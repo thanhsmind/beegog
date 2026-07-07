@@ -2,6 +2,7 @@
 // and bash write-target extraction. Used by the write-guard hook and helpers.
 
 import { findConflicts } from './reservations.mjs';
+import { readConfig } from './state.mjs';
 
 /** File-path patterns that must never be read without asking the human. */
 export const SECRET_PATTERNS = [
@@ -49,6 +50,10 @@ function underAllowedPrefix(relPath) {
 
 /**
  * Gate + reservation write check.
+ * - Idle (intake gate): no bee work is active, so source writes are blocked
+ *   until the request is routed through bee-hive. Repository-harness lesson:
+ *   a default-open first move is the hole every ad-hoc edit slips through.
+ *   Disable per repo with {"guards":{"idle_gate":false}} in .bee/config.json.
  * - Gated phases (exploring/planning/validating): block writes outside
  *   GATE_ALLOWED_PREFIXES while approved_gates.execution is false.
  * - Swarming: deny writes that conflict with another agent's reservation
@@ -57,6 +62,24 @@ function underAllowedPrefix(relPath) {
 export function checkWrite(root, state, relPath, agentName = null) {
   const normalized = normalizeRel(relPath);
   const phase = state?.phase || 'idle';
+
+  if (phase === 'idle') {
+    const config = readConfig(root);
+    const idleGateOn = !(config.guards && config.guards.idle_gate === false);
+    if (idleGateOn && !underAllowedPrefix(normalized)) {
+      return {
+        allow: false,
+        kind: 'intake',
+        reason:
+          `bee intake gate: no bee work is active (phase: idle) — writing "${normalized}" is blocked. ` +
+          'Route the request through bee-hive first: classify the mode (tiny fixes stay tiny — one cell, ' +
+          'a 2-minute reality check, Gate 3, go), then execute. ' +
+          `Writable without routing: ${GATE_ALLOWED_PREFIXES.join(', ')}. ` +
+          'To disable this gate for the repo: set {"guards":{"idle_gate":false}} in .bee/config.json.',
+      };
+    }
+    return { allow: true };
+  }
 
   if (GATED_PHASES.has(phase)) {
     const executionApproved = state?.approved_gates?.execution === true;

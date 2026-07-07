@@ -122,8 +122,10 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 Hooks block or inject; the agent responds by contract:
 
 - `@@BEE_PRIVACY@@ … @@END@@` marker on a read → route through AskUserQuestion with the file and question from the marker. Never work around the block.
+- Intake block (`bee intake gate`, phase idle) → do **not** retry the write; this session has no active bee work yet. Run bee-hive routing now: classify the mode, create the cell(s), pass the gates, then execute. Tiny fixes stay tiny.
 - Gate-guard block on a write → do **not** retry the write; surface the Gate 3 question to the user ("Feasibility validated. Approve execution?").
 - Reservation block → the worker returns `[BLOCKED]` with the conflict; the orchestrator fixes reservations or cell scope.
+- `bee decision review` nudge at session end → ask the user whether a durable decision/learning emerged; log it via `bee_decisions.mjs log` if yes.
 
 ## Headless
 

@@ -77,8 +77,9 @@ All functions are sync unless noted. `root` = absolute repo root path.
 - `SECRET_PATTERNS`: regexes for `.env`(+suffixes), `*.pem`, `*.key`, `id_rsa*`, `*.p12`, `credentials*`, `secrets.*`.
 - `SCOUT_DIRS`: `node_modules/`, `dist/`, `build/`, `.git/objects`, `vendor/`, `coverage/`, `.next/`, `__pycache__/`.
 - `GATE_ALLOWED_PREFIXES`: `.bee/`, `docs/` (covers `docs/history/`), `.spikes/`, `plans/`, `AGENTS.md`.
-- `checkWrite(root, state, relPath, agentName=null)` → `{allow:true}` or `{allow:false, kind:'gate'|'reservation', reason}`.
-  - gate: phase ∈ {planning, validating} contexts don't block; block only when `state.phase` ∈ {`exploring`,`planning`,`validating`} AND path not under GATE_ALLOWED_PREFIXES AND `approved_gates.execution` is false. During `swarming`: reservation check via `findConflicts` when `agentName`/`BEE_AGENT_NAME` provided; unreserved-but-conflicting → deny.
+- `checkWrite(root, state, relPath, agentName=null)` → `{allow:true}` or `{allow:false, kind:'intake'|'gate'|'reservation', reason}`.
+  - intake (v0.1.1, repository-harness lesson): when `state.phase` is `idle` AND path not under GATE_ALLOWED_PREFIXES → deny with `kind:'intake'` pointing at bee-hive routing. Default-on; disable per repo via `config.guards.idle_gate: false`. This closes the "first ad-hoc edit slips through before any workflow starts" hole.
+  - gate: block only when `state.phase` ∈ {`exploring`,`planning`,`validating`} AND path not under GATE_ALLOWED_PREFIXES AND `approved_gates.execution` is false. During `swarming`: reservation check via `findConflicts` when `agentName`/`BEE_AGENT_NAME` provided; unreserved-but-conflicting → deny.
 - `checkRead(relPath)` → `{allow:true}` or `{allow:false, kind:'privacy'|'scout', reason, marker}` where privacy marker = `@@BEE_PRIVACY@@{json}@@END@@` containing `{file, question}`.
 - `extractBashTargets(command)` → `{paths:[], broadWrite:boolean}` (khuym patterns: `sed -i`, `tee`, `rm`, `mv`, `cp`, `mkdir`, `touch`, `git add|mv|rm`, redirection `>`).
 
@@ -129,7 +130,7 @@ bee_decisions.mjs log --decision D --rationale R [--alternatives A] [--scope S] 
 | `bee-write-guard.mjs` | PreToolUse `Edit\|Write\|MultiEdit\|Bash\|Read\|Glob\|Grep` | parse stdin payload (`tool_name`, `tool_input`); for reads → `checkRead`; for writes/Bash → `checkWrite` (+`extractBashTargets`). Deny = **exit 2 with reason on stderr** (include marker text for privacy). Allow = exit 0 silent. |
 | `bee-state-sync.mjs` | PostToolUse `TaskCreate\|TaskUpdate\|TodoWrite` + SubagentStop + Stop | refresh cell counts + last_activity into state.json; exit 0 |
 | `bee-chain-nudge.mjs` | SubagentStop | if state.workers lists this agent or phase=swarming → print nudge ("collect [STATUS], update cell, check reservations; when wave clean → next step"); phase=reviewing → reviewer-synthesis nudge; else silent |
-| `bee-session-close.mjs` | Stop | if phase not idle/compounding-complete and no HANDOFF → print warning listing claimed-uncapped cells + active reservations; exit 0 |
+| `bee-session-close.mjs` | Stop | if phase not idle/compounding-complete and no HANDOFF → print warning listing claimed-uncapped cells + active reservations. If phase IS idle: decision-review nudge (v0.1.1) — when `git status` shows changed source files and no decision was logged in the last 6h, print a deduped (`shouldInject`) reminder to ask the user about recording a decision/learning. Never blocks; exit 0 |
 
 Common prologue for every hook: read stdin fully (may be empty), `findRepoRoot(cwd)`, require `.bee/onboarding.json` + `hookEnabled(root, '<name>')`, dynamic-import lib from `<root>/.bee/bin/lib/` with try/catch → exit 0 on any miss; crash-log to `.bee/logs/hooks.jsonl`.
 

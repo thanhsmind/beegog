@@ -63,6 +63,52 @@ function libModuleUrl(root, name) {
   return pathToFileURL(path.join(root, ".bee", "bin", "lib", name)).href;
 }
 
+// Repository-harness lesson: review the session for an unrecorded decision
+// before it ends. When source files changed with no bee flow active and no
+// recent decision logged, nudge once (deduped) — never block.
+const NUDGE_ALLOWED = /^(\.bee\/|docs\/|\.spikes\/|plans\/|AGENTS\.md$)/;
+const DECISION_RECENT_MS = 6 * 3600 * 1000;
+
+async function maybeDecisionNudge(root) {
+  try {
+    const { execSync } = await import("node:child_process");
+    const out = execSync("git status --porcelain", {
+      cwd: root,
+      timeout: 3000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).toString();
+    const changed = out
+      .split("\n")
+      .map((line) => line.slice(3).trim().replace(/^"|"$/g, ""))
+      .filter(Boolean)
+      .filter((p) => !NUDGE_ALLOWED.test(p));
+    if (changed.length === 0) {
+      return;
+    }
+    const decisionsLib = await import(libModuleUrl(root, "decisions.mjs"));
+    const injectLib = await import(libModuleUrl(root, "inject.mjs"));
+    const recent = decisionsLib.activeDecisions(root, { recent: 1 });
+    const lastTs = recent[0] && recent[0].date ? Date.parse(recent[0].date) : 0;
+    if (lastTs && Date.now() - lastTs < DECISION_RECENT_MS) {
+      return;
+    }
+    const hash = changed.sort().join("|");
+    if (!injectLib.shouldInject(root, "decision-nudge", hash)) {
+      return;
+    }
+    injectLib.markInjected(root, "decision-nudge", hash);
+    process.stdout.write(
+      `bee decision review: ${changed.length} source file(s) changed with no bee flow active ` +
+        "and no recent decision logged. Before finishing, ask the user: is there a durable " +
+        'decision or convention here worth recording? If yes: node .bee/bin/bee_decisions.mjs log ' +
+        '--decision "..." --rationale "..." (or a dated learning in docs/history/learnings/). ' +
+        "If not, carry on.",
+    );
+  } catch {
+    // fail-open: no git, no lib, no problem
+  }
+}
+
 async function main() {
   const payload = await readStdinPayload();
   const root = findRepoRoot(payload.cwd || process.cwd());
@@ -81,6 +127,7 @@ async function main() {
     const state = stateLib.readState(root);
     const phase = state.phase || "idle";
     if (phase === "idle" || phase === "compounding-complete") {
+      await maybeDecisionNudge(root);
       return 0;
     }
     if (stateLib.readHandoff(root)) {

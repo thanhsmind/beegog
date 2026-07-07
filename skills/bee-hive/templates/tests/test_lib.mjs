@@ -239,6 +239,21 @@ check('sweepExpired releases TTL-expired reservations', () => {
 
 // ─── guards ─────────────────────────────────────────────────────────────────
 
+check('checkWrite blocks source writes while idle (intake gate); config can disable it', () => {
+  const state = defaultState(); // phase: idle
+  const denied = checkWrite(root, state, 'src/app.ts');
+  assert(denied.allow === false && denied.kind === 'intake', 'intake deny expected while idle');
+  assert(denied.reason.includes('bee-hive'), 'intake reason should point at bee-hive routing');
+  const docsOk = checkWrite(root, state, 'docs/notes.md');
+  assert(docsOk.allow === true, 'docs/ writes stay allowed while idle');
+  const configPath = path.join(root, '.bee', 'config.json');
+  const before = readJson(configPath, {});
+  writeJsonAtomic(configPath, { ...before, guards: { idle_gate: false } });
+  const off = checkWrite(root, state, 'src/app.ts');
+  assert(off.allow === true, 'idle gate must be disableable via guards.idle_gate=false');
+  writeJsonAtomic(configPath, before || {});
+});
+
 check('checkWrite blocks source writes in a gated phase without execution approval', () => {
   const state = { ...defaultState(), phase: 'planning' };
   const denied = checkWrite(root, state, 'src/app.ts');
