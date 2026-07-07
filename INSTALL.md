@@ -4,20 +4,22 @@ Source: **https://github.com/thanhsmind/beegog**
 
 ## Quick install (recommended): the install script
 
-One command does everything below — fetches bee, installs the skills for the chosen runtimes, and onboards the target repo (greenfield or brownfield). It always shows the exact plan and asks before writing (skip prompts with `-y`/`-Yes`).
+One command does everything below — fetches bee, installs the skills for the chosen runtimes, and onboards the target repo (greenfield or brownfield). **The current directory is the target by default** — `cd` into your project first. It always shows the exact plan and asks before writing (skip prompts with `-y`/`-Yes`).
 
 macOS / Linux / Git Bash:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -d /path/to/project -y
+curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -y
 ```
 
 Windows PowerShell:
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1
-.\install-bee.ps1 -Directory C:\path\to\project -Yes
+.\install-bee.ps1 -Yes
 ```
+
+To target another directory instead, add `-d /path/to/project` (bash) / `-Directory C:\path\to\project` (PowerShell).
 
 From a local clone: `scripts/install.sh [-d <target>]` / `.\scripts\install.ps1 [-Directory <target>]`.
 

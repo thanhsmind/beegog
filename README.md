@@ -39,15 +39,17 @@ bee-hive
 
 ## Install
 
-Quick (greenfield or brownfield, both runtimes):
+Quick (greenfield or brownfield, both runtimes) — run from inside your project; the current directory is the target by default:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -d /path/to/project -y
+curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -y
 ```
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1; .\install-bee.ps1 -Directory C:\path\to\project -Yes
+iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1; .\install-bee.ps1 -Yes
 ```
+
+Installing into a different directory: add `-d /path/to/project` (bash) / `-Directory C:\path\to\project` (PowerShell).
 
 Full options, the Claude Code plugin route (`/plugin marketplace add thanhsmind/beegog` + `/plugin install bee@bee`), manual installs, verify/update/uninstall: [INSTALL.md](INSTALL.md).
 
