@@ -70,6 +70,9 @@ Ten skills, hard cap. Every SKILL.md stays lean (< ~200 lines); depth lives in o
       learnings/
         critical-patterns.md     ← mandatory pre-planning/pre-execution context
         YYYYMMDD-<slug>.md       ← dated learnings
+    specs/
+      <area>.md                  ← current-behavior spec per long-lived area (state layer)
+      reading-map.md             ← one line per location: what lives where
     decisions/NNNN-<slug>.md     ← long-form decision records (linked from decisions.jsonl)
   .spikes/<feature>/             ← disposable feasibility proofs
 ```
@@ -85,6 +88,27 @@ mode: tiny | small | standard | high-risk | spike
 ```
 
 The shape pass writes it as `requirements-only` and stops at Gate 2; the post-approval prep pass enriches the *same file* to `implementation-ready` and creates the current-slice cells. Downstream skills (validating, swarming, reviewing, compounding) all receive one canonical plan path — no doc-discovery ambiguity, and the readiness field is machine-checkable (`bee_status.mjs` reports it).
+
+## The state layer: area specs + reading map (decision 0001)
+
+Everything else under `docs/` is **history-shaped** (append-only, dated, feature-sliced) and answers *"how did we get here"*. `docs/specs/` is **state-shaped** and answers *"where are we now"* — the opposite write discipline, on purpose:
+
+| | Log artifacts (`decisions.jsonl`, `docs/history/`, learnings) | State artifacts (`docs/specs/`) |
+|---|---|---|
+| Answers | How we got here | Where we are |
+| Write discipline | Append-only, supersede, never edit | **Overwritten/merged** to match reality |
+| Organized by | Feature / date | **Area** (a form, a module — outlives features) |
+
+- **`docs/specs/<area>.md`** — the current behavior, requirements, and settled edge cases of one long-lived area, written in the present tense. It cites active D-IDs for rationale but never narrates history ("was", "changed from" are banned — history lives in git and `docs/history/`). Template in `bee-compounding`'s reference.
+- **`docs/specs/reading-map.md`** — one line per location: `path — what lives here`, optionally pointing at the area's spec. This is the navigation knowledge that otherwise gets re-derived every session.
+
+The loop that keeps the layer honest:
+
+1. **Write:** `bee-compounding` syncs specs at feature close. Capped cells with `behavior_change: true` (plus their `verification_evidence`) are the ready-made delta list — sync means merging those deltas into the touched areas' specs and refreshing reading-map lines, not rewriting docs.
+2. **Read:** `bee-hive`'s scout contract reads the touched area's spec *before* the area's code, in every lane; the session preamble mentions the state layer when `docs/specs/` exists. Fresh-session reading order: **spec (what is) → decisions (why) → history (only for archaeology)**.
+3. **Guard:** `bee-grooming`'s entropy score carries a `stale specs` term — an area with `behavior_change` cells capped after its spec's `updated` date is measured debt, not a hope.
+
+Area naming is kebab-case, chosen at first spec write, stable thereafter; the compounding orchestrator maps cells to areas by the files they touched.
 
 ## Skill invocation modes
 

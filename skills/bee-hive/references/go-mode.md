@@ -54,16 +54,20 @@ Before invoking `bee-exploring`:
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
 
-Each gate is one question in the standard CONTEXT / QUESTION / RECOMMENDATION / options format. Gates are asked **one at a time** — never batch Gate 2 and Gate 3 into a single question, even when validation looks trivially clean. Optional at Gates 2–4: a cross-model second opinion; disagreement is quoted to the user, never auto-resolved.
+Each gate is one question in the standard CONTEXT / QUESTION / RECOMMENDATION / options format, presented per the **Gate Presentation Contract** (`routing-and-contracts.md`): plain-language layer in chat, in the user's language; full mechanical report written to `docs/history/<feature>/reports/` and linked, never pasted. Gates are asked **one at a time** — never batch Gate 2 and Gate 3 into a single question, even when validation looks trivially clean. Optional at Gates 2–4: a cross-model second opinion; disagreement is quoted to the user, never auto-resolved.
 
 ## Gate Presentations
+
+Templates below are the **human layer** — fill them in the user's language, in the user's terms. Square-bracket content is plain prose, never table dumps or jargon.
 
 **GATE 1** — after exploring:
 
 ```text
-Exploration complete for [feature].
-[N] decisions locked in docs/history/<feature>/CONTEXT.md, [M] open questions noted.
-Key decisions: D1: [summary] ... (max 5, then "see CONTEXT.md")
+What we decided: [the feature in one plain sentence] — [N] choices locked, [M] questions still open.
+The key choices, in plain words: [max 3, one line each; more → "full list in CONTEXT.md"]
+If a choice is wrong: everything after this builds on it — fixing it now costs a conversation, fixing it later costs redone work.
+You are deciding: whether these choices match what you meant, before any planning starts.
+Full record: docs/history/<feature>/CONTEXT.md
 Decisions locked. Approve CONTEXT.md before planning? (yes / revise / show full CONTEXT.md)
 ```
 
@@ -72,9 +76,11 @@ Revise → return to exploring for the specific gray areas, update CONTEXT.md in
 **GATE 2** — after the planning shape pass:
 
 ```text
-Planning complete for [feature]. Mode: [tiny/spike/small/standard/high-risk] ([k] risk flags: [list]).
-Proposed shape: [work item / spike question / plan summary / epic list].
-Why this is the least workflow that protects the work: [one sentence].
+What I plan to build: [the shape in one plain sentence]. Size: [mode, glossed — e.g. "standard — a normal mid-size feature"].
+Why this size: [one plain sentence — the least workflow that honestly protects the work].
+If the shape is wrong: preparation gets built against it — revising now is cheap, revising after prep is not.
+You are deciding: whether this is the right thing and the right size, before detailed preparation.
+Full plan: docs/history/<feature>/plan.md
 Work shape is ready. Approve before current-work preparation? (yes / revise / show full plan.md)
 ```
 
@@ -83,9 +89,11 @@ Revise → return to the shape pass, update `plan.md` (still `requirements-only`
 **GATE 3** — after validating:
 
 ```text
-Validation complete for [feature], current work. Mode: [mode].
-Reality gate: [passed/failed by check]. Feasibility: [READY / READY WITH CONSTRAINTS / NOT READY].
-Spikes: [all passed / N failed]. [N] cells ready. Unresolved concerns: [list or "none"].
+What I'm about to do: [the change in the user's terms, one sentence — what changes for them, not the mechanism].
+Why it's trustworthy: [the single strongest piece of evidence, plain words — e.g. "a dry run rebuilt all 3 pages byte-for-byte identical"].
+If it goes wrong: [what breaks for the user + how we'd notice — loud failure, rollback path].
+You are deciding: whether I may start editing real files — this slice of work only.
+Full validation report: docs/history/<feature>/reports/validation-<slice>.md
 Feasibility validated. Approve execution? (yes / review cells / no — revise plan)
 ```
 
@@ -94,8 +102,11 @@ Approval covers the **current slice only**. No → return to planning or validat
 **GATE 4** — after reviewing the final slice:
 
 ```text
-Review complete for [feature].
-P1 (blocks merge): [count] — [titles]   P2: [count]   P3: [count]
+What was built: [the shipped change in one plain sentence].
+Review found: [P1 count] problems that block merge — [each named in plain words] — plus [P2+P3 count] smaller issues filed for later.
+If we merge now: [the consequence in user terms — "nothing known breaks" or "X would ship broken for users who Y"].
+You are deciding: whether this goes into the main branch.
+Full review: docs/history/<feature>/reports/
 ```
 
 - P1 > 0 → "P1 findings block merge. Fix before proceeding? (a) fix now (b) show details (c) explicit user override" — silence is not acknowledgment.

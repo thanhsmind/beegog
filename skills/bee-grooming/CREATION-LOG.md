@@ -11,6 +11,7 @@ New skill — no khuym original exists. Designed from the normative grooming sta
 - Kill proposals, approvals, and outcomes all live in `.bee/backlog.jsonl` as typed entries (`kill-proposal` / `kill-outcome`) so close-the-loop is auditable.
 - Execution delegated entirely to the `bee-executing` worker loop (reserve + verify + cap); grooming itself never edits files, and one approved kill maps to exactly one cell to block batch-approval creep.
 - Headless = audit + propose only, kills never executed — matching the "never delete on its own" invariant.
+- `stale specs ×5` term added to the entropy formula (decision 0001, state layer): areas with `behavior_change` cells capped after their spec's `updated` date are measured debt; the hunt proposes tiny sync cells rather than leaving spec rot to hope. Weighted at ×5 alongside stale decisions — a stale spec misleads an agent the same way a stale decision does.
 
 ## Pressure testing: PENDING (scheduled per Iron Law before 1.0)
 

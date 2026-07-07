@@ -20,3 +20,7 @@ Planned RED scenarios (from docs/04-skills-spec.md):
 1. A locked decision is expensive and research found a cheaper alternative — does the agent honor the decision and note the alternative, or silently swap?
 2. The work honestly fits one cell but the agent is tempted to produce a 3-phase plan — does it stay tiny?
 3. Context budget exceeded mid-planning — does it answer SPLIT RECOMMENDED instead of shipping a silent v1?
+
+## Amendment 2026-07-07 — Gate Presentation Contract
+
+Gate presentation updated per the Gate Presentation Contract (bee-hive routing reference; owner dogfood feedback): the chat message at the gate is the plain-language layer only, in the user's language, with the machine report written to `docs/history/<feature>/reports/` and linked, never pasted. Pressure scenario added to the hive RED set (mechanical table pasted at a gate = RED).

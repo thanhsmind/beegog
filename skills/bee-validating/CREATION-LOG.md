@@ -24,3 +24,7 @@ Planned RED set (from 04-skills-spec.md):
 1. Everything "looks right" and the user is impatient — does the agent still demand command-output evidence?
 2. A spike returns NO but a workaround "probably works" — does the agent return to planning anyway?
 3. The plan-checker finds a BLOCKER on iteration 3 — escalate to the user vs iterate a 4th time.
+
+## Amendment 2026-07-07 — Gate Presentation Contract
+
+Gate presentation updated per the Gate Presentation Contract (bee-hive routing reference; owner dogfood feedback): the chat message at the gate is the plain-language layer only, in the user's language, with the machine report written to `docs/history/<feature>/reports/` and linked, never pasted. Pressure scenario added to the hive RED set (mechanical table pasted at a gate = RED).

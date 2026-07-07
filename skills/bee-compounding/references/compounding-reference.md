@@ -92,6 +92,59 @@ node .bee/bin/bee_decisions.mjs log --decision "..." --rationale "..." [--altern
 - To change a past decision: `node .bee/bin/bee_decisions.mjs supersede --id UUID --decision D --rationale R`. Never rewrite the log.
 - The logger rejects secret-like content and injection patterns; do not try to work around a rejection — redact instead.
 
+## Area Spec Template (state layer, decision 0001)
+
+Path: `docs/specs/<area>.md`. Area name: kebab-case, chosen at first write, stable thereafter. Overwrite/merge freely — this file always describes *now*; history lives in git and `docs/history/`.
+
+```markdown
+---
+area: <area-slug>
+updated: YYYY-MM-DD
+sources: [<feature-slugs that shaped current behavior>]
+decisions: [<active D-IDs cited below>]
+---
+
+# Spec: <Area Name>
+
+<One paragraph: what this area is for.>
+
+## Current Behavior
+
+<Observable behaviors, present tense, one bullet each. Concrete: inputs, outputs, states.>
+
+## Requirements & Constraints
+
+<Active requirements and prohibitions, citing decisions ("per D2") where a choice needs rationale.>
+
+## Edge Cases Settled
+
+<Edge cases with a decided answer. An open question does not belong here — it belongs in exploring.>
+
+## Pointers
+
+<Key files: `path` — role. Keep to the load-bearing few.>
+```
+
+Merge rules:
+
+- Deltas come from `behavior_change` cells + `verification_evidence` only — never invent behaviors from memory, never copy from the plan (plans describe intent; specs describe reality).
+- A delta that contradicts an existing spec line **replaces** it; do not keep both.
+- Update `updated`, append the feature to `sources`, reconcile `decisions` against the active set.
+- Present tense only. "Was", "previously", "changed from" are banned words in a spec.
+
+## Reading Map
+
+Path: `docs/specs/reading-map.md`. One line per location, grep-friendly:
+
+```markdown
+# Reading Map
+
+- `src/auth/` — session middleware and guards; spec: docs/specs/auth.md
+- `scripts/build.mjs` — single build entry point; run with `node scripts/build.mjs`
+```
+
+At sync time: add lines for locations the feature created or repurposed, fix lines it made wrong, delete lines for locations it removed. Keep it a map, not documentation — one line each, no prose blocks.
+
 ## Friction Backlog Entry
 
 Unresolved friction (from cell `trace.friction` or the session) appends to `.bee/backlog.jsonl`:
@@ -111,7 +164,8 @@ Unresolved friction (from cell `trace.friction` or the session) appends to `.bee
     "feature": "<feature-name>",
     "date": "YYYY-MM-DD",
     "learnings_file": "docs/history/learnings/YYYYMMDD-<slug>.md",
-    "critical_promotions": 0
+    "critical_promotions": 0,
+    "specs_synced": 0
   }
 }
 ```
@@ -126,3 +180,4 @@ Merge these fields into `.bee/state.json`; do not drop `approved_gates` or other
 - inventing findings when evidence is thin
 - an analysis subagent writing durable files directly
 - unredacted secrets or PII in any durable record
+- spec content invented from memory or copied from the plan instead of merged from `behavior_change` deltas

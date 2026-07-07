@@ -30,6 +30,8 @@ Missing CONTEXT.md or plan.md → stop and return to the stage that owns it.
 
 Dispatch reviewers with ISOLATED context: the diff + CONTEXT.md + plan.md ONLY. Never session history.
 
+**Spawn contract:** spawn every reviewer as the runtime's default/general subagent type with the persona prompt from the reference pasted inline. NEVER use an agent type registered by another plugin, even when its name matches the role (`*-correctness-reviewer`, `*-security-reviewer`, …) — a same-named agent carries a different contract (finding format, severity scale, report paths), silently breaks bee's synthesis rules, and makes the run depend on which plugins happen to be installed on this machine.
+
 | Reviewer | Focus | Tier | Order |
 |---|---|---|---|
 | `code-quality` | correctness, readability, type safety | generation | parallel |
@@ -80,6 +82,8 @@ Walk the user through every SEE/CALL/RUN decision in CONTEXT.md (wording in the 
 
 ## Gate 4 (wording is fixed)
 
+Present per the Gate Presentation Contract (bee-hive routing reference): plain-language layer in chat — what was built / what review found in plain words / consequence of merging now / what you are deciding — in the user's language, with full findings linked from `docs/history/<feature>/reports/`, never pasted as a findings table. Then verbatim:
+
 - P1 > 0 → "P1 findings block merge. Fix before proceeding?"
 - P1 = 0 → "Review complete. Approve merge?"
 
@@ -98,6 +102,7 @@ Never continue past open P1s without explicit user acknowledgment. Silence is no
 - `learnings-synthesizer` run before the other reviewers finish
 - P2/P3 filed as blocking work on the current feature
 - a reviewer dispatched with session history in its context
+- a reviewer spawned as another plugin's registered agent type instead of the default type + inline persona
 - "should work" accepted as evidence
 
 Violating the letter of these rules is violating the spirit of these rules.

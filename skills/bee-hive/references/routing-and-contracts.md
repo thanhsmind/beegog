@@ -76,9 +76,11 @@ Retrieval triggers, not reading lists. Token budgets by lane:
 
 | Lane | Harness-context budget | Always read | Trigger-based reads |
 |---|---|---|---|
-| tiny / small | ≈ 2K tokens | bee_status, critical-patterns digest | touched-file neighborhood only |
+| tiny / small | ≈ 2K tokens | bee_status, critical-patterns digest, touched area's `docs/specs/<area>.md` when present | touched-file neighborhood only |
 | standard | ≈ 5K tokens | + recent active decisions, CONTEXT.md | touching schema → schema decisions first; touching auth → auth decisions |
 | high-risk | ≈ 10K tokens | + full decision search on tags, plan history | + high-risk template, prior spikes in `.spikes/`, related learnings files |
+
+Reading order per area (state layer, decision 0001): **spec → decisions → history**. `docs/specs/reading-map.md` answers "where does X live" before any broad grep.
 
 Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `coverage/` — the scout guard blocks them anyway.
 
@@ -93,7 +95,7 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
 | executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `docs/history/<feature>/reports/` |
 | reviewing | diff, CONTEXT.md, plan.md, capped cells | P1/P2/P3 findings, backlog items, `residual-findings.md` fallback |
-| compounding | feature history, traces, findings, commits | `docs/history/learnings/YYYYMMDD-<slug>.md`, critical-patterns promotions, decision log, backlog friction |
+| compounding | feature history, traces, findings, commits | `docs/history/learnings/YYYYMMDD-<slug>.md`, critical-patterns promotions, decision log, backlog friction, `docs/specs/<area>.md` sync + reading-map refresh |
 | grooming | entropy inputs, backlog, traces, diffs | kill proposals, tiny/small cells, outcome records |
 
 Every skill ends with an explicit handoff: `[Outcome]. Invoke bee-<next-skill> skill.`
@@ -116,6 +118,24 @@ For plans, findings, blockers, and handoffs, answer in this order:
 5. Next step
 
 Avoid "violates D5" or "non-monotonic" without immediate explanation.
+
+## Gate Presentation Contract
+
+A gate message has two layers, and **only the human layer goes into chat**:
+
+1. **Human layer (the chat message)** — written in the language the user is conversing in, jargon-free, answering four questions in order:
+   - **What I'm about to do** — one sentence in the user's terms: what changes *for them*, not the mechanism.
+   - **Why it's trustworthy** — the single strongest piece of evidence in plain words ("a dry run rebuilt all 3 pages byte-for-byte identical"), never a checklist.
+   - **If it goes wrong** — what breaks for the user and how it would be noticed (loud failure, rollback path).
+   - **What you are deciding** — the exact commitment being approved and its boundary ("current slice only").
+
+   Then the fixed gate question verbatim, with the standard options, and a link to the full report.
+
+2. **Machine layer (the linked report)** — the full mechanical material (reality-gate tables, feasibility matrices, plan-checker findings, cell lists) is written to `docs/history/<feature>/reports/` and **linked** from the gate message. It is never pasted into the gate message. It exists for the agent, the audit trail, and grooming — not for the human's eyes at decision time.
+
+Litmus test: **the user must be able to restate what they are approving in their own words.** A gate the user cannot restate is a dead gate — worse than no gate, because it manufactures false confidence. A technical term (BLOCKER count, spike id) may appear in the human layer only with an immediate plain-language gloss.
+
+This contract applies to all four gates, in every mode, including go mode.
 
 ## Question Format
 
@@ -146,6 +166,9 @@ docs/history/<feature>/
 
 docs/history/learnings/
   critical-patterns.md  YYYYMMDD-<slug>.md
+
+docs/specs/
+  <area>.md  reading-map.md
 
 .spikes/<feature>/
 ```

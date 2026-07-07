@@ -23,7 +23,8 @@ Compute the score from `.bee/` records (`node .bee/bin/bee_status.mjs --json` pl
 
 ```
 ENTROPY SCORE = orphaned cells ×10 + unverified cells ×5 + stale decisions ×5
-              + backlog-without-outcome ×2 + stale work ×3 + broken tools ×8, cap 100
+              + stale specs ×5 + backlog-without-outcome ×2 + stale work ×3
+              + broken tools ×8, cap 100
 ```
 
 - **0** = perfect · **1–25** = healthy · **26–50** = attention · **51–100** = action required
@@ -37,6 +38,7 @@ Work every source; per-source checklists in the reference:
 - friction clusters across cell traces and `.bee/backlog.jsonl`
 - dead code and unused exports
 - stale docs that contradict the code
+- stale area specs (behavior changed after the spec's `updated` date — decision 0001)
 - TODO/stub debris
 - verify-commands that no longer run
 - superseded-but-still-cited decisions

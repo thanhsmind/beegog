@@ -43,12 +43,12 @@ Exit: Gate discipline holds under pressure tests; a feature pauses at 65% and re
 ## Phase 3 — Memory and the clean hive
 
 1. `bee_decisions.mjs` (event-sourced log, write-time redaction, datamark on read) + decision surfacing in hive bootstrap.
-2. **compounding**: analysts, learnings template, critical promotion, friction → backlog.
-3. **grooming**: entropy audit, hunt checklists, propose/approve/execute/close-the-loop.
+2. **compounding**: analysts, learnings template, critical promotion, friction → backlog, **state-layer sync** (merge `behavior_change` deltas into `docs/specs/<area>.md`, refresh `reading-map.md` — decision 0001).
+3. **grooming**: entropy audit (including the `stale specs` term), hunt checklists, propose/approve/execute/close-the-loop.
 4. **bee-writing-skills** (adapted from khuym; needed before Phase 3 skills are edited further — consider pulling it into Phase 1 if skill churn is high).
 5. Backlog outcome loop live: every grooming item closes with predicted-vs-actual.
 
-Exit: after two features, `critical-patterns.md` and active decisions demonstrably change agent behavior (fewer repeated mistakes in dogfood notes); entropy score reported and trending.
+Exit: after two features, `critical-patterns.md` and active decisions demonstrably change agent behavior (fewer repeated mistakes in dogfood notes); entropy score reported and trending; for at least one area touched twice, a fresh session answers "what does this area do now?" from its `docs/specs/` entry without re-exploring the code.
 
 ## Phase 4 — Polish (only if earned)
 

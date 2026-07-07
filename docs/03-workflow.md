@@ -24,6 +24,8 @@ Gate wording (fixed, from khuym):
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
 
+**Gate Presentation Contract** (owner feedback, dogfood): a gate is presented in two layers. The chat message is the plain-language layer only, in the user's language — *what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding* — followed by the fixed question. The full mechanical material (reality-gate tables, matrices, plan-checker findings, cell lists) goes to `docs/history/<feature>/reports/` and is linked, never pasted. Litmus: the user can restate what they are approving in their own words — a gate the user cannot restate is a dead gate that manufactures false confidence. Normative text in `bee-hive/references/routing-and-contracts.md`.
+
 Optional at Gates 2–4: a **cross-model second opinion** (gstack). If the other runtime's model is available, ask it to challenge the artifact. Agreement → mention it. Disagreement → quote both positions to the user. Never auto-resolve.
 
 ## Priority rules (hive law)
@@ -128,13 +130,13 @@ Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify
 ### bee-compounding (honey)
 
 - **Reads:** feature history, cells and traces, review findings, commit history. Missing artifacts → session summary + git diff; never fabricate.
-- **Does:** three parallel analysis subagents — pattern extractor, decision analyst, failure analyst; orchestrator synthesizes (subagents never write durable files); write one dated `docs/history/learnings/YYYYMMDD-<slug>.md` (what happened / root cause / imperative future rule); promote only genuinely critical, cross-feature lessons to `critical-patterns.md`; log durable decisions to `bee_decisions.mjs log` (with rationale + alternatives); file unresolved friction into `.bee/backlog.jsonl` with predicted impact.
-- **Never:** skip compounding for meaningful work; promote everything as critical; write "test more carefully"-grade advice.
+- **Does:** three parallel analysis subagents — pattern extractor, decision analyst, failure analyst; orchestrator synthesizes (subagents never write durable files); write one dated `docs/history/learnings/YYYYMMDD-<slug>.md` (what happened / root cause / imperative future rule); promote only genuinely critical, cross-feature lessons to `critical-patterns.md`; log durable decisions to `bee_decisions.mjs log` (with rationale + alternatives); sync the state layer — merge `behavior_change` cell deltas into `docs/specs/<area>.md` and refresh `docs/specs/reading-map.md` (decision 0001); file unresolved friction into `.bee/backlog.jsonl` with predicted impact.
+- **Never:** skip compounding for meaningful work; promote everything as critical; write "test more carefully"-grade advice; leave a spec older than the behavior it describes when `behavior_change` cells were capped.
 
 ### bee-grooming (undertaker bees) — on demand
 
-- **Audit:** compute the entropy score (orphaned cells ×10, unverified cells ×5, stale decisions ×5, backlog-without-outcome ×2, stale work ×3, broken tools ×8; cap 100) and report the trend.
-- **Hunt:** cluster friction from traces and backlog; scan for dead code, unused exports, stale docs vs code, TODO/stub debris, unverified verify-commands, superseded-but-cited decisions; slop-pattern pass on recent diffs (gstack).
+- **Audit:** compute the entropy score (orphaned cells ×10, unverified cells ×5, stale decisions ×5, stale specs ×5, backlog-without-outcome ×2, stale work ×3, broken tools ×8; cap 100) and report the trend.
+- **Hunt:** cluster friction from traces and backlog; scan for dead code, unused exports, stale docs vs code, stale area specs (decision 0001), TODO/stub debris, unverified verify-commands, superseded-but-cited decisions; slop-pattern pass on recent diffs (gstack).
 - **Propose:** each kill candidate becomes a backlog item with pain, predicted impact, and risk lane — presented for approval (grooming never deletes on its own initiative).
 - **Execute:** approved kills run as tiny/small cells through the normal worker loop (reservation, verify, cap).
 - **Close the loop:** record actual outcome against the prediction; feed durable lessons to compounding.

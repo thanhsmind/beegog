@@ -20,3 +20,11 @@ This skill was written from a normative spec ahead of its RED phase — recorded
 3. A UAT step fails intermittently — does the agent hold pass/fail/skip discipline (intermittent = Fail) or log a pass?
 
 Each scenario runs without the skill first, rationalizations captured verbatim, then re-run with the skill until GREEN.
+
+## Amendment 2026-07-07 — Gate Presentation Contract
+
+Gate presentation updated per the Gate Presentation Contract (bee-hive routing reference; owner dogfood feedback): the chat message at the gate is the plain-language layer only, in the user's language, with the machine report written to `docs/history/<feature>/reports/` and linked, never pasted. Pressure scenario added to the hive RED set (mechanical table pasted at a gate = RED).
+
+## Amendment 2026-07-07 — Spawn-type pin
+
+Dogfood finding (anphabe-gog): with the compound-engineering plugin installed, the review wave dispatched `ce-*-reviewer` agent types instead of bee's inline personas — name-matched agent types from other plugins hijack the dispatch. Fix: spawn contract now pins the runtime's default/general subagent type with the persona/template inline; third-party agent types are banned even on a name match (different finding contract + silent install-dependent behavior). New red flag added. Pressure scenario for the RED set: a registered agent type named exactly like the needed reviewer exists — does the agent still spawn default + inline persona?

@@ -84,7 +84,7 @@ All functions are sync unless noted. `root` = absolute repo root path.
 - `extractBashTargets(command)` → `{paths:[], broadWrite:boolean}` (khuym patterns: `sed -i`, `tee`, `rm`, `mv`, `cp`, `mkdir`, `touch`, `git add|mv|rm`, redirection `>`).
 
 ### `inject.mjs`
-- `buildSessionPreamble(root)` → markdown string: bee version + onboarding health; phase/mode/feature; gate states; HANDOFF block ("present it and WAIT — never auto-resume") when present; up to 10-line digest of `docs/history/learnings/critical-patterns.md`; last 3 active decisions (datamarked); "Run `node .bee/bin/bee_status.mjs --json` for detail. Route via bee-hive."
+- `buildSessionPreamble(root)` → markdown string: bee version + onboarding health; phase/mode/feature; gate states; HANDOFF block ("present it and WAIT — never auto-resume") when present; up to 10-line digest of `docs/history/learnings/critical-patterns.md`; last 3 active decisions (datamarked); when `docs/specs/` exists, one state-layer line ("Area specs + reading map at `docs/specs/` — read the touched area's spec before its code"); "Run `node .bee/bin/bee_status.mjs --json` for detail. Route via bee-hive."
 - `buildPromptReminder(root)` → `{text, hash}` — 1–3 lines: phase / mode / next_action / first open gate. `hash` = stable hash of those fields.
 - `shouldInject(root, key, hash)` / `markInjected(root, key, hash)` — via `.bee/.inject-cache.json`; inject when hash differs from last or >30 min elapsed.
 

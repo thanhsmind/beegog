@@ -113,6 +113,8 @@ All CRITICAL flags must be fixed before Gate 3. MINOR flags ship with a recorded
 
 ## Approval Gate Block
 
+Two layers (Gate Presentation Contract, bee-hive routing reference). The machine block goes into the **report file** `docs/history/<feature>/reports/validation-<slice>.md`, together with the reality gate report, feasibility matrix, plan-checker findings, and cell review above. It is never pasted into chat:
+
 ```text
 VALIDATION COMPLETE - APPROVAL REQUIRED BEFORE EXECUTION
 Mode: <mode>
@@ -123,11 +125,22 @@ Structure: PASS after <N> iterations
 Spikes: <none | passed | constraints recorded>
 Cell review: PASS (<N> cells, 0 CRITICAL open)
 Unresolved concerns: <none | list>
+```
 
+The **chat message** is the human layer only — in the user's language, jargon-free:
+
+```text
+What I'm about to do: [the change in the user's terms, one sentence — what changes for them, not the mechanism].
+Why it's trustworthy: [the single strongest piece of evidence, plain words — e.g. "a dry run rebuilt all 3 pages byte-for-byte identical"].
+If it goes wrong: [what breaks for the user + how we'd notice — loud failure, rollback path].
+You are deciding: whether I may start editing real files — this slice of work only.
+Full validation report: docs/history/<feature>/reports/validation-<slice>.md
 Feasibility validated. Approve execution?
 ```
 
-Approval is for the current work only. On yes: update `.bee/state.json` (`approved_gates.execution: true`) and hand off to bee-swarming. In headless mode, stop here — emit this block in the terminal report and exit without approval.
+Litmus: the user can restate what they are approving in their own words.
+
+Approval is for the current work only. On yes: update `.bee/state.json` (`approved_gates.execution: true`) and hand off to bee-swarming. In headless mode, stop here — emit both layers in the terminal report and exit without approval.
 
 ## Red Flags
 
@@ -138,3 +151,4 @@ Approval is for the current work only. On yes: update `.bee/state.json` (`approv
 - cells not tied to the current work slice
 - a small fix generating epic ceremony; a hard-gate change validated as small
 - Gate 3 asked with CRITICAL cell flags still open
+- the machine block pasted into chat, or a gate message the user cannot restate in their own words

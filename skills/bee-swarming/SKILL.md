@@ -27,7 +27,7 @@ You are the orchestrator. Launch workers, tend results, handle rescues, keep the
 
 1. **Wave analysis.** List claimable cells with `node .bee/bin/bee_cells.mjs ready` and walk their deps: cells with all deps capped and no shared files run in parallel within one wave; dependent or file-overlapping cells go to later waves. Two ready cells sharing a file means fix the reservations or split the cell scope — never "spawn both and be careful".
 2. **Assign.** The orchestrator picks exactly **one cell per worker**. Workers never self-select, browse the ready list, or take a second cell.
-3. **Spawn with the isolation contract.** Each worker prompt contains: the cell id, the path to `docs/history/<feature>/CONTEXT.md` and `docs/history/<feature>/plan.md`, the global constraints, its reservation identity (agent nickname), and the status-token protocol (`[DONE] [BLOCKED] [HANDOFF] [NOOP]`) — **nothing else, never session history**. Use the template in `references/swarming-reference.md`.
+3. **Spawn with the isolation contract.** Each worker prompt contains: the cell id, the path to `docs/history/<feature>/CONTEXT.md` and `docs/history/<feature>/plan.md`, the global constraints, its reservation identity (agent nickname), and the status-token protocol (`[DONE] [BLOCKED] [HANDOFF] [NOOP]`) — **nothing else, never session history**. Use the template in `references/swarming-reference.md`. Spawn as the runtime's default/general subagent type with that template inline — NEVER as an agent type registered by another plugin, even when the name matches the role: a same-named agent carries a different contract and makes the run depend on what happens to be installed.
 4. **Pick the model tier per dispatch** and state it explicitly in the spawn: `extraction` = cheapest capable (retrieval, mechanical edits), `generation` = mid (implementation, test writing), `ceiling` = the orchestrator's own model (integration, architecture, final review). Where the runtime cannot select per-agent models, fall back to read budgets and output caps in the prompt.
 5. **Record workers** (nickname, cell id, tier, status) in `.bee/state.json` `workers` before results arrive.
 6. **Tend** the swarm: collect status tokens, update cells and state, verify reservations were released. Silence is not failure — inspect cell status and `node .bee/bin/bee_reservations.mjs list --active-only` before assuming a worker is stuck. Do not send routine mid-flight pings; interrupt only for explicit user aborts or confirmed deadlocks.
@@ -76,6 +76,7 @@ With `mode:headless`: waves run without check-ins; unrescuable blockers and anyt
 - spawning before validation approval
 - a worker choosing its own cell, or handling two
 - full session context forked into a routine worker
+- a worker spawned as another plugin's registered agent type instead of the default type + inline template
 - two in-flight workers holding overlapping paths
 - passive waiting while cells/reservations look unhealthy
 - state.json missing in-flight workers

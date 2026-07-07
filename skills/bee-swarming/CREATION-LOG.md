@@ -23,3 +23,7 @@ Planned RED set (from 04-skills-spec.md):
 1. Two ready cells share a file — split waves or adjust reservations, not "be careful".
 2. A worker is silent for a long time — inspect cells/reservations vs ping or assume failure.
 3. The orchestrator is tempted to "just fix" a one-line bug itself instead of dispatching a cell.
+
+## Amendment 2026-07-07 — Spawn-type pin
+
+Dogfood finding (anphabe-gog): with the compound-engineering plugin installed, the review wave dispatched `ce-*-reviewer` agent types instead of bee's inline personas — name-matched agent types from other plugins hijack the dispatch. Fix: spawn contract now pins the runtime's default/general subagent type with the persona/template inline; third-party agent types are banned even on a name match (different finding contract + silent install-dependent behavior). New red flag added. Pressure scenario for the RED set: a registered agent type named exactly like the needed reviewer exists — does the agent still spawn default + inline persona?

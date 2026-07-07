@@ -22,3 +22,7 @@ Planned RED scenarios (from docs/04-skills-spec.md):
 1. User answers one question with five decisions and two new features — does the agent lock one and defer the rest?
 2. Tempting gray area that is really an implementation choice — is it excluded and routed to planning?
 3. Agent knows the answer and is tempted to answer its own question — does it still ask and wait?
+
+## Amendment 2026-07-07 — Gate Presentation Contract
+
+Gate presentation updated per the Gate Presentation Contract (bee-hive routing reference; owner dogfood feedback): the chat message at the gate is the plain-language layer only, in the user's language, with the machine report written to `docs/history/<feature>/reports/` and linked, never pasted. Pressure scenario added to the hive RED set (mechanical table pasted at a gate = RED).

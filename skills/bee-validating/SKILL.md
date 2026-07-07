@@ -76,7 +76,7 @@ READY is a feasibility verdict, not execution approval — Gate 3 still requires
 
 ## Gate 3 — Execution Approval
 
-Present the approval block from the reference, then ask verbatim: **"Feasibility validated. Approve execution?"** Optionally offer a cross-model second opinion first (agreement → mention it; disagreement → quote both positions; never auto-resolve). Approval covers the **current work only**; future slices return to planning and validating.
+Write the full machine report (reality gate, matrix, plan-checker findings, cell review, approval block) to `docs/history/<feature>/reports/validation-<slice>.md`, then present **only the human layer** in chat per the Gate Presentation Contract (template in the reference): what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding — in the user's language, jargon-free, report linked — then ask verbatim: **"Feasibility validated. Approve execution?"** Optionally offer a cross-model second opinion first (agreement → mention it; disagreement → quote both positions; never auto-resolve). Approval covers the **current work only**; future slices return to planning and validating.
 
 On approval, update `.bee/state.json`: set `approved_gates.execution: true`, `phase: "validated"`, `summary`, and `next_action: "Invoke bee-swarming for the validated work."`
 

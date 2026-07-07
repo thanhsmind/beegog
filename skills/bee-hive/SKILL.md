@@ -48,6 +48,8 @@ Orient on: onboarding health, phase, mode, feature, gate states, cell counts, ac
 
 Then read `docs/history/learnings/critical-patterns.md` and surface recent active decisions (`node .bee/bin/bee_decisions.mjs active --recent 3`).
 
+**State layer:** when `docs/specs/` exists, note it in the orientation summary. Before working in any area, the reading order is **spec → decisions → history**: read `docs/specs/<area>.md` (what the area does now) before its code, decisions for the why, `docs/history/` only for archaeology. `docs/specs/reading-map.md` answers "where does X live" before any broad grep.
+
 ## Routing
 
 | Request | Route |
@@ -91,6 +93,8 @@ Never skipped, never batched, never self-approved — including go mode and head
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
 
+**Presentation:** every gate is presented per the Gate Presentation Contract (`references/routing-and-contracts.md`): the chat message is the plain-language layer only — what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding, in the user's language — then the fixed question. The full mechanical report goes to `docs/history/<feature>/reports/` and is linked, never pasted. Litmus: the user can restate what they are approving in their own words.
+
 Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it. Disagreement → quote both positions to the user. Never auto-resolve.
 
 ## Priority Rules (hive law)
@@ -116,6 +120,7 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 - `.bee/bin/` — vendored helpers (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`) + `lib/`
 - `docs/history/<feature>/CONTEXT.md` — locked decisions, source of truth
 - `docs/history/learnings/critical-patterns.md` — mandatory pre-work reading
+- `docs/specs/<area>.md` + `docs/specs/reading-map.md` — state layer: current behavior per area, and what lives where (read spec before code)
 
 ## Hook Response Protocol
 
@@ -133,7 +138,7 @@ With `mode:headless`: never ask blocking questions. Perform onboarding checks an
 
 ## Red Flags
 
-- jumping from exploring to swarming · code before CONTEXT.md exists · skipping validating · ignoring locked decisions · workers self-selecting cells · capping without verification · commits without cell ids · continuing past open P1s · reservation leaks · stale state.json after a phase transition · resuming without surfacing HANDOFF.json · plausibility language ("should work") accepted as evidence · a tiny fix wearing epic ceremony · a hard-gate change routed below high-risk · session history pasted into a worker dispatch
+- jumping from exploring to swarming · code before CONTEXT.md exists · skipping validating · ignoring locked decisions · workers self-selecting cells · capping without verification · commits without cell ids · continuing past open P1s · reservation leaks · stale state.json after a phase transition · resuming without surfacing HANDOFF.json · plausibility language ("should work") accepted as evidence · a tiny fix wearing epic ceremony · a hard-gate change routed below high-risk · session history pasted into a worker dispatch · a gate presented as a mechanical table with no plain-language layer · a gate question the user cannot restate in their own words
 
 Violating the letter of the rules is violating the spirit of the rules.
 

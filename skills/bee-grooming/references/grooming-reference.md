@@ -6,7 +6,8 @@ Load after `bee-grooming` is selected. The cycle lives in SKILL.md; counting rul
 
 ```
 ENTROPY SCORE = orphaned cells ×10 + unverified cells ×5 + stale decisions ×5
-              + backlog-without-outcome ×2 + stale work ×3 + broken tools ×8, cap 100
+              + stale specs ×5 + backlog-without-outcome ×2 + stale work ×3
+              + broken tools ×8, cap 100
 ```
 
 Counting rules per term (all from `.bee/` records — never guess):
@@ -16,6 +17,7 @@ Counting rules per term (all from `.bee/` records — never guess):
 | orphaned cells | open/claimed cells whose feature is no longer the active feature and has no HANDOFF pointing at them | `node .bee/bin/bee_cells.mjs list` vs `.bee/state.json` + `.bee/HANDOFF.json` |
 | unverified cells | claimed cells with no recorded verify result (`trace.verify_passed` absent) | cell files |
 | stale decisions | active decisions citing files/paths that no longer exist, or contradicted by current code | `node .bee/bin/bee_decisions.mjs active` + spot-check citations |
+| stale specs | areas with a `behavior_change: true` cell capped after the area spec's `updated` frontmatter date, or with such a cell and no spec at all (map cells to areas by files touched); count each area once | capped cell files vs `docs/specs/<area>.md` frontmatter |
 | backlog-without-outcome | backlog entries older than 30 days with no matching outcome entry | `.bee/backlog.jsonl` |
 | stale work | reservations past TTL and never released; HANDOFF.json older than 7 days | `.bee/reservations.json`, `.bee/HANDOFF.json` |
 | broken tools | `.bee/bin/` helpers that error on invocation; hook crash entries in `.bee/logs/hooks.jsonl` since the last audit | run helpers with `--json`, read the log |
@@ -25,7 +27,7 @@ Bands: 0 = perfect · 1–25 healthy · 26–50 attention · 51–100 action req
 Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run can compare:
 
 ```json
-{"ts":"<ISO>","type":"entropy-audit","score":18,"breakdown":{"orphaned_cells":0,"unverified_cells":1,"stale_decisions":1,"backlog_without_outcome":4,"stale_work":0,"broken_tools":0},"trend":"down from 27","source":"grooming"}
+{"ts":"<ISO>","type":"entropy-audit","score":18,"breakdown":{"orphaned_cells":0,"unverified_cells":1,"stale_decisions":1,"stale_specs":0,"backlog_without_outcome":4,"stale_work":0,"broken_tools":0},"trend":"down from 27","source":"grooming"}
 ```
 
 ## Hunt Checklists
@@ -35,6 +37,8 @@ Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run
 **Dead code / unused exports** — for each suspect symbol: grep every reference (imports, dynamic `import()`, `require`, string-built paths, config/registry files, reflection); check public-API surface (package entry points, exported types); check test-only usage (test-only = candidate to move, not to keep). No reference anywhere = candidate. Any doubt = not a candidate.
 
 **Stale docs vs code** — compare README/docs claims (commands, file paths, flags, versions) against reality by running or resolving them; each mismatch is a candidate (fix the doc, not the code, unless the code is the bug).
+
+**Stale area specs** — for each stale-specs hit from the audit, propose a sync cell (tiny lane) that merges the missed `behavior_change` deltas into `docs/specs/<area>.md`; also spot-check `docs/specs/reading-map.md` lines against reality (paths exist, one-liners still true). A spec staler than the behavior it describes is worse than no spec — an agent trusts it and acts on the old behavior.
 
 **TODO/stub debris** — grep `TODO|FIXME|HACK|XXX|not implemented|placeholder`; each hit is either a real backlog item (file it with predicted impact) or debris (kill candidate). Never leave it as a comment-shaped promise.
 

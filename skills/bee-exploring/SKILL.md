@@ -69,7 +69,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
        "next_action": "Gate 1, then invoke bee-planning."
      }
      ```
-   - Present **Gate 1**: "Decisions locked. Approve CONTEXT.md before planning?"
+   - Present **Gate 1** per the Gate Presentation Contract (bee-hive routing reference): plain-language layer in chat — what we decided / why trustworthy / cost if wrong / what you are deciding — in the user's language, CONTEXT.md linked not pasted; then verbatim: "Decisions locked. Approve CONTEXT.md before planning?"
    - CONTEXT.md is the source of truth for every downstream agent; decision IDs are stable and cited, never reinterpreted.
 
 ## Headless
