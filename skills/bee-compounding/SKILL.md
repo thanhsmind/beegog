@@ -1,7 +1,7 @@
 ---
 name: bee-compounding
 description: >-
-  Capture durable learnings and decisions so future work starts smarter. Use when reviewing completes, or when work is intentionally abandoned with lessons worth keeping.
+  Capture durable learnings and decisions so future work starts smarter. Use when scribing completes, or when work is intentionally abandoned with lessons worth keeping.
 metadata:
   version: '0.1'
   ecosystem: bee
@@ -15,7 +15,7 @@ metadata:
 
 # Compounding (honey)
 
-Compounding captures reusable lessons from completed work and feeds them back into future exploring, planning, and reviewing. Run it after `bee-reviewing` completes, or when work is intentionally abandoned with lessons. Do not skip it for meaningful work just because the session feels done.
+Compounding captures reusable lessons from completed work and feeds them back into future exploring, planning, and reviewing. Run it after `bee-scribing` completes, or when work is intentionally abandoned with lessons. Do not skip it for meaningful work just because the session feels done.
 
 ## 1. Gather Evidence
 
@@ -62,15 +62,13 @@ node .bee/bin/bee_decisions.mjs log --decision "..." --rationale "..." [--altern
 
 Log choices future planning must honor. Supersede outdated decisions (`bee_decisions.mjs supersede`) — never edit history.
 
-## 6. Sync the State Layer (decision 0001)
+## 6. Guard the State Layer (decisions 0001, 0002)
 
-Update `docs/specs/` so it matches what actually shipped:
+`bee-scribing` owns `docs/specs/`; compounding only verifies the handoff happened:
 
-1. Collect capped cells with `behavior_change: true` and their `verification_evidence` — this is the delta list; do not re-derive behaviors from the diff.
-2. Map each delta to an area by the files it touched (kebab-case area names, stable once chosen). Merge the deltas into each touched area's `docs/specs/<area>.md` — create the spec from the template if the area has none. Specs are written in the present tense and state only current behavior, requirements, and settled edge cases, citing active D-IDs; never narrate history ("was", "changed from" are banned — history lives in git and `docs/history/`).
-3. Refresh `docs/specs/reading-map.md`: add or correct one-line entries for locations this feature created or repurposed.
-
-No `behavior_change` cells → record "state layer: no sync needed" in the run summary and move on. Templates and merge rules in the reference.
+1. Check `.bee/state.json` for the feature's scribing record ("scribing: N specs synced" or "scribing: no sync needed").
+2. Record present → note it in the run summary and move on.
+3. Record absent while `behavior_change` cells were capped → **invoke bee-scribing now**, then resume compounding. Never merge specs inline "to save a step" — the BA-grade template, sources, and rebuild check live in scribing, and a shortcut sync produces exactly the shallow spec decision 0002 exists to prevent.
 
 ## 7. File Unresolved Friction
 
@@ -86,12 +84,12 @@ Record the completed compounding run in `.bee/state.json` (phase, learnings file
 - Do NOT promote everything as critical — apply all three criteria.
 - Do NOT write generic lessons ("test more carefully" is banned-grade advice). Concrete situation, root cause, imperative rule.
 - Do NOT let subagents write durable files; the orchestrator synthesizes.
-- Do NOT skip the state-layer sync when `behavior_change` cells were capped — a spec older than the behavior it describes is measured entropy, not a detail.
-- Secrets and PII never appear in learnings, decisions, backlog entries, or specs.
+- Do NOT close out while `behavior_change` cells were capped but scribing never ran — invoke bee-scribing; never sync specs inline. A spec older than the behavior it describes is measured entropy, not a detail.
+- Secrets and PII never appear in learnings, decisions, or backlog entries.
 
 ## Headless
 
-`mode:headless`: gather, analyze, and write the dated learnings file for unambiguous findings; log clearly-durable decisions and friction; apply spec merges whose deltas come directly from `behavior_change` cells + evidence (they are mechanical). Critical promotions, ambiguous merge/keep calls, and any spec rewording beyond the delta merge are NOT applied — they go to an `Outstanding Questions` section of the structured terminal report for the human.
+`mode:headless`: gather, analyze, and write the dated learnings file for unambiguous findings; log clearly-durable decisions and friction. Critical promotions and ambiguous calls are NOT applied — they go to an `Outstanding Questions` section of the structured terminal report for the human. A missing scribing record is reported there too (headless compounding never invokes another skill on its own).
 
 ## Red Flags
 
@@ -101,15 +99,14 @@ Record the completed compounding run in `.bee/state.json` (phase, learnings file
 - inventing findings when artifacts are missing
 - an analyst subagent writing to `docs/history/learnings/` directly
 - an API key, token, or credential in an evidence snippet
-- history narration inside a spec ("previously", "changed from") — specs state only what is
-- `behavior_change` cells capped but no spec touched and no "no sync needed" record
+- `behavior_change` cells capped but no scribing record — and compounding "fixing" it by editing `docs/specs/` itself
 
 Violating the letter of these rules is violating the spirit of these rules.
 
 ## Handoff
 
-Compounding complete: learnings at `docs/history/learnings/YYYYMMDD-<slug>.md`, <N> critical promotions, <M> area specs synced. Invoke bee-hive skill.
+Compounding complete: learnings at `docs/history/learnings/YYYYMMDD-<slug>.md`, <N> critical promotions, state-layer guard checked. Invoke bee-hive skill.
 
 | Reference | When to Load |
 |---|---|
-| `references/compounding-reference.md` | analyst prompts, learnings template, promotion format, spec + reading-map templates, backlog entry format |
+| `references/compounding-reference.md` | analyst prompts, learnings template, promotion format, backlog entry format |

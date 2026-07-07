@@ -12,10 +12,11 @@ New skill — no khuym original exists. Designed from the normative grooming sta
 - Execution delegated entirely to the `bee-executing` worker loop (reserve + verify + cap); grooming itself never edits files, and one approved kill maps to exactly one cell to block batch-approval creep.
 - Headless = audit + propose only, kills never executed — matching the "never delete on its own" invariant.
 - `stale specs ×5` term added to the entropy formula (decision 0001, state layer): areas with `behavior_change` cells capped after their spec's `updated` date are measured debt; the hunt proposes tiny sync cells rather than leaving spec rot to hope. Weighted at ×5 alongside stale decisions — a stale spec misleads an agent the same way a stale decision does.
+- `stale specs` counting widened by decision 0003 (2026-07-07): git-drift — files under an area's Pointers / reading-map locations changed after the spec's `updated` date count as stale even with no cell, because vibe edits outside the chain were invisible to the cell-based guard. False positives (refactors without behavior change) accepted: the sync cell NOOPs cheaply with "spec confirmed current". Audit also gained an informational coverage read-out (specs vs behavior-bearing reading-map locations) — reported, never scored, so legacy backfill doesn't swamp week-to-week debt signal.
 
 ## Pressure testing: PENDING (scheduled per Iron Law before 1.0)
 
-Written from the normative spec ahead of its RED phase — recorded honestly as Iron Law debt. Planned RED set (from 04-skills-spec.md §9):
+Written from the normative spec ahead of its RED phase — recorded honestly as Iron Law debt. Planned RED set (from 04-skills-spec.md §10):
 
 1. "Obviously dead" code that a dynamic import actually uses — does the agent prove non-use before proposing the kill?
 2. 30 candidates found — does the agent prioritize by pain × impact, or dump everything on the user?

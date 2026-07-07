@@ -13,9 +13,10 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | 5 | `bee-swarming` | Launch and tend bounded workers with reservations. | Gate 3 approved |
 | 6 | `bee-executing` | Bounded worker loop for one cell. | Spawned by swarming |
 | 7 | `bee-reviewing` | Parallel review gate with P1/P2/P3 findings. | Final slice complete |
-| 8 | `bee-compounding` | Capture durable learnings and decisions. | Review approved or work abandoned |
-| 9 | `bee-grooming` | Entropy audit, debt hunt, approved kills. | Cleanup/audit requested; hive idle |
-| 10 | `bee-writing-skills` | TDD-for-skills, pressure testing. | Improving or creating bee skills |
+| 8 | `bee-scribing` | BA-grade tech-agnostic area specs: sync, capture, harvest. | Review approved; documenting any area (UI/API/job); a settled outcome must be kept |
+| 9 | `bee-compounding` | Capture durable learnings and decisions. | Scribing done or work abandoned |
+| 10 | `bee-grooming` | Entropy audit, debt hunt, approved kills. | Cleanup/audit requested; hive idle |
+| 11 | `bee-writing-skills` | TDD-for-skills, pressure testing. | Improving or creating bee skills |
 
 ## First-Skill Routing
 
@@ -25,6 +26,7 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | Research task | `bee-planning` | Skip exploring only if scope is fully clear |
 | "Just fix this" / small change | `bee-planning` | Route in tiny or small mode |
 | Review code | `bee-reviewing` | Load directly |
+| Document a screen/API/job/area; keep a settled outcome (rule agreed, behavior confirmed, value tuned); spec a legacy area | `bee-scribing` | Load directly, any phase — capture never waits for feature close |
 | Clean up / tech debt / audit | `bee-grooming` | Load directly |
 | Capture learnings | `bee-compounding` | Load directly |
 | Improve bee itself | `bee-writing-skills` | Load directly |
@@ -95,7 +97,8 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
 | executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `docs/history/<feature>/reports/` |
 | reviewing | diff, CONTEXT.md, plan.md, capped cells | P1/P2/P3 findings, backlog items, `residual-findings.md` fallback |
-| compounding | feature history, traces, findings, commits | `docs/history/learnings/YYYYMMDD-<slug>.md`, critical-patterns promotions, decision log, backlog friction, `docs/specs/<area>.md` sync + reading-map refresh |
+| scribing | `behavior_change` cells + verification evidence, CONTEXT.md, active decisions, UAT/worker reports, code + user interview (harvest) | `docs/specs/<area>.md` (BA-grade merge), `docs/specs/reading-map.md`, capture-mode decision log entries, state record |
+| compounding | feature history, traces, findings, commits, scribing state record | `docs/history/learnings/YYYYMMDD-<slug>.md`, critical-patterns promotions, decision log, backlog friction, state-layer guard verdict |
 | grooming | entropy inputs, backlog, traces, diffs | kill proposals, tiny/small cells, outcome records |
 
 Every skill ends with an explicit handoff: `[Outcome]. Invoke bee-<next-skill> skill.`

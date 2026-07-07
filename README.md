@@ -17,6 +17,7 @@ A hive is a staged, self-regulating system — and every bee role maps to a work
 | The swarm | `bee-swarming` | Orchestrate bounded workers over validated cells |
 | Worker bees | `bee-executing` | One worker, one cell: implement, verify, **cap the cell** |
 | Inspector bees | `bee-reviewing` | Multi-agent review, artifact verification, UAT |
+| Scribe bees | `bee-scribing` | The hive's BA: tech-agnostic specs of every area — meaning survives any rewrite |
 | Honey | `bee-compounding` | Convert finished work into durable knowledge |
 | Undertaker bees | `bee-grooming` | Hunt and kill tech debt, drift, and dead work |
 | Comb building | `bee-writing-skills` | TDD-for-skills: build and pressure-test the hive's own comb |
@@ -33,7 +34,9 @@ bee-hive
   -> bee-swarming      spawns  bounded workers
   -> bee-executing     caps    one verified cell per worker
   -> bee-reviewing     writes  P1/P2/P3 findings                    [GATE 4: P1s block merge]
+  -> bee-scribing      writes  docs/specs/<area>.md — BA-grade, tech-agnostic area specs
   -> bee-compounding   writes  learnings + decisions
+  (on demand) bee-scribing    captures settled outcomes from discussion/testing; backfills legacy areas
   (on demand) bee-grooming    kills tech debt, audits hive health
 ```
 
@@ -69,7 +72,9 @@ Full options, the Claude Code plugin route (`/plugin marketplace add thanhsmind/
 
 ## Status
 
-**v0.1.0 built.** All 10 skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and two test suites (28 lib contract tests + onboarding/idempotency/`--repo-hooks` tests) — all green, smoke-tested end-to-end (onboard → gate-locked claim → verify-gated cap → hook denials).
+**v0.1.0 built.** The original 10 skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and two test suites (28 lib contract tests + onboarding/idempotency/`--repo-hooks` tests) — all green, smoke-tested end-to-end (onboard → gate-locked claim → verify-gated cap → hook denials).
+
+**bee-scribing added** (decision 0002, which also replaced the ten-skill hard cap with a decision gate): the 11th skill — a dedicated BA that keeps `docs/specs/` at BA grade (data dictionaries, behaviors & operations, actor access, business rules; technology quarantined to one Pointers section) so any area — screen, API, background job, integration, pipeline, process — can be understood without the code and rebuilt on another stack. Runs in the chain between reviewing and compounding, plus on-demand capture (any settled outcome of a discuss → build → test → adjust loop is logged and merged immediately) and harvest (backfill legacy areas) modes. Not yet dogfooded.
 
 Known debt before 1.0 (recorded in each skill's CREATION-LOG.md): pressure-testing of the skills themselves per the Iron Law — v0.1 skills inherit bulletproofing from their khuym/superpowers lineage but have not yet been RED/GREEN/REFACTOR-tested in bee form.
 

@@ -35,11 +35,13 @@ bee reassembles these into one opinionated chain, sized for a single developer r
 
 10. **Humans decide at exactly four gates.** Approve decisions, approve the work shape, approve execution, approve merge. Models recommend; the user decides. When two models disagree at a gate, surface the disagreement — never auto-resolve. (khuym, gstack)
 
+11. **The meaning outlives the stack.** This holds for the entire development process — backend, frontend, integrations, pipelines, processes alike. Vibe-driven development locks knowledge into code and the current technology: business rules, field meanings, and behaviors agreed in discussion vanish when the session closes. So every settled outcome of the discuss → build → test → adjust loop — a rule agreed, a behavior confirmed by test, a value tuned — is recorded technology-agnostically in the state layer (`docs/specs/`) the moment it settles, at BA grade. Code is one *rendering* of the spec; the spec must survive a full rewrite on another stack (the rebuild bar). Lanes scale ceremony, never memory: a tiny fix that changes behavior still updates the spec. (owner requirement, decisions 0001/0002)
+
 ## Non-goals
 
 - **Not a runtime, not a binary.** No Rust CLI, no daemon, no database migrations. State is JSON/JSONL + markdown; helpers are small Node scripts vendored into the repo (like khuym's `.codex/*.mjs`).
 - **Not 20 runtimes.** Claude Code and Codex only. The abstraction must make a third runtime cheap later, but bee does not pay for it now.
-- **Not 40 skills.** Ten skills, hard cap. Domain skills (frontend, deploy, DB…) are out of scope — that's what other plugins are for.
+- **Not 40 skills.** Eleven skills today; additions are decision-gated, not counted — a new skill requires a decision record in `docs/decisions/` naming the workflow gap no existing skill covers (decision 0002 lifted the original ten-skill hard cap this way). Domain skills (frontend, deploy, DB…) remain out of scope — that's what other plugins are for.
 - **Not a benchmark rig.** Health is measured by internal signals (entropy score, friction backlog, predicted-vs-actual), not an external benchmark harness.
 - **Not autonomous merging.** P1 findings block. Gates never auto-approve.
 
@@ -52,4 +54,5 @@ bee succeeds when, for its owner:
 3. A session can pause at ~65% context and resume the next day from `HANDOFF.json` without re-explaining anything.
 4. `docs/history/learnings/critical-patterns.md` and `decisions.jsonl` visibly change agent behavior in later features (fewer repeated mistakes).
 5. Grooming runs find and kill real debt, and the entropy score trends down.
+6. Any long-lived area can be understood by a human — and rebuilt by an agent on a different stack — from its `docs/specs/` entry alone, without reading the code (the rebuild bar, decision 0002).
 6. The same skills run under both Claude Code and Codex with no divergence in the workflow contract.

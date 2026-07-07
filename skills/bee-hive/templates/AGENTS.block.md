@@ -20,7 +20,9 @@ bee-hive
   -> bee-swarming
   -> bee-executing
   -> bee-reviewing     [GATE 4] P1 findings block merge; else "Review complete. Approve merge?"
+  -> bee-scribing      (BA spec sync: docs/specs/<area>.md, tech-agnostic)
   -> bee-compounding
+  (on demand) bee-scribing — capture a settled rule/behavior/value; document/harvest any area (UI, API, job, integration)
   (on demand) bee-grooming
 ```
 
@@ -36,6 +38,7 @@ The four gates are **human** gates. Never self-approve a gate, in any mode, incl
 6. At roughly 65% context usage, write `.bee/HANDOFF.json` and pause cleanly.
 7. `docs/history/<feature>/CONTEXT.md` is the source of truth for locked decisions. Log decisions through `node .bee/bin/bee_decisions.mjs`, never by hand-editing `.bee/decisions.jsonl`.
 8. One commit per cell, cell id in the commit message.
+9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` spec sync in every lane — tiny included — and any settled discussion outcome (rule agreed, behavior confirmed by test, value tuned; backend or frontend alike) is logged as a decision and merged into `docs/specs/` the moment it settles, never left in the chat.
 
 ## Working files
 
@@ -55,6 +58,7 @@ The four gates are **human** gates. Never self-approve a gate, in any mode, incl
 
 docs/history/<feature>/    <- CONTEXT.md, discovery.md, approach.md, plan.md, reports/
 docs/history/learnings/    <- critical-patterns.md + dated learnings
+docs/specs/           <- state layer: BA-grade area specs + reading-map.md (read spec before code)
 docs/decisions/       <- long-form decision records
 .spikes/<feature>/    <- disposable feasibility proofs
 ```

@@ -13,7 +13,9 @@ bee-hive
   -> bee-swarming (+ bee-executing × N)
   -> more approved work remains? -> back to planning for the next slice
   -> bee-reviewing                          [GATE 4] P1s block; else approve merge
+  -> bee-scribing                           (BA spec sync — state layer)
   -> bee-compounding
+  (on demand, any time) bee-scribing        capture a settled outcome; harvest a legacy area
   (on demand, any time the hive is idle) bee-grooming
 ```
 
@@ -38,6 +40,7 @@ Optional at Gates 2–4: a **cross-model second opinion** (gstack). If the other
 6. Never skip validating — including in tiny mode (it collapses to a 2-minute reality check, it does not disappear).
 7. `docs/history/learnings/critical-patterns.md` and recent active decisions (`bee_decisions.mjs active --recent 3`) are mandatory context before planning or executing.
 8. Evidence before claims: any "done/passing/fixed" statement requires fresh command output in the same message.
+9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` sync in every lane, and a settled discussion outcome is captured the moment it settles (vision principle 11). An explicit user settlement signal — "chốt", "final", "ok ship it" — is a mandatory same-turn capture trigger, never deferred to feature close (decision 0003).
 
 ## Modes and lanes (the mode gate)
 
@@ -47,13 +50,15 @@ Every planning pass starts by classifying the work. Classification is **mechanic
 
 | Mode | Trigger | Workflow |
 |---|---|---|
-| `tiny` | 0–1 flags, ≤2 files, no API/data change, one direct task | one cell → single worker → lightweight review → compound only if a lesson emerged |
+| `tiny` | 0–1 flags, ≤2 files, no API/data change, one direct task | one cell → single worker → lightweight review → scribing sync if behavior changed → compound only if a lesson emerged |
 | `spike` | one yes/no proof decides whether the plan is real | spike cell in `.spikes/` → answer → return to planning |
-| `small` | 0–1 flags, ≤3 files, no gray areas | light plan (one shape note) → validating reality gate → single worker → light review |
+| `small` | 0–1 flags, ≤3 files, no gray areas | light plan (one shape note) → validating reality gate → single worker → light review → scribing sync if behavior changed |
 | `standard` | 2–3 flags, or story-sized behavior | full chain; phase plan or epic map, whichever explains the work honestly |
 | `high-risk` | 4+ flags **or any hard-gate flag** (auth, authorization, data loss, audit/security, external provider, validation removal) | epic map → current-story pack → mandatory feasibility spikes → slower Gate 3 → detailed traces |
 
 Rule of use: **the least workflow that honestly protects the work**. A tiny fix that spawns epic ceremony is a red flag; a hard-gate change routed as `small` is a worse one.
+
+**Lanes scale ceremony, never memory** (vision principle 11): in every lane — tiny included — a capped `behavior_change` cell obliges a `bee-scribing` sync before the work is considered closed. The sync itself scales with the lane (a tiny fix usually means one replaced line in one spec); skipping it does not.
 
 ## Stage contracts
 
@@ -125,18 +130,26 @@ Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify
   4. **Artifact verification** for everything CONTEXT.md/plan.md promised: EXISTS → SUBSTANTIVE (no stub/TODO/fake path) → WIRED (imported and used on the integration path). All three = OK; EXISTS+SUBSTANTIVE = P2; missing or EXISTS-only = P1.
   5. **Human UAT** walk-through for SEE/CALL/RUN decisions; failure → P1 fix cell and re-run; skip requires a recorded reason.
   6. Finish: project build/test/lint gates; P2/P3 → backlog/grooming cells with traceability (never blocking the current epic); if filing a residual finding anywhere fails, write it to `docs/history/<feature>/reports/residual-findings.md` so nothing evaporates; close out state.
-- **Handoff:** Gate 4 → "Invoke bee-compounding."
+- **Handoff:** Gate 4 → "Invoke bee-scribing."
+
+### bee-scribing (scribe bees) — the BA
+
+- **Owns:** the state layer at BA grade (decision 0002) — `docs/specs/<area>.md` + `reading-map.md`. An area is **domain-general**: a screen/form, an API, a background job, an integration, a pipeline, a business process — any unit with observable behavior that outlives features. Acceptance test is the **rebuild bar**: an agent given only the spec, minus its Pointers section, rebuilds the same observable behavior on another stack; a human understands the area without the code. **Tech-agnostic rule:** no language/framework/library/file names outside the quarantined `Pointers (implementation)` section.
+- **Reads:** capped `behavior_change` cells + `verification_evidence`, UAT records and worker reports (→ behaviors, data, per-actor visibility); gate-locked CONTEXT.md + active decisions (→ business rules, cited by D-ID); code + user interview in harvest mode.
+- **Does:** three modes. **Sync** (chain, after Gate 4): merge the feature's behavior deltas into the touched areas' specs — entry points & triggers (links/screens; schedules/events/calls), data dictionary (every enum value's business meaning; display order for UI; chosen config values with their D-ID), behavior/operation blocks (blocked-when or runs-when / what changes / side effects / what each actor or consumer observes; failure behavior for operations), actors & access matrix, business rules; refresh the reading map; run the rebuild self-check. **Capture** (any phase, on demand): whenever a discuss → build → test → adjust loop settles an outcome — a rule agreed, a behavior confirmed by test, a threshold tuned — it is logged via `bee_decisions.mjs` and merged into the spec immediately; discussion knowledge never waits for feature close. **Harvest** (on demand or from grooming): first spec for a pre-bee area — code yields observable behavior only; meanings and rules are asked (one Socratic question per message) or filed as honest `Open Gaps` with `coverage: partial`.
+- **Never:** invent — evidence → behavior, approved decision → rule, neither → open gap; copy from plan.md; state a not-yet-implemented rule as current behavior; narrate history; leak technology above Pointers; skip when `behavior_change` cells were capped.
+- **Handoff:** "Invoke bee-compounding."
 
 ### bee-compounding (honey)
 
 - **Reads:** feature history, cells and traces, review findings, commit history. Missing artifacts → session summary + git diff; never fabricate.
-- **Does:** three parallel analysis subagents — pattern extractor, decision analyst, failure analyst; orchestrator synthesizes (subagents never write durable files); write one dated `docs/history/learnings/YYYYMMDD-<slug>.md` (what happened / root cause / imperative future rule); promote only genuinely critical, cross-feature lessons to `critical-patterns.md`; log durable decisions to `bee_decisions.mjs log` (with rationale + alternatives); sync the state layer — merge `behavior_change` cell deltas into `docs/specs/<area>.md` and refresh `docs/specs/reading-map.md` (decision 0001); file unresolved friction into `.bee/backlog.jsonl` with predicted impact.
-- **Never:** skip compounding for meaningful work; promote everything as critical; write "test more carefully"-grade advice; leave a spec older than the behavior it describes when `behavior_change` cells were capped.
+- **Does:** three parallel analysis subagents — pattern extractor, decision analyst, failure analyst; orchestrator synthesizes (subagents never write durable files); write one dated `docs/history/learnings/YYYYMMDD-<slug>.md` (what happened / root cause / imperative future rule); promote only genuinely critical, cross-feature lessons to `critical-patterns.md`; log durable decisions to `bee_decisions.mjs log` (with rationale + alternatives); **guard the state layer** — verify `bee-scribing` ran for the feature (state record); if not, invoke it, never sync specs inline (decisions 0001/0002); file unresolved friction into `.bee/backlog.jsonl` with predicted impact.
+- **Never:** skip compounding for meaningful work; promote everything as critical; write "test more carefully"-grade advice; close out while a spec is older than the behavior it describes (`behavior_change` cells capped but scribing never ran).
 
 ### bee-grooming (undertaker bees) — on demand
 
 - **Audit:** compute the entropy score (orphaned cells ×10, unverified cells ×5, stale decisions ×5, stale specs ×5, backlog-without-outcome ×2, stale work ×3, broken tools ×8; cap 100) and report the trend.
-- **Hunt:** cluster friction from traces and backlog; scan for dead code, unused exports, stale docs vs code, stale area specs (decision 0001), TODO/stub debris, unverified verify-commands, superseded-but-cited decisions; slop-pattern pass on recent diffs (gstack).
+- **Hunt:** cluster friction from traces and backlog; scan for dead code, unused exports, stale docs vs code, stale or missing area specs (decisions 0001/0002 — proposed sync/harvest work routes through `bee-scribing`), TODO/stub debris, unverified verify-commands, superseded-but-cited decisions; slop-pattern pass on recent diffs (gstack).
 - **Propose:** each kill candidate becomes a backlog item with pain, predicted impact, and risk lane — presented for approval (grooming never deletes on its own initiative).
 - **Execute:** approved kills run as tiny/small cells through the normal worker loop (reservation, verify, cap).
 - **Close the loop:** record actual outcome against the prediction; feed durable lessons to compounding.

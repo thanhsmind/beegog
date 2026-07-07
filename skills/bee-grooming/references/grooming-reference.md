@@ -17,12 +17,14 @@ Counting rules per term (all from `.bee/` records — never guess):
 | orphaned cells | open/claimed cells whose feature is no longer the active feature and has no HANDOFF pointing at them | `node .bee/bin/bee_cells.mjs list` vs `.bee/state.json` + `.bee/HANDOFF.json` |
 | unverified cells | claimed cells with no recorded verify result (`trace.verify_passed` absent) | cell files |
 | stale decisions | active decisions citing files/paths that no longer exist, or contradicted by current code | `node .bee/bin/bee_decisions.mjs active` + spot-check citations |
-| stale specs | areas with a `behavior_change: true` cell capped after the area spec's `updated` frontmatter date, or with such a cell and no spec at all (map cells to areas by files touched); count each area once | capped cell files vs `docs/specs/<area>.md` frontmatter |
+| stale specs | areas with a `behavior_change: true` cell capped after the area spec's `updated` frontmatter date, or with such a cell and no spec at all (map cells to areas by files touched); ALSO areas whose Pointers / reading-map locations have git commits or uncommitted changes after `updated` even with no cell — vibe edits outside the chain count too (decision 0003); count each area once | capped cell files + `git log --since=<updated> -- <paths>` + `git status --porcelain` vs `docs/specs/<area>.md` frontmatter |
 | backlog-without-outcome | backlog entries older than 30 days with no matching outcome entry | `.bee/backlog.jsonl` |
 | stale work | reservations past TTL and never released; HANDOFF.json older than 7 days | `.bee/reservations.json`, `.bee/HANDOFF.json` |
 | broken tools | `.bee/bin/` helpers that error on invocation; hook crash entries in `.bee/logs/hooks.jsonl` since the last audit | run helpers with `--json`, read the log |
 
 Bands: 0 = perfect · 1–25 healthy · 26–50 attention · 51–100 action required.
+
+**Coverage read-out** (decision 0003 — informational, never scored): alongside the score, report `specs: <N areas specced> / <M behavior-bearing reading-map locations>` (a location is behavior-bearing when its one-liner describes observable behavior, not assets/config). Low coverage is a backfill program for harvest cells, not week-to-week debt.
 
 Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run can compare:
 
@@ -38,7 +40,7 @@ Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run
 
 **Stale docs vs code** — compare README/docs claims (commands, file paths, flags, versions) against reality by running or resolving them; each mismatch is a candidate (fix the doc, not the code, unless the code is the bug).
 
-**Stale area specs** — for each stale-specs hit from the audit, propose a sync cell (tiny lane) that merges the missed `behavior_change` deltas into `docs/specs/<area>.md`; also spot-check `docs/specs/reading-map.md` lines against reality (paths exist, one-liners still true). A spec staler than the behavior it describes is worse than no spec — an agent trusts it and acts on the old behavior.
+**Stale, missing, or duplicated area specs** — for each stale-specs hit from the audit, propose a `bee-scribing` sync cell (tiny lane) that merges the missed `behavior_change` deltas into `docs/specs/<area>.md`; a git-drift hit (files changed, no cell — decision 0003) gets the same sync cell, and "no behavioral delta — spec confirmed current" is a valid cheap outcome; for an area with shipped behavior and no spec at all, propose a `bee-scribing` harvest cell (small lane — it may need user interview time). Scan for **duplicates**: two spec files whose Pointers or reading-map lines overlap on the same surface (including `-v2`/`-new`/date-suffixed names) — propose a `bee-scribing` merge cell that consolidates into the older stable name and deletes the fork; two documents describing one area is worse than a stale one, because readers cannot tell which is true. Also spot-check `docs/specs/reading-map.md` lines against reality (paths exist, one-liners still true, exactly one spec per surface). A spec staler than the behavior it describes is worse than no spec — an agent trusts it and acts on the old behavior. Sync/harvest/merge always runs through bee-scribing, never as a raw doc edit — the BA template and never-invent rules live there.
 
 **TODO/stub debris** — grep `TODO|FIXME|HACK|XXX|not implemented|placeholder`; each hit is either a real backlog item (file it with predicted impact) or debris (kill candidate). Never leave it as a comment-shaped promise.
 

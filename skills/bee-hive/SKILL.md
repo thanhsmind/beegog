@@ -58,6 +58,7 @@ Then read `docs/history/learnings/critical-patterns.md` and surface recent activ
 | Research task, clear scope | `bee-planning` |
 | Small clear fix | `bee-planning` (tiny/small mode) |
 | Review request | `bee-reviewing` |
+| Document a screen/API/job/area; "ghi lại rule này"; a just-settled rule/behavior/value to keep; spec an existing feature | `bee-scribing` |
 | Clean up / debt / audit | `bee-grooming` |
 | Capture learnings | `bee-compounding` |
 | Improve bee itself | `bee-writing-skills` |
@@ -107,6 +108,7 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 6. Never skip validating — in tiny mode it collapses to a 2-minute reality check, it does not disappear.
 7. `docs/history/learnings/critical-patterns.md` and recent active decisions are mandatory context before planning or executing.
 8. Evidence before claims: any "done/passing/fixed" statement requires fresh command output in the same message.
+9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` sync in every lane — tiny included — and a settled discussion outcome (rule, behavior, tuned value; backend or frontend alike) is captured the moment it settles.
 
 ## Runtime Files
 
@@ -120,7 +122,7 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 - `.bee/bin/` — vendored helpers (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`) + `lib/`
 - `docs/history/<feature>/CONTEXT.md` — locked decisions, source of truth
 - `docs/history/learnings/critical-patterns.md` — mandatory pre-work reading
-- `docs/specs/<area>.md` + `docs/specs/reading-map.md` — state layer: current behavior per area, and what lives where (read spec before code)
+- `docs/specs/<area>.md` + `docs/specs/reading-map.md` — state layer, owned by `bee-scribing`: BA-grade tech-agnostic spec per area, and what lives where (read spec before code)
 
 ## Hook Response Protocol
 

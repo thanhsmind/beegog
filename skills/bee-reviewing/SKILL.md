@@ -109,7 +109,7 @@ Violating the letter of these rules is violating the spirit of these rules.
 
 ## Handoff
 
-Review complete. Invoke bee-compounding skill.
+Review complete. Invoke bee-scribing skill.
 
 | Reference | When to Load |
 |---|---|

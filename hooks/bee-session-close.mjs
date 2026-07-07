@@ -109,6 +109,53 @@ async function maybeDecisionNudge(root) {
   }
 }
 
+// Decision 0003 capture nudge: a settled outcome must reach the state layer in
+// the same session it settled. When the newest active decision is more recent
+// than every docs/specs/*.md update, warn (deduped) that something settled was
+// never captured — invoke bee-scribing capture before closing. Never blocks.
+async function maybeCaptureNudge(root) {
+  try {
+    const specsDir = path.join(root, "docs", "specs");
+    if (!fs.existsSync(specsDir)) {
+      return;
+    }
+    const decisionsLib = await import(libModuleUrl(root, "decisions.mjs"));
+    const injectLib = await import(libModuleUrl(root, "inject.mjs"));
+    const recent = decisionsLib.activeDecisions(root, { recent: 1 });
+    const lastDecision = recent[0];
+    const decisionTs = lastDecision && lastDecision.date ? Date.parse(lastDecision.date) : 0;
+    if (!decisionTs) {
+      return;
+    }
+    let newestSpec = 0;
+    for (const name of fs.readdirSync(specsDir)) {
+      if (!name.endsWith(".md")) {
+        continue;
+      }
+      const mtime = fs.statSync(path.join(specsDir, name)).mtimeMs;
+      if (mtime > newestSpec) {
+        newestSpec = mtime;
+      }
+    }
+    if (decisionTs <= newestSpec) {
+      return;
+    }
+    const hash = String(lastDecision.id || lastDecision.date);
+    if (!injectLib.shouldInject(root, "capture-nudge", hash)) {
+      return;
+    }
+    injectLib.markInjected(root, "capture-nudge", hash);
+    process.stdout.write(
+      "bee capture nudge (decision 0003): the newest decision is more recent than every " +
+        "area spec under docs/specs/ — a settled outcome may exist only in the decision log " +
+        "and the chat. Before finishing, invoke bee-scribing capture to merge it into the " +
+        "touched area's spec (or confirm no spec is affected).\n",
+    );
+  } catch {
+    // fail-open: no specs, no lib, no problem
+  }
+}
+
 async function main() {
   const payload = await readStdinPayload();
   const root = findRepoRoot(payload.cwd || process.cwd());
@@ -124,6 +171,7 @@ async function main() {
     if (!stateLib.hookEnabled(root, HOOK_NAME)) {
       return 0;
     }
+    await maybeCaptureNudge(root);
     const state = stateLib.readState(root);
     const phase = state.phase || "idle";
     if (phase === "idle" || phase === "compounding-complete") {

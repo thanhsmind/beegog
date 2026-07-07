@@ -38,7 +38,7 @@ Work every source; per-source checklists in the reference:
 - friction clusters across cell traces and `.bee/backlog.jsonl`
 - dead code and unused exports
 - stale docs that contradict the code
-- stale area specs (behavior changed after the spec's `updated` date — decision 0001)
+- stale, missing, or duplicated area specs (behavior changed after the spec's `updated` date; `behavior_change` cells capped with no spec at all; or two specs covering one surface — decisions 0001/0002; proposed sync/harvest/merge work routes through `bee-scribing`)
 - TODO/stub debris
 - verify-commands that no longer run
 - superseded-but-still-cited decisions

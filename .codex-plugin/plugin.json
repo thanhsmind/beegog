@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "Bee",
     "shortDescription": "Validate-first skills for agentic software delivery",
-    "longDescription": "Bundles the bee workflow skills: hive bootstrap and routing, exploring, planning, validating, swarming, executing, reviewing, compounding, grooming, and skill authoring. Hard gates, verified cells, bounded workers, compounding learnings.",
+    "longDescription": "Bundles the bee workflow skills: hive bootstrap and routing, exploring, planning, validating, swarming, executing, reviewing, scribing (BA-grade tech-agnostic area specs), compounding, grooming, and skill authoring. Hard gates, verified cells, bounded workers, compounding learnings.",
     "category": "Productivity",
     "capabilities": [
       "Plan",

@@ -1,6 +1,6 @@
 # 0001 — The State Layer: Area Specs + Reading Map
 
-- **Status:** active
+- **Status:** active — amended by [0002](0002-scribing-skill.md) (spec template upgraded to BA grade; write ownership moved from bee-compounding to bee-scribing; sources widened)
 - **Date:** 2026-07-07
 - **Source:** owner + agent review session (bee usefulness evaluation, anphabe-gog dogfood period)
 - **Confidence:** 0.8 (design-level; validated only against the owner's observed pain, not yet by dogfood)

@@ -43,12 +43,13 @@ Exit: Gate discipline holds under pressure tests; a feature pauses at 65% and re
 ## Phase 3 — Memory and the clean hive
 
 1. `bee_decisions.mjs` (event-sourced log, write-time redaction, datamark on read) + decision surfacing in hive bootstrap.
-2. **compounding**: analysts, learnings template, critical promotion, friction → backlog, **state-layer sync** (merge `behavior_change` deltas into `docs/specs/<area>.md`, refresh `reading-map.md` — decision 0001).
-3. **grooming**: entropy audit (including the `stale specs` term), hunt checklists, propose/approve/execute/close-the-loop.
-4. **bee-writing-skills** (adapted from khuym; needed before Phase 3 skills are edited further — consider pulling it into Phase 1 if skill churn is high).
-5. Backlog outcome loop live: every grooming item closes with predicted-vs-actual.
+2. **scribing** (decision 0002): the BA-grade state layer — area-spec template with the rebuild bar, sync mode in the chain after reviewing, capture mode for discussion-agreed rules, harvest mode for legacy areas.
+3. **compounding**: analysts, learnings template, critical promotion, friction → backlog, and the state-layer **guard** (verify scribing ran; invoke it if not — decisions 0001/0002).
+4. **grooming**: entropy audit (including the `stale specs` term), hunt checklists, propose/approve/execute/close-the-loop.
+5. **bee-writing-skills** (adapted from khuym; needed before Phase 3 skills are edited further — consider pulling it into Phase 1 if skill churn is high).
+6. Backlog outcome loop live: every grooming item closes with predicted-vs-actual.
 
-Exit: after two features, `critical-patterns.md` and active decisions demonstrably change agent behavior (fewer repeated mistakes in dogfood notes); entropy score reported and trending; for at least one area touched twice, a fresh session answers "what does this area do now?" from its `docs/specs/` entry without re-exploring the code.
+Exit: after two features, `critical-patterns.md` and active decisions demonstrably change agent behavior (fewer repeated mistakes in dogfood notes); entropy score reported and trending; for at least one area touched twice, a fresh session answers "what does this area do now?" from its `docs/specs/` entry without re-exploring the code; and the **rebuild test** has run once (decision 0003) — one small area rebuilt on a different stack from its spec alone (Pointers removed), observable behavior compared against the original.
 
 ## Phase 4 — Polish (only if earned)
 
@@ -65,5 +66,5 @@ Deliberately deferred until real usage demands them — each is upstream-proven 
 
 - The Iron Law applies to bee's own skills from the first line: no SKILL.md without a failing pressure scenario, and a CREATION-LOG.md for each.
 - Dogfood friction is captured with the harness triggers and becomes the next phase's backlog — bee is its own first grooming target.
-- Keep the 10-skill cap and the 6-hook cap; any proposed addition must name what it replaces.
+- Skill additions are decision-gated (decision 0002): a new skill needs a decision record naming the workflow gap no existing skill covers. Keep the 6-hook cap; any proposed hook must name which of the six it replaces.
 - Every enforcement rule ships in `bin/lib/` first (works on both runtimes), then optionally gets a hook belt — never hook-only enforcement.

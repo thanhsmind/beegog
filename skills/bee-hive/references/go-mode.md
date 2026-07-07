@@ -33,7 +33,9 @@ User: "/go [feature]"
        ▼
 [GATE 4] ← HARD STOP (never auto-merge)
        ▼
-[STEP 7] bee-compounding      → docs/history/learnings/, decision log
+[STEP 7] bee-scribing         → docs/specs/<area>.md BA-grade sync, reading map
+       ▼
+[STEP 8] bee-compounding      → docs/history/learnings/, decision log
        ▼
 DONE
 ```

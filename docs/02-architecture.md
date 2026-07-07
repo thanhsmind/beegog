@@ -15,7 +15,7 @@ bee/
     bee-write-guard.mjs          ← PreToolUse: gate guard + reservation guard + privacy/scout
     bee-state-sync.mjs           ← PostToolUse/SubagentStop/Stop: state snapshot persistence
     bee-chain-nudge.mjs          ← SubagentStop: advance the chain after workers/reviewers
-    bee-session-close.mjs        ← Stop: warn on mid-phase exit without HANDOFF
+    bee-session-close.mjs        ← Stop: warn on mid-phase exit without HANDOFF + decision/capture nudges
   AGENTS.template.md             ← Codex bootstrap block (installed into repo AGENTS.md, BEE:START/END markers)
   skills/
     hive/                        ← bootstrap + routing meta-skill
@@ -34,12 +34,13 @@ bee/
     swarming/      SKILL.md + references/swarming-reference.md
     executing/     SKILL.md + references/worker-details.md
     reviewing/     SKILL.md + references/reviewing-reference.md
+    scribing/      SKILL.md + references/scribing-reference.md
     compounding/   SKILL.md + references/compounding-reference.md
     grooming/      SKILL.md + references/grooming-reference.md
     bee-writing-skills/  SKILL.md + references/{pressure-test-template.md, creation-log-template.md}
 ```
 
-Ten skills, hard cap. Every SKILL.md stays lean (< ~200 lines); depth lives in one `references/` file per skill, never nested deeper than one level (khuym/superpowers rule).
+Eleven skills; additions are decision-gated (a decision record naming the uncovered workflow gap — decision 0002), never casual. Every SKILL.md stays lean (< ~200 lines); depth lives in one `references/` file per skill, never nested deeper than one level (khuym/superpowers rule).
 
 ## Target-repo layout (what onboarding installs)
 
@@ -71,7 +72,9 @@ Ten skills, hard cap. Every SKILL.md stays lean (< ~200 lines); depth lives in o
         critical-patterns.md     ← mandatory pre-planning/pre-execution context
         YYYYMMDD-<slug>.md       ← dated learnings
     specs/
-      <area>.md                  ← current-behavior spec per long-lived area (state layer)
+      <area>.md                  ← BA-grade functional spec per long-lived area (state layer)
+      system-overview.md         ← cross-area glue: area map, shared entities, global roles, cross-area flows (decision 0003)
+      visuals/<area>/            ← one settled snapshot per screen of a UI area, referenced from its spec (decision 0003)
       reading-map.md             ← one line per location: what lives where
     decisions/NNNN-<slug>.md     ← long-form decision records (linked from decisions.jsonl)
   .spikes/<feature>/             ← disposable feasibility proofs
@@ -89,7 +92,7 @@ mode: tiny | small | standard | high-risk | spike
 
 The shape pass writes it as `requirements-only` and stops at Gate 2; the post-approval prep pass enriches the *same file* to `implementation-ready` and creates the current-slice cells. Downstream skills (validating, swarming, reviewing, compounding) all receive one canonical plan path — no doc-discovery ambiguity, and the readiness field is machine-checkable (`bee_status.mjs` reports it).
 
-## The state layer: area specs + reading map (decision 0001)
+## The state layer: area specs + reading map (decisions 0001, 0002)
 
 Everything else under `docs/` is **history-shaped** (append-only, dated, feature-sliced) and answers *"how did we get here"*. `docs/specs/` is **state-shaped** and answers *"where are we now"* — the opposite write discipline, on purpose:
 
@@ -99,16 +102,18 @@ Everything else under `docs/` is **history-shaped** (append-only, dated, feature
 | Write discipline | Append-only, supersede, never edit | **Overwritten/merged** to match reality |
 | Organized by | Feature / date | **Area** (a form, a module — outlives features) |
 
-- **`docs/specs/<area>.md`** — the current behavior, requirements, and settled edge cases of one long-lived area, written in the present tense. It cites active D-IDs for rationale but never narrates history ("was", "changed from" are banned — history lives in git and `docs/history/`). Template in `bee-compounding`'s reference.
+- **`docs/specs/<area>.md`** — a **BA-grade, technology-agnostic functional spec** of one long-lived area (domain-general: a screen/form, an API, a background job, an integration, a pipeline, a business process), written in the present tense: purpose, entry points & triggers (which link opens which screen; which schedule/event/call runs what), data dictionary (every field/input/output's meaning, every enum value's business meaning, display order for UI, chosen config values with their deciding D-ID), behaviors & operations per user action or system run (what blocks or triggers it, what changes, side effects, what each actor or consumer observes afterwards, failure behavior for operations), an actors & access matrix (human roles and consuming systems), numbered business rules citing active D-IDs, settled edge cases, honest open gaps — and a quarantined `Pointers (implementation)` section as the *only* technology-bound content. It never narrates history ("was", "changed from" are banned — history lives in git and `docs/history/`). Acceptance test is the **rebuild bar** (decision 0002): an agent given only the spec, minus Pointers, can rebuild the same observable behavior on a different stack; a human reads it and understands the area without the code. Template in `bee-scribing`'s reference.
 - **`docs/specs/reading-map.md`** — one line per location: `path — what lives here`, optionally pointing at the area's spec. This is the navigation knowledge that otherwise gets re-derived every session.
+- **`docs/specs/system-overview.md`** (decision 0003) — the cross-area glue no per-area spec owns: the area map (what areas exist, where each spec lives), shared business entities and their meanings, the global actor/role model stated once, and cross-area flows. Synced by scribing whenever a feature adds/removes an area or changes shared entities, roles, or a cross-area flow.
+- **`docs/specs/visuals/<area>/`** (decision 0003) — UI areas only: one settled snapshot per screen, referenced from the spec's `Visuals` section, refreshed at sync when the screen visibly changed. The vibe loop's final artifact is often *seen*; a missing snapshot is an Open Gap, never silent.
 
 The loop that keeps the layer honest:
 
-1. **Write:** `bee-compounding` syncs specs at feature close. Capped cells with `behavior_change: true` (plus their `verification_evidence`) are the ready-made delta list — sync means merging those deltas into the touched areas' specs and refreshing reading-map lines, not rewriting docs.
-2. **Read:** `bee-hive`'s scout contract reads the touched area's spec *before* the area's code, in every lane; the session preamble mentions the state layer when `docs/specs/` exists. Fresh-session reading order: **spec (what is) → decisions (why) → history (only for archaeology)**.
-3. **Guard:** `bee-grooming`'s entropy score carries a `stale specs` term — an area with `behavior_change` cells capped after its spec's `updated` date is measured debt, not a hope.
+1. **Write:** `bee-scribing` owns the layer (decision 0002). In the chain it runs after reviewing: capped cells with `behavior_change: true` (plus their `verification_evidence`) are the ready-made delta list — sync means merging those deltas into the touched areas' specs and refreshing reading-map lines, not rewriting docs. On demand it also **captures** settled outcomes of the discuss → build → test → adjust loop — rules agreed, behaviors confirmed, values tuned, whatever the domain (logged as decisions, merged immediately) — and **harvests** first specs for areas built before/outside bee. An explicit user settlement signal ("chốt", "final", "ok ship it") is a **mandatory same-turn capture trigger** (decision 0003); the session-close hook nudges when the newest decision is more recent than every spec update. `bee-compounding` guards the handoff: it verifies scribing ran, and invokes it if not.
+2. **Read:** `bee-hive`'s scout contract reads the touched area's spec *before* the area's code, in every lane; the session preamble mentions the state layer when `docs/specs/` exists. Fresh-session reading order: **system overview → touched area's spec (what is) → decisions (why) → history (only for archaeology)**.
+3. **Guard:** `bee-grooming`'s entropy score carries a `stale specs` term — an area with `behavior_change` cells capped after its spec's `updated` date (or with such cells and no spec at all) is measured debt, not a hope. The term also reads **git** (decision 0003): files under an area's Pointers / reading-map locations changed after `updated` count as stale even with no cell — vibe edits outside the chain are debt too. The audit additionally reports spec coverage (informational, unscored).
 
-Area naming is kebab-case, chosen at first spec write, stable thereafter; the compounding orchestrator maps cells to areas by the files they touched.
+Area naming is kebab-case, chosen at first spec write, stable thereafter; the scribing orchestrator maps cells to areas by the files they touched.
 
 ## Skill invocation modes
 
@@ -209,7 +214,7 @@ Any proposed seventh hook must name which of the six it replaces — claudekit's
 ```json
 {
   "schema_version": "1.0",
-  "phase": "idle | exploring | planning | validating | swarming | reviewing | compounding | grooming",
+  "phase": "idle | exploring | planning | validating | swarming | reviewing | scribing | compounding | grooming",
   "feature": "<slug> | null",
   "mode": "tiny | small | standard | high-risk | spike | null",
   "approved_gates": { "context": false, "shape": false, "execution": false, "review": false },
