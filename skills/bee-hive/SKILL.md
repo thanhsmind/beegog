@@ -46,7 +46,7 @@ Orient on: onboarding health, phase, mode, feature, gate states, cell counts, ac
 
 **HANDOFF:** if `.bee/HANDOFF.json` exists, present its phase, feature, cells in flight, and next action to the user and **wait for confirmation. Never auto-resume.**
 
-Then read `history/learnings/critical-patterns.md` and surface recent active decisions (`node .bee/bin/bee_decisions.mjs active --recent 3`).
+Then read `docs/history/learnings/critical-patterns.md` and surface recent active decisions (`node .bee/bin/bee_decisions.mjs active --recent 3`).
 
 ## Routing
 
@@ -101,7 +101,7 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 4. Gate 3 is the critical execution approval; no source-editing execution before it.
 5. A failed reality gate or a NO spike halts the pipeline and returns to planning.
 6. Never skip validating — in tiny mode it collapses to a 2-minute reality check, it does not disappear.
-7. `history/learnings/critical-patterns.md` and recent active decisions are mandatory context before planning or executing.
+7. `docs/history/learnings/critical-patterns.md` and recent active decisions are mandatory context before planning or executing.
 8. Evidence before claims: any "done/passing/fixed" statement requires fresh command output in the same message.
 
 ## Runtime Files
@@ -114,8 +114,8 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 - `.bee/decisions.jsonl` / `.bee/backlog.jsonl` — decision log / friction items
 - `.bee/cells/<id>.json` — one cell per file
 - `.bee/bin/` — vendored helpers (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`) + `lib/`
-- `history/<feature>/CONTEXT.md` — locked decisions, source of truth
-- `history/learnings/critical-patterns.md` — mandatory pre-work reading
+- `docs/history/<feature>/CONTEXT.md` — locked decisions, source of truth
+- `docs/history/learnings/critical-patterns.md` — mandatory pre-work reading
 
 ## Hook Response Protocol
 

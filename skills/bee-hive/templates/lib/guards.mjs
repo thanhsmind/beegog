@@ -27,7 +27,7 @@ export const SCOUT_DIRS = [
 ];
 
 /** Paths writable in gated phases even before execution approval. */
-export const GATE_ALLOWED_PREFIXES = ['.bee/', 'history/', 'docs/', '.spikes/', 'plans/', 'AGENTS.md'];
+export const GATE_ALLOWED_PREFIXES = ['.bee/', 'docs/', '.spikes/', 'plans/', 'AGENTS.md'];
 
 const GATED_PHASES = new Set(['exploring', 'planning', 'validating']);
 

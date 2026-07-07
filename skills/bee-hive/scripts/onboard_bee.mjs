@@ -313,8 +313,8 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
   }
 
   // 4. learnings stub
-  if (!fs.existsSync(path.join(repoRoot, "history", "learnings", "critical-patterns.md"))) {
-    plan.push({ action: "create_stub", path: "history/learnings/critical-patterns.md" });
+  if (!fs.existsSync(path.join(repoRoot, "docs", "history", "learnings", "critical-patterns.md"))) {
+    plan.push({ action: "create_stub", path: "docs/history/learnings/critical-patterns.md" });
   }
 
   // 5. repo hooks fallback (--repo-hooks only)

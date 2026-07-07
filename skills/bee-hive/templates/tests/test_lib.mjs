@@ -243,8 +243,8 @@ check('checkWrite blocks source writes in a gated phase without execution approv
   const state = { ...defaultState(), phase: 'planning' };
   const denied = checkWrite(root, state, 'src/app.ts');
   assert(denied.allow === false && denied.kind === 'gate', 'gate deny expected');
-  const allowed = checkWrite(root, state, 'history/demo/plan.md');
-  assert(allowed.allow === true, 'history/ writes allowed in gated phases');
+  const allowed = checkWrite(root, state, 'docs/history/demo/plan.md');
+  assert(allowed.allow === true, 'docs/history/ writes allowed in gated phases');
 });
 
 check('checkWrite blocks unreserved conflicting writes during swarming', () => {

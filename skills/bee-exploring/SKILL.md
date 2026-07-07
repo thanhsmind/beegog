@@ -1,7 +1,7 @@
 ---
 name: bee-exploring
 description: >-
-  Turn a fuzzy feature request into locked decisions in history/<feature>/CONTEXT.md. Use when a request has gray areas or unstated product decisions that would make planning guess. Not for implementation research, cell creation, or code.
+  Turn a fuzzy feature request into locked decisions in docs/history/<feature>/CONTEXT.md. Use when a request has gray areas or unstated product decisions that would make planning guess. Not for implementation research, cell creation, or code.
 metadata:
   version: '0.1'
   ecosystem: bee
@@ -12,7 +12,7 @@ metadata:
 
 If `.bee/onboarding.json` is missing or stale, stop and invoke `bee-hive`.
 
-Exploring turns fuzzy intent into locked decisions in `history/<feature>/CONTEXT.md`. Scout bees find the flowers; they do not build the comb.
+Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CONTEXT.md`. Scout bees find the flowers; they do not build the comb.
 
 ## Hard Gates
 
@@ -25,7 +25,7 @@ Exploring turns fuzzy intent into locked decisions in `history/<feature>/CONTEXT
 
 1. **Scope**
    - Classify: `Quick`, `Standard`, or `Deep`.
-   - Read `history/learnings/critical-patterns.md` and `.bee/state.json` if present.
+   - Read `docs/history/learnings/critical-patterns.md` and `.bee/state.json` if present.
    - If the request spans independent subsystems, pick one and defer the rest.
 
 2. **Domain**
@@ -54,7 +54,7 @@ Exploring turns fuzzy intent into locked decisions in `history/<feature>/CONTEXT
    - Scope creep (new features, adjacent work): mark it deferred with one line, return to the current question.
 
 5. **Context Assembly**
-   - Write `history/<feature-slug>/CONTEXT.md` from `references/context-template.md`.
+   - Write `docs/history/<feature-slug>/CONTEXT.md` from `references/context-template.md`.
    - Include boundary, domain types, locked decisions table with D-IDs, scout paths, canonical references, open questions, and deferred ideas.
    - Concrete language only. No placeholders, TODOs, or vague preferences.
    - **Fresh-eyes review:** spawn one reviewer with no conversation history (tier: `generation`). It checks completeness, contradictions, vague decisions, missing D-IDs, and blockers. Fix findings and re-review — max two loops, then present remaining doubts to the user.

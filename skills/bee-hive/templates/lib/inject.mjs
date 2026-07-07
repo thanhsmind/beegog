@@ -19,7 +19,7 @@ function stableHash(fields) {
 }
 
 function criticalPatternsDigest(root, maxLines = 10) {
-  const file = path.join(root, 'history', 'learnings', 'critical-patterns.md');
+  const file = path.join(root, 'docs', 'history', 'learnings', 'critical-patterns.md');
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');

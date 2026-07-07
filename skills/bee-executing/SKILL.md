@@ -27,7 +27,7 @@ Open `references/worker-details.md` only for expanded commands, trace tiers, fri
 
 - Read `AGENTS.md`.
 - Run `node .bee/bin/bee_status.mjs --json`
-- Read `history/<feature>/CONTEXT.md`.
+- Read `docs/history/<feature>/CONTEXT.md`.
 - Read the cell: `node .bee/bin/bee_cells.mjs show --id <id>`
 - Use the parent-provided agent nickname as your reservation identity.
 
@@ -81,7 +81,7 @@ Package installs **always** checkpoint: stop and return `[BLOCKED]` with the pac
 ## 8. Return
 
 - Start your final message with exactly one of `[DONE]`, `[BLOCKED]`, `[HANDOFF]`, `[NOOP]`, followed by the result fields.
-- Write a report file to `history/<feature>/reports/<cell-id>.md` (same content).
+- Write a report file to `docs/history/<feature>/reports/<cell-id>.md` (same content).
 
 ## Compaction
 

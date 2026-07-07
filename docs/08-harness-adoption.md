@@ -7,7 +7,7 @@ A second, closer read of repository-harness (HARNESS_MATURITY.md, FEATURE_INTAKE
 | Harness mechanism | Where bee has it |
 |---|---|
 | Risk lanes + hard gates, mechanical checklist | Mode gate in `bee-planning` (same 10 flags, same 0–1/2–3/4+ mapping) |
-| Policy ≠ operations | markdown in `history/`+`docs/` vs JSONL/JSON in `.bee/` |
+| Policy ≠ operations | markdown in `docs/` (incl. `docs/history/`) vs JSONL/JSON in `.bee/` |
 | Verify gate on close | **Stronger in bee**: harness's pre-close gate is advisory ("ADVISORY: verification has not passed"); bee's `capCell` mechanically refuses |
 | Friction triggers → backlog with predicted→actual | `bee-executing` trace + `bee-grooming` close-the-loop |
 | Entropy audit | `bee-grooming` formula |

@@ -65,7 +65,7 @@ Dispatch at the **generation** tier; name the model explicitly (fallback: read b
 
 ```text
 You are an adversarial plan checker. Assume the plan is flawed until proven otherwise.
-Inputs: history/<feature>/CONTEXT.md, approach.md, plan.md, and the current-work cells
+Inputs: docs/history/<feature>/CONTEXT.md, approach.md, plan.md, and the current-work cells
 (node .bee/bin/bee_cells.mjs list --feature <feature>).
 Verify exactly 5 dimensions:
 1. Requirement/decision coverage — every locked D-ID lands in at least one cell.

@@ -59,23 +59,24 @@ Ten skills, hard cap. Every SKILL.md stays lean (< ~200 lines); depth lives in o
     cells/                       ← one JSON file per cell: <feature>-<n>.json
     bin/                         ← vendored helpers (bee_status, bee_cells, bee_reservations, bee_decisions)
     bin/lib/                     ← shared modules (state, cells, reservations, guards, inject) used by BOTH helpers and hooks
-  history/
-    <feature>/
-      CONTEXT.md                 ← locked decisions (source of truth)
-      discovery.md               ← research findings
-      approach.md                ← chosen path, risks, proof needs
-      plan.md | epic-map.md      ← unified plan artifact, enriched in place (see below)
-      reports/                   ← worker results, reviewer reports, spike reports (file-based comms)
-    learnings/
-      critical-patterns.md       ← mandatory pre-planning/pre-execution context
-      YYYYMMDD-<slug>.md         ← dated learnings
-  docs/decisions/NNNN-<slug>.md  ← long-form decision records (linked from decisions.jsonl)
+  docs/
+    history/
+      <feature>/
+        CONTEXT.md               ← locked decisions (source of truth)
+        discovery.md             ← research findings
+        approach.md              ← chosen path, risks, proof needs
+        plan.md | epic-map.md    ← unified plan artifact, enriched in place (see below)
+        reports/                 ← worker results, reviewer reports, spike reports (file-based comms)
+      learnings/
+        critical-patterns.md     ← mandatory pre-planning/pre-execution context
+        YYYYMMDD-<slug>.md       ← dated learnings
+    decisions/NNNN-<slug>.md     ← long-form decision records (linked from decisions.jsonl)
   .spikes/<feature>/             ← disposable feasibility proofs
 ```
 
-**Policy vs operations** (repository-harness): markdown under `history/` and `docs/` is human-readable policy and narrative; JSON/JSONL under `.bee/` is the queryable operational record. Helpers keep them consistent; agents never hand-edit JSONL except through helpers.
+**Policy vs operations** (repository-harness): markdown under `docs/` (including `docs/history/`) is human-readable policy and narrative; JSON/JSONL under `.bee/` is the queryable operational record. Helpers keep them consistent; agents never hand-edit JSONL except through helpers.
 
-**Unified plan artifact** (compound-engineering): `history/<feature>/plan.md` is one document across planning's two passes, with frontmatter:
+**Unified plan artifact** (compound-engineering): `docs/history/<feature>/plan.md` is one document across planning's two passes, with frontmatter:
 
 ```yaml
 artifact_contract: bee-plan/v1
@@ -160,7 +161,7 @@ Both vectors point at the same skill (`bee-hive`); the preamble content is gener
 
 ### Seam 2 — Subagent spawn (how swarming launches workers)
 
-- **Claude Code:** Agent tool, one worker per cell, `run_in_background` for parallel waves; worker results returned as tool results *and* written to `history/<feature>/reports/` (file-based record survives either way).
+- **Claude Code:** Agent tool, one worker per cell, `run_in_background` for parallel waves; worker results returned as tool results *and* written to `docs/history/<feature>/reports/` (file-based record survives either way).
 - **Codex:** Codex subagents (khuym's same-session path) with the parent thread collecting `[DONE]/[BLOCKED]/[HANDOFF]/[NOOP]` messages, plus the same report files.
 
 The spawn *contract* is identical on both: assigned cell id, CONTEXT.md path, global constraints, reservation identity, status-token protocol. `references/swarming-reference.md` holds both mechanics side by side; the SKILL.md body is runtime-agnostic.

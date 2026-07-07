@@ -76,14 +76,14 @@ All functions are sync unless noted. `root` = absolute repo root path.
 ### `guards.mjs`
 - `SECRET_PATTERNS`: regexes for `.env`(+suffixes), `*.pem`, `*.key`, `id_rsa*`, `*.p12`, `credentials*`, `secrets.*`.
 - `SCOUT_DIRS`: `node_modules/`, `dist/`, `build/`, `.git/objects`, `vendor/`, `coverage/`, `.next/`, `__pycache__/`.
-- `GATE_ALLOWED_PREFIXES`: `.bee/`, `history/`, `docs/`, `.spikes/`, `plans/`, `AGENTS.md`.
+- `GATE_ALLOWED_PREFIXES`: `.bee/`, `docs/` (covers `docs/history/`), `.spikes/`, `plans/`, `AGENTS.md`.
 - `checkWrite(root, state, relPath, agentName=null)` → `{allow:true}` or `{allow:false, kind:'gate'|'reservation', reason}`.
   - gate: phase ∈ {planning, validating} contexts don't block; block only when `state.phase` ∈ {`exploring`,`planning`,`validating`} AND path not under GATE_ALLOWED_PREFIXES AND `approved_gates.execution` is false. During `swarming`: reservation check via `findConflicts` when `agentName`/`BEE_AGENT_NAME` provided; unreserved-but-conflicting → deny.
 - `checkRead(relPath)` → `{allow:true}` or `{allow:false, kind:'privacy'|'scout', reason, marker}` where privacy marker = `@@BEE_PRIVACY@@{json}@@END@@` containing `{file, question}`.
 - `extractBashTargets(command)` → `{paths:[], broadWrite:boolean}` (khuym patterns: `sed -i`, `tee`, `rm`, `mv`, `cp`, `mkdir`, `touch`, `git add|mv|rm`, redirection `>`).
 
 ### `inject.mjs`
-- `buildSessionPreamble(root)` → markdown string: bee version + onboarding health; phase/mode/feature; gate states; HANDOFF block ("present it and WAIT — never auto-resume") when present; up to 10-line digest of `history/learnings/critical-patterns.md`; last 3 active decisions (datamarked); "Run `node .bee/bin/bee_status.mjs --json` for detail. Route via bee-hive."
+- `buildSessionPreamble(root)` → markdown string: bee version + onboarding health; phase/mode/feature; gate states; HANDOFF block ("present it and WAIT — never auto-resume") when present; up to 10-line digest of `docs/history/learnings/critical-patterns.md`; last 3 active decisions (datamarked); "Run `node .bee/bin/bee_status.mjs --json` for detail. Route via bee-hive."
 - `buildPromptReminder(root)` → `{text, hash}` — 1–3 lines: phase / mode / next_action / first open gate. `hash` = stable hash of those fields.
 - `shouldInject(root, key, hash)` / `markInjected(root, key, hash)` — via `.bee/.inject-cache.json`; inject when hash differs from last or >30 min elapsed.
 
@@ -139,7 +139,7 @@ Common prologue for every hook: read stdin fully (may be empty), `findRepoRoot(c
 node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md]
 ```
 
-1. Verify Node ≥18. 2. Compute plan: AGENTS.md BEE block (insert or update between `<!-- BEE:START -->` / `<!-- BEE:END -->`, content from `../templates/AGENTS.block.md` — do NOT touch anything outside markers); create `.bee/` runtime files if missing (never overwrite existing state/decisions/cells); copy `templates/*.mjs` + `templates/lib/*` → `.bee/bin/`; create `history/learnings/critical-patterns.md` stub if missing. 3. Without `--apply` → report `{status: 'up_to_date'|'changes_needed', plan:[...]}`. With `--apply` → apply + write `.bee/onboarding.json` with managed versions. `--repo-hooks` additionally merges hook entries into `<repo>/.claude/settings.json` (backup first). `--claude-md` writes/extends `CLAUDE.md` with a bare `@AGENTS.md` import (harness pattern: auto-loads the BEE block on Claude Code when plugin hooks are unavailable); never duplicates the import, never rewrites existing user content.
+1. Verify Node ≥18. 2. Compute plan: AGENTS.md BEE block (insert or update between `<!-- BEE:START -->` / `<!-- BEE:END -->`, content from `../templates/AGENTS.block.md` — do NOT touch anything outside markers); create `.bee/` runtime files if missing (never overwrite existing state/decisions/cells); copy `templates/*.mjs` + `templates/lib/*` → `.bee/bin/`; create `docs/history/learnings/critical-patterns.md` stub if missing. 3. Without `--apply` → report `{status: 'up_to_date'|'changes_needed', plan:[...]}`. With `--apply` → apply + write `.bee/onboarding.json` with managed versions. `--repo-hooks` additionally merges hook entries into `<repo>/.claude/settings.json` (backup first). `--claude-md` writes/extends `CLAUDE.md` with a bare `@AGENTS.md` import (harness pattern: auto-loads the BEE block on Claude Code when plugin hooks are unavailable); never duplicates the import, never rewrites existing user content.
 
 `BEE_VERSION = '0.1.0'` exported from `lib/state.mjs`; onboarding compares for drift.
 

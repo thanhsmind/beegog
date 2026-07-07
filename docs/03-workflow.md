@@ -34,7 +34,7 @@ Optional at Gates 2–4: a **cross-model second opinion** (gstack). If the other
 4. Gate 3 is the critical execution approval; no source-editing execution before it.
 5. A failed reality gate or a NO spike halts the pipeline and returns to planning.
 6. Never skip validating — including in tiny mode (it collapses to a 2-minute reality check, it does not disappear).
-7. `history/learnings/critical-patterns.md` and recent active decisions (`bee_decisions.mjs active --recent 3`) are mandatory context before planning or executing.
+7. `docs/history/learnings/critical-patterns.md` and recent active decisions (`bee_decisions.mjs active --recent 3`) are mandatory context before planning or executing.
 8. Evidence before claims: any "done/passing/fixed" statement requires fresh command output in the same message.
 
 ## Modes and lanes (the mode gate)
@@ -67,7 +67,7 @@ Rule of use: **the least workflow that honestly protects the work**. A tiny fix 
 
 - **Reads:** user conversation, critical-patterns, a *quick scout only* (`rg` keyword pass + 2–3 files, cited in questions).
 - **Does:** classify scope and domain types (SEE/CALL/RUN/READ/ORGANIZE); generate 2–4 gray areas that would otherwise make planning guess; Socratic locking — **one question per message**, preferably single-choice, outcome-framed ("what breaks for users if…"); assign stable IDs D1, D2…; scope creep → mark deferred and return.
-- **Writes:** `history/<feature>/CONTEXT.md` — boundary, domain types, locked decisions, deferred ideas, scout paths. Concrete language; no placeholders. One fresh-eyes reviewer pass (max two loops).
+- **Writes:** `docs/history/<feature>/CONTEXT.md` — boundary, domain types, locked decisions, deferred ideas, scout paths. Concrete language; no placeholders. One fresh-eyes reviewer pass (max two loops).
 - **Never:** research implementation, propose architecture, create cells, write code, bundle questions, answer its own question.
 - **Handoff:** Gate 1 → "Invoke bee-planning."
 
@@ -111,24 +111,24 @@ Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify
 - Implement: read before editing; match existing patterns and locked decisions; no stubs, TODO-placeholders, or dead code. **Deviation rules (gsd):** auto-fix bugs / missing critical functionality / blocking issues; STOP and report for architectural changes; package installs always checkpoint.
 - Verify: run the cell's verify command exactly; diff-aware test mapping where the project suite is big (claudekit); two serious failures → `[BLOCKED]` with command, failure summary, diagnosis.
 - Cap: `bee_cells.mjs cap <id>` (refuses without a recorded verify pass); one commit per cell with the cell id; record the lane-tier trace (outcome, files, deviations, friction if a trigger fired); if the cell is marked `behavior_change: true`, the trace must include structured `verification_evidence` — tests inspected, tests added/changed, red-failure or characterization evidence, verification run, any deliberate exception (compound-engineering); release reservations.
-- Return exactly one of `[DONE] [BLOCKED] [HANDOFF] [NOOP]` plus a report file in `history/<feature>/reports/`.
+- Return exactly one of `[DONE] [BLOCKED] [HANDOFF] [NOOP]` plus a report file in `docs/history/<feature>/reports/`.
 - **Never:** edit outside reserved scope, handle multiple cells, wait silently, cap without verification.
 
 ### bee-reviewing (inspector bees)
 
 - **Does:**
-  1. Dispatch specialist reviewers with isolated context (diff + CONTEXT.md + plan.md only): `code-quality`, `architecture`, `security`, `test-coverage` in parallel; `learnings-researcher` searches `history/learnings/` for precedent related to the touched modules (compound-engineering); `learnings-synthesizer` runs after all of them.
+  1. Dispatch specialist reviewers with isolated context (diff + CONTEXT.md + plan.md only): `code-quality`, `architecture`, `security`, `test-coverage` in parallel; `learnings-researcher` searches `docs/history/learnings/` for precedent related to the touched modules (compound-engineering); `learnings-synthesizer` runs after all of them.
   2. Findings → severity P1 (security/data-loss/breaking/blocker — blocks merge), P2 (real perf/architecture/reliability/test gap), P3 (cleanup/docs/future debt). Uncertain → P2. **Synthesis rules** (compound-engineering): reviewers score independently; corroboration across independent reviewers promotes a finding one level; each finding carries an `autofix_class` — `gated_auto` (concrete fix, apply after judgment), `manual` (needs design input), `advisory` (report-only) — as routing *signal, not an apply gate*; on disagreement take the more conservative route. Each finding: plain-language summary, what the code does today, why it matters, concrete failure scenario, file/line evidence, smallest credible fix.
   3. **Verification-evidence gate:** for any capped cell with `behavior_change: true`, check the recorded `verification_evidence`; missing or vague evidence is itself a P1 finding — the work goes back, it does not pass forward.
   4. **Artifact verification** for everything CONTEXT.md/plan.md promised: EXISTS → SUBSTANTIVE (no stub/TODO/fake path) → WIRED (imported and used on the integration path). All three = OK; EXISTS+SUBSTANTIVE = P2; missing or EXISTS-only = P1.
   5. **Human UAT** walk-through for SEE/CALL/RUN decisions; failure → P1 fix cell and re-run; skip requires a recorded reason.
-  6. Finish: project build/test/lint gates; P2/P3 → backlog/grooming cells with traceability (never blocking the current epic); if filing a residual finding anywhere fails, write it to `history/<feature>/reports/residual-findings.md` so nothing evaporates; close out state.
+  6. Finish: project build/test/lint gates; P2/P3 → backlog/grooming cells with traceability (never blocking the current epic); if filing a residual finding anywhere fails, write it to `docs/history/<feature>/reports/residual-findings.md` so nothing evaporates; close out state.
 - **Handoff:** Gate 4 → "Invoke bee-compounding."
 
 ### bee-compounding (honey)
 
 - **Reads:** feature history, cells and traces, review findings, commit history. Missing artifacts → session summary + git diff; never fabricate.
-- **Does:** three parallel analysis subagents — pattern extractor, decision analyst, failure analyst; orchestrator synthesizes (subagents never write durable files); write one dated `history/learnings/YYYYMMDD-<slug>.md` (what happened / root cause / imperative future rule); promote only genuinely critical, cross-feature lessons to `critical-patterns.md`; log durable decisions to `bee_decisions.mjs log` (with rationale + alternatives); file unresolved friction into `.bee/backlog.jsonl` with predicted impact.
+- **Does:** three parallel analysis subagents — pattern extractor, decision analyst, failure analyst; orchestrator synthesizes (subagents never write durable files); write one dated `docs/history/learnings/YYYYMMDD-<slug>.md` (what happened / root cause / imperative future rule); promote only genuinely critical, cross-feature lessons to `critical-patterns.md`; log durable decisions to `bee_decisions.mjs log` (with rationale + alternatives); file unresolved friction into `.bee/backlog.jsonl` with predicted impact.
 - **Never:** skip compounding for meaningful work; promote everything as critical; write "test more carefully"-grade advice.
 
 ### bee-grooming (undertaker bees) — on demand

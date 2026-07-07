@@ -88,7 +88,7 @@ git commit -m "feat(<cell-id>): <summary matching the cap outcome>"
 
 ## Result Field Spec
 
-Every result starts with exactly one token and includes, minimum: nickname, cell id, files touched/requested, reservation outcome (released yes/no), verification result, and the parent's next action. Mirror the result into `history/<feature>/reports/<cell-id>.md`.
+Every result starts with exactly one token and includes, minimum: nickname, cell id, files touched/requested, reservation outcome (released yes/no), verification result, and the parent's next action. Mirror the result into `docs/history/<feature>/reports/<cell-id>.md`.
 
 - `[DONE]` — cell capped, one commit made, verification recorded as passed, reservations released.
 - `[BLOCKED]` — cannot continue safely; include the blocker, diagnosis, and current reservation state.
@@ -102,6 +102,6 @@ Ambiguities you deferred go in an `Outstanding Questions` section of the report.
 Reread, in order:
 
 1. `AGENTS.md`
-2. `history/<feature>/CONTEXT.md`
+2. `docs/history/<feature>/CONTEXT.md`
 3. `node .bee/bin/bee_cells.mjs show --id <id>`
 4. `node .bee/bin/bee_reservations.mjs list --active-only`

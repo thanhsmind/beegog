@@ -1,6 +1,6 @@
 # CONTEXT.md Template
 
-Write this to `history/<feature-slug>/CONTEXT.md`. Remove unused optional sections.
+Write this to `docs/history/<feature-slug>/CONTEXT.md`. Remove unused optional sections.
 No TODOs, placeholders, or vague decisions. Decision IDs are stable forever —
 downstream cells cite them (`per D2`), so never renumber.
 

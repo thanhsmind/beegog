@@ -22,7 +22,7 @@ Use when `bee-planning` needs artifact templates, cell quality rules, or shape g
 <bounded list, likely touch order>
 
 ## Relevant learnings
-- <history/learnings file or decision id> — <what it changes here>
+- <docs/history/learnings file or decision id> — <what it changes here>
 
 ## Questions for validating
 - <assumption that could invalidate the path>

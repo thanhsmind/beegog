@@ -8,7 +8,7 @@ Use `bee-hive` first in this repo unless you are resuming an already approved be
 2. If `.bee/onboarding.json` is missing or outdated, stop and run `bee-hive` onboarding before continuing.
 3. Run `node .bee/bin/bee_status.mjs --json` as the first step of every session and after every compaction.
 4. If `.bee/HANDOFF.json` exists, **never auto-resume**. Surface the saved state to the user and wait for explicit confirmation.
-5. If `history/learnings/critical-patterns.md` exists, read it before any planning or execution work.
+5. If `docs/history/learnings/critical-patterns.md` exists, read it before any planning or execution work.
 
 ## Chain and gates
 
@@ -34,7 +34,7 @@ The four gates are **human** gates. Never self-approve a gate, in any mode, incl
 4. Reserve files before write-heavy work in a swarm: `node .bee/bin/bee_reservations.mjs reserve --agent <name> --cell <id> --path <path>`. On conflict, return `[BLOCKED]` with the conflict — do not write anyway.
 5. Prefix write-heavy shell commands with `BEE_AGENT_NAME=<name>` during swarms so reservation ownership is checkable.
 6. At roughly 65% context usage, write `.bee/HANDOFF.json` and pause cleanly.
-7. `history/<feature>/CONTEXT.md` is the source of truth for locked decisions. Log decisions through `node .bee/bin/bee_decisions.mjs`, never by hand-editing `.bee/decisions.jsonl`.
+7. `docs/history/<feature>/CONTEXT.md` is the source of truth for locked decisions. Log decisions through `node .bee/bin/bee_decisions.mjs`, never by hand-editing `.bee/decisions.jsonl`.
 8. One commit per cell, cell id in the commit message.
 
 ## Working files
@@ -53,8 +53,8 @@ The four gates are **human** gates. Never self-approve a gate, in any mode, incl
   bin/                <- vendored helpers: bee_status, bee_cells, bee_reservations, bee_decisions
   bin/lib/            <- shared modules used by helpers and hooks
 
-history/<feature>/    <- CONTEXT.md, discovery.md, approach.md, plan.md, reports/
-history/learnings/    <- critical-patterns.md + dated learnings
+docs/history/<feature>/    <- CONTEXT.md, discovery.md, approach.md, plan.md, reports/
+docs/history/learnings/    <- critical-patterns.md + dated learnings
 docs/decisions/       <- long-form decision records
 .spikes/<feature>/    <- disposable feasibility proofs
 ```

@@ -141,7 +141,7 @@ What onboarding installs:
 <repo>/AGENTS.md          ← BEE block between <!-- BEE:START --> / <!-- BEE:END --> (content outside markers untouched)
 <repo>/.bee/              ← onboarding.json, state.json, config.json (+ empty cells/, logs/)
 <repo>/.bee/bin/          ← bee_status / bee_cells / bee_reservations / bee_decisions + lib/
-<repo>/history/learnings/critical-patterns.md   ← stub if missing
+<repo>/docs/history/learnings/critical-patterns.md   ← stub if missing
 ```
 
 Existing `state.json`, `decisions.jsonl`, and `cells/` are **never** overwritten; re-running is idempotent and reports `up_to_date`.
@@ -183,7 +183,7 @@ node .bee/bin/bee_cells.mjs claim --id anything --worker w1
 
 **Update:** pull/copy the new plugin version, then re-run onboarding per repo (`--apply`) — it detects drift via managed versions in `.bee/onboarding.json` and refreshes the AGENTS block + helpers. Plugin route: `/plugin update bee` (or re-add the marketplace) as well.
 
-**Uninstall (per repo):** delete the BEE block (everything between and including the `BEE:START`/`BEE:END` markers) from `AGENTS.md`, remove `.bee/`, and — if `--repo-hooks` was used — remove the six `bee-*` entries from `.claude/settings.json`. `history/` is yours; keep it.
+**Uninstall (per repo):** delete the BEE block (everything between and including the `BEE:START`/`BEE:END` markers) from `AGENTS.md`, remove `.bee/`, and — if `--repo-hooks` was used — remove the six `bee-*` entries from `.claude/settings.json`. `docs/history/` is yours; keep it.
 
 **Uninstall (runtime):** `/plugin uninstall bee` on Claude Code, or delete the copied skill folders.
 

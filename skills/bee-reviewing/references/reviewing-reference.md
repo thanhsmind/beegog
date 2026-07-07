@@ -4,7 +4,7 @@ Load after `bee-reviewing` is selected. Companion to SKILL.md — flow lives the
 
 ## Specialist Dispatch
 
-Isolation contract: each reviewer receives the diff (or branch range), `history/<feature>/CONTEXT.md`, and `history/<feature>/plan.md` — nothing else, never session history. Reviewers 1–5 run in parallel; `learnings-synthesizer` runs after all of them return.
+Isolation contract: each reviewer receives the diff (or branch range), `docs/history/<feature>/CONTEXT.md`, and `docs/history/<feature>/plan.md` — nothing else, never session history. Reviewers 1–5 run in parallel; `learnings-synthesizer` runs after all of them return.
 
 Common prompt shape:
 
@@ -22,7 +22,7 @@ Per-reviewer focus lines (append to the shape):
 | `architecture` | Boundaries, coupling, API design, maintainability, drift from plan.md structure. |
 | `security` | Auth, authorization, secrets in code or logs, injection, permissions, data exposure. |
 | `test-coverage` | Missing edge cases, regression paths, weak or tautological assertions, untested behavior changes. |
-| `learnings-researcher` | Search `history/learnings/` (including `critical-patterns.md`) for precedent related to the modules touched in this diff. Return matched learnings with file paths and one line each on why they apply. Report only — no severity scoring. |
+| `learnings-researcher` | Search `docs/history/learnings/` (including `critical-patterns.md`) for precedent related to the modules touched in this diff. Return matched learnings with file paths and one line each on why they apply. Report only — no severity scoring. |
 | `learnings-synthesizer` | Take all reviewer findings plus researcher precedent. Deduplicate overlaps, mark cross-reviewer corroboration (promotes one severity level), attach known-pattern notes, classify each finding's autofix_class, and present counts by severity. |
 
 Tiers: researcher = extraction, specialists = generation, synthesizer = ceiling (orchestrator's model). Where the runtime cannot select per-agent models, fall back to read budgets and output caps.
@@ -93,7 +93,7 @@ Backlog entry format (one JSON object per line):
 {"ts":"<ISO>","type":"review-finding","feature":"<feature>","severity":"P2","title":"<problem title>","autofix_class":"manual","evidence":"<file:line one-liner>","predicted_impact":"<what it costs if left>","source":"reviewing"}
 ```
 
-P2/P3 entries carry the feature name for traceability but must NOT be wired as blockers of the current work. If any filing write fails, append the full finding to `history/<feature>/reports/residual-findings.md` — nothing evaporates.
+P2/P3 entries carry the feature name for traceability but must NOT be wired as blockers of the current work. If any filing write fails, append the full finding to `docs/history/<feature>/reports/residual-findings.md` — nothing evaporates.
 
 ## Verification-Evidence Gate (behavior_change cells)
 

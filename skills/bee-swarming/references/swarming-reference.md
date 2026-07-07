@@ -35,8 +35,8 @@ Identity:
 - Model tier: <extraction|generation|ceiling> (model: <MODEL_NAME>)
 
 Inputs — read these; nothing else will be provided:
-- history/<FEATURE>/CONTEXT.md
-- history/<FEATURE>/plan.md
+- docs/history/<FEATURE>/CONTEXT.md
+- docs/history/<FEATURE>/plan.md
 - Global constraints: <GLOBAL_CONSTRAINTS — locked D-IDs, prohibitions, budgets>
 
 Contract:
@@ -45,12 +45,12 @@ Contract:
 - Reserve every file before writing, under your nickname.
 - Prefix write-heavy shell commands with BEE_AGENT_NAME="<NICKNAME>".
 - Return exactly one final status token: [DONE], [BLOCKED], [HANDOFF], or [NOOP],
-  followed by the result fields, and write a report to history/<FEATURE>/reports/.
+  followed by the result fields, and write a report to docs/history/<FEATURE>/reports/.
 
 Startup:
 1. Read AGENTS.md.
 2. Run node .bee/bin/bee_status.mjs --json
-3. Read history/<FEATURE>/CONTEXT.md, then run node .bee/bin/bee_cells.mjs show --id <CELL_ID>
+3. Read docs/history/<FEATURE>/CONTEXT.md, then run node .bee/bin/bee_cells.mjs show --id <CELL_ID>
 4. Reserve, implement, verify, cap, release, report.
 ```
 

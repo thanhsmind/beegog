@@ -31,7 +31,7 @@ Tiers: pattern extractor = extraction; decision and failure analysts = generatio
 
 ## Learnings File Template
 
-Path: `history/learnings/YYYYMMDD-<slug>.md`. Slug: `YYYYMMDD-<primary-topic>-<secondary-topic>`, lowercase hyphens only.
+Path: `docs/history/learnings/YYYYMMDD-<slug>.md`. Slug: `YYYYMMDD-<primary-topic>-<secondary-topic>`, lowercase hyphens only.
 
 ```markdown
 ---
@@ -66,7 +66,7 @@ Multiple findings from one feature go in one dated file as repeated Learning sec
 
 ## Critical Promotion Format
 
-Only lessons passing all three criteria (multi-feature relevance, meaningful waste prevented, generalizable) get a summary block appended to `history/learnings/critical-patterns.md`:
+Only lessons passing all three criteria (multi-feature relevance, meaningful waste prevented, generalizable) get a summary block appended to `docs/history/learnings/critical-patterns.md`:
 
 ```markdown
 ## [YYYYMMDD] <Learning Title>
@@ -76,7 +76,7 @@ Only lessons passing all three criteria (multi-feature relevance, meaningful was
 
 <2-4 sentence summary: what happened, root cause, and the future rule.>
 
-**Full entry:** history/learnings/YYYYMMDD-<slug>.md
+**Full entry:** docs/history/learnings/YYYYMMDD-<slug>.md
 ```
 
 critical-patterns.md is injected into every session preamble — every low-signal block you add taxes every future session. When in doubt, do not promote.
@@ -110,7 +110,7 @@ Unresolved friction (from cell `trace.friction` or the session) appends to `.bee
   "last_compounding_run": {
     "feature": "<feature-name>",
     "date": "YYYY-MM-DD",
-    "learnings_file": "history/learnings/YYYYMMDD-<slug>.md",
+    "learnings_file": "docs/history/learnings/YYYYMMDD-<slug>.md",
     "critical_promotions": 0
   }
 }

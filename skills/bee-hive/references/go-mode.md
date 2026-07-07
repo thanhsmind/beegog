@@ -11,7 +11,7 @@ User: "/go [feature]"
 [BOOTSTRAP] onboarding check, bee_status scout, critical-patterns.md, recent decisions
        │
        ▼
-[STEP 1] bee-exploring        → history/<feature>/CONTEXT.md
+[STEP 1] bee-exploring        → docs/history/<feature>/CONTEXT.md
        ▼
 [GATE 1] ← HARD STOP
        ▼
@@ -33,7 +33,7 @@ User: "/go [feature]"
        ▼
 [GATE 4] ← HARD STOP (never auto-merge)
        ▼
-[STEP 7] bee-compounding      → history/learnings/, decision log
+[STEP 7] bee-compounding      → docs/history/learnings/, decision log
        ▼
 DONE
 ```
@@ -44,7 +44,7 @@ Before invoking `bee-exploring`:
 
 1. Run the State Bootstrap from `routing-and-contracts.md` (onboarding, `node .bee/bin/bee_status.mjs --json`, critical-patterns, `node .bee/bin/bee_decisions.mjs active --recent 3`).
 2. Apply the surface-scope-earlier check — clear acceptance criteria plus pattern references may skip Step 1 with user approval.
-3. Determine the feature slug (lowercase-hyphenated) and create `history/<feature>/` if missing.
+3. Determine the feature slug (lowercase-hyphenated) and create `docs/history/<feature>/` if missing.
 4. Update `.bee/state.json`: `feature: <slug>`, `phase: exploring`, `mode: null` (set at the mode gate).
 
 ## Gate Wording (fixed)
@@ -62,7 +62,7 @@ Each gate is one question in the standard CONTEXT / QUESTION / RECOMMENDATION / 
 
 ```text
 Exploration complete for [feature].
-[N] decisions locked in history/<feature>/CONTEXT.md, [M] open questions noted.
+[N] decisions locked in docs/history/<feature>/CONTEXT.md, [M] open questions noted.
 Key decisions: D1: [summary] ... (max 5, then "see CONTEXT.md")
 Decisions locked. Approve CONTEXT.md before planning? (yes / revise / show full CONTEXT.md)
 ```

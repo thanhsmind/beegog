@@ -27,10 +27,10 @@ Load `references/planning-reference.md` for artifact templates and cell quality 
 
 Read, in order:
 
-1. `history/<feature>/CONTEXT.md` (or the hive scoping synthesis for surface-scope-earlier work).
-2. `history/learnings/critical-patterns.md` — mandatory.
+1. `docs/history/<feature>/CONTEXT.md` (or the hive scoping synthesis for surface-scope-earlier work).
+2. `docs/history/learnings/critical-patterns.md` — mandatory.
 3. Recent decisions: `node .bee/bin/bee_decisions.mjs active --recent 3` and a tag-matched search for this feature's area (`node .bee/bin/bee_decisions.mjs search --text <tag>`).
-4. Tag-matched precedent in `history/learnings/` (grep for the feature's domain keywords). Inject hits as "we've solved X before: <file>" — precedent beats research.
+4. Tag-matched precedent in `docs/history/learnings/` (grep for the feature's domain keywords). Inject hits as "we've solved X before: <file>" — precedent beats research.
 5. Session scout: `node .bee/bin/bee_status.mjs --json`.
 
 ## 2. Discovery (research levels)
@@ -59,11 +59,11 @@ Record the count and the flags in `plan.md`. Above `small`, state why smaller mo
 
 ## 4. Synthesis — approach.md
 
-Write `history/<feature>/approach.md`: chosen path and rejected alternatives, risk map (component / LOW–MEDIUM–HIGH / proof needed), likely files and order, relevant learnings, and open questions for validating. MEDIUM/HIGH unknowns need a validating proof or a spike before execution cells exist.
+Write `docs/history/<feature>/approach.md`: chosen path and rejected alternatives, risk map (component / LOW–MEDIUM–HIGH / proof needed), likely files and order, relevant learnings, and open questions for validating. MEDIUM/HIGH unknowns need a validating proof or a spike before execution cells exist.
 
 ## 5. Shape — plan.md (STOP at Gate 2)
 
-Write **one** `history/<feature>/plan.md` with frontmatter:
+Write **one** `docs/history/<feature>/plan.md` with frontmatter:
 
 ```yaml
 artifact_contract: bee-plan/v1

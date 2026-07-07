@@ -19,7 +19,7 @@ Compounding captures reusable lessons from completed work and feeds them back in
 
 ## 1. Gather Evidence
 
-- `history/<feature>/CONTEXT.md`, `plan.md`, worker reports under `history/<feature>/reports/`
+- `docs/history/<feature>/CONTEXT.md`, `plan.md`, worker reports under `docs/history/<feature>/reports/`
 - cells and traces: `node .bee/bin/bee_cells.mjs list --feature <feature>`
 - review findings (including residual-findings.md, if present)
 - feature commit history
@@ -40,13 +40,13 @@ Subagents return temporary findings only — they NEVER write durable files. The
 
 ## 3. Synthesize — One Learnings File
 
-Write one dated file: `history/learnings/YYYYMMDD-<slug>.md` with frontmatter (`date`, `feature`, `categories`, `severity`, `tags`) and sections **What Happened** / **Root Cause** / **Recommendation**. Recommendations are imperative future rules: "When X, do Y" — specific enough to act on. Template in the reference.
+Write one dated file: `docs/history/learnings/YYYYMMDD-<slug>.md` with frontmatter (`date`, `feature`, `categories`, `severity`, `tags`) and sections **What Happened** / **Root Cause** / **Recommendation**. Recommendations are imperative future rules: "When X, do Y" — specific enough to act on. Template in the reference.
 
 Before writing, redact secrets and PII from every evidence snippet. If a finding cannot be safely redacted, drop it and note the skip in the run summary. Secrets never enter learnings.
 
 ## 4. Promote Criticals — Sparingly
 
-Append a summary block to `history/learnings/critical-patterns.md` only when a lesson meets ALL three criteria:
+Append a summary block to `docs/history/learnings/critical-patterns.md` only when a lesson meets ALL three criteria:
 
 1. **Multi-feature relevance** — it will matter beyond this feature.
 2. **Meaningful waste prevented** — it would save future agents real time or real damage.
@@ -88,14 +88,14 @@ Record the completed compounding run in `.bee/state.json` (phase, learnings file
 - promoting most findings as critical
 - vague advice with no situation or root cause
 - inventing findings when artifacts are missing
-- an analyst subagent writing to `history/learnings/` directly
+- an analyst subagent writing to `docs/history/learnings/` directly
 - an API key, token, or credential in an evidence snippet
 
 Violating the letter of these rules is violating the spirit of these rules.
 
 ## Handoff
 
-Compounding complete: learnings at `history/learnings/YYYYMMDD-<slug>.md`, <N> critical promotions. Invoke bee-hive skill.
+Compounding complete: learnings at `docs/history/learnings/YYYYMMDD-<slug>.md`, <N> critical promotions. Invoke bee-hive skill.
 
 | Reference | When to Load |
 |---|---|

@@ -19,7 +19,7 @@ Reviewing is the final automated quality gate after execution. It verifies that 
 
 ## Required Inputs
 
-- `history/<feature>/CONTEXT.md` and `history/<feature>/plan.md`
+- `docs/history/<feature>/CONTEXT.md` and `docs/history/<feature>/plan.md`
 - the feature diff (or merged branch range)
 - capped cells and traces: `node .bee/bin/bee_cells.mjs list --feature <feature>`
 - current state: `node .bee/bin/bee_status.mjs --json`
@@ -36,7 +36,7 @@ Dispatch reviewers with ISOLATED context: the diff + CONTEXT.md + plan.md ONLY. 
 | `architecture` | boundaries, coupling, API design, maintainability | generation | parallel |
 | `security` | auth, secrets, injection, permissions, data exposure | generation | parallel |
 | `test-coverage` | missing edge cases, regression paths, weak assertions | generation | parallel |
-| `learnings-researcher` | searches `history/learnings/` for precedent on the touched modules | extraction | parallel |
+| `learnings-researcher` | searches `docs/history/learnings/` for precedent on the touched modules | extraction | parallel |
 | `learnings-synthesizer` | dedupe, corroboration, known-pattern notes | ceiling | AFTER all of the above |
 
 **Conditional reviewers** join the same parallel wave when the diff mechanically matches their trigger: `performance` (queries in loops, caching), `api-contract` (routes, public shapes), `data-migration` (spawn gate: migration/schema files only), `reliability` (retries, queues, external calls). Scan the diff once before dispatch; spawn every matched trigger; cap the wave at 7. Trigger table and focus lines in `references/reviewing-reference.md`.
@@ -75,7 +75,7 @@ Walk the user through every SEE/CALL/RUN decision in CONTEXT.md (wording in the 
 
 1. Run the project build/test/lint gates; quote fresh command output — never claim "passing" without it.
 2. P2/P3 findings → `.bee/backlog.jsonl` entries (plus grooming cells where warranted) with non-blocking traceability to the feature. They never block the current work.
-3. If filing a residual finding anywhere fails, write it to `history/<feature>/reports/residual-findings.md` so nothing evaporates.
+3. If filing a residual finding anywhere fails, write it to `docs/history/<feature>/reports/residual-findings.md` so nothing evaporates.
 4. Close out `.bee/state.json`: phase, summary, next_action.
 
 ## Gate 4 (wording is fixed)

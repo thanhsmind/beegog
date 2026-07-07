@@ -21,10 +21,10 @@ Start with `node .bee/bin/bee_status.mjs --json`. If onboarding is missing or st
 
 ## Required Inputs
 
-- `history/<feature>/CONTEXT.md`
-- `history/<feature>/discovery.md`
-- `history/<feature>/approach.md`
-- `history/<feature>/plan.md` — approved at Gate 2 and enriched to `artifact_readiness: implementation-ready`
+- `docs/history/<feature>/CONTEXT.md`
+- `docs/history/<feature>/discovery.md`
+- `docs/history/<feature>/approach.md`
+- `docs/history/<feature>/plan.md` — approved at Gate 2 and enriched to `artifact_readiness: implementation-ready`
 - current-work cells: `node .bee/bin/bee_cells.mjs list --feature <feature>`
 
 If any input is missing, or `plan.md` is absent, unapproved, or its `artifact_readiness` is not `implementation-ready`, stop and return to bee-planning. Never validate an unapproved shape.

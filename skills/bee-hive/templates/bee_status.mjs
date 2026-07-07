@@ -82,7 +82,7 @@ function buildStatus(root) {
     cells: counts,
     active_reservations: active,
     critical_patterns_present: fs.existsSync(
-      path.join(root, 'history', 'learnings', 'critical-patterns.md'),
+      path.join(root, 'docs', 'history', 'learnings', 'critical-patterns.md'),
     ),
     recent_decisions: activeDecisions(root, { recent: 3 }).map((event) => ({
       id: event.id,

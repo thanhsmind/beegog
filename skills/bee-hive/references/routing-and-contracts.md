@@ -40,7 +40,7 @@ On every session start:
 1. Confirm onboarding is current via `.bee/onboarding.json` (see SKILL.md onboarding protocol).
 2. Run `node .bee/bin/bee_status.mjs --json`.
 3. If `.bee/HANDOFF.json` exists, present it and wait. Do not auto-resume.
-4. Read `history/learnings/critical-patterns.md` when present.
+4. Read `docs/history/learnings/critical-patterns.md` when present.
 5. Surface recent active decisions: `node .bee/bin/bee_decisions.mjs active --recent 3`.
 6. Check active reservations when workers may be in flight: `node .bee/bin/bee_reservations.mjs list --active-only`.
 
@@ -87,13 +87,13 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 | Skill | Reads | Writes |
 |-------|-------|--------|
 | hive | onboarding, state, HANDOFF, critical-patterns, decisions | state routing updates only |
-| exploring | user conversation, critical-patterns, quick scout | `history/<feature>/CONTEXT.md`, state update |
+| exploring | user conversation, critical-patterns, quick scout | `docs/history/<feature>/CONTEXT.md`, state update |
 | planning | CONTEXT.md, critical-patterns, active decisions, bee_status | `approach.md`, `plan.md` (requirements-only → implementation-ready), current-slice cells via `bee_cells.mjs add` |
 | validating | CONTEXT.md, discovery, approach, approved shape, cells | reality-gate report, feasibility matrix, spike results in `.spikes/`, repaired cells |
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
-| executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `history/<feature>/reports/` |
+| executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `docs/history/<feature>/reports/` |
 | reviewing | diff, CONTEXT.md, plan.md, capped cells | P1/P2/P3 findings, backlog items, `residual-findings.md` fallback |
-| compounding | feature history, traces, findings, commits | `history/learnings/YYYYMMDD-<slug>.md`, critical-patterns promotions, decision log, backlog friction |
+| compounding | feature history, traces, findings, commits | `docs/history/learnings/YYYYMMDD-<slug>.md`, critical-patterns promotions, decision log, backlog friction |
 | grooming | entropy inputs, backlog, traces, diffs | kill proposals, tiny/small cells, outcome records |
 
 Every skill ends with an explicit handoff: `[Outcome]. Invoke bee-<next-skill> skill.`
@@ -141,10 +141,10 @@ One question per message. Never bundle. Never answer your own question.
   cells/<id>.json  logs/hooks.jsonl  .inject-cache.json
   bin/  bin/lib/
 
-history/<feature>/
+docs/history/<feature>/
   CONTEXT.md  discovery.md  approach.md  plan.md  reports/
 
-history/learnings/
+docs/history/learnings/
   critical-patterns.md  YYYYMMDD-<slug>.md
 
 .spikes/<feature>/

@@ -27,7 +27,7 @@ A **cell** is bee's task unit (honeycomb cell): a small JSON record with accepta
 
 ```
 bee-hive
-  -> bee-exploring     writes  history/<feature>/CONTEXT.md        [GATE 1: human approves decisions]
+  -> bee-exploring     writes  docs/history/<feature>/CONTEXT.md        [GATE 1: human approves decisions]
   -> bee-planning      writes  discovery, approach, work shape      [GATE 2: human approves shape]
   -> bee-validating    writes  feasibility evidence, validated cells [GATE 3: human approves execution]
   -> bee-swarming      spawns  bounded workers

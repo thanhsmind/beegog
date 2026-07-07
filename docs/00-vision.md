@@ -50,6 +50,6 @@ bee succeeds when, for its owner:
 1. A vague feature request reliably becomes locked decisions, a validated plan, and capped cells without a single "wait, that's not what I meant" late in execution.
 2. Small fixes complete in minutes with near-zero ceremony (tiny lane works).
 3. A session can pause at ~65% context and resume the next day from `HANDOFF.json` without re-explaining anything.
-4. `history/learnings/critical-patterns.md` and `decisions.jsonl` visibly change agent behavior in later features (fewer repeated mistakes).
+4. `docs/history/learnings/critical-patterns.md` and `decisions.jsonl` visibly change agent behavior in later features (fewer repeated mistakes).
 5. Grooming runs find and kill real debt, and the entropy score trends down.
 6. The same skills run under both Claude Code and Codex with no divergence in the workflow contract.

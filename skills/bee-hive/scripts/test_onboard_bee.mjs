@@ -99,8 +99,8 @@ try {
     check(fs.existsSync(path.join(tmp, rel)) && fs.statSync(path.join(tmp, rel)).isDirectory(),
       `${rel}/ directory exists`);
   }
-  check(fs.existsSync(path.join(tmp, "history", "learnings", "critical-patterns.md")),
-    "history/learnings/critical-patterns.md stub exists");
+  check(fs.existsSync(path.join(tmp, "docs", "history", "learnings", "critical-patterns.md")),
+    "docs/history/learnings/critical-patterns.md stub exists");
 
   const config = JSON.parse(fs.readFileSync(path.join(tmp, ".bee", "config.json"), "utf8"));
   check(config.hooks && Object.values(config.hooks).every((v) => v === true) &&
