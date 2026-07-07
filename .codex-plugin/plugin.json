@@ -1,0 +1,34 @@
+{
+  "name": "bee",
+  "version": "0.1.0",
+  "description": "bee: validate-first agentic development skills — staged workflow with four human gates, evidence-based validation, bounded swarms over verified cells, and a compounding knowledge loop.",
+  "license": "MIT",
+  "keywords": [
+    "bee",
+    "skills",
+    "agentic-development",
+    "planning",
+    "multi-agent",
+    "validate-first"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Bee",
+    "shortDescription": "Validate-first skills for agentic software delivery",
+    "longDescription": "Bundles the bee workflow skills: hive bootstrap and routing, exploring, planning, validating, swarming, executing, reviewing, compounding, grooming, and skill authoring. Hard gates, verified cells, bounded workers, compounding learnings.",
+    "category": "Productivity",
+    "capabilities": [
+      "Plan",
+      "Write",
+      "Review",
+      "Learn"
+    ],
+    "defaultPrompt": [
+      "Onboard this repository for bee and start with bee:hive.",
+      "Route a feature request through the full bee chain.",
+      "Plan and validate a feature before we write code.",
+      "Groom this repo for tech debt and drift."
+    ],
+    "brandColor": "#B45309"
+  }
+}
