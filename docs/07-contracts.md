@@ -7,7 +7,7 @@ Normative contracts every v0.1 component codes against. When this doc and anothe
 - Node 18+, ESM (`.mjs`), **zero npm dependencies**. Windows-safe paths (use `node:path`).
 - Atomic writes everywhere: write `<file>.tmp`, then `renameSync`.
 - All scripts fail safe: helpers exit non-zero with a one-line JSON error on `--json`; hooks NEVER break a session (wrap everything, log to `.bee/logs/hooks.jsonl`, exit 0 unless deliberately blocking).
-- Source of truth for vendored code: `skills/hive/templates/` in the plugin. Onboarding copies it to `<repo>/.bee/bin/` (helpers) and `<repo>/.bee/bin/lib/` (modules).
+- Source of truth for vendored code: `skills/bee-hive/templates/` in the plugin. Onboarding copies it to `<repo>/.bee/bin/` (helpers) and `<repo>/.bee/bin/lib/` (modules).
 - Hooks live in the plugin (`hooks/`). At runtime they resolve the target repo root from CWD and dynamic-import lib from `<root>/.bee/bin/lib/`. If root or lib is missing → exit 0 silently (self-arm rule).
 
 ## Runtime files
@@ -36,13 +36,13 @@ Normative contracts every v0.1 component codes against. When this doc and anothe
   "approved_gates": { "context": false, "shape": false, "execution": false, "review": false },
   "workers": [],
   "summary": "",
-  "next_action": "Invoke bee:hive."
+  "next_action": "Invoke bee-hive."
 }
 ```
 
 Cell schema: as in [02-architecture.md](02-architecture.md) (id, feature, title, lane, status, deps, decisions, files, read_first, action, must_haves, verify, trace{worker, outcome, files_changed, deviations, friction, capped_at, behavior_change, verification_evidence, verify_output}).
 
-## lib API (`skills/hive/templates/lib/`)
+## lib API (`skills/bee-hive/templates/lib/`)
 
 All functions are sync unless noted. `root` = absolute repo root path.
 
@@ -83,7 +83,7 @@ All functions are sync unless noted. `root` = absolute repo root path.
 - `extractBashTargets(command)` → `{paths:[], broadWrite:boolean}` (khuym patterns: `sed -i`, `tee`, `rm`, `mv`, `cp`, `mkdir`, `touch`, `git add|mv|rm`, redirection `>`).
 
 ### `inject.mjs`
-- `buildSessionPreamble(root)` → markdown string: bee version + onboarding health; phase/mode/feature; gate states; HANDOFF block ("present it and WAIT — never auto-resume") when present; up to 10-line digest of `history/learnings/critical-patterns.md`; last 3 active decisions (datamarked); "Run `node .bee/bin/bee_status.mjs --json` for detail. Route via bee:hive."
+- `buildSessionPreamble(root)` → markdown string: bee version + onboarding health; phase/mode/feature; gate states; HANDOFF block ("present it and WAIT — never auto-resume") when present; up to 10-line digest of `history/learnings/critical-patterns.md`; last 3 active decisions (datamarked); "Run `node .bee/bin/bee_status.mjs --json` for detail. Route via bee-hive."
 - `buildPromptReminder(root)` → `{text, hash}` — 1–3 lines: phase / mode / next_action / first open gate. `hash` = stable hash of those fields.
 - `shouldInject(root, key, hash)` / `markInjected(root, key, hash)` — via `.bee/.inject-cache.json`; inject when hash differs from last or >30 min elapsed.
 
@@ -93,7 +93,7 @@ All functions are sync unless noted. `root` = absolute repo root path.
 - `activeDecisions(root, {recent=null})` — decide events not superseded/redacted, newest first.
 - `datamark(text)` — strip/neutralize backticks fences, role tags, control chars; wrap in `«…»`.
 
-## Helper CLI surface (`skills/hive/templates/*.mjs`)
+## Helper CLI surface (`skills/bee-hive/templates/*.mjs`)
 
 Thin argv wrappers over lib. All support `--json`. Non-zero exit + `{error}` JSON on failure.
 
@@ -133,20 +133,20 @@ bee_decisions.mjs log --decision D --rationale R [--alternatives A] [--scope S] 
 
 Common prologue for every hook: read stdin fully (may be empty), `findRepoRoot(cwd)`, require `.bee/onboarding.json` + `hookEnabled(root, '<name>')`, dynamic-import lib from `<root>/.bee/bin/lib/` with try/catch → exit 0 on any miss; crash-log to `.bee/logs/hooks.jsonl`.
 
-## Onboarding (`skills/hive/scripts/onboard_bee.mjs`)
+## Onboarding (`skills/bee-hive/scripts/onboard_bee.mjs`)
 
 ```
-node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks]
+node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md]
 ```
 
-1. Verify Node ≥18. 2. Compute plan: AGENTS.md BEE block (insert or update between `<!-- BEE:START -->` / `<!-- BEE:END -->`, content from `../templates/AGENTS.block.md` — do NOT touch anything outside markers); create `.bee/` runtime files if missing (never overwrite existing state/decisions/cells); copy `templates/*.mjs` + `templates/lib/*` → `.bee/bin/`; create `history/learnings/critical-patterns.md` stub if missing. 3. Without `--apply` → report `{status: 'up_to_date'|'changes_needed', plan:[...]}`. With `--apply` → apply + write `.bee/onboarding.json` with managed versions. `--repo-hooks` additionally merges hook entries into `<repo>/.claude/settings.json` (backup first).
+1. Verify Node ≥18. 2. Compute plan: AGENTS.md BEE block (insert or update between `<!-- BEE:START -->` / `<!-- BEE:END -->`, content from `../templates/AGENTS.block.md` — do NOT touch anything outside markers); create `.bee/` runtime files if missing (never overwrite existing state/decisions/cells); copy `templates/*.mjs` + `templates/lib/*` → `.bee/bin/`; create `history/learnings/critical-patterns.md` stub if missing. 3. Without `--apply` → report `{status: 'up_to_date'|'changes_needed', plan:[...]}`. With `--apply` → apply + write `.bee/onboarding.json` with managed versions. `--repo-hooks` additionally merges hook entries into `<repo>/.claude/settings.json` (backup first). `--claude-md` writes/extends `CLAUDE.md` with a bare `@AGENTS.md` import (harness pattern: auto-loads the BEE block on Claude Code when plugin hooks are unavailable); never duplicates the import, never rewrites existing user content.
 
 `BEE_VERSION = '0.1.0'` exported from `lib/state.mjs`; onboarding compares for drift.
 
 ## Skill conventions (v0.1)
 
-- Frontmatter: `name` (bare hyphen-case = dir name), `description` ("Use when …" trigger conditions only), `metadata.version: '0.1'`, `metadata.ecosystem: bee`, `metadata.dependencies` mapping or `[]`.
-- Body < 200 lines; one `references/` level; end with handoff sentence `[Outcome]. Invoke bee:<next> skill.`
+- Frontmatter: `name` (bare hyphen-case = dir name), `description` (purpose clause for the slash menu + "Use when …" trigger conditions; never workflow steps), `metadata.version: '0.1'`, `metadata.ecosystem: bee`, `metadata.dependencies` mapping or `[]`.
+- Body < 200 lines; one `references/` level; end with handoff sentence `[Outcome]. Invoke bee-<next> skill.`
 - Every skill documents `mode:headless` behavior in one short section.
 - Commands quoted in skills MUST match the CLI surface above verbatim.
 - Each skill ships `CREATION-LOG.md`: provenance (which upstream skill it adapts), what changed, and an honest `Pressure testing: PENDING (scheduled per Iron Law before 1.0)` note with the 3 scenarios from 04-skills-spec listed as the planned RED set.

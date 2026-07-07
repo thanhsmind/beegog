@@ -10,32 +10,46 @@ A hive is a staged, self-regulating system — and every bee role maps to a work
 
 | Hive role | bee skill | What it does |
 |---|---|---|
-| The hive itself | `bee:hive` | Bootstrap, routing, state, gates — load first in every session |
-| Scout bees | `bee:exploring` | Find the nectar: lock fuzzy intent into decisions, scout *just enough* |
-| Waggle dance | `bee:planning` | Communicate the found path precisely enough that workers can fly it |
-| Guard bees | `bee:validating` | Nothing enters the hive unproven: reality gate, feasibility evidence |
-| The swarm | `bee:swarming` | Orchestrate bounded workers over validated cells |
-| Worker bees | `bee:executing` | One worker, one cell: implement, verify, **cap the cell** |
-| Inspector bees | `bee:reviewing` | Multi-agent review, artifact verification, UAT |
-| Honey | `bee:compounding` | Convert finished work into durable knowledge |
-| Undertaker bees | `bee:grooming` | Hunt and kill tech debt, drift, and dead work |
-| Comb building | `bee:writing-bee-skills` | TDD-for-skills: build and pressure-test the hive's own comb |
+| The hive itself | `bee-hive` | Bootstrap, routing, state, gates — load first in every session |
+| Scout bees | `bee-exploring` | Find the nectar: lock fuzzy intent into decisions, scout *just enough* |
+| Waggle dance | `bee-planning` | Communicate the found path precisely enough that workers can fly it |
+| Guard bees | `bee-validating` | Nothing enters the hive unproven: reality gate, feasibility evidence |
+| The swarm | `bee-swarming` | Orchestrate bounded workers over validated cells |
+| Worker bees | `bee-executing` | One worker, one cell: implement, verify, **cap the cell** |
+| Inspector bees | `bee-reviewing` | Multi-agent review, artifact verification, UAT |
+| Honey | `bee-compounding` | Convert finished work into durable knowledge |
+| Undertaker bees | `bee-grooming` | Hunt and kill tech debt, drift, and dead work |
+| Comb building | `bee-writing-skills` | TDD-for-skills: build and pressure-test the hive's own comb |
 
 A **cell** is bee's task unit (honeycomb cell): a small JSON record with acceptance criteria and a verify command. A cell is **capped** (closed) only after its verification passes — never before.
 
 ## The chain
 
 ```
-bee:hive
-  -> bee:exploring     writes  history/<feature>/CONTEXT.md        [GATE 1: human approves decisions]
-  -> bee:planning      writes  discovery, approach, work shape      [GATE 2: human approves shape]
-  -> bee:validating    writes  feasibility evidence, validated cells [GATE 3: human approves execution]
-  -> bee:swarming      spawns  bounded workers
-  -> bee:executing     caps    one verified cell per worker
-  -> bee:reviewing     writes  P1/P2/P3 findings                    [GATE 4: P1s block merge]
-  -> bee:compounding   writes  learnings + decisions
-  (on demand) bee:grooming    kills tech debt, audits hive health
+bee-hive
+  -> bee-exploring     writes  history/<feature>/CONTEXT.md        [GATE 1: human approves decisions]
+  -> bee-planning      writes  discovery, approach, work shape      [GATE 2: human approves shape]
+  -> bee-validating    writes  feasibility evidence, validated cells [GATE 3: human approves execution]
+  -> bee-swarming      spawns  bounded workers
+  -> bee-executing     caps    one verified cell per worker
+  -> bee-reviewing     writes  P1/P2/P3 findings                    [GATE 4: P1s block merge]
+  -> bee-compounding   writes  learnings + decisions
+  (on demand) bee-grooming    kills tech debt, audits hive health
 ```
+
+## Install
+
+Quick (greenfield or brownfield, both runtimes):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -d /path/to/project -y
+```
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1; .\install-bee.ps1 -Directory C:\path\to\project -Yes
+```
+
+Full options, the Claude Code plugin route (`/plugin marketplace add thanhsmind/beegog` + `/plugin install bee@bee`), manual installs, verify/update/uninstall: [INSTALL.md](INSTALL.md).
 
 ## Documents
 
@@ -60,7 +74,7 @@ Known debt before 1.0 (recorded in each skill's CREATION-LOG.md): pressure-testi
 Try it in a repo:
 
 ```bash
-node <plugin>/skills/hive/scripts/onboard_bee.mjs --repo-root <your-repo>          # plan (dry-run)
-node <plugin>/skills/hive/scripts/onboard_bee.mjs --repo-root <your-repo> --apply  # install
+node <plugin>/skills/bee-hive/scripts/onboard_bee.mjs --repo-root <your-repo>          # plan (dry-run)
+node <plugin>/skills/bee-hive/scripts/onboard_bee.mjs --repo-root <your-repo> --apply  # install
 node .bee/bin/bee_status.mjs --json                                                # scout
 ```

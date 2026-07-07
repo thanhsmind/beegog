@@ -1,0 +1,13 @@
+{
+  "name": "bee",
+  "owner": {
+    "name": "bee"
+  },
+  "plugins": [
+    {
+      "name": "bee",
+      "source": "./",
+      "description": "Validate-first agentic development: staged workflow with four human gates, evidence-based validation, bounded swarms over verified cells, and a compounding knowledge loop."
+    }
+  ]
+}

@@ -5,16 +5,16 @@ The bee chain, stage by stage: what each skill reads, writes, and must never do.
 ## The chain and the four gates
 
 ```
-bee:hive
-  -> bee:exploring                          [GATE 1] approve CONTEXT.md
-  -> bee:planning (shape)                   [GATE 2] approve work shape
-  -> bee:planning (current-work prep)
-  -> bee:validating                         [GATE 3] approve execution
-  -> bee:swarming (+ bee:executing × N)
+bee-hive
+  -> bee-exploring                          [GATE 1] approve CONTEXT.md
+  -> bee-planning (shape)                   [GATE 2] approve work shape
+  -> bee-planning (current-work prep)
+  -> bee-validating                         [GATE 3] approve execution
+  -> bee-swarming (+ bee-executing × N)
   -> more approved work remains? -> back to planning for the next slice
-  -> bee:reviewing                          [GATE 4] P1s block; else approve merge
-  -> bee:compounding
-  (on demand, any time the hive is idle) bee:grooming
+  -> bee-reviewing                          [GATE 4] P1s block; else approve merge
+  -> bee-compounding
+  (on demand, any time the hive is idle) bee-grooming
 ```
 
 Gate wording (fixed, from khuym):
@@ -55,23 +55,23 @@ Rule of use: **the least workflow that honestly protects the work**. A tiny fix 
 
 ## Stage contracts
 
-### bee:hive (bootstrap & routing)
+### bee-hive (bootstrap & routing)
 
 - **On every session start / after compaction:** verify onboarding (`.bee/onboarding.json`), run `node .bee/bin/bee_status.mjs --json`, surface `HANDOFF.json` if present and **wait**, read `critical-patterns.md`, surface recent active decisions.
-- **Routing:** vague/new feature → exploring; clear-scope research → planning; small fix → planning in tiny/small mode; review request → reviewing; "clean up / debt / audit" → grooming; capture learnings → compounding; improve bee → writing-bee-skills; `/go` → go mode (full chain with the four gates).
+- **Routing:** vague/new feature → exploring; clear-scope research → planning; small fix → planning in tiny/small mode; review request → reviewing; "clean up / debt / audit" → grooming; capture learnings → compounding; improve bee → bee-writing-skills; `/go` → go mode (full chain with the four gates).
 - **Surface scope earlier** (compound-engineering): if the request already contains concrete acceptance criteria *and* references to existing patterns, offer to skip exploring — "Found clear requirements. Jump straight to planning, or explore alternatives first?" — and on approval route to planning with a one-paragraph scoping synthesis in place of CONTEXT.md gray-area work (the decisions still get D-IDs).
 - **Scout contract (just-enough reading):** phase × lane matrix with token budgets — tiny ≈ 2K tokens of harness context, standard ≈ 5K, high-risk ≈ 10K. Retrieval triggers, not reading lists: "touching schema → read schema decisions first", "touching auth → read auth decisions + high-risk template".
 - **Never:** auto-resume a handoff, skip a gate, or let a stage start with stale onboarding.
 
-### bee:exploring (scout bees)
+### bee-exploring (scout bees)
 
 - **Reads:** user conversation, critical-patterns, a *quick scout only* (`rg` keyword pass + 2–3 files, cited in questions).
 - **Does:** classify scope and domain types (SEE/CALL/RUN/READ/ORGANIZE); generate 2–4 gray areas that would otherwise make planning guess; Socratic locking — **one question per message**, preferably single-choice, outcome-framed ("what breaks for users if…"); assign stable IDs D1, D2…; scope creep → mark deferred and return.
 - **Writes:** `history/<feature>/CONTEXT.md` — boundary, domain types, locked decisions, deferred ideas, scout paths. Concrete language; no placeholders. One fresh-eyes reviewer pass (max two loops).
 - **Never:** research implementation, propose architecture, create cells, write code, bundle questions, answer its own question.
-- **Handoff:** Gate 1 → "Invoke bee:planning."
+- **Handoff:** Gate 1 → "Invoke bee-planning."
 
-### bee:planning (the waggle dance)
+### bee-planning (the waggle dance)
 
 - **Reads:** CONTEXT.md, critical-patterns, active decisions, bee_status scout.
 - **Does:**
@@ -81,9 +81,9 @@ Rule of use: **the least workflow that honestly protects the work**. A tiny fix 
   4. **Shape:** write `plan.md` (`artifact_readiness: requirements-only`) — direct note / spike question / small plan / phase plan / epic map. **Stop at Gate 2.**
   5. **Prep (after approval):** enrich the *same* `plan.md` to `artifact_readiness: implementation-ready` and create cells for the *current* slice only. Cells are executable prompts: files, read-first, directive action citing D-IDs, `must_haves`, verify command. Every cell that changes observable behavior is marked `behavior_change: true`. Future-slice cells are prohibited.
 - **Quality rules:** no scope reduction of locked decisions (SPLIT instead); no pseudo-cells in markdown; every cell has a testable exit; test matrix informed by the 12 edge dimensions (claudekit) at a depth matching the lane.
-- **Handoff:** "Invoke bee:validating."
+- **Handoff:** "Invoke bee-validating."
 
-### bee:validating (guard bees)
+### bee-validating (guard bees)
 
 - **Reads:** CONTEXT.md, discovery, approach, approved shape, current-work cells.
 - **Does:**
@@ -93,16 +93,16 @@ Rule of use: **the least workflow that honestly protects the work**. A tiny fix 
   4. **Plan-checker subagent** (adversarial, gsd): assume the plan is flawed; verify 5 dimensions — requirement/decision coverage, cell completeness, dependency correctness, key links, scope sanity. Every finding carries BLOCKER or WARNING. Max 3 structural iterations, then escalate. In the high-risk lane, scale to a small persona panel (compound-engineering): coherence + feasibility always, plus conditional lenses (security, product, scope-guardian) chosen by the diff of concerns — findings deduped and synthesized into auto-fix vs present-for-decision buckets.
   5. **Cell review:** can each cell be picked up cold? CRITICAL flags (assumed context, vague acceptance, scope overload, unproven feasibility, broken verify) must be fixed.
 - **Decision vocabulary:** READY / READY WITH CONSTRAINTS / NOT READY – RUN SPIKE / NOT READY – RETURN TO PLANNING.
-- **Handoff:** Gate 3 → "Invoke bee:swarming." Approval covers the current work only.
+- **Handoff:** Gate 3 → "Invoke bee-swarming." Approval covers the current work only.
 
-### bee:swarming (orchestrator)
+### bee-swarming (orchestrator)
 
 - **Preconditions:** Gate 3 approved; cells open and validated; reservations swept.
 - **Does:** wave analysis over the cell dependency graph (parallel within a wave, sequential across waves); assign exactly one cell per worker; spawn with the isolation contract — cell id, CONTEXT.md path, global constraints, reservation identity, status-token protocol, **nothing else, never session history**; pick the worker model by declared tier (compound-engineering): `extraction` = cheapest capable (retrieval, mechanical edits), `generation` = mid (implementation, test writing), `ceiling` = the orchestrator's own model (integration, architecture, final review) — state the model explicitly, and where the runtime can't select per-agent models, fall back to read budgets and output caps; record workers in `state.json`; tend results; rescue or re-dispatch `[BLOCKED]` with more context or a stronger tier; write HANDOFF at ~65% context.
 - **Never:** implement cells itself; let workers self-select; resolve file conflicts by "being careful" (fix reservations or cell scope instead); send routine mid-flight pings (silence is not failure).
-- **Handoff:** phase clean → next planning slice, or final slice done → "Invoke bee:reviewing."
+- **Handoff:** phase clean → next planning slice, or final slice done → "Invoke bee-reviewing."
 
-### bee:executing (worker bee)
+### bee-executing (worker bee)
 
 Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify → Cap → Release → Return.**
 
@@ -114,7 +114,7 @@ Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify
 - Return exactly one of `[DONE] [BLOCKED] [HANDOFF] [NOOP]` plus a report file in `history/<feature>/reports/`.
 - **Never:** edit outside reserved scope, handle multiple cells, wait silently, cap without verification.
 
-### bee:reviewing (inspector bees)
+### bee-reviewing (inspector bees)
 
 - **Does:**
   1. Dispatch specialist reviewers with isolated context (diff + CONTEXT.md + plan.md only): `code-quality`, `architecture`, `security`, `test-coverage` in parallel; `learnings-researcher` searches `history/learnings/` for precedent related to the touched modules (compound-engineering); `learnings-synthesizer` runs after all of them.
@@ -123,15 +123,15 @@ Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify
   4. **Artifact verification** for everything CONTEXT.md/plan.md promised: EXISTS → SUBSTANTIVE (no stub/TODO/fake path) → WIRED (imported and used on the integration path). All three = OK; EXISTS+SUBSTANTIVE = P2; missing or EXISTS-only = P1.
   5. **Human UAT** walk-through for SEE/CALL/RUN decisions; failure → P1 fix cell and re-run; skip requires a recorded reason.
   6. Finish: project build/test/lint gates; P2/P3 → backlog/grooming cells with traceability (never blocking the current epic); if filing a residual finding anywhere fails, write it to `history/<feature>/reports/residual-findings.md` so nothing evaporates; close out state.
-- **Handoff:** Gate 4 → "Invoke bee:compounding."
+- **Handoff:** Gate 4 → "Invoke bee-compounding."
 
-### bee:compounding (honey)
+### bee-compounding (honey)
 
 - **Reads:** feature history, cells and traces, review findings, commit history. Missing artifacts → session summary + git diff; never fabricate.
 - **Does:** three parallel analysis subagents — pattern extractor, decision analyst, failure analyst; orchestrator synthesizes (subagents never write durable files); write one dated `history/learnings/YYYYMMDD-<slug>.md` (what happened / root cause / imperative future rule); promote only genuinely critical, cross-feature lessons to `critical-patterns.md`; log durable decisions to `bee_decisions.mjs log` (with rationale + alternatives); file unresolved friction into `.bee/backlog.jsonl` with predicted impact.
 - **Never:** skip compounding for meaningful work; promote everything as critical; write "test more carefully"-grade advice.
 
-### bee:grooming (undertaker bees) — on demand
+### bee-grooming (undertaker bees) — on demand
 
 - **Audit:** compute the entropy score (orphaned cells ×10, unverified cells ×5, stale decisions ×5, backlog-without-outcome ×2, stale work ×3, broken tools ×8; cap 100) and report the trend.
 - **Hunt:** cluster friction from traces and backlog; scan for dead code, unused exports, stale docs vs code, TODO/stub debris, unverified verify-commands, superseded-but-cited decisions; slop-pattern pass on recent diffs (gstack).
@@ -139,7 +139,7 @@ Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify
 - **Execute:** approved kills run as tiny/small cells through the normal worker loop (reservation, verify, cap).
 - **Close the loop:** record actual outcome against the prediction; feed durable lessons to compounding.
 
-### bee:writing-bee-skills (comb building)
+### bee-writing-skills (comb building)
 
 Carried from khuym/superpowers nearly verbatim — see [04-skills-spec.md](04-skills-spec.md#skill-writing-discipline). The Iron Law: **no skill (or skill edit) without a failing pressure test first.**
 

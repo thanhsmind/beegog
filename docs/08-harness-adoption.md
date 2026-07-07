@@ -6,13 +6,13 @@ A second, closer read of repository-harness (HARNESS_MATURITY.md, FEATURE_INTAKE
 
 | Harness mechanism | Where bee has it |
 |---|---|
-| Risk lanes + hard gates, mechanical checklist | Mode gate in `bee:planning` (same 10 flags, same 0–1/2–3/4+ mapping) |
+| Risk lanes + hard gates, mechanical checklist | Mode gate in `bee-planning` (same 10 flags, same 0–1/2–3/4+ mapping) |
 | Policy ≠ operations | markdown in `history/`+`docs/` vs JSONL/JSON in `.bee/` |
 | Verify gate on close | **Stronger in bee**: harness's pre-close gate is advisory ("ADVISORY: verification has not passed"); bee's `capCell` mechanically refuses |
-| Friction triggers → backlog with predicted→actual | `bee:executing` trace + `bee:grooming` close-the-loop |
-| Entropy audit | `bee:grooming` formula |
+| Friction triggers → backlog with predicted→actual | `bee-executing` trace + `bee-grooming` close-the-loop |
+| Entropy audit | `bee-grooming` formula |
 | Decision records with lifecycle | `.bee/decisions.jsonl` + `docs/decisions/` (event-sourced — stronger than harness's mutable status column) |
-| Context phase × lane matrix, token budgets | `bee:hive` scout contract |
+| Context phase × lane matrix, token budgets | `bee-hive` scout contract |
 | Capability-based tool registry | `.bee/tools.json` (designed; helper still minimal) |
 | Trace tiers by lane | Cap-time enforcement in `cells.mjs` (high-risk requires files+outcome; behavior_change requires evidence) |
 
@@ -24,14 +24,14 @@ Harness's core stance: *"The human does not need to classify risk. The harness d
 
 Adopt:
 - `intake` block in `plan.md` frontmatter **and** an appended row in `.bee/intake.jsonl`: `{date, input_type, summary, risk_flags:[], lane, reason, feature}`.
-- Harness's **input-type table** into `bee:hive` routing (before the lane choice): new spec / spec slice / change request / new initiative / maintenance / harness improvement → each names its target artifact. bee's routing currently only distinguishes vague-vs-clear; input type decides *where work lands* before *how risky it is*.
+- Harness's **input-type table** into `bee-hive` routing (before the lane choice): new spec / spec slice / change request / new initiative / maintenance / harness improvement → each names its target artifact. bee's routing currently only distinguishes vague-vs-clear; input type decides *where work lands* before *how risky it is*.
 - Payoff: grooming can later audit **lane accuracy** (misclassified work is a top source of harness failure), and repeated misclassification becomes a proposal.
 
 ### 2. Intervention log
 
 Harness records every human/reviewer/CI correction as a typed durable row (`correction | override | escalation | approval`) and feeds it to `propose`. bee has gates but forgets what the human actually did at them — the highest-signal training data for "bớt sai sót" is currently discarded.
 
-Adopt: `.bee/interventions.jsonl` — `{date, type, source: human|ci|agent, description, feature, cell|gate ref}`. Writers: `bee:hive` logs gate rejections and mid-flight corrections; `bee:reviewing` logs P1 acknowledgments and UAT failures; `bee:swarming` logs escalations. Reader: `bee:grooming`'s hunt ("repeated intervention patterns") and `bee:compounding` (a decision the user reversed twice is a critical-pattern candidate).
+Adopt: `.bee/interventions.jsonl` — `{date, type, source: human|ci|agent, description, feature, cell|gate ref}`. Writers: `bee-hive` logs gate rejections and mid-flight corrections; `bee-reviewing` logs P1 acknowledgments and UAT failures; `bee-swarming` logs escalations. Reader: `bee-grooming`'s hunt ("repeated intervention patterns") and `bee-compounding` (a decision the user reversed twice is a critical-pattern candidate).
 
 ### 3. Rule-based `propose`
 

@@ -36,7 +36,7 @@ bee/
     reviewing/     SKILL.md + references/reviewing-reference.md
     compounding/   SKILL.md + references/compounding-reference.md
     grooming/      SKILL.md + references/grooming-reference.md
-    writing-bee-skills/  SKILL.md + references/{pressure-test-template.md, creation-log-template.md}
+    bee-writing-skills/  SKILL.md + references/{pressure-test-template.md, creation-log-template.md}
 ```
 
 Ten skills, hard cap. Every SKILL.md stays lean (< ~200 lines); depth lives in one `references/` file per skill, never nested deeper than one level (khuym/superpowers rule).
@@ -149,14 +149,14 @@ Everything a skill tells an agent to run is one of these, `git`, or the project'
 
 The workflow contract is runtime-neutral; only two seams differ:
 
-### Seam 1 — Bootstrap (how bee:hive gets loaded)
+### Seam 1 — Bootstrap (how bee-hive gets loaded)
 
 | Runtime | Mechanism |
 |---|---|
 | Claude Code | `hooks/bee-session-init.mjs` (SessionStart on startup/resume/clear/compact) injects the routing preamble plus live state: status, gates, HANDOFF surfacing, critical-patterns digest, recent decisions (superpowers pattern + claudekit session-init) |
 | Codex | The `AGENTS.template.md` block installed into the repo's `AGENTS.md` carries the same instructions (khuym pattern); `bee_status.mjs --json` is the first commanded step. Re-read after any compaction. |
 
-Both vectors point at the same skill (`bee:hive`); the preamble content is generated from one shared module (`bin/lib/inject.mjs`) for the hook, the AGENTS.md block, and `bee_status` output, so the runtimes can never drift.
+Both vectors point at the same skill (`bee-hive`); the preamble content is generated from one shared module (`bin/lib/inject.mjs`) for the hook, the AGENTS.md block, and `bee_status` output, so the runtimes can never drift.
 
 ### Seam 2 — Subagent spawn (how swarming launches workers)
 
@@ -190,12 +190,12 @@ Any proposed seventh hook must name which of the six it replaces — claudekit's
   "approved_gates": { "context": false, "shape": false, "execution": false, "review": false },
   "workers": [],
   "summary": "one plain-language sentence",
-  "next_action": "Invoke bee:<skill>."
+  "next_action": "Invoke bee-<skill>."
 }
 ```
 
 - Every skill updates `phase`, `summary`, `next_action` on completion — the handoff is machine-checkable.
-- At ~65% context usage, the active skill writes `.bee/HANDOFF.json` (phase, feature, cells in flight, done/remaining, next action) and pauses. Resume never auto-continues: `bee:hive` surfaces the handoff and waits for the user.
+- At ~65% context usage, the active skill writes `.bee/HANDOFF.json` (phase, feature, cells in flight, done/remaining, next action) and pauses. Resume never auto-continues: `bee-hive` surfaces the handoff and waits for the user.
 - Gate approvals are recorded here; `bee_status.mjs` refuses to report "ready to swarm" unless `execution: true`.
 
 ## Security posture (carried from upstreams)

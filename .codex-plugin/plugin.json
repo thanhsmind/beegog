@@ -24,7 +24,7 @@
       "Learn"
     ],
     "defaultPrompt": [
-      "Onboard this repository for bee and start with bee:hive.",
+      "Onboard this repository for bee and start with bee-hive.",
       "Route a feature request through the full bee chain.",
       "Plan and validate a feature before we write code.",
       "Groom this repo for tech debt and drift."

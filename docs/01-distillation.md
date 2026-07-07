@@ -7,46 +7,46 @@ bee follows the khuym method: read each upstream system, keep what holds up in p
 | Idea | Source | Lands in bee as |
 |---|---|---|
 | 7-stage chain with explicit artifact handoffs | khuym | The bee chain (unchanged skeleton) |
-| 4 human gates, never skipped | khuym | Gates 1–4 in `bee:hive` |
-| Socratic decision locking, one question at a time, D-IDs | khuym / superpowers / gsd | `bee:exploring` |
-| Mode gate: smallest honest workflow | khuym | Mode gate in `bee:planning` |
-| Reality gate + feasibility matrix + spikes | khuym / gsd | `bee:validating` |
-| Reservation-based worker isolation, `[DONE]/[BLOCKED]/[HANDOFF]/[NOOP]` | khuym | `bee:swarming` + `bee:executing` |
-| ~65% context budget → HANDOFF.json pause/resume | khuym | `bee:hive` priority rule |
-| Plans as executable prompts (`must_haves`: truths/artifacts/key_links/prohibitions) | gsd-core | Cell + plan format in `bee:planning` |
-| Goal-backward adversarial plan-checker with BLOCKER/WARNING severity | gsd-core | Plan-checker subagent in `bee:validating` |
-| 4-level deviation rules for executors | gsd-core | `bee:executing` |
-| Wave-based parallelism from a dependency graph | gsd-core | `bee:swarming` |
-| Research depth levels 0–3 | gsd-core | `bee:planning` scout step |
-| EXISTS / SUBSTANTIVE / WIRED artifact verification | gsd-core / khuym | `bee:reviewing` |
+| 4 human gates, never skipped | khuym | Gates 1–4 in `bee-hive` |
+| Socratic decision locking, one question at a time, D-IDs | khuym / superpowers / gsd | `bee-exploring` |
+| Mode gate: smallest honest workflow | khuym | Mode gate in `bee-planning` |
+| Reality gate + feasibility matrix + spikes | khuym / gsd | `bee-validating` |
+| Reservation-based worker isolation, `[DONE]/[BLOCKED]/[HANDOFF]/[NOOP]` | khuym | `bee-swarming` + `bee-executing` |
+| ~65% context budget → HANDOFF.json pause/resume | khuym | `bee-hive` priority rule |
+| Plans as executable prompts (`must_haves`: truths/artifacts/key_links/prohibitions) | gsd-core | Cell + plan format in `bee-planning` |
+| Goal-backward adversarial plan-checker with BLOCKER/WARNING severity | gsd-core | Plan-checker subagent in `bee-validating` |
+| 4-level deviation rules for executors | gsd-core | `bee-executing` |
+| Wave-based parallelism from a dependency graph | gsd-core | `bee-swarming` |
+| Research depth levels 0–3 | gsd-core | `bee-planning` scout step |
+| EXISTS / SUBSTANTIVE / WIRED artifact verification | gsd-core / khuym | `bee-reviewing` |
 | Three-lane mechanical risk model + hard-gate flags | repository-harness | Merged into bee's mode gate |
-| Context phase × lane reading matrix with token budgets | repository-harness | `bee:hive` scout contract |
-| Friction capture → backlog with predicted-vs-actual outcomes | repository-harness | `bee:grooming` |
-| Entropy audit / hive health score | repository-harness | `bee:grooming` |
+| Context phase × lane reading matrix with token budgets | repository-harness | `bee-hive` scout contract |
+| Friction capture → backlog with predicted-vs-actual outcomes | repository-harness | `bee-grooming` |
+| Entropy audit / hive health score | repository-harness | `bee-grooming` |
 | Decision records with lifecycle + optional verify command | repository-harness / gstack | `decisions.jsonl` + `docs/decisions/` |
 | Event-sourced decision log (decide/supersede/redact, append-only) | gstack | `.bee/decisions.jsonl` |
-| Learnings JSONL injected into future session preambles | gstack / khuym | `bee:compounding` + `bee:hive` bootstrap |
+| Learnings JSONL injected into future session preambles | gstack / khuym | `bee-compounding` + `bee-hive` bootstrap |
 | Cross-model second opinion at contentious gates | gstack | Optional step at Gates 2–4 |
 | Docs generated from code where code owns the truth | gstack | bee build script (later phase) |
 | Context isolation: task + interfaces + constraints only, never history | claudekit / superpowers | Worker spawn contract |
 | File-based agent communication (reports/ dir, no MCP required) | claudekit | Worker results + review reports |
-| Diff-aware testing (map changed files → affected tests) | claudekit | `bee:executing` verify step |
-| 12-dimension edge-case decomposition | claudekit | Reference checklist in `bee:planning`/`bee:reviewing` |
+| Diff-aware testing (map changed files → affected tests) | claudekit | `bee-executing` verify step |
+| 12-dimension edge-case decomposition | claudekit | Reference checklist in `bee-planning`/`bee-reviewing` |
 | Privacy/scout blocking of secrets and generated dirs | claudekit | `bee-write-guard` hook (Claude Code) + guardrail text (Codex) |
 | Hook automation skeleton: config-gated, fail-open, injection-deduped, chain-nudging, state-syncing hooks over shared `lib/` | claudekit | 6-hook skeleton in [06-runtime-integration.md](06-runtime-integration.md) |
 | Unified plan artifact enriched in place (`artifact_readiness: requirements-only → implementation-ready`) | compound-engineering | `history/<feature>/plan.md` frontmatter contract |
-| Model tiers: extraction / generation / ceiling for subagent dispatch | compound-engineering | Spawn guidance in `bee:swarming` / `bee:validating` / `bee:reviewing` |
+| Model tiers: extraction / generation / ceiling for subagent dispatch | compound-engineering | Spawn guidance in `bee-swarming` / `bee-validating` / `bee-reviewing` |
 | Headless mode: `mode:headless` on every skill — defer ambiguous decisions to a report, never hang on a question | compound-engineering | Shared skill standard |
-| Severity corroboration: independent reviewers agreeing promotes a finding one level | compound-engineering | `bee:reviewing` synthesis rule |
-| Autofix classes (gated_auto / manual / advisory) + owner routing as *signal, not gates* | compound-engineering | `bee:reviewing` finding schema |
-| Verification-evidence contract when `behavior_change: true` | compound-engineering | `bee:executing` trace + `bee:reviewing` gate |
-| Learnings searched structurally by planning and review (precedent injection), not just stored | compound-engineering / gstack | `bee:planning` bootstrap + reviewing roster |
-| Residual findings: durable file fallback when tracker filing fails | compound-engineering | `bee:reviewing` finishing step |
-| Surface scope earlier: skip exploration when acceptance criteria + pattern refs already given | compound-engineering | `bee:hive` routing check |
-| Iron Law: no skill without a failing pressure test | superpowers / khuym | `bee:writing-bee-skills` |
+| Severity corroboration: independent reviewers agreeing promotes a finding one level | compound-engineering | `bee-reviewing` synthesis rule |
+| Autofix classes (gated_auto / manual / advisory) + owner routing as *signal, not gates* | compound-engineering | `bee-reviewing` finding schema |
+| Verification-evidence contract when `behavior_change: true` | compound-engineering | `bee-executing` trace + `bee-reviewing` gate |
+| Learnings searched structurally by planning and review (precedent injection), not just stored | compound-engineering / gstack | `bee-planning` bootstrap + reviewing roster |
+| Residual findings: durable file fallback when tracker filing fails | compound-engineering | `bee-reviewing` finishing step |
+| Surface scope earlier: skip exploration when acceptance criteria + pattern refs already given | compound-engineering | `bee-hive` routing check |
+| Iron Law: no skill without a failing pressure test | superpowers / khuym | `bee-writing-skills` |
 | Description = trigger conditions only, never workflow summary | superpowers | Skill-writing checklist |
-| Evidence-before-claims verification gate | superpowers | `bee:executing` + `bee:reviewing` |
-| Model selection per task complexity ("turn count beats token price") | superpowers | `bee:swarming` spawn guidance |
+| Evidence-before-claims verification gate | superpowers | `bee-executing` + `bee-reviewing` |
+| Model selection per task complexity ("turn count beats token price") | superpowers | `bee-swarming` spawn guidance |
 | Session-start hook injecting the routing skill | superpowers | Claude Code hook; Codex gets AGENTS.md block |
 
 ## Per-framework audit
@@ -128,7 +128,7 @@ bee follows the khuym method: read each upstream system, keep what holds up in p
 
 **Keep:**
 - **Event-sourced decisions:** `.bee/decisions.jsonl`, append-only, three event kinds (`decide`, `supersede`, `redact`); "active" is computed, never edited. Each event: decision, rationale, alternatives considered, scope, date, source, confidence. Write-time secret/PII rejection; datamark on read so resurfaced text can't act as instructions.
-- **Learnings injection:** top-N relevant learnings and recent active decisions are surfaced at session bootstrap (`bee:hive`), not just stored.
+- **Learnings injection:** top-N relevant learnings and recent active decisions are surfaced at session bootstrap (`bee-hive`), not just stored.
 - **Cross-model dispatch as a gate feature:** at Gate 2/3/4, optionally ask the *other* runtime's model for a second opinion. Agreement is a strong signal to report; disagreement is surfaced to the user verbatim. Never auto-resolve.
 - **Docs from code** (deferred to a later bee phase): generate command references in skills from the actual helper scripts, so docs can't drift.
 - **Three layers of knowledge** framing for research: tried-and-true, new-and-popular, first-principles — prize layer 3, log it as a learning when found.
