@@ -105,8 +105,9 @@ bee_status.mjs [--json]
 bee_cells.mjs list [--feature F] [--status S] | ready [--feature F] | show --id ID
              | add --file cell.json            (or --stdin)
              | claim --id ID --worker NAME
-             | verify --id ID --command CMD --passed true|false [--output-file F]
+             | verify --id ID --command CMD --passed true|false [--output TEXT | --output-file F]
              | cap --id ID [--outcome TEXT] [--files a,b] [--behavior-change] [--evidence-file F] [--deviations-file F] [--friction TEXT]
+               (cap refuses for small/standard/high-risk lanes when the recorded verify has no output and no evidence, or when --files is empty — decision 0004)
              | block --id ID --reason R | drop --id ID --reason R
 
 bee_reservations.mjs reserve --agent A --cell C --path P [--ttl N]

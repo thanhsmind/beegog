@@ -31,7 +31,7 @@ The four gates are **human** gates. Never self-approve a gate, in any mode, incl
 ## Critical rules
 
 1. Never execute before validating: no source edits until Gate 3 (`approved_gates.execution: true` in `.bee/state.json`).
-2. **Capping requires verification.** `node .bee/bin/bee_cells.mjs cap` refuses unless a passing verify result is recorded for the cell. Never work around this; run the cell's verify command and record it with `bee_cells.mjs verify` first.
+2. **Capping requires verification — with proof.** `node .bee/bin/bee_cells.mjs cap` refuses unless a passing verify result is recorded for the cell; small+ lanes additionally require the verify's recorded output (`verify --output "..."` or `--output-file`) or attached evidence, plus a non-empty `--files` list. The cell's `verify` field must be a runnable command, not a description; run it and record what it printed. An assertion is not evidence.
 3. Cells are assigned by the orchestrator; workers never self-select. `claim` refuses while Gate 3 is unapproved or deps are uncapped.
 4. Reserve files before write-heavy work in a swarm: `node .bee/bin/bee_reservations.mjs reserve --agent <name> --cell <id> --path <path>`. On conflict, return `[BLOCKED]` with the conflict — do not write anyway.
 5. Prefix write-heavy shell commands with `BEE_AGENT_NAME=<name>` during swarms so reservation ownership is checkable.

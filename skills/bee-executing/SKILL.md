@@ -62,8 +62,9 @@ Package installs **always** checkpoint: stop and return `[BLOCKED]` with the pac
 
 ## 5. Verify
 
-- Run the cell's verify command exactly, then record it:
-  `node .bee/bin/bee_cells.mjs verify --id <id> --command "<cmd>" --passed true|false`
+- Run the cell's verify command exactly, then record it **with its output** (decision 0004 — proof, not assertion):
+  `node .bee/bin/bee_cells.mjs verify --id <id> --command "<cmd>" --output "<what it printed>" --passed true|false` (or `--output-file <f>` for long output)
+- The `verify` field must be a runnable command. If the cell shipped with a prose description instead, that is a planning defect — return `[BLOCKED]` naming it; never invent a substitute check.
 - On failure: fix the root cause and rerun the exact command. After **two serious failed attempts**, return `[BLOCKED]` with the command, failure summary, and diagnosis. A broken verify command in the repo is itself a blocker — never substitute a weaker check and cap anyway.
 
 ## 6. Cap
@@ -97,6 +98,8 @@ Workers always run effectively headless: never ask the parent or user a blocking
 - selecting your own cell, or handling more than one
 - waiting silently instead of returning a status
 - capping without a recorded verify pass, or "verifying" with a substitute command
+- recording `--passed true` with no output — small+ lanes refuse the cap; an assertion is not evidence
+- `--files` left empty on a cell that touched files — the trace is the machine-readable record, not the outcome prose
 - a `behavior_change` cell capped without verification evidence
 - installing packages without a checkpoint
 - leaving reservations active without reporting it

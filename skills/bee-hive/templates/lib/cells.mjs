@@ -200,10 +200,25 @@ export function capCell(
       `capCell: cell "${id}" declares behavior_change but provides no verification_evidence — attach evidence (--evidence-file) or drop the behavior_change flag.`,
     );
   }
-  if (cell.lane === 'high-risk') {
-    if (!Array.isArray(files_changed) || files_changed.length === 0) {
-      throw new Error(`capCell: high-risk cell "${id}" requires non-empty files_changed.`);
+  // Decision 0004: small+ lanes cap only on recorded proof, never on an assertion.
+  if (cell.lane === 'small' || cell.lane === 'standard' || cell.lane === 'high-risk') {
+    const output = trace.verify_output;
+    const hasOutput = typeof output === 'string' ? output.trim().length > 0 : output != null;
+    const hasEvidence =
+      verification_evidence != null &&
+      (typeof verification_evidence !== 'string' || verification_evidence.trim().length > 0);
+    if (!hasOutput && !hasEvidence) {
+      throw new Error(
+        `capCell: lane "${cell.lane}" cell "${id}" has a passing verify flag but no recorded proof — re-record the verify with its output (bee_cells.mjs verify --id ${id} --command CMD --output "..." --passed true) or attach verification_evidence (--evidence-file). An assertion is not evidence.`,
+      );
     }
+    if (!Array.isArray(files_changed) || files_changed.length === 0) {
+      throw new Error(
+        `capCell: lane "${cell.lane}" cell "${id}" requires non-empty files_changed (--files a.js,b.js) — record what the worker actually touched. A cell that changed nothing is a drop or a NOOP, not a cap.`,
+      );
+    }
+  }
+  if (cell.lane === 'high-risk') {
     if (typeof outcome !== 'string' || !outcome.trim()) {
       throw new Error(`capCell: high-risk cell "${id}" requires an outcome summary.`);
     }

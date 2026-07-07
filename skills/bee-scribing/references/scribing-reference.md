@@ -19,6 +19,8 @@ A section with genuinely no content for the area's shape gets one line — "Not 
 
 Path: `docs/specs/<area>.md`. Area name: kebab-case, chosen at first write, stable thereafter. Overwrite/merge freely — this file always describes *now*; history lives in git and `docs/history/`.
 
+`docs/specs/` holds ONLY the state layer: area specs, `system-overview.md`, `reading-map.md`, `visuals/`. Never write other artifacts (scripts, exports, survey notes) here; when found, flag them for grooming to relocate — they pollute coverage counting and spec scans.
+
 ```markdown
 ---
 area: <area-slug>

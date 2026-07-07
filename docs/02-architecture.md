@@ -157,7 +157,7 @@ One JSON file per cell in `.bee/cells/`, one schema across planning → executio
 
 Rules:
 
-- **Capping requires verification.** `bee_cells.mjs cap <id>` refuses unless a verify result is recorded. One commit per cell, cell id in the commit message.
+- **Capping requires verification — with proof.** `bee_cells.mjs cap <id>` refuses unless a passing verify result is recorded; for `small`/`standard`/`high-risk` lanes it additionally refuses without recorded verify *output* (or `verification_evidence`) and a non-empty `files_changed` list (decision 0004 — dogfood showed assertion-capping: `verify_passed: true` with no output and an empty file list). An assertion is not evidence. One commit per cell, cell id in the commit message.
 - **Lane scales strictness.** `tiny` cells may omit `must_haves` and record a one-line trace; `high-risk` cells require full `must_haves`, spike evidence links, and a detailed trace (fields checked mechanically, harness-style tiers).
 - **Ready = all deps capped.** `bee_cells.mjs ready` lists claimable cells; only the orchestrator assigns them (workers never self-select).
 - Optional adapter: when the beads CLI (`br`) is present and the user opts in, cells mirror into beads for graph tooling. Nothing in the chain depends on it.

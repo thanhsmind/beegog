@@ -4,9 +4,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 
-export const BEE_VERSION = '0.1.2';
+export const BEE_VERSION = '0.1.3';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
+
+// The phase enum (02-architecture state model). 'compounding-complete' is the
+// one blessed terminal alias written at feature close (07-contracts, hook 6).
+// Anything else is agent drift — bee_status flags it (decision 0004).
+export const PHASES = [
+  'idle',
+  'exploring',
+  'planning',
+  'validating',
+  'swarming',
+  'reviewing',
+  'scribing',
+  'compounding',
+  'grooming',
+];
+export const KNOWN_PHASES = [...PHASES, 'compounding-complete'];
+
+export function isKnownPhase(phase) {
+  return KNOWN_PHASES.includes(phase);
+}
 
 const DEFAULT_HOOKS = {
   'session-init': true,

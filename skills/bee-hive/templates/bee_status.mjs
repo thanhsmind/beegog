@@ -8,6 +8,8 @@ import path from 'node:path';
 import {
   BEE_VERSION,
   GATE_NAMES,
+  PHASES,
+  isKnownPhase,
   findRepoRoot,
   readState,
   readHandoff,
@@ -49,6 +51,17 @@ function buildStatus(root) {
   if (expiredUnreleased.length > 0) {
     staleness.push(
       `${expiredUnreleased.length} reservation(s) expired but never released — run bee_reservations.mjs sweep.`,
+    );
+  }
+  if (!isKnownPhase(state.phase)) {
+    staleness.push(
+      `Unknown phase "${state.phase}" — not in the enum (${PHASES.join(', ')}; terminal alias: compounding-complete). Set state.phase to a valid value (idle at feature close); invented phases break machine-checkable handoffs (decision 0004).`,
+    );
+  }
+  const POST_REVIEW_PHASES = ['scribing', 'compounding', 'compounding-complete'];
+  if (POST_REVIEW_PHASES.includes(state.phase) && state.approved_gates?.review !== true) {
+    staleness.push(
+      `Phase "${state.phase}" is past reviewing but gate "review" is still pending — Gate 4 was never recorded. Ask the user for Gate 4 (or record the approval already given) before closing the feature (decision 0004).`,
     );
   }
 

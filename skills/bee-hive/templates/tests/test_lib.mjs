@@ -7,7 +7,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { findRepoRoot, defaultState, readState, writeState, gateApproved } from '../lib/state.mjs';
+import {
+  findRepoRoot,
+  defaultState,
+  readState,
+  writeState,
+  gateApproved,
+  isKnownPhase,
+} from '../lib/state.mjs';
 import {
   addCell,
   readCell,
@@ -190,10 +197,46 @@ check('capCell on a high-risk cell requires files_changed and outcome', () => {
     }),
   );
   claimCell(root, 'hr-1', 'worker-b');
-  recordVerify(root, 'hr-1', { command: 'npm test', passed: true });
+  recordVerify(root, 'hr-1', { command: 'npm test', output: '12 passing', passed: true });
   assertThrows(() => capCell(root, 'hr-1', {}), 'high-risk', 'high-risk trace tier');
   capCell(root, 'hr-1', { files_changed: ['src/auth.js'], outcome: 'auth guard added' });
   assert(readCell(root, 'hr-1').status === 'capped', 'hr-1 capped with full trace');
+});
+
+check('capCell refuses a small cell whose verify has no output and no evidence (decision 0004)', () => {
+  addCell(root, makeCell('ev-1'));
+  claimCell(root, 'ev-1', 'worker-c');
+  recordVerify(root, 'ev-1', { command: 'npm test', passed: true }); // assertion, no output
+  assertThrows(
+    () => capCell(root, 'ev-1', { files_changed: ['src/y.js'], outcome: 'done' }),
+    'proof',
+    'assertion-capping must be refused',
+  );
+});
+
+check('capCell refuses a small cell with proof but empty files_changed (decision 0004)', () => {
+  recordVerify(root, 'ev-1', { command: 'npm test', output: '3 passing', passed: true });
+  assertThrows(
+    () => capCell(root, 'ev-1', { outcome: 'done' }),
+    'files_changed',
+    'empty files_changed must be refused for small+',
+  );
+  capCell(root, 'ev-1', { files_changed: ['src/y.js'], outcome: 'done' });
+  assert(readCell(root, 'ev-1').status === 'capped', 'ev-1 caps once output + files recorded');
+});
+
+check('tiny lane still caps on a passing verify alone (lanes scale strictness)', () => {
+  addCell(root, makeCell('tiny-1', { lane: 'tiny' }));
+  claimCell(root, 'tiny-1', 'worker-c');
+  recordVerify(root, 'tiny-1', { command: 'node -e "process.exit(0)"', passed: true });
+  capCell(root, 'tiny-1', { outcome: 'typo fixed' });
+  assert(readCell(root, 'tiny-1').status === 'capped', 'tiny cell capped without output/files');
+});
+
+check('isKnownPhase accepts the enum + terminal alias and rejects drift', () => {
+  assert(isKnownPhase('swarming') === true, 'enum phase accepted');
+  assert(isKnownPhase('compounding-complete') === true, 'terminal alias accepted');
+  assert(isKnownPhase('merged') === false, 'invented phase rejected');
 });
 
 check('blockCell records the reason', () => {

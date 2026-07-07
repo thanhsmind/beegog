@@ -7,7 +7,8 @@
 //   node .bee/bin/bee_cells.mjs show --id ID [--json]
 //   node .bee/bin/bee_cells.mjs add --file cell.json | --stdin [--json]
 //   node .bee/bin/bee_cells.mjs claim --id ID --worker NAME [--json]
-//   node .bee/bin/bee_cells.mjs verify --id ID --command CMD --passed true|false [--output-file F] [--json]
+//   node .bee/bin/bee_cells.mjs verify --id ID --command CMD --passed true|false [--output TEXT | --output-file F] [--json]
+//     (small+ lanes refuse to cap without recorded verify output or evidence — decision 0004)
 //   node .bee/bin/bee_cells.mjs cap --id ID [--outcome TEXT] [--files a,b] [--behavior-change]
 //                                  [--evidence-file F] [--deviations-file F] [--friction TEXT] [--json]
 //   node .bee/bin/bee_cells.mjs block --id ID --reason R [--json]
@@ -130,7 +131,9 @@ function run(args) {
       }
       const output = flags['output-file']
         ? readFileText(String(flags['output-file']), 'output')
-        : null;
+        : flags.output
+          ? String(flags.output)
+          : null;
       const cell = recordVerify(root, id, { command, output, passed: passedRaw === 'true' });
       return {
         result: cell,
