@@ -34,7 +34,7 @@ Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run
 
 ## Hunt Checklists
 
-**Friction clusters** — group `trace.friction` strings from capped cells and `type:"friction"` backlog entries by module/topic; 2+ hits on the same thing = a cluster worth a proposal.
+**Friction clusters** — group `trace.friction` strings from capped cells and `type:"friction"` backlog entries by module/topic; 2+ hits on the same thing = a cluster worth a proposal. Also tally entries by `layer` (spec | context | environment | verification | state) and report one line in the audit: friction count per layer, largest = the bottleneck layer this cycle — fix proposals aim at that layer first. Entries without `layer` count as unattributed.
 
 **Dead code / unused exports** — for each suspect symbol: grep every reference (imports, dynamic `import()`, `require`, string-built paths, config/registry files, reflection); check public-API surface (package entry points, exported types); check test-only usage (test-only = candidate to move, not to keep). No reference anywhere = candidate. Any doubt = not a candidate.
 

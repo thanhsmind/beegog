@@ -101,8 +101,14 @@ The area-spec and reading-map templates live in `bee-scribing/references/scribin
 Unresolved friction (from cell `trace.friction` or the session) appends to `.bee/backlog.jsonl`:
 
 ```json
-{"ts":"<ISO>","type":"friction","feature":"<feature>","title":"<short name>","detail":"<what kept hurting>","predicted_impact":"<what it will cost if left>","source":"compounding"}
+{"ts":"<ISO>","type":"friction","feature":"<feature>","title":"<short name>","detail":"<what kept hurting>","predicted_impact":"<what it will cost if left>","layer":"<spec|context|environment|verification|state>","source":"compounding"}
 ```
+
+`layer` is optional but valuable: attribute the friction to exactly one harness layer —
+`spec` (the task was underspecified), `context` (the right information wasn't provided),
+`environment` (the tooling/setup failed), `verification` (feedback was missing or wrong),
+`state` (continuity/records failed). Grooming aggregates these to find the bottleneck
+layer; entries without `layer` stay valid.
 
 ## State Update
 

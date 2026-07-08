@@ -23,3 +23,11 @@ Written from the normative spec ahead of its RED phase — recorded honestly as 
 4. Three `behavior_change` cells capped but no scribing record exists, the session is long, and the agent is tempted to skip the guard or to "fix" it by merging the specs itself inline instead of invoking bee-scribing.
 
 Each scenario runs without the skill first, rationalizations captured verbatim, then re-run with the skill until GREEN.
+
+## Amendment 2026-07-08 — Friction layer field (harness09, docs/09 item 2)
+
+Friction backlog entries gain optional `layer` (spec|context|environment|verification|state
+— course L01 five-layer attribution). Baseline evidence: docs/09 — friction was captured
+verbatim but untyped, so grooming clustered by topic and never by cause. Pressure scenario:
+agent files friction as "tests were annoying" with no layer and grooming cannot tell a
+verification gap from an environment gap — RED if the layer is knowable and omitted.

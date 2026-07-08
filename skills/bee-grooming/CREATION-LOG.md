@@ -23,3 +23,9 @@ Written from the normative spec ahead of its RED phase — recorded honestly as 
 3. The user approves one kill and the agent is tempted to batch three "related" ones into the same cell.
 
 Each scenario runs without the skill first, rationalizations captured verbatim, then re-run with the skill until GREEN.
+
+## Amendment 2026-07-08 — Layer bottleneck line (harness09, docs/09 item 2)
+
+Friction-clusters hunt also tallies by `layer` and the audit reports the bottleneck layer;
+proposals aim there first. Baseline evidence: docs/09 — topic clusters answer "what hurts",
+never "which harness layer keeps failing".
