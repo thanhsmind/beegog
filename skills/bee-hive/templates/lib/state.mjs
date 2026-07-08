@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 
-export const BEE_VERSION = '0.1.3';
+export const BEE_VERSION = '0.1.4';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -26,6 +26,19 @@ export const KNOWN_PHASES = [...PHASES, 'compounding-complete'];
 
 export function isKnownPhase(phase) {
   return KNOWN_PHASES.includes(phase);
+}
+
+// Host-project standard commands (docs/09 item 1, decision D1): the record is
+// the primitive — .bee/config.json `commands`, no init.sh, no second location.
+export const COMMAND_KEYS = ['setup', 'start', 'test', 'verify'];
+
+function normalizeCommands(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const commands = {};
+  for (const key of COMMAND_KEYS) {
+    if (typeof raw[key] === 'string' && raw[key].trim()) commands[key] = raw[key].trim();
+  }
+  return commands;
 }
 
 const DEFAULT_HOOKS = {
@@ -114,6 +127,7 @@ export function readConfig(root) {
     hooks: { ...DEFAULT_HOOKS, ...(config.hooks || {}) },
     lanes: config.lanes || {},
     capabilities: config.capabilities || {},
+    commands: normalizeCommands(config.commands),
   };
 }
 

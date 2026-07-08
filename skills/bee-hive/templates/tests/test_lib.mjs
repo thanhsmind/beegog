@@ -14,6 +14,7 @@ import {
   writeState,
   gateApproved,
   isKnownPhase,
+  readConfig,
 } from '../lib/state.mjs';
 import {
   addCell,
@@ -386,6 +387,42 @@ check('buildSessionPreamble mentions phase and gates', () => {
   const preamble = buildSessionPreamble(root);
   assert(/gate/i.test(preamble), 'preamble mentions gates');
   assert(/bee_status/.test(preamble), 'preamble points at bee_status');
+});
+
+// ─── standard commands (docs/09 item 1) ─────────────────────────────────────
+
+check('readConfig returns empty commands when config.json absent', () => {
+  const config = readConfig(root);
+  assert(
+    config.commands && Object.keys(config.commands).length === 0,
+    `expected empty commands object, got ${JSON.stringify(config.commands)}`,
+  );
+});
+
+check('buildSessionPreamble omits commands section when none recorded', () => {
+  const preamble = buildSessionPreamble(root);
+  assert(!/Standard commands/.test(preamble), 'no commands section without recorded commands');
+  assert(!/Baseline gate/.test(preamble), 'no baseline-gate line without recorded commands');
+});
+
+check('readConfig keeps only known non-empty string commands', () => {
+  writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
+    commands: { setup: 'npm install', verify: 'npm test', bogus: 'x', test: 42, start: '  ' },
+  });
+  const config = readConfig(root);
+  assert(config.commands.setup === 'npm install', 'setup kept');
+  assert(config.commands.verify === 'npm test', 'verify kept');
+  assert(!('bogus' in config.commands), 'unknown key dropped');
+  assert(!('test' in config.commands), 'non-string value dropped');
+  assert(!('start' in config.commands), 'blank string dropped');
+});
+
+check('buildSessionPreamble shows commands and baseline gate when verify recorded', () => {
+  const preamble = buildSessionPreamble(root);
+  assert(/Standard commands/.test(preamble), 'commands section present');
+  assert(preamble.includes('npm test'), 'verify command shown');
+  assert(/Baseline gate/.test(preamble), 'baseline-gate instruction present');
+  assert(/never build on red/i.test(preamble), 'fix-first rule stated');
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────
