@@ -5,7 +5,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
-import { BEE_VERSION, GATE_NAMES, readState, readHandoff, readOnboarding } from './state.mjs';
+import {
+  BEE_VERSION,
+  COMMAND_KEYS,
+  GATE_NAMES,
+  readConfig,
+  readState,
+  readHandoff,
+  readOnboarding,
+} from './state.mjs';
 import { activeDecisions, datamark } from './decisions.mjs';
 
 const INJECT_INTERVAL_MS = 30 * 60 * 1000;
@@ -73,6 +81,19 @@ export function buildSessionPreamble(root) {
     if (handoff.next_action) lines.push(`- Saved next action: ${handoff.next_action}`);
   }
 
+  const commands = readConfig(root).commands || {};
+  const recordedKeys = COMMAND_KEYS.filter((key) => commands[key]);
+  if (recordedKeys.length > 0) {
+    lines.push('');
+    lines.push('### Standard commands (host project)');
+    for (const key of recordedKeys) lines.push(`- ${key}: \`${commands[key]}\``);
+    if (commands.verify) {
+      lines.push(
+        '- Baseline gate: run the verify command once per session before claiming any cell; a red baseline is surfaced and becomes its own fix-first tiny cell — never build on red.',
+      );
+    }
+  }
+
   const digest = criticalPatternsDigest(root);
   if (digest) {
     lines.push('');
@@ -95,7 +116,7 @@ export function buildSessionPreamble(root) {
   }
 
   lines.push('');
-  lines.push('Run `node .bee/bin/bee_status.mjs --json` for detail. Route via bee-hive.');
+  lines.push('Run `node .bee/bin/bee_status.mjs --json` yourself for detail (agent-run — never hand bee commands to the user). Route via bee-hive.');
   return lines.join('\n');
 }
 

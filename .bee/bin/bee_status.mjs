@@ -7,10 +7,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   BEE_VERSION,
+  COMMAND_KEYS,
   GATE_NAMES,
   PHASES,
   isKnownPhase,
   findRepoRoot,
+  readConfig,
   readState,
   readHandoff,
   readOnboarding,
@@ -36,7 +38,14 @@ function buildStatus(root) {
     (r) => r.released_at == null && !active.includes(r),
   );
 
+  const commands = readConfig(root).commands || {};
+
   const staleness = [];
+  if (Object.keys(commands).length === 0) {
+    staleness.push(
+      "No standard commands recorded — capture the host project's setup/start/test/verify into .bee/config.json `commands` so sessions can run the baseline gate (docs/09 item 1).",
+    );
+  }
   if (onboardingRaw && onboardingRaw.bee_version && onboardingRaw.bee_version !== BEE_VERSION) {
     staleness.push(
       `Onboarding installed bee ${onboardingRaw.bee_version} but plugin is ${BEE_VERSION} — re-run onboarding.`,
@@ -93,6 +102,7 @@ function buildStatus(root) {
     gates: state.approved_gates,
     handoff,
     cells: counts,
+    commands,
     active_reservations: active,
     critical_patterns_present: fs.existsSync(
       path.join(root, 'docs', 'history', 'learnings', 'critical-patterns.md'),
@@ -115,6 +125,11 @@ function renderText(status) {
     `Gates: ${GATE_NAMES.map((g) => `${g}=${status.gates?.[g] ? 'approved' : 'pending'}`).join(' ')}`,
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,
+    `Standard commands: ${
+      COMMAND_KEYS.filter((key) => status.commands?.[key])
+        .map((key) => `${key}=${status.commands[key]}`)
+        .join(' | ') || 'none recorded'
+    }`,
     `Active reservations: ${status.active_reservations.length}`,
     `Critical patterns file: ${status.critical_patterns_present ? 'present' : 'absent'}`,
   ];
