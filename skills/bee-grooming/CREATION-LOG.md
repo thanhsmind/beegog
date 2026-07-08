@@ -29,3 +29,11 @@ Each scenario runs without the skill first, rationalizations captured verbatim, 
 Friction-clusters hunt also tallies by `layer` and the audit reports the bottleneck layer;
 proposals aim there first. Baseline evidence: docs/09 — topic clusters answer "what hurts",
 never "which harness layer keeps failing".
+
+## Amendment 2026-07-08 — Fresh Session Test probe (harness09, docs/09 item 4)
+
+Hunt gains the five-question cold-start probe with artifact mapping; unanswerable question
+= backlog item naming the missing artifact. Baseline evidence: docs/09 — bee had the
+artifacts but never audited the mapping end-to-end. Pressure scenario: audit "passes" by
+confirming the files exist without actually answering the five questions from them — RED;
+the probe reads/runs the artifacts, it does not stat them.
