@@ -6,6 +6,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   findRepoRoot,
@@ -15,7 +17,9 @@ import {
   gateApproved,
   isKnownPhase,
   readConfig,
+  COMMAND_KEYS,
 } from '../lib/state.mjs';
+import { detectCommands } from '../lib/commands_detect.mjs';
 import {
   addCell,
   readCell,
@@ -473,8 +477,92 @@ check('buildSessionPreamble shows commands but no baseline gate without verify',
   });
 });
 
+// ─── command detection (harness10-1, decision D3: propose-only) ─────────────
+
+const detectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-detect-'));
+
+function makeFixture(name, files) {
+  const dir = path.join(detectRoot, name);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [file, content] of Object.entries(files)) {
+    fs.writeFileSync(path.join(dir, file), content, 'utf8');
+  }
+  return dir;
+}
+
+check('detectCommands returns [] on a repo with no manifests', () => {
+  const dir = makeFixture('empty', {});
+  const candidates = detectCommands(dir);
+  assert(Array.isArray(candidates) && candidates.length === 0, 'empty repo yields no candidates');
+});
+
+check('detectCommands maps package.json scripts to invocable npm commands', () => {
+  const dir = makeFixture('npm', {
+    'package.json': JSON.stringify({
+      scripts: { test: 'vitest run', verify: 'npm run lint && npm test', lint: 'eslint .' },
+    }),
+  });
+  const candidates = detectCommands(dir);
+  const byKey = Object.fromEntries(candidates.map((c) => [c.key, c]));
+  assert(byKey.test && byKey.test.value === 'npm test', `test maps to npm test, got ${JSON.stringify(byKey.test)}`);
+  assert(byKey.verify && byKey.verify.value === 'npm run verify', 'verify maps to npm run verify (invocable, not recipe body)');
+  assert(!('lint' in byKey), 'non-COMMAND_KEYS script never proposed');
+  for (const candidate of candidates) {
+    assert(COMMAND_KEYS.includes(candidate.key), `key from COMMAND_KEYS, got ${candidate.key}`);
+    assert(typeof candidate.value === 'string' && candidate.value.trim(), 'value non-empty');
+    assert(candidate.source === 'package.json', `source names the manifest, got ${candidate.source}`);
+  }
+});
+
+check('detectCommands maps Makefile targets, never recipe bodies', () => {
+  const dir = makeFixture('make', {
+    Makefile: 'setup:\n\tnpm ci\n\ntest: setup\n\tgo test ./internal/...\n\n.PHONY: setup test\n',
+  });
+  const candidates = detectCommands(dir);
+  const byKey = Object.fromEntries(candidates.map((c) => [c.key, c]));
+  assert(byKey.setup && byKey.setup.value === 'make setup', 'setup target maps to make setup');
+  assert(byKey.test && byKey.test.value === 'make test', 'test target maps to make test');
+  assert(candidates.every((c) => c.source === 'Makefile'), 'source is Makefile');
+  assert(!candidates.some((c) => c.value.includes('go test ./internal')), 'recipe body never used as value');
+});
+
+check('detectCommands dedups: package.json beats Makefile on the same key', () => {
+  const dir = makeFixture('conflict', {
+    'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+    Makefile: 'test:\n\tpytest\n',
+  });
+  const candidates = detectCommands(dir).filter((c) => c.key === 'test');
+  assert(candidates.length === 1, `exactly one candidate per key, got ${candidates.length}`);
+  assert(candidates[0].value === 'npm test' && candidates[0].source === 'package.json', 'package.json wins the dedup');
+});
+
+check('detectCommands proposes ecosystem conventions only without an explicit match', () => {
+  const dir = makeFixture('py', { 'pyproject.toml': '[project]\nname = "demo"\n' });
+  const candidates = detectCommands(dir);
+  assert(candidates.length === 1, `pyproject alone yields one candidate, got ${candidates.length}`);
+  assert(candidates[0].key === 'test' && candidates[0].value === 'pytest', 'pyproject convention proposes pytest');
+  assert(candidates[0].source === 'pyproject.toml', 'convention carries the marker file as source');
+  const explicitDir = makeFixture('py-explicit', {
+    'pyproject.toml': '[project]\nname = "demo"\n',
+    Makefile: 'test:\n\ttox\n',
+  });
+  const explicit = detectCommands(explicitDir).filter((c) => c.key === 'test');
+  assert(explicit.length === 1 && explicit[0].source === 'Makefile', 'explicit target suppresses the convention');
+});
+
+check('commands_detect.mjs run directly prints JSON candidates (CLI entry)', () => {
+  const modulePath = fileURLToPath(new URL('../lib/commands_detect.mjs', import.meta.url));
+  const dir = makeFixture('cli', { 'go.mod': 'module example.com/demo\n\ngo 1.22\n' });
+  const result = spawnSync(process.execPath, [modulePath, dir], { encoding: 'utf8' });
+  assert(result.status === 0, `CLI exits 0, got ${result.status}: ${result.stderr}`);
+  const parsed = JSON.parse(result.stdout);
+  assert(Array.isArray(parsed) && parsed.length === 1, 'CLI prints the candidate list');
+  assert(parsed[0].key === 'test' && parsed[0].value === 'go test ./...' && parsed[0].source === 'go.mod', 'go.mod convention surfaced via CLI');
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
+fs.rmSync(detectRoot, { recursive: true, force: true });
 fs.rmSync(root, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
