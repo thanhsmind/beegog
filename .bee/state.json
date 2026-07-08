@@ -1,27 +1,27 @@
 {
   "schema_version": "1.0",
-  "phase": "reviewing-complete",
-  "feature": "harness10-backlog-and-fresh-session",
-  "mode": "standard",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
-    "context": true,
-    "shape": true,
-    "execution": true,
+    "context": false,
+    "shape": false,
+    "execution": false,
     "review": false
   },
   "workers": [],
-  "summary": "Review complete: P1=0, P2=0, P3=3 (1 fixed inline, 2 filed). All artifacts EXISTS/SUBSTANTIVE/WIRED, evidence gate passed, dogfood UAT live. Tests green (59/0 + PASS).",
-  "next_action": "Gate 4 (approve merge), then bee-scribing + bee-compounding.",
+  "summary": "harness10 closed: 8 cells capped, backlog+fresh-session machinery shipped and dogfooded live (docs/backlog.md seeded, vendored helpers synced). Review P1=P2=0, 1 P3 fixed + 2 filed. Learnings + critical promotion recorded.",
+  "next_action": "Invoke bee-hive. docs/backlog.md now carries 3 proposed PBIs (init lane, priority scoring, README badges). Open P3s in .bee/backlog.jsonl.",
   "last_scribing_run": {
-    "feature": "harness09",
+    "feature": "harness10-backlog-and-fresh-session",
     "date": "2026-07-08",
-    "synced": "docs/02-architecture.md (config commands, status line, preamble list) + AGENTS block via onboarding; no docs/specs layer in this repo — design docs are the spec layer",
-    "cells_covered": "harness09-1..9"
+    "synced": "docs/02-architecture.md (target-repo layout: docs/backlog.md added, bin/lib backlog+commands_detect, backlog.jsonl disambiguated as machine backlog, preamble project-map+PBI description); docs/10 is the canonical spec artifact for this feature and was written during exploring. No docs/specs layer in this repo — design docs are the spec layer.",
+    "cells_covered": "harness10-1..8"
   },
   "last_compounding_run": {
-    "feature": "harness09",
+    "feature": "harness10-backlog-and-fresh-session",
     "date": "2026-07-08",
-    "learnings_file": "docs/history/learnings/20260708-harness09.md",
+    "learnings_file": "docs/history/learnings/20260708-harness10.md",
     "critical_promotions": 1,
     "scribing_verified": true
   }

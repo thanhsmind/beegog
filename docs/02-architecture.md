@@ -53,14 +53,15 @@ Eleven skills; additions are decision-gated (a decision record naming the uncove
     HANDOFF.json                 ← pause/resume artifact (exists only while paused)
     reservations.json            ← local file reservations for same-session swarms
     decisions.jsonl              ← event-sourced decisions (decide/supersede/redact)
-    backlog.jsonl                ← friction + grooming items (predicted → actual)
+    backlog.jsonl                ← machine backlog: friction + grooming + review findings (predicted → actual) — NOT the product backlog (that is docs/backlog.md)
     tools.json                   ← capability registry (present/absent, fallback notes)
     config.json                  ← per-repo config: hooks.<name> toggles + commands (setup/start/test/verify — the host project's standard paths, docs/09 item 1)
     logs/hooks.jsonl             ← fail-open hook crash/audit log
     cells/                       ← one JSON file per cell: <feature>-<n>.json
     bin/                         ← vendored helpers (bee_status, bee_cells, bee_reservations, bee_decisions)
-    bin/lib/                     ← shared modules (state, cells, reservations, guards, inject) used by BOTH helpers and hooks
+    bin/lib/                     ← shared modules (state, cells, reservations, guards, inject, backlog, commands_detect) used by BOTH helpers and hooks
   docs/
+    backlog.md                   ← product backlog: prioritized PBI rows (proposed/in-flight/done), scribing-owned (docs/10) — distinct from .bee/backlog.jsonl
     history/
       <feature>/
         CONTEXT.md               ← locked decisions (source of truth)
@@ -186,7 +187,7 @@ The workflow contract is runtime-neutral; only two seams differ:
 | Claude Code | `hooks/bee-session-init.mjs` (SessionStart on startup/resume/clear/compact) injects the routing preamble plus live state: status, gates, HANDOFF surfacing, standard commands + baseline gate, critical-patterns digest, recent decisions (superpowers pattern + claudekit session-init) |
 | Codex | The `AGENTS.template.md` block installed into the repo's `AGENTS.md` carries the same instructions (khuym pattern); `bee_status.mjs --json` is the first commanded step. Re-read after any compaction. |
 
-Both vectors point at the same skill (`bee-hive`); the preamble content is generated from one shared module (`bin/lib/inject.mjs`) for the hook, the AGENTS.md block, and `bee_status` output, so the runtimes can never drift.
+Both vectors point at the same skill (`bee-hive`); the preamble content is generated from one shared module (`bin/lib/inject.mjs`) for the hook, the AGENTS.md block, and `bee_status` output, so the runtimes can never drift. The preamble carries, in order: standard commands (host project paths), a Project map section (pointers to `docs/specs/` maps and a specced-area count, or a bootstrap warning when absent) with a PBI counts line when `docs/backlog.md` exists, the critical-patterns digest, and recent decisions.
 
 ### Seam 2 — Subagent spawn (how swarming launches workers)
 
