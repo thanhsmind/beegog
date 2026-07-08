@@ -44,9 +44,11 @@ Write one dated file: `docs/history/learnings/YYYYMMDD-<slug>.md` with frontmatt
 
 Before writing, redact secrets and PII from every evidence snippet. If a finding cannot be safely redacted, drop it and note the skip in the run summary. Secrets never enter learnings.
 
-## 4. Promote Criticals — Sparingly
+## 4. Promote Criticals — Check First, Prose Second
 
-Append a summary block to `docs/history/learnings/critical-patterns.md` only when a lesson meets ALL three criteria:
+For a lesson that clears the bar below, the **first-choice promotion target is an executable check**: a grep/lint line appended to the affected area's verify command, a `bin/lib` guard, or a hook denial. A twice-seen review finding or user correction almost always qualifies — mechanize it and it can never recur; prose in `critical-patterns.md` taxes every session preamble and relies on being read. Prose is the fallback for what genuinely cannot be mechanized (judgment calls, product taste). File the check as a tiny/small cell if it cannot ship in the current feature.
+
+Either way, promote sparingly — only when a lesson meets ALL three criteria:
 
 1. **Multi-feature relevance** — it will matter beyond this feature.
 2. **Meaningful waste prevented** — it would save future agents real time or real damage.

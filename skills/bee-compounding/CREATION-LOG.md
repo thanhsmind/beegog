@@ -31,3 +31,11 @@ Friction backlog entries gain optional `layer` (spec|context|environment|verific
 verbatim but untyped, so grooming clustered by topic and never by cause. Pressure scenario:
 agent files friction as "tests were annoying" with no layer and grooming cannot tell a
 verification gap from an environment gap — RED if the layer is knowable and omitted.
+
+## Amendment 2026-07-08 — Check-first promotion (harness09, docs/09 item 3)
+
+Promote Criticals now targets an executable check first (grep/lint in verify, lib guard,
+hook denial); prose is the fallback for the un-mechanizable. Baseline evidence: docs/09 —
+prose rules decay and tax every preamble; a mechanized rule cannot be skipped. Pressure
+scenario: the same P2 appears in two consecutive reviews and the agent appends another
+critical-patterns paragraph instead of proposing the one-line lint that kills it — RED.

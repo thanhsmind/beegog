@@ -64,6 +64,12 @@ tags: [tag1, tag2]
 
 Multiple findings from one feature go in one dated file as repeated Learning sections — not one file per finding.
 
+## Promotion Decision Tree (docs/09 item 3)
+
+1. Seen twice (review finding, user correction, repeated deviation)? If not, it stays a learning entry.
+2. Mechanizable? A grep/lint line in a verify command, a `bin/lib` guard, a hook denial → **promote as the check**, note the check's location in the learnings file, done.
+3. Not mechanizable (judgment, taste, product intent) → promote as prose below.
+
 ## Critical Promotion Format
 
 Only lessons passing all three criteria (multi-feature relevance, meaningful waste prevented, generalizable) get a summary block appended to `docs/history/learnings/critical-patterns.md`:

@@ -81,6 +81,8 @@ C) Defer — leave in backlog with a revisit note
 
 One question per candidate. Approval covers exactly that candidate.
 
+Promote-to-check proposals (a repeated finding becoming a grep/lint/guard — docs/09 item 3) ride the same template with `risk_lane` tiny or small; changing what a gate or gate-adjacent guard *blocks* is never tiny.
+
 ## Outcome Template
 
 After the kill cell caps (or fails), append:
