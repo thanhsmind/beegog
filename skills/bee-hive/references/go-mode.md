@@ -16,12 +16,15 @@ User: "/go [feature]"
 [GATE 1] ← HARD STOP
        ▼
 [STEP 2] bee-planning (shape) → approach.md, plan.md (requirements-only)
+         bee-briefing (render) → implement-plan.md  (small+; the Gate 2 review object)
        ▼
-[GATE 2] ← HARD STOP
+[GATE 2] ← HARD STOP (review the implement plan)
        ▼
 [STEP 3] bee-planning (prep)  → plan.md enriched to implementation-ready, current-slice cells
+         bee-briefing (refresh) → implement-plan.md Affected Files + Steps re-projected
        ▼
 [STEP 4] bee-validating       → reality gate, feasibility matrix, spikes, plan-checker, cell review
+         bee-briefing (refresh) → implement-plan.md Validation Plan patched with evidence
        ▼
 [GATE 3] ← HARD STOP (the most critical gate)
        ▼
@@ -32,6 +35,8 @@ User: "/go [feature]"
 [STEP 6] bee-reviewing        → P1/P2/P3, artifact verification, UAT (after final slice only)
        ▼
 [GATE 4] ← HARD STOP (never auto-merge)
+       ▼
+         bee-briefing (walkthrough) → walkthrough.md, implement-plan status → Shipped (standard/high-risk)
        ▼
 [STEP 7] bee-scribing         → docs/specs/<area>.md BA-grade sync, reading map
        ▼

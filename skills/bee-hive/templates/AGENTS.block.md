@@ -16,7 +16,8 @@ Use `bee-hive` first in this repo unless you are resuming an already approved be
 ```
 bee-hive
   -> bee-exploring     [GATE 1] "Decisions locked. Approve CONTEXT.md before planning?"
-  -> bee-planning      [GATE 2] "Work shape is ready. Approve before current-work preparation?"
+  -> bee-planning      (shape) → bee-briefing renders implement-plan.md (small+)
+                       [GATE 2] "Work shape is ready. Approve before current-work preparation?"
   -> bee-validating    [GATE 3] "Feasibility validated. Approve execution?"
   -> bee-swarming
   -> bee-executing

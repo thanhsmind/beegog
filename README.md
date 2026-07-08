@@ -14,6 +14,7 @@ A hive is a staged, self-regulating system — and every bee role maps to a work
 | Scout bees | `bee-exploring` | Find the nectar: lock fuzzy intent into decisions, scout *just enough* |
 | Forager bees | `bee-xia` | Range beyond the hive: evidence-labeled research, reuse-first recommendations |
 | Waggle dance | `bee-planning` | Communicate the found path precisely enough that workers can fly it |
+| The beekeeper's brief | `bee-briefing` | Translate the dance for the human: one reviewable implement plan both sides agree on before code |
 | Guard bees | `bee-validating` | Nothing enters the hive unproven: reality gate, feasibility evidence |
 | The swarm | `bee-swarming` | Orchestrate bounded workers over validated cells |
 | Worker bees | `bee-executing` | One worker, one cell: implement, verify, **cap the cell** |
@@ -30,11 +31,13 @@ A **cell** is bee's task unit (honeycomb cell): a small JSON record with accepta
 ```
 bee-hive
   -> bee-exploring     writes  docs/history/<feature>/CONTEXT.md        [GATE 1: human approves decisions]
-  -> bee-planning      writes  discovery, approach, work shape      [GATE 2: human approves shape]
+  -> bee-planning      writes  discovery, approach, work shape
+  -> bee-briefing      writes  implement-plan.md (human-readable)   [GATE 2: human approves the brief]
   -> bee-validating    writes  feasibility evidence, validated cells [GATE 3: human approves execution]
   -> bee-swarming      spawns  bounded workers
   -> bee-executing     caps    one verified cell per worker
   -> bee-reviewing     writes  P1/P2/P3 findings                    [GATE 4: P1s block merge]
+  -> bee-briefing      writes  walkthrough.md (standard/high-risk: what shipped + how to test)
   -> bee-scribing      writes  docs/specs/<area>.md — BA-grade, tech-agnostic area specs
   -> bee-compounding   writes  learnings + decisions
   (on demand) bee-xia         researches a topic standalone; also runs inside planning discovery L2/L3
@@ -77,6 +80,7 @@ open a session          →   hook prints the bee preamble       (reads .bee/sta
                             bee-exploring locks decisions      docs/history/X/CONTEXT.md
 you approve GATE 1      →
                             bee-planning shapes the work       plan.md, approach.md
+                            bee-briefing renders the brief     implement-plan.md (you review this)
 you approve GATE 2      →
                             bee-validating proves feasibility  reality gate, spikes, cells
 you approve GATE 3      →   ← before this, source writes are DENIED by the write-guard
@@ -86,6 +90,7 @@ you approve GATE 3      →   ← before this, source writes are DENIED by the w
                             recorded passing verify)
                             bee-reviewing: P1/P2/P3 findings
 you approve GATE 4      →   (P1 findings block merge)
+                            bee-briefing writes walkthrough    docs/history/X/walkthrough.md
                             bee-scribing syncs area specs      docs/specs/<area>.md
                             bee-compounding stores learnings   decisions, critical-patterns
 ```
@@ -231,6 +236,8 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 **bee-scribing added** (decision 0002, which also replaced the ten-skill hard cap with a decision gate): the 11th skill — a dedicated BA that keeps `docs/specs/` at BA grade (data dictionaries, behaviors & operations, actor access, business rules; technology quarantined to one Pointers section) so any area — screen, API, background job, integration, pipeline, process — can be understood without the code and rebuilt on another stack. Runs in the chain between reviewing and compounding, plus on-demand capture (any settled outcome of a discuss → build → test → adjust loop is logged and merged immediately) and harvest (backfill legacy areas) modes. Not yet dogfooded.
 
 **bee-xia added** (decision 0005): the 12th skill — the anti-reinvention research scout distilled from khuym's `xia`. Standalone mode answers "research topic X" with an evidence-labeled brief (`Local/Upstream/Docs/Inference`, reuse-first recommendation ladder) in `docs/history/research/`; in-chain mode is the protocol body of planning's discovery L2/L3, merging into `approach.md`. Not yet dogfooded.
+
+**bee-briefing added** (decision 0008): the 13th skill — the beekeeper's brief, distilled from Google Antigravity's Implementation Plan and Walkthrough artifacts. Renders one human-readable `docs/history/<feature>/implement-plan.md` per feature that Gates 2–3 link as the review object, consolidating the terse truth artifacts and authoring the two sections the chain lacked (a Technical Design narrative and bee's only Rollback discipline); after Gate 4 it writes `walkthrough.md` — what shipped, how it was verified, how to test it — reconstructed from the execution records, never the plan. A consolidator, not a second planner: it projects every section from a named source and never invents to fill a template. Lane-scaled (nothing for `tiny`/`spike`, a mini-brief for `small`, walkthrough only for `standard`/`high-risk`). RED baseline ran clean at the Fable/Opus tier (all nine scenarios — six render/refresh + three walkthrough — passed on principle), so it ships thin and procedural with the negations kept as guards; weaker-tier pressure-testing is recorded debt. Not yet dogfooded.
 
 Known debt before 1.0 (recorded in each skill's CREATION-LOG.md): pressure-testing of the skills themselves per the Iron Law — v0.1 skills inherit bulletproofing from their khuym/superpowers lineage but have not yet been RED/GREEN/REFACTOR-tested in bee form.
 

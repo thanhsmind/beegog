@@ -7,12 +7,14 @@ The bee chain, stage by stage: what each skill reads, writes, and must never do.
 ```
 bee-hive
   -> bee-exploring                          [GATE 1] approve CONTEXT.md
-  -> bee-planning (shape)                   [GATE 2] approve work shape
-  -> bee-planning (current-work prep)
-  -> bee-validating                         [GATE 3] approve execution
+  -> bee-planning (shape)
+  -> bee-briefing (render implement-plan)   [GATE 2] approve work shape (reviews the brief)
+  -> bee-planning (current-work prep) + bee-briefing (refresh)
+  -> bee-validating + bee-briefing (patch validation) [GATE 3] approve execution (reviews the brief)
   -> bee-swarming (+ bee-executing × N)
   -> more approved work remains? -> back to planning for the next slice
   -> bee-reviewing                          [GATE 4] P1s block; else approve merge
+  -> bee-briefing (walkthrough)             (standard/high-risk: walkthrough.md, implement-plan status → Shipped)
   -> bee-scribing                           (BA spec sync — state layer)
   -> bee-compounding
   (on demand, any time) bee-scribing        capture a settled outcome; harvest a legacy area
@@ -88,7 +90,15 @@ Rule of use: **the least workflow that honestly protects the work**. A tiny fix 
   4. **Shape:** write `plan.md` (`artifact_readiness: requirements-only`) — direct note / spike question / small plan / phase plan / epic map. **Stop at Gate 2.**
   5. **Prep (after approval):** enrich the *same* `plan.md` to `artifact_readiness: implementation-ready` and create cells for the *current* slice only. Cells are executable prompts: files, read-first, directive action citing D-IDs, `must_haves`, verify command. Every cell that changes observable behavior is marked `behavior_change: true`. Future-slice cells are prohibited.
 - **Quality rules:** no scope reduction of locked decisions (SPLIT instead); no pseudo-cells in markdown; every cell has a testable exit; test matrix informed by the 12 edge dimensions (claudekit) at a depth matching the lane.
-- **Handoff:** "Invoke bee-validating."
+- **Handoff:** invoke `bee-briefing` to render the implement plan (`small`+), then "Invoke bee-validating."
+
+### bee-briefing (the beekeeper's brief) — decision 0008
+
+- **Reads:** CONTEXT.md decisions, approach.md, plan.md, current-slice cells, validating reports, `state.json` gates.
+- **Does:** render **one** `docs/history/<feature>/implement-plan.md` per feature — a human-legible consolidation of the truth artifacts that Gates 2–3 link as the review object. It **projects** every section from a named source and **authors only two**: the Technical Design narrative and the Rollback Plan (bee's only rollback discipline). Lane-scaled: no brief for `tiny`/`spike`, a ~15-line mini-brief for `small`, the full template with empty sections dropped for `standard`, Rollback + Security mandatory for `high-risk`. Three modes: **render** (before Gate 2), **refresh** (after prep, and after validating patches the Validation Plan with evidence), **walkthrough** (after Gate 4 on `standard`/`high-risk`: `docs/history/<feature>/walkthrough.md` reconstructed from execution records — capped cell traces, review findings, UAT — never from the plan; sets the implement plan `status: Shipped`), **on-demand** (any phase). Status frontmatter mirrors the gates (`Draft → Ready for Review → Approved → Needs Revision → Shipped`); a source change after approval flips `Needs Revision`.
+- **Truth model (extends D12):** the brief is the human-layer projection of the truth artifacts, never their master. Human feedback on the brief flows back into `CONTEXT.md`/`plan.md` (a locked decision is superseded by D-ID) and the brief re-renders — it is never hand-edited as the sole change site.
+- **Never:** originate a decision/scope/approach/cell; invent content to fill a section (source silent → Open Question); assert a validation result that has not run; in walkthrough mode, summarize the plan instead of reconstructing from execution records, claim verification broader than the evidence, or omit deferred findings/deviations; fork a `-v2`/dated brief; paste the whole brief into a gate chat message (link it).
+- **Handoff:** render/refresh → return to the caller (`bee-planning` for Gate 2, `bee-validating` for Gate 3); walkthrough → "Invoke bee-scribing." Briefing presents no gate itself.
 
 ### bee-validating (guard bees)
 
@@ -130,7 +140,7 @@ Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify
   4. **Artifact verification** for everything CONTEXT.md/plan.md promised: EXISTS → SUBSTANTIVE (no stub/TODO/fake path) → WIRED (imported and used on the integration path). All three = OK; EXISTS+SUBSTANTIVE = P2; missing or EXISTS-only = P1.
   5. **Human UAT** walk-through for SEE/CALL/RUN decisions; failure → P1 fix cell and re-run; skip requires a recorded reason.
   6. Finish: project build/test/lint gates; P2/P3 → backlog/grooming cells with traceability (never blocking the current epic); if filing a residual finding anywhere fails, write it to `docs/history/<feature>/reports/residual-findings.md` so nothing evaporates; close out state.
-- **Handoff:** Gate 4 → "Invoke bee-scribing."
+- **Handoff:** Gate 4 → `standard`/`high-risk`: "Invoke bee-briefing (walkthrough)," which then hands to scribing; `tiny`/`spike`/`small`: "Invoke bee-scribing."
 
 ### bee-scribing (scribe bees) — the BA
 

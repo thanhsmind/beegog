@@ -73,7 +73,7 @@ mode: tiny | small | standard | high-risk | spike
 
 Body scaled to mode: direct note, spike question, small plan, phase plan, or epic map (templates in `references/planning-reference.md`). Sketch the test matrix against the 12 edge dimensions at a depth matching the lane.
 
-Present **Gate 2** per the Gate Presentation Contract (bee-hive routing reference): plain-language layer in chat — what I plan to build / why this size / cost if the shape is wrong / what you are deciding — in the user's language, plan.md linked not pasted; then verbatim: "Work shape is ready. Approve before current-work preparation?" — then **stop**. No pseudo-cells in markdown, no prep, no cells.
+For `small`/`standard`/`high-risk`, invoke `bee-briefing` to render `docs/history/<feature>/implement-plan.md` from CONTEXT.md/approach.md/plan.md; the Gate 2 message links the brief as the review document (`tiny`/`spike` skip the brief). Present **Gate 2** per the Gate Presentation Contract (bee-hive routing reference): plain-language layer in chat — what I plan to build / why this size / cost if the shape is wrong / what you are deciding — in the user's language, the implement plan linked not pasted; then verbatim: "Work shape is ready. Approve before current-work preparation?" — then **stop**. No pseudo-cells in markdown, no prep, no cells.
 
 ## 6. Prep (after Gate 2 approval only)
 
@@ -83,7 +83,8 @@ Present **Gate 2** per the Gate Presentation Contract (bee-hive routing referenc
    node .bee/bin/bee_cells.mjs add --file <cell.json>
    ```
    Every cell is an executable prompt: `files`, `read_first`, directive `action` citing D-IDs, `must_haves` (truths / artifacts / key_links / prohibitions), a runnable `verify` command, and `behavior_change: true` whenever the cell changes observable behavior. Cell quality rules and a schema example live in `references/planning-reference.md`.
-3. Update `.bee/state.json`: `phase: planning-complete`, `next_action: "Invoke bee-validating."`
+3. For `small`/`standard`/`high-risk`, invoke `bee-briefing` in refresh mode so the implement plan's Affected Files and Implementation Steps re-project from the created cells.
+4. Update `.bee/state.json`: `phase: planning-complete`, `next_action: "Invoke bee-validating."`
 
 ## Scope-Reduction Prohibition
 

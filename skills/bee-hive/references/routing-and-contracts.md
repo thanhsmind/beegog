@@ -17,6 +17,7 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | 9 | `bee-compounding` | Capture durable learnings and decisions. | Scribing done or work abandoned |
 | 10 | `bee-grooming` | Entropy audit, debt hunt, approved kills. | Cleanup/audit requested; hive idle |
 | 11 | `bee-writing-skills` | TDD-for-skills, pressure testing. | Improving or creating bee skills |
+| 12 | `bee-briefing` | Render the one human-readable implement plan per feature, and the post-Gate-4 walkthrough (consolidator, not planner). | Planning shaped `small`+ work; a feature's implement plan needs (re)generating; a `standard`/`high-risk` feature passed Gate 4 |
 
 ## First-Skill Routing
 
@@ -24,6 +25,7 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 |---|---|---|
 | Vague/new feature | `bee-exploring` | Always start here if gray areas exist |
 | Research a topic/library/approach (no feature underway) | `bee-xia` | Standalone brief; suggests exploring or planning as next step |
+| (Re)generate or read a feature's implement plan or walkthrough | `bee-briefing` | Consolidates the truth artifacts into `docs/history/<feature>/implement-plan.md`, any phase; writes `walkthrough.md` post-Gate-4 for `standard`/`high-risk`; renders nothing for `tiny`/`spike` |
 | Research inside a scoped feature | `bee-planning` | Discovery L2/L3 invokes `bee-xia` in-chain |
 | "Just fix this" / small change | `bee-planning` | Route in tiny or small mode |
 | Review code | `bee-reviewing` | Load directly |
@@ -94,6 +96,7 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 | hive | onboarding, state, HANDOFF, critical-patterns, decisions | state routing updates only |
 | exploring | user conversation, critical-patterns, quick scout | `docs/history/<feature>/CONTEXT.md`, state update |
 | planning | CONTEXT.md, critical-patterns, active decisions, bee_status | `approach.md`, `plan.md` (requirements-only → implementation-ready), current-slice cells via `bee_cells.mjs add` |
+| briefing | CONTEXT.md, approach.md, plan.md, cells, validating reports, state gates (render/refresh); capped cell traces, review findings, UAT (walkthrough) | `docs/history/<feature>/implement-plan.md` (projection; `small`+); `docs/history/<feature>/walkthrough.md` (post-Gate-4; `standard`/`high-risk`) |
 | validating | CONTEXT.md, discovery, approach, approved shape, cells | reality-gate report, feasibility matrix, spike results in `.spikes/`, repaired cells |
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
 | executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `docs/history/<feature>/reports/` |
@@ -172,7 +175,7 @@ One question per message. Never bundle. Never answer your own question.
   bin/  bin/lib/
 
 docs/history/<feature>/
-  CONTEXT.md  discovery.md  approach.md  plan.md  reports/
+  CONTEXT.md  discovery.md  approach.md  plan.md  implement-plan.md  walkthrough.md  reports/
 
 docs/history/learnings/
   critical-patterns.md  YYYYMMDD-<slug>.md

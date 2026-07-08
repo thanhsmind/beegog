@@ -109,7 +109,7 @@ Violating the letter of these rules is violating the spirit of these rules.
 
 ## Handoff
 
-Review complete. Invoke bee-scribing skill.
+Review complete. For `standard`/`high-risk`, invoke `bee-briefing` in walkthrough mode to write `docs/history/<feature>/walkthrough.md` from the execution records (cell traces, review findings, UAT) and set the implement plan `status: Shipped`; then invoke bee-scribing skill. For `tiny`/`spike`/`small`, invoke bee-scribing skill directly (no walkthrough).
 
 | Reference | When to Load |
 |---|---|

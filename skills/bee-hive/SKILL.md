@@ -61,6 +61,7 @@ Then read `docs/history/learnings/critical-patterns.md` and surface recent activ
 | Small clear fix | `bee-planning` (tiny/small mode) |
 | Review request | `bee-reviewing` |
 | Document a screen/API/job/area; "ghi lại rule này"; a just-settled rule/behavior/value to keep; spec an existing feature | `bee-scribing` |
+| (Re)generate or read a feature's implement plan | `bee-briefing` |
 | Clean up / debt / audit | `bee-grooming` |
 | Capture learnings | `bee-compounding` |
 | Improve bee itself | `bee-writing-skills` |
