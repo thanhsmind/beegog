@@ -1,3 +1,236 @@
 {
-  "reservations": []
+  "reservations": [
+    {
+      "agent": "forager-1",
+      "cell": "harness10-1",
+      "path": "skills/bee-hive/templates/lib/commands_detect.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T07:39:56.663Z",
+      "released_at": "2026-07-08T07:44:12.682Z"
+    },
+    {
+      "agent": "forager-1",
+      "cell": "harness10-1",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T07:39:56.733Z",
+      "released_at": "2026-07-08T07:44:12.682Z"
+    },
+    {
+      "agent": "forager-2",
+      "cell": "harness10-2",
+      "path": "skills/bee-hive/scripts/onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T07:45:32.795Z",
+      "released_at": "2026-07-08T07:48:53.219Z"
+    },
+    {
+      "agent": "forager-2",
+      "cell": "harness10-2",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T07:45:32.866Z",
+      "released_at": "2026-07-08T07:48:53.219Z"
+    },
+    {
+      "agent": "forager-2",
+      "cell": "harness10-2",
+      "path": "skills/bee-exploring/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T07:45:32.945Z",
+      "released_at": "2026-07-08T07:48:53.219Z"
+    },
+    {
+      "agent": "forager-3",
+      "cell": "harness10-3",
+      "path": "skills/bee-scribing/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:01:59.040Z",
+      "released_at": "2026-07-08T08:05:25.290Z"
+    },
+    {
+      "agent": "forager-3",
+      "cell": "harness10-3",
+      "path": "skills/bee-scribing/references/scribing-reference.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:01:59.124Z",
+      "released_at": "2026-07-08T08:05:25.290Z"
+    },
+    {
+      "agent": "forager-3",
+      "cell": "harness10-3",
+      "path": "skills/bee-hive/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:01:59.210Z",
+      "released_at": "2026-07-08T08:05:25.290Z"
+    },
+    {
+      "agent": "forager-4",
+      "cell": "harness10-4",
+      "path": "skills/bee-hive/scripts/onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:13:00.283Z",
+      "released_at": "2026-07-08T08:18:57.335Z"
+    },
+    {
+      "agent": "forager-4",
+      "cell": "harness10-4",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:13:00.355Z",
+      "released_at": "2026-07-08T08:18:57.335Z"
+    },
+    {
+      "agent": "forager-5",
+      "cell": "harness10-5",
+      "path": "skills/bee-hive/templates/lib/inject.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:20:26.863Z",
+      "released_at": "2026-07-08T08:23:42.954Z"
+    },
+    {
+      "agent": "forager-5",
+      "cell": "harness10-5",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:20:26.939Z",
+      "released_at": "2026-07-08T08:23:42.954Z"
+    },
+    {
+      "agent": "forager-6",
+      "cell": "harness10-6",
+      "path": "skills/bee-hive/templates/lib/backlog.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:36:17.256Z",
+      "released_at": "2026-07-08T08:40:54.718Z"
+    },
+    {
+      "agent": "forager-6",
+      "cell": "harness10-6",
+      "path": "skills/bee-hive/templates/bee_status.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:36:17.350Z",
+      "released_at": "2026-07-08T08:40:54.718Z"
+    },
+    {
+      "agent": "forager-6",
+      "cell": "harness10-6",
+      "path": "skills/bee-hive/templates/lib/inject.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:36:17.455Z",
+      "released_at": "2026-07-08T08:40:54.718Z"
+    },
+    {
+      "agent": "forager-6",
+      "cell": "harness10-6",
+      "path": "skills/bee-hive/templates/lib/cells.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:36:17.525Z",
+      "released_at": "2026-07-08T08:40:54.718Z"
+    },
+    {
+      "agent": "forager-6",
+      "cell": "harness10-6",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:36:17.596Z",
+      "released_at": "2026-07-08T08:40:54.718Z"
+    },
+    {
+      "agent": "forager-7",
+      "cell": "harness10-7",
+      "path": "skills/bee-scribing/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:44:30.119Z",
+      "released_at": "2026-07-08T08:48:32.851Z"
+    },
+    {
+      "agent": "forager-7",
+      "cell": "harness10-7",
+      "path": "skills/bee-scribing/references/scribing-reference.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:44:30.191Z",
+      "released_at": "2026-07-08T08:48:32.851Z"
+    },
+    {
+      "agent": "forager-7",
+      "cell": "harness10-7",
+      "path": "skills/bee-exploring/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:44:30.266Z",
+      "released_at": "2026-07-08T08:48:32.851Z"
+    },
+    {
+      "agent": "forager-7",
+      "cell": "harness10-7",
+      "path": "skills/bee-compounding/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:44:30.334Z",
+      "released_at": "2026-07-08T08:48:32.851Z"
+    },
+    {
+      "agent": "forager-7",
+      "cell": "harness10-7",
+      "path": "skills/bee-hive/references/routing-and-contracts.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:44:30.405Z",
+      "released_at": "2026-07-08T08:48:32.851Z"
+    },
+    {
+      "agent": "forager-7",
+      "cell": "harness10-7",
+      "path": "skills/bee-grooming/references/grooming-reference.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:44:30.476Z",
+      "released_at": "2026-07-08T08:48:32.851Z"
+    },
+    {
+      "agent": "forager-7",
+      "cell": "harness10-7",
+      "path": "skills/bee-hive/templates/AGENTS.block.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:44:30.546Z",
+      "released_at": "2026-07-08T08:48:32.851Z"
+    },
+    {
+      "agent": "forager-7",
+      "cell": "harness10-7",
+      "path": "docs/07-contracts.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:44:30.614Z",
+      "released_at": "2026-07-08T08:48:32.851Z"
+    },
+    {
+      "agent": "forager-8",
+      "cell": "harness10-8",
+      "path": ".bee/bin",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:50:18.708Z",
+      "released_at": "2026-07-08T08:53:35.424Z"
+    },
+    {
+      "agent": "forager-8",
+      "cell": "harness10-8",
+      "path": "AGENTS.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:50:18.781Z",
+      "released_at": "2026-07-08T08:53:35.424Z"
+    },
+    {
+      "agent": "forager-8",
+      "cell": "harness10-8",
+      "path": ".bee/onboarding.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:50:18.852Z",
+      "released_at": "2026-07-08T08:53:35.424Z"
+    },
+    {
+      "agent": "forager-8",
+      "cell": "harness10-8",
+      "path": "docs/backlog.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-08T08:50:18.925Z",
+      "released_at": "2026-07-08T08:53:35.424Z"
+    }
+  ]
 }

@@ -1,17 +1,30 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "swarming",
+  "feature": "harness10-backlog-and-fresh-session",
+  "mode": "standard",
   "approved_gates": {
-    "context": false,
-    "shape": false,
-    "execution": false,
+    "context": true,
+    "shape": true,
+    "execution": true,
     "review": false
   },
-  "workers": [],
-  "summary": "harness09 closed: 10 cells capped, slices 1-5 of docs/09 adopted, review P1=0, learnings + outcomes recorded, session-finish verify green.",
-  "next_action": "Invoke bee-hive. Open follow-ups live in .bee/backlog.jsonl (verify-tier warning, gate-staleness check) and docs/09 items 6-10 have named triggers.",
+  "workers": [
+    {
+      "nickname": "forager-7",
+      "cell": "harness10-7",
+      "tier": "generation",
+      "status": "done"
+    },
+    {
+      "nickname": "forager-8",
+      "cell": "harness10-8",
+      "tier": "generation",
+      "status": "spawned"
+    }
+  ],
+  "summary": "harness10-7 capped (a4dc872). Dispatching forager-8 (dogfood sync + seed backlog). Note: check harness10-7 projection-rule prose reads naturally at reviewing.",
+  "next_action": "Tend forager-6; then forager-7 (prose), forager-8 (dogfood).",
   "last_scribing_run": {
     "feature": "harness09",
     "date": "2026-07-08",
