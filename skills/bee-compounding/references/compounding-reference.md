@@ -66,7 +66,7 @@ Multiple findings from one feature go in one dated file as repeated Learning sec
 
 ## Promotion Decision Tree (docs/09 item 3)
 
-1. Seen twice (review finding, user correction, repeated deviation)? If not, it stays a learning entry.
+1. Seen twice (review finding, user correction, repeated deviation) AND it clears the three promotion criteria below? If not, it stays a learning entry.
 2. Mechanizable? A grep/lint line in a verify command, a `bin/lib` guard, a hook denial → **promote as the check**, note the check's location in the learnings file, done.
 3. Not mechanizable (judgment, taste, product intent) → promote as prose below.
 

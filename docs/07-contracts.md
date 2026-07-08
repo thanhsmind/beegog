@@ -22,8 +22,9 @@ carries three elements:
 
 A refusal that ends at "not allowed" with no stated next step violates this contract.
 Guard denials follow the same shape (`reason` names the gate/conflict, why, and the route:
-surface Gate 3, reserve first, or return `[BLOCKED]`). Tests assert the shape for the three
-highest-traffic paths: cap-refusal, gate-block, reservation-conflict.
+surface Gate 3, reserve first, or return `[BLOCKED]`). Tests assert the FIX element (the
+stated next action) for the three highest-traffic paths: cap-refusal, gate-block,
+reservation-conflict.
 
 ## Runtime files
 
