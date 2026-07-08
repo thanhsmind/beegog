@@ -173,6 +173,32 @@ RECOMMENDATION: (b) — matches the exclusion already enforced in search.
 
 Budget the interview: batch the inventory first, then ask only the questions whose answers change the spec. Unanswered → Open Gaps + `coverage: partial`. Confirmed answers in harvest/capture mode are decisions — log them (`bee_decisions.mjs log`) and cite the new D-ID in the spec.
 
+## Bootstrap Mode (D2 of harness10)
+
+Bootstrap exists for one situation: `docs/specs/` lacks `system-overview.md` or `reading-map.md` — typically a repo fresh from onboarding, before any harvest has run. It is **offered, never auto-run**: the agent names the missing file(s) and asks; only user approval starts the pass. Bootstrap creates ONLY the missing map file(s) — an existing `system-overview.md` or `reading-map.md` is never touched by bootstrap (in-place-never-fork holds; improving an existing map belongs to sync or harvest).
+
+Binding rules:
+
+- **Sources:** code/tree inspection and verbatim README extracts only. Nothing else feeds a skeleton — no plan.md, no memory, no inference from file or symbol names.
+- **Never invent:** every meaning, purpose, or rule that code cannot mechanically prove is an Open Gap line, never a written claim. A plausible-sounding guess is worse than a stated gap.
+- **`coverage: partial`, always:** every bootstrap output carries `coverage: partial` in frontmatter — a skeleton by definition fails the rebuild bar, and says so.
+- **No interviews:** bootstrap asks the user nothing about meaning. Meaning-filling belongs to harvest mode — bootstrap is inventory, harvest is meaning.
+- **Loud gaps:** the output states its own gaps explicitly — a populated Open Gaps section plus `[unknown]` markers inline — so the Fresh Session Test probe (grooming) and harvest inherit a concrete worklist, never a silent hole.
+
+**Tech-agnostic collision rule (binding):** directory paths live only in reading-map lines and Pointers sections. A system-overview area-map line whose purpose cannot be stated in business terms carries an `[unknown]` gap marker instead of a path-derived guess. A README quote that names technology goes to Pointers or becomes a gap — never into the Purpose paragraph.
+
+**Skeleton shape — `system-overview.md`** (standard overview template, filled only where provable):
+
+- Purpose: the README's first paragraph as a quoted extract with stated provenance ("README, opening paragraph, verbatim") when it speaks in business terms; otherwise one `[unknown]` gap line — never a paraphrase presented as fact.
+- Area Map: one stub line per top-level structural unit and entry point the tree proves, phrased in business terms where provable; a line that cannot be carries `[unknown — see Open Gaps]`.
+- Shared Entities, Actors & Roles, Cross-Area Flows: section headers kept, containing only what code proves — usually a single Open Gap pointer each.
+- Open Gaps: one line per unfilled meaning, naming who or what could answer it (usually "harvest interview").
+- Pointers: the entry points and technology facts the tree proves.
+
+**Skeleton shape — `reading-map.md`:** one line per top-level location, each with a mechanically derived one-liner (manifest fields, script names, an unambiguous README statement) or an `[unknown]` gap marker — never an invented description. `spec:` cross-references appear only for spec files that actually exist.
+
+A completed bootstrap announces its gap count and offers harvest as the next step for meaning-filling.
+
 ## Rebuild Checklist (self-check before finishing)
 
 Cover the Pointers section and verify:

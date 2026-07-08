@@ -28,6 +28,9 @@ Scribing is bee's BA. It owns the state layer: `docs/specs/<area>.md` (one BA-gr
 | **sync** (chain default) | reviewing completed with `behavior_change` cells capped | merge the feature's behavior deltas into the touched areas' specs |
 | **capture** | any discuss → build → test → adjust loop **settles an outcome**, any phase — a rule agreed, a behavior confirmed by test, a threshold/tuning value chosen, an error policy adjusted; an explicit user settlement signal ("chốt", "final", "ok ship it") makes capture **mandatory in the same turn** (decision 0003) | log the decision, then merge the settled truth into the area's spec immediately — discussion knowledge never waits for feature close |
 | **harvest** | user asks to document an existing area, or grooming files a missing-spec item | write the first spec for an area built before/outside bee |
+| **bootstrap** | `docs/specs/` lacks `system-overview.md` or `reading-map.md` — typically right after onboarding | **offer — never auto-run** (D2 of harness10) a bounded skeleton pass creating ONLY the missing map file(s) from mechanically provable facts; an existing map file is never touched. Full binding rules + skeleton shapes: the reference's Bootstrap section |
+
+Bootstrap is inventory, harvest is meaning: bootstrap writes only what code, tree, and verbatim README extracts prove, marks every meaning as an Open Gap (`coverage: partial`), and asks no interview questions — its loudly stated gaps are harvest's worklist.
 
 ## 1. Gather Sources — and What Each May Feed
 
@@ -130,4 +133,4 @@ Scribing complete: <N> area specs synced (<coverage>), <M> open gaps, reading ma
 
 | Reference | When to Load |
 |---|---|
-| `references/scribing-reference.md` | full spec template, per-section rules, field-dictionary and visibility-matrix formats, harvest interview protocol, rebuild checklist |
+| `references/scribing-reference.md` | full spec template, per-section rules, field-dictionary and visibility-matrix formats, harvest interview protocol, bootstrap rules and skeleton shapes, rebuild checklist |
