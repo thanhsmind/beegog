@@ -207,6 +207,56 @@ function mergeAgentsContent(existing, renderedBlock) {
   };
 }
 
+// ---------- AGENTS.md minimal header (decision D4) ----------
+//
+// Propose-only Q1 upgrade: when the region outside the BEE markers carries no
+// prose, onboarding proposes a minimal header. The any-prose test is the
+// mechanical stand-in for the semantic "does this answer what is this
+// project?" check - conservative, it never fires on existing prose, and
+// whitespace-only or comment-only lines (including lines inside a multi-line
+// HTML comment) never count as prose. Existing user content is never touched.
+
+const HEADER_POINTER_CANDIDATES = [
+  "README.md",
+  "docs/specs/system-overview.md",
+  "docs/specs/reading-map.md",
+];
+
+function hasProseOutsideBlock(text) {
+  let outside = text;
+  const start = outside.indexOf(MARKER_START);
+  const end = outside.indexOf(MARKER_END);
+  if (start !== -1 && end !== -1 && end >= start) {
+    outside = outside.slice(0, start) + outside.slice(end + MARKER_END.length);
+  }
+  // Strip closed HTML comments (multi-line aware). An unclosed comment stays
+  // in place and counts as prose - conservative: never propose over content.
+  const stripped = outside.replace(/<!--[\s\S]*?-->/g, "");
+  return stripped.split("\n").some((line) => line.trim() !== "");
+}
+
+function composeAgentsHeader(repoRoot) {
+  // Mechanically provable parts only (never-invent): the repo folder name as
+  // title, one loud fill-me gap for the project one-liner, and pointer lines
+  // only to files that actually exist at plan time.
+  const lines = [
+    `# ${path.basename(repoRoot)}`,
+    "",
+    "<!-- [unknown] one-line project description - replace me -->",
+  ];
+  const pointers = HEADER_POINTER_CANDIDATES.filter((rel) =>
+    fs.existsSync(path.join(repoRoot, ...rel.split("/"))),
+  );
+  if (pointers.length > 0) {
+    lines.push("");
+    for (const rel of pointers) {
+      lines.push(`- ${rel}`);
+    }
+  }
+  lines.push("");
+  return `${lines.join("\n")}\n`;
+}
+
 // ---------- repo hooks (.claude/settings.json) ----------
 
 function repoHookCommand(fileName) {
@@ -311,6 +361,15 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
     plan.push({ action: "append_agents_block", path: "AGENTS.md" });
   } else if (extractAgentsBlock(agentsText) !== renderedBlock) {
     plan.push({ action: "update_agents_block", path: "AGENTS.md" });
+  }
+
+  // 1b. minimal header proposal (decision D4, propose-only): fires only when
+  // no prose line exists outside the BEE markers - so fresh repos get the
+  // header alongside create_agents_block (ordered after it), block-only
+  // AGENTS.md files flip up_to_date -> changes_needed (intended upgrade),
+  // and any existing prose suppresses the item entirely.
+  if (!hasProseOutsideBlock(agentsText)) {
+    plan.push({ action: "propose_agents_header", path: "AGENTS.md" });
   }
 
   // 2. runtime files (create-if-missing only; never overwrite state/decisions/cells)
@@ -444,14 +503,34 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
   });
   const applied = [];
 
+  // Compose the header BEFORE any mergeAgentsContent call (decision D4): it
+  // rides the existing-content input of the same merge - one write mechanism,
+  // no new merge helper parameter.
+  const proposeHeader = plan.some((item) => item.action === "propose_agents_header");
+  const headerText = proposeHeader ? composeAgentsHeader(repoRoot) : "";
+  let headerApplied = false;
+
   for (const item of plan) {
     const target = path.join(repoRoot, ...item.path.split("/"));
     switch (item.action) {
       case "create_agents_block":
       case "append_agents_block":
       case "update_agents_block": {
-        const merged = mergeAgentsContent(readTextIfExists(target), renderedBlock);
+        const merged = mergeAgentsContent(headerText + readTextIfExists(target), renderedBlock);
         writeFileAtomic(target, merged.text);
+        headerApplied = proposeHeader;
+        break;
+      }
+      case "propose_agents_header": {
+        if (headerApplied) {
+          break; // header already rode the block write above
+        }
+        // Block-only file (already onboarded, block current): prepend the
+        // header through the same merge path - the in-place block replace
+        // keeps everything outside the markers untouched.
+        const merged = mergeAgentsContent(headerText + readTextIfExists(target), renderedBlock);
+        writeFileAtomic(target, merged.text);
+        headerApplied = true;
         break;
       }
       case "create_runtime_file": {

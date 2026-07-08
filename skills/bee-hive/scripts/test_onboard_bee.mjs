@@ -68,6 +68,14 @@ try {
   check(Array.isArray(plan1.payload?.plan) && plan1.payload.plan.length > 0,
     "plan mode lists planned actions");
   check(!fs.existsSync(path.join(tmp, "AGENTS.md")), "plan mode writes nothing");
+  const plan1Actions = (plan1.payload?.plan || []).map((i) => i.action);
+  check(plan1Actions.includes("create_agents_block") &&
+    plan1Actions.includes("propose_agents_header"),
+    "empty repo plans create_agents_block + propose_agents_header (D4)",
+    JSON.stringify(plan1Actions));
+  check(plan1Actions.indexOf("propose_agents_header") >
+    plan1Actions.indexOf("create_agents_block"),
+    "propose_agents_header ordered after create_agents_block");
 
   // --- 2. apply ------------------------------------------------------------
   const apply1 = runOnboard(["--repo-root", tmp, "--apply", "--json"]);
@@ -85,6 +93,18 @@ try {
   check(agentsText.includes("bee_status.mjs"), "AGENTS block mentions bee_status first step");
   check(agentsText.includes("commands.verify") && agentsText.includes("never build on red"),
     "AGENTS block carries the baseline-gate startup step");
+
+  // --- 3a. minimal header above the block (D4, propose_agents_header) -------
+  check(agentsText.startsWith(`# ${path.basename(tmp)}\n`),
+    "applied header opens with the repo folder title above the block");
+  check(agentsText.includes("<!-- [unknown] one-line project description - replace me -->"),
+    "header carries the loud [unknown] fill-me gap line");
+  check(!agentsText.includes("- README.md") && !agentsText.includes("- docs/specs/"),
+    "no pointer lines for files that do not exist");
+  const applyHeaderAgain = runOnboard(["--repo-root", tmp, "--apply", "--json"]);
+  check(applyHeaderAgain.payload?.status === "applied", "re-apply after header succeeds");
+  check(fs.readFileSync(path.join(tmp, "AGENTS.md"), "utf8") === agentsText,
+    "re-apply leaves header AGENTS.md byte-identical (idempotent)");
 
   // --- 3b. standard-commands capture notice (docs/09 item 1) ----------------
   check(Array.isArray(apply1.payload?.notices) &&
@@ -226,6 +246,82 @@ try {
   const afterThird = fs.readFileSync(path.join(tmp, "AGENTS.md"), "utf8");
   check(afterThird === restored, "third apply is byte-identical (idempotent)");
   check(apply3.payload?.recheck === "up_to_date", "third apply recheck up_to_date");
+
+  // --- 7b. propose_agents_header semantics (D4) -------------------------------
+  // Prose outside the markers -> never proposed, prose preserved byte-for-byte.
+  const proseTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-header-prose-"));
+  try {
+    const prose = "# Handwritten\n\nThis project does X.";
+    fs.writeFileSync(path.join(proseTmp, "AGENTS.md"), `${prose}\n`, "utf8");
+    const prosePlan = runOnboard(["--repo-root", proseTmp, "--json"]);
+    check(!(prosePlan.payload?.plan || []).some((i) => i.action === "propose_agents_header"),
+      "prose outside markers never yields propose_agents_header",
+      JSON.stringify(prosePlan.payload?.plan || []));
+    runOnboard(["--repo-root", proseTmp, "--apply", "--json"]);
+    const proseAfter = fs.readFileSync(path.join(proseTmp, "AGENTS.md"), "utf8");
+    check(proseAfter.startsWith(prose),
+      "existing prose preserved byte-for-byte ahead of the appended block");
+    check(!proseAfter.includes("[unknown] one-line project description"),
+      "no header injected into a prose-bearing AGENTS.md");
+  } finally {
+    try {
+      fs.rmSync(proseTmp, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // Pointer lines appear only for files that exist at plan time.
+  const ptrTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-header-ptr-"));
+  try {
+    fs.writeFileSync(path.join(ptrTmp, "README.md"), "# readme\n", "utf8");
+    fs.mkdirSync(path.join(ptrTmp, "docs", "specs"), { recursive: true });
+    fs.writeFileSync(path.join(ptrTmp, "docs", "specs", "reading-map.md"), "# map\n", "utf8");
+    runOnboard(["--repo-root", ptrTmp, "--apply", "--json"]);
+    const ptrText = fs.readFileSync(path.join(ptrTmp, "AGENTS.md"), "utf8");
+    check(ptrText.includes("- README.md") && ptrText.includes("- docs/specs/reading-map.md"),
+      "header pointer lines present for files that exist");
+    check(!ptrText.includes("- docs/specs/system-overview.md"),
+      "no pointer line for the missing system-overview.md");
+  } finally {
+    try {
+      fs.rmSync(ptrTmp, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // Block-only AGENTS.md (already-onboarded, pre-header) flips up_to_date ->
+  // changes_needed with only the propose item: intended propose-only upgrade.
+  const flipTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-header-flip-"));
+  try {
+    runOnboard(["--repo-root", flipTmp, "--apply", "--json"]);
+    const flipFull = fs.readFileSync(path.join(flipTmp, "AGENTS.md"), "utf8");
+    const blockOnly = flipFull.slice(flipFull.indexOf("<!-- BEE:START -->"));
+    fs.writeFileSync(path.join(flipTmp, "AGENTS.md"),
+      `<!-- keep\nthis multi-line comment -->\n${blockOnly}`, "utf8");
+    const flipPlan = runOnboard(["--repo-root", flipTmp, "--json"]);
+    check(flipPlan.payload?.status === "changes_needed" &&
+      (flipPlan.payload?.plan || []).length > 0 &&
+      flipPlan.payload.plan.every((i) => i.action === "propose_agents_header"),
+      "block-only AGENTS.md flips up_to_date -> changes_needed with only propose_agents_header",
+      JSON.stringify(flipPlan.payload?.plan || []));
+    runOnboard(["--repo-root", flipTmp, "--apply", "--json"]);
+    const flipAfter = fs.readFileSync(path.join(flipTmp, "AGENTS.md"), "utf8");
+    check(flipAfter.startsWith(`# ${path.basename(flipTmp)}\n`),
+      "header prepended at the top of a block-only AGENTS.md");
+    check(flipAfter.includes("<!-- keep\nthis multi-line comment -->"),
+      "comment-only content outside markers preserved (comments are not prose)");
+    const flipRecheck = runOnboard(["--repo-root", flipTmp, "--json"]);
+    check(flipRecheck.payload?.status === "up_to_date",
+      "header apply settles the flip back to up_to_date");
+  } finally {
+    try {
+      fs.rmSync(flipTmp, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
 
   // --- 8. never overwrite existing state/decisions/cells ---------------------
   const customState = { schema_version: "1.0", phase: "swarming", marker: "user-owned" };
