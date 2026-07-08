@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "phase": "reviewing",
+  "phase": "reviewing-complete",
   "feature": "harness10-backlog-and-fresh-session",
   "mode": "standard",
   "approved_gates": {
@@ -10,8 +10,8 @@
     "review": false
   },
   "workers": [],
-  "summary": "Slice 4 (final) capped: harness10-6..8 done. All 8 cells capped. Dogfood live: docs/backlog.md seeded (3 PBIs), vendored .bee/bin synced, AGENTS header proposed. Commits 42d35f1, a4dc872, 29b6015.",
-  "next_action": "bee-reviewing: EXISTS/SUBSTANTIVE/WIRED + UAT across all 8 cells, then Gate 4.",
+  "summary": "Review complete: P1=0, P2=0, P3=3 (1 fixed inline, 2 filed). All artifacts EXISTS/SUBSTANTIVE/WIRED, evidence gate passed, dogfood UAT live. Tests green (59/0 + PASS).",
+  "next_action": "Gate 4 (approve merge), then bee-scribing + bee-compounding.",
   "last_scribing_run": {
     "feature": "harness09",
     "date": "2026-07-08",
