@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "phase": "swarming",
+  "phase": "reviewing",
   "feature": "harness10-backlog-and-fresh-session",
   "mode": "standard",
   "approved_gates": {
@@ -9,22 +9,9 @@
     "execution": true,
     "review": false
   },
-  "workers": [
-    {
-      "nickname": "forager-7",
-      "cell": "harness10-7",
-      "tier": "generation",
-      "status": "done"
-    },
-    {
-      "nickname": "forager-8",
-      "cell": "harness10-8",
-      "tier": "generation",
-      "status": "spawned"
-    }
-  ],
-  "summary": "harness10-7 capped (a4dc872). Dispatching forager-8 (dogfood sync + seed backlog). Note: check harness10-7 projection-rule prose reads naturally at reviewing.",
-  "next_action": "Tend forager-6; then forager-7 (prose), forager-8 (dogfood).",
+  "workers": [],
+  "summary": "Slice 4 (final) capped: harness10-6..8 done. All 8 cells capped. Dogfood live: docs/backlog.md seeded (3 PBIs), vendored .bee/bin synced, AGENTS header proposed. Commits 42d35f1, a4dc872, 29b6015.",
+  "next_action": "bee-reviewing: EXISTS/SUBSTANTIVE/WIRED + UAT across all 8 cells, then Gate 4.",
   "last_scribing_run": {
     "feature": "harness09",
     "date": "2026-07-08",

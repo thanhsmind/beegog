@@ -3,7 +3,7 @@
   "feature": "harness10-backlog-and-fresh-session",
   "title": "Dogfood sync: re-onboard the bee repo so vendored helpers and AGENTS block pick up harness10",
   "lane": "tiny",
-  "status": "claimed",
+  "status": "capped",
   "deps": [
     "harness10-7"
   ],
@@ -35,11 +35,20 @@
   "verify": "node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --json | grep -q up_to_date && node .bee/bin/bee_status.mjs --json | grep -q '\"pbi\"' && node .bee/bin/lib/commands_detect.mjs | grep -qF '[' && node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs",
   "trace": {
     "worker": "forager-8",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "Dogfood sync complete: vendored .bee/bin picks up harness10 templates (backlog, commands_detect, cells pbi field, inject PBI line, bee_status pbi), AGENTS.md gained D4-proposed header with [unknown] fill-me line, docs/backlog.md seeded with 3 proposed PBI rows. Verify green (chain exit 0). Block was an orchestrator-authored verify-string bug (grep -q '[' invalid regex), fixed to grep -qF.",
+    "files_changed": [
+      ".bee/bin/bee_status.mjs",
+      ".bee/bin/lib/backlog.mjs",
+      ".bee/bin/lib/commands_detect.mjs",
+      ".bee/bin/lib/cells.mjs",
+      ".bee/bin/lib/inject.mjs",
+      "AGENTS.md",
+      "docs/backlog.md",
+      ".bee/onboarding.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-08T08:57:08.475Z",
     "behavior_change": false,
     "verification_evidence": null,
     "verify_output": "onboard: up_to_date | pbi={proposed:3,in_flight:0,done:0} | commands_detect: [] | test_lib 59/0 | test_onboard PASS | CHAIN EXIT 0",
