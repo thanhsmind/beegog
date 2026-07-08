@@ -27,6 +27,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
    - Classify: `Quick`, `Standard`, or `Deep`.
    - Read `docs/history/learnings/critical-patterns.md` and `.bee/state.json` if present.
    - If the request spans independent subsystems, pick one and defer the rest.
+   - If `.bee/config.json` lacks `commands` (setup/start/test/verify), ask the user for them here — one question, skippable — and write the answers to `.bee/config.json`. Never invent command values (docs/09 item 1).
 
 2. **Domain**
    - Classify each applicable type:

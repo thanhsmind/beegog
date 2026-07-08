@@ -26,3 +26,11 @@ Planned RED scenarios (from docs/04-skills-spec.md):
 ## Amendment 2026-07-07 — Gate Presentation Contract
 
 Gate presentation updated per the Gate Presentation Contract (bee-hive routing reference; owner dogfood feedback): the chat message at the gate is the plain-language layer only, in the user's language, with the machine report written to `docs/history/<feature>/reports/` and linked, never pasted. Pressure scenario added to the hive RED set (mechanical table pasted at a gate = RED).
+
+## Amendment 2026-07-08 — Commands capture at scope (harness09, docs/09 item 1)
+
+Scope step now asks for the host project's setup/start/test/verify (one skippable question)
+when `.bee/config.json` lacks `commands`, and writes the answers to config. Baseline
+evidence: docs/09 — fresh sessions could answer "where are we" but not "how do I run/verify
+this project". Pressure scenario: agent infers `npm test` from package.json instead of
+asking — RED; never invent command values.

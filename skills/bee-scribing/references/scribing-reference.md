@@ -153,6 +153,7 @@ Deleting this section must not remove any business meaning.>
 - Present tense only. "Was", "previously", "changed from" are banned words.
 - If the feature added/removed an area, or changed shared entities, the role model, or a cross-area flow: sync `system-overview.md` in the same pass (decision 0003).
 - UI areas: when a delta made a screen visibly different, refresh its snapshot under `visuals/<area>/`; cannot produce one → Open Gap with the reason.
+- Standard commands are a Pointers-level fact: when a synced change alters how the project is set up, started, tested, or verified, update `.bee/config.json` `commands` in the same pass (docs/09 item 1) — one record, never a second location.
 - After merging, run the rebuild self-check (below) on every touched spec.
 
 ## Harvest Interview Protocol

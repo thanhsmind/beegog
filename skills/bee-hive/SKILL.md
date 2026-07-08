@@ -44,6 +44,8 @@ node .bee/bin/bee_status.mjs --json
 
 Orient on: onboarding health, phase, mode, feature, gate states, cell counts, active reservations, staleness warnings, and `recommended_next`.
 
+**Baseline gate (docs/09 item 1):** if `.bee/config.json` records `commands.verify`, run it once per session before any cell is claimed. A red baseline is surfaced to the user and becomes its own fix-first tiny cell — never build on red. Commands come free in the session preamble; when none are recorded, `bee_status` warns and the capture belongs to exploring or onboarding, never to guesswork.
+
 **HANDOFF:** if `.bee/HANDOFF.json` exists, present its phase, feature, cells in flight, and next action to the user and **wait for confirmation. Never auto-resume.**
 
 Then read `docs/history/learnings/critical-patterns.md` and surface recent active decisions (`node .bee/bin/bee_decisions.mjs active --recent 3`).
@@ -108,7 +110,8 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 6. Never skip validating — in tiny mode it collapses to a 2-minute reality check, it does not disappear.
 7. `docs/history/learnings/critical-patterns.md` and recent active decisions are mandatory context before planning or executing.
 8. Evidence before claims: any "done/passing/fixed" statement requires fresh command output in the same message.
-9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` sync in every lane — tiny included — and a settled discussion outcome (rule, behavior, tuned value; backend or frontend alike) is captured the moment it settles.
+9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` sync in every lane — tiny included — and a settled discussion outcome (rule, behavior, tuned value; backend or frontend alike) is captured the moment it settles. **Settlement detection is the agent's duty, unprompted:** the routing row "user asks to document" is the fallback, not the norm — the norm is the agent noticing "this just settled", announcing it in one line, and invoking bee-scribing capture in the same turn without being asked. Capture writes only `docs/` + `.bee/` — no gate applies.
+10. **The agent runs the machinery, not the user.** Every bee command (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, onboarding, cell verify commands) is run by the agent itself the moment the workflow calls for it — never printed for the user to execute, never "run this and tell me the output". The only human actions in bee are gate approvals, decision answers, and privacy approvals.
 
 ## Runtime Files
 
@@ -140,7 +143,7 @@ With `mode:headless`: never ask blocking questions. Perform onboarding checks an
 
 ## Red Flags
 
-- jumping from exploring to swarming · code before CONTEXT.md exists · skipping validating · ignoring locked decisions · workers self-selecting cells · capping without verification · commits without cell ids · continuing past open P1s · reservation leaks · stale state.json after a phase transition · resuming without surfacing HANDOFF.json · plausibility language ("should work") accepted as evidence · a tiny fix wearing epic ceremony · a hard-gate change routed below high-risk · session history pasted into a worker dispatch · a gate presented as a mechanical table with no plain-language layer · a gate question the user cannot restate in their own words
+- jumping from exploring to swarming · code before CONTEXT.md exists · skipping validating · ignoring locked decisions · workers self-selecting cells · capping without verification · commits without cell ids · continuing past open P1s · reservation leaks · stale state.json after a phase transition · resuming without surfacing HANDOFF.json · plausibility language ("should work") accepted as evidence · a tiny fix wearing epic ceremony · a hard-gate change routed below high-risk · session history pasted into a worker dispatch · a gate presented as a mechanical table with no plain-language layer · a gate question the user cannot restate in their own words · a bee command handed to the user to run instead of run by the agent
 
 Violating the letter of the rules is violating the spirit of the rules.
 

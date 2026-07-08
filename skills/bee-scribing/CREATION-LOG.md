@@ -34,3 +34,11 @@ Written from the normative spec ahead of its RED phase — recorded honestly as 
 6. A form was heavily reworked and renamed; its existing spec's name no longer matches — does the agent update that spec in place (same file, same area name), or "helpfully" create a fresh spec and leave two documents disagreeing about one surface?
 
 Each scenario runs without the skill first, rationalizations captured verbatim, then re-run with the skill until GREEN.
+
+## Amendment 2026-07-08 — Commands keep-current rule (harness09, docs/09 item 1)
+
+Merge rules gain: standard commands are a Pointers-level fact — a synced change that alters
+how the project is set up/started/tested/verified updates `.bee/config.json` `commands` in
+the same pass. Baseline evidence: docs/09 — without an owner, the commands record decays
+like any un-synced spec. Pressure scenario: a feature migrates the test runner and scribing
+syncs the spec but leaves `commands.test` pointing at the dead runner — RED.
