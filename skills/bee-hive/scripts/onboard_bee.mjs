@@ -259,6 +259,24 @@ function mergeRepoSettings(settingsPath) {
   };
 }
 
+// ---------- standard commands notice (docs/09 item 1, decision D4) ----------
+
+const COMMAND_KEYS = ["setup", "start", "test", "verify"];
+
+function commandsNotices(repoRoot) {
+  const config = readJsonIfExists(path.join(repoRoot, ".bee", "config.json")) || {};
+  const raw = config.commands && typeof config.commands === "object" ? config.commands : {};
+  const recorded = COMMAND_KEYS.filter(
+    (key) => typeof raw[key] === "string" && raw[key].trim(),
+  );
+  if (recorded.length > 0) {
+    return [];
+  }
+  return [
+    "No standard commands recorded. Ask the user for the host project's setup/start/test/verify commands and write them to .bee/config.json `commands` (skippable — never invent values). They power the session baseline gate.",
+  ];
+}
+
 // ---------- plan computation ----------
 
 function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
@@ -549,6 +567,9 @@ function emit(payload, asJson) {
   if (items.length === 0) {
     process.stdout.write("  (nothing to do)\n");
   }
+  for (const notice of payload.notices || []) {
+    process.stdout.write(`notice: ${notice}\n`);
+  }
 }
 
 export function main(argv = process.argv.slice(2)) {
@@ -585,6 +606,7 @@ export function main(argv = process.argv.slice(2)) {
           status: plan.length === 0 ? "up_to_date" : "changes_needed",
           bee_version: beeVersion,
           plan,
+          notices: commandsNotices(repoRoot),
         },
         args.json,
       );
@@ -602,6 +624,7 @@ export function main(argv = process.argv.slice(2)) {
         recheck: recheck.plan.length === 0 ? "up_to_date" : "changes_needed",
         recheck_plan: recheck.plan,
         onboarding: result.onboarding,
+        notices: commandsNotices(repoRoot),
       },
       args.json,
     );

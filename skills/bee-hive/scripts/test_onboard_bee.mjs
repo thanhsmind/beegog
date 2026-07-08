@@ -83,6 +83,23 @@ try {
   check(agentsText.includes("<!-- BEE:START -->") && agentsText.includes("<!-- BEE:END -->"),
     "AGENTS.md contains BEE:START/END markers");
   check(agentsText.includes("bee_status.mjs"), "AGENTS block mentions bee_status first step");
+  check(agentsText.includes("commands.verify") && agentsText.includes("never build on red"),
+    "AGENTS block carries the baseline-gate startup step");
+
+  // --- 3b. standard-commands capture notice (docs/09 item 1) ----------------
+  check(Array.isArray(apply1.payload?.notices) &&
+    apply1.payload.notices.some((n) => n.includes("standard commands")),
+    "apply on repo without commands surfaces the capture notice");
+  const cfgPath = path.join(tmp, ".bee", "config.json");
+  const cfgRaw = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+  cfgRaw.commands = { verify: "npm test" };
+  fs.writeFileSync(cfgPath, `${JSON.stringify(cfgRaw, null, 2)}\n`, "utf8");
+  const planNotice = runOnboard(["--repo-root", tmp, "--json"]);
+  check(Array.isArray(planNotice.payload?.notices) && planNotice.payload.notices.length === 0,
+    "notice disappears once commands are recorded",
+    JSON.stringify(planNotice.payload?.notices || null));
+  delete cfgRaw.commands;
+  fs.writeFileSync(cfgPath, `${JSON.stringify(cfgRaw, null, 2)}\n`, "utf8");
 
   // --- 4. verify .bee tree ---------------------------------------------------
   for (const rel of [
