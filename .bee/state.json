@@ -1,17 +1,17 @@
 {
   "schema_version": "1.0",
-  "phase": "compounding",
-  "feature": "harness09",
-  "mode": "standard",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
-    "context": true,
-    "shape": true,
-    "execution": true,
-    "review": true
+    "context": false,
+    "shape": false,
+    "execution": false,
+    "review": false
   },
   "workers": [],
-  "summary": "All 9 cells capped; scribing synced 02-architecture; learnings + 1 critical promotion + backlog outcomes written; awaiting slice 2-5 review result.",
-  "next_action": "Collect review, final commit, close to idle.",
+  "summary": "harness09 closed: 10 cells capped, slices 1-5 of docs/09 adopted, review P1=0, learnings + outcomes recorded, session-finish verify green.",
+  "next_action": "Invoke bee-hive. Open follow-ups live in .bee/backlog.jsonl (verify-tier warning, gate-staleness check) and docs/09 items 6-10 have named triggers.",
   "last_scribing_run": {
     "feature": "harness09",
     "date": "2026-07-08",
