@@ -55,7 +55,7 @@ Eleven skills; additions are decision-gated (a decision record naming the uncove
     decisions.jsonl              ← event-sourced decisions (decide/supersede/redact)
     backlog.jsonl                ← friction + grooming items (predicted → actual)
     tools.json                   ← capability registry (present/absent, fallback notes)
-    config.json                  ← per-repo config incl. hooks.<name> toggles
+    config.json                  ← per-repo config: hooks.<name> toggles + commands (setup/start/test/verify — the host project's standard paths, docs/09 item 1)
     logs/hooks.jsonl             ← fail-open hook crash/audit log
     cells/                       ← one JSON file per cell: <feature>-<n>.json
     bin/                         ← vendored helpers (bee_status, bee_cells, bee_reservations, bee_decisions)
@@ -168,7 +168,7 @@ Four small Node scripts (Node 18+, zero npm deps), installed to `.bee/bin/` by o
 
 | Helper | Operations |
 |---|---|
-| `bee_status.mjs` | Read-only scout: onboarding health, state, handoff, gates, active cells, entropy quick-read, recommended next reads. `--json` |
+| `bee_status.mjs` | Read-only scout: onboarding health, state, handoff, gates, active cells, standard commands (warns when unrecorded), entropy quick-read, recommended next reads. `--json` |
 | `bee_cells.mjs` | `list / ready / show / add / claim / cap / block / drop`; enforces cap-requires-verify and lane field tiers |
 | `bee_reservations.mjs` | `reserve / release / list / sweep` with agent, cell id, path glob, TTL; conflict → caller must return `[BLOCKED]` |
 | `bee_decisions.mjs` | `log / supersede / redact / search --recent / active`; write-time secret & injection rejection, datamark on read |
@@ -183,7 +183,7 @@ The workflow contract is runtime-neutral; only two seams differ:
 
 | Runtime | Mechanism |
 |---|---|
-| Claude Code | `hooks/bee-session-init.mjs` (SessionStart on startup/resume/clear/compact) injects the routing preamble plus live state: status, gates, HANDOFF surfacing, critical-patterns digest, recent decisions (superpowers pattern + claudekit session-init) |
+| Claude Code | `hooks/bee-session-init.mjs` (SessionStart on startup/resume/clear/compact) injects the routing preamble plus live state: status, gates, HANDOFF surfacing, standard commands + baseline gate, critical-patterns digest, recent decisions (superpowers pattern + claudekit session-init) |
 | Codex | The `AGENTS.template.md` block installed into the repo's `AGENTS.md` carries the same instructions (khuym pattern); `bee_status.mjs --json` is the first commanded step. Re-read after any compaction. |
 
 Both vectors point at the same skill (`bee-hive`); the preamble content is generated from one shared module (`bin/lib/inject.mjs`) for the hook, the AGENTS.md block, and `bee_status` output, so the runtimes can never drift.

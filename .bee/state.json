@@ -1,15 +1,28 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "compounding",
+  "feature": "harness09",
+  "mode": "standard",
   "approved_gates": {
-    "context": false,
-    "shape": false,
-    "execution": false,
-    "review": false
+    "context": true,
+    "shape": true,
+    "execution": true,
+    "review": true
   },
   "workers": [],
-  "summary": "",
-  "next_action": "Invoke bee-hive."
+  "summary": "All 9 cells capped; scribing synced 02-architecture; learnings + 1 critical promotion + backlog outcomes written; awaiting slice 2-5 review result.",
+  "next_action": "Collect review, final commit, close to idle.",
+  "last_scribing_run": {
+    "feature": "harness09",
+    "date": "2026-07-08",
+    "synced": "docs/02-architecture.md (config commands, status line, preamble list) + AGENTS block via onboarding; no docs/specs layer in this repo — design docs are the spec layer",
+    "cells_covered": "harness09-1..9"
+  },
+  "last_compounding_run": {
+    "feature": "harness09",
+    "date": "2026-07-08",
+    "learnings_file": "docs/history/learnings/20260708-harness09.md",
+    "critical_promotions": 1,
+    "scribing_verified": true
+  }
 }
