@@ -2,12 +2,12 @@
   "schema_version": "1.0",
   "bee_version": "0.1.4",
   "managed": {
-    "agents_block": "453b3b441b5f39b8d3dc262059ec192b7d2d3adc013065f914c05c6e8e2fa0da",
+    "agents_block": "284893aac540485a5df18190f6d273ef0598b63181743afdfdb975bd4091a9a7",
     "helpers": {
       "bee_cells.mjs": "635f169e03173edefe7a809cc2e3dff7d200131e59cf209d356c014e4ef13e0f",
       "bee_decisions.mjs": "1a5e1b02d66ee55416c52e5eac29d7c0ee623cf9b8a79a8f84d0eef43d91973b",
       "bee_reservations.mjs": "02b0b1fe84e994a5a33bf4aaf181317d0b4fa88b064a5b53f800af8a0ccf9fd8",
-      "bee_status.mjs": "a595b0c13e890a038403d1cb7ca992224e3ce0e8117a8da1ec27cae7a748fe2b"
+      "bee_status.mjs": "43aa0b4bbc37de3dec839bc559a49f8f2bcce2ca5b43dad0b0237c6d402d7930"
     },
     "lib": {
       "cells.mjs": "83805c1d637a8c6a825f71791873be39bfbd1fc36cb9440b8a9941918d6c0c72",
@@ -20,5 +20,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-08T06:29:56.706Z"
+  "updated_at": "2026-07-08T06:36:58.211Z"
 }

@@ -100,6 +100,14 @@ try {
     JSON.stringify(planNotice.payload?.notices || null));
   delete cfgRaw.commands;
   fs.writeFileSync(cfgPath, `${JSON.stringify(cfgRaw, null, 2)}\n`, "utf8");
+  const stateSource = fs.readFileSync(path.join(TEMPLATES_LIB_DIR, "state.mjs"), "utf8");
+  const stateKeys = stateSource.match(/COMMAND_KEYS = \[([^\]]+)\]/)?.[1] || "";
+  const onboardSource = fs.readFileSync(path.join(SCRIPTS_DIR, "onboard_bee.mjs"), "utf8");
+  const onboardKeys = onboardSource.match(/COMMAND_KEYS = \[([^\]]+)\]/)?.[1] || "";
+  const normKeys = (s) => s.replace(/["'\s]/g, "");
+  check(stateKeys && normKeys(stateKeys) === normKeys(onboardKeys),
+    "onboard_bee.mjs COMMAND_KEYS matches lib/state.mjs (no drift)",
+    `state: [${stateKeys}] vs onboard: [${onboardKeys}]`);
 
   // --- 4. verify .bee tree ---------------------------------------------------
   for (const rel of [

@@ -425,6 +425,18 @@ check('buildSessionPreamble shows commands and baseline gate when verify recorde
   assert(/never build on red/i.test(preamble), 'fix-first rule stated');
 });
 
+check('buildSessionPreamble shows commands but no baseline gate without verify', () => {
+  writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
+    commands: { test: 'npm run unit' },
+  });
+  const preamble = buildSessionPreamble(root);
+  assert(/Standard commands/.test(preamble), 'commands section present without verify');
+  assert(!/Baseline gate/.test(preamble), 'no baseline-gate line without verify command');
+  writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
+    commands: { setup: 'npm install', verify: 'npm test' },
+  });
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 fs.rmSync(root, { recursive: true, force: true });

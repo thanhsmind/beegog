@@ -86,5 +86,5 @@ Before ending a substantial bee work chunk:
 
 1. Cap or release every claimed cell; release reservations (`bee_reservations.mjs release`).
 2. Leave `.bee/state.json` (phase, summary, next_action) and `.bee/HANDOFF.json` consistent with the true pause/resume state.
-3. If `commands.verify` is recorded, run it once more; a red result is reported to the user — never left silent.
+3. If `commands.verify` is recorded, run it: end green, or end red only with a fix-first cell filed and the red result reported — never left silent.
 4. Mention remaining blockers, open questions, and the next action in the final response.
