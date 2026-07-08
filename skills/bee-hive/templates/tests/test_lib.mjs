@@ -477,6 +477,77 @@ check('buildSessionPreamble shows commands but no baseline gate without verify',
   });
 });
 
+// ─── project map preamble section (harness10-5, decision D5) ────────────────
+
+const specsFixtureDir = path.join(root, 'docs', 'specs');
+
+function projectMapSection(preamble) {
+  const all = preamble.split('\n');
+  const start = all.indexOf('### Project map');
+  assert(start !== -1, 'Project map heading always present');
+  const section = [all[start]];
+  for (let i = start + 1; i < all.length; i += 1) {
+    if (all[i] === '' || all[i].startsWith('### ')) break;
+    section.push(all[i]);
+  }
+  return section;
+}
+
+check('preamble shows the single warning line when neither map file exists', () => {
+  const section = projectMapSection(buildSessionPreamble(root));
+  assert(section.length === 2, `heading + exactly one warning line, got ${section.length}`);
+  assert(/Project map missing/.test(section[1]), 'warning names the gap');
+  assert(/Q1\/Q2/.test(section[1]), 'warning names the unanswerable questions');
+  assert(/bee-scribing bootstrap/.test(section[1]), 'warning names the one-command fix');
+});
+
+check('preamble warning still fires when area specs exist but neither map file does', () => {
+  fs.mkdirSync(specsFixtureDir, { recursive: true });
+  fs.writeFileSync(path.join(specsFixtureDir, 'auth.md'), '# Auth\n', 'utf8');
+  try {
+    const section = projectMapSection(buildSessionPreamble(root));
+    assert(section.length === 2, `heading + warning only, got ${section.length}`);
+    assert(/bee-scribing bootstrap/.test(section[1]), 'area specs alone do not answer Q1/Q2');
+  } finally {
+    fs.rmSync(specsFixtureDir, { recursive: true, force: true });
+  }
+});
+
+check('preamble shows single pointer + count when only one map file exists', () => {
+  fs.mkdirSync(specsFixtureDir, { recursive: true });
+  fs.writeFileSync(path.join(specsFixtureDir, 'reading-map.md'), '# Reading map\n', 'utf8');
+  try {
+    const section = projectMapSection(buildSessionPreamble(root));
+    assert(section.length === 3, `heading + pointer + count, got ${section.length}`);
+    assert(section.some((line) => line.includes('docs/specs/reading-map.md')), 'pointer for the existing map');
+    assert(!section.some((line) => line.includes('system-overview.md')), 'no pointer for the missing map');
+    assert(section.some((line) => /Specced areas: 0/.test(line)), 'count is its own line and excludes map files');
+    assert(!section.some((line) => /Project map missing/.test(line)), 'no warning when a map exists');
+  } finally {
+    fs.rmSync(specsFixtureDir, { recursive: true, force: true });
+  }
+});
+
+check('preamble shows both pointers + count within 4 lines when both map files exist', () => {
+  fs.mkdirSync(specsFixtureDir, { recursive: true });
+  fs.writeFileSync(path.join(specsFixtureDir, 'system-overview.md'), '# Overview\n', 'utf8');
+  fs.writeFileSync(path.join(specsFixtureDir, 'reading-map.md'), '# Reading map\n', 'utf8');
+  fs.writeFileSync(path.join(specsFixtureDir, 'auth.md'), '# Auth\n', 'utf8');
+  fs.writeFileSync(path.join(specsFixtureDir, 'billing.md'), '# Billing\n', 'utf8');
+  try {
+    const preamble = buildSessionPreamble(root);
+    const section = projectMapSection(preamble);
+    assert(section.length === 4, `section never exceeds 4 lines (max case is exactly 4), got ${section.length}`);
+    assert(section.some((line) => line.includes('docs/specs/system-overview.md')), 'system-overview pointer');
+    assert(section.some((line) => line.includes('docs/specs/reading-map.md')), 'reading-map pointer');
+    assert(section.some((line) => /Specced areas: 2/.test(line)), 'count excludes the two map files');
+    assert(!/PBI/.test(preamble), 'no PBI content in the preamble (slice 4 boundary, D10)');
+    assert(!/visuals/.test(preamble), 'visuals/ never mentioned');
+  } finally {
+    fs.rmSync(specsFixtureDir, { recursive: true, force: true });
+  }
+});
+
 // ─── command detection (harness10-1, decision D3: propose-only) ─────────────
 
 const detectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-detect-'));
