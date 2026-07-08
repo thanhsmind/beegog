@@ -18,6 +18,7 @@ import {
   readOnboarding,
 } from './lib/state.mjs';
 import { listCells, readyCells } from './lib/cells.mjs';
+import { readBacklogCounts } from './lib/backlog.mjs';
 import { listReservations } from './lib/reservations.mjs';
 import { activeDecisions, datamark } from './lib/decisions.mjs';
 
@@ -39,6 +40,7 @@ function buildStatus(root) {
   );
 
   const commands = readConfig(root).commands || {};
+  const backlog = readBacklogCounts(root);
 
   const staleness = [];
   if (Object.keys(commands).length === 0) {
@@ -102,6 +104,9 @@ function buildStatus(root) {
     gates: state.approved_gates,
     handoff,
     cells: counts,
+    pbi: backlog
+      ? { proposed: backlog.proposed, in_flight: backlog.inFlight, done: backlog.done }
+      : null,
     commands,
     active_reservations: active,
     critical_patterns_present: fs.existsSync(
@@ -125,6 +130,9 @@ function renderText(status) {
     `Gates: ${GATE_NAMES.map((g) => `${g}=${status.gates?.[g] ? 'approved' : 'pending'}`).join(' ')}`,
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,
+    ...(status.pbi
+      ? [`PBI: ${status.pbi.done} done / ${status.pbi.in_flight} in-flight / ${status.pbi.proposed} proposed`]
+      : []),
     `Standard commands: ${
       COMMAND_KEYS.filter((key) => status.commands?.[key])
         .map((key) => `${key}=${status.commands[key]}`)

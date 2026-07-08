@@ -20,6 +20,7 @@ import {
   COMMAND_KEYS,
 } from '../lib/state.mjs';
 import { detectCommands } from '../lib/commands_detect.mjs';
+import { readBacklogCounts, BACKLOG_STATUSES } from '../lib/backlog.mjs';
 import {
   addCell,
   readCell,
@@ -528,23 +529,36 @@ check('preamble shows single pointer + count when only one map file exists', () 
   }
 });
 
-check('preamble shows both pointers + count within 4 lines when both map files exist', () => {
+check('preamble Project map: 4 lines without backlog, 5-line max with the PBI line (D5+D10)', () => {
   fs.mkdirSync(specsFixtureDir, { recursive: true });
   fs.writeFileSync(path.join(specsFixtureDir, 'system-overview.md'), '# Overview\n', 'utf8');
   fs.writeFileSync(path.join(specsFixtureDir, 'reading-map.md'), '# Reading map\n', 'utf8');
   fs.writeFileSync(path.join(specsFixtureDir, 'auth.md'), '# Auth\n', 'utf8');
   fs.writeFileSync(path.join(specsFixtureDir, 'billing.md'), '# Billing\n', 'utf8');
+  const backlogFixture = path.join(root, 'docs', 'backlog.md');
   try {
+    // No backlog.md yet: the PBI line is absent (repurposed slice-4-boundary assertion, D10).
+    const noBacklog = projectMapSection(buildSessionPreamble(root));
+    assert(noBacklog.length === 4, `without backlog the section is 4 lines, got ${noBacklog.length}`);
+    assert(!noBacklog.some((line) => /PBI/.test(line)), 'no PBI line when docs/backlog.md is missing');
+    assert(noBacklog.some((line) => line.includes('docs/specs/system-overview.md')), 'system-overview pointer');
+    assert(noBacklog.some((line) => line.includes('docs/specs/reading-map.md')), 'reading-map pointer');
+    assert(noBacklog.some((line) => /Specced areas: 2/.test(line)), 'count excludes the two map files');
+
+    // With backlog.md the PBI line rides the section — 5 lines is the exact max.
+    fs.writeFileSync(
+      backlogFixture,
+      '| ID | Story | CoS | Status | Feature |\n| -- | ----- | --- | ------ | ------- |\n| 1 | A | x | done | f |\n| 2 | B | y | proposed | |\n',
+      'utf8',
+    );
     const preamble = buildSessionPreamble(root);
-    const section = projectMapSection(preamble);
-    assert(section.length === 4, `section never exceeds 4 lines (max case is exactly 4), got ${section.length}`);
-    assert(section.some((line) => line.includes('docs/specs/system-overview.md')), 'system-overview pointer');
-    assert(section.some((line) => line.includes('docs/specs/reading-map.md')), 'reading-map pointer');
-    assert(section.some((line) => /Specced areas: 2/.test(line)), 'count excludes the two map files');
-    assert(!/PBI/.test(preamble), 'no PBI content in the preamble (slice 4 boundary, D10)');
+    const withBacklog = projectMapSection(preamble);
+    assert(withBacklog.length === 5, `section never exceeds 5 lines (max case with the PBI line is exactly 5), got ${withBacklog.length}`);
+    assert(withBacklog.some((line) => /PBI: 1 done \/ 0 in-flight \/ 1 proposed/.test(line)), 'PBI line rides the section when backlog exists');
     assert(!/visuals/.test(preamble), 'visuals/ never mentioned');
   } finally {
     fs.rmSync(specsFixtureDir, { recursive: true, force: true });
+    fs.rmSync(backlogFixture, { force: true });
   }
 });
 
@@ -629,6 +643,130 @@ check('commands_detect.mjs run directly prints JSON candidates (CLI entry)', () 
   const parsed = JSON.parse(result.stdout);
   assert(Array.isArray(parsed) && parsed.length === 1, 'CLI prints the candidate list');
   assert(parsed[0].key === 'test' && parsed[0].value === 'go test ./...' && parsed[0].source === 'go.mod', 'go.mod convention surfaced via CLI');
+});
+
+// ─── backlog parser (harness10-6, decisions D6/D9/D10) ─────────────────────
+
+const backlogFile = path.join(root, 'docs', 'backlog.md');
+
+function withBacklog(content, fn) {
+  fs.mkdirSync(path.dirname(backlogFile), { recursive: true });
+  fs.writeFileSync(backlogFile, content, 'utf8');
+  try {
+    fn();
+  } finally {
+    fs.rmSync(backlogFile, { force: true });
+  }
+}
+
+check('readBacklogCounts returns null when docs/backlog.md is absent', () => {
+  fs.rmSync(backlogFile, { force: true });
+  assert(readBacklogCounts(root) === null, 'absent file yields null (gates the preamble PBI line)');
+  const section = projectMapSection(buildSessionPreamble(root));
+  assert(!section.some((line) => /PBI/.test(line)), 'no PBI line in the preamble when the file is absent');
+});
+
+check('readBacklogCounts counts a well-formed backlog by Status column', () => {
+  withBacklog(
+    '# Backlog\n\n' +
+      '| ID | Story | CoS | Status | Feature |\n' +
+      '|----|-------|-----|--------|---------|\n' +
+      '| 1 | Login | works | done | auth |\n' +
+      '| 2 | Search | fast | in-flight | search |\n' +
+      '| 3 | Export | csv | proposed | |\n' +
+      '| 4 | Import | csv | proposed | |\n',
+    () => {
+      const counts = readBacklogCounts(root);
+      assert(counts.done === 1, `done=1, got ${counts.done}`);
+      assert(counts.inFlight === 1, `inFlight=1, got ${counts.inFlight}`);
+      assert(counts.proposed === 2, `proposed=2, got ${counts.proposed}`);
+      assert(counts.total === 4, `total=4, got ${counts.total}`);
+    },
+  );
+});
+
+check('readBacklogCounts tolerates extra columns, reordering, and bold markup', () => {
+  withBacklog(
+    '| Prio | Status | ID | Story |\n' +
+      '|------|--------|----|-------|\n' +
+      '| P0 | **done** | 1 | A |\n' +
+      '| P1 | `in-flight` | 2 | B |\n' +
+      '| P2 | proposed | 3 | C |\n',
+    () => {
+      const counts = readBacklogCounts(root);
+      assert(counts.done === 1 && counts.inFlight === 1 && counts.proposed === 1, `bold/code/reorder tolerated, got ${JSON.stringify(counts)}`);
+    },
+  );
+});
+
+check('readBacklogCounts skips malformed and unknown-status rows without throwing', () => {
+  withBacklog(
+    '| ID | Story | Status |\n' +
+      '|----|-------|--------|\n' +
+      '| 1 | A | done |\n' +
+      '| 2 | B |\n' + // missing Status cell -> skipped
+      '| 3 | C | blocked |\n' + // unknown token -> skipped
+      'not a table row at all\n' +
+      '| 4 | D | proposed |\n',
+    () => {
+      let counts;
+      assert(
+        (() => {
+          counts = readBacklogCounts(root);
+          return true;
+        })(),
+        'parser never throws on malformed rows',
+      );
+      assert(counts.done === 1 && counts.proposed === 1 && counts.inFlight === 0, `only valid rows count, got ${JSON.stringify(counts)}`);
+      assert(counts.total === 2, `total counts only valid rows, got ${counts.total}`);
+    },
+  );
+});
+
+check('readBacklogCounts counts duplicate IDs honestly (row-by-row, dedup is grooming prose)', () => {
+  withBacklog(
+    '| ID | Status |\n' +
+      '|----|--------|\n' +
+      '| 7 | in-flight |\n' +
+      '| 7 | in-flight |\n' +
+      '| 7 | done |\n',
+    () => {
+      const counts = readBacklogCounts(root);
+      assert(counts.inFlight === 2 && counts.done === 1, `each row counts, got ${JSON.stringify(counts)}`);
+      assert(counts.total === 3, `total=3, got ${counts.total}`);
+    },
+  );
+});
+
+check('BACKLOG_STATUSES is the locked D6 enum and matches its source literal (drift guard)', () => {
+  assert(Array.isArray(BACKLOG_STATUSES), 'exported as an array');
+  assert(
+    BACKLOG_STATUSES.join(',') === 'proposed,in-flight,done',
+    `D6 enum is proposed/in-flight/done, got ${BACKLOG_STATUSES.join(',')}`,
+  );
+  const src = fs.readFileSync(fileURLToPath(new URL('../lib/backlog.mjs', import.meta.url)), 'utf8');
+  const literal = src.match(/BACKLOG_STATUSES = \[([^\]]+)\]/)?.[1] || '';
+  assert(
+    literal.replace(/["'\s]/g, '') === 'proposed,in-flight,done',
+    `source literal matches the export (no drift), got [${literal}]`,
+  );
+});
+
+// ─── cells: optional pbi field (harness10-6, decision D9) ───────────────────
+
+check('addCell persists an optional pbi string and cap ignores it (no validation coupling)', () => {
+  addCell(root, makeCell('pbi-1', { pbi: 'PBI-42' }));
+  assert(readCell(root, 'pbi-1').pbi === 'PBI-42', 'pbi persisted verbatim on add');
+  recordVerify(root, 'pbi-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  const capped = capCell(root, 'pbi-1', { outcome: 'done', files_changed: ['a.js'] });
+  assert(capped.status === 'capped', 'a cell with pbi caps exactly like one without it');
+  assert(capped.pbi === 'PBI-42', 'pbi survives the cap untouched');
+});
+
+check('addCell rejects a non-string pbi but accepts a missing/stale one', () => {
+  assertThrows(() => addCell(root, makeCell('pbi-bad', { pbi: 42 })), 'pbi', 'non-string pbi rejected');
+  addCell(root, makeCell('pbi-none')); // no pbi field at all is fine
+  assert(readCell(root, 'pbi-none').pbi === undefined, 'absent pbi stays absent, never a blocker');
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

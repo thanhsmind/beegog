@@ -15,6 +15,7 @@ import {
   readOnboarding,
 } from './state.mjs';
 import { activeDecisions, datamark } from './decisions.mjs';
+import { readBacklogCounts } from './backlog.mjs';
 
 const INJECT_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -48,6 +49,8 @@ const PROJECT_MAP_FILES = [
 ];
 
 // D5: pointers + specced-area count, never content; 2–4 lines including the heading.
+// D10: one PBI line rides the section (in either branch) when docs/backlog.md
+// exists, so the cap is 2–5 lines including the heading.
 function projectMapLines(root) {
   const specsDir = path.join(root, 'docs', 'specs');
   const present = PROJECT_MAP_FILES.filter(([file]) =>
@@ -59,23 +62,30 @@ function projectMapLines(root) {
     lines.push(
       '- Project map missing (Q1/Q2 unanswerable from repo) — bee-scribing bootstrap available.',
     );
-    return lines;
+  } else {
+    for (const [file, label] of present) lines.push(`- ${label}: docs/specs/${file}`);
+    let areaCount = 0;
+    try {
+      areaCount = fs
+        .readdirSync(specsDir, { withFileTypes: true })
+        .filter(
+          (entry) =>
+            entry.isFile() &&
+            entry.name.endsWith('.md') &&
+            !PROJECT_MAP_FILES.some(([file]) => file === entry.name),
+        ).length;
+    } catch {
+      areaCount = 0;
+    }
+    lines.push(`- Specced areas: ${areaCount} (docs/specs/ — read the spec before the code)`);
   }
-  for (const [file, label] of present) lines.push(`- ${label}: docs/specs/${file}`);
-  let areaCount = 0;
-  try {
-    areaCount = fs
-      .readdirSync(specsDir, { withFileTypes: true })
-      .filter(
-        (entry) =>
-          entry.isFile() &&
-          entry.name.endsWith('.md') &&
-          !PROJECT_MAP_FILES.some(([file]) => file === entry.name),
-      ).length;
-  } catch {
-    areaCount = 0;
+  // D10: PBI line only when docs/backlog.md exists — appended in BOTH branches.
+  const backlog = readBacklogCounts(root);
+  if (backlog) {
+    lines.push(
+      `- PBI: ${backlog.done} done / ${backlog.inFlight} in-flight / ${backlog.proposed} proposed`,
+    );
   }
-  lines.push(`- Specced areas: ${areaCount} (docs/specs/ — read the spec before the code)`);
   return lines;
 }
 

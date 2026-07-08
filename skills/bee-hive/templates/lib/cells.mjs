@@ -98,6 +98,12 @@ export function addCell(root, cell) {
       );
     }
   }
+  // D9: optional pbi field references a backlog id — persisted verbatim, no
+  // validation coupling (a missing/stale reference is a grooming find, never a
+  // cap/claim blocker). Only reject an outright non-string value.
+  if (cell.pbi !== undefined && cell.pbi !== null && typeof cell.pbi !== 'string') {
+    throw new Error('addCell: optional "pbi" must be a string backlog id when present.');
+  }
   if (readCell(root, cell.id)) {
     throw new Error(`addCell: cell "${cell.id}" already exists.`);
   }
