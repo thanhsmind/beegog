@@ -116,7 +116,8 @@ Thin argv wrappers over lib. All support `--json`. Non-zero exit + `{error}` JSO
 
 ```
 bee_status.mjs [--json]
-  → { onboarding, phase, mode, feature, gates, handoff, cells:{open,claimed,capped,blocked}, active_reservations, critical_patterns_present, recent_decisions, staleness_warnings, recommended_next }
+  → { onboarding, phase, mode, feature, gates, handoff, cells:{open,claimed,capped,blocked}, pbi:{proposed,in_flight,done}|null, active_reservations, critical_patterns_present, recent_decisions, staleness_warnings, recommended_next }
+    (pbi added additively, harness10 D10: counts of docs/backlog.md Status column, null when the file is absent)
 
 bee_cells.mjs list [--feature F] [--status S] | ready [--feature F] | show --id ID
              | add --file cell.json            (or --stdin)

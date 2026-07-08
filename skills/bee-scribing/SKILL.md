@@ -77,6 +77,12 @@ The trigger is **settlement**, not subject matter: whenever a discuss → build 
 
 Litmus: if the session ended right now, would this outcome exist anywhere but the chat? If no — capture it now.
 
+### Deferred requests → product-backlog rows (D8, decision 0007 pattern)
+
+The same unprompted-capture duty covers **deferred work**, not just settled truths. When the user pushes work out of the current scope — "để sau", "phase 2", "later", "not now" — or a Deferred Idea leaves exploring, the agent appends a `proposed` row to `docs/backlog.md` (the product backlog) **in the same turn, announce-then-do**: "ghi vào backlog: <story> (proposed)", then write it. A user having to say "ghi vào backlog" means detection already failed once. Backlog writes are `docs/`-layer — allowed in every phase, no gate. The row's ID/columns/merge rules live in the reference's Product Backlog section; do not duplicate the table schema here. This is prose-ruled, never hook-enforced (D7).
+
+At sync, close the loop the other way: when this scribing run closes a feature that matches a backlog row, flip that row to `done` and link `docs/history/<feature>/` (D11b) — the sync pass owns the done-flip.
+
 ## 5. Harvest Mode — Backfill Without Inventing
 
 1. Inventory the area from code and running behavior: screens, fields, actions, roles — or for backend areas: triggers, inputs, outputs, consumers, failure paths.
@@ -120,6 +126,7 @@ Record the scribing run in `.bee/state.json` (phase, areas synced, gaps opened, 
 - a settled outcome (rule, confirmed behavior, chosen value) that exists nowhere but the chat
 - the user said "chốt"/"final" and the turn ended with no decision logged and no spec merged
 - a capture that ran only because the user asked "ghi lại" — a silent settlement the agent should have caught itself (decision 0007)
+- the user deferred work ("để sau", "phase 2", "later") and the turn ended with no `proposed` row appended to `docs/backlog.md` — the missed-capture failure applied to backlog items (D8)
 - asking "should I document this?" instead of announcing the capture and doing it
 - a UI screen that visibly changed while its snapshot under `docs/specs/visuals/` did not (and no Open Gap says why)
 - an area added or removed with `system-overview.md` left unsynced

@@ -104,6 +104,12 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 
 Every skill ends with an explicit handoff: `[Outcome]. Invoke bee-<next-skill> skill.`
 
+## Direction of Truth — Projection Rule (D12)
+
+The repo artifacts are the single source of truth for what work exists and its state: **cells** (`.bee/cells/`) for in-flight execution and the **PBI rows** in `docs/backlog.md` for product intent. A session's todo list — `TaskCreate`, `TodoWrite`, and any equivalent scratch checklist — is an **ephemeral projection** of those durable records, never the reverse.
+
+The mapping is one-way, `projection|todo list`: cells and PBI rows generate the session todo list, and no edit to that list ever writes back to a cell or a backlog row. When the two disagree, the repo artifact wins and the session list is regenerated from it. A todo item with no cell or PBI behind it is a projection bug, not a new unit of work — file the cell or the backlog row first, then let the list re-derive. This keeps the durable layer authoritative and the chat/session state disposable.
+
 ## Communication Contract
 
 Plain language first:

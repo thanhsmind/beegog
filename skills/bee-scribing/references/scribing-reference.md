@@ -278,6 +278,37 @@ Path: `docs/specs/reading-map.md`. One line per location, grep-friendly:
 
 At sync time: add lines for locations the feature created or repurposed, fix lines it made wrong, delete lines for removed locations. Keep it a map, not documentation — one line each, no prose blocks.
 
+## Product Backlog (`docs/backlog.md`, D6)
+
+`docs/backlog.md` is the **product backlog** — the human-first list of product backlog items (PBIs): stories the product owner wants, ordered by priority. It is a different artifact from `.bee/backlog.jsonl`, which is the machine layer for friction and grooming/kill items (entropy-audit trend, kill proposals). Two backlogs, two owners, never merged: `docs/backlog.md` = product intent (PBI rows), `.bee/backlog.jsonl` = machine debt. Scribing owns `docs/backlog.md` the same way it owns specs — one file, forever, updated in place; never fork a `-v2` or a second backlog file.
+
+**Structure — one markdown table, priority-ordered (highest first):**
+
+```markdown
+# Product Backlog
+
+| ID | Story | CoS | Status | Feature |
+|----|-------|-----|--------|---------|
+| P1 | Owners can pause a posting without closing it | A paused posting is hidden from applicants but still editable by the owner | done | job-pause |
+| P2 | Applicants get a weekly digest of matching postings | One email per week lists new matches; opt-out honored | in-flight | applicant-digest |
+| P3 | Companies can archive closed postings out of the default list | Closed postings move to an Archive view, restorable within 30 days | proposed | — |
+```
+
+- **Columns:** `ID` (stable, `P<n>`, next free integer, never reused) · `Story` (one line, user-facing outcome) · `CoS` (Condition of Satisfaction — the one-line acceptance signal) · `Status` · `Feature` (the `docs/history/<feature>/` slug once opened, `—` while unstarted).
+- **Status enum — exactly `proposed / in-flight / done`** (D6), no others. This enum is the same literal `BACKLOG_STATUSES` the parser (`.bee/bin/lib/backlog.mjs`) counts; do not invent a fourth status.
+- **Priority order is the row order.** Highest-priority PBI at the top; reorder rows to re-prioritize — position is the signal, no separate rank column.
+
+**Merge rules (scribing-owned, specs pattern):**
+
+- **Append, never fork.** A new deferred request appends a `proposed` row with the next free `P<n>` ID at its priority position. There is never a second backlog file.
+- **In place forever.** A PBI's row is updated where it sits; history lives in git, never in a "was proposed" note.
+- **Flip triggers are the only status writes (D11), and they are prose-ruled, never hook-enforced (D7):**
+  - **(a) exploring opens a feature matching a row** → that row flips to `in-flight` and gains the feature slug; if the request never passed through the backlog, exploring creates the row first, then flips it (D11a — owned by exploring).
+  - **(b) feature close** (scribing sync, or compounding when no `behavior_change` cell ran) → the matching row flips to `done` and gains a link to `docs/history/<feature>/` (D11b — owned by scribing at sync).
+- **No validation coupling.** A cell may carry an optional `pbi` field naming a row ID; a missing or stale reference is a grooming find, not a cap blocker (D9).
+
+**Runnable surfaces already exist (shipped by harness10-6) — reference them, never re-describe machinery here:** `node .bee/bin/bee_status.mjs --json` reports `pbi: { proposed, in_flight, done } | null`, and the session preamble carries one line `PBI: N done / N in-flight / N proposed` whenever `docs/backlog.md` exists. Drift (an `in-flight` row with no active feature, a `done` feature with no row, duplicate rows for one story) is caught by grooming's audit, not by any hook.
+
 ## State Record
 
 ```json

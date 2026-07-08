@@ -72,6 +72,8 @@ Log choices future planning must honor. Supersede outdated decisions (`bee_decis
 2. Record present → note it in the run summary and move on.
 3. Record absent while `behavior_change` cells were capped → **invoke bee-scribing now**, then resume compounding. Never merge specs inline "to save a step" — the BA-grade template, sources, and rebuild check live in scribing, and a shortcut sync produces exactly the shallow spec decision 0002 exists to prevent.
 
+**Backlog done-flip fallback (D11b):** confirm the feature's `docs/backlog.md` row flipped to `done` with a `docs/history/<feature>/` link. Scribing owns that flip at sync; when scribing legitimately NOOPed (no `behavior_change` cell, nothing to sync), compounding is the last close point — do the done-flip here so no shipped feature leaves a stale `in-flight` row. Prose-ruled, never hook-enforced (D7).
+
 ## 7. File Unresolved Friction
 
 Unresolved friction from cell traces or the session → `.bee/backlog.jsonl` entries with a predicted impact, so `bee-grooming` can hunt them later. Entry format in the reference.

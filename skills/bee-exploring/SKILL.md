@@ -27,6 +27,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
    - Classify: `Quick`, `Standard`, or `Deep`.
    - Read `docs/history/learnings/critical-patterns.md` and `.bee/state.json` if present.
    - If the request spans independent subsystems, pick one and defer the rest.
+   - **Backlog flip (D11a):** when this feature matches an existing `docs/backlog.md` row, flip that row to `in-flight` and add the feature slug, same turn; if the request never passed through the backlog, create the `proposed` row first, then flip it. This is the only place a row goes `in-flight` (table schema + merge rules live in the scribing reference; prose-ruled, never hook-enforced — D7).
    - If `.bee/config.json` lacks `commands` (setup/start/test/verify), run detection first: `node .bee/bin/lib/commands_detect.mjs` prints JSON candidates from the repo's manifests. Present the candidates as **one** pre-filled confirmation question (`key: value — source`), still skippable; fall back to the open question when detection finds nothing. Write only user-confirmed values to `.bee/config.json` `commands`. Never invent command values (docs/09 item 1, D3 of harness10).
 
 2. **Domain**
@@ -57,6 +58,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 5. **Context Assembly**
    - Write `docs/history/<feature-slug>/CONTEXT.md` from `references/context-template.md`.
    - Include boundary, domain types, locked decisions table with D-IDs, scout paths, canonical references, open questions, and deferred ideas.
+   - **Deferred Ideas also feed the product backlog (D8):** each Deferred Ideas entry that is real future work appends a `proposed` row to `docs/backlog.md` in the same turn (announce-then-do) — the CONTEXT.md list is the record for this feature, the backlog row is the durable product-level intent. Do not wait to be asked.
    - Concrete language only. No placeholders, TODOs, or vague preferences.
    - **Fresh-eyes review:** spawn one reviewer with no conversation history (tier: `generation`). It checks completeness, contradictions, vague decisions, missing D-IDs, and blockers. Fix findings and re-review — max two loops, then present remaining doubts to the user.
 

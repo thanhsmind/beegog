@@ -18,7 +18,7 @@ Counting rules per term (all from `.bee/` records — never guess):
 | unverified cells | claimed cells with no recorded verify result (`trace.verify_passed` absent) | cell files |
 | stale decisions | active decisions citing files/paths that no longer exist, or contradicted by current code | `node .bee/bin/bee_decisions.mjs active` + spot-check citations |
 | stale specs | areas with a `behavior_change: true` cell capped after the area spec's `updated` frontmatter date, or with such a cell and no spec at all (map cells to areas by files touched); ALSO areas whose Pointers / reading-map locations have git commits or uncommitted changes after `updated` even with no cell — vibe edits outside the chain count too (decision 0003); count each area once | capped cell files + `git log --since=<updated> -- <paths>` + `git status --porcelain` vs `docs/specs/<area>.md` frontmatter |
-| backlog-without-outcome | backlog entries older than 30 days with no matching outcome entry | `.bee/backlog.jsonl` |
+| backlog-without-outcome | **machine-backlog** (`.bee/backlog.jsonl`) entries older than 30 days with no matching outcome entry — NOT `docs/backlog.md` PBI rows, which are product intent and never score entropy | `.bee/backlog.jsonl` |
 | stale work | reservations past TTL and never released; HANDOFF.json older than 7 days | `.bee/reservations.json`, `.bee/HANDOFF.json` |
 | broken tools | `.bee/bin/` helpers that error on invocation; hook crash entries in `.bee/logs/hooks.jsonl` since the last audit | run helpers with `--json`, read the log |
 
@@ -42,17 +42,27 @@ Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run
 
 **Stale, missing, or duplicated area specs** — for each stale-specs hit from the audit, propose a `bee-scribing` sync cell (tiny lane) that merges the missed `behavior_change` deltas into `docs/specs/<area>.md`; a git-drift hit (files changed, no cell — decision 0003) gets the same sync cell, and "no behavioral delta — spec confirmed current" is a valid cheap outcome; for an area with shipped behavior and no spec at all, propose a `bee-scribing` harvest cell (small lane — it may need user interview time). Scan for **duplicates**: two spec files whose Pointers or reading-map lines overlap on the same surface (including `-v2`/`-new`/date-suffixed names) — propose a `bee-scribing` merge cell that consolidates into the older stable name and deletes the fork; two documents describing one area is worse than a stale one, because readers cannot tell which is true. Also spot-check `docs/specs/reading-map.md` lines against reality (paths exist, one-liners still true, exactly one spec per surface). **Misfiled artifacts** (decision 0004): `docs/specs/` holds ONLY area specs, `system-overview.md`, `reading-map.md`, and `visuals/` — scripts, exports, CSVs, or survey folders living there pollute coverage counting and spec scans; propose a tiny move-cell relocating them (e.g. to `docs/history/` or a data directory) and fixing any references. A spec staler than the behavior it describes is worse than no spec — an agent trusts it and acts on the old behavior. Sync/harvest/merge always runs through bee-scribing, never as a raw doc edit — the BA template and never-invent rules live there.
 
-**Fresh Session Test** (docs/09 item 4) — answer five questions from repo artifacts alone, each mapped to its owner; an unanswerable question files a backlog item naming the missing or stale artifact:
+**Fresh Session Test** (docs/09 item 4) — answer five questions from repo artifacts alone, each mapped to its owner; an unanswerable probe does **not** file an open-ended task — it names its **one-command fix** (D10/A5), so the finding is immediately actionable:
 
-| Question | Answered by |
-|---|---|
-| What is this system? | `docs/specs/system-overview.md` |
-| How is it organized? | `docs/specs/reading-map.md` |
-| How do I run it? | `.bee/config.json` `commands` (setup/start) |
-| How do I verify it? | `.bee/config.json` `commands` (test/verify) — run it, don't just read it |
-| Where are we now? | `node .bee/bin/bee_status.mjs --json` |
+| Question | Answered by | One-command fix when unanswerable |
+|---|---|---|
+| What is this system? | `docs/specs/system-overview.md` | run `bee-scribing` **bootstrap** (offers a provable-facts skeleton for the missing map, D2) |
+| How is it organized? | `docs/specs/reading-map.md` | run `bee-scribing` **bootstrap** (writes the missing reading-map skeleton, D2) |
+| How do I run it? | `.bee/config.json` `commands` (setup/start) | run `node .bee/bin/lib/commands_detect.mjs`, confirm the candidates into `.bee/config.json` (D3) |
+| How do I verify it? | `.bee/config.json` `commands` (test/verify) — run it, don't just read it | run `node .bee/bin/lib/commands_detect.mjs`, confirm test/verify into `.bee/config.json` (D3) |
+| Where are we now? | `node .bee/bin/bee_status.mjs --json` | (self-answering — the command is the artifact) |
 
-Five minutes per audit; this catches system-of-record decay the entropy formula cannot see (a spec can be fresh and the repo still unanswerable to a cold start).
+Five minutes per audit; this catches system-of-record decay the entropy formula cannot see (a spec can be fresh and the repo still unanswerable to a cold start). A probe finding is filed with its fix named, never as "document the project" — the fix is one bounded command (bootstrap for Q1/Q2, detect-and-confirm for Q3/Q4).
+
+**Product-backlog (PBI) drift** — audit `docs/backlog.md` (the product backlog of PBI rows — distinct from `.bee/backlog.jsonl`, the machine friction/grooming layer) for three drift patterns, each a tiny fix cell (prose-ruled correction, never a hook — D7):
+
+| Drift | Meaning | Fix cell |
+|---|---|---|
+| `in-flight` row, no active feature | a row claims work is underway but no `docs/history/<feature>/` matches the slug | tiny: flip to `done`+link if the feature shipped, or back to `proposed` if it was dropped |
+| `done` feature, no row | a shipped feature under `docs/history/` has no backlog row (bypassed the backlog) | tiny: append the `done` row retroactively, linked |
+| duplicate rows for one story | two rows describe the same PBI (parser counts both honestly — dedup is this prose audit, not the counter's job) | tiny: merge into the higher-priority row, delete the fork |
+
+Status counts come from `node .bee/bin/bee_status.mjs --json` (`pbi`) — the audit reconciles those counts against active features and `docs/history/`, it does not recount by hand.
 
 **TODO/stub debris** — grep `TODO|FIXME|HACK|XXX|not implemented|placeholder`; each hit is either a real backlog item (file it with predicted impact) or debris (kill candidate). Never leave it as a comment-shaped promise.
 
