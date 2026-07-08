@@ -16,6 +16,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { detectCommands } from "../templates/lib/commands_detect.mjs";
+
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPTS_DIR = path.dirname(SCRIPT_PATH);
 const HIVE_DIR = path.dirname(SCRIPTS_DIR);
@@ -271,6 +273,22 @@ function commandsNotices(repoRoot) {
   );
   if (recorded.length > 0) {
     return [];
+  }
+  // Detection is propose-only (decision D3): candidates ride the notice for
+  // the agent to present as one confirmation question. This script never
+  // writes detected values to .bee/config.json — only user-confirmed values
+  // are written, by the agent.
+  let candidates = [];
+  try {
+    candidates = detectCommands(repoRoot);
+  } catch {
+    candidates = [];
+  }
+  if (candidates.length > 0) {
+    const proposals = candidates.map((c) => `${c.key}: ${c.value} — ${c.source}`).join("; ");
+    return [
+      `No standard commands recorded. Detected candidates: ${proposals}. Present them to the user as one pre-filled confirmation question (skippable) and write only confirmed values to .bee/config.json \`commands\` — never write unconfirmed values (D3). They power the session baseline gate.`,
+    ];
   }
   return [
     "No standard commands recorded. Ask the user for the host project's setup/start/test/verify commands and write them to .bee/config.json `commands` (skippable — never invent values). They power the session baseline gate.",

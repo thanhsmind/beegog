@@ -90,6 +90,10 @@ try {
   check(Array.isArray(apply1.payload?.notices) &&
     apply1.payload.notices.some((n) => n.includes("standard commands")),
     "apply on repo without commands surfaces the capture notice");
+  // No manifests in this repo -> the open-question notice, no detected candidates (D3).
+  check(apply1.payload.notices.some((n) => n.includes("Ask the user")) &&
+    !apply1.payload.notices.some((n) => n.includes("Detected candidates")),
+    "notice stays the open question when detection finds nothing");
   const cfgPath = path.join(tmp, ".bee", "config.json");
   const cfgRaw = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
   cfgRaw.commands = { verify: "npm test" };
@@ -108,6 +112,33 @@ try {
   check(stateKeys && normKeys(stateKeys) === normKeys(onboardKeys),
     "onboard_bee.mjs COMMAND_KEYS matches lib/state.mjs (no drift)",
     `state: [${stateKeys}] vs onboard: [${onboardKeys}]`);
+
+  // --- 3c. detected command candidates ride the notice, propose-only (D3) ---
+  const detTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-detect-test-"));
+  try {
+    fs.writeFileSync(path.join(detTmp, "package.json"),
+      `${JSON.stringify({ name: "fixture", scripts: { test: "vitest run" } }, null, 2)}\n`, "utf8");
+    const detApply = runOnboard(["--repo-root", detTmp, "--apply", "--json"]);
+    check(detApply.payload?.status === "applied", "apply on manifest-bearing repo succeeds");
+    const detNotices = detApply.payload?.notices || [];
+    check(detNotices.some((n) => n.includes("Detected candidates") &&
+      n.includes("test: npm test — package.json")),
+      "notice lists detected candidates as key: value — source proposals",
+      JSON.stringify(detNotices));
+    check(detNotices.some((n) => n.includes("confirmation question") && n.includes("confirmed")),
+      "candidate notice instructs confirm-before-write");
+    const detConfig = JSON.parse(
+      fs.readFileSync(path.join(detTmp, ".bee", "config.json"), "utf8"));
+    check(detConfig.commands === undefined,
+      "apply writes no detected values to config.json commands",
+      JSON.stringify(detConfig.commands || null));
+  } finally {
+    try {
+      fs.rmSync(detTmp, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
 
   // --- 4. verify .bee tree ---------------------------------------------------
   for (const rel of [

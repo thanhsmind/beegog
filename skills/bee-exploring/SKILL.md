@@ -27,7 +27,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
    - Classify: `Quick`, `Standard`, or `Deep`.
    - Read `docs/history/learnings/critical-patterns.md` and `.bee/state.json` if present.
    - If the request spans independent subsystems, pick one and defer the rest.
-   - If `.bee/config.json` lacks `commands` (setup/start/test/verify), ask the user for them here — one question, skippable — and write the answers to `.bee/config.json`. Never invent command values (docs/09 item 1).
+   - If `.bee/config.json` lacks `commands` (setup/start/test/verify), run detection first: `node .bee/bin/lib/commands_detect.mjs` prints JSON candidates from the repo's manifests. Present the candidates as **one** pre-filled confirmation question (`key: value — source`), still skippable; fall back to the open question when detection finds nothing. Write only user-confirmed values to `.bee/config.json` `commands`. Never invent command values (docs/09 item 1, D3 of harness10).
 
 2. **Domain**
    - Classify each applicable type:
