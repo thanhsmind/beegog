@@ -14,7 +14,7 @@ If `.bee/onboarding.json` is missing or stale, stop and invoke `bee-hive`.
 
 Planning is the waggle dance: it turns locked `CONTEXT.md` decisions into the smallest believable path to execution — mode, approach, one unified `plan.md`, and (only after approval) current-slice cells.
 
-Load `references/planning-reference.md` for artifact templates and cell quality rules; `references/edge-dimensions.md` for the test matrix.
+Load `references/planning-reference.md` for artifact templates and cell quality rules; `references/edge-dimensions.md` for the test matrix. Discovery at L2/L3 runs through `bee-xia`.
 
 ## Hard Gates
 
@@ -42,7 +42,7 @@ Pick the lowest level that removes real uncertainty:
 - **L2 — standard:** compare 2–3 candidate approaches; note trade-offs.
 - **L3 — deep dive:** unfamiliar territory, external systems, or hard-gate flags.
 
-At L2+, frame candidates through **three layers of knowledge**: tried-and-true (what the repo/ecosystem already trusts), new-and-popular (current mainstream, verify version claims), first-principles (what the problem actually requires). Recommend from evidence, not novelty.
+At L2+, invoke `bee-xia` in-chain: local truth → local reuse → upstream patterns → version-aware docs, evidence labels on every claim, and the anti-reinvention ladder (reuse → built-in → adapt upstream → build) for the recommendation; its findings merge into `approach.md`, never a separate file. Frame candidates through **three layers of knowledge**: tried-and-true (what the repo/ecosystem already trusts), new-and-popular (current mainstream, verify version claims), first-principles (what the problem actually requires). Recommend from evidence, not novelty.
 
 ## 3. Mode Gate (mechanical)
 

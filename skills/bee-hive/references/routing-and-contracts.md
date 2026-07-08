@@ -23,7 +23,8 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | Request type | First skill | Notes |
 |---|---|---|
 | Vague/new feature | `bee-exploring` | Always start here if gray areas exist |
-| Research task | `bee-planning` | Skip exploring only if scope is fully clear |
+| Research a topic/library/approach (no feature underway) | `bee-xia` | Standalone brief; suggests exploring or planning as next step |
+| Research inside a scoped feature | `bee-planning` | Discovery L2/L3 invokes `bee-xia` in-chain |
 | "Just fix this" / small change | `bee-planning` | Route in tiny or small mode |
 | Review code | `bee-reviewing` | Load directly |
 | Document a screen/API/job/area; keep a settled outcome (rule agreed, behavior confirmed, value tuned); spec a legacy area | `bee-scribing` | Load directly, any phase — capture never waits for feature close |

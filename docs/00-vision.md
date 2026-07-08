@@ -41,7 +41,7 @@ bee reassembles these into one opinionated chain, sized for a single developer r
 
 - **Not a runtime, not a binary.** No Rust CLI, no daemon, no database migrations. State is JSON/JSONL + markdown; helpers are small Node scripts vendored into the repo (like khuym's `.codex/*.mjs`).
 - **Not 20 runtimes.** Claude Code and Codex only. The abstraction must make a third runtime cheap later, but bee does not pay for it now.
-- **Not 40 skills.** Eleven skills today; additions are decision-gated, not counted — a new skill requires a decision record in `docs/decisions/` naming the workflow gap no existing skill covers (decision 0002 lifted the original ten-skill hard cap this way). Domain skills (frontend, deploy, DB…) remain out of scope — that's what other plugins are for.
+- **Not 40 skills.** Twelve skills today; additions are decision-gated, not counted — a new skill requires a decision record in `docs/decisions/` naming the workflow gap no existing skill covers (decision 0002 lifted the original ten-skill hard cap this way). Domain skills (frontend, deploy, DB…) remain out of scope — that's what other plugins are for.
 - **Not a benchmark rig.** Health is measured by internal signals (entropy score, friction backlog, predicted-vs-actual), not an external benchmark harness.
 - **Not autonomous merging.** P1 findings block. Gates never auto-approve.
 

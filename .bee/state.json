@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
+  "approved_gates": {
+    "context": false,
+    "shape": false,
+    "execution": false,
+    "review": false
+  },
+  "workers": [],
+  "summary": "",
+  "next_action": "Invoke bee-hive."
+}

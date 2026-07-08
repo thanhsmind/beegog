@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "session-init": true,
+    "prompt-context": true,
+    "write-guard": true,
+    "state-sync": true,
+    "chain-nudge": true,
+    "session-close": true
+  },
+  "lanes": {},
+  "capabilities": {}
+}
