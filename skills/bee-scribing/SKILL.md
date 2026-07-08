@@ -1,7 +1,7 @@
 ---
 name: bee-scribing
 description: >-
-  Keep technology-agnostic BA specs of every area current, so a human understands the system without the code and an agent can rebuild it on another stack. Use when reviewing completes (chain), when the user asks to document a screen/API/job/area, when a discussion-test-adjust loop settles a rule, behavior, or value that must not be lost, or when a legacy area has code but no spec.
+  Keep technology-agnostic BA specs of every area current, so a human understands the system without the code and an agent can rebuild it on another stack. SELF-TRIGGERING: invoke this yourself, unprompted, the moment any discussion-test-adjust loop settles a rule, behavior, or value — the user should never have to ask for knowledge to be recorded. Also use when reviewing completes (chain), when the user asks to document a screen/API/job/area, or when a legacy area has code but no spec.
 metadata:
   version: '0.1'
   ecosystem: bee
@@ -64,7 +64,9 @@ Merge rules:
 
 ## 4. Capture Mode — Settled Outcomes from the Vibe Loop
 
-The trigger is **settlement**, not subject matter: whenever a discuss → build → test → adjust loop lands on an outcome that is now "how it works" — a business rule agreed, a behavior confirmed by a test run, a retry/threshold/tuning value chosen after experiment, an error-handling policy adjusted — capture it in the same session. When the user says the settlement out loud — "chốt", "final", "ok ship it", any equivalent — capture happens **in that same turn**, never deferred (decision 0003); the session-close hook warns when a decision exists that no spec update followed:
+The trigger is **settlement**, not subject matter: whenever a discuss → build → test → adjust loop lands on an outcome that is now "how it works" — a business rule agreed, a behavior confirmed by a test run, a retry/threshold/tuning value chosen after experiment, an error-handling policy adjusted — capture it in the same session. When the user says the settlement out loud — "chốt", "final", "ok ship it", any equivalent — capture happens **in that same turn**, never deferred (decision 0003); the session-close hook warns when a decision exists that no spec update followed.
+
+**Detection is the scribe's duty, unprompted (decision 0007).** The explicit signal is the *loud* case; most settlements are silent — the user confirms a behavior works, accepts an explanation, picks an option, moves on. The agent watches for these itself, every turn, and captures without being asked. Do not ask "should I document this?" — announce in one line what settled and where it goes ("chốt: X — ghi vào `docs/specs/<area>.md` + decision log"), then do it in the same turn. Capture writes only `docs/` and `.bee/` — allowed in every phase, no gate. A user having to say "ghi lại" means detection already failed once:
 
 1. Log it first: `node .bee/bin/bee_decisions.mjs log --decision "..." --rationale "..."` — the decision log is the durable anchor; the rationale records *why* this outcome won over what was tried.
 2. Merge the settled truth into the area's spec (Business Rules for policy; Behaviors & Operations for confirmed behavior; Data Dictionary for a value's meaning) citing the new D-ID, same message.
@@ -114,6 +116,8 @@ Record the scribing run in `.bee/state.json` (phase, areas synced, gaps opened, 
 - "I'll write the spec after compounding" — scribing runs first, while evidence is fresh
 - a settled outcome (rule, confirmed behavior, chosen value) that exists nowhere but the chat
 - the user said "chốt"/"final" and the turn ended with no decision logged and no spec merged
+- a capture that ran only because the user asked "ghi lại" — a silent settlement the agent should have caught itself (decision 0007)
+- asking "should I document this?" instead of announcing the capture and doing it
 - a UI screen that visibly changed while its snapshot under `docs/specs/visuals/` did not (and no Open Gap says why)
 - an area added or removed with `system-overview.md` left unsynced
 - treating scribing as UI-only — backend jobs, APIs, integrations, and processes are areas too
