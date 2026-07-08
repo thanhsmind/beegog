@@ -10,6 +10,21 @@ Normative contracts every v0.1 component codes against. When this doc and anothe
 - Source of truth for vendored code: `skills/bee-hive/templates/` in the plugin. Onboarding copies it to `<repo>/.bee/bin/` (helpers) and `<repo>/.bee/bin/lib/` (modules).
 - Hooks live in the plugin (`hooks/`). At runtime they resolve the target repo root from CWD and dynamic-import lib from `<root>/.bee/bin/lib/`. If root or lib is missing → exit 0 silently (self-arm rule).
 
+## Refusal messages: ERROR / WHY / FIX (docs/09 item 5)
+
+bee refuses a lot by design — the message decides whether a refusal teaches in one
+correction or causes retry thrash. Every user-facing refusal from `bin/lib/` or a hook
+carries three elements:
+
+1. **ERROR** — the rule that fired, named (`capCell: cell "x-1" has no passing verify result`).
+2. **WHY** — the reason in the same sentence (`— an assertion is not evidence`).
+3. **FIX** — the next command or action, concrete (`run … and record it: bee_cells.mjs verify --id x-1 --command CMD --passed true`).
+
+A refusal that ends at "not allowed" with no stated next step violates this contract.
+Guard denials follow the same shape (`reason` names the gate/conflict, why, and the route:
+surface Gate 3, reserve first, or return `[BLOCKED]`). Tests assert the shape for the three
+highest-traffic paths: cap-refusal, gate-block, reservation-conflict.
+
 ## Runtime files
 
 ```

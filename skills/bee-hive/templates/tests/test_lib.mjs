@@ -425,6 +425,42 @@ check('buildSessionPreamble shows commands and baseline gate when verify recorde
   assert(/never build on red/i.test(preamble), 'fix-first rule stated');
 });
 
+// ─── refusal-message contract: ERROR/WHY/FIX (07-contracts, docs/09 item 5) ──
+
+check('cap-refusal message carries a FIX (the verify command to run)', () => {
+  try {
+    capCell(root, 'demo-2', { outcome: 'x' });
+    throw new Error('expected cap to refuse');
+  } catch (error) {
+    const text = String(error.message || error);
+    assert(/bee_cells\.mjs verify/.test(text), `cap refusal names the fix command, got: ${text}`);
+  }
+});
+
+check('gate-block reason carries a FIX (route to approval)', () => {
+  const res = checkWrite(root, { phase: 'planning', approved_gates: { execution: false } }, 'src/blocked.js');
+  assert(res.allow === false && res.kind === 'gate', 'write blocked in gated phase');
+  assert(/approval|bee-hive/i.test(res.reason), `gate reason names the next action, got: ${res.reason}`);
+});
+
+check('reservation-conflict reason carries a FIX (reserve or [BLOCKED])', () => {
+  const res = checkWrite(
+    root,
+    { phase: 'swarming', approved_gates: { execution: true } },
+    'src/api/router.ts',
+    'worker-z',
+  );
+  if (res.allow === false) {
+    assert(/\[BLOCKED\]|Reserve/i.test(res.reason), `conflict reason names the route, got: ${res.reason}`);
+  } else {
+    // no live reservation at this point in the suite — exercise the message via findConflicts path
+    reserve(root, { agent: 'worker-a', cell: 'msg-1', path: 'src/msg/locked.ts' });
+    const res2 = checkWrite(root, { phase: 'swarming', approved_gates: { execution: true } }, 'src/msg/locked.ts', 'worker-z');
+    assert(res2.allow === false, 'conflicting write blocked');
+    assert(/\[BLOCKED\]|Reserve/i.test(res2.reason), `conflict reason names the route, got: ${res2.reason}`);
+  }
+});
+
 check('buildSessionPreamble shows commands but no baseline gate without verify', () => {
   writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
     commands: { test: 'npm run unit' },

@@ -136,13 +136,15 @@ export function claimCell(root, id, worker) {
   const state = readState(root);
   if (!gateApproved(state, 'execution')) {
     throw new Error(
-      'claimCell: gate "execution" is not approved — cells cannot be claimed before the human approves execution.',
+      'claimCell: gate "execution" is not approved — cells cannot be claimed before the human approves execution. Surface Gate 3 to the user ("Feasibility validated. Approve execution?"); never self-approve.',
     );
   }
   const cell = readCell(root, id);
   if (!cell) throw new Error(`claimCell: cell "${id}" not found.`);
   if (cell.status !== 'open') {
-    throw new Error(`claimCell: cell "${id}" is "${cell.status}", not "open".`);
+    throw new Error(
+      `claimCell: cell "${id}" is "${cell.status}", not "open" — only open cells can be claimed. Run bee_cells.mjs ready to list claimable cells.`,
+    );
   }
   const uncapped = depsAllCapped(root, cell);
   if (uncapped.length > 0) {
