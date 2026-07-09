@@ -59,7 +59,7 @@ The four gates are **human** gates. Never self-approve a gate, in any mode, incl
   bin/                <- vendored helpers: bee_status, bee_cells, bee_reservations, bee_decisions
   bin/lib/            <- shared modules used by helpers and hooks
 
-docs/history/<feature>/    <- CONTEXT.md, discovery.md, approach.md, plan.md, reports/
+docs/history/<feature>/    <- always: CONTEXT.md, plan.md, reports/; conditional (decision 0009): discovery.md/approach.md/implement-plan.md only for L2+ discovery or high-risk, else folded into plan.md sections
 docs/history/learnings/    <- critical-patterns.md + dated learnings
 docs/specs/           <- state layer: BA-grade area specs + reading-map.md (read spec before code)
 docs/backlog.md       <- product backlog: PBI rows (proposed/in-flight/done), scribing-owned; NOT .bee/backlog.jsonl (that stays machine friction/grooming)

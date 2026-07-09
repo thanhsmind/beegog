@@ -11,6 +11,10 @@
 //     (small+ lanes refuse to cap without recorded verify output or evidence — decision 0004)
 //   node .bee/bin/bee_cells.mjs cap --id ID [--outcome TEXT] [--files a,b] [--behavior-change]
 //                                  [--evidence-file F] [--deviations-file F] [--friction TEXT] [--json]
+//     (behavior_change cells refuse to cap without a "before" characterization —
+//      red_failure_evidence in the evidence JSON, or a deliberate_exceptions note
+//      for a brand-new surface — decision 0009. Evidence lives in the cell trace,
+//      the single source; reports/<cell>.md links it, never re-embeds the JSON.)
 //   node .bee/bin/bee_cells.mjs block --id ID --reason R [--json]
 //   node .bee/bin/bee_cells.mjs drop --id ID --reason R [--json]
 

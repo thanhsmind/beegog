@@ -27,20 +27,20 @@ If `.bee/onboarding.json` is missing or stale, stop and invoke `bee-hive`.
 
 ## Lane forms (ceremony scales with risk)
 
-Match the brief to the lane the plan already chose. A tiny fix wearing a 12-section brief is the same red flag as a tiny fix wearing epic ceremony.
+Match the brief to the lane the plan already chose. A tiny fix wearing a 12-section brief is the same red flag as a tiny fix wearing epic ceremony. Briefing is **invoked conditionally** — `bee-planning` only calls it where the fan-out table (decision 0009) earns a brief; below high-risk the caller may skip it entirely, and briefing NOOPs when not called. Do not treat a brief as automatic for every feature.
 
 | Lane | Brief |
 |---|---|
 | `tiny` / `spike` | **none** — the Gate chat layer and `plan.md`'s direct note are the record. Do not create the file. |
-| `small` | **mini-brief** (~15 lines): Goal · Scope in/out · Affected files · Validation · one-line Risk · one-line Rollback (template in the reference) |
-| `standard` | **full template, empty sections dropped** — a section with no real content is deleted, never filled with "N/A" |
-| `high-risk` | full template; **Rollback and Security/Permissions sections are mandatory** and must have real content |
+| `small` | **none by default**; render the ~15-line **mini-brief** (Goal · Scope in/out · Affected files · Validation · one-line Risk · one-line Rollback, template in the reference) only when the user asks for a consolidated doc |
+| `standard` | **on-demand** — default is `plan.md` + the Gate 2 chat layer; render the **full template (empty sections dropped**, never "N/A") when the user asks or the slice spans multiple domains. Do not auto-generate it for a single-slice standard fix |
+| `high-risk` | **mandatory** — full template; **Rollback and Security/Permissions sections are mandatory** and must have real content |
 
 ## Modes
 
 | Mode | Trigger | Does |
 |---|---|---|
-| **render** (chain) | `bee-planning` finished the shape (`plan.md` requirements-only), before Gate 2 | build `implement-plan.md` from the artifacts; `Status: Ready for Review`; the Gate 2 message links it as the review document |
+| **render** (chain) | `bee-planning` invokes briefing before Gate 2 — for high-risk always, for standard/small only when a consolidated doc is warranted (decision 0009) | build `implement-plan.md` from the artifacts; `Status: Ready for Review`; the Gate 2 message links it as the review document |
 | **refresh** (chain) | after Gate 2 prep (cells created) and after `bee-validating` produces evidence | re-project the changed sections in place (Affected Files & Steps from cells; Validation Plan from the validating report) — never a second file |
 | **walkthrough** (chain) | `bee-reviewing` passed Gate 4 on a `standard`/`high-risk` feature | write `docs/history/<feature>/walkthrough.md` — what shipped, how it was verified (real evidence), how to test it; set the implement plan `status: Shipped` |
 | **on-demand** | user asks to (re)generate or read the implement plan or walkthrough for a feature | render / refresh / walkthrough as above, any phase |
@@ -55,7 +55,7 @@ Every section is projected from a named source. If the source is silent, the sec
 | Goal / Success | `CONTEXT.md` boundary + locked decisions | restate the user outcome; cite D-IDs |
 | Current State | exploring scout + `approach.md` findings | what was inspected and how it behaves today |
 | Scope (in/out) | `CONTEXT.md` decisions + `plan.md` Out of scope | deferred ideas stay deferred |
-| Proposed Approach + alternatives | `approach.md` (recommended path, rejected alternatives) | render as written; do not substitute a "better" idea |
+| Proposed Approach + alternatives | `approach.md`, or `plan.md`'s `## Approach` section when the approach was folded in (decision 0009) | render as written; do not substitute a "better" idea |
 | **Technical Design** | **authored** from `approach.md` + cells | narrative of the flow/data/API/UI/security *as the artifacts imply*; anything beyond them → Open Question |
 | Affected Files | `approach.md` files + cell `files` | after prep, project from the cells (authoritative) |
 | Implementation Steps | `plan.md` shape + cells | project cell titles/deps after prep |
@@ -122,7 +122,7 @@ Then set the implement plan's `status: Shipped`.
 - a Technical Design or Rollback section containing a decision the truth artifacts never made
 - a section filled with plausible content because "a blank section looks unprofessional" — the honest home for a gap is Open Questions
 - editing `implement-plan.md` directly in response to gate feedback, leaving `CONTEXT.md`/`plan.md` stale
-- a full 12-section brief for a `tiny` or `small` fix; `N/A` placeholder sections
+- a brief auto-generated for a `tiny`/`small`/single-slice `standard` fix that nobody asked to consolidate; a full 12-section brief for a small fix; `N/A` placeholder sections
 - a Validation Plan that states results ("142 passing") before anything ran
 - the whole brief pasted into a gate chat message instead of linked
 - a `-v2`/`-new`/dated implement-plan file, or a fresh brief created without checking for the feature's existing one

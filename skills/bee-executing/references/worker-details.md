@@ -73,6 +73,12 @@ Passed via `--evidence-file <path>` on cap for any `behavior_change: true` cell:
 
 Every field is honest or explicitly empty with a reason in `deliberate_exceptions`. Vague evidence here becomes a P1 finding in bee-reviewing — the work comes back.
 
+**`red_failure_evidence` is captured at cap time, not backfilled later (decision 0009).** For a `behavior_change` cell the helper *refuses to cap* unless the evidence names a "before": the prior behavior this change alters — a `git show <pre-change-commit>:<file>` extract, or a pre-change check that failed. If the surface is genuinely new (no prior behavior to characterize), say so in `deliberate_exceptions`. This is why the characterization is cheap to record now — the old state is one `git show` away while you hold the diff in context; recovering it after review means a whole extra evidence-only cell.
+
+## Evidence lives in one place (decision 0009)
+
+The cell **trace** is the single source of verification evidence: `trace.verification_evidence` (the JSON above) plus `trace.verify_output` (the recorded verify run). Do not create a parallel `reports/<cell-id>-evidence.json` or a `reports/execution-*-evidence.md` that re-embeds the same JSON — two copies drift and inflate the doc set. The per-cell report (below) *links and summarizes* the trace in one line; it never re-embeds it.
+
 ## Verification Failure
 
 Fix the root cause and rerun the exact failing command. After two serious attempts, return `[BLOCKED]` with: the command, the failure summary, attempts made, your diagnosis, and the smallest useful next decision for the parent. A verify command that is itself broken in the repo is a `[BLOCKED]`, never a reason to cap with a substitute check.
@@ -88,7 +94,7 @@ git commit -m "feat(<cell-id>): <summary matching the cap outcome>"
 
 ## Result Field Spec
 
-Every result starts with exactly one token and includes, minimum: nickname, cell id, files touched/requested, reservation outcome (released yes/no), verification result, and the parent's next action. Mirror the result into `docs/history/<feature>/reports/<cell-id>.md`.
+Every result starts with exactly one token and includes, minimum: nickname, cell id, files touched/requested, reservation outcome (released yes/no), verification result, and the parent's next action. Mirror the result into `docs/history/<feature>/reports/<cell-id>.md` as a short summary that **links** the cell (`.bee/cells/<cell-id>.json`) for the full trace and evidence — never a second copy of the `verification_evidence` JSON or the verify output (decision 0009: the trace is the single source).
 
 - `[DONE]` — cell capped, one commit made, verification recorded as passed, reservations released.
 - `[BLOCKED]` — cannot continue safely; include the blocker, diagnosis, and current reservation state.

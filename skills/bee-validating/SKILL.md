@@ -22,12 +22,11 @@ Start with `node .bee/bin/bee_status.mjs --json`. If onboarding is missing or st
 ## Required Inputs
 
 - `docs/history/<feature>/CONTEXT.md`
-- `docs/history/<feature>/discovery.md`
-- `docs/history/<feature>/approach.md`
 - `docs/history/<feature>/plan.md` — approved at Gate 2 and enriched to `artifact_readiness: implementation-ready`
+- the discovery and approach content: `docs/history/<feature>/discovery.md` and `approach.md` **if they exist**; otherwise the `## Discovery` and `## Approach` sections folded into `plan.md` (decision 0009 — separate files are written only for L2+ discovery or high-risk lanes)
 - current-work cells: `node .bee/bin/bee_cells.mjs list --feature <feature>`
 
-If any input is missing, or `plan.md` is absent, unapproved, or its `artifact_readiness` is not `implementation-ready`, stop and return to bee-planning. Never validate an unapproved shape.
+If `plan.md` is absent, unapproved, or its `artifact_readiness` is not `implementation-ready`, stop and return to bee-planning. Never validate an unapproved shape. A missing `discovery.md`/`approach.md` is **not** a failure when `plan.md` carries the equivalent sections — read those instead; stop only if neither the files nor the sections exist and the plan genuinely lacks discovery/approach content.
 
 ## Operating Contract
 

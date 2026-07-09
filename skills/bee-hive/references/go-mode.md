@@ -15,10 +15,11 @@ User: "/go [feature]"
        ▼
 [GATE 1] ← HARD STOP
        ▼
-[STEP 2] bee-planning (shape) → approach.md, plan.md (requirements-only)
-         bee-briefing (render) → implement-plan.md  (small+; the Gate 2 review object)
+[STEP 2] bee-planning (shape) → plan.md (requirements-only); discovery.md/approach.md
+                                 only for L2+ discovery or high-risk, else plan.md sections (D0009)
+         bee-briefing (render) → implement-plan.md  (high-risk always; standard/small on-demand)
        ▼
-[GATE 2] ← HARD STOP (review the implement plan)
+[GATE 2] ← HARD STOP (review the implement plan, or plan.md when no brief was rendered)
        ▼
 [STEP 3] bee-planning (prep)  → plan.md enriched to implementation-ready, current-slice cells
          bee-briefing (refresh) → implement-plan.md Affected Files + Steps re-projected

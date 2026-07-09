@@ -59,6 +59,8 @@ Finding format, in this order: plain-language summary → what the code does tod
 
 For every capped cell with `behavior_change: true`, inspect the recorded `verification_evidence` in the cell trace. Missing or vague evidence ("tests pass", "should be covered") is itself a P1 finding — the work goes back; it does not pass forward.
 
+This is now a **backstop, not the primary catch** (decision 0009): the cap helper already refuses a `behavior_change` cell without a "before" characterization (`red_failure_evidence`, or a `deliberate_exceptions` note for a genuinely new surface), so an assertion-capped cell should not reach review. If one does, treat it as a helper bypass and a P1. Do **not** raise a P1 whose only remedy is "record the missing before-state in a new evidence cell" — that backfill loop is exactly what the cap-time enforcement exists to prevent; a real evidence gap means the behavior was never actually proven, which the worker fixes by re-verifying, not by writing a document. Read evidence from the cell trace — the single source — never from a parallel `reports/*-evidence.*` file.
+
 ## 4. Artifact Verification
 
 For everything CONTEXT.md and plan.md promised, verify three levels:

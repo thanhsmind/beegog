@@ -42,7 +42,9 @@ Pick the lowest level that removes real uncertainty:
 - **L2 — standard:** compare 2–3 candidate approaches; note trade-offs.
 - **L3 — deep dive:** unfamiliar territory, external systems, or hard-gate flags.
 
-At L2+, invoke `bee-xia` in-chain: local truth → local reuse → upstream patterns → version-aware docs, evidence labels on every claim, and the anti-reinvention ladder (reuse → built-in → adapt upstream → build) for the recommendation; its findings merge into `approach.md`, never a separate file. Frame candidates through **three layers of knowledge**: tried-and-true (what the repo/ecosystem already trusts), new-and-popular (current mainstream, verify version claims), first-principles (what the problem actually requires). Recommend from evidence, not novelty.
+At L2+, invoke `bee-xia` in-chain: local truth → local reuse → upstream patterns → version-aware docs, evidence labels on every claim, and the anti-reinvention ladder (reuse → built-in → adapt upstream → build) for the recommendation; its findings merge into the approach (see §4), never a standalone research file. Frame candidates through **three layers of knowledge**: tried-and-true (what the repo/ecosystem already trusts), new-and-popular (current mainstream, verify version claims), first-principles (what the problem actually requires). Recommend from evidence, not novelty.
+
+**Artifact fan-out (decision 0009).** Only **L2/L3** discovery earns a separate `docs/history/<feature>/discovery.md` (a real multi-candidate comparison worth reading alone). At **L0/L1**, record the finding in `plan.md`'s `## Discovery` note and cite it — do not spawn a discovery file that just restates the current state `plan.md` already carries. The full fan-out table (which artifacts become separate files, when) is in `references/planning-reference.md`.
 
 ## 3. Mode Gate (mechanical)
 
@@ -57,9 +59,11 @@ Count risk flags — do not vibe it:
 
 Record the count and the flags in `plan.md`. Above `small`, state why smaller modes are insufficient. Use the least workflow that honestly protects the work.
 
-## 4. Synthesis — approach.md
+## 4. Synthesis — approach (section by default, file when earned)
 
-Write `docs/history/<feature>/approach.md`: chosen path and rejected alternatives, risk map (component / LOW–MEDIUM–HIGH / proof needed), likely files and order, relevant learnings, and open questions for validating. MEDIUM/HIGH unknowns need a validating proof or a spike before execution cells exist.
+Produce the approach: chosen path and rejected alternatives, risk map (component / LOW–MEDIUM–HIGH / proof needed), likely files and order, relevant learnings, and open questions for validating. MEDIUM/HIGH unknowns need a validating proof or a spike before execution cells exist.
+
+Write it as an `## Approach` section **inside `plan.md`** by default. Graduate it to a standalone `docs/history/<feature>/approach.md` only for **high-risk** lanes or **L2+** discovery, where the rejected alternatives and risk map are substantial enough to read on their own (decision 0009 / fan-out table in the reference). Do not spawn `approach.md` for a small or standard fix whose approach is a paragraph — that just restates `plan.md`.
 
 ## 5. Shape — plan.md (STOP at Gate 2)
 
@@ -73,7 +77,7 @@ mode: tiny | small | standard | high-risk | spike
 
 Body scaled to mode: direct note, spike question, small plan, phase plan, or epic map (templates in `references/planning-reference.md`). Sketch the test matrix against the 12 edge dimensions at a depth matching the lane.
 
-For `small`/`standard`/`high-risk`, invoke `bee-briefing` to render `docs/history/<feature>/implement-plan.md` from CONTEXT.md/approach.md/plan.md; the Gate 2 message links the brief as the review document (`tiny`/`spike` skip the brief). Present **Gate 2** per the Gate Presentation Contract (bee-hive routing reference): plain-language layer in chat — what I plan to build / why this size / cost if the shape is wrong / what you are deciding — in the user's language, the implement plan linked not pasted; then verbatim: "Work shape is ready. Approve before current-work preparation?" — then **stop**. No pseudo-cells in markdown, no prep, no cells.
+Render `docs/history/<feature>/implement-plan.md` via `bee-briefing` only where the fan-out table calls for it (decision 0009): **high-risk** always; **standard** on-demand (default: `plan.md` + the Gate 2 chat layer are the review record — render the brief only when the user asks or the slice spans multiple domains); **small** optional mini-brief on request; **tiny**/**spike** none. When a brief is rendered, the Gate 2 message links it as the review document; when not, the Gate 2 message links `plan.md` directly. Present **Gate 2** per the Gate Presentation Contract (bee-hive routing reference): plain-language layer in chat — what I plan to build / why this size / cost if the shape is wrong / what you are deciding — in the user's language, the review document linked not pasted; then verbatim: "Work shape is ready. Approve before current-work preparation?" — then **stop**. No pseudo-cells in markdown, no prep, no cells.
 
 ## 6. Prep (after Gate 2 approval only)
 
@@ -83,7 +87,7 @@ For `small`/`standard`/`high-risk`, invoke `bee-briefing` to render `docs/histor
    node .bee/bin/bee_cells.mjs add --file <cell.json>
    ```
    Every cell is an executable prompt: `files`, `read_first`, directive `action` citing D-IDs, `must_haves` (truths / artifacts / key_links / prohibitions), a runnable `verify` command, and `behavior_change: true` whenever the cell changes observable behavior. Cell quality rules and a schema example live in `references/planning-reference.md`.
-3. For `small`/`standard`/`high-risk`, invoke `bee-briefing` in refresh mode so the implement plan's Affected Files and Implementation Steps re-project from the created cells.
+3. If an implement plan was rendered at §5 (high-risk, or a standard/small feature where one was produced on request), invoke `bee-briefing` in refresh mode so its Affected Files and Implementation Steps re-project from the created cells. If no brief exists, skip — there is nothing to refresh.
 4. Update `.bee/state.json`: `phase: planning-complete`, `next_action: "Invoke bee-validating."`
 
 ## Scope-Reduction Prohibition

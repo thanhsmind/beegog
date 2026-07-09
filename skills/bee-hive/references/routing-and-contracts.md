@@ -175,7 +175,11 @@ One question per message. Never bundle. Never answer your own question.
   bin/  bin/lib/
 
 docs/history/<feature>/
-  CONTEXT.md  discovery.md  approach.md  plan.md  implement-plan.md  walkthrough.md  reports/
+  CONTEXT.md  plan.md  reports/                       ← always
+  discovery.md  approach.md  implement-plan.md        ← conditional (decision 0009): separate
+                                                        files only for L2+ discovery / high-risk;
+                                                        else folded into plan.md sections
+  walkthrough.md                                      ← standard/high-risk, post-Gate-4
 
 docs/history/learnings/
   critical-patterns.md  YYYYMMDD-<slug>.md

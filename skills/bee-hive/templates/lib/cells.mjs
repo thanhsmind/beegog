@@ -208,6 +208,34 @@ export function capCell(
       `capCell: cell "${id}" declares behavior_change but provides no verification_evidence — attach evidence (--evidence-file) or drop the behavior_change flag.`,
     );
   }
+  // Decision 0009: a behavior_change cell must record the "before" it changed —
+  // a characterization of prior behavior — not just an assertion that the new
+  // behavior works. This blocks assertion-capping at the source (worker must
+  // capture the git-show / failing pre-change check at cap time) instead of
+  // letting reviewing catch it later and spawn a whole evidence-backfill cell.
+  if (behavior_change === true && verification_evidence) {
+    let evidence = verification_evidence;
+    if (typeof evidence === 'string') {
+      try {
+        evidence = JSON.parse(evidence);
+      } catch {
+        evidence = null; // freeform evidence — the non-empty check above already applies
+      }
+    }
+    if (evidence && typeof evidence === 'object' && !Array.isArray(evidence)) {
+      const before = evidence.red_failure_evidence;
+      const hasBefore = typeof before === 'string' && before.trim().length > 0;
+      const exceptions = evidence.deliberate_exceptions;
+      const hasException = Array.isArray(exceptions)
+        ? exceptions.some((e) => typeof e === 'string' && e.trim().length > 0)
+        : typeof exceptions === 'string' && exceptions.trim().length > 0;
+      if (!hasBefore && !hasException) {
+        throw new Error(
+          `capCell: behavior_change cell "${id}" needs a "before" characterization — set red_failure_evidence in the evidence (the prior behavior this change alters: a git-show of the old state, or a pre-change check that failed). If there is genuinely no prior behavior (a brand-new surface), say so in deliberate_exceptions. An assertion that the new behavior works is not evidence that behavior changed.`,
+        );
+      }
+    }
+  }
   // Decision 0004: small+ lanes cap only on recorded proof, never on an assertion.
   if (cell.lane === 'small' || cell.lane === 'standard' || cell.lane === 'high-risk') {
     const output = trace.verify_output;
