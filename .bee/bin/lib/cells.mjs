@@ -196,13 +196,19 @@ export function capCell(
     files_changed = [],
     deviations = [],
     friction = null,
-    behavior_change = false,
+    behavior_change,
     verification_evidence = null,
     outcome,
   } = {},
 ) {
   const cell = readCell(root, id);
   if (!cell) throw new Error(`capCell: cell "${id}" not found.`);
+  // Honor the cell's declared behavior_change when the caller omits it — the CLI
+  // flag is opt-in, so a cell planned as behavior_change must not silently lose
+  // its evidence/before-state guards (and its scribing debt) at cap just because
+  // --behavior-change was not repeated. Explicit false/true from the caller wins.
+  const bc =
+    behavior_change === undefined ? cell.behavior_change === true : behavior_change === true;
   if (cell.status === 'capped') throw new Error(`capCell: cell "${id}" is already capped.`);
   if (cell.status === 'dropped') throw new Error(`capCell: cell "${id}" was dropped.`);
   const trace = { ...defaultTrace(), ...(cell.trace || {}) };
@@ -211,7 +217,7 @@ export function capCell(
       `capCell: cell "${id}" has no passing verify result — run the cell's verify command and record it (bee_cells.mjs verify --id ${id} --command CMD --passed true) before capping.`,
     );
   }
-  if (behavior_change === true && !verification_evidence) {
+  if (bc && !verification_evidence) {
     throw new Error(
       `capCell: cell "${id}" declares behavior_change but provides no verification_evidence — attach evidence (--evidence-file) or drop the behavior_change flag.`,
     );
@@ -221,7 +227,7 @@ export function capCell(
   // behavior works. This blocks assertion-capping at the source (worker must
   // capture the git-show / failing pre-change check at cap time) instead of
   // letting reviewing catch it later and spawn a whole evidence-backfill cell.
-  if (behavior_change === true && verification_evidence) {
+  if (bc && verification_evidence) {
     let evidence = verification_evidence;
     if (typeof evidence === 'string') {
       try {
@@ -273,7 +279,7 @@ export function capCell(
     files_changed: Array.isArray(files_changed) ? files_changed : [],
     deviations: Array.isArray(deviations) ? deviations : [],
     friction: friction ?? null,
-    behavior_change: behavior_change === true,
+    behavior_change: bc,
     verification_evidence: verification_evidence ?? null,
     outcome: typeof outcome === 'string' && outcome.trim() ? outcome : trace.outcome,
     capped_at: utcNow(),

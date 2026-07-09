@@ -167,7 +167,9 @@ function run(args) {
               .map((f) => f.trim())
               .filter(Boolean)
           : [],
-        behavior_change: flags['behavior-change'] === true,
+        // Omit when the flag is absent so capCell falls back to the cell's
+        // declared behavior_change (grooming fix); present flag forces true.
+        behavior_change: flags['behavior-change'] === true ? true : undefined,
         // Evidence goes straight into the trace (the single source, decision 0009).
         // Prefer --evidence-stdin so no evidence file is ever persisted; --evidence-file
         // remains for back-compat but the file must be a throwaway, never under reports/.

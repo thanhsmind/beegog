@@ -24,6 +24,8 @@ Counting rules per term (all from `.bee/` records — never guess):
 
 Bands: 0 = perfect · 1–25 healthy · 26–50 attention · 51–100 action required.
 
+**This score is bee's own housekeeping, not project debt.** Report it in the short hive-housekeeping note (a few lines), never as the headline. `broken_tools` and any bee-lib / vendored-helper bug are **harness health** — surface them in one plain line and route upstream to bee; they NEVER become project kill proposals. `stale_specs` is the one term about the user's own docs — carry it into the project hunt.
+
 **Coverage read-out** (decision 0003 — informational, never scored): alongside the score, report `specs: <N areas specced> / <M behavior-bearing reading-map locations>` (a location is behavior-bearing when its one-liner describes observable behavior, not assets/config). Low coverage is a backfill program for harvest cells, not week-to-week debt.
 
 Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run can compare:
@@ -33,6 +35,8 @@ Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run
 ```
 
 ## Hunt Checklists
+
+**Scope first (every check below):** hunt the **project's own files** only — its source, docs, tests, config. Exclude the harness and generated trees: `.bee/`, `.claude/`, `.codex/`, the `AGENTS.md` bee block, `node_modules/`, build output, lockfiles. A finding inside those is not project debt; a real bee bug there is a one-line "report upstream to bee" note, not a kill proposal. Write every finding in plain project language (name the module/file and what it costs), not bee vocabulary.
 
 **Friction clusters** — group `trace.friction` strings from capped cells and `type:"friction"` backlog entries by module/topic; 2+ hits on the same thing = a cluster worth a proposal. Also tally entries by `layer` (spec | context | environment | verification | state) and report one line in the audit: friction count per layer, largest = the bottleneck layer this cycle — fix proposals aim at that layer first. Entries without `layer` count as unattributed.
 

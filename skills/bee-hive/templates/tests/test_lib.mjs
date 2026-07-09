@@ -248,6 +248,24 @@ check('tiny lane still caps on a passing verify alone (lanes scale strictness)',
   assert(readCell(root, 'tiny-1').status === 'capped', 'tiny cell capped without output/files');
 });
 
+check('capCell honors the cell-declared behavior_change when the flag is omitted (grooming fix)', () => {
+  addCell(root, makeCell('bc-decl', { behavior_change: true }));
+  claimCell(root, 'bc-decl', 'worker-c');
+  recordVerify(root, 'bc-decl', { command: 'npm test', output: 'ok', passed: true });
+  // omitting the flag must NOT drop the declared behavior_change — cap still demands evidence
+  assertThrows(
+    () => capCell(root, 'bc-decl', { files_changed: ['a.js'], outcome: 'done' }),
+    'verification_evidence',
+    'declared behavior_change is still enforced at cap when the flag is omitted',
+  );
+  const capped = capCell(root, 'bc-decl', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'npm test' },
+  });
+  assert(capped.trace.behavior_change === true, 'trace.behavior_change carried from the cell declaration');
+});
+
 check('isKnownPhase accepts the enum + terminal alias and rejects drift', () => {
   assert(isKnownPhase('swarming') === true, 'enum phase accepted');
   assert(isKnownPhase('compounding-complete') === true, 'terminal alias accepted');
