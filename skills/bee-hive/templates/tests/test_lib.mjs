@@ -21,6 +21,8 @@ import {
   modelForTier,
   MODEL_TIERS,
   RUNTIMES,
+  advisorModel,
+  ADVISOR_POINTS,
 } from '../lib/state.mjs';
 import { detectCommands } from '../lib/commands_detect.mjs';
 import { readBacklogCounts, BACKLOG_STATUSES } from '../lib/backlog.mjs';
@@ -961,6 +963,44 @@ check('cell tier: validation, tierMix, and the ceiling scarcity warning', () => 
     assert(ceilingScarcityWarning(tRoot) === null, 're-tiering routine cells clears the warning');
   } finally {
     fs.rmSync(tRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── advisor mode: cheap main loop, ceiling on demand (decision 0013) ───────
+
+check('advisorModel: off by default, resolves ceiling only at configured points', () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-advisor-'));
+  fs.mkdirSync(path.join(aRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(aRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  try {
+    assert(ADVISOR_POINTS.includes('blocked') && ADVISOR_POINTS.includes('execution'), 'points enum');
+
+    // off by default → always null, and config carries a normalized advisor block
+    assert(advisorModel(aRoot, 'execution') === null, 'advisor off by default');
+    const def = readConfig(aRoot).advisor;
+    assert(def.enabled === false && Array.isArray(def.at), 'default advisor normalized');
+
+    // enabled with a point subset
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      advisor: { enabled: true, at: ['execution', 'blocked', 'bogus'] },
+    });
+    assert(advisorModel(aRoot, 'execution') === 'fable', 'resolves ceiling at a configured point');
+    assert(advisorModel(aRoot, 'blocked') === 'fable', 'resolves at blocked');
+    assert(advisorModel(aRoot, 'shape') === null, 'null at a point not in the list');
+    assert(advisorModel(aRoot, null) === 'fable', 'no point given → ceiling when enabled');
+    assert(readConfig(aRoot).advisor.at.join(',') === 'execution,blocked', 'unknown points filtered out');
+
+    // honors the models override for ceiling
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      advisor: { enabled: true, at: ['execution'] },
+      models: { claude: { ceiling: 'opus' } },
+    });
+    assert(advisorModel(aRoot, 'execution') === 'opus', 'advisor uses the configured ceiling model');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
   }
 });
 

@@ -121,6 +121,13 @@ export function buildSessionPreamble(root) {
       '- ⚡ GATE BYPASS ON — the agent auto-approves Gates 1-3 for tiny/small/standard work (records the recommended choice, logs it, continues). High-risk/hard-gate work, secret reads, and Gate 4 UAT still stop for the human. Turn off with the bee-bypass-gate skill.',
     );
   }
+  const advisor = readConfig(root).advisor;
+  if (advisor.enabled) {
+    const ceiling = readConfig(root).models.claude.ceiling;
+    lines.push(
+      `- 🧭 ADVISOR MODE ON — run this session on the generation tier; consult the ceiling model (${ceiling}) only at: ${advisor.at.join(', ')}. One ceiling call per point, verdict recorded; the human still approves every gate (decision 0013).`,
+    );
+  }
 
   if (handoff) {
     lines.push('');

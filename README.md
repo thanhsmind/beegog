@@ -225,7 +225,12 @@ Not every step needs your most capable (most expensive) model. The costly loops 
 - **extraction** — cheapest capable (retrieval, mechanical edits).
 - `null` = the runtime can't select a per-agent model (Codex today) → the tier is enforced as a read budget + output cap in the worker prompt. Set real ids (e.g. `"ceiling": "gpt-5-pro"`) if your runtime supports switching.
 
-Planning assigns each cell a tier; `bee-swarming` resolves it to a model per dispatch (`modelForTier(root, tier, runtime)`). To keep the discipline honest, `bee_status` and the session preamble **warn when too many cells sit on the ceiling tier** (the cost lever erodes when the strongest model touches most dispatches). Two shapes, one map: a Fable-tier orchestrator fanning out to Sonnet-tier workers, or a Sonnet-tier main loop consulting a Fable-tier advisor only at the hard calls — either way the strongest model stays in the `ceiling` slot (decision 0012).
+Planning assigns each cell a tier; `bee-swarming` resolves it to a model per dispatch (`modelForTier(root, tier, runtime)`). To keep the discipline honest, `bee_status` and the session preamble **warn when too many cells sit on the ceiling tier** (the cost lever erodes when the strongest model touches most dispatches).
+
+Two shapes, one map — either way the strongest model stays in the `ceiling` slot:
+
+- **Orchestrator** (fan-out): a ceiling-tier session plans and fans out to generation-tier workers. This is `bee-swarming`'s default.
+- **Advisor** (opt-in, decision 0013): run the whole session on the *generation* tier and consult the *ceiling* model only at the hard calls. Turn it on per-repo with `"advisor": { "enabled": true, "at": ["shape", "execution", "blocked"] }` — at each point the agent asks one tight question, spawns one ceiling subagent for a verdict, records it, and continues cheap. It's surfaced loudly (`ADVISOR MODE ON`) and never self-approves a human gate.
 
 ---
 
@@ -353,7 +358,7 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 |---|---|
 | `onboarding.json` | installed bee version + managed-file hashes (drift detection) |
 | `state.json` | phase, mode, feature, the four gate approvals, workers, next action |
-| `config.json` | per-repo hook/guard toggles, lanes, capabilities, **`gate_bypass`**, **`models`** (runtime-keyed tier→model map) |
+| `config.json` | per-repo hook/guard toggles, lanes, capabilities, **`gate_bypass`**, **`models`** (runtime-keyed tier→model map), **`advisor`** (cheap-loop + ceiling-consult mode) |
 | `HANDOFF.json` | pause context at ~65% budget — surfaced next session, never auto-resumed |
 | `cells/<id>.json` | one cell each: acceptance criteria, verify command, full trace |
 | `decisions.jsonl` / `backlog.jsonl` | append-only decision events / friction & grooming items |
@@ -373,13 +378,13 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 | [04-skills-spec.md](docs/04-skills-spec.md) | You are about to write a SKILL.md — per-skill specifications |
 | [06-runtime-integration.md](docs/06-runtime-integration.md) | Claude Code hook automation + Codex parity matrix |
 | [07-contracts.md](docs/07-contracts.md) | You are implementing or extending v0.1 — lib API, CLI surface, hook behaviors |
-| [decisions/](docs/decisions/) | Why bee is shaped the way it is — one record per load-bearing choice (0001–0012) |
+| [decisions/](docs/decisions/) | Why bee is shaped the way it is — one record per load-bearing choice (0001–0013) |
 
 ---
 
 ## Status
 
-**v0.1.10.** Core built and green: the skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
+**v0.1.11.** Core built and green: the skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
 
 Recent additions, each gated by a decision record:
 
@@ -389,7 +394,8 @@ Recent additions, each gated by a decision record:
 - **Artifact scaling + cap-time before-state** (0009) — planning stops fanning out four overlapping documents for small work; capping a behavior change now requires a recorded "before".
 - **`bee-bypass-gate`** (0010) — opt-in autopilot that auto-approves low-risk gates while keeping an absolute safety floor (high-risk/hard-gate, Gate 4 UAT, and secrets always stop).
 - **Capture-mode spine / scribing debt** (0011) — behavior_change cells capped since the last spec sync are counted as *scribing debt* and surfaced in `bee_status`, the preamble, and the swarming nudge, so settled behavior reaches `docs/specs/` mid-flight instead of only when a human remembers.
-- **Runtime-keyed model tiers + scarcity signal** (0012) — a per-repo `models` map (claude/codex → extraction/generation/ceiling) with a `modelForTier` resolver; cells carry a `tier`, swarming resolves tier → model, and `bee_status`/preamble warn when the ceiling share runs high — keeping the strongest model scarce (the advisor / orchestrator cost patterns).
+- **Runtime-keyed model tiers + scarcity signal** (0012) — a per-repo `models` map (claude/codex → extraction/generation/ceiling) with a `modelForTier` resolver; cells carry a `tier`, swarming resolves tier → model, and `bee_status`/preamble warn when the ceiling share runs high — keeping the strongest model scarce.
+- **Advisor mode** (0013) — opt-in: run the session on the generation tier and consult the ceiling model only at the hard calls (Gate 2/3, `[BLOCKED]`), one scarce call per point. The inverse of the orchestrator pattern; both keep the strongest model scarce.
 
 **Known debt before 1.0** (recorded in each skill's `CREATION-LOG.md`): the newer skills and the two most recent decisions have not yet been dogfooded/pressure-tested per bee's own Iron Law; the gate-bypass safety floor in particular wants RED-baseline testing on a real high-risk feature.
 

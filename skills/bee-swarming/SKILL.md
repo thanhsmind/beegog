@@ -40,7 +40,7 @@ Load `references/swarming-reference.md` for runtime spawn mechanics, the worker 
 Escalate in order, one rung at a time:
 
 1. **More context** — re-dispatch the same cell with the specific missing information (a file path, a decision quote, a reservation fix).
-2. **Stronger tier** — re-dispatch at the next model tier up (extraction → generation → ceiling).
+2. **Stronger tier** — re-dispatch at the next model tier up (extraction → generation → ceiling). In advisor mode (decision 0013), the `blocked` consult point makes this explicit: spawn one ceiling-tier advisor for a verdict on the blocker, record it, then continue on the main model.
 3. **Escalate** — surface the blocker to the user with the worker's diagnosis; if it invalidates the plan, return to bee-planning.
 
 A reservation conflict is rescued by adjusting reservations or cell scope — never by telling workers to be careful.

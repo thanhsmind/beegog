@@ -77,6 +77,9 @@ const DEFAULT_CONFIG = {
     claude: { extraction: "haiku", generation: "sonnet", ceiling: "fable" },
     codex: { extraction: null, generation: null, ceiling: null },
   },
+  // Advisor mode (decision 0013): run the session on the generation tier and
+  // consult the ceiling model only at the listed hard calls. Off by default.
+  advisor: { enabled: false, at: ["shape", "execution", "blocked"] },
 };
 
 const CRITICAL_PATTERNS_STUB = `# Critical Patterns

@@ -104,6 +104,7 @@ function buildStatus(root) {
     gates: state.approved_gates,
     gate_bypass: readConfig(root).gate_bypass === true,
     models: readConfig(root).models,
+    advisor: readConfig(root).advisor,
     tier_mix: tierMix(root, { feature: state.feature || null }),
     ceiling_scarcity: ceilingScarcityWarning(root),
     handoff,
@@ -153,6 +154,9 @@ function renderText(status) {
     `Critical patterns file: ${status.critical_patterns_present ? 'present' : 'absent'}`,
     ...(status.models
       ? [`Models (claude): ceiling=${status.models.claude.ceiling} generation=${status.models.claude.generation} extraction=${status.models.claude.extraction} — keep ceiling scarce (decision 0012)`]
+      : []),
+    ...(status.advisor && status.advisor.enabled
+      ? [`🧭 ADVISOR MODE ON — session on generation; consult ceiling at: ${status.advisor.at.join(', ')} (decision 0013)`]
       : []),
     ...(status.tier_mix && status.tier_mix.tiered > 0
       ? [`Tier mix: extraction=${status.tier_mix.counts.extraction} generation=${status.tier_mix.counts.generation} ceiling=${status.tier_mix.counts.ceiling} untiered=${status.tier_mix.counts.untiered} (ceiling ${Math.round(status.tier_mix.ceilingShare * 100)}%)`]

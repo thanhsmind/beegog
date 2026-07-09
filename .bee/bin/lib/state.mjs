@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 
-export const BEE_VERSION = '0.1.10';
+export const BEE_VERSION = '0.1.11';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -65,6 +65,24 @@ const DEFAULT_MODELS = {
   // Set real model ids here if your runtime supports switching (e.g. ceiling: 'gpt-5-pro').
   codex: { extraction: null, generation: null, ceiling: null },
 };
+
+// Decision 0013 — advisor mode. Run the session on the generation tier and
+// consult the ceiling model only at the listed hard calls (the "advisor" cost
+// pattern). Off by default. `at` is a subset of ADVISOR_POINTS.
+export const ADVISOR_POINTS = ['context', 'shape', 'execution', 'review', 'blocked'];
+const DEFAULT_ADVISOR = { enabled: false, at: ['shape', 'execution', 'blocked'] };
+
+function normalizeAdvisor(raw) {
+  const out = { enabled: false, at: [...DEFAULT_ADVISOR.at] };
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    out.enabled = raw.enabled === true;
+    if (Array.isArray(raw.at)) {
+      const at = raw.at.filter((p) => ADVISOR_POINTS.includes(p));
+      if (at.length) out.at = at;
+    }
+  }
+  return out;
+}
 
 function normalizeModels(raw) {
   const out = {
@@ -163,6 +181,7 @@ export function readConfig(root) {
     capabilities: config.capabilities || {},
     commands: normalizeCommands(config.commands),
     models: normalizeModels(config.models),
+    advisor: normalizeAdvisor(config.advisor),
   };
 }
 
@@ -183,4 +202,16 @@ export function modelForTier(root, tier, runtime = 'claude') {
   const t = MODEL_TIERS.includes(tier) ? tier : 'generation';
   const value = models[rt] ? models[rt][t] : null;
   return value == null ? null : value;
+}
+
+/**
+ * Advisor mode resolution (decision 0013). Returns the ceiling model to consult
+ * when advisor mode is on and `point` is a configured consult point, else null.
+ * The session itself runs on the generation tier; this is the phone-a-friend.
+ */
+export function advisorModel(root, point, runtime = 'claude') {
+  const { advisor } = readConfig(root);
+  if (!advisor.enabled) return null;
+  if (point && !advisor.at.includes(point)) return null;
+  return modelForTier(root, 'ceiling', runtime);
 }

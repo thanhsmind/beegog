@@ -167,6 +167,22 @@ When `config.gate_bypass` is `true`, at **Gate 1, 2, or 3**:
 
 The mechanical guards do not change: `claimCell` and the write-guard still require `approved_gates.execution: true` — bypass simply means the agent records that approval itself for eligible work instead of waiting for the human. Bypass state is surfaced every session (the preamble and `bee_status` both print a loud `GATE BYPASS ON` line) so it is never silently in effect.
 
+### Advisor mode (cheap main loop, ceiling consulted on demand — decision 0013)
+
+The inverse of the fan-out orchestrator: run the **whole session on the generation tier** (the cheaper model) and consult the **ceiling** model only at the hard calls. This is the "advisor" cost pattern — the strongest model is a phone-a-friend, not a full-time seat. Off by default; enabled per-repo in `.bee/config.json`:
+
+```json
+"advisor": { "enabled": true, "at": ["shape", "execution", "blocked"] }
+```
+
+`at` lists the consult points (subset of `context` · `shape` · `execution` · `review` · `blocked`). When `advisor.enabled` is true, at each listed point the agent:
+
+1. **Frames one tight question** for the advisor — the specific decision, the minimal context (diff / CONTEXT / the blocker), and the exact verdict wanted (approve / choose-A-vs-B / find-the-flaw). Never the session transcript.
+2. **Spawns one `ceiling`-tier subagent** (model = `modelForTier(root, 'ceiling', runtime)`) for that verdict, then continues on the main (generation) model. One advisor call per point — the ceiling stays scarce.
+3. **Records the verdict** where it belongs (a decision at a gate, the `[BLOCKED]` resolution in swarming, a review note) so it is auditable.
+
+Advisor mode is **not** gate-bypass and **not** a substitute for the human gates — the human still approves Gates 1–4. The advisor informs the agent's recommendation; it never self-approves. It composes with the rescue ladder (`blocked` is the ladder's "stronger tier" rung made explicit) and with review synthesis. State is surfaced loudly every session (preamble + `bee_status` print `ADVISOR MODE ON`) so a cheap-model session is never silently running without its safety consult.
+
 ## Question Format
 
 Used at all gates and Socratic steps:
