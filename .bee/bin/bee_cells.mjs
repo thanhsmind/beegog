@@ -19,6 +19,8 @@
 //      the single source; reports/<cell>.md links it, never re-embeds the JSON.)
 //   node .bee/bin/bee_cells.mjs block --id ID --reason R [--json]
 //   node .bee/bin/bee_cells.mjs drop --id ID --reason R [--json]
+//   node .bee/bin/bee_cells.mjs tier --id ID --tier extraction|generation|ceiling [--json]
+//     (the orchestrator's dispatch-time model-tier judgment, decision 0016)
 
 import fs from 'node:fs';
 import { findRepoRoot } from './lib/state.mjs';
@@ -32,6 +34,7 @@ import {
   capCell,
   blockCell,
   dropCell,
+  setTier,
 } from './lib/cells.mjs';
 
 function parseArgs(argv) {
@@ -191,9 +194,13 @@ function run(args) {
       const cell = dropCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
       return { result: cell, text: `Dropped ${cell.id}.` };
     }
+    case 'tier': {
+      const cell = setTier(root, requireFlag(flags, 'id'), String(requireFlag(flags, 'tier')));
+      return { result: cell, text: `Cell ${cell.id} tier set to ${cell.tier}.` };
+    }
     default:
       throw new Error(
-        `Unknown command "${args.command || '(missing)'}". Use: list, ready, show, add, claim, verify, cap, block, drop.`,
+        `Unknown command "${args.command || '(missing)'}". Use: list, ready, show, add, claim, verify, cap, block, drop, tier.`,
       );
   }
 }

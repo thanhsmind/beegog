@@ -309,6 +309,20 @@ export function dropCell(root, id, reason) {
   return writeCell(root, cell);
 }
 
+// Decision 0016 — the orchestrator assesses a cell's difficulty at dispatch and
+// records the tier it chose (extraction/generation/ceiling), rather than a fixed
+// planning-time label. Keeps tierMix/scarcity accurate against real dispatch
+// decisions. Idempotent; validates the tier.
+export function setTier(root, id, tier) {
+  if (!MODEL_TIERS.includes(tier)) {
+    throw new Error(`setTier: tier must be one of ${MODEL_TIERS.join(', ')}, got "${tier}".`);
+  }
+  const cell = readCell(root, id);
+  if (!cell) throw new Error(`setTier: cell "${id}" not found.`);
+  cell.tier = tier;
+  return writeCell(root, cell);
+}
+
 // Decision 0011 — capture-mode spine. The behavior_change cells capped for the
 // active feature since the last scribing run: the mechanical proxy for "settled
 // behavior not yet in docs/specs/". Threshold prefers last_scribing_run.at

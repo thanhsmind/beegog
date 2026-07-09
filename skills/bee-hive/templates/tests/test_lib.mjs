@@ -39,6 +39,7 @@ import {
   scribingDebt,
   tierMix,
   ceilingScarcityWarning,
+  setTier,
 } from '../lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, reservationsPath } from '../lib/reservations.mjs';
 import { checkWrite, checkRead, extractBashTargets } from '../lib/guards.mjs';
@@ -984,13 +985,12 @@ check('cell tier: validation, tierMix, and the ceiling scarcity warning', () => 
     const w = ceilingScarcityWarning(tRoot);
     assert(w && w.ceiling === 2 && w.tiered === 3 && w.pct === 67, `scarcity warns, got ${JSON.stringify(w)}`);
 
-    // re-tier the ceiling cells down → back under threshold → silent
-    for (const id of ['c1', 'c4']) {
-      const cell = readCell(tRoot, id);
-      cell.tier = 'generation';
-      writeCell(tRoot, cell);
-    }
-    assert(ceilingScarcityWarning(tRoot) === null, 're-tiering routine cells clears the warning');
+    // the orchestrator re-tiers at dispatch via setTier (decision 0016)
+    assertThrows(() => setTier(tRoot, 'c1', 'huge'), 'tier', 'setTier validates the tier');
+    setTier(tRoot, 'c1', 'generation');
+    setTier(tRoot, 'c4', 'generation');
+    assert(readCell(tRoot, 'c1').tier === 'generation', 'setTier records the dispatch-time judgment');
+    assert(ceilingScarcityWarning(tRoot) === null, 're-tiering routine cells down clears the warning');
   } finally {
     fs.rmSync(tRoot, { recursive: true, force: true });
   }
