@@ -1,53 +1,251 @@
 # bee
 
-**bee** is a lightweight, validate-first agentic development plugin suite for **Claude Code** and **Codex**, distilled from the strongest ideas of seven upstream systems: khuym, claudekit, gsd-core, gstack, repository-harness, superpowers, and compound-engineering.
+**bee** is a lightweight, *validate-first* agentic-development plugin suite for **Claude Code** and **Codex**. It turns "vibe-coding with an AI" into a staged, gated workflow where the agent proves each step before taking the next, records what it learns, and gets less wrong over time.
 
-bee is not a greenfield framework. Like khuym before it, bee sits downstream of proven agentic-development systems and keeps only the pieces that hold up in practice for a solo developer: a staged workflow with hard gates, evidence-based validation, bounded multi-agent execution, and a compounding knowledge loop that makes both the human and the agents less wrong over time.
+It is distilled from seven upstream systems (khuym, claudekit, gsd-core, gstack, repository-harness, superpowers, compound-engineering) — bee keeps only the pieces that hold up in daily practice for a solo developer and throws away the rest.
+
+> Docs are in English to match the codebase. Ask if you'd like a Vietnamese companion (`README.vi.md`).
+
+---
+
+## Why bee exists (the idea in plain words)
+
+Letting an AI write code freely is fast until it isn't. The usual failure modes:
+
+- It **starts coding before the goal is clear**, then you discover halfway that it built the wrong thing.
+- It says "done" when it **hasn't actually checked** — "tests pass" with no test named, "should work" as evidence.
+- It **forgets**: a rule you agreed three sessions ago is gone, so it re-asks or re-breaks it.
+- On a big task it **loses the thread** two-thirds of the way through the context window.
+
+bee's answer is four ideas working together:
+
+1. **Gates** — the human approves at four irreversible moments (what to build, how, whether to start writing code, whether to merge). Between gates the agent runs on its own; at a gate it stops.
+2. **Cells** — work is cut into small, self-contained task units, each with its own acceptance criteria and a real verify command. A cell **cannot be closed until its verification passes** — this is enforced by code, not by the agent's good intentions.
+3. **Lanes** — ceremony scales with risk. A typo fix is one cell and a light touch; an auth change gets mandatory proof and a slower path. Memory never scales down: even a one-line fix that changes behavior updates the spec.
+4. **Compounding** — finished work becomes durable knowledge: specs that survive a rewrite, a decision log, and "critical patterns" the next session reads first.
+
+The result is meant to be *trustworthy, not ceremonial*: every "done" is backed by recorded evidence, and every gate is something you can restate in your own words before you approve it.
+
+---
+
+## The core concepts in one minute
+
+| Concept | What it is | Why it matters |
+|---|---|---|
+| **Gate** | One of four human approval points (decisions → shape → execution → merge) | You stay in control at the moments that are expensive to undo |
+| **Cell** | A small JSON task unit: what to do, files, acceptance criteria, verify command, trace | The atom of work; can't be "capped" (closed) without proof it passed |
+| **Lane** | The size/risk class of the work: `tiny`, `small`, `standard`, `high-risk`, `spike` | Decides how much process the work gets — no epic ceremony for a typo |
+| **Spec** | A tech-agnostic, BA-grade description of an *area* (a screen, API, job, process) in `docs/specs/` | The system's meaning, understandable without the code and rebuildable on any stack |
+| **Decision** | An append-only log entry (`D<n>`) recording a locked choice + its rationale | Nothing agreed evaporates when the session closes |
+| **Handoff** | A saved pause point written at ~65% context | Long work resumes cleanly next session — and never auto-resumes |
+
+---
 
 ## The metaphor
 
-A hive is a staged, self-regulating system — and every bee role maps to a workflow stage:
+A hive is a staged, self-regulating system — each bee role maps to a workflow stage:
 
 | Hive role | bee skill | What it does |
 |---|---|---|
 | The hive itself | `bee-hive` | Bootstrap, routing, state, gates — load first in every session |
-| Scout bees | `bee-exploring` | Find the nectar: lock fuzzy intent into decisions, scout *just enough* |
+| Scout bees | `bee-exploring` | Lock fuzzy intent into decisions; scout *just enough* |
 | Forager bees | `bee-xia` | Range beyond the hive: evidence-labeled research, reuse-first recommendations |
-| Waggle dance | `bee-planning` | Communicate the found path precisely enough that workers can fly it |
-| The beekeeper's brief | `bee-briefing` | Translate the dance for the human: one reviewable implement plan both sides agree on before code |
+| Waggle dance | `bee-planning` | Communicate the found path precisely enough for workers to fly it |
+| The beekeeper's brief | `bee-briefing` | Translate the dance for the human: one reviewable implement plan |
 | Guard bees | `bee-validating` | Nothing enters the hive unproven: reality gate, feasibility evidence |
 | The swarm | `bee-swarming` | Orchestrate bounded workers over validated cells |
 | Worker bees | `bee-executing` | One worker, one cell: implement, verify, **cap the cell** |
 | Inspector bees | `bee-reviewing` | Multi-agent review, artifact verification, UAT |
-| Scribe bees | `bee-scribing` | The hive's BA: tech-agnostic specs of every area — meaning survives any rewrite |
+| Scribe bees | `bee-scribing` | The hive's BA: tech-agnostic specs of every area |
 | Honey | `bee-compounding` | Convert finished work into durable knowledge |
 | Undertaker bees | `bee-grooming` | Hunt and kill tech debt, drift, and dead work |
 | Comb building | `bee-writing-skills` | TDD-for-skills: build and pressure-test the hive's own comb |
+| The keeper's override | `bee-bypass-gate` | Opt-in autopilot: auto-approve low-risk gates (safety floor stays) |
 
-A **cell** is bee's task unit (honeycomb cell): a small JSON record with acceptance criteria and a verify command. A cell is **capped** (closed) only after its verification passes — never before.
+---
 
-## The chain
+## The workflow, explained simply
+
+You describe what you want. bee routes it by size and risk, then walks it through the chain below. **Bold = you decide; everything else the agent does on its own.**
 
 ```
-bee-hive
-  -> bee-exploring     writes  docs/history/<feature>/CONTEXT.md        [GATE 1: human approves decisions]
-  -> bee-planning      writes  discovery, approach, work shape
-  -> bee-briefing      writes  implement-plan.md (human-readable)   [GATE 2: human approves the brief]
-  -> bee-validating    writes  feasibility evidence, validated cells [GATE 3: human approves execution]
-  -> bee-swarming      spawns  bounded workers
-  -> bee-executing     caps    one verified cell per worker
-  -> bee-reviewing     writes  P1/P2/P3 findings                    [GATE 4: P1s block merge]
-  -> bee-briefing      writes  walkthrough.md (standard/high-risk: what shipped + how to test)
-  -> bee-scribing      writes  docs/specs/<area>.md — BA-grade, tech-agnostic area specs
-  -> bee-compounding   writes  learnings + decisions
-  (on demand) bee-xia         researches a topic standalone; also runs inside planning discovery L2/L3
-  (on demand) bee-scribing    captures settled outcomes from discussion/testing; backfills legacy areas
-  (on demand) bee-grooming    kills tech debt, audits hive health
+        bee-hive               reads your request, picks the lane, routes
+           │
+        bee-exploring          asks the sharp questions, writes down the decisions
+           ▼
+   ▶ GATE 1  "Are these the right decisions?"        ← you approve
+           │
+        bee-planning           shapes the work: the plan, the approach
+        bee-briefing           writes a human-readable implement plan (bigger work)
+           ▼
+   ▶ GATE 2  "Is this the right thing, at the right size?"   ← you approve
+           │
+        bee-planning (prep)    cuts the work into cells for the current slice
+        bee-validating         proves it's actually feasible against the real repo
+           ▼
+   ▶ GATE 3  "May I start editing real files?"        ← you approve  (most critical)
+           │
+        bee-swarming           spawns bounded workers
+        bee-executing          one worker per cell: implement → verify → CAP
+           │
+        bee-reviewing          multi-agent review, verifies the work is real
+           ▼
+   ▶ GATE 4  "P1 issues block merge; otherwise, merge?"   ← you approve
+           │
+        bee-briefing           writes the walkthrough (what shipped + how to test)
+        bee-scribing           updates the area specs (the durable meaning)
+        bee-compounding        stores learnings + decisions for next time
+           ▼
+         done
 ```
+
+Each gate is a single plain-language question with the machine detail linked, not dumped. You must be able to **restate what you're approving in your own words** — a gate you can't restate is worse than no gate.
+
+Which artifacts get written scales with the work (decision 0009): a small/standard feature produces just `CONTEXT.md` + `plan.md`; separate `discovery.md` / `approach.md` / `implement-plan.md` files appear only for deeper research (L2+) or `high-risk` work. No more four documents restating the same "current state".
+
+---
+
+## What is a cell?
+
+A **cell** is bee's unit of work — one honeycomb cell of the hive. It's a single JSON file in `.bee/cells/` that a "cold" worker (an agent with zero session history) can pick up and execute correctly, then close only with proof.
+
+Think of it as a self-contained work ticket that is *executable* and *machine-checkable*.
+
+```jsonc
+{
+  "id": "auth-3",
+  "feature": "auth",
+  "title": "Wire session middleware into the API router",
+  "lane": "standard",                      // tiny | small | standard | high-risk | spike
+  "status": "open",                        // open → claimed → capped | blocked | dropped
+  "deps": ["auth-1", "auth-2"],            // this cell is "ready" only when these are capped
+  "decisions": ["D2", "D4"],               // locked decisions it must honor (cited, never reinterpreted)
+  "files": ["src/api/router.ts", "src/auth/middleware.ts"],  // everything it may write
+  "read_first": ["src/api/router.ts"],     // what it must read before touching anything
+  "action": "Mount the session middleware from auth-2 onto all /api/* routes (per D2). Preserve the public response envelope (per D4).",
+  "must_haves": {                          // the contract — what "done" actually means
+    "truths":       ["Unauthenticated /api/* requests return 401"],   // observable behavior
+    "artifacts":    [{ "path": "src/auth/middleware.ts", "substantive": "exports authGuard, no TODO stubs" }],
+    "key_links":    ["router.ts imports and mounts authGuard"],       // wired, not just present
+    "prohibitions": ["No change to the public response envelope"]     // what must NOT change
+  },
+  "verify": "npm test -- auth",            // a REAL command that runs in this repo today
+  "trace": { "worker": null, "outcome": null, "files_changed": [], "behavior_change": false,
+             "verification_evidence": null /* ...filled in when the work is done... */ }
+}
+```
+
+The rules that make a cell trustworthy:
+
+- **Capping requires proof, not an assertion.** `bee_cells.mjs cap` **refuses** to close a cell unless a passing `verify` result is recorded. For `small`/`standard`/`high-risk` it also requires the verify's recorded output (or evidence) and a non-empty list of changed files — "verify_passed: true" with no output and no files is rejected.
+- **Behavior changes need a "before".** If a cell changes observable behavior (`behavior_change: true`), capping also refuses without a *characterization of the prior behavior* — `red_failure_evidence` such as a `git show` of the old state, or a pre-change check that failed. This blocks "it works now" being accepted as proof that behavior actually changed, and it's captured at cap time (one command away) rather than backfilled later (decision 0009).
+- **Ready = all deps capped.** `bee_cells.mjs ready` lists claimable cells. Only the orchestrator assigns them; workers never self-select.
+- **Evidence lives in one place.** The cell's `trace` is the single source of verification evidence. Reports link to it; they never duplicate it.
+- **Lane scales strictness.** A `tiny` cell may skip `must_haves` and record a one-line trace; a `high-risk` cell needs full `must_haves`, spike evidence, and a detailed trace.
+- **One commit per cell**, with the cell id in the message.
+
+`bee_status.mjs` and every downstream skill read the cell trace, so "what happened" is always machine-readable, never buried in chat.
+
+---
+
+## The four gates
+
+Gates are **human** approvals, and three of them are enforced by code — the agent physically cannot proceed past Gate 3 without it being recorded.
+
+| Gate | Asked after | What you're really deciding | If you get it wrong |
+|---|---|---|---|
+| **Gate 1** | exploring | Are these the decisions I meant? | Everything downstream builds on them — cheap to fix now, costly later |
+| **Gate 2** | planning shape | Is this the right thing, at the right size? | Preparation gets built against the wrong shape |
+| **Gate 3** | validating | May the agent start editing real files (this slice only)? | The most irreversible step — this is where code starts changing |
+| **Gate 4** | reviewing | Does this go into the main branch? | P1 findings ship broken code to users |
+
+Enforcement, not etiquette: until Gate 3 is approved, `bee_cells.mjs claim` throws and the write-guard hook **denies source edits** (while keeping `.bee/`, `docs/`, `.spikes/`, and `AGENTS.md` writable). Gate 4 never auto-merges past an open P1.
+
+### Gate bypass (opt-in autopilot)
+
+If you trust bee in a given repo and want speed, turn on **`bee-bypass-gate`** (`on` / `off` / `status`). When on, the agent stops asking at **Gates 1–3 for normal-lane work** — it takes its own recommendation, records the approval, logs it, and continues, posting a short `⚡ auto-approved Gate N` line instead of a question.
+
+The safety floor is **absolute and not configurable**:
+
+- **High-risk / hard-gate work always stops for you** — anything touching auth, authorization, data loss, security, an external provider, validation removal, or a database migration.
+- **Gate 4 UAT and P1 always stop** — you still confirm the feature works; the merge auto-approves only when there are zero P1s and every UAT item passed.
+- **Reading secrets always asks** — `.env`, keys, credentials, etc.
+
+Bypass is **not** the same as headless mode (headless still stops at every gate). It's off by default, persists per-repo, and is surfaced loudly (`GATE BYPASS ON`) in the session preamble and `bee_status` so it's never silently in effect.
+
+---
+
+## How review works
+
+Cell closure is *not* proof the feature works — so `bee-reviewing` is a separate quality gate before merge. It runs in five parts:
+
+1. **Multi-agent specialist review.** Independent reviewers run in parallel, each with an *isolated* context (the diff + `CONTEXT.md` + `plan.md` only — never session history, so they can't be led):
+   - always-on: **code-quality** (correctness, types), **architecture** (boundaries, coupling), **security** (auth, secrets, injection), **test-coverage** (missing cases, weak assertions), plus a **learnings-researcher** (finds precedent) and a **learnings-synthesizer** (dedupes, corroborates).
+   - conditional (spawned only when the diff matches): **performance**, **api-contract**, **data-migration**, **reliability**.
+2. **Severity + synthesis.** Every finding is **P1** (security / data loss / breaking change — blocks merge), **P2** (real perf/architecture/reliability/test gap), or **P3** (cleanup, docs, future debt). Uncertain → P2. When independent reviewers corroborate a finding, it's promoted one level. Each finding is written in a fixed shape: plain-language summary → what the code does today → why it matters → concrete failure scenario → file/line evidence → smallest credible fix.
+3. **Verification-evidence gate.** For every capped `behavior_change` cell, the recorded evidence must name what was tested, what changed, the before-state, and the verification run. Vague evidence ("covered by existing tests", no test named) is itself a **P1** — the work goes back. (The cap helper now blocks the worst case at source, so this is a backstop.)
+4. **Artifact verification.** For everything `CONTEXT.md` and `plan.md` promised, check three levels: **EXISTS** → **SUBSTANTIVE** (not a stub/TODO/fake path) → **WIRED** (imported and used on the real path). All three = OK; substantive-but-not-wired = P2; missing or exists-only = P1.
+5. **Human UAT.** For each SEE/CALL/RUN decision in `CONTEXT.md`, you confirm it actually works (Pass / Fail / Skip). A fail spawns a P1 fix cell and re-runs that item; a skip needs a recorded reason. UAT failures are never logged as passes.
+
+Then **Gate 4**: P1 > 0 blocks merge (fix cells run through swarming, review re-runs on the fix, repeat until zero or explicit override); P1 = 0 → "Approve merge?". P2/P3 findings are filed to the backlog as non-blocking follow-ups — they never hold up the current work.
+
+---
+
+## Lanes: ceremony scales with risk
+
+Every planning pass counts mechanical **risk flags** (auth · authorization · data model · audit/security · external systems · public contracts · cross-platform · existing covered behavior · weak proof · multi-domain) and picks the smallest honest lane:
+
+| Lane | When | What it gets |
+|---|---|---|
+| `tiny` | 0–1 flags, ≤2 files, one direct task | one cell, one-line trace, lightest review |
+| `small` | 0–1 flags, ≤3 files, no gray areas | a cell or two, optional mini-brief |
+| `standard` | 2–3 flags, or story-sized behavior | full cells + must_haves, one review pass |
+| `high-risk` | 4+ flags, or any hard-gate flag | mandatory spikes/feasibility proof, strict trace, slower Gate 3 |
+| `spike` | one yes/no question decides if the plan is real | a disposable experiment under `.spikes/`, answers then discards |
+
+The rule that never bends: **lanes scale ceremony, never memory.** Even a `tiny` cell that changed behavior obliges a spec sync, and a settled decision is logged the moment it settles — in every lane.
+
+---
+
+## How a session flows (end to end)
+
+bee has two layers that always work together:
+
+1. **Runtime layer** (per machine) — the 14 `bee-*` skills the agent loads, plus (Claude Code) 6 lifecycle hooks.
+2. **Repo layer** (per project) — the `AGENTS.md` BEE block, `.bee/` state, and 4 vendored helper CLIs that *mechanically* enforce the workflow for any agent, on any runtime.
+
+```
+you                         agent                              on disk
+─────────────────────────── ────────────────────────────────── ─────────────────────────
+open a session          →   hook prints the bee preamble       (reads .bee/state.json)
+                            (phase, gates, critical patterns,
+                            pending HANDOFF, bypass warning)
+"add feature X"         →   bee-hive routes by scope + risk
+                            bee-exploring locks decisions      docs/history/X/CONTEXT.md
+you approve GATE 1      →
+                            bee-planning shapes the work       plan.md (+ approach, if earned)
+                            bee-briefing renders the brief     implement-plan.md (bigger work)
+you approve GATE 2      →
+                            bee-validating proves feasibility  reality gate, spikes, cells
+you approve GATE 3      →   ← before this, source writes are DENIED by the write-guard
+                            bee-swarming spawns workers
+                            bee-executing: implement → verify  .bee/cells/<id>.json capped
+                            → cap (refuses without proof +        (verify output + before-state
+                               a recorded before-state)            recorded in the trace)
+                            bee-reviewing: P1/P2/P3 + UAT
+you approve GATE 4      →   (P1 findings block merge)
+                            bee-briefing writes walkthrough    docs/history/X/walkthrough.md
+                            bee-scribing syncs area specs      docs/specs/<area>.md
+                            bee-compounding stores learnings   decisions, critical-patterns
+```
+
+If a session runs long, bee writes `.bee/HANDOFF.json` at ~65% context and pauses; the next session surfaces the handoff and **waits** — it never auto-resumes.
+
+---
 
 ## Install
 
-Quick (greenfield or brownfield, both runtimes) — run from inside your project; the current directory is the target by default:
+Run from inside your project (the current directory is the target by default):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -y
@@ -57,93 +255,52 @@ curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/inst
 iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1; .\install-bee.ps1 -Yes
 ```
 
-Installing into a different directory: add `-d /path/to/project` (bash) / `-Directory C:\path\to\project` (PowerShell).
+Different directory: add `-d /path/to/project` (bash) / `-Directory C:\path\to\project` (PowerShell). Full options, the Claude Code plugin route (`/plugin marketplace add thanhsmind/beegog` + `/plugin install bee@bee`), manual installs, verify/update/uninstall: [INSTALL.md](INSTALL.md).
 
-Full options, the Claude Code plugin route (`/plugin marketplace add thanhsmind/beegog` + `/plugin install bee@bee`), manual installs, verify/update/uninstall: [INSTALL.md](INSTALL.md).
-
-## How a session flows
-
-bee has two layers that always work together:
-
-1. **Runtime layer** (per machine) — the 12 `bee-*` skills the agent loads, plus (Claude Code) 6 lifecycle hooks.
-2. **Repo layer** (per project) — the `AGENTS.md` BEE block, `.bee/` state, and 4 vendored helper CLIs that *mechanically* enforce the workflow for any agent, on any runtime.
-
-A typical run, end to end:
-
-```
-you                         agent                              on disk
-─────────────────────────── ────────────────────────────────── ─────────────────────────
-open a session          →   hook prints the bee preamble       (reads .bee/state.json)
-                            (phase, gates, critical patterns,
-                            pending HANDOFF if any)
-"add feature X"         →   bee-hive routes by scope + risk
-                            bee-exploring locks decisions      docs/history/X/CONTEXT.md
-you approve GATE 1      →
-                            bee-planning shapes the work       plan.md, approach.md
-                            bee-briefing renders the brief     implement-plan.md (you review this)
-you approve GATE 2      →
-                            bee-validating proves feasibility  reality gate, spikes, cells
-you approve GATE 3      →   ← before this, source writes are DENIED by the write-guard
-                            bee-swarming spawns workers
-                            bee-executing: implement → verify  .bee/cells/<id>.json capped
-                            → cap (cap refuses without a          (verify output recorded)
-                            recorded passing verify)
-                            bee-reviewing: P1/P2/P3 findings
-you approve GATE 4      →   (P1 findings block merge)
-                            bee-briefing writes walkthrough    docs/history/X/walkthrough.md
-                            bee-scribing syncs area specs      docs/specs/<area>.md
-                            bee-compounding stores learnings   decisions, critical-patterns
-```
-
-Two properties make this trustworthy rather than ceremonial:
-
-- **Gates are human approvals, enforced by code.** Until Gate 3 is approved, `bee_cells.mjs claim` throws and the write-guard hook denies source edits (`.bee/`, `docs/`, `.spikes/`, `plans/`, `AGENTS.md` stay writable). No agent good intentions involved.
-- **Ceremony scales with risk, memory never does.** Every planning pass classifies the work into a lane — `tiny` / `spike` / `small` / `standard` / `high-risk` — using mechanical risk flags (auth, data model, external systems, …). A typo fix is one cell and one lightweight review; an auth change gets mandatory spikes and a slower Gate 3. But in *every* lane, a capped cell that changed behavior obliges a spec sync, and settled decisions get logged the moment they settle.
-
-If a session runs long, bee writes `.bee/HANDOFF.json` at ~65% context and pauses; the next session surfaces the handoff and **waits** — it never auto-resumes.
+---
 
 ## Usage examples
 
-bee is driven conversationally — you talk to the agent, the skills and helpers do the bookkeeping. In an onboarded repo:
+bee is driven conversationally — you talk, the skills and helpers do the bookkeeping. In an onboarded repo:
 
 | You say | What happens |
 |---|---|
 | "Onboard this repository for bee" | `bee-hive` runs `onboard_bee.mjs` (plan first, asks before `--apply`) |
-| "Add CSV export to the report screen" | routed through the full chain above, gated at 1–4 |
-| "Fix the typo in the footer" | tiny lane: one cell, one worker, no epic ceremony |
-| "Research: what's the best way to do X here?" | `bee-xia` writes an evidence-labeled brief in `docs/history/research/` (every claim tagged Local/Upstream/Docs/Inference, reuse-first recommendation) |
-| "Chốt: we'll always soft-delete users" / "final, ship it" | settlement signal → `bee-scribing` captures it into the area spec + decision log *same turn* |
-| "Review this branch" | `bee-reviewing`: multi-agent review, P1/P2/P3 findings |
+| "Add CSV export to the report screen" | routed through the full chain, gated at 1–4 |
+| "Fix the typo in the footer" | `tiny` lane: one cell, one worker, no epic ceremony |
+| "Research: what's the best way to do X here?" | `bee-xia` writes an evidence-labeled brief (every claim tagged Local/Upstream/Docs/Inference, reuse-first) |
+| "Chốt: we'll always soft-delete users" / "ship it" | settlement signal → `bee-scribing` captures it into the spec + decision log *same turn* |
+| "Review this branch" | `bee-reviewing`: multi-agent review, P1/P2/P3 findings, UAT |
+| "Turn on gate bypass" | `bee-bypass-gate on` → autopilot for low-risk gates (safety floor stays) |
 | "Clean up tech debt" / "audit the hive" | `bee-grooming` hunts drift, dead work, stale reservations |
 | "What did we decide about auth?" | reads the decision log (`bee_decisions.mjs search --text auth`) |
 
-You can also poke the state directly from any terminal — same commands the agents use:
+Poke the state directly from any terminal — the same commands the agents use:
 
 ```bash
-node .bee/bin/bee_status.mjs --json            # where am I? phase, gates, cells, next action
+node .bee/bin/bee_status.mjs --json            # where am I? phase, gates, cells, bypass, next action
 node .bee/bin/bee_cells.mjs list               # all cells; `ready` = open cells with deps capped
 node .bee/bin/bee_decisions.mjs active         # decisions currently in force
-```
 
-And verify the enforcement is armed (expected to refuse):
-
-```bash
+# verify the enforcement is armed (expected to refuse before Gate 3):
 node .bee/bin/bee_cells.mjs claim --id anything --worker w1
 # → error: gate "execution" is not approved   ✔
 ```
 
-## Scripts & CLI reference
+---
+
+## Under the hood
 
 Everything is Node 18+ ESM, **zero npm dependencies**, atomic writes, Windows-safe paths. Helpers exit non-zero with a one-line `{error}` JSON on `--json`; hooks never break a session (fail-open, crash-logged to `.bee/logs/hooks.jsonl`).
 
-### Installers — `scripts/`
+### Vendored helpers — `<repo>/.bee/bin/` (source: `skills/bee-hive/templates/`)
 
-| Script | Platform | What it does |
-|---|---|---|
-| `install.sh` | macOS / Linux / Git Bash | fetch bee, install skills for chosen runtimes, onboard the target repo |
-| `install.ps1` | Windows PowerShell | same, PowerShell-native |
+Copied into every onboarded repo, so enforcement works even for agents that ignore instructions.
 
-Both take the same flags (`--dry-run`, `--runtime claude\|codex\|both`, `--claude-md`, `--no-hooks`, `--source <path>`, `-y`) — full table in [INSTALL.md](INSTALL.md). Idempotent; existing `AGENTS.md`/`CLAUDE.md` content outside the BEE markers is preserved byte-for-byte.
+- **`bee_status.mjs`** — one-shot situational scout: onboarding health, phase/mode/feature, gate states, **gate-bypass state**, cell counts, reservations, recent decisions, staleness warnings, recommended next action. First command of every session.
+- **`bee_cells.mjs`** — the cell lifecycle: `list` / `ready` / `show` / `add` / `claim` (throws unless Gate 3 approved + deps capped) / `verify` / `cap` (refuses without recorded proof; `behavior_change` cells also require a before-state) / `block` / `drop`.
+- **`bee_reservations.mjs`** — file-level conflict prevention between parallel workers: `reserve` / `release` / `list` / `sweep` (release expired TTLs). On overlap → `{ok:false, conflicts}`; the caller must return `[BLOCKED]`.
+- **`bee_decisions.mjs`** — append-only decision log (rejects secrets and injection patterns): `log` / `supersede` / `redact` / `active` / `search`.
 
 ### Onboarding — `skills/bee-hive/scripts/onboard_bee.mjs`
 
@@ -151,56 +308,22 @@ Both take the same flags (`--dry-run`, `--runtime claude\|codex\|both`, `--claud
 node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md]
 ```
 
-Without `--apply` it only reports the plan (`up_to_date` | `changes_needed`). With `--apply` it installs/refreshes: the AGENTS.md BEE block (between `<!-- BEE:START/END -->` markers), `.bee/` runtime files, and the vendored helpers below. Existing `state.json`, `decisions.jsonl`, and `cells/` are **never** overwritten. Re-run after pulling a new bee version — it detects drift via managed hashes in `.bee/onboarding.json`. `--repo-hooks` additionally wires the 6 hooks into `<repo>/.claude/settings.json` (for the no-plugin route); `--claude-md` adds an `@AGENTS.md` import to CLAUDE.md.
+Without `--apply` it only reports the plan. With `--apply` it installs/refreshes the AGENTS.md BEE block, `.bee/` runtime files, and the vendored helpers — **never** overwriting your `state.json`, `decisions.jsonl`, or `cells/`. Re-run after pulling a new bee version; it detects drift via managed hashes in `.bee/onboarding.json`.
 
-### Vendored helpers — `<repo>/.bee/bin/` (source: `skills/bee-hive/templates/`)
+### Hooks — `hooks/` (Claude Code; the plugin route loads them automatically)
 
-Copied into every onboarded repo, so enforcement works even for agents that ignore instructions. All support `--json`.
-
-**`bee_status.mjs`** — one-shot situational scout: onboarding health, phase/mode/feature, gate states, cell counts, active reservations, recent decisions, staleness warnings, recommended next action. First command of every session.
-
-**`bee_cells.mjs`** — the task unit lifecycle:
-
-```
-list [--feature F] [--status S] | ready [--feature F] | show --id ID
-add --file cell.json  (or --stdin)          # validates schema, lane, must_haves
-claim --id ID --worker NAME                 # THROWS unless Gate 3 approved + deps capped
-verify --id ID --command CMD --passed true|false [--output TEXT | --output-file F]
-cap --id ID [--outcome TEXT] [--files a,b] [--behavior-change] [--evidence-file F] ...
-                                            # REFUSES without a recorded passing verify;
-                                            # small/standard/high-risk also need output/evidence + files
-block --id ID --reason R | drop --id ID --reason R
-```
-
-**`bee_reservations.mjs`** — file-level conflict prevention between parallel workers:
-
-```
-reserve --agent A --cell C --path P [--ttl N]   # {ok:false, conflicts} on overlap
-release --agent A [--cell C] | list [--active-only] | sweep   # sweep = release expired TTLs
-```
-
-**`bee_decisions.mjs`** — append-only decision log (injection-hardened: rejects secrets and prompt-injection patterns):
-
-```
-log --decision D --rationale R [--alternatives A] [--scope S] [--confidence N]
-supersede --id UUID --decision D --rationale R | redact --id UUID --reason R
-active [--recent N] | search --text T
-```
-
-### Hooks — `hooks/` (Claude Code; plugin route loads them automatically)
-
-Self-arming: every hook exits silently unless the repo has `.bee/onboarding.json`. Per-repo kill switch in `.bee/config.json → hooks.<name>`.
+Self-arming (silent unless the repo has `.bee/onboarding.json`); per-repo kill switch in `.bee/config.json → hooks.<name>`.
 
 | Hook | Fires on | Does |
 |---|---|---|
-| `bee-session-init.mjs` | session start/resume/compact | prints the bee preamble (phase, gates, handoff, critical-patterns digest) |
-| `bee-prompt-context.mjs` | each user prompt | 1–3 line reminder of phase/next action, deduped (only when changed or >30 min) |
-| `bee-write-guard.mjs` | before Edit/Write/Bash/Read/… | denies source writes pre-Gate-3, unreserved conflicting writes while swarming, secret-file reads; also gates ad-hoc edits while the hive is idle |
+| `bee-session-init.mjs` | session start/resume/compact | prints the bee preamble (phase, gates, handoff, critical patterns, bypass warning) |
+| `bee-prompt-context.mjs` | each user prompt | short reminder of phase/next action, deduped |
+| `bee-write-guard.mjs` | before Edit/Write/Bash/Read/… | denies source writes pre-Gate-3, unreserved conflicting writes while swarming, and secret-file reads |
 | `bee-state-sync.mjs` | after task tools / stop | refreshes cell counts + last activity into `state.json` |
 | `bee-chain-nudge.mjs` | subagent stop | nudges the orchestrator to collect worker status / synthesize reviews |
-| `bee-session-close.mjs` | session stop | warns about claimed-uncapped cells or a missing HANDOFF; when idle, nudges a decision review if source changed with nothing logged |
+| `bee-session-close.mjs` | session stop | warns about claimed-uncapped cells, missing HANDOFF, or unlogged decisions |
 
-Codex has no hooks — by design the same rules hold there because the *helpers* enforce them; the AGENTS.md BEE block covers bootstrap. Parity matrix: [docs/06-runtime-integration.md](docs/06-runtime-integration.md).
+Codex has no hooks — by design the same rules hold there because the *helpers* enforce them and the AGENTS.md block covers bootstrap. Parity matrix: [docs/06-runtime-integration.md](docs/06-runtime-integration.md).
 
 ### Runtime files — `<repo>/.bee/`
 
@@ -208,37 +331,42 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 |---|---|
 | `onboarding.json` | installed bee version + managed-file hashes (drift detection) |
 | `state.json` | phase, mode, feature, the four gate approvals, workers, next action |
-| `config.json` | per-repo hook/guard toggles, lanes, capabilities |
+| `config.json` | per-repo hook/guard toggles, lanes, capabilities, **`gate_bypass`** |
 | `HANDOFF.json` | pause context at ~65% budget — surfaced next session, never auto-resumed |
-| `cells/<id>.json` | one task unit each: acceptance criteria, verify command, full trace |
+| `cells/<id>.json` | one cell each: acceptance criteria, verify command, full trace |
 | `decisions.jsonl` / `backlog.jsonl` | append-only decision events / friction & grooming items |
 | `reservations.json` | active file reservations (TTL-bounded) |
 | `logs/hooks.jsonl` | hook crash/audit log |
+
+---
 
 ## Documents
 
 | Doc | Read when |
 |---|---|
 | [00-vision.md](docs/00-vision.md) | You want the principles and non-goals |
-| [01-distillation.md](docs/01-distillation.md) | You want to know what bee took from each upstream framework, and what it deliberately rejected |
-| [02-architecture.md](docs/02-architecture.md) | You want the plugin layout, dual-runtime (Claude Code + Codex) support, runtime files, and state model |
-| [03-workflow.md](docs/03-workflow.md) | You want the full stage-by-stage workflow contract: artifacts, gates, modes, lanes |
+| [01-distillation.md](docs/01-distillation.md) | What bee took from each upstream framework, and what it rejected |
+| [02-architecture.md](docs/02-architecture.md) | Plugin layout, dual-runtime support, runtime files, cell schema, state model |
+| [03-workflow.md](docs/03-workflow.md) | The full stage-by-stage workflow contract: artifacts, gates, modes, lanes |
 | [04-skills-spec.md](docs/04-skills-spec.md) | You are about to write a SKILL.md — per-skill specifications |
-| [05-roadmap.md](docs/05-roadmap.md) | You want the build order for bee itself |
-| [06-runtime-integration.md](docs/06-runtime-integration.md) | You want the Claude Code hook automation skeleton and the Codex parity matrix — how both runtimes get first-class, mechanically-enforced support |
+| [06-runtime-integration.md](docs/06-runtime-integration.md) | Claude Code hook automation + Codex parity matrix |
 | [07-contracts.md](docs/07-contracts.md) | You are implementing or extending v0.1 — lib API, CLI surface, hook behaviors |
-| [08-harness-adoption.md](docs/08-harness-adoption.md) | You want the repository-harness deep-dive: what else to adopt (intake records, interventions, verify-all, propose rules, maturity ladder, worktree isolation) |
+| [decisions/](docs/decisions/) | Why bee is shaped the way it is — one record per load-bearing choice (0001–0010) |
+
+---
 
 ## Status
 
-**v0.1.0 built.** The original 10 skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and two test suites (28 lib contract tests + onboarding/idempotency/`--repo-hooks` tests) — all green, smoke-tested end-to-end (onboard → gate-locked claim → verify-gated cap → hook denials).
+**v0.1.6.** Core built and green: the skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
 
-**bee-scribing added** (decision 0002, which also replaced the ten-skill hard cap with a decision gate): the 11th skill — a dedicated BA that keeps `docs/specs/` at BA grade (data dictionaries, behaviors & operations, actor access, business rules; technology quarantined to one Pointers section) so any area — screen, API, background job, integration, pipeline, process — can be understood without the code and rebuilt on another stack. Runs in the chain between reviewing and compounding, plus on-demand capture (any settled outcome of a discuss → build → test → adjust loop is logged and merged immediately) and harvest (backfill legacy areas) modes. Not yet dogfooded.
+Recent additions, each gated by a decision record:
 
-**bee-xia added** (decision 0005): the 12th skill — the anti-reinvention research scout distilled from khuym's `xia`. Standalone mode answers "research topic X" with an evidence-labeled brief (`Local/Upstream/Docs/Inference`, reuse-first recommendation ladder) in `docs/history/research/`; in-chain mode is the protocol body of planning's discovery L2/L3, merging into `approach.md`. Not yet dogfooded.
+- **`bee-scribing`** (0002) — a dedicated BA that keeps `docs/specs/` at BA grade so any area can be understood without the code and rebuilt on another stack.
+- **`bee-xia`** (0005) — the anti-reinvention research scout: evidence-labeled briefs, reuse-first recommendations.
+- **`bee-briefing`** (0008) — the beekeeper's brief: one human-readable implement plan per feature, plus the post-ship walkthrough.
+- **Artifact scaling + cap-time before-state** (0009) — planning stops fanning out four overlapping documents for small work; capping a behavior change now requires a recorded "before".
+- **`bee-bypass-gate`** (0010) — opt-in autopilot that auto-approves low-risk gates while keeping an absolute safety floor (high-risk/hard-gate, Gate 4 UAT, and secrets always stop).
 
-**bee-briefing added** (decision 0008): the 13th skill — the beekeeper's brief, distilled from Google Antigravity's Implementation Plan and Walkthrough artifacts. Renders one human-readable `docs/history/<feature>/implement-plan.md` per feature that Gates 2–3 link as the review object, consolidating the terse truth artifacts and authoring the two sections the chain lacked (a Technical Design narrative and bee's only Rollback discipline); after Gate 4 it writes `walkthrough.md` — what shipped, how it was verified, how to test it — reconstructed from the execution records, never the plan. A consolidator, not a second planner: it projects every section from a named source and never invents to fill a template. Lane-scaled (nothing for `tiny`/`spike`, a mini-brief for `small`, walkthrough only for `standard`/`high-risk`). RED baseline ran clean at the Fable/Opus tier (all nine scenarios — six render/refresh + three walkthrough — passed on principle), so it ships thin and procedural with the negations kept as guards; weaker-tier pressure-testing is recorded debt. Not yet dogfooded.
+**Known debt before 1.0** (recorded in each skill's `CREATION-LOG.md`): the newer skills and the two most recent decisions have not yet been dogfooded/pressure-tested per bee's own Iron Law; the gate-bypass safety floor in particular wants RED-baseline testing on a real high-risk feature.
 
-Known debt before 1.0 (recorded in each skill's CREATION-LOG.md): pressure-testing of the skills themselves per the Iron Law — v0.1 skills inherit bulletproofing from their khuym/superpowers lineage but have not yet been RED/GREEN/REFACTOR-tested in bee form.
-
-Try it in a repo: see [Usage examples](#usage-examples) above — onboard, scout with `bee_status`, then ask the agent for a tiny fix and watch it route.
+Try it: onboard a repo, scout with `bee_status`, then ask the agent for a tiny fix and watch it route.
