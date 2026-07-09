@@ -102,6 +102,7 @@ function buildStatus(root) {
     mode: state.mode,
     feature: state.feature,
     gates: state.approved_gates,
+    gate_bypass: readConfig(root).gate_bypass === true,
     handoff,
     cells: counts,
     pbi: backlog
@@ -128,6 +129,9 @@ function renderText(status) {
     `Onboarding: ${status.onboarding.installed ? `installed (bee ${status.onboarding.bee_version})` : 'MISSING'}${status.onboarding.drift ? ' [version drift]' : ''}`,
     `Phase: ${status.phase} | Mode: ${status.mode ?? 'none'} | Feature: ${status.feature ?? 'none'}`,
     `Gates: ${GATE_NAMES.map((g) => `${g}=${status.gates?.[g] ? 'approved' : 'pending'}`).join(' ')}`,
+    ...(status.gate_bypass
+      ? ['⚡ GATE BYPASS ON — Gates 1-3 auto-approved for normal-lane work; high-risk/hard-gate, secrets, UAT still stop. Off: bee-bypass-gate off']
+      : []),
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,
     ...(status.pbi

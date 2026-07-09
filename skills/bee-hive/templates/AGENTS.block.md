@@ -28,7 +28,7 @@ bee-hive
   (on demand) bee-grooming
 ```
 
-The four gates are **human** gates. Never self-approve a gate, in any mode, including headless runs.
+The four gates are **human** gates. Never self-approve a gate, in any mode, including headless runs — **except** when the opt-in gate-bypass switch is on (`.bee/config.json` `gate_bypass: true`, set via the `bee-bypass-gate` skill): it auto-approves Gates 1-3 for `tiny`/`small`/`standard` work only. High-risk/hard-gate work, secret reads, and Gate 4 UAT are never bypassed. `bee_status` and the session preamble print `GATE BYPASS ON` whenever it is active.
 
 ## Critical rules
 

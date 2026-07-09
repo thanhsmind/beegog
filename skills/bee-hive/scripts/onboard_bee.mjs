@@ -64,6 +64,11 @@ const DEFAULT_CONFIG = {
   },
   lanes: {},
   capabilities: {},
+  // Opt-in autopilot (decision 0010): when true, the agent auto-approves
+  // Gates 1-3 for tiny/small/standard non-hard-gate work instead of stopping
+  // for the human. High-risk/hard-gate work, secret reads, and Gate 4 UAT are
+  // never bypassed. Toggle with the bee-bypass-gate skill. Default off.
+  gate_bypass: false,
 };
 
 const CRITICAL_PATTERNS_STUB = `# Critical Patterns

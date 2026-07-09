@@ -79,6 +79,8 @@ Write the full machine report (reality gate, matrix, plan-checker findings, cell
 
 On approval, update `.bee/state.json`: set `approved_gates.execution: true`, `phase: "validated"`, `summary`, and `next_action: "Invoke bee-swarming for the validated work."`
 
+**Gate bypass (opt-in, decision 0010).** If `.bee/config.json` `gate_bypass: true` AND the lane is `tiny`/`small`/`standard` with no hard-gate flag, do not ask: take the recommendation, set `approved_gates.execution: true` yourself, log a one-line audit decision, post a short `⚡ auto-approved Gate 3 (bypass)` line, and hand off to bee-swarming — per the Gate Presentation Contract. If the lane is `high-risk` or the work carries any hard-gate flag (auth, authorization, data loss, audit/security, external provider, validation removal, migration/schema), bypass does not apply — present Gate 3 to the human as above. This is the most irreversible gate; the safety floor here is not negotiable.
+
 ## Headless
 
 With `mode:headless`: run every check, apply unambiguous cell repairs, and defer ambiguous ones to an `Outstanding Questions` section of the structured terminal report. Headless **stops at the Gate 3 question** — it emits the approval block and the READY/NOT READY verdict and exits. It never self-approves execution.

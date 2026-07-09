@@ -142,7 +142,7 @@ export function claimCell(root, id, worker) {
   const state = readState(root);
   if (!gateApproved(state, 'execution')) {
     throw new Error(
-      'claimCell: gate "execution" is not approved — cells cannot be claimed before the human approves execution. Surface Gate 3 to the user ("Feasibility validated. Approve execution?"); never self-approve.',
+      'claimCell: gate "execution" is not approved — cells cannot be claimed before execution is approved. Surface Gate 3 to the user ("Feasibility validated. Approve execution?") and set approved_gates.execution once approved. Only the opt-in gate_bypass switch may self-approve, and only for tiny/small/standard non-hard-gate work (decision 0010) — never self-approve high-risk/hard-gate execution.',
     );
   }
   const cell = readCell(root, id);

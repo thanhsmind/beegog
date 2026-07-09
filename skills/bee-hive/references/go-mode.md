@@ -1,6 +1,6 @@
 # Go Mode — Step-by-Step Reference
 
-Load this when executing go mode. Go mode is the full bee pipeline from raw feature request to merged, compounded learnings. It chains every skill in sequence with exactly **4 human gates**. Each gate protects the next irreversible commitment.
+Load this when executing go mode. Go mode is the full bee pipeline from raw feature request to merged, compounded learnings. It chains every skill in sequence with up to **4 human gates** (fewer when the opt-in gate-bypass switch is on — see the end of this file). Each gate protects the next irreversible commitment.
 
 Trigger: `/go [feature]`, "run the full pipeline", or "go mode".
 
@@ -140,4 +140,8 @@ After compounding: set state `phase: idle`, `feature: null`, `mode: null`, summa
 
 ## Headless Go Mode
 
-`mode:headless` runs stages headlessly **between** gates only. Every gate still stops the pipeline and reports "awaiting Gate N approval" in the terminal report. `auto_approve_gates` does not exist in bee. The four gates are never self-approved.
+`mode:headless` runs stages headlessly **between** gates only. Every gate still stops the pipeline and reports "awaiting Gate N approval" in the terminal report. Headless never self-approves a gate.
+
+## Gate bypass in go mode (opt-in)
+
+Separate from headless. When `.bee/config.json` `gate_bypass: true` (set via `bee-bypass-gate`), go mode does not stop at Gates 1-3 for `tiny`/`small`/`standard` non-hard-gate work: at each, the agent takes the RECOMMENDATION, records the approval, logs a one-line audit decision, posts a short `⚡ auto-approved Gate N` line, and continues to the next step. The **safety floor is absolute** — `high-risk` lane or any hard-gate flag (auth, authorization, data loss, audit/security, external provider, validation removal, migration) stops for the human as normal; Gate 4 UAT and P1 always stop; secret reads always ask. Full rule: the Gate Presentation Contract in `routing-and-contracts.md`. With bypass off (the default), the four gates are never self-approved.

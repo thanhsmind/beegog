@@ -115,6 +115,11 @@ export function buildSessionPreamble(root) {
     `- Phase: ${state.phase} | Mode: ${state.mode ?? 'none'} | Feature: ${state.feature ?? 'none'}`,
   );
   lines.push(`- Gates: ${gatesLine(state)}`);
+  if (readConfig(root).gate_bypass === true) {
+    lines.push(
+      '- ⚡ GATE BYPASS ON — the agent auto-approves Gates 1-3 for tiny/small/standard work (records the recommended choice, logs it, continues). High-risk/hard-gate work, secret reads, and Gate 4 UAT still stop for the human. Turn off with the bee-bypass-gate skill.',
+    );
+  }
 
   if (handoff) {
     lines.push('');

@@ -18,6 +18,7 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | 10 | `bee-grooming` | Entropy audit, debt hunt, approved kills. | Cleanup/audit requested; hive idle |
 | 11 | `bee-writing-skills` | TDD-for-skills, pressure testing. | Improving or creating bee skills |
 | 12 | `bee-briefing` | Render the one human-readable implement plan per feature, and the post-Gate-4 walkthrough (consolidator, not planner). | Planning shaped `small`+ work; a feature's implement plan needs (re)generating; a `standard`/`high-risk` feature passed Gate 4 |
+| 13 | `bee-bypass-gate` | Toggle opt-in gate-bypass autopilot (`on`/`off`/`status`): auto-approve Gates 1-3 for normal-lane work; high-risk/hard-gate, secrets, UAT always stop. | User wants to run without approving every gate, or to check/turn off bypass |
 
 ## First-Skill Routing
 
@@ -34,6 +35,7 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | Capture learnings | `bee-compounding` | Load directly |
 | Improve bee itself | `bee-writing-skills` | Load directly |
 | `/go` / full pipeline | Go mode | See `go-mode.md` |
+| Turn gate-bypass on/off, or check it | `bee-bypass-gate` | Load directly, any phase; toggles `.bee/config.json` `gate_bypass` |
 | Resume session | Resume logic | Check `HANDOFF.json` first |
 
 **Surface-scope-earlier check** (runs before routing to exploring): the request contains concrete acceptance criteria AND references to existing patterns → offer "Found clear requirements. Jump straight to planning, or explore alternatives first?" On approval, planning receives a one-paragraph scoping synthesis whose decisions still carry D-IDs.
@@ -149,6 +151,21 @@ A gate message has two layers, and **only the human layer goes into chat**:
 Litmus test: **the user must be able to restate what they are approving in their own words.** A gate the user cannot restate is a dead gate — worse than no gate, because it manufactures false confidence. A technical term (BLOCKER count, spike id) may appear in the human layer only with an immediate plain-language gloss.
 
 This contract applies to all four gates, in every mode, including go mode.
+
+### Gate bypass mode (opt-in autopilot, decision 0010)
+
+Off by default. Turned on with the `bee-bypass-gate` skill, which sets `.bee/config.json` `gate_bypass: true` (persistent per-repo). When it is on, the agent does **not** stop at a bypassable gate — it takes the RECOMMENDATION option itself and continues. This is the one deliberate exception to "gates are never self-approved"; **headless mode is not** — headless still stops at every gate.
+
+When `config.gate_bypass` is `true`, at **Gate 1, 2, or 3**:
+
+1. **Safety floor — check first, and it is absolute.** If the feature's lane is `high-risk`, or the work carries any hard-gate flag (auth · authorization · data loss · audit/security · external provider · validation removal · database migration/schema change), the gate is **NOT** bypassed. Present it to the human normally, exactly as if bypass were off. Bypass covers only `tiny`/`small`/`standard` non-hard-gate work.
+2. Otherwise, do not ask. Instead: select the option the RECOMMENDATION favors; set `approved_gates.<gate>` in `.bee/state.json` (same write the human's "yes" would trigger); still write the machine-layer report to `docs/history/<feature>/reports/`; log a one-line audit entry — `node .bee/bin/bee_decisions.mjs log --decision "auto-approved Gate N (bypass): <choice>" --rationale "<the recommendation's why>"` — so the approval is never silent; then post a **short chat line** (not a question) — `⚡ auto-approved Gate N (bypass): <what/why in one plain sentence>` — and continue. The human sees what happened and can still interrupt.
+
+**Gate 4 is never fully bypassed.** UAT items (the SEE/CALL/RUN decisions) are always presented to the human, and any P1 finding always stops. The merge is auto-approved only when P1 = 0 **and** every UAT item was confirmed pass by the human; otherwise Gate 4 stops as normal.
+
+**Privacy is never bypassed.** Reading secret-shaped files always requires explicit human approval, regardless of `gate_bypass`.
+
+The mechanical guards do not change: `claimCell` and the write-guard still require `approved_gates.execution: true` — bypass simply means the agent records that approval itself for eligible work instead of waiting for the human. Bypass state is surfaced every session (the preamble and `bee_status` both print a loud `GATE BYPASS ON` line) so it is never silently in effect.
 
 ## Question Format
 

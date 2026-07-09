@@ -90,7 +90,7 @@ Use the least workflow that honestly protects the work. A tiny fix wearing epic 
 
 ## The Four Gates
 
-Never skipped, never batched, never self-approved — including go mode and headless mode:
+Never skipped, never batched, never self-approved — including go mode and headless mode. The **one** exception is the opt-in gate-bypass switch (`bee-bypass-gate` skill → `.bee/config.json` `gate_bypass: true`), which auto-approves Gates 1-3 for `tiny`/`small`/`standard` work only; high-risk/hard-gate work, secrets, and Gate 4 UAT always stop (full rule: the Gate Presentation Contract in `references/routing-and-contracts.md`). Headless is not bypass — headless still stops at every gate.
 
 - **Gate 1:** "Decisions locked. Approve CONTEXT.md before planning?"
 - **Gate 2:** "Work shape is ready. Approve before current-work preparation?"
@@ -140,7 +140,7 @@ Hooks block or inject; the agent responds by contract:
 
 ## Headless
 
-With `mode:headless`: never ask blocking questions. Perform onboarding checks and routing only when unambiguous; defer every ambiguity (stale onboarding needing `--apply`, HANDOFF present, unclear route) into an `Outstanding Questions` section of a structured terminal report. The four gates are NEVER self-approved in any mode.
+With `mode:headless`: never ask blocking questions. Perform onboarding checks and routing only when unambiguous; defer every ambiguity (stale onboarding needing `--apply`, HANDOFF present, unclear route) into an `Outstanding Questions` section of a structured terminal report. The four gates are NEVER self-approved in headless mode — the only mode that self-approves gates is the explicit opt-in gate-bypass switch (and only for normal-lane work, never high-risk/hard-gate/UAT/secrets). Headless and bypass are independent: headless without bypass still stops at every gate.
 
 ## Red Flags
 

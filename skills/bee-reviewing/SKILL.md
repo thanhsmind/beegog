@@ -91,6 +91,8 @@ Present per the Gate Presentation Contract (bee-hive routing reference): plain-l
 
 Never continue past open P1s without explicit user acknowledgment. Silence is not acknowledgment.
 
+**Gate bypass does not fully cover Gate 4 (decision 0010).** Even with `.bee/config.json` `gate_bypass: true`: the §5 UAT items (every SEE/CALL/RUN decision) are always presented to the human, and any P1 finding always stops. Bypass may auto-approve the **merge** question only when P1 = 0 **and** every UAT item was confirmed pass by the human — then record the review gate, log a one-line audit decision, and post a short `⚡ auto-approved merge (bypass)` line instead of asking. Any P1, or any UAT fail/skip, stops Gate 4 for the human as normal. Secret reads during review always require human approval regardless of bypass.
+
 ## Headless
 
 `mode:headless` = report-only: run all reviewers, both verification gates, and artifact checks; emit every finding in a structured terminal report with UAT items and ambiguous severities deferred to an `Outstanding Questions` section. Gate 4 still requires the human — headless never self-approves merge.
