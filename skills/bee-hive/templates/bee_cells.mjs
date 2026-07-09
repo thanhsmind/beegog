@@ -10,7 +10,9 @@
 //   node .bee/bin/bee_cells.mjs verify --id ID --command CMD --passed true|false [--output TEXT | --output-file F] [--json]
 //     (small+ lanes refuse to cap without recorded verify output or evidence — decision 0004)
 //   node .bee/bin/bee_cells.mjs cap --id ID [--outcome TEXT] [--files a,b] [--behavior-change]
-//                                  [--evidence-file F] [--deviations-file F] [--friction TEXT] [--json]
+//                                  [--evidence-stdin | --evidence-file F] [--deviations-file F] [--friction TEXT] [--json]
+//     (prefer --evidence-stdin: pipe the evidence JSON so NO evidence file is persisted;
+//      the trace is the single source, decision 0009)
 //     (behavior_change cells refuse to cap without a "before" characterization —
 //      red_failure_evidence in the evidence JSON, or a deliberate_exceptions note
 //      for a brand-new surface — decision 0009. Evidence lives in the cell trace,
@@ -46,7 +48,7 @@ function parseArgs(argv) {
     let value;
     if (eq !== -1) {
       value = arg.slice(eq + 1);
-    } else if (['json', 'stdin', 'behavior-change'].includes(name)) {
+    } else if (['json', 'stdin', 'behavior-change', 'evidence-stdin'].includes(name)) {
       value = true;
     } else {
       value = argv[i + 1];
@@ -166,9 +168,14 @@ function run(args) {
               .filter(Boolean)
           : [],
         behavior_change: flags['behavior-change'] === true,
-        verification_evidence: flags['evidence-file']
-          ? readFileText(String(flags['evidence-file']), 'evidence')
-          : null,
+        // Evidence goes straight into the trace (the single source, decision 0009).
+        // Prefer --evidence-stdin so no evidence file is ever persisted; --evidence-file
+        // remains for back-compat but the file must be a throwaway, never under reports/.
+        verification_evidence: flags['evidence-stdin']
+          ? fs.readFileSync(0, 'utf8')
+          : flags['evidence-file']
+            ? readFileText(String(flags['evidence-file']), 'evidence')
+            : null,
         deviations,
         friction: flags.friction ? String(flags.friction) : null,
       });

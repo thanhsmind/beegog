@@ -57,3 +57,11 @@ This **recalibrates 0008's lane table** (which rendered a brief for `small`/`sta
 - One new cap-time refusal class. It fires only on `behavior_change` cells with JSON evidence lacking a before-state — the honest fix is to record the `git show`, which the worker has at hand. Greenfield surfaces pass via `deliberate_exceptions`.
 - 0008's lane table is superseded on *when to render*; its skill design is intact. 0004's cap-proof rule is extended, not replaced.
 - Prose-ruled parts (fan-out calibration) inherit the usual weaker-runtime debt: pressure-testing on Codex / cheap worker tiers is recorded debt, consistent with the v0.1 skills.
+
+## Follow-up (0.1.7) — the single-source rule made mechanically possible
+
+Dogfood caught the gap this decision had left open: the "no `reports/*-evidence.md`" rule was prose in `worker-details.md`, but `bee_cells.mjs cap` read evidence **only** from `--evidence-file <path>` and *refused* to cap a `behavior_change` cell without it. With no fileless path and no instructed location, workers wrote the required evidence into `reports/execution-*-evidence.md` — the exact duplication the rule forbade, three lines away. The rule was unenforceable.
+
+Fix (0.1.7): `cap` gained `--evidence-stdin` (mirrors `add --stdin`) — the evidence JSON is piped straight into `trace.verification_evidence`, so **no evidence file is ever written**. `--evidence-file` stays for back-compat but the skills now say: prefer stdin; if you must use a file, use a throwaway path outside `docs/history/` and delete it — never `reports/`. Updated: `bee_cells.mjs` (CLI + header), `bee-executing/SKILL.md` (§6 cap, §8 report is a slim link), `worker-details.md` (evidence example, cap ref, single-source rule). Tested: pipe evidence → trace populated with `red_failure_evidence`, zero files on disk.
+
+Edge case noted, not yet solved: a cell **implemented but deliberately left uncapped** (live verification pending a deploy) has interim build-time evidence with no trace home — the trace only takes `verification_evidence` at cap. Such a cell legitimately uses a report file until it caps. A trace slot for pre-cap evidence (or an explicit "deferred-cap" evidence convention) is a possible future decision; for now these files are expected for deferred-cap work and are cleaned once the cell caps.

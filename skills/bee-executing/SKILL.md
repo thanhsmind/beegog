@@ -71,7 +71,7 @@ Package installs **always** checkpoint: stop and return `[BLOCKED]` with the pac
 
 - Cap only after the verify pass is recorded (the helper refuses otherwise):
   `node .bee/bin/bee_cells.mjs cap --id <id> --outcome "<summary>" --files <a,b> [--deviations-file <f>] [--friction "<text>"]`
-- If the cell is `behavior_change: true`, add `--behavior-change --evidence-file <f>` where the file holds structured `verification_evidence`: tests inspected, tests added/changed, red-failure evidence, verification run (see `references/worker-details.md`).
+- If the cell is `behavior_change: true`, add `--behavior-change --evidence-stdin` and **pipe** the structured `verification_evidence` (tests inspected, tests added/changed, red-failure/before-state evidence, verification run — see `references/worker-details.md`). It lands in the cell trace; **do not write an evidence file** in `reports/` or anywhere else (decision 0009 — the trace is the single source).
 - Trace depth follows the cell's lane (tiny = one line; high-risk = full trace). Record friction only when a trigger fired.
 - Make exactly **one commit per cell**, cell id in the message.
 
@@ -82,7 +82,7 @@ Package installs **always** checkpoint: stop and return `[BLOCKED]` with the pac
 ## 8. Return
 
 - Start your final message with exactly one of `[DONE]`, `[BLOCKED]`, `[HANDOFF]`, `[NOOP]`, followed by the result fields.
-- Write a report file to `docs/history/<feature>/reports/<cell-id>.md` (same content).
+- Write a **short** per-cell report to `docs/history/<feature>/reports/<cell-id>.md`: the status token, a one-line outcome, files touched, and a link to `.bee/cells/<cell-id>.json` for the full trace/evidence. Never re-embed the `verification_evidence` JSON or verify output (decision 0009 — the trace is the single source).
 
 ## Compaction
 

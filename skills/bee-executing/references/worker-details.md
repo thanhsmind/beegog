@@ -14,7 +14,7 @@ node .bee/bin/bee_cells.mjs show --id <id>
 node .bee/bin/bee_cells.mjs claim --id <id> --worker "<name>"
 node .bee/bin/bee_reservations.mjs reserve --agent "<name>" --cell "<id>" --path "<path>" --ttl 3600
 node .bee/bin/bee_cells.mjs verify --id <id> --command "<cmd>" --passed true|false [--output-file <f>]
-node .bee/bin/bee_cells.mjs cap --id <id> [--outcome TEXT] [--files a,b] [--behavior-change] [--evidence-file F] [--deviations-file F] [--friction TEXT]
+node .bee/bin/bee_cells.mjs cap --id <id> [--outcome TEXT] [--files a,b] [--behavior-change] [--evidence-stdin] [--deviations-file F] [--friction TEXT]
 node .bee/bin/bee_reservations.mjs release --agent "<name>" --cell "<id>"
 node .bee/bin/bee_decisions.mjs active --recent 3
 ```
@@ -44,7 +44,7 @@ For the one assigned cell, confirm before claiming:
 | `small` | `outcome`, `files_changed` |
 | `standard` | `outcome`, `files_changed`, `deviations`, `friction` when a trigger fired |
 | `high-risk` | all of the above (non-empty `files_changed` and `outcome` are enforced by the helper), plus spike-evidence links where the plan recorded constraints, plus `verification_evidence` |
-| any lane with `behavior_change: true` | `verification_evidence` is mandatory — `cap` refuses without `--evidence-file` |
+| any lane with `behavior_change: true` | `verification_evidence` is mandatory — `cap` refuses without it; pipe it via `--evidence-stdin` (no file written) |
 
 ## Friction Triggers (verbatim — record friction only when one fires)
 
@@ -59,7 +59,15 @@ One line per trigger, factual, in `--friction` (or the deviations file for multi
 
 ## verification_evidence Example
 
-Passed via `--evidence-file <path>` on cap for any `behavior_change: true` cell:
+Piped via `--evidence-stdin` on cap for any `behavior_change: true` cell (the evidence goes straight into `trace.verification_evidence` — **no file is written**):
+
+```bash
+node .bee/bin/bee_cells.mjs cap --id <id> --files a,b --behavior-change --evidence-stdin <<'JSON'
+{ ...the evidence object below... }
+JSON
+```
+
+The evidence object:
 
 ```json
 {
@@ -77,7 +85,7 @@ Every field is honest or explicitly empty with a reason in `deliberate_exception
 
 ## Evidence lives in one place (decision 0009)
 
-The cell **trace** is the single source of verification evidence: `trace.verification_evidence` (the JSON above) plus `trace.verify_output` (the recorded verify run). Do not create a parallel `reports/<cell-id>-evidence.json` or a `reports/execution-*-evidence.md` that re-embeds the same JSON — two copies drift and inflate the doc set. The per-cell report (below) *links and summarizes* the trace in one line; it never re-embeds it.
+The cell **trace** is the single source of verification evidence: `trace.verification_evidence` (the JSON above) plus `trace.verify_output` (the recorded verify run). **Pipe evidence with `--evidence-stdin` so no evidence file is ever written.** Do NOT create `reports/<cell-id>-evidence.json`, `reports/execution-*-evidence.md`, or any other on-disk evidence file — that is the exact duplication decision 0009 removed. (`--evidence-file` still exists only for back-compat; if you must use it, write to a throwaway path outside `docs/history/`, pass it to cap, and delete it — never leave it in `reports/`.) The per-cell report (below) *links and summarizes* the trace in one line; it never re-embeds it.
 
 ## Verification Failure
 
