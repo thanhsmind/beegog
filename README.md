@@ -232,6 +232,8 @@ Two shapes, one map — either way the strongest model stays in the `ceiling` sl
 - **Orchestrator** (fan-out): a ceiling-tier session plans and fans out to generation-tier workers. This is `bee-swarming`'s default.
 - **Advisor** (opt-in, decision 0013): run the whole session on the *generation* tier and consult the *ceiling* model only at the hard calls. Turn it on per-repo with `"advisor": { "enabled": true, "at": ["shape", "execution", "blocked"] }` — at each point the agent asks one tight question, spawns one ceiling subagent for a verdict, records it, and continues cheap. It's surfaced loudly (`ADVISOR MODE ON`) and never self-approves a human gate.
 
+**To change the ceiling model** (or any tier / advisor), edit `.bee/config.json` `models.claude.ceiling`. Every field, the runtime keys, and a full sample to copy: **[docs/config-reference.md](docs/config-reference.md)**.
+
 ---
 
 ## How a session flows (end to end)
@@ -371,6 +373,7 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 
 | Doc | Read when |
 |---|---|
+| [config-reference.md](docs/config-reference.md) | You want to configure `.bee/config.json` — models/ceiling, advisor, commands, bypass (with a sample to copy) |
 | [00-vision.md](docs/00-vision.md) | You want the principles and non-goals |
 | [01-distillation.md](docs/01-distillation.md) | What bee took from each upstream framework, and what it rejected |
 | [02-architecture.md](docs/02-architecture.md) | Plugin layout, dual-runtime support, runtime files, cell schema, state model |
