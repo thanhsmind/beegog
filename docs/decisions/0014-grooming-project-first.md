@@ -1,6 +1,8 @@
 # 0014 — Grooming is project-first; the harness is out of scope
 
-- **Status:** active — owner-approved 2026-07-09; **built in 0.1.12** (2026-07-09). Grooming SKILL + reference rescoped; the capCell behavior_change bug it surfaced is fixed in the same version. Lib suite green (64/64), onboarding suite green.
+- **Status:** active — owner-approved 2026-07-09; **built in 0.1.12** (grooming rescope + capCell fix) and **0.1.13** (write-guard fd-dup fix + the missing skill-deploy step). Lib suite green (64/64), onboarding suite green.
+
+> **Deploy gap found 2026-07-09 (important):** the first grooming rescope did not take effect in anphabe-gogl because skills live in `~/.claude/skills` + `~/.codex/skills` (installed once), while `onboard --repo-hooks` only refreshes the per-repo vendored `.bee/bin/`. So every SKILL.md prose change since ~0.1.6 (grooming scope, scribing-debt prose, model-tier prose, advisor contract) and the `bee-bypass-gate` skill itself were never on the machine — only the lib mechanics were. **Deploying bee changes needs BOTH: (1) `onboard --repo-hooks` per repo for `.bee/bin/`, and (2) copy `skills/*` → `~/.claude/skills` + `~/.codex/skills`.** Fixed by syncing all 14 skills to both runtimes.
 - **Date:** 2026-07-09
 - **Source:** owner ran `bee-grooming` in a real project (anphabe-gogl) and the report was almost entirely about **bee's own plumbing** — the entropy score (bee bookkeeping), `broken_tools` (a bee helper), a `.claude/*.bak` file, and a bug in bee's vendored `cells.mjs` — with the project's actual code debt barely present. Verdict: grooming had drifted into auditing the harness, in bee-jargon, instead of hunting the user's project. "Mục đích của grooming là tập trung trên project hiện tại, chứ không phải trên bee hay .claude/.codex."
 
@@ -23,6 +25,10 @@ Rescope `bee-grooming` to be **project-first**, with a hard harness boundary and
 ## Companion bugfix (the harness bug grooming caught)
 
 Grooming correctly diagnosed a real defect in bee's own `cells.mjs` (from decision 0011's work): `capCell` read `behavior_change` only from the CLI flag, never from the cell's declared `behavior_change`, so a cell planned as a behavior change lost its evidence/before-state guards — and its scribing debt — at cap unless `--behavior-change` was repeated. Fixed: `capCell` now falls back to the cell's declared value when the caller omits the flag (`bc = behavior_change === undefined ? cell.behavior_change === true : ...`), and `bee_cells.mjs cap` passes `undefined` when the flag is absent so the fallback applies. This makes decision 0011's scribing-debt signal and the 0009 before-state guard actually fire on planned behavior_change cells. Under 0014 this is exactly a "harness bug → fixed upstream in bee", not a project kill.
+
+## Companion bugfix 2 — write-guard misparses `2>&1` (0.1.13)
+
+Grooming also (correctly) flagged that the write-guard blocks read-only bash containing `2>&1`. Root cause: the redirect parser in `lib/guards.mjs` (`/^\d?>{1,2}(.*)$/`) captured `&1` from `2>&1` as an inline file target, so the idle intake-gate refused the command as a "write to a file named &1". Fix: fd-duplication targets (those starting with `&`, e.g. `2>&1`, `1>&2`, `>&2`) are no longer treated as file writes; a real redirect to a filename (`2>err.log`) still is. This is a pure harness bug — under 0014 it belongs upstream in bee, which is exactly where it was fixed.
 
 ## Rationale
 

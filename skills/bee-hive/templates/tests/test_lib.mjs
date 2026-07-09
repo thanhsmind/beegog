@@ -363,6 +363,13 @@ check('extractBashTargets flags sed -i and redirection targets', () => {
   assert(redir.paths.includes('out/log.txt'), 'redirection target detected');
   const broad = extractBashTargets('rm -rf .');
   assert(broad.broadWrite === true, 'rm -rf . is a broad write');
+  // fd-duplication is NOT a file write (guards.mjs bug fix, decision 0014)
+  const dup = extractBashTargets('node bee_status.mjs --json 2>&1');
+  assert(!dup.paths.includes('&1') && dup.paths.length === 0, `2>&1 is not a write target, got ${JSON.stringify(dup.paths)}`);
+  const dup2 = extractBashTargets('cmd 1>&2');
+  assert(!dup2.paths.some((p) => p.startsWith('&')), 'fd dup &2 not treated as a file');
+  const realRedir = extractBashTargets('cmd 2>err.log');
+  assert(realRedir.paths.includes('err.log'), 'a real stderr redirect to a file is still caught');
 });
 
 // ─── decisions ──────────────────────────────────────────────────────────────

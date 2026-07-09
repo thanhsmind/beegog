@@ -196,12 +196,20 @@ export function extractBashTargets(command) {
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
 
-    // Redirection: "> file", ">> file", ">file", "2> file"
+    // Redirection: "> file", ">> file", ">file", "2> file".
+    // NOT a file write: fd-duplication like `2>&1`, `1>&2`, `>&2` — the target
+    // starts with `&` (a file descriptor, not a filename). Treating `&1` as a
+    // write blocked read-only commands at idle (guards.mjs bug, decision 0014).
     const redirect = token.match(/^\d?>{1,2}(.*)$/);
     if (redirect) {
       const inline = redirect[1];
-      if (inline) addTarget(inline);
-      else if (tokens[i + 1] && !SEPARATORS.has(tokens[i + 1])) {
+      if (inline) {
+        if (!inline.startsWith('&')) addTarget(inline);
+      } else if (
+        tokens[i + 1] &&
+        !SEPARATORS.has(tokens[i + 1]) &&
+        !tokens[i + 1].startsWith('&')
+      ) {
         addTarget(tokens[i + 1]);
         i += 1;
       }
