@@ -24,7 +24,16 @@ Model tiers live under **`models`**, keyed by runtime (Claude Code vs Codex name
 ```
 
 - **To change which model the ceiling uses**, edit `models.claude.ceiling` (e.g. `"opus"` instead of `"fable"`). Same for `generation` / `extraction`.
-- Valid Claude values are the short names the Agent tool accepts: `haiku` · `sonnet` · `opus` · `fable`.
+- **What the short names mean (important).** For Claude Code these are **family aliases**, not exact version strings. The value must be one of exactly `haiku` · `sonnet` · `opus` · `fable` — the Claude Code Agent tool accepts only these four. Each alias is resolved **by Claude Code (not by bee)** to the current model of that family on your account. So `"sonnet"` isn't "some random Sonnet" — it means "the Sonnet tier", and the harness uses the latest. Today they resolve to:
+
+  | alias | resolves to (current) | model id |
+  |---|---|---|
+  | `haiku` | Haiku 4.5 | `claude-haiku-4-5` |
+  | `sonnet` | Sonnet 5 | `claude-sonnet-5` |
+  | `opus` | Opus 4.8 | `claude-opus-4-8` |
+  | `fable` | Fable 5 | `claude-fable-5` |
+
+  You **cannot pin an exact sub-version** for a Claude Code subagent — the model param is family-alias only, and it tracks the latest of each family as Anthropic ships new ones. bee just passes the alias through. (For **Codex**, the `codex` tiers take the runtime's real model ids, e.g. `"gpt-5-pro"`, because that runtime addresses models by id.)
 - `bee_status` prints the active map (`Models (claude): ceiling=… generation=… extraction=…`), and warns if too many cells sit on the ceiling tier — the point is to keep the strong model scarce.
 
 ## Advisor mode (opt-in — cheap main loop, ceiling on demand)
