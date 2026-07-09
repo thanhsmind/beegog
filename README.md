@@ -205,6 +205,28 @@ Every planning pass counts mechanical **risk flags** (auth · authorization · d
 
 The rule that never bends: **lanes scale ceremony, never memory.** Even a `tiny` cell that changed behavior obliges a spec sync, and a settled decision is logged the moment it settles — in every lane.
 
+A capped `behavior_change` cell also creates **scribing debt** until its meaning reaches `docs/specs/`: `bee_status`, the session preamble, and the swarming chain-nudge all surface the count so settled behavior is captured mid-flight, not only when someone remembers (decision 0011).
+
+---
+
+## Model tiers — keep the strong model scarce
+
+Not every step needs your most capable (most expensive) model. The costly loops — try, read, fix, repeat — should run on a cheap model; the strong model should touch only the decision points. bee makes this a per-repo setting, **keyed by runtime** (Claude Code and Codex name their models differently):
+
+```json
+"models": {
+  "claude": { "extraction": "haiku", "generation": "sonnet", "ceiling": "fable" },
+  "codex":  { "extraction": null,    "generation": null,     "ceiling": null }
+}
+```
+
+- **ceiling** — the strongest model, kept *scarce*: the orchestrator that plans and fans out, or a called-only advisor when a worker is stuck. Touch it on every dispatch and the cost saving evaporates.
+- **generation** — the mid worker that runs the loops (implementation, tests) — where the bulk of work goes.
+- **extraction** — cheapest capable (retrieval, mechanical edits).
+- `null` = the runtime can't select a per-agent model (Codex today) → the tier is enforced as a read budget + output cap in the worker prompt. Set real ids (e.g. `"ceiling": "gpt-5-pro"`) if your runtime supports switching.
+
+`bee-swarming` resolves tier → model per dispatch (`modelForTier(root, tier, runtime)`); `bee_status` prints the active map. Two shapes, one map: a Fable-tier orchestrator fanning out to Sonnet-tier workers, or a Sonnet-tier main loop consulting a Fable-tier advisor only at the hard calls — either way the strongest model stays in the `ceiling` slot (decision 0012).
+
 ---
 
 ## How a session flows (end to end)
@@ -297,7 +319,7 @@ Everything is Node 18+ ESM, **zero npm dependencies**, atomic writes, Windows-sa
 
 Copied into every onboarded repo, so enforcement works even for agents that ignore instructions.
 
-- **`bee_status.mjs`** — one-shot situational scout: onboarding health, phase/mode/feature, gate states, **gate-bypass state**, cell counts, reservations, recent decisions, staleness warnings, recommended next action. First command of every session.
+- **`bee_status.mjs`** — one-shot situational scout: onboarding health, phase/mode/feature, gate states, **gate-bypass state**, cell counts, **scribing debt** (uncaptured behavior changes), **model-tier map**, reservations, recent decisions, staleness warnings, recommended next action. First command of every session.
 - **`bee_cells.mjs`** — the cell lifecycle: `list` / `ready` / `show` / `add` / `claim` (throws unless Gate 3 approved + deps capped) / `verify` / `cap` (refuses without recorded proof; `behavior_change` cells also require a before-state) / `block` / `drop`.
 - **`bee_reservations.mjs`** — file-level conflict prevention between parallel workers: `reserve` / `release` / `list` / `sweep` (release expired TTLs). On overlap → `{ok:false, conflicts}`; the caller must return `[BLOCKED]`.
 - **`bee_decisions.mjs`** — append-only decision log (rejects secrets and injection patterns): `log` / `supersede` / `redact` / `active` / `search`.
@@ -331,7 +353,7 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 |---|---|
 | `onboarding.json` | installed bee version + managed-file hashes (drift detection) |
 | `state.json` | phase, mode, feature, the four gate approvals, workers, next action |
-| `config.json` | per-repo hook/guard toggles, lanes, capabilities, **`gate_bypass`** |
+| `config.json` | per-repo hook/guard toggles, lanes, capabilities, **`gate_bypass`**, **`models`** (runtime-keyed tier→model map) |
 | `HANDOFF.json` | pause context at ~65% budget — surfaced next session, never auto-resumed |
 | `cells/<id>.json` | one cell each: acceptance criteria, verify command, full trace |
 | `decisions.jsonl` / `backlog.jsonl` | append-only decision events / friction & grooming items |
@@ -351,13 +373,13 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 | [04-skills-spec.md](docs/04-skills-spec.md) | You are about to write a SKILL.md — per-skill specifications |
 | [06-runtime-integration.md](docs/06-runtime-integration.md) | Claude Code hook automation + Codex parity matrix |
 | [07-contracts.md](docs/07-contracts.md) | You are implementing or extending v0.1 — lib API, CLI surface, hook behaviors |
-| [decisions/](docs/decisions/) | Why bee is shaped the way it is — one record per load-bearing choice (0001–0010) |
+| [decisions/](docs/decisions/) | Why bee is shaped the way it is — one record per load-bearing choice (0001–0012) |
 
 ---
 
 ## Status
 
-**v0.1.6.** Core built and green: the skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
+**v0.1.9.** Core built and green: the skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
 
 Recent additions, each gated by a decision record:
 
@@ -366,6 +388,8 @@ Recent additions, each gated by a decision record:
 - **`bee-briefing`** (0008) — the beekeeper's brief: one human-readable implement plan per feature, plus the post-ship walkthrough.
 - **Artifact scaling + cap-time before-state** (0009) — planning stops fanning out four overlapping documents for small work; capping a behavior change now requires a recorded "before".
 - **`bee-bypass-gate`** (0010) — opt-in autopilot that auto-approves low-risk gates while keeping an absolute safety floor (high-risk/hard-gate, Gate 4 UAT, and secrets always stop).
+- **Capture-mode spine / scribing debt** (0011) — behavior_change cells capped since the last spec sync are counted as *scribing debt* and surfaced in `bee_status`, the preamble, and the swarming nudge, so settled behavior reaches `docs/specs/` mid-flight instead of only when a human remembers.
+- **Runtime-keyed model tiers** (0012) — a per-repo `models` map (claude/codex → extraction/generation/ceiling) with a `modelForTier` resolver; swarming resolves tier → model so the strongest model stays scarce (the advisor / orchestrator cost patterns).
 
 **Known debt before 1.0** (recorded in each skill's `CREATION-LOG.md`): the newer skills and the two most recent decisions have not yet been dogfooded/pressure-tested per bee's own Iron Law; the gate-bypass safety floor in particular wants RED-baseline testing on a real high-risk feature.
 

@@ -16,6 +16,7 @@ import {
 } from './state.mjs';
 import { activeDecisions, datamark } from './decisions.mjs';
 import { readBacklogCounts } from './backlog.mjs';
+import { scribingDebt } from './cells.mjs';
 
 const INJECT_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -148,6 +149,16 @@ export function buildSessionPreamble(root) {
 
   lines.push('');
   for (const line of projectMapLines(root)) lines.push(line);
+
+  // D11: capture-mode spine — settled behavior not yet in docs/specs/.
+  const debt = scribingDebt(root);
+  if (debt.count > 0) {
+    lines.push('');
+    lines.push(`### Scribing debt: ${debt.count} behavior_change cell(s) uncaptured`);
+    lines.push(
+      `- ${debt.cells.join(', ')} capped since the last scribing run — run bee-scribing capture now; settled behavior belongs in docs/specs/ before it evaporates (decision 0011).`,
+    );
+  }
 
   const digest = criticalPatternsDigest(root);
   if (digest) {

@@ -69,6 +69,8 @@ Merge rules:
 
 The trigger is **settlement**, not subject matter: whenever a discuss → build → test → adjust loop lands on an outcome that is now "how it works" — a business rule agreed, a behavior confirmed by a test run, a retry/threshold/tuning value chosen after experiment, an error-handling policy adjusted — capture it in the same session. When the user says the settlement out loud — "chốt", "final", "ok ship it", any equivalent — capture happens **in that same turn**, never deferred (decision 0003); the session-close hook warns when a decision exists that no spec update followed.
 
+**The debt signal backs this up (decision 0011).** Every `behavior_change` cell capped since the last scribing run is counted as *scribing debt* and surfaced mechanically — in the session preamble, in `bee_status`, and in the chain-nudge fired when a worker returns during swarming. Debt > 0 means a settlement already landed in a capped cell and belongs in a spec **now**, not at feature close. Self-detection is still the first duty; the debt count is the backstop for the settlements the agent's own watching missed. Running capture (or sync) and recording the run in state clears it.
+
 **Detection is the scribe's duty, unprompted (decision 0007).** The explicit signal is the *loud* case; most settlements are silent — the user confirms a behavior works, accepts an explanation, picks an option, moves on. The agent watches for these itself, every turn, and captures without being asked. Do not ask "should I document this?" — announce in one line what settled and where it goes ("chốt: X — ghi vào `docs/specs/<area>.md` + decision log"), then do it in the same turn. Capture writes only `docs/` and `.bee/` — allowed in every phase, no gate. A user having to say "ghi lại" means detection already failed once:
 
 1. Log it first: `node .bee/bin/bee_decisions.mjs log --decision "..." --rationale "..."` — the decision log is the durable anchor; the rationale records *why* this outcome won over what was tried.
@@ -99,7 +101,7 @@ Before finishing, re-read the spec with the Pointers section covered and ask: co
 
 ## 8. Update State
 
-Record the scribing run in `.bee/state.json` (phase, areas synced, gaps opened, next_action). No `behavior_change` cells and nothing to capture → record "scribing: no sync needed" and hand off.
+Record the scribing run in `.bee/state.json` under `last_scribing_run` with `feature`, `date`, an **ISO-precise `at` timestamp** (e.g. `2026-07-09T14:03:00Z`), `areas_synced`, and `next_action` (plus top-level `phase`/`next_action`). The `at` stamp is what clears **scribing debt** (decision 0011): the harness counts `behavior_change` cells capped *after* it, so a missing or day-only stamp leaves just-synced cells still showing as debt. No `behavior_change` cells and nothing to capture → still record the run ("scribing: no sync needed", current `at`) and hand off, so the debt signal resets.
 
 ## Hard Gates
 

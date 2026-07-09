@@ -294,3 +294,31 @@ export function dropCell(root, id, reason) {
   cell.trace = { ...defaultTrace(), ...(cell.trace || {}), dropped_reason: reason };
   return writeCell(root, cell);
 }
+
+// Decision 0011 — capture-mode spine. The behavior_change cells capped for the
+// active feature since the last scribing run: the mechanical proxy for "settled
+// behavior not yet in docs/specs/". Threshold prefers last_scribing_run.at
+// (precise ISO, written by newer scribing runs) and falls back to .date (day
+// granularity) for older runs. A last run for a DIFFERENT feature (or none)
+// means the whole active feature is debt. Returns { count, cells: [ids] }; empty
+// while idle (no feature in flight). Pure read — never a blocker, only a signal.
+export function scribingDebt(root) {
+  const state = readState(root);
+  const feature = state.feature;
+  if (!feature) return { count: 0, cells: [] };
+  const lastRun = state.last_scribing_run;
+  let threshold = 0;
+  if (lastRun && lastRun.feature === feature) {
+    const parsed = Date.parse(lastRun.at || lastRun.date);
+    if (Number.isFinite(parsed)) threshold = parsed;
+  }
+  const cells = listCells(root, { feature, status: 'capped' })
+    .filter((cell) => {
+      const trace = cell.trace || {};
+      if (trace.behavior_change !== true) return false;
+      const cappedAt = Date.parse(trace.capped_at);
+      return Number.isFinite(cappedAt) && cappedAt > threshold;
+    })
+    .map((cell) => cell.id);
+  return { count: cells.length, cells };
+}

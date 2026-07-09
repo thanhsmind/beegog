@@ -121,13 +121,26 @@ async function main() {
       );
     } else if (isRegisteredWorker || phase === "swarming") {
       const who = agentName ? `Worker "${agentName}"` : "A bee worker";
-      process.stdout.write(
+      let msg =
         `bee chain-nudge: ${who} returned - collect its [STATUS] token ` +
-          "([DONE]/[BLOCKED]/[HANDOFF]/[NOOP]), update the cell " +
-          "(node .bee/bin/bee_cells.mjs), and check/release its reservations " +
-          "(node .bee/bin/bee_reservations.mjs list --active-only). " +
-          "When the wave is clean, move to the next wave or the next chain step.",
-      );
+        "([DONE]/[BLOCKED]/[HANDOFF]/[NOOP]), update the cell " +
+        "(node .bee/bin/bee_cells.mjs), and check/release its reservations " +
+        "(node .bee/bin/bee_reservations.mjs list --active-only). " +
+        "When the wave is clean, move to the next wave or the next chain step.";
+      // Decision 0011: capture-mode spine — if behavior_change cells capped since
+      // the last scribing run, nudge capture in-flight, not only at feature close.
+      try {
+        const cellsLib = await import(libModuleUrl(root, "cells.mjs"));
+        const debt = cellsLib.scribingDebt(root);
+        if (debt && debt.count > 0) {
+          msg +=
+            `\n⚠ Scribing debt: ${debt.count} behavior_change cell(s) capped since the last capture ` +
+            `(${debt.cells.join(", ")}) — run bee-scribing capture now; don't wait for review (decision 0011).`;
+        }
+      } catch {
+        // fail-open: the debt nudge is advisory, never a blocker
+      }
+      process.stdout.write(msg);
     }
     // else: not a bee-managed subagent -> silent.
   } catch (error) {

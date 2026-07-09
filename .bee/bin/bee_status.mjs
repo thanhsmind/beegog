@@ -17,7 +17,7 @@ import {
   readHandoff,
   readOnboarding,
 } from './lib/state.mjs';
-import { listCells, readyCells } from './lib/cells.mjs';
+import { listCells, readyCells, scribingDebt } from './lib/cells.mjs';
 import { readBacklogCounts } from './lib/backlog.mjs';
 import { listReservations } from './lib/reservations.mjs';
 import { activeDecisions, datamark } from './lib/decisions.mjs';
@@ -103,8 +103,10 @@ function buildStatus(root) {
     feature: state.feature,
     gates: state.approved_gates,
     gate_bypass: readConfig(root).gate_bypass === true,
+    models: readConfig(root).models,
     handoff,
     cells: counts,
+    scribing_debt: scribingDebt(root),
     pbi: backlog
       ? { proposed: backlog.proposed, in_flight: backlog.inFlight, done: backlog.done }
       : null,
@@ -134,6 +136,9 @@ function renderText(status) {
       : []),
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,
+    ...(status.scribing_debt && status.scribing_debt.count > 0
+      ? [`Scribing debt: ${status.scribing_debt.count} behavior_change cell(s) uncaptured (${status.scribing_debt.cells.join(', ')}) — run bee-scribing capture (decision 0011)`]
+      : []),
     ...(status.pbi
       ? [`PBI: ${status.pbi.done} done / ${status.pbi.in_flight} in-flight / ${status.pbi.proposed} proposed`]
       : []),
@@ -144,6 +149,9 @@ function renderText(status) {
     }`,
     `Active reservations: ${status.active_reservations.length}`,
     `Critical patterns file: ${status.critical_patterns_present ? 'present' : 'absent'}`,
+    ...(status.models
+      ? [`Models (claude): ceiling=${status.models.claude.ceiling} generation=${status.models.claude.generation} extraction=${status.models.claude.extraction} — keep ceiling scarce (decision 0012)`]
+      : []),
   ];
   if (status.recent_decisions.length > 0) {
     lines.push('Recent decisions:');

@@ -69,6 +69,14 @@ const DEFAULT_CONFIG = {
   // for the human. High-risk/hard-gate work, secret reads, and Gate 4 UAT are
   // never bypassed. Toggle with the bee-bypass-gate skill. Default off.
   gate_bypass: false,
+  // Model tiers, runtime-keyed (decision 0012). swarming resolves tier → model
+  // per dispatch so the strongest model stays scarce (ceiling) and cheap models
+  // run the loops (extraction/generation). Edit per repo. null = the runtime
+  // cannot switch per-agent model → tier enforced via read budget + output cap.
+  models: {
+    claude: { extraction: "haiku", generation: "sonnet", ceiling: "fable" },
+    codex: { extraction: null, generation: null, ceiling: null },
+  },
 };
 
 const CRITICAL_PATTERNS_STUB = `# Critical Patterns

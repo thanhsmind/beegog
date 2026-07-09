@@ -18,6 +18,9 @@ import {
   isKnownPhase,
   readConfig,
   COMMAND_KEYS,
+  modelForTier,
+  MODEL_TIERS,
+  RUNTIMES,
 } from '../lib/state.mjs';
 import { detectCommands } from '../lib/commands_detect.mjs';
 import { readBacklogCounts, BACKLOG_STATUSES } from '../lib/backlog.mjs';
@@ -29,6 +32,7 @@ import {
   recordVerify,
   capCell,
   blockCell,
+  scribingDebt,
 } from '../lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, reservationsPath } from '../lib/reservations.mjs';
 import { checkWrite, checkRead, extractBashTargets } from '../lib/guards.mjs';
@@ -185,7 +189,7 @@ check('capCell refuses behavior_change without verification_evidence', () => {
 check('capCell caps with passing verify + evidence, and unlocks dependents', () => {
   const cell = capCell(root, 'demo-1', {
     behavior_change: true,
-    verification_evidence: { tests_added: ['x.test.js'], red_failure: 'seen', verification_run: 'npm test' },
+    verification_evidence: { tests_added: ['x.test.js'], red_failure_evidence: 'prior behavior seen failing', verification_run: 'npm test' },
     files_changed: ['src/x.js'],
     outcome: 'done',
   });
@@ -767,6 +771,142 @@ check('addCell rejects a non-string pbi but accepts a missing/stale one', () => 
   assertThrows(() => addCell(root, makeCell('pbi-bad', { pbi: 42 })), 'pbi', 'non-string pbi rejected');
   addCell(root, makeCell('pbi-none')); // no pbi field at all is fine
   assert(readCell(root, 'pbi-none').pbi === undefined, 'absent pbi stays absent, never a blocker');
+});
+
+// ─── scribing debt: capture-mode spine (decision 0011) ──────────────────────
+
+check('scribingDebt tracks behavior_change caps against the last scribing run', () => {
+  const dRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-debt-'));
+  fs.mkdirSync(path.join(dRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  const mk = (id) => ({
+    id,
+    feature: 'feat',
+    title: id,
+    lane: 'small',
+    status: 'open',
+    deps: [],
+    action: 'do it',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const cap = (id, behaviorChange) => {
+    addCell(dRoot, mk(id));
+    claimCell(dRoot, id, 'w');
+    recordVerify(dRoot, id, { command: 'x', output: 'ok', passed: true });
+    capCell(
+      dRoot,
+      id,
+      behaviorChange
+        ? {
+            behavior_change: true,
+            verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'x' },
+            files_changed: ['a.js'],
+            outcome: 'done',
+          }
+        : { files_changed: ['a.js'], outcome: 'done' },
+    );
+  };
+  try {
+    // idle (no feature in flight) → no debt
+    assert(scribingDebt(dRoot).count === 0, 'no feature → zero debt');
+
+    writeState(dRoot, {
+      ...defaultState(),
+      phase: 'swarming',
+      feature: 'feat',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    cap('d1', true);
+    cap('d2', true);
+    cap('d3', false); // non-behavior_change cap is never debt
+
+    // no scribing run yet → both behavior_change caps are debt, d3 excluded
+    let debt = scribingDebt(dRoot);
+    assert(debt.count === 2, `no run → 2 behavior_change caps, got ${debt.count}`);
+    assert(
+      debt.cells.includes('d1') && debt.cells.includes('d2') && !debt.cells.includes('d3'),
+      'only behavior_change caps count as debt',
+    );
+
+    // a scribing run AFTER the caps (precise .at) clears the debt
+    let state = readState(dRoot);
+    state.last_scribing_run = { feature: 'feat', at: '2999-01-01T00:00:00.000Z' };
+    writeState(dRoot, state);
+    assert(scribingDebt(dRoot).count === 0, 'a run after the caps clears debt');
+
+    // a run BEFORE the caps → debt returns
+    state = readState(dRoot);
+    state.last_scribing_run = { feature: 'feat', at: '2000-01-01T00:00:00.000Z' };
+    writeState(dRoot, state);
+    assert(scribingDebt(dRoot).count === 2, 'caps after the run are debt again');
+
+    // a run for a DIFFERENT feature never clears this feature's debt
+    state = readState(dRoot);
+    state.last_scribing_run = { feature: 'other', at: '2999-01-01T00:00:00.000Z' };
+    writeState(dRoot, state);
+    assert(scribingDebt(dRoot).count === 2, 'a run for another feature does not clear this one');
+
+    // date-only fallback still works for older runs (no .at field)
+    state = readState(dRoot);
+    state.last_scribing_run = { feature: 'feat', date: '2999-01-01' };
+    writeState(dRoot, state);
+    assert(scribingDebt(dRoot).count === 0, 'date-only fallback (future) clears debt');
+
+    // and the debt surfaces in the session preamble
+    state = readState(dRoot);
+    state.last_scribing_run = { feature: 'other', at: '2999-01-01T00:00:00.000Z' };
+    writeState(dRoot, state);
+    assert(/Scribing debt/.test(buildSessionPreamble(dRoot)), 'preamble surfaces scribing debt');
+  } finally {
+    fs.rmSync(dRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── model tiers: runtime-keyed resolver (decision 0012) ────────────────────
+
+check('modelForTier resolves runtime-keyed tiers: defaults, overrides, fallbacks', () => {
+  const mRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-model-'));
+  fs.mkdirSync(path.join(mRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(mRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  try {
+    // enums exported
+    assert(MODEL_TIERS.join(',') === 'extraction,generation,ceiling', 'tier enum locked');
+    assert(RUNTIMES.join(',') === 'claude,codex', 'runtime enum locked');
+
+    // claude defaults (no config file present)
+    assert(modelForTier(mRoot, 'ceiling') === 'fable', 'claude ceiling defaults to fable');
+    assert(modelForTier(mRoot, 'generation') === 'sonnet', 'claude generation defaults to sonnet');
+    assert(modelForTier(mRoot, 'extraction') === 'haiku', 'claude extraction defaults to haiku');
+
+    // codex defaults null → caller uses budget/cap fallback
+    assert(modelForTier(mRoot, 'ceiling', 'codex') === null, 'codex ceiling null by default');
+
+    // unknown runtime → claude; unknown tier → generation
+    assert(modelForTier(mRoot, 'ceiling', 'gemini') === 'fable', 'unknown runtime falls back to claude');
+    assert(modelForTier(mRoot, 'bogus') === 'sonnet', 'unknown tier falls back to generation');
+
+    // per-runtime override from config; unspecified tiers keep their default
+    writeJsonAtomic(path.join(mRoot, '.bee', 'config.json'), {
+      models: { claude: { ceiling: 'opus' }, codex: { ceiling: 'gpt-5-pro' } },
+    });
+    assert(modelForTier(mRoot, 'ceiling') === 'opus', 'claude ceiling overridden to opus');
+    assert(modelForTier(mRoot, 'generation') === 'sonnet', 'unspecified claude tier keeps default');
+    assert(modelForTier(mRoot, 'ceiling', 'codex') === 'gpt-5-pro', 'codex ceiling set from config');
+    assert(modelForTier(mRoot, 'generation', 'codex') === null, 'unset codex tier stays null');
+
+    // readConfig always returns a full normalized models map
+    const models = readConfig(mRoot).models;
+    assert(models.claude && models.codex, 'both runtime maps present');
+    assert(models.claude.extraction === 'haiku', 'defaults survive partial override');
+  } finally {
+    fs.rmSync(mRoot, { recursive: true, force: true });
+  }
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

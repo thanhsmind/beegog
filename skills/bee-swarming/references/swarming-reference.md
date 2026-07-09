@@ -15,13 +15,37 @@ Load after Gate 3 approval, before spawning the first wave.
 | | Claude Code | Codex |
 |---|---|---|
 | Spawn | `Agent` tool, one call per worker; put the worker prompt in `prompt`; set `run_in_background: true` so the whole wave runs in parallel (send all spawns of a wave in one message) | `spawn_agent(agent_type="worker", message="<WORKER_PROMPT>", fork_context=false)` |
-| Model tier | `model` parameter per Agent call: `haiku` ≈ extraction, `sonnet` ≈ generation, inherit/`opus` ≈ ceiling | No per-agent model selection — state the tier in the prompt and enforce it as a read budget + output cap |
+| Model tier | `model` parameter per Agent call = `config.models.claude[tier]` (default `haiku`/`sonnet`/`fable`; ceiling = the orchestrator's model, kept scarce) | `config.models.codex[tier]` if set; today Codex cannot select a per-agent model → tier is enforced as a read budget + output cap in the prompt |
 | Result collection | You are notified when each background agent completes; its final message is the worker report — parse the leading status token | Status tokens arrive in the parent thread; use `wait_agent(..., timeout_ms=60000)` only when a specific result is needed |
 | Follow-up / rescue | `SendMessage` to the same agent id continues it with context intact; a new `Agent` call starts fresh | Re-`spawn_agent` with enriched context; do not send routine `send_input(...)` mid-flight |
 | Harness assist | `bee-chain-nudge` hook fires on SubagentStop: collect the status, update the cell, check reservations | None — the tend loop in this skill is the nudge |
 | Isolation guarantee | Fresh context per Agent call; include only the contract fields | `fork_context=false`; never fork the parent context for routine cells |
 
 On both runtimes the integrity rails are identical because they live in the helpers: `bee_cells.mjs cap` refuses without a verify pass, and `bee_reservations.mjs reserve` reports conflicts the worker must turn into `[BLOCKED]`.
+
+## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
+
+The tier→model map lives in `.bee/config.json` `models`, keyed by runtime first (bee is dual-runtime and each names models differently), then tier:
+
+```json
+"models": {
+  "claude": { "extraction": "haiku", "generation": "sonnet", "ceiling": "fable" },
+  "codex":  { "extraction": null,    "generation": null,     "ceiling": null }
+}
+```
+
+- **ceiling** = the strongest model, kept **scarce** — the orchestrator's own model, used for planning, integration, architecture, and final review only. This scarcity is the whole cost lever: touch it on every dispatch and the saving evaporates.
+- **generation** = the mid worker that runs the loops (implementation, test writing). This is where the bulk of dispatches go.
+- **extraction** = cheapest capable (retrieval, mechanical edits).
+- A **null** tier means the runtime cannot switch per-agent models (Codex today) → state the tier in the worker prompt and enforce it as a read budget + output cap. Set real ids (e.g. `"ceiling": "gpt-5-pro"`) only if your runtime supports per-agent selection.
+
+Resolve a tier for the active runtime before spawning:
+
+```
+node .bee/bin/bee_status.mjs --json    # .models shows both runtime maps
+```
+
+Or in code: `modelForTier(root, tier, runtime)` from `lib/state.mjs` returns the model name or `null` (→ budget/cap fallback). Two shapes, one map: keep the strongest model as `ceiling` and it stays scarce whether it is the orchestrator (fan-out) or a called-only advisor (rescue ladder).
 
 ## Worker Prompt Template
 
