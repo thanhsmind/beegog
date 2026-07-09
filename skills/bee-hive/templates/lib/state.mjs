@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 
-export const BEE_VERSION = '0.1.13';
+export const BEE_VERSION = '0.1.14';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -56,30 +56,41 @@ const DEFAULT_HOOKS = {
 // the strongest (kept scarce — the orchestrator's own model). A null value
 // means "this runtime cannot select a per-agent model" → the tier is enforced
 // via read budgets + output caps in the worker prompt instead (Codex today).
+// Cells can be tiered at any of these; `ceiling` is a concept ("keep it on the
+// session model"), not a configured value (decision 0015).
 export const MODEL_TIERS = ['extraction', 'generation', 'ceiling'];
+// Only these two are configured — the CHEAPER tiers you downgrade workers to.
+// The ceiling is never configured: it is always the session/orchestrator model,
+// so it has no entry and resolves to "inherit the session model".
+export const CONFIGURABLE_TIERS = ['extraction', 'generation'];
 export const RUNTIMES = ['claude', 'codex'];
 const DEFAULT_MODELS = {
   // Claude Code Agent tool accepts short model names: haiku | sonnet | opus | fable.
-  claude: { extraction: 'haiku', generation: 'sonnet', ceiling: 'fable' },
+  claude: { extraction: 'haiku', generation: 'sonnet' },
   // Codex has no per-agent model selection today → null tiers = budget/cap fallback.
-  // Set real model ids here if your runtime supports switching (e.g. ceiling: 'gpt-5-pro').
-  codex: { extraction: null, generation: null, ceiling: null },
+  // Set real model ids here if your runtime supports switching (e.g. generation: 'gpt-5').
+  codex: { extraction: null, generation: null },
 };
 
 // Decision 0013 — advisor mode. Run the session on the generation tier and
 // consult the ceiling model only at the listed hard calls (the "advisor" cost
 // pattern). Off by default. `at` is a subset of ADVISOR_POINTS.
 export const ADVISOR_POINTS = ['context', 'shape', 'execution', 'review', 'blocked'];
-const DEFAULT_ADVISOR = { enabled: false, at: ['shape', 'execution', 'blocked'] };
+// `model` is the STRONGER-than-session model the cheap session phones at a
+// consult point — it must be named because in advisor mode the session runs on
+// the cheap tier, so the expert is not the session/ceiling model (decision 0015).
+const DEFAULT_ADVISOR = { enabled: false, at: ['shape', 'execution', 'blocked'], model: 'fable' };
 
 function normalizeAdvisor(raw) {
-  const out = { enabled: false, at: [...DEFAULT_ADVISOR.at] };
+  const out = { enabled: false, at: [...DEFAULT_ADVISOR.at], model: DEFAULT_ADVISOR.model };
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     out.enabled = raw.enabled === true;
     if (Array.isArray(raw.at)) {
       const at = raw.at.filter((p) => ADVISOR_POINTS.includes(p));
       if (at.length) out.at = at;
     }
+    if (typeof raw.model === 'string' && raw.model.trim()) out.model = raw.model.trim();
+    else if (raw.model === null) out.model = null;
   }
   return out;
 }
@@ -93,7 +104,7 @@ function normalizeModels(raw) {
     for (const rt of RUNTIMES) {
       const src = raw[rt];
       if (!src || typeof src !== 'object' || Array.isArray(src)) continue;
-      for (const tier of MODEL_TIERS) {
+      for (const tier of CONFIGURABLE_TIERS) {
         if (typeof src[tier] === 'string' && src[tier].trim()) out[rt][tier] = src[tier].trim();
         else if (src[tier] === null) out[rt][tier] = null;
       }
@@ -197,9 +208,13 @@ export function hookEnabled(root, name) {
  * Unknown runtime falls back to 'claude'; unknown tier to 'generation'.
  */
 export function modelForTier(root, tier, runtime = 'claude') {
+  // The ceiling tier is never configured — it is always the session/orchestrator
+  // model (decision 0015). null means "inherit the session model" (omit the
+  // subagent model param). Only generation/extraction resolve to a pinned model.
+  if (tier === 'ceiling') return null;
   const { models } = readConfig(root);
   const rt = RUNTIMES.includes(runtime) ? runtime : 'claude';
-  const t = MODEL_TIERS.includes(tier) ? tier : 'generation';
+  const t = CONFIGURABLE_TIERS.includes(tier) ? tier : 'generation';
   const value = models[rt] ? models[rt][t] : null;
   return value == null ? null : value;
 }
@@ -209,9 +224,12 @@ export function modelForTier(root, tier, runtime = 'claude') {
  * when advisor mode is on and `point` is a configured consult point, else null.
  * The session itself runs on the generation tier; this is the phone-a-friend.
  */
-export function advisorModel(root, point, runtime = 'claude') {
+export function advisorModel(root, point) {
+  // In advisor mode the session runs on the cheap tier, so the expert it phones
+  // is a STRONGER, explicitly-named model (advisor.model) — not the session
+  // model, and not the ceiling (which would be the cheap session) (decision 0015).
   const { advisor } = readConfig(root);
   if (!advisor.enabled) return null;
   if (point && !advisor.at.includes(point)) return null;
-  return modelForTier(root, 'ceiling', runtime);
+  return advisor.model || null;
 }

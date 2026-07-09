@@ -25,19 +25,19 @@ On both runtimes the integrity rails are identical because they live in the help
 
 ## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
 
-The tier→model map lives in `.bee/config.json` `models`, keyed by runtime first (bee is dual-runtime and each names models differently), then tier:
+Only the **cheaper** tiers are configured, in `.bee/config.json` `models`, keyed by runtime first (bee is dual-runtime and each names models differently), then tier. **The ceiling is never configured** — it is always the session/orchestrator model (decision 0015):
 
 ```json
 "models": {
-  "claude": { "extraction": "haiku", "generation": "sonnet", "ceiling": "fable" },
-  "codex":  { "extraction": null,    "generation": null,     "ceiling": null }
+  "claude": { "extraction": "haiku", "generation": "sonnet" },
+  "codex":  { "extraction": null,    "generation": null }
 }
 ```
 
-- **ceiling** = the strongest model, kept **scarce** — the orchestrator's own model, used for planning, integration, architecture, and final review only. This scarcity is the whole cost lever: touch it on every dispatch and the saving evaporates.
-- **generation** = the mid worker that runs the loops (implementation, test writing). This is where the bulk of dispatches go.
+- **ceiling** = the strongest model in play = **the session model itself** (no config entry). A ceiling cell inherits the session model — omit the `model` param. Keep it scarce: planning, integration, architecture, final review only. Touch it on every dispatch and the saving evaporates.
+- **generation** = the mid worker that runs the loops (implementation, test writing). Where the bulk of dispatches go.
 - **extraction** = cheapest capable (retrieval, mechanical edits).
-- A **null** tier means the runtime cannot switch per-agent models (Codex today) → state the tier in the worker prompt and enforce it as a read budget + output cap. Set real ids (e.g. `"ceiling": "gpt-5-pro"`) only if your runtime supports per-agent selection.
+- A **null** tier means the runtime cannot switch per-agent models (Codex today) → state the tier in the worker prompt and enforce it as a read budget + output cap. Set real ids (e.g. `"generation": "gpt-5"`) only if your runtime supports per-agent selection.
 
 Resolve a tier for the active runtime before spawning:
 

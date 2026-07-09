@@ -123,9 +123,8 @@ export function buildSessionPreamble(root) {
   }
   const advisor = readConfig(root).advisor;
   if (advisor.enabled) {
-    const ceiling = readConfig(root).models.claude.ceiling;
     lines.push(
-      `- 🧭 ADVISOR MODE ON — run this session on the generation tier; consult the ceiling model (${ceiling}) only at: ${advisor.at.join(', ')}. One ceiling call per point, verdict recorded; the human still approves every gate (decision 0013).`,
+      `- 🧭 ADVISOR MODE ON — run this session on the generation tier; consult the stronger advisor model (${advisor.model ?? 'set advisor.model'}) only at: ${advisor.at.join(', ')}. One consult per point, verdict recorded; the human still approves every gate (decision 0013).`,
     );
   }
 

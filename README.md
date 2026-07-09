@@ -211,28 +211,28 @@ A capped `behavior_change` cell also creates **scribing debt** until its meaning
 
 ## Model tiers — keep the strong model scarce
 
-Not every step needs your most capable (most expensive) model. The costly loops — try, read, fix, repeat — should run on a cheap model; the strong model should touch only the decision points. bee makes this a per-repo setting, **keyed by runtime** (Claude Code and Codex name their models differently):
+Not every step needs your most capable (most expensive) model. The costly loops — try, read, fix, repeat — should run on a cheap model; the strong model should touch only the decision points. bee makes this a per-repo setting. You configure only the two **cheaper** tiers — the **ceiling is always the model you run the session on** (decision 0015), so it needs no config:
 
 ```json
 "models": {
-  "claude": { "extraction": "haiku", "generation": "sonnet", "ceiling": "fable" },
-  "codex":  { "extraction": null,    "generation": null,     "ceiling": null }
+  "claude": { "extraction": "haiku", "generation": "sonnet" },
+  "codex":  { "extraction": null,    "generation": null }
 }
 ```
 
-- **ceiling** — the strongest model, kept *scarce*: the orchestrator that plans and fans out, or a called-only advisor when a worker is stuck. Touch it on every dispatch and the cost saving evaporates.
+- **ceiling** — the strongest model = **your session model** (no entry). Kept *scarce*: planning, integration, review; a ceiling cell just inherits the session model. Touch it on every dispatch and the cost saving evaporates.
 - **generation** — the mid worker that runs the loops (implementation, tests) — where the bulk of work goes.
 - **extraction** — cheapest capable (retrieval, mechanical edits).
-- `null` = the runtime can't select a per-agent model (Codex today) → the tier is enforced as a read budget + output cap in the worker prompt. Set real ids (e.g. `"ceiling": "gpt-5-pro"`) if your runtime supports switching.
+- `null` = the runtime can't select a per-agent model (Codex today) → the tier is enforced as a read budget + output cap in the worker prompt. Set real ids (e.g. `"generation": "gpt-5"`) if your runtime supports switching.
 
-Planning assigns each cell a tier; `bee-swarming` resolves it to a model per dispatch (`modelForTier(root, tier, runtime)`). To keep the discipline honest, `bee_status` and the session preamble **warn when too many cells sit on the ceiling tier** (the cost lever erodes when the strongest model touches most dispatches).
+Planning assigns each cell a tier; `bee-swarming` resolves it (`modelForTier`) — `generation`/`extraction` to the configured alias, `ceiling` to "inherit the session model". `bee_status` and the preamble **warn when too many cells sit on the ceiling tier** (the cost lever erodes when the strongest model touches most dispatches).
 
-Two shapes, one map — either way the strongest model stays in the `ceiling` slot:
+Two shapes, one lever — either way the strongest model stays scarce:
 
-- **Orchestrator** (fan-out): a ceiling-tier session plans and fans out to generation-tier workers. This is `bee-swarming`'s default.
-- **Advisor** (opt-in, decision 0013): run the whole session on the *generation* tier and consult the *ceiling* model only at the hard calls. Turn it on per-repo with `"advisor": { "enabled": true, "at": ["shape", "execution", "blocked"] }` — at each point the agent asks one tight question, spawns one ceiling subagent for a verdict, records it, and continues cheap. It's surfaced loudly (`ADVISOR MODE ON`) and never self-approves a human gate.
+- **Orchestrator** (fan-out): run the session on your strong model; it plans and fans out to cheaper workers. `bee-swarming`'s default.
+- **Advisor** (opt-in, decision 0013): run the whole session on the *generation* tier and consult a stronger model only at the hard calls. Because the session is cheap here, you name the strong model: `"advisor": { "enabled": true, "at": ["shape", "execution", "blocked"], "model": "fable" }` — at each point the agent asks one tight question, spawns one advisor subagent for a verdict, records it, and continues cheap. Surfaced loudly (`ADVISOR MODE ON`); never self-approves a human gate.
 
-**To change the ceiling model** (or any tier / advisor), edit `.bee/config.json` `models.claude.ceiling`. Every field, the runtime keys, and a full sample to copy: **[docs/config-reference.md](docs/config-reference.md)**.
+**To change the worker models**, edit `.bee/config.json` `models.claude.generation` / `extraction`; the ceiling changes by running the session on a different model. Every field + a full sample to copy: **[docs/config-reference.md](docs/config-reference.md)**.
 
 ---
 
@@ -381,13 +381,13 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 | [04-skills-spec.md](docs/04-skills-spec.md) | You are about to write a SKILL.md — per-skill specifications |
 | [06-runtime-integration.md](docs/06-runtime-integration.md) | Claude Code hook automation + Codex parity matrix |
 | [07-contracts.md](docs/07-contracts.md) | You are implementing or extending v0.1 — lib API, CLI surface, hook behaviors |
-| [decisions/](docs/decisions/) | Why bee is shaped the way it is — one record per load-bearing choice (0001–0014) |
+| [decisions/](docs/decisions/) | Why bee is shaped the way it is — one record per load-bearing choice (0001–0015) |
 
 ---
 
 ## Status
 
-**v0.1.13.** Core built and green: the skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
+**v0.1.14.** Core built and green: the skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
 
 Recent additions, each gated by a decision record:
 

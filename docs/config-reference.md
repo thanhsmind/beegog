@@ -2,28 +2,29 @@
 
 Every onboarded repo has a `.bee/config.json`. Any key you leave out uses a built-in default, so the file can be short — but the values below are the ones worth setting per repo. **`.bee/config.json` is strict JSON: no comments, no trailing commas.** The annotated block here is for reading; copy the clean block at the bottom into the real file.
 
-## Where the ceiling / worker models are set
+## Which model each tier uses
 
-Model tiers live under **`models`**, keyed by runtime (Claude Code vs Codex name their models differently), then tier:
+There are three tiers, but **you only configure the two cheaper ones.** The **ceiling** (strongest) tier is **never configured — it is always the model you are running the session on** (decision 0015). So if you run the session on Fable, ceiling work runs on Fable; run it on Opus, ceiling is Opus. bee doesn't pick it; it inherits your session model.
+
+You configure only `generation` and `extraction`, under **`models`**, keyed by runtime (Claude Code vs Codex name models differently):
 
 ```jsonc
 {
   "models": {
     "claude": {
       "extraction": "haiku",    // cheapest — retrieval, mechanical edits
-      "generation": "sonnet",   // the mid worker that runs the loops (most cells)
-      "ceiling":    "fable"     // the STRONGEST model — kept scarce (planning, integration, review, advisor)
+      "generation": "sonnet"    // the mid worker that runs the loops (most cells)
+      // no "ceiling" — it's whatever model runs your session
     },
     "codex": {
       "extraction": null,       // Codex has no per-agent model switch today →
-      "generation": null,       //   null means "enforce the tier via read budget + output cap in the prompt"
-      "ceiling":    null        // set real ids (e.g. "gpt-5-pro") only if your Codex build supports switching
+      "generation": null        //   null means "enforce the tier via read budget + output cap in the prompt"
     }
   }
 }
 ```
 
-- **To change which model the ceiling uses**, edit `models.claude.ceiling` (e.g. `"opus"` instead of `"fable"`). Same for `generation` / `extraction`.
+- **To change the worker models**, edit `models.claude.generation` / `extraction` (e.g. `"opus"` for a stronger worker tier). To change the **ceiling**, just run the session on a different model — there is no config for it.
 - **What the short names mean (important).** For Claude Code these are **family aliases**, not exact version strings. The value must be one of exactly `haiku` · `sonnet` · `opus` · `fable` — the Claude Code Agent tool accepts only these four. Each alias is resolved **by Claude Code (not by bee)** to the current model of that family on your account. So `"sonnet"` isn't "some random Sonnet" — it means "the Sonnet tier", and the harness uses the latest. Today they resolve to:
 
   | alias | resolves to (current) | model id |
@@ -33,19 +34,20 @@ Model tiers live under **`models`**, keyed by runtime (Claude Code vs Codex name
   | `opus` | Opus 4.8 | `claude-opus-4-8` |
   | `fable` | Fable 5 | `claude-fable-5` |
 
-  You **cannot pin an exact sub-version** for a Claude Code subagent — the model param is family-alias only, and it tracks the latest of each family as Anthropic ships new ones. bee just passes the alias through. (For **Codex**, the `codex` tiers take the runtime's real model ids, e.g. `"gpt-5-pro"`, because that runtime addresses models by id.)
-- `bee_status` prints the active map (`Models (claude): ceiling=… generation=… extraction=…`), and warns if too many cells sit on the ceiling tier — the point is to keep the strong model scarce.
+  You **cannot pin an exact sub-version** for a Claude Code subagent — the model param is family-alias only, and it tracks the latest of each family as Anthropic ships new ones. (For **Codex**, the `codex` tiers take the runtime's real model ids, e.g. `"gpt-5"`, because that runtime addresses models by id.)
+- `bee_status` prints the active map (`Models (claude): generation=… extraction=… · ceiling = the session model`), and warns if too many cells sit on the ceiling tier — the point is to keep the strong (session) model scarce.
 
-## Advisor mode (opt-in — cheap main loop, ceiling on demand)
+## Advisor mode (opt-in — cheap main loop, strong model on demand)
 
-Run the whole session on the cheaper `generation` model and consult the `ceiling` model only at the hard calls:
+Run the whole session on the cheaper `generation` model and consult a **stronger** model only at the hard calls. Here the session is cheap, so the strong model is **named explicitly** in `advisor.model` (it isn't the session model):
 
 ```jsonc
 {
   "advisor": {
     "enabled": false,                             // set true to turn advisor mode on
-    "at": ["shape", "execution", "blocked"]       // when to consult the ceiling: subset of
+    "at": ["shape", "execution", "blocked"],      // when to consult: subset of
                                                   //   context · shape (Gate 2) · execution (Gate 3) · review · blocked
+    "model": "fable"                              // the STRONGER model to phone (a Claude alias, or a Codex id)
   }
 }
 ```
@@ -71,9 +73,11 @@ Clean JSON — paste into `.bee/config.json` and edit values (keep any existing 
   "commands": { "setup": "npm install", "start": "npm run dev", "test": "npm test", "verify": "npm run build" },
   "gate_bypass": false,
   "models": {
-    "claude": { "extraction": "haiku", "generation": "sonnet", "ceiling": "fable" },
-    "codex":  { "extraction": null, "generation": null, "ceiling": null }
+    "claude": { "extraction": "haiku", "generation": "sonnet" },
+    "codex":  { "extraction": null, "generation": null }
   },
-  "advisor": { "enabled": false, "at": ["shape", "execution", "blocked"] }
+  "advisor": { "enabled": false, "at": ["shape", "execution", "blocked"], "model": "fable" }
 }
 ```
+
+> **ceiling** has no entry — it is always whatever model you run the session on.

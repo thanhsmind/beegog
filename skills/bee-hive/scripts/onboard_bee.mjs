@@ -73,13 +73,16 @@ const DEFAULT_CONFIG = {
   // per dispatch so the strongest model stays scarce (ceiling) and cheap models
   // run the loops (extraction/generation). Edit per repo. null = the runtime
   // cannot switch per-agent model → tier enforced via read budget + output cap.
+  // Only the cheaper tiers are configured; the ceiling is always the session
+  // model (decision 0015), so it has no entry here.
   models: {
-    claude: { extraction: "haiku", generation: "sonnet", ceiling: "fable" },
-    codex: { extraction: null, generation: null, ceiling: null },
+    claude: { extraction: "haiku", generation: "sonnet" },
+    codex: { extraction: null, generation: null },
   },
-  // Advisor mode (decision 0013): run the session on the generation tier and
-  // consult the ceiling model only at the listed hard calls. Off by default.
-  advisor: { enabled: false, at: ["shape", "execution", "blocked"] },
+  // Advisor mode (decisions 0013/0015): run the session on the generation tier
+  // and consult a STRONGER model (advisor.model) only at the listed hard calls.
+  // Off by default.
+  advisor: { enabled: false, at: ["shape", "execution", "blocked"], model: "fable" },
 };
 
 const CRITICAL_PATTERNS_STUB = `# Critical Patterns

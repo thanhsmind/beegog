@@ -153,10 +153,10 @@ function renderText(status) {
     `Active reservations: ${status.active_reservations.length}`,
     `Critical patterns file: ${status.critical_patterns_present ? 'present' : 'absent'}`,
     ...(status.models
-      ? [`Models (claude): ceiling=${status.models.claude.ceiling} generation=${status.models.claude.generation} extraction=${status.models.claude.extraction} — keep ceiling scarce (decision 0012)`]
+      ? [`Models (claude): generation=${status.models.claude.generation} extraction=${status.models.claude.extraction} · ceiling = the session model (keep it scarce; decisions 0012/0015)`]
       : []),
     ...(status.advisor && status.advisor.enabled
-      ? [`🧭 ADVISOR MODE ON — session on generation; consult ceiling at: ${status.advisor.at.join(', ')} (decision 0013)`]
+      ? [`🧭 ADVISOR MODE ON — session on generation; consult ${status.advisor.model ?? 'the strong model'} at: ${status.advisor.at.join(', ')} (decision 0013)`]
       : []),
     ...(status.tier_mix && status.tier_mix.tiered > 0
       ? [`Tier mix: extraction=${status.tier_mix.counts.extraction} generation=${status.tier_mix.counts.generation} ceiling=${status.tier_mix.counts.ceiling} untiered=${status.tier_mix.counts.untiered} (ceiling ${Math.round(status.tier_mix.ceilingShare * 100)}%)`]

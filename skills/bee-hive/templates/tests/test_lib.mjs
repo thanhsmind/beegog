@@ -20,6 +20,7 @@ import {
   COMMAND_KEYS,
   modelForTier,
   MODEL_TIERS,
+  CONFIGURABLE_TIERS,
   RUNTIMES,
   advisorModel,
   ADVISOR_POINTS,
@@ -907,32 +908,36 @@ check('modelForTier resolves runtime-keyed tiers: defaults, overrides, fallbacks
   try {
     // enums exported
     assert(MODEL_TIERS.join(',') === 'extraction,generation,ceiling', 'tier enum locked');
+    assert(CONFIGURABLE_TIERS.join(',') === 'extraction,generation', 'only cheaper tiers are configurable');
     assert(RUNTIMES.join(',') === 'claude,codex', 'runtime enum locked');
 
-    // claude defaults (no config file present)
-    assert(modelForTier(mRoot, 'ceiling') === 'fable', 'claude ceiling defaults to fable');
+    // ceiling is NEVER configured — always null = inherit the session model (decision 0015)
+    assert(modelForTier(mRoot, 'ceiling') === null, 'ceiling resolves to null (session model)');
+    assert(modelForTier(mRoot, 'ceiling', 'codex') === null, 'ceiling is session model on codex too');
+
+    // claude defaults for the cheaper tiers
     assert(modelForTier(mRoot, 'generation') === 'sonnet', 'claude generation defaults to sonnet');
     assert(modelForTier(mRoot, 'extraction') === 'haiku', 'claude extraction defaults to haiku');
 
     // codex defaults null → caller uses budget/cap fallback
-    assert(modelForTier(mRoot, 'ceiling', 'codex') === null, 'codex ceiling null by default');
+    assert(modelForTier(mRoot, 'generation', 'codex') === null, 'codex generation null by default');
 
     // unknown runtime → claude; unknown tier → generation
-    assert(modelForTier(mRoot, 'ceiling', 'gemini') === 'fable', 'unknown runtime falls back to claude');
+    assert(modelForTier(mRoot, 'generation', 'gemini') === 'sonnet', 'unknown runtime falls back to claude');
     assert(modelForTier(mRoot, 'bogus') === 'sonnet', 'unknown tier falls back to generation');
 
-    // per-runtime override from config; unspecified tiers keep their default
+    // per-runtime override of the cheaper tiers; a stray ceiling entry is ignored
     writeJsonAtomic(path.join(mRoot, '.bee', 'config.json'), {
-      models: { claude: { ceiling: 'opus' }, codex: { ceiling: 'gpt-5-pro' } },
+      models: { claude: { generation: 'opus', ceiling: 'whatever' }, codex: { generation: 'gpt-5' } },
     });
-    assert(modelForTier(mRoot, 'ceiling') === 'opus', 'claude ceiling overridden to opus');
-    assert(modelForTier(mRoot, 'generation') === 'sonnet', 'unspecified claude tier keeps default');
-    assert(modelForTier(mRoot, 'ceiling', 'codex') === 'gpt-5-pro', 'codex ceiling set from config');
-    assert(modelForTier(mRoot, 'generation', 'codex') === null, 'unset codex tier stays null');
+    assert(modelForTier(mRoot, 'generation') === 'opus', 'claude generation overridden to opus');
+    assert(modelForTier(mRoot, 'extraction') === 'haiku', 'unspecified claude tier keeps default');
+    assert(modelForTier(mRoot, 'ceiling') === null, 'a config ceiling value is ignored — ceiling stays the session model');
+    assert(modelForTier(mRoot, 'generation', 'codex') === 'gpt-5', 'codex generation set from config');
 
-    // readConfig always returns a full normalized models map
+    // readConfig models never carries a ceiling key
     const models = readConfig(mRoot).models;
-    assert(models.claude && models.codex, 'both runtime maps present');
+    assert(models.claude.ceiling === undefined && models.codex.ceiling === undefined, 'ceiling is not stored in the models map');
     assert(models.claude.extraction === 'haiku', 'defaults survive partial override');
   } finally {
     fs.rmSync(mRoot, { recursive: true, force: true });
@@ -993,7 +998,7 @@ check('cell tier: validation, tierMix, and the ceiling scarcity warning', () => 
 
 // ─── advisor mode: cheap main loop, ceiling on demand (decision 0013) ───────
 
-check('advisorModel: off by default, resolves ceiling only at configured points', () => {
+check('advisorModel: off by default, resolves advisor.model only at configured points', () => {
   const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-advisor-'));
   fs.mkdirSync(path.join(aRoot, '.bee'), { recursive: true });
   writeJsonAtomic(path.join(aRoot, '.bee', 'onboarding.json'), {
@@ -1003,27 +1008,26 @@ check('advisorModel: off by default, resolves ceiling only at configured points'
   try {
     assert(ADVISOR_POINTS.includes('blocked') && ADVISOR_POINTS.includes('execution'), 'points enum');
 
-    // off by default → always null, and config carries a normalized advisor block
+    // off by default → always null; the normalized block carries a default model
     assert(advisorModel(aRoot, 'execution') === null, 'advisor off by default');
     const def = readConfig(aRoot).advisor;
-    assert(def.enabled === false && Array.isArray(def.at), 'default advisor normalized');
+    assert(def.enabled === false && Array.isArray(def.at) && def.model === 'fable', 'default advisor normalized (model=fable)');
 
-    // enabled with a point subset
+    // enabled with a point subset → resolves advisor.model (default) at those points only
     writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
       advisor: { enabled: true, at: ['execution', 'blocked', 'bogus'] },
     });
-    assert(advisorModel(aRoot, 'execution') === 'fable', 'resolves ceiling at a configured point');
+    assert(advisorModel(aRoot, 'execution') === 'fable', 'resolves the advisor model at a configured point');
     assert(advisorModel(aRoot, 'blocked') === 'fable', 'resolves at blocked');
     assert(advisorModel(aRoot, 'shape') === null, 'null at a point not in the list');
-    assert(advisorModel(aRoot, null) === 'fable', 'no point given → ceiling when enabled');
+    assert(advisorModel(aRoot, null) === 'fable', 'no point given → advisor model when enabled');
     assert(readConfig(aRoot).advisor.at.join(',') === 'execution,blocked', 'unknown points filtered out');
 
-    // honors the models override for ceiling
+    // a custom advisor.model is honored (independent of the models tier map)
     writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
-      advisor: { enabled: true, at: ['execution'] },
-      models: { claude: { ceiling: 'opus' } },
+      advisor: { enabled: true, at: ['execution'], model: 'opus' },
     });
-    assert(advisorModel(aRoot, 'execution') === 'opus', 'advisor uses the configured ceiling model');
+    assert(advisorModel(aRoot, 'execution') === 'opus', 'advisor uses the configured advisor.model');
   } finally {
     fs.rmSync(aRoot, { recursive: true, force: true });
   }
