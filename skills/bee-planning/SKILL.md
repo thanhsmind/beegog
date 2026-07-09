@@ -86,7 +86,7 @@ Render `docs/history/<feature>/implement-plan.md` via `bee-briefing` only where 
    ```bash
    node .bee/bin/bee_cells.mjs add --file <cell.json>
    ```
-   Every cell is an executable prompt: `files`, `read_first`, directive `action` citing D-IDs, `must_haves` (truths / artifacts / key_links / prohibitions), a runnable `verify` command, and `behavior_change: true` whenever the cell changes observable behavior. Cell quality rules and a schema example live in `references/planning-reference.md`.
+   Every cell is an executable prompt: `files`, `read_first`, directive `action` citing D-IDs, `must_haves` (truths / artifacts / key_links / prohibitions), a runnable `verify` command, `behavior_change: true` whenever the cell changes observable behavior, and a model `tier` (`extraction` / `generation` / `ceiling`) — default routine cells to `generation`, reserve `ceiling` for genuine integration/architecture/decision cells and keep it scarce (swarming resolves tier→model; `bee_status` and the preamble warn if the ceiling share runs high — decision 0012 / P7). Cell quality rules and a schema example live in `references/planning-reference.md`.
 3. If an implement plan was rendered at §5 (high-risk, or a standard/small feature where one was produced on request), invoke `bee-briefing` in refresh mode so its Affected Files and Implementation Steps re-project from the created cells. If no brief exists, skip — there is nothing to refresh.
 4. Update `.bee/state.json`: `phase: planning-complete`, `next_action: "Invoke bee-validating."`
 

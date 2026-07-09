@@ -27,12 +27,15 @@ import { readBacklogCounts, BACKLOG_STATUSES } from '../lib/backlog.mjs';
 import {
   addCell,
   readCell,
+  writeCell,
   readyCells,
   claimCell,
   recordVerify,
   capCell,
   blockCell,
   scribingDebt,
+  tierMix,
+  ceilingScarcityWarning,
 } from '../lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, reservationsPath } from '../lib/reservations.mjs';
 import { checkWrite, checkRead, extractBashTargets } from '../lib/guards.mjs';
@@ -906,6 +909,58 @@ check('modelForTier resolves runtime-keyed tiers: defaults, overrides, fallbacks
     assert(models.claude.extraction === 'haiku', 'defaults survive partial override');
   } finally {
     fs.rmSync(mRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── cell tier + ceiling scarcity (P7, decision 0012) ───────────────────────
+
+check('cell tier: validation, tierMix, and the ceiling scarcity warning', () => {
+  const tRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-tier-'));
+  fs.mkdirSync(path.join(tRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(tRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  const mk = (id, tier) => ({
+    id, feature: 'feat', title: id, lane: 'small', status: 'open', deps: [],
+    action: 'do it', verify: 'node -e "process.exit(0)"',
+    ...(tier !== undefined ? { tier } : {}),
+  });
+  try {
+    // invalid tier rejected; absent + valid accepted and persisted
+    assertThrows(() => addCell(tRoot, mk('bad', 'huge')), 'tier', 'invalid tier rejected');
+    addCell(tRoot, mk('c1', 'ceiling'));
+    addCell(tRoot, mk('c2', 'generation'));
+    addCell(tRoot, mk('c3')); // untiered
+    assert(readCell(tRoot, 'c1').tier === 'ceiling', 'valid tier persisted');
+    assert(readCell(tRoot, 'c3').tier === undefined, 'absent tier stays absent');
+
+    writeState(tRoot, { ...defaultState(), feature: 'feat' });
+    const mix = tierMix(tRoot, { feature: 'feat' });
+    assert(
+      mix.counts.ceiling === 1 && mix.counts.generation === 1 && mix.counts.untiered === 1,
+      `mix counts, got ${JSON.stringify(mix.counts)}`,
+    );
+    assert(mix.tiered === 2, 'untiered excluded from the tiered denominator');
+    assert(Math.round(mix.ceilingShare * 100) === 50, 'ceiling share = 1/2');
+
+    // 2 tiered cells is below the min → no warning even at 50%
+    assert(ceilingScarcityWarning(tRoot) === null, 'below min-tiered stays silent');
+
+    // 2 ceiling of 3 tiered = 67% > 40% and tiered >= 3 → warn
+    addCell(tRoot, mk('c4', 'ceiling'));
+    const w = ceilingScarcityWarning(tRoot);
+    assert(w && w.ceiling === 2 && w.tiered === 3 && w.pct === 67, `scarcity warns, got ${JSON.stringify(w)}`);
+
+    // re-tier the ceiling cells down → back under threshold → silent
+    for (const id of ['c1', 'c4']) {
+      const cell = readCell(tRoot, id);
+      cell.tier = 'generation';
+      writeCell(tRoot, cell);
+    }
+    assert(ceilingScarcityWarning(tRoot) === null, 're-tiering routine cells clears the warning');
+  } finally {
+    fs.rmSync(tRoot, { recursive: true, force: true });
   }
 });
 

@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
-import { readState, gateApproved } from './state.mjs';
+import { readState, gateApproved, MODEL_TIERS } from './state.mjs';
 
 export const LANES = ['tiny', 'small', 'standard', 'high-risk', 'spike'];
 
@@ -103,6 +103,14 @@ export function addCell(root, cell) {
   // cap/claim blocker). Only reject an outright non-string value.
   if (cell.pbi !== undefined && cell.pbi !== null && typeof cell.pbi !== 'string') {
     throw new Error('addCell: optional "pbi" must be a string backlog id when present.');
+  }
+  // D11/D12: optional model tier — planning assigns it so swarming can resolve
+  // tier → model and the harness can keep the ceiling model scarce (P7). Absent
+  // = untiered (never a blocker); a present value must be a known tier.
+  if (cell.tier !== undefined && cell.tier !== null && !MODEL_TIERS.includes(cell.tier)) {
+    throw new Error(
+      `addCell: optional "tier" must be one of ${MODEL_TIERS.join(', ')} when present.`,
+    );
   }
   if (readCell(root, cell.id)) {
     throw new Error(`addCell: cell "${cell.id}" already exists.`);
@@ -321,4 +329,36 @@ export function scribingDebt(root) {
     })
     .map((cell) => cell.id);
   return { count: cells.length, cells };
+}
+
+// Decision 0012 / P7 — keep the ceiling (strongest) model scarce, measurably.
+// Above this share of tiered cells on the ceiling tier, the scarcity is at risk
+// (the cost lever of "the strong model touches few dispatches" is eroding).
+export const CEILING_MAX_SHARE = 0.4;
+const SCARCITY_MIN_TIERED = 3; // below this, any share is noise — stay silent.
+
+/** Tier assignment across a feature's cells (all statuses). */
+export function tierMix(root, { feature = null } = {}) {
+  const cells = listCells(root, feature ? { feature } : {});
+  const counts = { extraction: 0, generation: 0, ceiling: 0, untiered: 0 };
+  for (const cell of cells) {
+    if (MODEL_TIERS.includes(cell.tier)) counts[cell.tier] += 1;
+    else counts.untiered += 1;
+  }
+  const tiered = counts.extraction + counts.generation + counts.ceiling;
+  const ceilingShare = tiered > 0 ? counts.ceiling / tiered : 0;
+  return { counts, tiered, ceilingShare };
+}
+
+/**
+ * P7 scarcity signal: returns { pct, ceiling, tiered } when the active feature
+ * leans too much on the ceiling model, else null (nothing to warn about).
+ * Scoped to the active feature when set. Advisory — never a blocker.
+ */
+export function ceilingScarcityWarning(root) {
+  const state = readState(root);
+  const mix = tierMix(root, { feature: state.feature || null });
+  if (mix.tiered < SCARCITY_MIN_TIERED) return null;
+  if (mix.ceilingShare <= CEILING_MAX_SHARE) return null;
+  return { pct: Math.round(mix.ceilingShare * 100), ceiling: mix.counts.ceiling, tiered: mix.tiered };
 }

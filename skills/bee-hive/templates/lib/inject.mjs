@@ -16,7 +16,7 @@ import {
 } from './state.mjs';
 import { activeDecisions, datamark } from './decisions.mjs';
 import { readBacklogCounts } from './backlog.mjs';
-import { scribingDebt } from './cells.mjs';
+import { scribingDebt, ceilingScarcityWarning, CEILING_MAX_SHARE } from './cells.mjs';
 
 const INJECT_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -157,6 +157,16 @@ export function buildSessionPreamble(root) {
     lines.push(`### Scribing debt: ${debt.count} behavior_change cell(s) uncaptured`);
     lines.push(
       `- ${debt.cells.join(', ')} capped since the last scribing run — run bee-scribing capture now; settled behavior belongs in docs/specs/ before it evaporates (decision 0011).`,
+    );
+  }
+
+  // P7: keep the ceiling model scarce — warn when this feature leans on it too much.
+  const scarcity = ceilingScarcityWarning(root);
+  if (scarcity) {
+    lines.push('');
+    lines.push(`### Ceiling-model scarcity: ${scarcity.pct}% of tiered cells on ceiling`);
+    lines.push(
+      `- ${scarcity.ceiling}/${scarcity.tiered} cells tiered ceiling (> ${Math.round(CEILING_MAX_SHARE * 100)}%) — the cost lever erodes when the strongest model touches most dispatches; re-tier routine cells to generation/extraction (decision 0012).`,
     );
   }
 

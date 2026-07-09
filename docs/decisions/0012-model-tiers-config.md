@@ -49,6 +49,6 @@ Add a **runtime-keyed** `models` map to `.bee/config.json`, resolved by a shared
 
 ## Consequences / deferred (PBI)
 
-- **Scarcity is documented, not yet enforced.** Nothing stops most dispatches going to `ceiling`. Deferred: a `tier` field on cells (planning assigns it) + a `bee_status`/preamble warning when ceiling-tier share exceeds a threshold — turns "keep the strong model scarce" into a measured signal (the same spine move as decision 0011's scribing debt).
+- **Scarcity signal — BUILT in 0.1.10 (P7).** Cells carry an optional `tier` field (validated in `addCell`); `tierMix` + `ceilingScarcityWarning` (lib/cells.mjs) compute the ceiling share for the active feature and warn above `CEILING_MAX_SHARE` (0.4, min 3 tiered cells). Surfaced in `bee_status` (tier mix + warning) and the session preamble; planning assigns tier per cell, swarming resolves `cell.tier` → model. This turns "keep the strong model scarce" into a measured signal (the same spine move as decision 0011's scribing debt).
 - **Advisor pattern (strategy 1) not first-class.** Running the whole session on `generation` and consulting `ceiling` only at Gate 2/3 or `[BLOCKED]` via a single advisor subagent is a further add (a cross-model escalation gate). Deferred.
 - **Codex model switching** depends on the runtime gaining per-agent selection; null tiers are correct until then.

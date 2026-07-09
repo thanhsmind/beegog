@@ -17,7 +17,7 @@ import {
   readHandoff,
   readOnboarding,
 } from './lib/state.mjs';
-import { listCells, readyCells, scribingDebt } from './lib/cells.mjs';
+import { listCells, readyCells, scribingDebt, tierMix, ceilingScarcityWarning } from './lib/cells.mjs';
 import { readBacklogCounts } from './lib/backlog.mjs';
 import { listReservations } from './lib/reservations.mjs';
 import { activeDecisions, datamark } from './lib/decisions.mjs';
@@ -104,6 +104,8 @@ function buildStatus(root) {
     gates: state.approved_gates,
     gate_bypass: readConfig(root).gate_bypass === true,
     models: readConfig(root).models,
+    tier_mix: tierMix(root, { feature: state.feature || null }),
+    ceiling_scarcity: ceilingScarcityWarning(root),
     handoff,
     cells: counts,
     scribing_debt: scribingDebt(root),
@@ -151,6 +153,12 @@ function renderText(status) {
     `Critical patterns file: ${status.critical_patterns_present ? 'present' : 'absent'}`,
     ...(status.models
       ? [`Models (claude): ceiling=${status.models.claude.ceiling} generation=${status.models.claude.generation} extraction=${status.models.claude.extraction} — keep ceiling scarce (decision 0012)`]
+      : []),
+    ...(status.tier_mix && status.tier_mix.tiered > 0
+      ? [`Tier mix: extraction=${status.tier_mix.counts.extraction} generation=${status.tier_mix.counts.generation} ceiling=${status.tier_mix.counts.ceiling} untiered=${status.tier_mix.counts.untiered} (ceiling ${Math.round(status.tier_mix.ceilingShare * 100)}%)`]
+      : []),
+    ...(status.ceiling_scarcity
+      ? [`⚠ Ceiling scarcity: ${status.ceiling_scarcity.ceiling}/${status.ceiling_scarcity.tiered} tiered cells on ceiling (${status.ceiling_scarcity.pct}%) — re-tier routine cells (decision 0012)`]
       : []),
   ];
   if (status.recent_decisions.length > 0) {
