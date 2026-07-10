@@ -495,6 +495,38 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-10T09:42:54.813Z",
       "released_at": "2026-07-10T09:48:27.728Z"
+    },
+    {
+      "agent": "sculptor",
+      "cell": "evolving-10",
+      "path": "skills/bee-evolving/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:52:07.963Z",
+      "released_at": "2026-07-10T10:03:03.500Z"
+    },
+    {
+      "agent": "sculptor",
+      "cell": "evolving-10",
+      "path": "skills/bee-evolving/CREATION-LOG.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:52:08.001Z",
+      "released_at": "2026-07-10T10:03:03.500Z"
+    },
+    {
+      "agent": "sculptor",
+      "cell": "evolving-10",
+      "path": "docs/history/evolving-loop/reports/evolving-10-pressure.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:52:08.041Z",
+      "released_at": "2026-07-10T10:03:03.500Z"
+    },
+    {
+      "agent": "sculptor",
+      "cell": "evolving-10",
+      "path": "docs/history/evolving-loop/reports/evolving-10.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:52:08.078Z",
+      "released_at": "2026-07-10T10:03:03.500Z"
     }
   ]
 }
