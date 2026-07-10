@@ -26,7 +26,7 @@ Lanes scale ceremony, never memory. The specialist wave in §1 is the `standard`
 | `docs` | none — never reaches this skill | none |
 | `tiny` | **self-review, 0 subagents**: re-run the verify command fresh; walk the diff against the self-check list below; verify the promised artifact EXISTS/SUBSTANTIVE/WIRED | **done-report, not a question**: diff + fresh verify output + capture line. A blocking problem found → stop and ask; otherwise proceed to scribing |
 | `small` | **1 correctness reviewer** (review slot, isolated context: diff + CONTEXT.md/plan.md only) + the tiny self-checks | asked normally |
-| `standard` | 4 core reviewers + learnings pair (§1 table) | asked normally |
+| `standard` | 4 core reviewers (§1 table) | asked normally |
 | `high-risk` | full wave + conditional reviewers, cap 7 | asked normally, UAT always |
 
 **Tiny self-check list:** does the diff do what the merged gate promised and nothing beyond its cell scope · fresh verify output green · no secret/credential touched · no test/CI/lockfile/verify-config change the cell didn't declare (frozen judge) · new artifact actually wired, not just present. Finding a real defect here is treated exactly like a P1: stop, tell the user, fix before proceeding — the fast path never ships a known defect.
@@ -54,8 +54,8 @@ Dispatch reviewers with ISOLATED context: the diff + CONTEXT.md + plan.md ONLY. 
 | `architecture` | boundaries, coupling, API design, maintainability | review | parallel |
 | `security` | auth, secrets, injection, permissions, data exposure | review | parallel |
 | `test-coverage` | missing edge cases, regression paths, weak assertions | review | parallel |
-| `learnings-researcher` | searches `docs/history/learnings/` for precedent on the touched modules | extraction | parallel |
-| `learnings-synthesizer` | dedupe, corroboration, known-pattern notes | ceiling | AFTER all of the above |
+
+Precedent arrives pre-loaded: planning's bootstrap owns the `docs/history/learnings/` search, and its hits land in `plan.md`, which every reviewer receives — no review-time precedent agent exists. Synthesis (§2) is the orchestrator's own work after all reviewers return, never a dispatched reviewer.
 
 **The `review` slot (P16, decision 0021):** reviewers resolve `resolveTier(root, 'review', runtime)` — a dedicated, per-repo-editable model for review work, default `opus` on Claude (independent reviewer > self-review: the model that reviews should not be the model that implemented). A `null` review slot falls back to `generation`; a `{kind:'cli'}` value dispatches an external adversarial reviewer (e.g. GPT via codex CLI) under the External Executors protocol. Conditional reviewers (below) use the same slot.
 
@@ -68,6 +68,8 @@ Full prompts in `references/reviewing-reference.md`.
 - **P1** — security breach, data loss, breaking change, production blocker. Blocks merge.
 - **P2** — real performance, architecture, reliability, or important test gap.
 - **P3** — cleanup, docs, future debt.
+
+The orchestrator performs synthesis itself, only after every reviewer has returned — it already runs on the strongest model in the wave, so a dispatched synthesis agent adds a hop, not a mind.
 
 Rules: uncertain → P2. Reviewers score independently; corroboration across independent reviewers promotes a finding one level. On disagreement, take the more conservative route. Every finding carries an `autofix_class` — `gated_auto` (concrete fix, apply after judgment), `manual` (needs design input), `advisory` (report-only) — as a routing SIGNAL, never an apply gate.
 
@@ -127,7 +129,7 @@ Never continue past open P1s without explicit user acknowledgment. Silence is no
 - UAT failure marked pass, or a skip without a recorded reason
 - artifact verification skipped because "the cells are capped"
 - a `behavior_change` cell accepted with vague verification evidence
-- `learnings-synthesizer` run before the other reviewers finish
+- synthesis started before every reviewer returned
 - P2/P3 filed as blocking work on the current feature
 - a reviewer dispatched with session history in its context
 - a reviewer spawned as another plugin's registered agent type instead of the default type + inline persona

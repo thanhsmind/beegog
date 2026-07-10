@@ -4,7 +4,7 @@ Load after `bee-reviewing` is selected. Companion to SKILL.md — flow lives the
 
 ## Specialist Dispatch
 
-Isolation contract: each reviewer receives the diff (or branch range), `docs/history/<feature>/CONTEXT.md`, and `docs/history/<feature>/plan.md` — nothing else, never session history. Reviewers 1–5 run in parallel; `learnings-synthesizer` runs after all of them return.
+Isolation contract: each reviewer receives the diff (or branch range), `docs/history/<feature>/CONTEXT.md`, and `docs/history/<feature>/plan.md` — nothing else, never session history. All reviewers run in parallel; the orchestrator synthesizes only after every one has returned (SKILL.md §2 — synthesis is orchestrator work, never a dispatched reviewer). Precedent is already in `plan.md` (planning's bootstrap owns the learnings search).
 
 Common prompt shape:
 
@@ -22,10 +22,10 @@ Per-reviewer focus lines (append to the shape):
 | `architecture` | Boundaries, coupling, API design, maintainability, drift from plan.md structure. |
 | `security` | Auth, authorization, secrets in code or logs, injection, permissions, data exposure. |
 | `test-coverage` | Missing edge cases, regression paths, weak or tautological assertions, untested behavior changes. |
-| `learnings-researcher` | Search `docs/history/learnings/` (including `critical-patterns.md`) for precedent related to the modules touched in this diff. Return matched learnings with file paths and one line each on why they apply. Report only — no severity scoring. |
-| `learnings-synthesizer` | Take all reviewer findings plus researcher precedent. Deduplicate overlaps, mark cross-reviewer corroboration (promotes one severity level), attach known-pattern notes, classify each finding's autofix_class, and present counts by severity. |
 
-Tiers: researcher = extraction, specialists = generation, synthesizer = ceiling (orchestrator's model). Where the runtime cannot select per-agent models, fall back to read budgets and output caps.
+Tiers: specialists = the review slot (SKILL.md §1). Where the runtime cannot select per-agent models, fall back to read budgets and output caps.
+
+Orchestrator synthesis (after all reviewers return): deduplicate overlaps, mark cross-reviewer corroboration (promotes one severity level), attach known-pattern notes from the precedent in `plan.md`, classify each finding's autofix_class, and present counts by severity.
 
 ## Conditional Reviewers (selected by diff analysis)
 
@@ -127,6 +127,6 @@ Can you confirm this works? [Pass / Fail / Skip]
 - P1 passed on user silence
 - UAT failure logged as pass, or skip without reason
 - artifact verification skipped
-- synthesizer run before specialists finish
+- synthesis started before every reviewer returned
 - P2/P3 blocking the current feature
 - findings dropped because a write failed (use residual-findings.md)

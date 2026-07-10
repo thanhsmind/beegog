@@ -1,17 +1,17 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "swarming",
+  "feature": "learnings-pair-relocation",
+  "mode": "small",
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": true
+    "review": false
   },
   "workers": [],
-  "summary": "external-result-contract closed: finish contract + durable workspace contract shipped in swarming-reference.md (commit af64c89), review clean after fixes, first real external cli dispatch field-tested. Learnings + decision 9d9591ca logged; reviewer scope-out friction filed.",
-  "next_action": null,
+  "summary": "learnings-pair-relocation (small): merged Gate 2+3 approved by owner 2026-07-11; solo in-session execution",
+  "next_action": "Execute cell learnings-pair-relocation-1 solo, then light review (1 correctness reviewer)",
   "last_scribing_run": {
     "feature": "external-result-contract",
     "date": "2026-07-10",
@@ -35,5 +35,5 @@
     "capped": 33,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T16:38:06.975Z"
+  "last_activity": "2026-07-10T17:34:48.626Z"
 }

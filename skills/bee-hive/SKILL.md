@@ -102,7 +102,7 @@ Use the least workflow that honestly protects the work. A tiny fix wearing epic 
 | `docs` | none — announce one line | format check (parse/lint if applicable) | direct, in-session | none | 0 |
 | `tiny` | short `plan.md` direct note | 2-minute reality check inline, 0 subagents | direct, in-session (solo) | self-review + done-report (diff + fresh verify output) | 1 — the merged shape+execution gate |
 | `small` | short `plan.md` | inline reality gate + matrix, 0 subagents; spike only if a blocking assumption demands it | direct, in-session (solo) | 1 correctness reviewer + self-checks | 2 — merged shape+execution gate, Gate 4 |
-| `standard` | full `plan.md` | plan-checker + cell reviewer | swarm workers | 4 core reviewers + learnings pair | 4 gates |
+| `standard` | full `plan.md` | plan-checker + cell reviewer | swarm workers | 4 core reviewers | 4 gates |
 | `high-risk` | `plan.md` + brief | persona panel | swarm workers | full wave + conditionals | 4 gates |
 
 **Docs lane:** the change is knowledge upkeep, same class as capture — announce one line ("docs lane: writing X"), write it, run a format check when one exists (JSON parses, markdown lints), log a decision/capture stub when the content encodes a settled outcome. No cells, no gates, no reviewers. If the target path is outside the write-guard allowlist (`.bee/, docs/, .spikes/, plans/, AGENTS.md`) the hook will block the idle write — fall back to the tiny fast path instead of fighting the guard.
