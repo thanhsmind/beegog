@@ -296,6 +296,9 @@ function renderRepoHookEntries() {
       { matcher: "TaskCreate|TaskUpdate|TodoWrite", hooks: [entry("bee-state-sync.mjs")] },
     ],
     SubagentStop: [{ hooks: [entry("bee-state-sync.mjs"), entry("bee-chain-nudge.mjs")] }],
+    // PreCompact mirrors the plugin hooks.json (decision 0017): an unflushed
+    // capture queue must warn LOUDLY before compaction buries its context.
+    PreCompact: [{ hooks: [entry("bee-session-close.mjs")] }],
     Stop: [{ hooks: [entry("bee-state-sync.mjs"), entry("bee-session-close.mjs")] }],
   };
 }
