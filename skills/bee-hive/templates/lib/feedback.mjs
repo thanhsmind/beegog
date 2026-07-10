@@ -189,24 +189,74 @@ function capTitle(value) {
   return `${text.slice(0, MAX_TITLE - 1)}…`; // trailing ellipsis marks truncation
 }
 
+// Coerce a foreign string field to a datamarked value, or null when it is
+// absent/non-string/empty. Used ONLY on the neutralize (foreign) path for a
+// SURVIVING entry's fields — which have already passed the secret/injection scan
+// — so any value that can reach a prompt is wrapped, never surfaced raw.
+function neutralizeField(value) {
+  return typeof value === 'string' && value ? datamark(value) : null;
+}
+
+// Sanitize a field for a dropped[] record. A dropped record records the reason
+// CATEGORY only and must NEVER carry the matched secret/injection text (datamark
+// neutralizes role tags but does not remove an API key or an "ignore previous
+// instructions" phrase). So a field that independently matches a pattern is
+// nulled outright; a clean field is datamarked so even benign meta cannot act as
+// instructions once it reaches a prompt.
+function sanitizeDropField(value) {
+  if (typeof value !== 'string' || !value) return null;
+  if (scanTitle(value)) return null; // never record matched secret/injection text
+  return datamark(value);
+}
+
+// A parseable ISO-ish date string, else null. Applied on the foreign path so a
+// hostile first_seen ('<script>', an object stringified upstream) cannot ride
+// through as data — the local producer's first_seen comes from bee's own clocks.
+function validFirstSeen(value) {
+  if (typeof value !== 'string' || !value) return null;
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+
 /**
  * A raw candidate is { type, title, layer, first_seen, pain, source }. Turn it
  * into an allowlist entry, or push a { kind, layer, source, first_seen, reason }
- * record onto dropped[]. Order is fixed: unknown-type check, then the title scan
+ * record onto dropped[]. Order is fixed: unknown-type check, then the scan
  * (before any transformation), then the cap, then the entry. Returns the entry
  * or null (dropped).
+ *
+ * This is the SINGLE construction path for BOTH producers: buildDigest (local,
+ * trusted) and mergeDigests (foreign, untrusted). With `neutralize: true` (D2b —
+ * a digest bee did NOT produce, review P1-1) the consumer path is strictly
+ * stronger than the producer it backstops, never weaker: the scan widens beyond
+ * title to `source` and `layer`; every surviving string field that can reach a
+ * prompt is datamark()ed, not title alone; `first_seen` must parse; a non-integer
+ * `pain` becomes null; and a dropped[] record's own source/layer/kind are
+ * datamarked so the attacker's raw text never lands even there. `kind` after
+ * normalizeKind is a closed-enum literal, so it is already safe and stays bare.
  */
-function buildEntry(raw, dropped) {
+function buildEntry(raw, dropped, { neutralize = false } = {}) {
   const kind = normalizeKind(raw.type);
-  const layer = typeof raw.layer === 'string' && raw.layer ? raw.layer : null;
-  const source = typeof raw.source === 'string' ? raw.source : null;
-  const firstSeen = typeof raw.first_seen === 'string' && raw.first_seen ? raw.first_seen : null;
+  const rawLayer = typeof raw.layer === 'string' && raw.layer ? raw.layer : null;
+  const rawSource = typeof raw.source === 'string' ? raw.source : null;
+  const firstSeen = neutralize
+    ? validFirstSeen(raw.first_seen)
+    : typeof raw.first_seen === 'string' && raw.first_seen
+      ? raw.first_seen
+      : null;
+
+  // A dropped record must never carry the attacker's raw text — nor the matched
+  // secret/injection text (reason category only). On the foreign path its own
+  // source/layer/kind are sanitized (matched → null, clean → datamarked); on the
+  // local path they are bee-owned meta and stay bare (behaviour unchanged).
+  const dropLayer = neutralize ? sanitizeDropField(rawLayer) : rawLayer;
+  const dropSource = neutralize ? sanitizeDropField(rawSource) : rawSource;
 
   if (kind === null) {
+    const rawKind = typeof raw.type === 'string' ? raw.type : null;
     dropped.push({
-      kind: typeof raw.type === 'string' ? raw.type : null,
-      layer,
-      source,
+      kind: neutralize ? sanitizeDropField(rawKind) : rawKind,
+      layer: dropLayer,
+      source: dropSource,
       first_seen: firstSeen,
       reason: 'unknown_type',
     });
@@ -214,14 +264,29 @@ function buildEntry(raw, dropped) {
   }
 
   const rawTitle = typeof raw.title === 'string' ? raw.title : '';
-  const hit = scanTitle(rawTitle);
+  // Scan the RAW values BEFORE any transformation. On the foreign path the scan
+  // widens beyond title to source and layer — an attacker who moves the payload
+  // out of title must not walk through clean. scanTitle keeps secret > injection.
+  let hit = scanTitle(rawTitle);
+  if (!hit && neutralize) hit = scanTitle(rawSource) || scanTitle(rawLayer);
   if (hit) {
-    dropped.push({ kind, layer, source, first_seen: firstSeen, reason: hit });
+    dropped.push({ kind, layer: dropLayer, source: dropSource, first_seen: firstSeen, reason: hit });
     return null;
   }
 
-  const pain = Number.isInteger(raw.pain) && raw.pain > 0 ? raw.pain : 1;
-  return { kind, layer, source, title: capTitle(rawTitle), first_seen: firstSeen, pain };
+  const pain = Number.isInteger(raw.pain) && raw.pain > 0 ? raw.pain : neutralize ? null : 1;
+  const title = capTitle(rawTitle);
+  if (neutralize) {
+    return {
+      kind,
+      layer: neutralizeField(rawLayer),
+      source: neutralizeField(rawSource),
+      title: datamark(title),
+      first_seen: firstSeen,
+      pain,
+    };
+  }
+  return { kind, layer: rawLayer, source: rawSource, title, first_seen: firstSeen, pain };
 }
 
 /**
@@ -568,35 +633,29 @@ export function mergeDigests(root, { now } = {}) {
     const dropped = [];
     for (const raw of foreign.entries) {
       if (!raw || typeof raw !== 'object') continue;
-      const rawTitle = typeof raw.title === 'string' ? raw.title : '';
-      const layer = typeof raw.layer === 'string' && raw.layer ? raw.layer : null;
-      const source = typeof raw.source === 'string' ? raw.source : null;
-      const firstSeen = typeof raw.first_seen === 'string' && raw.first_seen ? raw.first_seen : null;
-
-      // Re-scan the RAW title BEFORE any transformation — a match is a security
-      // event attributed to the source repo, never silently rewritten.
-      const hit = scanTitle(rawTitle);
-      if (hit) {
-        dropped.push({
-          kind: typeof raw.kind === 'string' ? raw.kind : null,
-          layer,
-          source,
-          first_seen: firstSeen,
-          reason: hit, // 'secret' | 'injection'
-        });
-        continue;
-      }
-
-      // Keep ONLY the allowlist fields (imported ENTRY_FIELDS — never a second
-      // local copy) and datamark the surviving title so it can never act as
-      // instructions once it enters a prompt. Any field outside the allowlist
-      // (e.g. a resurrected `detail`) is dropped by construction.
-      const clean = {};
-      for (const field of ENTRY_FIELDS) {
-        clean[field] = Object.prototype.hasOwnProperty.call(raw, field) ? raw[field] : null;
-      }
-      clean.title = datamark(rawTitle);
-      entries.push(clean);
+      // Route EVERY foreign entry through the SAME construction path the local
+      // producer uses (buildEntry), with neutralize:true. This is the fix for
+      // review P1-1: the old ad-hoc copy loop scanned/datamarked title alone and
+      // copied source/layer/kind/pain/first_seen raw, so an attacker moved the
+      // payload out of title and walked through clean. A foreign entry spells its
+      // normalized type as `kind`; buildEntry re-normalizes it through
+      // KIND_ALIASES exactly as the local `type` path does — an unknown kind lands
+      // in dropped[] as 'unknown_type' rather than being merged raw. Any field
+      // outside ENTRY_FIELDS (e.g. a resurrected `detail`) is dropped by
+      // construction, because the returned entry is built field by field.
+      const entry = buildEntry(
+        {
+          type: raw.kind,
+          title: raw.title,
+          layer: raw.layer,
+          source: raw.source,
+          first_seen: raw.first_seen,
+          pain: raw.pain,
+        },
+        dropped,
+        { neutralize: true },
+      );
+      if (entry) entries.push(entry);
     }
 
     entries.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
