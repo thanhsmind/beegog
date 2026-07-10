@@ -1,17 +1,17 @@
 {
   "schema_version": "1.0",
-  "phase": "scribing-complete",
-  "feature": "evolving-loop",
-  "mode": "high-risk",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
-    "context": true,
-    "shape": true,
-    "execution": true,
-    "review": true
+    "context": false,
+    "shape": false,
+    "execution": false,
+    "review": false
   },
   "workers": [],
-  "summary": "P18 complete at 0.1.19: slice A+B shipped, Gate 4 closed 2026-07-10 (UAT 3/3 pass; merge approved with 2 acknowledged open P1s filed to backlog, decision c75fed88).",
-  "next_action": "Invoke bee-compounding for the evolving-loop feature close.",
+  "summary": "P18 evolving-loop COMPLETE at 0.1.19 (slices A+B). Gate 4 closed with 2 acknowledged open P1s in backlog (decision c75fed88). Specs synced, learnings compounded.",
+  "next_action": "Idle. Top backlog candidates: the two acknowledged P1 fixes (rank --json key projection; shared datamarkClean) + the C0 sweep widening — one small fix-first slice before anything touches feedback.mjs again.",
   "last_scribing_run": {
     "feature": "evolving-loop",
     "date": "2026-07-10",
@@ -23,14 +23,11 @@
   },
   "last_compounding_run": {
     "feature": "evolving-loop",
-    "at": "2026-07-10T08:45:20.690Z",
-    "learnings": "docs/history/learnings/20260710-evolving-loop.md",
-    "critical_promotions": 6,
-    "mechanized": [
-      "evolving-7 structural guard",
-      "evolving-6 round-trip"
-    ],
-    "open_cell": "evolving-8"
+    "at": "2026-07-10T10:55:51.891Z",
+    "learnings": "docs/history/learnings/20260710-evolving-loop-slice-b.md",
+    "critical_promotions": 2,
+    "decisions_logged": 1,
+    "friction_filed": 1
   },
   "cells": {
     "open": 0,
@@ -38,5 +35,5 @@
     "capped": 29,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T10:43:46.834Z"
+  "last_activity": "2026-07-10T10:54:16.684Z"
 }

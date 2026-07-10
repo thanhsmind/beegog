@@ -99,3 +99,24 @@ wrappers, and forbade bare filesystem reads in the module — with a two-file sc
 for the source it required. The worker had to widen a shared helper outside its declared scope to do
 the honest thing rather than game the security check. When a plan names a source, it names the reader
 that can open it, or it grants the scope to build one.
+
+## [20260710] A non-exposure invariant needs a test on every output surface it crosses
+**Category:** security
+**Feature:** evolving-loop slice B
+**Tags:** [security, boundaries, testing]
+"Never render/emit X" written in a plan or SKILL.md is a request, not an enforcement. The stripped
+cluster key was banned in prose at two altitudes and still reached the consuming agent via
+`rank --json` spreading `...cluster`. When a value's absence from an output is a security
+property, assert that absence with a test at EVERY surface the value crosses (lib return, CLI
+output, prompt render) — the same root cause recurs one layer down from wherever you fixed it.
+
+## [20260710] Scope an incident-born check to the defect class, never the first location
+**Category:** failure
+**Feature:** evolving-loop slice B
+**Tags:** [testing, control-bytes, tooling]
+The C0 control-byte sweep guarded `templates/**/*.mjs` because that is where the NUL first bit;
+the actual cause — raw control bytes decoded from JSON-escaped tool parameters — can hit any
+written file, and struck a committed markdown report two commits later (git shows it as binary,
+grep goes silent). When mechanizing a check after an incident, ask "what code path produced this
+state?" and sweep everything that path can write; fix the instance AND widen the check in the
+same cell.
