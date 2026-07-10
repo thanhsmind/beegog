@@ -2,7 +2,7 @@
 feature: evolving-loop
 pbi: P18
 lane: high-risk
-status: Approved
+status: Shipped
 slice: B (the skill)
 rendered_from:
   - docs/history/evolving-loop/plan.md (revision 3)
@@ -23,8 +23,8 @@ rendered_from:
 |---|---|
 | 1 — context | carried from the feature (decisions D1–D5 locked; D2 superseded to the allowlist by `8cd4c84e`) |
 | 2 — shape | **Approved** — owner, at this document (2026-07-10). Rider: validating configures a real dogfood repo (anphabe-gogl) and generates its digest, so corroboration is measured on real foreign data |
-| 3 — execution | pending — `bee-validating` next |
-| 4 — review | pending |
+| 3 — execution | **Approved** — owner, 2026-07-10, on `reports/validation-slice-b.md` (READY WITH CONSTRAINTS) |
+| 4 — review | **Approved** — owner, 2026-07-10, UAT 3/3 pass; merge with 2 acknowledged open P1s (decision `c75fed88`, backlog-filed); record `reports/review-slice-b.md` |
 
 Slice A (data plane): **shipped** — evolving-1..8 capped, 110 tests green, commit `86aa168` latest.
 

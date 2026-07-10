@@ -171,3 +171,75 @@ All filed in `.bee/backlog.jsonl`, none blocking:
   `learnings`. Slice B's first honest question is whether the digest has anything to rank.
 - **A bare `title` may not be enough to act on.** With free text gone, `bee-evolving` may need a
   "fetch the full entry from the source repo, with the human present" escape hatch at its first gate.
+
+---
+
+# Walkthrough — evolving loop, slice B (+ evolving-8)
+
+Shipped 2026-07-10 at `0.1.19`. Reconstructed from the capped cell traces (evolving-8..11), the
+review record (`reports/review-slice-b.md`), and the Gate 4 UAT — not from the plan.
+
+## What shipped
+
+- **Two critical patterns became executable checks** (evolving-8): a C0 control-byte sweep over
+  every vendored template `.mjs` (the NUL that made grep read `feedback.mjs` as binary now turns
+  the suite red) and an assertion that `ENTRY_FIELDS` carries no literal array. `sortKey`'s
+  separator moved to the printable U+241F.
+- **The ranking engine** (evolving-9): `normalizeTitle` (fixed-point guillemet strip + datamark's
+  cleaning transforms), `clusterEntries` (local + every foreign group, corroboration = distinct
+  repos), `rankClusters` (pain × frequency × corroboration, deterministic tie-break), and a `rank`
+  CLI subcommand. Live on the real two-repo corpus: 81 clusters.
+- **`skills/bee-evolving/SKILL.md`** (evolving-10): the gated loop — bee-repo guard (D3) → rank →
+  Gate A (stored wrapped titles only) → Iron Law hand-off (D4) → suites green → per-diff Gate B →
+  manual push (D5). All four pressure scenarios RED before any content existed, ordering proven by
+  a sha256-pinned shell capture.
+- **Wiring + ship** (evolving-11): routing row in three mirror spots with the bee-writing-skills
+  collision disambiguated, `07-contracts.md` (only enforced invariants), `config-reference.md`,
+  decision record 0022, backlog P18 → done, `BEE_VERSION` 0.1.19.
+
+## How it was verified
+
+- Suite: **124 passed, 0 failed** + onboarding PASS — re-run by the orchestrator at every cap and
+  once more at review close. Purely additive over the 108-assertion baseline.
+- Every `[DONE]` was goal-checked (decision 0018): fresh verify in the orchestrator's shell,
+  frozen-judge intact for all four cells, vendored copies `cmp`-identical.
+- Iron Law ordering for both skill edits is proven by dated RED artifacts
+  (`reports/evolving-10-pressure.md`, `reports/evolving-11-routing-pressure.md`), the first with a
+  sha256 fixed-point re-verification, the second with a real fresh-subagent misroute captured
+  before the row existed.
+- The Gate 2 rider ran for real: anphabe-gogl's digest (59 entries, 0 dropped) generated and
+  merged live; every foreign title datamark-wrapped; cross-repo key collisions today: 0.
+- Gate 4 UAT (owner, 2026-07-10): rank CLI live (81 clusters), routing row present, suite green —
+  3/3 confirmed pass.
+
+## What was NOT verified / accepted risks
+
+**Merged with 2 acknowledged open P1s** (owner's explicit Gate 4 choice, decision `c75fed88`,
+both in `.bee/backlog.jsonl`):
+
+1. `rank --json` emits the datamark-stripped cluster `key`; non-rendering rests on SKILL.md prose,
+   not tool structure.
+2. `normalizeTitle` hand-duplicates `datamark`'s cleaning with no coupling test — future datamark
+   hardening would silently reopen the clustering trap.
+
+Also open in backlog: locale-dependent entry ordering (P2), wrapper-only-title collapse (P3), plus
+the cheap review fixes not yet applied (NFC normalization, pain-default/first_seen fixtures, stale
+CLI header, vendored-parity assertion, a NUL byte inside `reports/evolving-9.md`).
+`corroboration` is real-data-inert (=1 everywhere) until a second repo shares a friction.
+
+## How to test it yourself
+
+```bash
+node .bee/bin/bee_feedback.mjs rank --json   # ranked clusters over beegog + anphabe-gogl
+node skills/bee-hive/templates/tests/test_lib.mjs   # 124 passed, 0 failed
+# then read skills/bee-evolving/SKILL.md and try to make it push without Gate B — it must refuse
+```
+
+## Deviations from plan
+
+- evolving-10 added `skills/bee-evolving/CREATION-LOG.md` (bee-writing-skills discipline; declared).
+- evolving-10's S3 pressure run passed honestly on the first, lower-pressure attempt and was
+  re-run escalated — both runs recorded.
+- evolving-11 documented all four `bee_feedback.mjs` subcommands in `07-contracts.md` (slice A had
+  left digest/count/collect undocumented) instead of adding `rank` in isolation — declared scope
+  note.
