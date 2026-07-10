@@ -601,7 +601,14 @@ export function collectFeedback(root) {
 // Deterministic sort key so buildDigest is byte-identical across runs regardless
 // of filesystem enumeration order. generated_at is the ONLY volatile field.
 function sortKey(o) {
-  return [o.first_seen ?? '', o.kind ?? '', o.source ?? '', o.title ?? '', o.reason ?? ''].join(' ');
+  // Separator must be a printable, non-C0 sentinel — a raw C0 control byte
+  // (e.g. NUL) here makes grep/rg treat this whole file as BINARY and print
+  // nothing, not even a zero count, silently defeating any grep-based drift
+  // guard over this file (critical-patterns.md 20260710). U+241F (SYMBOL FOR
+  // UNIT SEPARATOR, a printable Control Pictures glyph, not itself a control
+  // character) is vanishingly unlikely to appear in these fields and keeps
+  // the file plain UTF-8 text.
+  return [o.first_seen ?? '', o.kind ?? '', o.source ?? '', o.title ?? '', o.reason ?? ''].join('\u241F');
 }
 
 /**

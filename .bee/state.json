@@ -1,17 +1,17 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "swarming",
+  "feature": "evolving-loop",
+  "mode": "small",
   "approved_gates": {
-    "context": false,
-    "shape": false,
-    "execution": false,
+    "context": true,
+    "shape": true,
+    "execution": true,
     "review": false
   },
   "workers": [],
   "summary": "P18 slice A shipped: feedback digest + consumer revalidation + close-time refresh. 108 tests. Spec at docs/specs/feedback-digest.md. Slice B (bee-evolving) not planned.",
-  "next_action": "Invoke bee-hive. evolving-8 (mechanize control-byte guard) is open; slice B needs planning.",
+  "next_action": "evolving-8 capped and committed. Plan slice B (bee-evolving skill) via bee-planning.",
   "last_scribing_run": {
     "feature": "evolving-loop",
     "date": "2026-07-10",
@@ -34,10 +34,10 @@
     "open_cell": "evolving-8"
   },
   "cells": {
-    "open": 1,
+    "open": 0,
     "claimed": 0,
-    "capped": 25,
+    "capped": 26,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T08:48:22.328Z"
+  "last_activity": "2026-07-10T09:03:06.580Z"
 }

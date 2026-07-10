@@ -431,6 +431,30 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-10T08:27:36.682Z",
       "released_at": "2026-07-10T08:30:15.991Z"
+    },
+    {
+      "agent": "mason",
+      "cell": "evolving-8",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:00:32.107Z",
+      "released_at": "2026-07-10T09:02:42.738Z"
+    },
+    {
+      "agent": "mason",
+      "cell": "evolving-8",
+      "path": "skills/bee-hive/templates/lib/feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:00:32.143Z",
+      "released_at": "2026-07-10T09:02:42.738Z"
+    },
+    {
+      "agent": "mason",
+      "cell": "evolving-8",
+      "path": ".bee/bin/lib/feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:00:32.180Z",
+      "released_at": "2026-07-10T09:02:42.738Z"
     }
   ]
 }
