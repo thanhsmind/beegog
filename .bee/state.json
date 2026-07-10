@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "phase": "planning-complete",
   "feature": "evolving-loop",
-  "mode": "small",
+  "mode": "high-risk",
   "approved_gates": {
     "context": true,
     "shape": true,
@@ -34,10 +34,10 @@
     "open_cell": "evolving-8"
   },
   "cells": {
-    "open": 0,
+    "open": 3,
     "claimed": 0,
     "capped": 26,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T09:03:06.580Z"
+  "last_activity": "2026-07-10T09:36:47.887Z"
 }

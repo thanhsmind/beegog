@@ -22,15 +22,17 @@
     "docs/history/evolving-loop/plan.md",
     "docs/history/evolving-loop/implement-plan.md",
     "skills/bee-writing-skills/SKILL.md",
-    "docs/history/learnings/critical-patterns.md"
+    "docs/history/learnings/critical-patterns.md",
+    "skills/bee-grooming/SKILL.md"
   ],
-  "action": "Author skills/bee-evolving/SKILL.md under the FULL Iron Law (D4, decision ff26725d: no mechanical-edit exemption exists). ORDER IS THE CELL: before ANY skill content is written, record the four pressure scenarios failing (RED) in docs/history/evolving-loop/reports/evolving-10-pressure.md — (1) bee-repo-only guard: invoking the skill outside the bee repo must refuse (D3: never auto, never in a host repo); (2) Gate-A skip attempt: proceeding to implementation without the human choosing what to fix must refuse; (3) Gate-B skip attempt: pushing without the human approving the diff must refuse; (4) auto-push attempt: any path where push happens without an explicit Gate B approval must refuse (D5: push is never auto). Then author the skill so each scenario flips GREEN, and record the GREEN evidence in the same report. The skill's loop: prove bee repo (D3 guard) -> run node .bee/bin/bee_feedback.mjs rank over the merged view (mergeDigests output only — the skill NEVER opens a foreign repo path itself; the trust boundary stays at D2b) -> Gate A: render top clusters with key, rank terms, and contributing source ids; human picks what to fix or stops -> hand the chosen item to bee-writing-skills under the Iron Law (failing pressure test first) -> suites green -> Gate B: human reviews the complete diff -> push as a named manual step. Follow the structure and communication standards of existing bee skills (bee-grooming is a good size model).",
+  "action": "Author skills/bee-evolving/SKILL.md under the FULL Iron Law (D4, decision ff26725d: no mechanical-edit exemption exists). ORDER IS THE CELL: before ANY skill content is written, record the four pressure scenarios failing (RED) in docs/history/evolving-loop/reports/evolving-10-pressure.md — (1) bee-repo-only guard: invoking the skill outside the bee repo must refuse (D3: never auto, never in a host repo); (2) Gate-A skip attempt: proceeding to implementation without the human choosing what to fix must refuse; (3) Gate-B skip attempt: pushing without the human approving the diff must refuse; (4) auto-push attempt: any path where push happens without an explicit Gate B approval must refuse (D5: push is never auto). Then author the skill so each scenario flips GREEN, and record the GREEN evidence in the same report. The skill's loop: prove bee repo (D3 guard) -> run node .bee/bin/bee_feedback.mjs rank over the merged view (mergeDigests output only — the skill NEVER opens a foreign repo path itself; the trust boundary stays at D2b) -> Gate A: render top clusters with a representative STORED title (datamark-wrapped exactly as stored for foreign entries — NEVER the stripped cluster key, which is an internal clustering handle only: rendering the stripped key would remove the very neutralization D2b applied), rank terms, and contributing source ids; human picks what to fix or stops -> hand the chosen item to bee-writing-skills under the Iron Law (failing pressure test first) -> suites green -> Gate B: human reviews the complete diff -> push as a named manual step. Follow the structure and communication standards of existing bee skills (bee-grooming is a good size model).",
   "must_haves": {
     "truths": [
       "the pressure report shows all four scenarios RED (dated, before content) then GREEN (after), in that order",
       "the skill refuses to run outside the bee repo, as a tested behavior not a prose sentence",
       "no step of the loop reads a foreign repo path directly — only the merged view from mergeDigests",
-      "push appears only after an explicit Gate B approval and is a named manual step"
+      "push appears only after an explicit Gate B approval and is a named manual step",
+      "the stripped cluster key never reaches a prompt — Gate A renders stored (still-wrapped) titles only"
     ],
     "artifacts": [
       {
@@ -43,7 +45,7 @@
       }
     ],
     "key_links": [
-      "Gate A renders only digest fields that mergeDigests already revalidated and datamarked (D2b) — the skill adds no new raw-text path into a prompt",
+      "Gate A renders only STORED digest fields that mergeDigests already revalidated and datamarked (D2b) — the datamark-stripped cluster key is internal and never rendered; the skill adds no new raw-text path into a prompt",
       "the Iron Law hand-off cites bee-writing-skills; the skill never implements fixes inline"
     ],
     "prohibitions": [

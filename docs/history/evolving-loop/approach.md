@@ -7,7 +7,10 @@ hive routed via surface-scope-earlier with the locked decision as the scoping sy
 
 - **D1** — Dogfood repos stay zero-effort: the digest is a *side effect* of `bee-compounding`
   at feature close, never a chore the host project runs.
-- **D2** — The digest carries **meta + short text only, never project code**.
+- **D2** — ~~The digest carries meta + short text only, never project code~~ — **superseded by
+  decision `8cd4c84e`**: the digest is an **allowlist of six structured fields** (no free-text
+  field exists to redact), and the consumer revalidates every foreign field (D2b). See `plan.md`
+  revision 2+.
 - **D3** — `bee-evolving` runs **only in the bee repo, on demand**. Never auto, never in a host repo.
 - **D4** — Every improvement goes through the `bee-writing-skills` **Iron Law**: a failing
   pressure test exists before any skill content is written or edited.
@@ -37,7 +40,10 @@ Three layers, each reusing an existing bee pattern rather than inventing one:
    `skills/bee-hive/templates/` is enough — `onboard_bee.mjs` copies helpers by directory scan.
 
 3. **`bee-evolving`** — a bee-repo-only skill (D3). Reads the merged digests → clusters friction →
-   ranks by `frequency × pain × corroborating-learning` → **HUMAN GATE 1: what to fix** → each
+   ranks by ~~`frequency × pain × corroborating-learning`~~ **`pain × frequency × corroboration`
+   (corroboration = distinct contributing repos; redefined against the measured corpus in `plan.md`
+   revision 3 — the corroborating-learning `+1` was dead code, `[C3]`)** → **HUMAN GATE 1: what to
+   fix** → each
    approved item is handed to `bee-writing-skills` (Iron Law, RED first — D4) → version bump +
    both suites green → **HUMAN GATE 2: approve the diff** → push + WSL deploy. The skill refuses
    to run when the repo root is not the bee repo.

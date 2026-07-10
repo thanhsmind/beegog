@@ -122,8 +122,12 @@ real data (confirming `[R4]`).
 
 - **Cluster key** = `normalizeTitle(title)`: repeatedly strip the `«…»` datamark wrapper until
   fixed-point (this defuses both the asymmetry trap and the double-wrap non-idempotence), then
-  casefold + collapse whitespace. Stored entries stay wrapped (D2b intact); only the *comparison
-  key* is stripped. The render-time-datamark alternative is rejected: it reopens slice A's
+  apply the same cleaning transforms `datamark` applies (fences, role tags, control chars, trim —
+  plan-checker W4: without them a bare local title never matches its datamarked foreign twin),
+  then casefold + collapse whitespace. Invariant: `normalizeTitle(datamark(t)) ===
+  normalizeTitle(t)`. Stored entries stay wrapped (D2b intact); only the *comparison key* is
+  stripped — **and the key is an internal handle: no rendering surface (Gate A included) ever
+  shows the stripped key; prompts get stored, still-wrapped titles** (plan-checker B1). The render-time-datamark alternative is rejected: it reopens slice A's
   `mergeDigests` contract and its 20+ merge assertions for a problem the comparison key solves
   locally.
 - **`frequency`** = cluster size. **`pain`** = max pain in the cluster. **`corroboration`** =

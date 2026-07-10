@@ -82,8 +82,10 @@ schema — the exact failure that forced revision 2 is not repeated.
 **Flow.** The user invokes `bee-evolving` in the bee repo. The skill first proves it is in the bee
 repo (D3 guard — refuses elsewhere), then runs `bee_feedback.mjs rank`, which calls
 `mergeDigests` over `dogfood_repos` + the local digest and feeds the merged view to
-`clusterEntries` → `rankClusters`. Gate A renders the top clusters — key, rank terms, contributing
-`source` ids — and the human picks what to fix (or stops). The chosen item is handed to
+`clusterEntries` → `rankClusters`. Gate A renders the top clusters — a representative **stored**
+title (datamark-wrapped exactly as stored for foreign entries; the stripped cluster key is an
+internal handle and never reaches a prompt), rank terms, contributing `source` ids — and the human
+picks what to fix (or stops). The chosen item is handed to
 `bee-writing-skills` under the full Iron Law (D4, decision `ff26725d`): failing pressure test first,
 then the fix, then suites green. Gate B shows the human the complete diff; only an explicit
 approval leads to a push, and the push itself is a named manual step (D5).
@@ -141,8 +143,14 @@ the rest unlock as their deps cap.
 
 ## Validation Plan
 
-Describes what **will** run; nothing is claimed. Baseline this session: 110/110 `test_lib.mjs` +
-onboarding suite PASS (recorded before evolving-8 was claimed, re-verified at its cap).
+**Validated 2026-07-10 — READY WITH CONSTRAINTS.** Full evidence:
+[`reports/validation-slice-b.md`](./reports/validation-slice-b.md) — reality gate 5/5 PASS,
+feasibility matrix 8/8 verified, adversarial plan-check STRUCTURALLY CLEAN after 2 blockers fixed
+(Gate A renders stored wrapped titles, never the stripped key; routing Iron-Law evidence owns its
+report), cell review 0 CRITICAL. The Gate 2 rider is executed: anphabe-gogl's real digest (59
+entries, 0 dropped) merges live — every foreign title wrapped, cross-repo collisions today 0, so
+corroboration ships measured-inert (constraint C2). Baseline: 110/110 + onboarding PASS, re-run
+with `dogfood_repos` configured.
 
 - Cells verify with the recorded command:
   `node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs`

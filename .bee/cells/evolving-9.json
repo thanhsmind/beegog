@@ -22,14 +22,16 @@
     "docs/history/learnings/critical-patterns.md",
     "skills/bee-hive/templates/lib/feedback.mjs"
   ],
-  "action": "Implement the slice B ranking engine in lib/feedback.mjs per plan.md revision 3 ('Ranking, defined against the real corpus'): (1) normalizeTitle(title) — repeatedly strip the datamark wrapper (U+00AB...U+00BB guillemets) until fixed-point (this defuses BOTH the datamark asymmetry trap — foreign titles stored wrapped, local bare — and datamark's double-wrap non-idempotence), then casefold and collapse whitespace. Stored entries stay wrapped: D2b's mergeDigests behavior is untouched; only the comparison key is stripped. (2) clusterEntries(mergedView) — group entries by normalizeTitle key; each cluster carries {key, entries, pain, frequency, corroboration}: pain = max entry pain, frequency = cluster size, corroboration = count of DISTINCT repos contributing (local counts as one). (3) rankClusters(clusters) — rank = pain * frequency * corroboration, sorted descending; deterministic tie-break: earliest first_seen ascending, then key lexicographic; output over a pinned digest is byte-identical (same idempotence discipline as buildDigest). (4) A thin 'rank' subcommand in bee_feedback.mjs (parseArgs/run/main shape like the existing subcommands, --json support, no business logic in the CLI). (5) Tests for every slice B matrix row in plan.md. Sync both vendored copies in .bee/bin/ byte-identical to the templates.",
+  "action": "Implement the slice B ranking engine in lib/feedback.mjs per plan.md revision 3 ('Ranking, defined against the real corpus'): (1) normalizeTitle(title) — repeatedly strip the datamark wrapper (U+00AB...U+00BB guillemets) until fixed-point (this defuses BOTH the datamark asymmetry trap — foreign titles stored wrapped, local bare — and datamark's double-wrap non-idempotence), then apply the SAME cleaning transforms datamark applies (strip backtick fences, role tags like </system>, C0 control chars, trim — decisions.mjs:145-149), then casefold and collapse whitespace; the invariant normalizeTitle(datamark(t)) === normalizeTitle(t) must hold for every title including ones carrying fences or role tags, else a bare local title never matches its datamarked foreign twin. Stored entries stay wrapped: D2b's mergeDigests behavior is untouched; only the comparison key is stripped. (2) clusterEntries(mergedView) — iterate BOTH locations: top-level .entries (repo = the local repo_label) AND each merged[i].entries (repo = merged[i].repo_label); group by normalizeTitle key; each cluster carries {key, entries, pain, frequency, corroboration}: pain = max entry pain, frequency = cluster size, corroboration = count of DISTINCT repos contributing (local counts as one). (3) rankClusters(clusters) — rank = pain * frequency * corroboration, sorted descending; deterministic tie-break: earliest first_seen ascending, then key lexicographic; output over a pinned digest is byte-identical (same idempotence discipline as buildDigest). (4) A thin 'rank' subcommand in bee_feedback.mjs (parseArgs/run/main shape like the existing subcommands, --json support, no business logic in the CLI); update the file header usage comment and the unknown-command help string to include rank. (5) Tests for every slice B matrix row in plan.md. Sync both vendored copies in .bee/bin/ byte-identical to the templates.",
   "must_haves": {
     "truths": [
       "a foreign wrapped title and an identical bare local title land in ONE cluster of 2 (the trap test)",
       "a double-wrapped title also unifies into the same cluster (fixed-point strip)",
       "corroboration is 2 when local + one synthetic foreign repo share a cluster key, 1 when disjoint",
       "rankClusters over a pinned digest is byte-identical across two runs; tie-break exercised by equal-rank fixtures",
-      "empty digest yields [] without throwing; distinct titles never falsely unify"
+      "empty digest yields [] without throwing; distinct titles never falsely unify",
+      "normalizeTitle(datamark(t)) === normalizeTitle(t) for titles carrying fences, role tags, and control chars",
+      "a CLI-entry test invokes bee_feedback.mjs rank directly (spawned as a process, like the commands_detect CLI-entry test) and receives valid JSON"
     ],
     "artifacts": [
       {
@@ -47,11 +49,13 @@
     ],
     "key_links": [
       "normalizeTitle strips at the comparison key only — mergeDigests' stored datamark wrapping (D2b) is untouched",
-      "rank subcommand consumes mergeDigests' merged view, never a raw foreign digest"
+      "rank subcommand consumes mergeDigests' merged view, never a raw foreign digest",
+      "the merged view shape is { entries: [...local], merged: [{ repo_label, entries, dropped, counts }] } — corroboration counts the local bucket as one repo plus each distinct merged[].repo_label",
+      "the normalized key is an internal clustering handle — any rendering surface uses stored titles, never the stripped key"
     ],
     "prohibitions": [
       "Never modify mergeDigests' datamark or revalidation behavior — the trap is defused at the comparison key, not by reopening the merge contract",
-      "Never weaken, skip, or delete any of the 110 existing assertions",
+      "Never weaken, skip, or delete any existing assertion (110 at planning time; reconcile against the live count, never delete to reconcile)",
       "No non-deterministic input (clock, LLM, fs order) reaches rank computation",
       "No C0 control character as a data separator in vendored source"
     ]

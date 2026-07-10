@@ -13,7 +13,8 @@
     "D3",
     "D4",
     "D5",
-    "ff26725d"
+    "ff26725d",
+    "8cd4c84e"
   ],
   "behavior_change": true,
   "files": [
@@ -24,7 +25,8 @@
     "docs/07-contracts.md",
     "docs/config-reference.md",
     "docs/decisions/0022-evolving-loop.md",
-    "docs/backlog.md"
+    "docs/backlog.md",
+    "docs/history/evolving-loop/reports/evolving-11-routing-pressure.md"
   ],
   "read_first": [
     "docs/history/evolving-loop/plan.md",
@@ -32,7 +34,7 @@
     "docs/decisions/0021-review-slot-and-effort-knob.md",
     "docs/history/learnings/critical-patterns.md"
   ],
-  "action": "Ship slice B's surface: (1) one routing row for bee-evolving in skills/bee-hive/SKILL.md's routing table (and the matching entry in references/routing-and-contracts.md if the table is mirrored there) — this is a SKILL edit, so the full Iron Law applies (decision ff26725d): record the routing scenario failing (a request to evolve bee routes nowhere) before the row exists, then GREEN, appended to docs/history/evolving-loop/reports/evolving-10-pressure.md or a sibling report. (2) docs/07-contracts.md: the rank CLI surface and the bee-evolving contract — state the ENFORCED invariants (allowlist digest per 8cd4c84e, consumer revalidation D2b, bee-repo-only D3, two human gates D5), never a stronger unenforceable claim. (3) docs/config-reference.md: dogfood_repos consumption by rank/bee-evolving. (4) docs/decisions/0022-evolving-loop.md: the feature decision record in the style of 0021 — D1-D5, the D2 supersede to allowlist, the comparison-key trap resolution, corroboration shipped defined-but-inert. (5) docs/backlog.md: P18 -> done, version column 0.1.19. (6) BEE_VERSION '0.1.18' -> '0.1.19' in skills/bee-hive/templates/lib/state.mjs:7, vendored copy .bee/bin/lib/state.mjs synced byte-identical.",
+  "action": "Ship slice B's surface: (1) one routing row for bee-evolving in skills/bee-hive/SKILL.md's routing table (the mirror surface is THREE spots: the routing table in skills/bee-hive/SKILL.md, the numbered skill roster in references/routing-and-contracts.md where bee-evolving becomes #12, and that reference file's separate Request-type table). DISAMBIGUATION required: the existing row 'Improve bee itself -> bee-writing-skills' collides semantically — reword so bee-writing-skills owns 'author/edit a bee skill' and bee-evolving owns 'evolve bee from its own dogfood feedback'; the RED pressure phrase must be one a user would actually type (e.g. 'bee tu cai thien tu feedback') — this is a SKILL edit, so the full Iron Law applies (decision ff26725d): record the routing scenario failing (a request to evolve bee routes nowhere) before the row exists, then GREEN, recorded in docs/history/evolving-loop/reports/evolving-11-routing-pressure.md (this cell owns that file; never write into evolving-10's report). (2) docs/07-contracts.md: the rank CLI surface and the bee-evolving contract — state the ENFORCED invariants (allowlist digest per 8cd4c84e, consumer revalidation D2b, bee-repo-only D3, two human gates D5), never a stronger unenforceable claim. (3) docs/config-reference.md: dogfood_repos consumption by rank/bee-evolving. (4) docs/decisions/0022-evolving-loop.md: the feature decision record in the style of 0021 — D1-D5, the D2 supersede to allowlist, the comparison-key trap resolution, corroboration shipped defined-but-inert. (5) docs/backlog.md: P18 -> done, version column 0.1.19. (6) BEE_VERSION '0.1.18' -> '0.1.19' in skills/bee-hive/templates/lib/state.mjs:7, vendored copy .bee/bin/lib/state.mjs synced byte-identical.",
   "must_haves": {
     "truths": [
       "a routing request to improve/evolve bee lands on bee-evolving via the hive table",
