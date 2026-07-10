@@ -1,17 +1,17 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "validated",
+  "feature": "config-sample-move",
+  "mode": "tiny",
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": true
+    "review": false
   },
   "workers": [],
-  "summary": "config-sample closed: tiny done-report clean after fixing cell-2 regression (D3 demo shapes restored, both cell verifies green). Lane scaling v2 shipped same session (decision d02a6bc6).",
-  "next_action": null,
+  "summary": "Owner-directed move of config-sample.json into .bee/ — merged shape+execution gate approved by the owner instruction itself (tiny fast path).",
+  "next_action": "Solo execution of config-sample-move-1.",
   "last_scribing_run": {
     "feature": "config-sample",
     "date": "2026-07-10",
@@ -35,5 +35,5 @@
     "capped": 31,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T15:23:52.834Z"
+  "last_activity": "2026-07-10T15:29:54.456Z"
 }
