@@ -44,13 +44,13 @@ Review đi qua Codex CLI, read-only (reviewer không được sửa gì):
     "generation": "sonnet",
     "review": {
       "kind": "cli",
-      "command": "wsl bash -lc \"codex exec --skip-git-repo-check -s read-only -\""
+      "command": "wsl bash -lc \"codex exec --skip-git-repo-check -s read-only -c model_reasoning_effort=xhigh -\""
     }
   }
 }
 ```
 
-Muốn ghim model/effort phía GPT: thêm `-m <model-id> -c model_reasoning_effort=xhigh` vào trước dấu `-` cuối (dấu `-` = đọc prompt từ stdin, bắt buộc giữ).
+Muốn ghim model phía GPT: thêm `-m <model-id>` trước dấu `-` cuối (dấu `-` = đọc prompt từ stdin, bắt buộc giữ). Chạy trong WSL trực tiếp thì bỏ phần `wsl bash -lc` và cặp nháy.
 
 ## 4. `codex-implements` — plan big (Claude), execute small (GPT)
 
@@ -69,7 +69,9 @@ Worker generation là Codex, cần quyền ghi workspace để reserve/implement
 }
 ```
 
-An toàn đi kèm (tự động, decision 0018/0019): mọi `[DONE]` từ executor ngoài đều bị orchestrator chạy lại verify + check frozen-judge, không có ngoại lệ spot-check.
+An toàn đi kèm (tự động, decision 0018/0019): mọi `[DONE]` từ executor ngoài đều bị orchestrator chạy lại verify + check frozen-judge, không có ngoại lệ spot-check. Giữ `-s workspace-write` — không dùng `--yolo`/bypass toàn máy làm mặc định.
+
+**Mẹo vận hành** (từ pattern codex-first): kết quả cuối lấy qua `-o <file>` thay vì parse stream; nén stderr (`2>/dev/null`) để thinking noise không phình context; sửa lỗi tiếp theo dùng `codex exec resume --last` (giữ context, rẻ hơn chạy mới) — quá 2 vòng resume fail thì `[BLOCKED]` leo thang; cell cần MCP/secrets/tool của phiên thì không bao giờ route ra ngoài.
 
 ## 5. `budget` — tiết kiệm tối đa
 
