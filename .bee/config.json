@@ -13,6 +13,27 @@
     "test": "node skills/bee-hive/templates/tests/test_lib.mjs",
     "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs"
   },
+  "models": {
+    "claude": {
+      "extraction": "haiku",
+      "generation": {
+        "model": "sonnet",
+        "effort": "medium"
+      },
+      "review": {
+        "kind": "cli",
+        "command": "codex exec --sandbox workspace-write"
+      }
+    },
+    "codex": {
+      "extraction": "gpt-5.5",
+      "generation": "gpt-5.5",
+      "review": {
+        "kind": "cli",
+        "command": "codex exec --sandbox workspace-write"
+      }
+    }
+  },
   "advisor": {
     "enabled": true,
     "at": [
