@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "phase": "swarming",
+  "phase": "planning-complete",
   "feature": "evolving-loop",
   "mode": "small",
   "approved_gates": {
@@ -10,8 +10,8 @@
     "review": false
   },
   "workers": [],
-  "summary": "P18 slice A shipped: feedback digest + consumer revalidation + close-time refresh. 108 tests. Spec at docs/specs/feedback-digest.md. Slice B (bee-evolving) not planned.",
-  "next_action": "evolving-8 capped and committed. Plan slice B (bee-evolving skill) via bee-planning.",
+  "summary": "P18: slice A shipped (evolving-1..8, 110 tests). Slice B shaped at plan.md revision 3, Gate 2 approved 2026-07-10, cells evolving-9/10/11 created.",
+  "next_action": "Invoke bee-validating (slice B: evolving-9/10/11; rider: configure anphabe-gogl dogfood repo + generate its digest).",
   "last_scribing_run": {
     "feature": "evolving-loop",
     "date": "2026-07-10",

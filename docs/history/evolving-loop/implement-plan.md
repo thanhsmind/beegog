@@ -2,227 +2,189 @@
 feature: evolving-loop
 pbi: P18
 lane: high-risk
-status: Shipped
-slice: A (data plane)
+status: Approved
+slice: B (the skill)
 rendered_from:
-  - docs/history/evolving-loop/plan.md
+  - docs/history/evolving-loop/plan.md (revision 3)
   - docs/history/evolving-loop/approach.md
-  - decision 20784de8 (2026-07-10)
+  - decision 8cd4c84e (D2 allowlist), decision ff26725d (full Iron Law)
 ---
 
-# Implement Plan — evolving loop, slice A
+# Implement Plan — evolving loop, slice B
 
-> Projection of the truth artifacts. Truth lives in [`plan.md`](./plan.md), [`approach.md`](./approach.md),
-> and decision `20784de8`. Feedback on this brief flows back into those first, then this re-renders.
+> Projection of the truth artifacts. Truth lives in [`plan.md`](./plan.md) (revision 3),
+> [`approach.md`](./approach.md), and the cited decisions. Feedback on this brief flows back into
+> those first, then this re-renders. Slice A's shipped record is
+> [`walkthrough.md`](./walkthrough.md); this document covers only slice B.
 
 ## Review Status
 
 | Gate | State |
 |---|---|
-| 1 — context | n/a (surface-scope-earlier; decision `20784de8` is the locked scoping synthesis) |
-| 2 — shape | **Approved** — owner, at this document. Iron Law resolution: **(a) full**, decision `ff26725d` |
+| 1 — context | carried from the feature (decisions D1–D5 locked; D2 superseded to the allowlist by `8cd4c84e`) |
+| 2 — shape | **Approved** — owner, at this document (2026-07-10). Rider: validating configures a real dogfood repo (anphabe-gogl) and generates its digest, so corroboration is measured on real foreign data |
 | 3 — execution | pending — `bee-validating` next |
 | 4 — review | pending |
 
+Slice A (data plane): **shipped** — evolving-1..8 capped, 110 tests green, commit `86aa168` latest.
+
 ## Goal / Success
 
-Bee learns from how it actually behaves in the repos that use it, and turns that into a shipped
-improvement — without any effort from the host projects and without ever letting their code leave
-their machine.
+Bee reads the friction it has already collected and ships itself an improvement — with a human
+approving **what** to fix (Gate A) and **the diff that fixes it** (Gate B), and a push that is never
+automatic (D5).
 
-Slice A succeeds when: any repo running bee produces a safe `feedback-digest.json` as a **side
-effect of closing a feature** (per D1), that digest provably contains no project code and no
-secrets (per D2), and the bee repo can read the digests of every repo listed in `dogfood_repos`.
+Slice B succeeds when: `bee-evolving` exists and refuses to run anywhere but the bee repo (D3);
+`bee_feedback.mjs rank` turns the merged digest into a deterministic ranked cluster list; the
+skill's loop (cluster → rank → Gate A → Iron Law hand-off per D4 → suites green → Gate B → push)
+is pressure-tested RED-first; P18 flips to done at version `0.1.19`.
 
-Cited decisions: **D1** zero-effort dogfooding · **D2** meta + short text only, never project code ·
-**D3** `bee-evolving` is bee-repo-only, on demand · **D4** Iron Law on every improvement ·
-**D5** two human gates, push never auto.
+## Current State (what slice A left behind)
 
-## Current State
-
-Bee already records everything the loop needs — it just never reads it back:
-
-- `.bee/backlog.jsonl` collects friction and findings (`bee-compounding` §7 files them).
-- `.bee/decisions.jsonl` holds process decisions.
-- `.bee/cells/*.json` traces carry `friction`, `deviations`, and `blocked_reason` per cell.
-- `docs/history/learnings/*.md` hold dated learnings with frontmatter severity + Recommendation lines.
-- `docs/history/<feature>/reports/residual-findings.md` holds anything a review failed to file.
-
-Nothing aggregates these, nothing crosses a repo boundary, and no skill reads them to improve bee.
-The known first candidate — workers leave `trace.friction` empty (gogl harvest, 2026-07-10) — is
-exactly the kind of finding this loop is meant to surface and fix.
+- A real digest exists: **33 entries** (11 finding, 7 friction, 5 proposal, 5 outcome, 3 learning,
+  1 blocked, 1 deviation), 0 dropped, pain 27×1 / 5×2 / 1×3. Titles carry usable Gate-A signal.
+- `dogfood_repos` is **null** — no foreign repo has produced a digest, so `corroboration` has zero
+  real data today (`[R4]` confirmed).
+- The **datamark trap** is armed: foreign titles are stored wrapped (`«…»`), local titles bare, and
+  `datamark` double-wraps on re-merge. Naive title-equality clustering never unifies across repos.
+- `mergeDigests` (D2b) already revalidates and wraps every foreign field — the security boundary
+  slice B consumes is in place and tested.
 
 ## Scope
 
-**In (slice A):** the collector library, the `bee_feedback.mjs` CLI, the `dogfood_repos` config key,
-and the `bee-compounding` refresh step.
+**In:** `normalizeTitle` / `clusterEntries` / `rankClusters` in `lib/feedback.mjs`; a `rank`
+subcommand in `bee_feedback.mjs`; the `bee-evolving` skill; hive routing row; `07-contracts.md`,
+`config-reference.md`, `docs/decisions/0022-evolving-loop.md`; backlog P18 → done; version `0.1.19`.
 
-**Out (slice B, planned next):** the `bee-evolving` skill itself, its ranking/gating protocol, hive
-routing, `07-contracts.md` + `config-reference.md` updates, decision `0022`, backlog flip, version
-bump `0.1.19`. Split at the 4/5 boundary on the advisor's recommendation: the skill's pressure tests
-and its Gate-A ranking are only honest when run against **real digests produced by slice A**.
+**Out (answered by the corpus):** a "fetch the full entry" escape hatch — real titles plus the
+`source` field (a cell id or bee-owned path the human can open) are sufficient Gate-A signal.
 
-**Out (permanently):** shipping digests off the machine; auto-applying a ranked fix; letting
-`bee-evolving` read a host repo's raw `.bee/` (the digest *is* the redaction boundary).
+**Out (permanently, unchanged):** auto-applying a ranked fix; pushing without Gate B; digests
+leaving the machine; `bee-evolving` reading a host repo's raw `.bee/`.
 
 ## Proposed Approach
 
-Three layers, each mirroring a pattern that already exists in this repo rather than inventing one.
-Rendered from [`approach.md`](./approach.md); alternatives rejected there (central service, raw
-cross-repo reads, auto-apply, append-log digest) are not re-litigated here.
+From `plan.md` revision 3. The ranking is defined against the measured corpus, not the documented
+schema — the exact failure that forced revision 2 is not repeated.
 
-1. `lib/feedback.mjs` — collect + redact + build the digest snapshot.
-2. `bee_feedback.mjs` — thin CLI in the exact shape of `bee_capture.mjs`.
-3. `dogfood_repos` in `.bee/config.json` — the bee repo's list of digest sources.
-
-Plus one step appended to `bee-compounding` so the digest refreshes itself at feature close.
+- **Cluster key** = fixed-point strip of the `«…»` wrapper, then casefold + whitespace collapse.
+  Stored entries stay wrapped (D2b intact); only the comparison key is stripped. *Rejected
+  alternative:* moving `datamark` to render time — reopens slice A's merge contract and its 20+
+  assertions for a problem the comparison key solves locally.
+- **`rank` = pain(max) × frequency(cluster size) × corroboration(distinct repos)**, tie-broken by
+  earliest `first_seen` then key lexicographic — byte-identical over a pinned digest.
+- **`corroboration` ships defined-but-inert**: unit-tested with synthetic foreign digests, measured
+  against real data the day a dogfood repo ships a digest (a validating question, not an
+  assumption).
 
 ## Technical Design
 
-**Flow.** `bee-compounding` finishes writing its learnings file, then calls
-`bee_feedback.mjs digest`. The CLI calls `buildDigest(root)`, which walks the five bee-owned
-sources above, normalizes each entry into a common shape, runs it through the safety pipeline, and
-atomically writes `.bee/feedback-digest.json`. In the bee repo, `bee_feedback.mjs collect` reads
-`dogfood_repos` from config, loads each repo's already-written digest, and merges them into one
-in-memory view keyed by cluster. Slice B's skill consumes that view; nothing else does.
+**Flow.** The user invokes `bee-evolving` in the bee repo. The skill first proves it is in the bee
+repo (D3 guard — refuses elsewhere), then runs `bee_feedback.mjs rank`, which calls
+`mergeDigests` over `dogfood_repos` + the local digest and feeds the merged view to
+`clusterEntries` → `rankClusters`. Gate A renders the top clusters — key, rank terms, contributing
+`source` ids — and the human picks what to fix (or stops). The chosen item is handed to
+`bee-writing-skills` under the full Iron Law (D4, decision `ff26725d`): failing pressure test first,
+then the fix, then suites green. Gate B shows the human the complete diff; only an explicit
+approval leads to a push, and the push itself is a named manual step (D5).
 
-**Data shape.** The digest is a **snapshot**, regenerated each close — never an append log, because
-an append log would re-count every re-observed friction and corrupt the `frequency` term. Each
-entry carries: `kind` (friction | finding | deviation | blocked | learning | residual), `layer`,
-`title`, `normalized_title`, `text` (safe prose), `pain`, `first_seen`, `source` (cell id or file
-path), and `repo_label`. The digest carries `schema_version`, `generated_at`, `counts`, and
-`dropped` (entries the safety pipeline could not make safe).
+**Data shape.** A cluster is `{key, entries[], pain, frequency, corroboration, rank}` — computed,
+never stored; the digest file keeps its slice-A schema untouched. Rank output is a pure function of
+the merged view.
 
-**Ranking terms live in the schema, not in the skill.** The plan pins them because `pain` does not
-exist in the raw data — friction rows carry no severity, only `finding` rows do. So the digest
-computes: `pain` from `finding.severity` (P1→3, P2→2, P3→1) or a learnings file's frontmatter
-severity, defaulting to **1** for plain friction rows; `frequency` deduped across repos on
-`(layer, normalized_title)`; `corroboration` as the count of contributing repos plus 1 when a
-learnings Recommendation matches the key. Clustering beyond exact key match is explicitly out of
-scope for v1. An LLM-judged `pain` at read time would make the ranking non-deterministic, which the
-test matrix forbids.
-
-**Security surface — see the dedicated section below.** It is the reason this feature is high-risk.
-
-**What the artifacts do not decide** (Open Questions, below): the exact `dogfood_repos` value shape,
-the digest's gitignore posture in host repos, and whether slice B's WSL deploy is scripted.
+**Prompt surface.** Everything Gate A renders originates from digest fields that `mergeDigests`
+already revalidated and datamarked (D2b). The skill adds no new raw-text path from a foreign repo
+into a prompt.
 
 ## Security / Permissions (mandatory — high-risk)
 
-The collector reads **another repository's tree**. Two invariants, enforced in code, not prose:
-
-**Invariant 1 — read scope.** No path outside `.bee/` and `docs/history/` is ever opened. Project
-source is never touched, so it can never be read.
-
-**Invariant 2 — text safety.** Read scope alone does *not* make the digest free of project code,
-because workers paste code into `trace.friction` and backlog `detail` routinely — this repo's own
-`.bee/backlog.jsonl` today contains shell fragments (`grep -q '['`) and function names
-(`readBacklogCounts`). The original plan's claim of "never project code" was therefore stronger
-than anything the code could enforce. The honest, enforced pipeline, in order:
-
-1. strip fenced **and** indented code blocks → replace with `[code omitted]` + a path reference;
-2. reject on `SECRET_CONTENT_PATTERNS` and `INJECTION_PATTERNS` (reused verbatim from
-   `lib/decisions.mjs`, already proven by `lib/capture.mjs`);
-3. truncate to a hard character cap, marking the truncation;
-4. **drop and count** any entry that cannot be made safe (`digest.dropped`) — never silently swallow.
-
-`residual-findings.md` is referenced **by path**, never inlined. The digest never leaves the
-machine: it is a local file, read locally, by a skill that runs only in the bee repo (D3).
-
-The contract wording in slice B's `07-contracts.md` will state this enforced invariant — *no project
-files opened; code blocks stripped; short prose fragments bounded by cap* — not the unenforceable
-stronger claim.
+- **Self-modification is human-gated twice.** Gate A bounds *what* may change; Gate B reviews the
+  *diff*; the push is never automatic (D5). No step of the skill writes source before its Iron Law
+  RED exists (D4).
+- **Bee-repo-only (D3), enforced not narrated:** the guard is a pressure-tested refusal, written
+  RED-first, not a sentence in prose.
+- **Never dispatched to an external CLI executor** (decision 0019): self-modifying and
+  destructive-adjacent work stays on native tiers where the orchestrator's goal-check applies.
+- **The trust boundary stays at `mergeDigests` (D2b).** The skill consumes only the merged,
+  revalidated, datamarked view. It never opens a foreign repo path itself.
+- The four RED pressure scenarios are enumerated in the cell spec (bee-repo guard refusal, Gate-A
+  skip, Gate-B skip, auto-push attempt) so "RED first" is checkable, not asserted.
 
 ## Affected Files
 
-Projected from `approach.md` (cells do not exist yet; re-projected from cell `files` after prep).
+Projected from `plan.md` revision 3 (cells do not exist yet; re-projected from cell `files` after
+Gate 2 prep).
 
 | File | Change |
 |---|---|
-| `skills/bee-hive/templates/lib/feedback.mjs` | **new** — collector, safety pipeline, digest builder |
-| `skills/bee-hive/templates/bee_feedback.mjs` | **new** — `digest` / `collect` / `count` CLI |
-| `skills/bee-hive/templates/lib/state.mjs` | `readConfig` normalizes `dogfood_repos` |
-| `skills/bee-hive/templates/tests/test_lib.mjs` | new assertions for every test-matrix row |
-| `skills/bee-hive/scripts/test_onboard_bee.mjs` | asserts `bee_feedback.mjs` + `lib/feedback.mjs` copied verbatim |
-| `skills/bee-compounding/SKILL.md` | one step: refresh the digest at close (D1) |
-| `.bee/config.json` | `dogfood_repos` recorded for this repo |
-
-No manifest edit is needed for the new helper — `onboard_bee.mjs` copies `templates/*.mjs` and
-`templates/lib/*.mjs` by directory scan.
+| `skills/bee-hive/templates/lib/feedback.mjs` | `normalizeTitle`, `clusterEntries`, `rankClusters` |
+| `skills/bee-hive/templates/bee_feedback.mjs` | new `rank` subcommand (thin, no business logic) |
+| `skills/bee-hive/templates/tests/test_lib.mjs` | slice B test-matrix rows (trap, corroboration, determinism, non-cluster) |
+| `skills/bee-evolving/SKILL.md` | **new** — the gated loop |
+| `skills/bee-hive/SKILL.md` + routing reference | one routing row (skill edit → full Iron Law) |
+| `docs/07-contracts.md`, `docs/config-reference.md` | contract + config surface for `rank` / `bee-evolving` |
+| `docs/decisions/0022-evolving-loop.md` | the feature's decision record |
+| `docs/backlog.md` | P18 → done |
+| version constant consumed by onboarding | `0.1.18` → `0.1.19` (same file previous bumps touched) |
 
 ## Implementation Steps
 
-Projected from the created cells (authoritative). Only `evolving-1` is `ready`; the rest unlock as
-their deps cap.
+Projected from the created cells `evolving-9/10/11` (authoritative). Only `evolving-9` is ready;
+the rest unlock as their deps cap.
 
-1. **`evolving-1` (standard, no deps)** — `lib/feedback.mjs`: `collectFeedback(root)` +
-   `buildDigest(root)`, read scope hard-limited, code-block stripping, redaction, truncation,
-   drop+count, `pain` computed, `SCHEMA_VERSION` pinned.
-2. **`evolving-2` (small, deps: `evolving-1`)** — `bee_feedback.mjs` CLI (`digest` / `count` /
-   `collect`) + the two onboard copied-verbatim assertions. No business logic in the CLI.
-3. **`evolving-3` (small, deps: `evolving-1`)** — `dogfood_repos` normalization (both value shapes),
-   `mergeDigests` with the `(layer, normalized_title)` cluster key and deterministic rank +
-   tie-break. Parallel-safe with step 2.
-4. **`evolving-4` (standard, deps: `evolving-2`)** — `bee-compounding` refresh step; a failing
-   refresh warns and **never blocks a host project's close** (D1). A *skill edit*, so it carries the
-   **full Iron Law**: RED pressure scenarios recorded before any SKILL.md content, then GREEN.
+1. **`evolving-9` (standard, no deps)** — ranking lib + `rank` CLI, tested against the real digest
+   snapshot and synthetic foreign digests (wrapped / bare / double-wrapped titles must unify).
+2. **`evolving-10` (high-risk, deps: 9)** — `bee-evolving` SKILL.md under the full Iron Law; the
+   four pressure scenarios RED before any skill content; never external-dispatched.
+3. **`evolving-11` (standard, deps: 10)** — routing row, contracts + config docs, decision 0022,
+   backlog flip, version bump.
 
 ## Validation Plan
 
-Describes what **will** run. Nothing has run yet; no result is claimed.
+Describes what **will** run; nothing is claimed. Baseline this session: 110/110 `test_lib.mjs` +
+onboarding suite PASS (recorded before evolving-8 was claimed, re-verified at its cap).
 
-Baseline for this session is green (70/70 `test_lib.mjs`, `test_onboard_bee.mjs` PASS — recorded at
-session start, before any cell was claimed).
-
-Cells 1–3 verify with the repo's recorded verify command:
-`node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs`
-
-The suite must gain assertions for each row of `plan.md`'s test matrix. The four that carry the
-high-risk weight:
-
-- a friction field holding an **API key** → entry dropped, `dropped === 1`, the key absent from the digest bytes;
-- a friction field holding a **fenced** and an **indented code block** → both replaced by `[code omitted]`, prose retained;
-- the collector pointed at a repo containing project source → **no path outside `.bee/` + `docs/history/` opened**;
-- `digest` run twice on unchanged inputs → **byte-identical** output.
-
-Plus: empty repo, malformed JSONL line, cell without `trace`, missing `dogfood_repos` entry,
-truncation boundary, deterministic tie-break on oldest `first_seen`, `SCHEMA_VERSION` drift pin, and
-a compounding close that survives a throwing digest refresh.
+- Cells verify with the recorded command:
+  `node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs`
+- The suite must gain the slice B matrix rows: empty digest → `[]`; `«same title»` + `same title` →
+  one cluster (and `««double»»` unifies); corroboration 2 with a synthetic foreign repo, 1 when
+  disjoint; byte-identical rank over a pinned digest with tie-break fixtures; distinct titles never
+  falsely unify.
+- `evolving-10`'s RED evidence: each of the four pressure scenarios recorded failing before
+  SKILL.md content exists, then GREEN after.
+- Open validating question: configure a real dogfood repo (e.g. anphabe-gogl) and generate its
+  digest, so `corroboration` and the trap test run against real foreign data at least once.
 
 ## Risks & Mitigation
 
 | Component | Risk | Mitigation / proof at validating |
 |---|---|---|
-| `lib/feedback.mjs` read scope + pasted code (D2) | **HIGH** | The four security assertions above; `dropped` is counted and surfaced, never silent |
-| Cross-repo paths under WSL / Git Bash | **MEDIUM** | Critical pattern `[20260708]`: node cannot resolve MSYS `/tmp`. All `dogfood_repos` entries go through `path.resolve` + existence check; a missing repo warns and is skipped |
-| Digest schema is a public contract | **MEDIUM** | `SCHEMA_VERSION` pinned by a drift test, mirroring `BACKLOG_STATUSES`; contract text lands in slice B |
-| `bee-compounding` chain change | **LOW** | Existing suite + an assertion that a throwing refresh does not fail the close |
-| Ranking determinism | **MEDIUM** | `pain` / `frequency` / `corroboration` computed in the digest; ties broken by oldest `first_seen`; no LLM judgment at read time |
+| Datamark trap — nothing ever clusters cross-repo | **HIGH** (silent) | Fixed-point strip in the cluster key + an explicit unification test with wrapped/bare/double-wrapped fixtures |
+| Self-modifying loop drifts past its gates | **HIGH** | Gate A + Gate B human stops; Iron Law RED-first with the four scenarios enumerated; push never auto (D5) |
+| `corroboration` believed meaningful with one repo | MEDIUM | Shipped defined-but-inert, stated in docs; real measurement deferred to a configured dogfood repo |
+| Ranking non-determinism | MEDIUM | Pure function over the merged view; pinned-digest byte-identity test; explicit tie-break |
+| Routing/skill edits regress the hive | LOW | Full Iron Law on every SKILL.md edit (decision `ff26725d`); suites stay the cap gate |
 
 ## Rollback Plan
 
-The digest is a **generated artifact**, not state: there is no migration, no schema to reverse, and
-nothing outside the repo to undo. Rollback of slice A is therefore complete and cheap:
+Slice B adds a skill and pure functions; it migrates nothing and holds no state.
 
-1. `git revert` the slice's cell commits (each cell commits with its id, so the set is exact).
-2. Delete `.bee/feedback-digest.json` in this repo and in any dogfood repo that generated one —
-   deleting it costs nothing, because the next feature close regenerates it from scratch.
-3. Remove the `dogfood_repos` key from `.bee/config.json`. `readConfig` treats it as absent, and
-   `collect` returns the local digest only.
-4. Re-run the verify command to confirm the suites return to the pre-slice baseline.
+1. `git revert` the slice's cell commits (each commits with its cell id; the set is exact).
+2. Delete `skills/bee-evolving/` — no other component references it except the routing row, which
+   the revert removes.
+3. Revert the version constant to `0.1.18`; re-run the verify command to confirm the suite returns
+   to the 110-assertion baseline.
+4. The digest and `dogfood_repos` are slice A surface and are untouched by a slice B rollback.
 
-The `bee-compounding` refresh step is the only edit to an existing behavior; reverting its commit
-restores the previous close chain exactly. **No host project can be left broken by a rollback**,
-because a failing or absent digest was already specified to warn rather than block (D1).
+No host project can be affected: every slice B artifact lives in the bee repo and runs only there
+(D3).
 
 ## Open Questions
 
-1. ~~Iron Law vs. mechanical skill edits~~ — **RESOLVED at Gate 2.** Owner chose **(a) full Iron
-   Law, no exemption carved**. Decision `ff26725d-bbf8-49b5-99cf-ed8edbc26b0d`. `evolving-4` and
-   every slice-B wiring cell carry RED/GREEN pressure-test evidence.
-2. `dogfood_repos` value shape — bare string array, or `{path,label}` objects? *(`evolving-3`
-   assumes: accept both, normalize to objects. Confirm at validating.)*
-3. Is `.bee/feedback-digest.json` gitignored in host repos, or committed as a visible artifact?
-   *(Plan assumes: bee writes it and never touches the host's gitignore.)*
-4. Is slice B's "WSL deploy" a scripted step or the existing manual copy into `~/.claude/skills/`?
-   *(Plan assumes: named, not scripted. Resolve before slice B, not now.)*
+1. Is slice B's "WSL deploy" a scripted step or the existing manual copy into `~/.claude/skills/`?
+   *(Plan assumes: named, not scripted. Resolve at validating, before Gate 3.)*
+2. ~~Should validating configure `dogfood_repos` → anphabe-gogl?~~ — **RESOLVED at Gate 2: yes.**
+   Validating configures it and generates that repo's digest, so corroboration and the trap test
+   run against real foreign data at least once.
+3. `.bee/feedback-digest.json` gitignore posture in host repos — carried from slice A, still
+   assumed "bee never touches the host's gitignore".

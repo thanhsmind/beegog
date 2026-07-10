@@ -1,0 +1,80 @@
+{
+  "id": "evolving-11",
+  "feature": "evolving-loop",
+  "pbi": "P18",
+  "title": "Wiring + docs + ship: routing row, contracts, decision 0022, backlog flip, version 0.1.19",
+  "lane": "standard",
+  "deps": [
+    "evolving-10"
+  ],
+  "decisions": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "ff26725d"
+  ],
+  "behavior_change": true,
+  "files": [
+    "skills/bee-hive/SKILL.md",
+    "skills/bee-hive/references/routing-and-contracts.md",
+    "skills/bee-hive/templates/lib/state.mjs",
+    ".bee/bin/lib/state.mjs",
+    "docs/07-contracts.md",
+    "docs/config-reference.md",
+    "docs/decisions/0022-evolving-loop.md",
+    "docs/backlog.md"
+  ],
+  "read_first": [
+    "docs/history/evolving-loop/plan.md",
+    "docs/history/evolving-loop/implement-plan.md",
+    "docs/decisions/0021-review-slot-and-effort-knob.md",
+    "docs/history/learnings/critical-patterns.md"
+  ],
+  "action": "Ship slice B's surface: (1) one routing row for bee-evolving in skills/bee-hive/SKILL.md's routing table (and the matching entry in references/routing-and-contracts.md if the table is mirrored there) — this is a SKILL edit, so the full Iron Law applies (decision ff26725d): record the routing scenario failing (a request to evolve bee routes nowhere) before the row exists, then GREEN, appended to docs/history/evolving-loop/reports/evolving-10-pressure.md or a sibling report. (2) docs/07-contracts.md: the rank CLI surface and the bee-evolving contract — state the ENFORCED invariants (allowlist digest per 8cd4c84e, consumer revalidation D2b, bee-repo-only D3, two human gates D5), never a stronger unenforceable claim. (3) docs/config-reference.md: dogfood_repos consumption by rank/bee-evolving. (4) docs/decisions/0022-evolving-loop.md: the feature decision record in the style of 0021 — D1-D5, the D2 supersede to allowlist, the comparison-key trap resolution, corroboration shipped defined-but-inert. (5) docs/backlog.md: P18 -> done, version column 0.1.19. (6) BEE_VERSION '0.1.18' -> '0.1.19' in skills/bee-hive/templates/lib/state.mjs:7, vendored copy .bee/bin/lib/state.mjs synced byte-identical.",
+  "must_haves": {
+    "truths": [
+      "a routing request to improve/evolve bee lands on bee-evolving via the hive table",
+      "07-contracts states only invariants the code enforces — no claim beyond allowlist + revalidation + repo guard + gates",
+      "BEE_VERSION is 0.1.19 in template and vendored copy, byte-identical"
+    ],
+    "artifacts": [
+      {
+        "path": "skills/bee-hive/SKILL.md",
+        "substantive": "one routing row for bee-evolving, RED-first evidence recorded"
+      },
+      {
+        "path": "docs/decisions/0022-evolving-loop.md",
+        "substantive": "feature decision record: D1-D5, D2 supersede, trap resolution, inert corroboration"
+      },
+      {
+        "path": "docs/backlog.md",
+        "substantive": "P18 done at 0.1.19"
+      }
+    ],
+    "key_links": [
+      "the routing row's Iron Law evidence lives in the feature's reports/, citing decision ff26725d",
+      "the contract text mirrors plan.md revision 3's enforced invariants, not revision 1's superseded claims"
+    ],
+    "prohibitions": [
+      "No SKILL.md content before its failing pressure test exists (decision ff26725d)",
+      "Never weaken any existing assertion",
+      "No contract wording stronger than what the code enforces"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs",
+  "status": "open",
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

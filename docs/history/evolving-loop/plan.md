@@ -1,11 +1,15 @@
 ---
 artifact_contract: bee-plan/v1
-artifact_readiness: requirements-only
+artifact_readiness: implementation-ready
 mode: high-risk
-revision: 2
+revision: 3
 ---
 
-# Plan — evolving loop (P18) — revision 2
+# Plan — evolving loop (P18) — revision 3
+
+**Revision 3 shapes slice B**, now that slice A has shipped (evolving-1..8 capped, 110 tests) and a
+real digest exists to plan against. Slice A content below is unchanged history; the slice B section
+is rewritten from named-scope to a full shape.
 
 Bee learns from its own dogfood data and ships the improvement. Locked design: decision
 `8cd4c84e` (which superseded `20784de8` — **D2 is now an allowlist**). Approach, rejected
@@ -64,9 +68,10 @@ Split at the 4/5 boundary. Not ceremony: cell 5's pressure tests and its Gate-A 
 honest when run against **real digests produced by slice A**, not fixtures — and a review gate at
 the boundary matches the risk profile of the one cell that ships a push protocol.
 
-- **Slice A — the data plane (this slice).** Digests exist, are safe, and refresh themselves.
-- **Slice B — the skill (next slice, no cells created now).** `bee-evolving` + wiring + docs +
-  version bump. Planned after slice A ships and real digests exist to test against.
+- **Slice A — the data plane (shipped, evolving-1..8 capped).** Digests exist, are safe, and
+  refresh themselves.
+- **Slice B — the skill (current slice, shaped in revision 3 below).** `bee-evolving` + wiring +
+  docs + version bump. Planned after slice A shipped and a real digest exists to test against.
 
 ### Slice A cells (current slice)
 
@@ -97,33 +102,59 @@ throws on escape, plus a source-level assertion that `feedback.mjs` contains no 
 outside the guard — mechanically identical to the `COMMAND_KEYS` cross-file guard
 (`test_onboard_bee.mjs:135-140`) and the `BACKLOG_STATUSES` value-lock (`test_lib.mjs:789-793`).
 
-### Slice B (named, not planned into cells)
+### Slice B — the skill (current slice, revision 3)
 
-The **ranking engine** (`frequency`, `corroboration`, `rank`, clustering, tie-break — defined against
-digests that exist by then), plus the `bee-evolving` skill (bee-repo-only guard per D3; cluster →
-rank → **Gate A: what to fix** → Iron Law hand-off per D4 → suites green → **Gate B: approve diff** →
-push per D5), plus hive routing row, `07-contracts.md`, `config-reference.md`,
-`docs/decisions/0022-evolving-loop.md`, backlog P18 → done, version bump `0.1.19`.
+Advisor consulted at `shape` (decision 0013; session ran on the advisor model, consult inline):
+APPROVE — ranking is defined against measured corpus not assumed schema (the revision-1 failure
+mode), the trap is defused at the comparison key rather than by reopening slice A's merge contract,
+and `corroboration` ships defined-but-measured-inert instead of fixture-faked.
 
-Its cell spec must **enumerate the required pressure scenarios** (bee-repo guard, Gate-A skip attempt,
-Gate-B skip attempt, auto-push attempt) so "RED first" is checkable rather than asserted `[advisor]`.
-That cell may never be dispatched to an external CLI executor (decision 0019: self-modifying,
-destructive-adjacent).
+**Reality check that unblocked planning (2026-07-10, real digest `.bee/feedback-digest.json`):**
+33 entries (11 finding, 7 friction, 5 proposal, 5 outcome, 3 learning, 1 blocked, 1 deviation),
+0 dropped, pain distribution 27×1 / 5×2 / 1×3. Titles carry enough signal for a human at Gate A
+("datamark guillemet fence is breakable", "Iron Law ordering has no mechanical proof") — **open
+question 4 is answered by the corpus: `title` + `source` suffice; no fetch escape hatch is built.**
+Gate A renders `source` (a cell id or bee-owned path) so the human opens the origin when a title is
+thin. `dogfood_repos` is **null** — no foreign repo has a digest yet, so `corroboration` has zero
+real data (confirming `[R4]`).
 
-**Slice B cannot be planned until slice A has run against the real repos.** The corpus already told us
-`corroboration` is inert with one populated repo `[R4]` and that `trace.friction` is empty in 23/23
-gogl cells — the very friction the loop was built to harvest. Slice B's first honest question is
-whether the digest has anything to rank at all.
+**Ranking, defined against the real corpus:**
 
-**Trap planted for slice B — the `datamark` asymmetry (cell review, 3c).** `datamark()` does not just
-sanitize, it *wraps*: it returns `«cleaned»`. Slice A datamarks **foreign** titles (D2b) and leaves
-**local** titles bare. So the merged view holds `«workers leave friction empty»` next to
-`workers leave friction empty`. Any slice-B step that clusters or dedupes on title equality will
-**never unify the same friction across repos** — which is precisely the cross-repo `frequency` and
-`corroboration` slice B exists to compute. It would surface as a silent "nothing ever clusters."
-Slice B must either strip the wrapper before comparison, or move the `datamark` to *render-into-prompt*
-time so the stored key stays raw. Note also that `datamark` is not idempotent-safe: re-merging an
-already-wrapped title double-wraps it.
+- **Cluster key** = `normalizeTitle(title)`: repeatedly strip the `«…»` datamark wrapper until
+  fixed-point (this defuses both the asymmetry trap and the double-wrap non-idempotence), then
+  casefold + collapse whitespace. Stored entries stay wrapped (D2b intact); only the *comparison
+  key* is stripped. The render-time-datamark alternative is rejected: it reopens slice A's
+  `mergeDigests` contract and its 20+ merge assertions for a problem the comparison key solves
+  locally.
+- **`frequency`** = cluster size. **`pain`** = max pain in the cluster. **`corroboration`** =
+  count of distinct repos contributing to the cluster (local counts as one).
+- **`rank` = pain × frequency × corroboration**, descending. Deterministic tie-break: earliest
+  `first_seen` ascending, then cluster key lexicographic. Rank output over a pinned digest is
+  byte-identical (same idempotence discipline as `buildDigest` `[C2]`).
+- **Honesty note:** with `dogfood_repos` null, `corroboration` = 1 for every cluster today. It is
+  defined and unit-tested now (synthetic foreign digests exercise the stripped-key unification the
+  trap predicted would silently fail), and measured against real foreign data the day a dogfood
+  repo ships a digest — configuring one is a validating question, not a planning assumption.
+
+**Slice B cells (to be created only after Gate 2):**
+
+| # | Cell | Lane | Deps | Heart of it |
+|---|---|---|---|---|
+| 9 | `evolving-9` ranking lib + CLI | standard | — | `clusterEntries` / `rankClusters` / `normalizeTitle` in `lib/feedback.mjs`; `bee_feedback.mjs rank` subcommand; tested against the real digest snapshot + synthetic foreign digests (wrapped/bare/double-wrapped titles must unify) |
+| 10 | `evolving-10` `bee-evolving` skill | **high-risk** | 9 | SKILL.md: bee-repo-only guard (D3) → cluster → rank → **Gate A** → Iron Law hand-off (D4) → suites green → **Gate B** → push (D5). Full Iron Law: RED pressure tests **enumerated** — bee-repo guard refusal, Gate-A skip attempt, Gate-B skip attempt, auto-push attempt — before any skill content. **Never dispatched to an external CLI executor** (decision 0019) |
+| 11 | `evolving-11` wiring + docs + ship | standard | 10 | hive routing row (skill edit → Iron Law, decision `ff26725d`), `07-contracts.md`, `config-reference.md`, `docs/decisions/0022-evolving-loop.md`, backlog P18 → done, version `0.1.19` |
+
+**Slice B test matrix additions (high-risk depth):**
+
+| Dimension | Case |
+|---|---|
+| empty | digest with zero entries → `rank` returns `[]`, no throw |
+| the trap | `«same title»` (foreign) + `same title` (local) → ONE cluster of 2; `««double»»` also unifies |
+| corroboration | local + one synthetic foreign repo sharing a cluster key → corroboration 2; disjoint → 1 |
+| determinism | `rankClusters` twice over a pinned digest → byte-identical; tie-break exercised by equal-rank fixtures |
+| non-cluster | distinct titles (e.g. Vietnamese vs English text) never falsely unify |
+| skill: guard | run outside the bee repo → refuses (RED exists first) |
+| skill: gates | Gate-A skip, Gate-B skip, auto-push attempts → each refused (RED exists first) |
 
 ## D2 — the allowlist (superseded, decision `8cd4c84e`)
 
