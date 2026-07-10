@@ -22,18 +22,6 @@ export function readJson(file, fallback = null) {
   }
 }
 
-// readText — the raw-text sibling of readJson, for non-JSON sources (e.g. a
-// learnings *.md whose YAML frontmatter must be parsed by the caller). Content
-// readers live here so callers like feedback.mjs stay free of any bare
-// filesystem read — the read-scope drift guard depends on that.
-export function readText(file, fallback = '') {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch {
-    return fallback;
-  }
-}
-
 export function writeJsonAtomic(file, obj) {
   ensureDir(path.dirname(file));
   const tmp = `${file}.tmp`;
