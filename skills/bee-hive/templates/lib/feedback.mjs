@@ -37,9 +37,18 @@ export const SCHEMA_VERSION = '1.0';
  * The allowlist (decision 8cd4c84e). Each digest entry is EXACTLY these fields
  * and nothing more — there is no detail/text/outcome/deviations field. Exported
  * so the consumer (evolving-3) imports this one constant rather than hardcoding a
- * second copy that would silently drift. Pinned by a drift test.
+ * second copy that would silently drift.
+ *
+ * ROUND 3 (P18, D2/D2b). The list is NO LONGER a bare literal. Three rounds of
+ * the same class of defect (title-only, then title+layer+source, then a
+ * Date.parse-lenient first_seen) all shared one root cause: ENTRY_FIELDS was a
+ * list of NAMES and nothing forced a name to own a validator, so forgetting a
+ * field was natural, silent, and untested. ENTRY_FIELDS is now DERIVED from
+ * `Object.keys(ENTRY_FIELD_SPEC)` (declared below, once the field validators
+ * exist), so a field with no spec cannot be emitted and a new field cannot be
+ * added without declaring how it is validated. See ENTRY_FIELD_SPEC and the
+ * `export const ENTRY_FIELDS = Object.keys(ENTRY_FIELD_SPEC)` derivation below.
  */
-export const ENTRY_FIELDS = ['kind', 'layer', 'source', 'title', 'first_seen', 'pain'];
 
 /**
  * Drop reasons. Category only — a dropped record NEVER carries the matched text
@@ -213,14 +222,6 @@ function capTitle(value) {
   return `${text.slice(0, MAX_TITLE - 1)}…`; // trailing ellipsis marks truncation
 }
 
-// Coerce a foreign string field to a datamarked value, or null when it is
-// absent/non-string/empty. Used ONLY on the neutralize (foreign) path for a
-// SURVIVING entry's fields — which have already passed the secret/injection scan
-// — so any value that can reach a prompt is wrapped, never surfaced raw.
-function neutralizeField(value) {
-  return typeof value === 'string' && value ? datamark(value) : null;
-}
-
 // Sanitize a field for a dropped[] record. A dropped record records the reason
 // CATEGORY only and must NEVER carry the matched secret/injection text (datamark
 // neutralizes role tags but does not remove an API key or an "ignore previous
@@ -233,84 +234,191 @@ function sanitizeDropField(value) {
   return datamark(value);
 }
 
-// A parseable ISO-ish date string, else null. Applied on the foreign path so a
-// hostile first_seen ('<script>', an object stringified upstream) cannot ride
-// through as data — the local producer's first_seen comes from bee's own clocks.
+// first_seen must stay SORTABLE, so it is NEVER datamarked — a wrapped value
+// cannot be compared. Round 3 (P18) makes it UNFORGEABLE BY FORMAT instead:
+// accept only an anchored strict ISO-ish date literal. V8's legacy Date.parse
+// treats parenthesised text as a discardable COMMENT, so
+// `Date.parse('Jan 1 2020 (</system> … AKIAIOSFODNN7EXAMPLE)')` returns a valid
+// timestamp and the raw string — a role tag and an AWS key — would ride through
+// un-scanned and un-datamarked. Never trust Date.parse's leniency: match the
+// literal instead.
+const STRICT_ISO_DATE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
 function validFirstSeen(value) {
-  if (typeof value !== 'string' || !value) return null;
-  return Number.isNaN(Date.parse(value)) ? null : value;
+  return typeof value === 'string' && STRICT_ISO_DATE.test(value) ? value : null;
 }
+
+// A positive integer, else null (local callers substitute the default 1).
+function validPain(value) {
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+// Extract the RAW (pre-transform) string a free-string field scans and stores.
+// layer coerces empty → null; source keeps '' (a bee-owned meta value); title
+// coerces a non-string to '' so it is always a string before capping.
+const rawLayerStr = (raw) => (typeof raw.layer === 'string' && raw.layer ? raw.layer : null);
+const rawSourceStr = (raw) => (typeof raw.source === 'string' ? raw.source : null);
+const rawTitleStr = (raw) => (typeof raw.title === 'string' ? raw.title : '');
+
+/**
+ * A free-string field spec. On the LOCAL (trusted) path the value is validated
+ * but left bare; on the NEUTRALIZE (foreign, untrusted) path it is scanned (a hit
+ * drops the whole entry, attributed) and then datamark()ed — never surfaced raw.
+ * `scanWhen: 'always'` (title) scans on both paths; `'neutralize'` (layer,
+ * source) widens the scan only for foreign data. `scanPriority` fixes the
+ * cross-field precedence (title > source > layer) independent of iteration order.
+ * `validator` is a function so the structural guard can assert every field owns
+ * one — a field without a validator cannot exist.
+ */
+function freeStringSpec({ rawOf, scanWhen, scanPriority, cap = false, inDropped }) {
+  return {
+    inDropped,
+    scanPriority,
+    validator: rawOf,
+    keep(raw, neutralize) {
+      const rawVal = rawOf(raw);
+      if (cap) return neutralize ? datamark(capTitle(rawVal)) : capTitle(rawVal);
+      if (neutralize) return typeof rawVal === 'string' && rawVal ? datamark(rawVal) : null;
+      return rawVal;
+    },
+    dropped(raw, neutralize) {
+      const rawVal = rawOf(raw);
+      return neutralize ? sanitizeDropField(rawVal) : rawVal;
+    },
+    scan(raw, neutralize) {
+      if (scanWhen === 'always' || (scanWhen === 'neutralize' && neutralize)) return scanTitle(rawOf(raw));
+      return null;
+    },
+  };
+}
+
+/**
+ * ENTRY_FIELD_SPEC — the SINGLE source of truth (P18 round 3, D2/D2b). Maps every
+ * allowlist field to its validator/neutralizer. buildEntry (both trust levels)
+ * and the dropped[] record builder iterate THIS map, never a raw name list, so a
+ * field with no spec cannot be emitted and a new field cannot be added without a
+ * validator. ENTRY_FIELDS is derived from Object.keys below, so the two can never
+ * drift into separate literals. `inDropped` marks the fields a dropped[] record
+ * carries ({kind, layer, source, first_seen} + reason — never title/pain).
+ * Insertion order fixes ENTRY_FIELDS at kind,layer,source,title,first_seen,pain.
+ */
+export const ENTRY_FIELD_SPEC = {
+  // `kind` after normalizeKind is a closed-enum literal, already safe and bare.
+  // resolveKind also supplies the dropped-record value: the sanitised raw type on
+  // an unknown_type drop, the normalized kind on a scan-hit drop.
+  kind: {
+    inDropped: true,
+    validator: normalizeKind,
+    resolveKind(raw, neutralize) {
+      const value = normalizeKind(raw.type);
+      if (value === null) {
+        const rawKind = typeof raw.type === 'string' ? raw.type : null;
+        return { value: null, isUnknown: true, dropped: neutralize ? sanitizeDropField(rawKind) : rawKind };
+      }
+      return { value, isUnknown: false, dropped: value };
+    },
+  },
+  layer: freeStringSpec({ rawOf: rawLayerStr, scanWhen: 'neutralize', scanPriority: 2, inDropped: true }),
+  source: freeStringSpec({ rawOf: rawSourceStr, scanWhen: 'neutralize', scanPriority: 1, inDropped: true }),
+  title: freeStringSpec({ rawOf: rawTitleStr, scanWhen: 'always', scanPriority: 0, cap: true, inDropped: false }),
+  first_seen: {
+    inDropped: true,
+    validator: validFirstSeen,
+    keep(raw) {
+      return validFirstSeen(raw.first_seen);
+    },
+    dropped(raw) {
+      return validFirstSeen(raw.first_seen);
+    },
+    scan() {
+      return null;
+    },
+  },
+  pain: {
+    inDropped: false,
+    validator: validPain,
+    keep(raw, neutralize) {
+      const p = validPain(raw.pain);
+      return p === null ? (neutralize ? null : 1) : p;
+    },
+    scan() {
+      return null;
+    },
+  },
+};
+
+/**
+ * The allowlist field names, DERIVED from the spec so the two can never drift.
+ * Exported for the consumer (evolving-3). A source-level structural test asserts
+ * this is exactly Object.keys(ENTRY_FIELD_SPEC) and that every field owns a
+ * validator — so a future field added without a spec turns the suite red instead
+ * of opening a hole.
+ */
+export const ENTRY_FIELDS = Object.keys(ENTRY_FIELD_SPEC);
 
 /**
  * A raw candidate is { type, title, layer, first_seen, pain, source }. Turn it
  * into an allowlist entry, or push a { kind, layer, source, first_seen, reason }
  * record onto dropped[]. Order is fixed: unknown-type check, then the scan
- * (before any transformation), then the cap, then the entry. Returns the entry
- * or null (dropped).
+ * (before any transformation), then the entry. Returns the entry or null.
  *
- * This is the SINGLE construction path for BOTH producers: buildDigest (local,
- * trusted) and mergeDigests (foreign, untrusted). With `neutralize: true` (D2b —
- * a digest bee did NOT produce, review P1-1) the consumer path is strictly
- * stronger than the producer it backstops, never weaker: the scan widens beyond
- * title to `source` and `layer`; every surviving string field that can reach a
- * prompt is datamark()ed, not title alone; `first_seen` must parse; a non-integer
- * `pain` becomes null; and a dropped[] record's own source/layer/kind are
- * datamarked so the attacker's raw text never lands even there. `kind` after
- * normalizeKind is a closed-enum literal, so it is already safe and stays bare.
+ * Both the entry AND the dropped record are built by ITERATING ENTRY_FIELD_SPEC,
+ * never a hardcoded field list — the round-3 fix. This is the SINGLE construction
+ * path for BOTH producers: buildDigest (local, trusted) and mergeDigests
+ * (foreign, untrusted). With `neutralize: true` (D2b) the consumer path is
+ * strictly stronger than the producer it backstops: the scan widens beyond title
+ * to source and layer; every surviving string field is datamark()ed, not title
+ * alone; first_seen must be a strict date literal; a non-integer pain becomes
+ * null; and a dropped[] record's own source/layer/kind are sanitised so the
+ * attacker's raw text never lands even there.
  */
 function buildEntry(raw, dropped, { neutralize = false } = {}) {
-  const kind = normalizeKind(raw.type);
-  const rawLayer = typeof raw.layer === 'string' && raw.layer ? raw.layer : null;
-  const rawSource = typeof raw.source === 'string' ? raw.source : null;
-  const firstSeen = neutralize
-    ? validFirstSeen(raw.first_seen)
-    : typeof raw.first_seen === 'string' && raw.first_seen
-      ? raw.first_seen
-      : null;
+  const kindResult = ENTRY_FIELD_SPEC.kind.resolveKind(raw, neutralize);
 
-  // A dropped record must never carry the attacker's raw text — nor the matched
-  // secret/injection text (reason category only). On the foreign path its own
-  // source/layer/kind are sanitized (matched → null, clean → datamarked); on the
-  // local path they are bee-owned meta and stay bare (behaviour unchanged).
-  const dropLayer = neutralize ? sanitizeDropField(rawLayer) : rawLayer;
-  const dropSource = neutralize ? sanitizeDropField(rawSource) : rawSource;
+  // Build a dropped[] record from the SAME spec loop, so it too can never carry
+  // an unspecced field. kind's dropped value comes from resolveKind (unknown_type
+  // → sanitised raw type; scan hit → the normalized kind).
+  const makeDropped = (reason) => {
+    const record = {};
+    for (const field of ENTRY_FIELDS) {
+      const spec = ENTRY_FIELD_SPEC[field];
+      if (!spec.inDropped) continue;
+      record[field] = field === 'kind' ? kindResult.dropped : spec.dropped(raw, neutralize);
+    }
+    record.reason = reason;
+    return record;
+  };
 
-  if (kind === null) {
-    const rawKind = typeof raw.type === 'string' ? raw.type : null;
-    dropped.push({
-      kind: neutralize ? sanitizeDropField(rawKind) : rawKind,
-      layer: dropLayer,
-      source: dropSource,
-      first_seen: firstSeen,
-      reason: 'unknown_type',
-    });
+  if (kindResult.isUnknown) {
+    dropped.push(makeDropped('unknown_type'));
     return null;
   }
 
-  const rawTitle = typeof raw.title === 'string' ? raw.title : '';
-  // Scan the RAW values BEFORE any transformation. On the foreign path the scan
-  // widens beyond title to source and layer — an attacker who moves the payload
-  // out of title must not walk through clean. scanTitle keeps secret > injection.
-  let hit = scanTitle(rawTitle);
-  if (!hit && neutralize) hit = scanTitle(rawSource) || scanTitle(rawLayer);
+  // Scan the RAW values BEFORE any transformation. title scans on both paths;
+  // source/layer widen the scan on the foreign path so an attacker who moves the
+  // payload out of title cannot walk through clean. Lowest scanPriority wins
+  // (title > source > layer); scanTitle keeps secret > injection within a field.
+  let hit = null;
+  let hitPriority = Infinity;
+  for (const field of ENTRY_FIELDS) {
+    const spec = ENTRY_FIELD_SPEC[field];
+    if (typeof spec.scan !== 'function') continue;
+    const h = spec.scan(raw, neutralize);
+    if (h && spec.scanPriority < hitPriority) {
+      hit = h;
+      hitPriority = spec.scanPriority;
+    }
+  }
   if (hit) {
-    dropped.push({ kind, layer: dropLayer, source: dropSource, first_seen: firstSeen, reason: hit });
+    dropped.push(makeDropped(hit));
     return null;
   }
 
-  const pain = Number.isInteger(raw.pain) && raw.pain > 0 ? raw.pain : neutralize ? null : 1;
-  const title = capTitle(rawTitle);
-  if (neutralize) {
-    return {
-      kind,
-      layer: neutralizeField(rawLayer),
-      source: neutralizeField(rawSource),
-      title: datamark(title),
-      first_seen: firstSeen,
-      pain,
-    };
+  const entry = {};
+  for (const field of ENTRY_FIELDS) {
+    const spec = ENTRY_FIELD_SPEC[field];
+    entry[field] = field === 'kind' ? kindResult.value : spec.keep(raw, neutralize);
   }
-  return { kind, layer: rawLayer, source: rawSource, title, first_seen: firstSeen, pain };
+  return entry;
 }
 
 /**
