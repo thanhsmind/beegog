@@ -10,7 +10,7 @@
     "review": true
   },
   "workers": [],
-  "summary": "learnings-pair-relocation closed: review wave = 4 core reviewers (cap 6), synthesis inline by orchestrator, precedent via planning->plan.md; 2 P1 + 1 P3 review findings fixed (8f33577); decision aec38e11 + 1 critical promotion logged. Digest refresh SKIPPED: fsutil.mjs readText export missing (pre-existing uncommitted lib edit) - filed as friction.",
+  "summary": "learnings-pair-relocation closed (4-core review wave shipped, pushed 841dab0). Vendored-helper regression fixed: a stale 0.1.18 plugin onboarding apply had overwritten fsutil/state/onboarding.json (killed readText -> digest crash); restored to HEAD 0.1.19, digest green (46 entries), plugin synced to 0.1.19.",
   "next_action": null,
   "last_scribing_run": {
     "feature": "learnings-pair-relocation",
@@ -28,7 +28,7 @@
     "critical_promotions": 1,
     "decisions_logged": 2,
     "friction_filed": 2,
-    "digest_refresh": "SKIPPED - bee_feedback.mjs digest throws (fsutil readText export missing); filed as friction"
+    "digest_refresh": "recovered 2026-07-11: regression restored, digest green (46 entries)"
   },
   "cells": {
     "open": 0,
@@ -36,5 +36,5 @@
     "capped": 35,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T17:59:58.652Z"
+  "last_activity": "2026-07-10T18:15:50.420Z"
 }
