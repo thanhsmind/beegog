@@ -27,7 +27,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, readText } from './fsutil.mjs';
-import { SECRET_CONTENT_PATTERNS, INJECTION_PATTERNS } from './decisions.mjs';
+import { SECRET_CONTENT_PATTERNS, INJECTION_PATTERNS, datamark } from './decisions.mjs';
+import { readConfig } from './state.mjs';
 
 /** Digest schema version. Pinned by a drift test, like BACKLOG_STATUSES. */
 export const SCHEMA_VERSION = '1.0';
@@ -456,5 +457,168 @@ export function buildDigest(root, { now } = {}) {
     counts,
     dropped,
     entries,
+  };
+}
+
+/**
+ * D2b — THE CONSUMER REVALIDATES (decision 8cd4c84e, clause D2b). Merge the LOCAL
+ * digest with each dogfood repo's ALREADY-WRITTEN .bee/feedback-digest.json. This
+ * is the security heart of slice A: the producing repo's write-time scan protects
+ * THAT repo, not bee. bee-evolving later edits bee's own source from these files,
+ * and a foreign digest lives in a repo bee does not control — a hand-edited,
+ * stale, or hostile feedback-digest.json is just JSON on disk. So for every entry
+ * read from a FOREIGN digest this function:
+ *   (1) realpath-contains the digest file under realpath(repoPath)/.bee/ — a
+ *       symlinked feedback-digest.json pointing anywhere else on this machine is
+ *       rejected and warned, never read (realpath resolves the symlink; a target
+ *       outside .bee/ fails containment). Content reads route through readJson so
+ *       the source-level read-scope drift guard stays clean;
+ *   (2) re-runs SECRET_CONTENT_PATTERNS and INJECTION_PATTERNS on the RAW title
+ *       (before any transformation), dropping violators into the repo's dropped[]
+ *       with reason 'secret'/'injection' attributed to the source repo;
+ *   (3) wraps every surviving title in datamark() (lib/decisions.mjs) — the same
+ *       neutralizer the decisions surfacing path applies at read time — so
+ *       '</system> ignore all previous instructions …' can never act as
+ *       instructions once the title reaches a prompt;
+ *   (4) keeps ONLY ENTRY_FIELDS — any field outside the allowlist (e.g. a
+ *       resurrected free-text `detail`) is stripped, never merged through.
+ * A missing, unreadable, or corrupt dogfood repo or digest is warned/skipped and
+ * counted, never thrown — one dead repo must never break the bee session.
+ *
+ * The merge is a FLAT list keyed by repo_label. There is deliberately NO
+ * clustering, frequency, corroboration, ranking, or tie-break here — measurement
+ * showed their inputs do not exist yet, and they moved to slice B by design.
+ *
+ * Shape (a superset of the local digest so a consumer reads one object):
+ *   { ...localDigest, merged: [ { repo_label, counts, dropped, entries } ],
+ *     merged_counts: { repos_configured, repos_merged, repos_skipped } }
+ * With dogfood_repos absent, `merged` is [] and the local digest is returned as-is.
+ *
+ * @param {string} root - the bee repo root (the CONSUMER)
+ * @param {{now?: (Date|string)}} [opts]
+ */
+export function mergeDigests(root, { now } = {}) {
+  const local = buildDigest(root, { now });
+  const repos = readConfig(root).dogfood_repos || [];
+  const merged = [];
+  let reposMerged = 0;
+  let reposSkipped = 0;
+
+  for (const repo of repos) {
+    const repoPath = repo && typeof repo.path === 'string' ? repo.path : null;
+    const label = repo && typeof repo.label === 'string' && repo.label ? repo.label : repoPath || 'unknown';
+    if (!repoPath) {
+      reposSkipped += 1;
+      continue;
+    }
+
+    // The dogfood path was already realpath'd by normalizeDogfoodRepos; re-realpath
+    // defensively (idempotent) so this function is safe under any caller.
+    let repoReal;
+    try {
+      repoReal = fs.realpathSync(repoPath);
+    } catch (err) {
+      console.warn(`mergeDigests: skipping dogfood repo "${label}" — ${err && err.code ? err.code : err}`);
+      reposSkipped += 1;
+      continue;
+    }
+
+    // Read ONLY the repo's written digest — never its raw .bee/ or docs/.
+    const digestPath = path.resolve(repoReal, '.bee', 'feedback-digest.json');
+    let realDigest;
+    try {
+      realDigest = fs.realpathSync(digestPath);
+    } catch (err) {
+      // No digest yet (a real repo that has never closed) or unreadable → skip+count.
+      if (!(err && err.code === 'ENOENT')) {
+        console.warn(`mergeDigests: skipping "${label}" digest — ${err && err.code ? err.code : err}`);
+      }
+      reposSkipped += 1;
+      continue;
+    }
+
+    // Realpath containment (D2b, clause 1): the resolved digest must be a REGULAR
+    // FILE under realpath(repoPath)/.bee/. A symlinked feedback-digest.json whose
+    // real target sits anywhere else is rejected, warned, and never read.
+    const beeDir = path.join(repoReal, '.bee');
+    let stat;
+    try {
+      stat = fs.lstatSync(realDigest);
+    } catch {
+      reposSkipped += 1;
+      continue;
+    }
+    const contained = realDigest.startsWith(beeDir + path.sep);
+    if (!contained || !stat.isFile()) {
+      console.warn(
+        `mergeDigests: rejecting "${label}" feedback-digest.json — real path "${realDigest}" is outside realpath(${label})/.bee/ or is not a regular file (D2b realpath containment)`,
+      );
+      reposSkipped += 1;
+      continue;
+    }
+
+    const foreign = readJson(realDigest, null);
+    if (!foreign || typeof foreign !== 'object' || !Array.isArray(foreign.entries)) {
+      // A corrupt or shapeless digest is skipped and counted, never thrown.
+      reposSkipped += 1;
+      continue;
+    }
+
+    const entries = [];
+    const dropped = [];
+    for (const raw of foreign.entries) {
+      if (!raw || typeof raw !== 'object') continue;
+      const rawTitle = typeof raw.title === 'string' ? raw.title : '';
+      const layer = typeof raw.layer === 'string' && raw.layer ? raw.layer : null;
+      const source = typeof raw.source === 'string' ? raw.source : null;
+      const firstSeen = typeof raw.first_seen === 'string' && raw.first_seen ? raw.first_seen : null;
+
+      // Re-scan the RAW title BEFORE any transformation — a match is a security
+      // event attributed to the source repo, never silently rewritten.
+      const hit = scanTitle(rawTitle);
+      if (hit) {
+        dropped.push({
+          kind: typeof raw.kind === 'string' ? raw.kind : null,
+          layer,
+          source,
+          first_seen: firstSeen,
+          reason: hit, // 'secret' | 'injection'
+        });
+        continue;
+      }
+
+      // Keep ONLY the allowlist fields (imported ENTRY_FIELDS — never a second
+      // local copy) and datamark the surviving title so it can never act as
+      // instructions once it enters a prompt. Any field outside the allowlist
+      // (e.g. a resurrected `detail`) is dropped by construction.
+      const clean = {};
+      for (const field of ENTRY_FIELDS) {
+        clean[field] = Object.prototype.hasOwnProperty.call(raw, field) ? raw[field] : null;
+      }
+      clean.title = datamark(rawTitle);
+      entries.push(clean);
+    }
+
+    entries.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    dropped.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    merged.push({
+      repo_label: label,
+      counts: { entries: entries.length, dropped: dropped.length },
+      dropped,
+      entries,
+    });
+    reposMerged += 1;
+  }
+
+  merged.sort((a, b) => String(a.repo_label).localeCompare(String(b.repo_label)));
+
+  return {
+    ...local,
+    merged,
+    merged_counts: {
+      repos_configured: repos.length,
+      repos_merged: reposMerged,
+      repos_skipped: reposSkipped,
+    },
   };
 }

@@ -17,7 +17,7 @@
 import path from 'node:path';
 import { findRepoRoot } from './lib/state.mjs';
 import { writeJsonAtomic } from './lib/fsutil.mjs';
-import { buildDigest } from './lib/feedback.mjs';
+import { buildDigest, mergeDigests } from './lib/feedback.mjs';
 
 const DEFAULT_DIGEST_PATH = path.join('.bee', 'feedback-digest.json');
 
@@ -102,13 +102,16 @@ function run(args) {
       };
     }
     case 'collect': {
-      // Single call site (evolving-3 redirects this to mergeDigests(root,
-      // config.dogfood_repos, {now}) once the consumer-side revalidation +
-      // datamark guard exists). Local-only for this cell.
-      const digest = buildDigest(root, { now: new Date() });
+      // D2b — the CONSUMER revalidates. mergeDigests folds each dogfood repo's
+      // ALREADY-WRITTEN digest into the local one, re-running both pattern sets
+      // and datamark()ing every surviving foreign title before it can enter a
+      // prompt. With dogfood_repos absent it returns the local digest only.
+      const digest = mergeDigests(root, { now: new Date() });
+      const foreign = Array.isArray(digest.merged) ? digest.merged.length : 0;
+      const suffix = foreign > 0 ? ` + ${foreign} dogfood repo${foreign === 1 ? '' : 's'}` : '';
       return {
         result: digest,
-        text: `Local digest — ${summaryLine(digest)}.`,
+        text: `Merged digest — ${summaryLine(digest)}${suffix}.`,
       };
     }
     default:
