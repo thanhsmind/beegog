@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "reviewing",
+  "feature": "external-result-contract",
+  "mode": "small",
   "approved_gates": {
     "context": true,
     "shape": true,
@@ -10,8 +10,9 @@
     "review": true
   },
   "workers": [],
-  "summary": "config-sample-move closed: sample relocated to .bee/config-sample.json per owner (decision 9749b660), verify green, no behavior change.",
-  "next_action": null,
+  "summary": "external-result-contract reviewed and merge-approved (user, Gate 4): P1 + 3 P2 + 1 round-2 finding all fixed and confirmed; verify green 124/0. Finish contract (result.json) + durable workspace contract live in swarming-reference.md.",
+  "next_action": "bee-scribing sync (behavior_change cell), then bee-compounding.",
+  "uat_skip_reason": "external-result-contract: docs-only change, no CONTEXT.md SEE/CALL/RUN decisions exist — no UAT items to walk",
   "last_scribing_run": {
     "feature": "config-sample-move",
     "date": "2026-07-10",
@@ -32,8 +33,8 @@
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 31,
+    "capped": 33,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T15:29:54.456Z"
+  "last_activity": "2026-07-10T16:32:13.482Z"
 }
