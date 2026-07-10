@@ -120,3 +120,17 @@ written file, and struck a committed markdown report two commits later (git show
 grep goes silent). When mechanizing a check after an incident, ask "what code path produced this
 state?" and sweep everything that path can write; fix the instance AND widen the check in the
 same cell.
+
+## [20260711] A removal is verified by its invariants, not the names it deletes
+**Category:** failure
+**Feature:** learnings-pair-relocation
+**Tags:** [removal-census, derived-constants, verification]
+
+Removing a named entity and grepping the name is not enough — two P1s slipped a small-lane
+census that way. When censusing a removal: grep from the **repo root** (exclude only declared
+archaeology), include **bare-token variants** of the removed names, and re-derive **every
+numeric constant computed from the removed thing's size** (caps, counts, "N reviewers",
+table totals) — put the recomputed number in the positive verify grep. A capacity constant
+that encodes the old roster size will silently refill the freed slots.
+
+**Full entry:** docs/history/learnings/20260711-learnings-pair-relocation.md

@@ -1,39 +1,40 @@
 {
   "schema_version": "1.0",
-  "phase": "reviewing",
-  "feature": "learnings-pair-relocation",
-  "mode": "small",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": false
+    "review": true
   },
   "workers": [],
-  "summary": "learnings-pair-relocation review done: 3 findings (2 P1 incl. 1 pre-existing, 1 P3), all gated_auto one-phrase fixes; Gate 4 pending",
-  "next_action": "Gate 4: P1 findings block merge — awaiting owner decision",
+  "summary": "learnings-pair-relocation closed: review wave = 4 core reviewers (cap 6), synthesis inline by orchestrator, precedent via planning->plan.md; 2 P1 + 1 P3 review findings fixed (8f33577); decision aec38e11 + 1 critical promotion logged. Digest refresh SKIPPED: fsutil.mjs readText export missing (pre-existing uncommitted lib edit) - filed as friction.",
+  "next_action": null,
   "last_scribing_run": {
-    "feature": "external-result-contract",
-    "date": "2026-07-10",
-    "at": "2026-07-10T16:35:58.232Z",
+    "feature": "learnings-pair-relocation",
+    "date": "2026-07-11",
+    "at": "2026-07-10T17:57:35.912Z",
     "areas_synced": [
-      "skills-as-spec convention (reading-map): protocol lives in swarming-reference.md itself; docs/backlog.md P14 note refreshed (first external run recorded)"
+      "no spec sync needed - skills-as-spec convention (reading-map): the review-wave contract lives in the edited bee-reviewing SKILL.md/reference themselves; no docs/specs area covers bee skills"
     ],
     "next_action": "bee-compounding"
   },
   "last_compounding_run": {
-    "feature": "external-result-contract",
-    "at": "2026-07-10T16:39:36.363Z",
-    "learnings": "docs/history/learnings/20260710-external-result-contract.md",
-    "critical_promotions": 0,
-    "decisions_logged": 1,
-    "friction_filed": 1
+    "feature": "learnings-pair-relocation",
+    "at": "2026-07-10T17:59:58.652Z",
+    "learnings": "docs/history/learnings/20260711-learnings-pair-relocation.md",
+    "critical_promotions": 1,
+    "decisions_logged": 2,
+    "friction_filed": 2,
+    "digest_refresh": "SKIPPED - bee_feedback.mjs digest throws (fsutil readText export missing); filed as friction"
   },
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 34,
+    "capped": 35,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T17:51:19.143Z"
+  "last_activity": "2026-07-10T17:59:58.652Z"
 }
