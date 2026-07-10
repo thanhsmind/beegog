@@ -1,25 +1,25 @@
 {
   "schema_version": "1.0",
-  "phase": "reviewing",
-  "feature": "config-sample",
-  "mode": "tiny",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": false
+    "review": true
   },
   "workers": [],
-  "summary": "config-sample-1 capped in commit 238521b; orchestrator goal-check passed, judge intact, reservations clear.",
-  "next_action": "Invoke bee-reviewing for Gate 4.",
+  "summary": "config-sample closed: tiny done-report clean after fixing cell-2 regression (D3 demo shapes restored, both cell verifies green). Lane scaling v2 shipped same session (decision d02a6bc6).",
+  "next_action": null,
   "last_scribing_run": {
-    "feature": "evolving-loop",
+    "feature": "config-sample",
     "date": "2026-07-10",
-    "at": "2026-07-10T10:51:57.983Z",
+    "at": "2026-07-10T15:28:14.865Z",
     "areas_synced": [
-      "feedback-digest"
+      "docs/03-workflow.md (lane scaling v2 sync; no behavior_change cells in config-sample itself)"
     ],
-    "next_action": "Invoke bee-compounding."
+    "next_action": null
   },
   "last_compounding_run": {
     "feature": "evolving-loop",
@@ -32,8 +32,8 @@
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 29,
+    "capped": 31,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T10:56:14.382Z"
+  "last_activity": "2026-07-10T15:23:52.834Z"
 }
