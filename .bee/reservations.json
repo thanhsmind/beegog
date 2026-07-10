@@ -527,6 +527,86 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-10T09:52:08.078Z",
       "released_at": "2026-07-10T10:03:03.500Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "skills/bee-hive/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.526Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "skills/bee-hive/references/routing-and-contracts.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.565Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "skills/bee-hive/templates/lib/state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.607Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": ".bee/bin/lib/state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.649Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "docs/07-contracts.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.689Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "docs/config-reference.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.729Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "docs/decisions/0022-evolving-loop.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.770Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "docs/backlog.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.824Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "docs/history/evolving-loop/reports/evolving-11-routing-pressure.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.868Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
+    },
+    {
+      "agent": "shipwright",
+      "cell": "evolving-11",
+      "path": "docs/history/evolving-loop/reports/evolving-11.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T10:06:31.912Z",
+      "released_at": "2026-07-10T10:11:54.042Z"
     }
   ]
 }

@@ -68,7 +68,8 @@ Then read `docs/history/learnings/critical-patterns.md` and surface recent activ
 | (Re)generate or read a feature's implement plan | `bee-briefing` |
 | Clean up / debt / audit | `bee-grooming` |
 | Capture learnings | `bee-compounding` |
-| Improve bee itself | `bee-writing-skills` |
+| Author or edit a bee skill (SKILL.md content) | `bee-writing-skills` |
+| Evolve bee from its own dogfood feedback (rank friction, ship a self-improvement) | `bee-evolving` |
 | `/go` or full pipeline | go mode (`references/go-mode.md`) |
 | Resume | surface HANDOFF, wait |
 

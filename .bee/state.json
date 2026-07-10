@@ -11,12 +11,12 @@
   },
   "workers": [
     {
-      "nickname": "sculptor",
-      "cell": "evolving-10",
-      "tier": "ceiling",
-      "model": "session",
+      "nickname": "shipwright",
+      "cell": "evolving-11",
+      "tier": "generation",
+      "model": "sonnet",
       "status": "spawned",
-      "at": "2026-07-10T09:50:04.904Z"
+      "at": "2026-07-10T10:04:06.457Z"
     }
   ],
   "summary": "P18 slice B validated (READY WITH CONSTRAINTS) and Gate 3 approved 2026-07-10. Executing evolving-9 -> 10 -> 11.",
@@ -43,10 +43,10 @@
     "open_cell": "evolving-8"
   },
   "cells": {
-    "open": 1,
+    "open": 0,
     "claimed": 0,
-    "capped": 28,
+    "capped": 29,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T10:03:24.900Z"
+  "last_activity": "2026-07-10T10:12:16.192Z"
 }

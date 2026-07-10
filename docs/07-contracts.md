@@ -135,7 +135,43 @@ bee_decisions.mjs log --decision D --rationale R [--alternatives A] [--scope S] 
                  | supersede --id UUID --decision D --rationale R
                  | redact --id UUID --reason R
                  | active [--recent N] | search --text T
+
+bee_feedback.mjs digest [--out PATH] [--json]     (P18, evolving loop; decision 8cd4c84e / D2)
+                 | count [--json]
+                 | collect [--json]
+                 | rank [--json]
+  digest   → builds and writes the LOCAL allowlist digest (buildDigest) to .bee/feedback-digest.json
+             (or --out PATH); schema_version + counts + dropped[] + entries[] (allowlist fields only,
+             see "bee-evolving contract" below)
+  count    → same digest, prints counts only (no write)
+  collect  → the MERGED view: buildDigest(root) folded with every configured dogfood_repos digest via
+             mergeDigests (revalidates + datamarks every foreign field — D2b); absent/unreachable
+             dogfood repos are skipped with a warning, never thrown
+  rank     → clusterEntries + rankClusters over the SAME merged view collect returns; no business
+             logic in the CLI — see lib API below
 ```
+
+## `bee-evolving` contract (P18, self-improvement loop; decisions D1–D5, `8cd4c84e`, `ff26725d`)
+
+Enforced invariants only — this section states no promise the code above does not already make:
+
+- **The digest is an allowlist, not a redaction filter (`8cd4c84e`, supersedes `20784de8`).**
+  `buildDigest` writes only `{kind, layer, source, title, first_seen, pain}` per entry plus
+  `dropped[]`; there is no `detail`/`text`/`outcome`/`deviations` field to leak because none is ever
+  read into the digest object.
+- **The consumer revalidates every foreign field (D2b).** `mergeDigests` re-runs the secret and
+  injection pattern scans against each configured `dogfood_repos` digest and wraps every surviving
+  foreign `title` in `datamark()` before it is returned — a hand-edited or hostile foreign digest is
+  never trusted as-is. `bee_feedback.mjs rank`/`collect` only ever consume `mergeDigests`'s output,
+  never a foreign digest file directly.
+- **Bee-repo-only (D3).** `skills/bee-evolving/SKILL.md` step 0 is a hard guard
+  (`test -f skills/bee-hive/templates/lib/feedback.mjs && test -f skills/bee-writing-skills/SKILL.md`)
+  that refuses to proceed anywhere the bee-repo-only files are absent; pressure-tested RED-first
+  under the full Iron Law (decision `ff26725d`) — see
+  `docs/history/evolving-loop/reports/evolving-10-pressure.md`.
+- **Two human gates (D5).** The skill stops for an explicit human choice before any implementation
+  (Gate A) and an explicit human approval of the complete diff before any push (Gate B); push is a
+  named manual step, never automatic. Both gates are pressure-tested RED-first (same report).
 
 ## Hook contracts (`hooks/`)
 
