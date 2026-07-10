@@ -820,3 +820,159 @@ export function mergeDigests(root, { now } = {}) {
     },
   };
 }
+
+// ─── slice B — ranking (P18, plan.md revision 3) ───────────────────────────
+//
+// The cluster key defuses TWO traps in one pass:
+//   (1) the datamark asymmetry trap — a foreign title is stored wrapped in
+//       «…» (mergeDigests, D2b) while an identical LOCAL title is stored bare
+//       (buildDigest never wraps its own trusted output). A naive string
+//       comparison never unifies them.
+//   (2) datamark's own double-wrap non-idempotence — datamark(datamark(t))
+//       produces «« t »», not «t» — so a title that has been merged twice (or
+//       whose source repo itself already carried a wrapped title) needs a
+//       FIXED-POINT strip, not a single strip.
+//
+// normalizeTitle strips the wrapper to fixed point, then re-applies the SAME
+// cleaning transforms datamark() itself runs (decisions.mjs:145-149 — fence
+// strip, role-tag strip, C0 control-char strip, trim) so the invariant
+// normalizeTitle(datamark(t)) === normalizeTitle(t) holds even when t already
+// carries a fence or a role tag (plan-checker finding W4): a bare local title
+// must match its datamarked foreign twin. It is intentionally NOT exported for
+// rendering — key is an INTERNAL clustering handle; every surface that shows a
+// title uses the stored (still-wrapped-for-foreign) entry.title, never this.
+export function normalizeTitle(title) {
+  let text = String(title ?? '');
+
+  // (1) Strip the «…» datamark wrapper to fixed point.
+  for (;;) {
+    const trimmed = text.trim();
+    if (trimmed.length >= 2 && trimmed.startsWith('«') && trimmed.endsWith('»')) {
+      text = trimmed.slice(1, -1);
+    } else {
+      text = trimmed;
+      break;
+    }
+  }
+
+  // (2) Apply datamark's OWN cleaning transforms (decisions.mjs:145-149) so a
+  // title carrying a fence, a role tag, or a control char normalizes the same
+  // way whether it arrived bare (local) or wrapped (foreign, already cleaned
+  // once by datamark).
+  const cleaned = text
+    .replace(/```+/g, '')
+    .replace(/<\/?\s*(?:system|assistant|user|developer|tool)\b[^>]*>/gi, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .trim();
+
+  // (3) Casefold + collapse whitespace so purely-cosmetic differences (case,
+  // repeated spaces) never split one friction into two clusters.
+  return cleaned.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Group every entry in a merged view into clusters keyed by normalizeTitle.
+ * Iterates BOTH the local `.entries` (repo = view.repo_label) and each
+ * `merged[i].entries` (repo = merged[i].repo_label) — the shape mergeDigests
+ * returns. Each cluster is { key, entries, pain, frequency, corroboration }:
+ *   - pain          = max entry.pain in the cluster (default 1 for a
+ *                      malformed/missing pain, matching buildEntry's own
+ *                      local default so a cluster is never rank-starved by a
+ *                      hole in the data)
+ *   - frequency      = cluster size (total contributing entries)
+ *   - corroboration  = count of DISTINCT repos contributing (the local repo
+ *                      counts as one repo, same as every foreign repo)
+ *
+ * Never throws on an empty or malformed view — an absent `.entries` /
+ * `.merged` is treated as [], so `clusterEntries({})` returns [].
+ *
+ * @param {object} mergedView - the shape returned by mergeDigests (or
+ *   buildDigest, which has no `.merged`)
+ * @returns {Array<{key: string, entries: object[], pain: number, frequency: number, corroboration: number}>}
+ */
+export function clusterEntries(mergedView) {
+  const view = mergedView && typeof mergedView === 'object' ? mergedView : {};
+  const localEntries = Array.isArray(view.entries) ? view.entries : [];
+  const mergedRepos = Array.isArray(view.merged) ? view.merged : [];
+  const localLabel = typeof view.repo_label === 'string' && view.repo_label ? view.repo_label : 'local';
+
+  const buckets = new Map();
+  const order = [];
+
+  const addEntry = (entry, repoLabel) => {
+    if (!entry || typeof entry !== 'object') return;
+    const key = normalizeTitle(entry.title);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { key, entries: [], pain: 0, repos: new Set() };
+      buckets.set(key, bucket);
+      order.push(key);
+    }
+    bucket.entries.push(entry);
+    bucket.repos.add(repoLabel);
+    const pain = Number.isInteger(entry.pain) && entry.pain > 0 ? entry.pain : 1;
+    if (pain > bucket.pain) bucket.pain = pain;
+  };
+
+  for (const entry of localEntries) addEntry(entry, localLabel);
+  for (const repo of mergedRepos) {
+    if (!repo || typeof repo !== 'object') continue;
+    const label = typeof repo.repo_label === 'string' && repo.repo_label ? repo.repo_label : 'unknown';
+    const entries = Array.isArray(repo.entries) ? repo.entries : [];
+    for (const entry of entries) addEntry(entry, label);
+  }
+
+  return order.map((key) => {
+    const bucket = buckets.get(key);
+    return {
+      key: bucket.key,
+      entries: bucket.entries,
+      pain: bucket.pain,
+      frequency: bucket.entries.length,
+      corroboration: bucket.repos.size,
+    };
+  });
+}
+
+// Earliest first_seen among a cluster's entries — the tie-break input. A
+// cluster with no valid first_seen anywhere sorts as '' (lexicographically
+// earliest), which is deterministic even though it is not chronological.
+function clusterFirstSeen(cluster) {
+  let earliest = null;
+  const entries = Array.isArray(cluster.entries) ? cluster.entries : [];
+  for (const entry of entries) {
+    const firstSeen = entry && typeof entry.first_seen === 'string' ? entry.first_seen : null;
+    if (firstSeen && (earliest === null || firstSeen < earliest)) earliest = firstSeen;
+  }
+  return earliest;
+}
+
+/**
+ * Rank clusters by rank = pain * frequency * corroboration, descending.
+ * Deterministic tie-break: earliest first_seen ascending, then cluster key
+ * lexicographic — so two runs over the SAME pinned digest are byte-identical
+ * (the same idempotence discipline buildDigest's clock injection proves).
+ * No non-deterministic input (clock, LLM, filesystem order) reaches this
+ * computation — it is a pure sort over its argument.
+ *
+ * @param {Array<{key: string, entries: object[], pain: number, frequency: number, corroboration: number}>} clusters
+ * @returns {Array<{key: string, entries: object[], pain: number, frequency: number, corroboration: number, rank: number, first_seen: string|null}>}
+ */
+export function rankClusters(clusters) {
+  const list = Array.isArray(clusters) ? clusters : [];
+  const ranked = list.map((cluster) => ({
+    ...cluster,
+    rank: cluster.pain * cluster.frequency * cluster.corroboration,
+    first_seen: clusterFirstSeen(cluster),
+  }));
+  ranked.sort((a, b) => {
+    if (b.rank !== a.rank) return b.rank - a.rank;
+    const aFirstSeen = a.first_seen ?? '';
+    const bFirstSeen = b.first_seen ?? '';
+    if (aFirstSeen !== bFirstSeen) return aFirstSeen < bFirstSeen ? -1 : 1;
+    if (a.key < b.key) return -1;
+    if (a.key > b.key) return 1;
+    return 0;
+  });
+  return ranked;
+}

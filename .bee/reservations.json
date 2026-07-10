@@ -455,6 +455,46 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-10T09:00:32.180Z",
       "released_at": "2026-07-10T09:02:42.738Z"
+    },
+    {
+      "agent": "ranker",
+      "cell": "evolving-9",
+      "path": "skills/bee-hive/templates/lib/feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:42:54.645Z",
+      "released_at": "2026-07-10T09:48:27.728Z"
+    },
+    {
+      "agent": "ranker",
+      "cell": "evolving-9",
+      "path": "skills/bee-hive/templates/bee_feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:42:54.685Z",
+      "released_at": "2026-07-10T09:48:27.728Z"
+    },
+    {
+      "agent": "ranker",
+      "cell": "evolving-9",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:42:54.729Z",
+      "released_at": "2026-07-10T09:48:27.728Z"
+    },
+    {
+      "agent": "ranker",
+      "cell": "evolving-9",
+      "path": ".bee/bin/lib/feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:42:54.773Z",
+      "released_at": "2026-07-10T09:48:27.728Z"
+    },
+    {
+      "agent": "ranker",
+      "cell": "evolving-9",
+      "path": ".bee/bin/bee_feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T09:42:54.813Z",
+      "released_at": "2026-07-10T09:48:27.728Z"
     }
   ]
 }

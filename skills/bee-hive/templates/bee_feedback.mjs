@@ -8,16 +8,22 @@
 //   node .bee/bin/bee_feedback.mjs digest [--out <path>] [--json]
 //   node .bee/bin/bee_feedback.mjs count [--json]
 //   node .bee/bin/bee_feedback.mjs collect [--json]
+//   node .bee/bin/bee_feedback.mjs rank [--json]
 //
 // `collect` returns the LOCAL digest only (this repo's own feedback). The
 // dogfood_repos merge across foreign repos belongs to evolving-3, which depends
 // on this cell: it redirects the single buildDigest(...) call inside the
 // 'collect' case to mergeDigests(...) instead of adding a second code path.
+//
+// `rank` (P18, slice B, evolving-9) is a THIN wrapper too: it calls
+// mergeDigests to get the same merged view `collect` returns, then
+// clusterEntries + rankClusters from lib/feedback.mjs. No clustering or
+// ranking logic lives here — see lib/feedback.mjs for the definitions.
 
 import path from 'node:path';
 import { findRepoRoot } from './lib/state.mjs';
 import { writeJsonAtomic } from './lib/fsutil.mjs';
-import { buildDigest, mergeDigests } from './lib/feedback.mjs';
+import { buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
 
 const DEFAULT_DIGEST_PATH = path.join('.bee', 'feedback-digest.json');
 
@@ -114,9 +120,23 @@ function run(args) {
         text: `Merged digest — ${summaryLine(digest)}${suffix}.`,
       };
     }
+    case 'rank': {
+      // Slice B (P18, evolving-9): cluster + rank over the SAME revalidated
+      // merged view 'collect' returns — never a raw foreign digest. No
+      // business logic here: clusterEntries/rankClusters live in the lib.
+      const digest = mergeDigests(root, { now: new Date() });
+      const clusters = clusterEntries(digest);
+      const ranked = rankClusters(clusters);
+      const top = ranked.length > 0 ? ranked[0] : null;
+      const topWord = top ? `top rank ${top.rank} (pain ${top.pain} × frequency ${top.frequency} × corroboration ${top.corroboration})` : 'no clusters';
+      return {
+        result: ranked,
+        text: `${ranked.length} cluster${ranked.length === 1 ? '' : 's'} — ${topWord}.`,
+      };
+    }
     default:
       throw new Error(
-        `Unknown command "${args.command || '(missing)'}". Use: digest, count, collect.`,
+        `Unknown command "${args.command || '(missing)'}". Use: digest, count, collect, rank.`,
       );
   }
 }

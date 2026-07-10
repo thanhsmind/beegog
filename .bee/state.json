@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "phase": "planning-complete",
+  "phase": "swarming",
   "feature": "evolving-loop",
   "mode": "high-risk",
   "approved_gates": {
@@ -9,9 +9,18 @@
     "execution": true,
     "review": false
   },
-  "workers": [],
-  "summary": "P18: slice A shipped (evolving-1..8, 110 tests). Slice B shaped at plan.md revision 3, Gate 2 approved 2026-07-10, cells evolving-9/10/11 created.",
-  "next_action": "Invoke bee-validating (slice B: evolving-9/10/11; rider: configure anphabe-gogl dogfood repo + generate its digest).",
+  "workers": [
+    {
+      "nickname": "ranker",
+      "cell": "evolving-9",
+      "tier": "generation",
+      "model": "sonnet",
+      "status": "spawned",
+      "at": "2026-07-10T09:40:04.991Z"
+    }
+  ],
+  "summary": "P18 slice B validated (READY WITH CONSTRAINTS) and Gate 3 approved 2026-07-10. Executing evolving-9 -> 10 -> 11.",
+  "next_action": "Swarm slice B sequentially; goal-check each cell (10/11: read pressure reports, not just suite).",
   "last_scribing_run": {
     "feature": "evolving-loop",
     "date": "2026-07-10",
@@ -34,10 +43,10 @@
     "open_cell": "evolving-8"
   },
   "cells": {
-    "open": 3,
+    "open": 2,
     "claimed": 0,
-    "capped": 26,
+    "capped": 27,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T09:36:47.887Z"
+  "last_activity": "2026-07-10T09:49:14.049Z"
 }
