@@ -1,23 +1,23 @@
 {
   "schema_version": "1.0",
-  "phase": "validated",
-  "feature": "config-sample-move",
-  "mode": "tiny",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": false
+    "review": true
   },
   "workers": [],
-  "summary": "Owner-directed move of config-sample.json into .bee/ — merged shape+execution gate approved by the owner instruction itself (tiny fast path).",
-  "next_action": "Solo execution of config-sample-move-1.",
+  "summary": "config-sample-move closed: sample relocated to .bee/config-sample.json per owner (decision 9749b660), verify green, no behavior change.",
+  "next_action": null,
   "last_scribing_run": {
-    "feature": "config-sample",
+    "feature": "config-sample-move",
     "date": "2026-07-10",
-    "at": "2026-07-10T15:28:14.865Z",
+    "at": "2026-07-10T15:33:24.898Z",
     "areas_synced": [
-      "docs/03-workflow.md (lane scaling v2 sync; no behavior_change cells in config-sample itself)"
+      "no sync needed — no behavior_change cells; supersede recorded in decision log"
     ],
     "next_action": null
   },
