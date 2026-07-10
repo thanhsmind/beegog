@@ -76,6 +76,18 @@ export const KIND_ALIASES = {
   learning: 'learning',
 };
 
+/**
+ * The closed set of NORMALIZED kinds — the alias VALUES, e.g. 'finding',
+ * 'approval', 'closed', 'audit', 'correction' — derived from KIND_ALIASES so
+ * the two can never drift into two separate literals. This is what makes
+ * normalizeKind idempotent: a digest bee already wrote carries values from
+ * this set (never alias KEYS like 'review-finding'), and the consumer's
+ * re-normalization (a D2b security control — see mergeDigests) must accept
+ * its own producer's vocabulary unchanged while still rejecting anything
+ * genuinely unrecognized (a foreign `kind: {}` or `kind: "<script>"`).
+ */
+export const NORMALIZED_KINDS = new Set(Object.values(KIND_ALIASES));
+
 const MAX_TITLE = 200;
 const PAIN_SEVERITY = { P1: 3, P2: 2, P3: 1 };
 const PAIN_LMH = { low: 1, medium: 2, high: 3 };
@@ -165,9 +177,21 @@ export function listInScope(root, relDir) {
   return names;
 }
 
-function normalizeKind(rawType) {
+/**
+ * Map a raw backlog `type` (an alias KEY, e.g. 'review-finding') to its
+ * normalized kind (the VALUE, e.g. 'finding'). IDEMPOTENT: a value already in
+ * NORMALIZED_KINDS (i.e. already-normalized — exactly what a digest bee
+ * already wrote carries) is returned unchanged, so re-running this on the
+ * consumer path (D2b) never rejects the producer's own vocabulary. A
+ * genuinely unrecognized token — including a non-string like `{}` or `null`,
+ * or an unrecognized string like '<script>' — still becomes null
+ * (unknown_type). Exported so its idempotence is directly testable.
+ */
+export function normalizeKind(rawType) {
   if (typeof rawType !== 'string') return null;
-  return Object.prototype.hasOwnProperty.call(KIND_ALIASES, rawType) ? KIND_ALIASES[rawType] : null;
+  if (Object.prototype.hasOwnProperty.call(KIND_ALIASES, rawType)) return KIND_ALIASES[rawType];
+  if (NORMALIZED_KINDS.has(rawType)) return rawType;
+  return null;
 }
 
 function scanTitle(value) {

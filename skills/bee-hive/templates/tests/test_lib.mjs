@@ -63,6 +63,8 @@ import {
   ENTRY_FIELDS,
   DROP_REASONS,
   KIND_ALIASES,
+  NORMALIZED_KINDS,
+  normalizeKind,
   resolveInScope,
   listInScope,
   collectFeedback,
@@ -2045,6 +2047,137 @@ check('mergeDigests: every surviving foreign string field that can reach a promp
     assert(entry.layer === datamark('backend'), `surviving foreign layer is datamark-wrapped, got ${JSON.stringify(entry.layer)}`);
   } finally {
     fs.rmSync(r, { recursive: true, force: true });
+    fs.rmSync(foreign, { recursive: true, force: true });
+  }
+});
+
+// ─── regression guard: normalizeKind idempotence (evolving-6, real-corpus loss) ─
+// evolving-5 closed a P1 (mergeDigests copying foreign fields raw) by re-running
+// kind normalization on the consumer path — a genuine D2b security control. But
+// a digest bee already WROTE carries NORMALIZED kinds (KIND_ALIASES' VALUES,
+// e.g. 'audit'), not the raw alias KEYS (e.g. 'entropy-audit') the producer
+// read. Re-running normalizeKind on an already-normalized value fell through to
+// unknown_type, because a normalized value is not an alias KEY. Measured
+// against the real anphabe-gogl digest: 59 entries in, 52 out, 7 dropped,
+// wiping out audit/correction/approval/closed entirely. The fix must be
+// idempotence, not deletion of the consumer-side re-normalization.
+
+check('normalizeKind is idempotent for every alias key and every normalized kind (the regression: re-running it on an already-normalized value must not fall through to unknown_type)', () => {
+  for (const key of Object.keys(KIND_ALIASES)) {
+    const once = normalizeKind(key);
+    assert(once !== null, `alias key "${key}" normalizes to something, not null`);
+    const twice = normalizeKind(once);
+    assert(twice === once, `normalizeKind("${key}") = "${once}", but normalizeKind(that) = "${twice}" — not idempotent`);
+  }
+  for (const kind of NORMALIZED_KINDS) {
+    const once = normalizeKind(kind);
+    assert(once === kind, `an already-normalized kind "${kind}" must be returned unchanged, got "${once}"`);
+    const twice = normalizeKind(once);
+    assert(twice === once, `normalizeKind("${kind}") is not idempotent: "${once}" then "${twice}"`);
+  }
+});
+
+check('mergeDigests: a foreign digest carrying the four regressed kinds (audit, correction, approval, closed — already-normalized VALUES, exactly what a producer writes) merges with zero unknown_type drops', () => {
+  const r = mkFeedbackRepo();
+  const foreign = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-foreign-regressed-'));
+  try {
+    const regressedKinds = ['audit', 'correction', 'approval', 'closed'];
+    writeForeignDigest(foreign, {
+      schema_version: '1.0',
+      repo_label: 'anphabe-gogl',
+      entries: regressedKinds.map((kind) => foreignEntry({ kind, title: `a ${kind} entry` })),
+    });
+    writeDogfoodConfig(r, [{ path: foreign, label: 'anphabe-gogl' }]);
+    const m = mergeDigests(r, { now: PIN });
+    const group = m.merged[0];
+    assert(group.entries.length === regressedKinds.length, `all ${regressedKinds.length} regressed-kind entries survive, got ${group.entries.length}`);
+    assert(!group.dropped.some((d) => d.reason === 'unknown_type'), `zero unknown_type drops, got ${JSON.stringify(group.dropped)}`);
+    for (const kind of regressedKinds) {
+      assert(group.entries.some((e) => e.kind === kind), `kind "${kind}" present in merged entries, got kinds ${JSON.stringify(group.entries.map((e) => e.kind))}`);
+    }
+  } finally {
+    fs.rmSync(r, { recursive: true, force: true });
+    fs.rmSync(foreign, { recursive: true, force: true });
+  }
+});
+
+check('mergeDigests: a foreign `kind` of {}, "<script>", or null is still dropped as unknown_type — the D2b re-normalization control stays intact', () => {
+  const r = mkFeedbackRepo();
+  const foreign = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-foreign-badkind-'));
+  try {
+    writeForeignDigest(foreign, {
+      schema_version: '1.0',
+      repo_label: 'foreign',
+      entries: [
+        foreignEntry({ kind: {}, title: 'object kind' }),
+        foreignEntry({ kind: '<script>', title: 'script kind' }),
+        foreignEntry({ kind: null, title: 'null kind' }),
+      ],
+    });
+    writeDogfoodConfig(r, [{ path: foreign, label: 'foreign' }]);
+    const m = mergeDigests(r, { now: PIN });
+    const group = m.merged[0];
+    assert(group.entries.length === 0, `none of the 3 bad-kind entries are merged, got ${group.entries.length}`);
+    assert(group.dropped.length === 3, `all 3 land in dropped, got ${group.dropped.length}`);
+    assert(group.dropped.every((d) => d.reason === 'unknown_type'), `every drop is reason unknown_type, got ${JSON.stringify(group.dropped.map((d) => d.reason))}`);
+  } finally {
+    fs.rmSync(r, { recursive: true, force: true });
+    fs.rmSync(foreign, { recursive: true, force: true });
+  }
+});
+
+check('round-trip: a digest produced by buildDigest and fed straight into mergeDigests loses ZERO entries (producer/consumer vocabulary symmetry — the assertion that would have caught the regression)', () => {
+  const producer = mkFeedbackRepo();
+  const consumer = mkFeedbackRepo();
+  const foreign = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-roundtrip-'));
+  try {
+    // Cover every backlog-facing alias key (14), plus the cell-derived kinds
+    // (blocked, deviation) and the learnings-derived kind (learning) — 17 of
+    // KIND_ALIASES' 17 keys, spanning all 13 members of NORMALIZED_KINDS,
+    // including the four kinds the regression wiped out (audit, correction,
+    // approval, closed).
+    writeBacklog(producer, [
+      { type: 'friction', title: 'a friction row', ts: PIN },
+      { type: 'finding', title: 'a finding row', severity: 'P2', ts: PIN },
+      { type: 'review-finding', title: 'a review-finding row', severity: 'P1', ts: PIN },
+      { type: 'proposal', title: 'a proposal row', ts: PIN },
+      { type: 'kill-proposal', title: 'a kill-proposal row', ts: PIN },
+      { type: 'outcome', title: 'an outcome row', ts: PIN },
+      { type: 'kill-outcome', title: 'a kill-outcome row', ts: PIN },
+      { type: 'kill-approval', title: 'a kill-approval row', ts: PIN },
+      { type: 'backlog-closed', title: 'a backlog-closed row', ts: PIN },
+      { type: 'entropy-audit', title: 'an entropy-audit row', ts: PIN },
+      { type: 'harness-issue', title: 'a harness-issue row', ts: PIN },
+      { type: 'debt', title: 'a debt row', ts: PIN },
+      { type: 'migrate-on-touch', title: 'a migrate-on-touch row', ts: PIN },
+      { type: 'scope-correction', title: 'a scope-correction row', ts: PIN },
+    ]);
+    writeLearning(producer, '20200101-round.md', { date: '2020-01-01', severity: 'medium' }, 'a learning row');
+    writeCellFile(producer, 'rt-blocked', { blocked_reason: 'x', deviations: [], capped_at: PIN });
+    writeCellFile(producer, 'rt-deviation', { blocked_reason: null, deviations: ['one'], capped_at: PIN });
+
+    const producedDigest = buildDigest(producer, { now: PIN });
+    assert(producedDigest.dropped.length === 0, `the producer digest itself drops nothing, got ${JSON.stringify(producedDigest.dropped)}`);
+    assert(producedDigest.entries.length === 17, `producer digest holds all 17 entries, got ${producedDigest.entries.length}`);
+
+    // Feed the produced digest back in as an untrusted FOREIGN digest, exactly
+    // as a real dogfood repo's already-written feedback-digest.json would be.
+    writeForeignDigest(foreign, producedDigest);
+    writeDogfoodConfig(consumer, [{ path: foreign, label: 'anphabe-gogl' }]);
+    const merged = mergeDigests(consumer, { now: PIN });
+    const group = merged.merged[0];
+
+    assert(group.entries.length === producedDigest.entries.length, `zero entries lost on round-trip: produced ${producedDigest.entries.length}, merged ${group.entries.length}, dropped ${JSON.stringify(group.dropped)}`);
+    assert(group.dropped.length === 0, `zero drops on round-trip, got ${JSON.stringify(group.dropped)}`);
+    const mergedKinds = group.entries.map((e) => e.kind).sort();
+    const producedKinds = producedDigest.entries.map((e) => e.kind).sort();
+    assert(mergedKinds.join(',') === producedKinds.join(','), `merged kinds match produced kinds exactly, got ${mergedKinds.join(',')} vs ${producedKinds.join(',')}`);
+    for (const kind of ['audit', 'correction', 'approval', 'closed']) {
+      assert(mergedKinds.includes(kind), `regressed kind "${kind}" survives the round-trip, got ${mergedKinds.join(',')}`);
+    }
+  } finally {
+    fs.rmSync(producer, { recursive: true, force: true });
+    fs.rmSync(consumer, { recursive: true, force: true });
     fs.rmSync(foreign, { recursive: true, force: true });
   }
 });
