@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.18",
+  "bee_version": "0.1.19",
   "managed": {
     "agents_block": "2b1561be670adc571676fff44a8b5fd9649a43523cab0995fe9f16a57419fcd8",
     "helpers": {
@@ -8,6 +8,7 @@
       "bee_capture.mjs": "11dc00e64b8926bc1f53961d128e9eee46dd397442bae360d27feaa775bef2a8",
       "bee_cells.mjs": "1097fa1814caf6f43c0ad9826f6cede693502ec1a33fddd864bc0c88a2d7abdc",
       "bee_decisions.mjs": "1a5e1b02d66ee55416c52e5eac29d7c0ee623cf9b8a79a8f84d0eef43d91973b",
+      "bee_feedback.mjs": "0e01eb9e93f37b83aa2683f29438969076f8c05b4aeacf40fa26eae3f92e7990",
       "bee_reservations.mjs": "02b0b1fe84e994a5a33bf4aaf181317d0b4fa88b064a5b53f800af8a0ccf9fd8",
       "bee_status.mjs": "bb8c9fcd47bdbc27aa39bd918f92facce0816d42b2f066fa0ebc2d080b1081d5"
     },
@@ -17,11 +18,12 @@
       "cells.mjs": "852836af6411e654a96f5e03bc5b007d31df95194a44fadc611d5704e3aadf6a",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
-      "fsutil.mjs": "303ed5d4b11b71038856208ff37d7342e3435b0776e07b7094dd9476dd6dd036",
+      "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
+      "fsutil.mjs": "7bbfb70e5f6bcf3b18d4c4be9342d55bb748683d419a219b3406dae0a04b3691",
       "guards.mjs": "7c5c0669a0482e3640edb365cc68b33ec59e14a5524762947f80ad12496f8f9d",
       "inject.mjs": "0763fa9856ed15827ed7c62d34fb66129a63722dcd554bf485da61ff0906fae8",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
-      "state.mjs": "4607cf38f738538b2297fbef810be2725c18f8b6c3c7c9a3977d1849a52cdf5c"
+      "state.mjs": "f756d86b68cd5d05e025fbe7773c22441c0e00cee48c503d61973c3650d12565"
     },
     "repo_hooks": {
       "bee-session-init.mjs": "553fb75679c922e9eb08a1dd49e51f9168950007041c74b8e23c866ca8078b6c",
@@ -33,5 +35,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-10T11:03:48.433Z"
+  "updated_at": "2026-07-10T11:31:54.959Z"
 }

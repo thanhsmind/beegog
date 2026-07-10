@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 
-export const BEE_VERSION = '0.1.18';
+export const BEE_VERSION = '0.1.19';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -135,6 +135,47 @@ function normalizeTierValue(value) {
   return undefined;
 }
 
+// Decision 8cd4c84e / D2b (P18, evolving loop) — dogfood_repos: the foreign repos
+// whose ALREADY-WRITTEN .bee/feedback-digest.json bee's evolving loop consumes.
+// Each entry normalizes to { path, label }: a bare string is the path (label
+// defaults to its basename), or an explicit { path, label } object. Absent key,
+// or any other shape, → [] / skipped — never thrown. Every path is path.resolve()d
+// THEN fs.realpath()ed here (critical pattern [20260708]: an MSYS /tmp string must
+// never reach a node fs API unresolved), and a path that does not exist or is
+// unreadable is WARNED and SKIPPED — one dead dogfood repo must never break the
+// bee repo's own session. Mirrors normalizeCommands / normalizeModels /
+// normalizeAdvisor: a single parse path lives in readConfig, nowhere else.
+function normalizeDogfoodRepos(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw) {
+    let rawPath = null;
+    let label = null;
+    if (typeof item === 'string') {
+      rawPath = item;
+    } else if (item && typeof item === 'object' && !Array.isArray(item) && typeof item.path === 'string') {
+      rawPath = item.path;
+      if (typeof item.label === 'string' && item.label.trim()) label = item.label.trim();
+    } else {
+      continue; // any other shape is ignored, never thrown
+    }
+    if (typeof rawPath !== 'string' || !rawPath.trim()) continue;
+    const resolved = path.resolve(rawPath.trim());
+    let real;
+    try {
+      real = fs.realpathSync(resolved);
+    } catch (err) {
+      // A missing or unreadable dogfood repo is warned and skipped, never thrown.
+      console.warn(
+        `dogfood_repos: skipping "${rawPath}" — ${err && err.code ? err.code : err} (dead or unreadable repo; the bee session continues)`,
+      );
+      continue;
+    }
+    out.push({ path: real, label: label || path.basename(resolved) });
+  }
+  return out;
+}
+
 function normalizeModels(raw) {
   const out = {
     claude: { ...DEFAULT_MODELS.claude },
@@ -233,6 +274,7 @@ export function readConfig(root) {
     commands: normalizeCommands(config.commands),
     models: normalizeModels(config.models),
     advisor: normalizeAdvisor(config.advisor),
+    dogfood_repos: normalizeDogfoodRepos(config.dogfood_repos),
   };
 }
 

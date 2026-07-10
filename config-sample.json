@@ -26,11 +26,14 @@
         "model": "sonnet",
         "effort": "medium"
       },
-      "review": "opus"
+      "review": {
+        "kind": "cli",
+        "command": "codex exec --sandbox workspace-write"
+      }
     },
     "codex": {
-      "extraction": null,
-      "generation": null,
+      "extraction": "gpt-5.5",
+      "generation": "gpt-5.5",
       "review": {
         "kind": "cli",
         "command": "codex exec --sandbox workspace-write"
