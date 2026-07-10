@@ -63,6 +63,7 @@ Then read `docs/history/learnings/critical-patterns.md` and surface recent activ
 | Vague or new feature | `bee-exploring` |
 | Research task, clear scope | `bee-planning` |
 | Small clear fix | `bee-planning` (tiny/small mode) |
+| Docs/spec/README/sample-only change | docs lane — announce, write, format-check, capture; no pipeline |
 | Review request | `bee-reviewing` |
 | Document a screen/API/job/area; "ghi lại rule này"; a just-settled rule/behavior/value to keep; spec an existing feature | `bee-scribing` |
 | (Re)generate or read a feature's implement plan | `bee-briefing` |
@@ -85,6 +86,7 @@ Classification is **mechanical**. Count these risk flags:
 
 | Mode | Trigger |
 |---|---|
+| `docs` | every touched file is knowledge, not runtime: `docs/`, specs, README, sample/example configs, plans — nothing executes it |
 | `tiny` | 0–1 flags, ≤2 files, no API/data change, one direct task |
 | `spike` | one yes/no proof decides whether the plan is real |
 | `small` | 0–1 flags, ≤3 files, no gray areas |
@@ -92,6 +94,20 @@ Classification is **mechanical**. Count these risk flags:
 | `high-risk` | 4+ flags **or any hard-gate flag** (auth, authorization, data loss, audit/security, external provider, validation removal) |
 
 Use the least workflow that honestly protects the work. A tiny fix wearing epic ceremony is a red flag; a hard-gate change routed as `small` is a worse one.
+
+**Ceremony scales with the lane (lanes scale ceremony, never memory):**
+
+| Lane | Plan | Validate | Execute | Review | Human stops |
+|---|---|---|---|---|---|
+| `docs` | none — announce one line | format check (parse/lint if applicable) | direct, in-session | none | 0 |
+| `tiny` | short `plan.md` direct note | 2-minute reality check inline, 0 subagents | direct, in-session (solo) | self-review + done-report (diff + fresh verify output) | 1 — the merged shape+execution gate |
+| `small` | short `plan.md` | inline reality gate + matrix, 0 subagents; spike only if a blocking assumption demands it | direct, in-session (solo) | 1 correctness reviewer + self-checks | 2 — merged shape+execution gate, Gate 4 |
+| `standard` | full `plan.md` | plan-checker + cell reviewer | swarm workers | 4 core reviewers + learnings pair | 4 gates |
+| `high-risk` | `plan.md` + brief | persona panel | swarm workers | full wave + conditionals | 4 gates |
+
+**Docs lane:** the change is knowledge upkeep, same class as capture — announce one line ("docs lane: writing X"), write it, run a format check when one exists (JSON parses, markdown lints), log a decision/capture stub when the content encodes a settled outcome. No cells, no gates, no reviewers. If the target path is outside the write-guard allowlist (`.bee/, docs/, .spikes/, plans/, AGENTS.md`) the hook will block the idle write — fall back to the tiny fast path instead of fighting the guard.
+
+**Tiny fast path:** Gates 2 and 3 are presented as **one merged question** — "Work shape + execution: I'm about to do X via Y, verified by Z. Approve?" — approval records both `shape` and `execution`. The 2-minute reality check runs inline before that question (validating folds into planning; it does not disappear). After the work: no separate merge gate — the done-report (diff + fresh verify output + capture line) closes it. A real problem found during self-review stops and asks, always.
 
 ## The Four Gates
 
@@ -101,6 +117,8 @@ Never skipped, never batched, never self-approved — including go mode and head
 - **Gate 2:** "Work shape is ready. Approve before current-work preparation?"
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
+
+Lane exceptions (Modes and Lanes table): `docs` lane has no gates; `tiny` and `small` merge Gates 2+3 into one shape+execution question, and `tiny` closes with a done-report instead of Gate 4. Every other lane asks all four, one at a time.
 
 **Presentation:** every gate is presented per the Gate Presentation Contract (`references/routing-and-contracts.md`): the chat message is the plain-language layer only — what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding, in the user's language — then the fixed question. The full mechanical report goes to `docs/history/<feature>/reports/` and is linked, never pasted. Litmus: the user can restate what they are approving in their own words.
 
@@ -150,7 +168,7 @@ With `mode:headless`: never ask blocking questions. Perform onboarding checks an
 
 ## Red Flags
 
-- jumping from exploring to swarming · code before CONTEXT.md exists · skipping validating · ignoring locked decisions · workers self-selecting cells · capping without verification · commits without cell ids · continuing past open P1s · reservation leaks · stale state.json after a phase transition · resuming without surfacing HANDOFF.json · plausibility language ("should work") accepted as evidence · a tiny fix wearing epic ceremony · a hard-gate change routed below high-risk · session history pasted into a worker dispatch · a gate presented as a mechanical table with no plain-language layer · a gate question the user cannot restate in their own words · a bee command handed to the user to run instead of run by the agent
+- a docs-only change routed through the full pipeline · jumping from exploring to swarming · code before CONTEXT.md exists · skipping validating · ignoring locked decisions · workers self-selecting cells · capping without verification · commits without cell ids · continuing past open P1s · reservation leaks · stale state.json after a phase transition · resuming without surfacing HANDOFF.json · plausibility language ("should work") accepted as evidence · a tiny fix wearing epic ceremony · a hard-gate change routed below high-risk · session history pasted into a worker dispatch · a gate presented as a mechanical table with no plain-language layer · a gate question the user cannot restate in their own words · a bee command handed to the user to run instead of run by the agent
 
 Violating the letter of the rules is violating the spirit of the rules.
 

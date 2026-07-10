@@ -17,6 +17,22 @@ metadata:
 
 Reviewing is the final automated quality gate after execution. It verifies that the completed feature is correct, safe, wired, and acceptable to the user before compounding begins. Cell closure is NOT proof the feature works.
 
+## Lane Scaling — review depth follows the lane
+
+Lanes scale ceremony, never memory. The specialist wave in §1 is the `standard`/`high-risk` protocol; smaller lanes run smaller reviews:
+
+| Lane | Review | Gate 4 |
+|---|---|---|
+| `docs` | none — never reaches this skill | none |
+| `tiny` | **self-review, 0 subagents**: re-run the verify command fresh; walk the diff against the self-check list below; verify the promised artifact EXISTS/SUBSTANTIVE/WIRED | **done-report, not a question**: diff + fresh verify output + capture line. A blocking problem found → stop and ask; otherwise proceed to scribing |
+| `small` | **1 correctness reviewer** (review slot, isolated context: diff + CONTEXT.md/plan.md only) + the tiny self-checks | asked normally |
+| `standard` | 4 core reviewers + learnings pair (§1 table) | asked normally |
+| `high-risk` | full wave + conditional reviewers, cap 7 | asked normally, UAT always |
+
+**Tiny self-check list:** does the diff do what the merged gate promised and nothing beyond its cell scope · fresh verify output green · no secret/credential touched · no test/CI/lockfile/verify-config change the cell didn't declare (frozen judge) · new artifact actually wired, not just present. Finding a real defect here is treated exactly like a P1: stop, tell the user, fix before proceeding — the fast path never ships a known defect.
+
+Everything below is the `standard`/`high-risk` protocol (`small` borrows only §1's dispatch mechanics for its single reviewer).
+
 ## Required Inputs
 
 - `docs/history/<feature>/CONTEXT.md` and `docs/history/<feature>/plan.md`
@@ -95,6 +111,8 @@ Present per the Gate Presentation Contract (bee-hive routing reference): plain-l
 
 Never continue past open P1s without explicit user acknowledgment. Silence is not acknowledgment.
 
+`tiny` lane exception (Lane Scaling table): with a clean self-review, Gate 4 is the done-report — no merge question. Any defect found flips it back into a blocking stop.
+
 **Gate bypass does not fully cover Gate 4 (decision 0010).** Even with `.bee/config.json` `gate_bypass: true`: the §5 UAT items (every SEE/CALL/RUN decision) are always presented to the human, and any P1 finding always stops. Bypass may auto-approve the **merge** question only when P1 = 0 **and** every UAT item was confirmed pass by the human — then record the review gate, log a one-line audit decision, and post a short `⚡ auto-approved merge (bypass)` line instead of asking. Any P1, or any UAT fail/skip, stops Gate 4 for the human as normal. Secret reads during review always require human approval regardless of bypass.
 
 ## Headless
@@ -103,6 +121,8 @@ Never continue past open P1s without explicit user acknowledgment. Silence is no
 
 ## Red Flags
 
+- a full reviewer wave spawned for a `tiny`/`small` lane (Lane Scaling: tiny = self-review, small = one correctness reviewer)
+- a tiny defect waved through because "it's just the fast path" — the fast path never ships a known defect
 - continuing past a P1 without explicit user acknowledgment
 - UAT failure marked pass, or a skip without a recorded reason
 - artifact verification skipped because "the cells are capped"

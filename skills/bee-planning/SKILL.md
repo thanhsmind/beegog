@@ -52,6 +52,7 @@ Count risk flags — do not vibe it:
 
 > auth · authorization · data model · audit/security · external systems · public contracts · cross-platform · existing covered behavior · weak proof around the area · multi-domain
 
+- **Every touched file is knowledge, not runtime** (docs/, specs, README, sample/example configs, plans) → `docs` lane: exit planning — announce one line, write it, format-check, capture per bee-hive. No plan.md, no cells, no gates.
 - **0–1 flags** → `tiny` (≤2 files, one direct task) or `small` (≤3 files, no gray areas)
 - **2–3 flags** or story-sized behavior → `standard`
 - **4+ flags or any hard-gate flag** (auth, authorization, data loss, audit/security, external provider, validation removal) → `high-risk`
@@ -81,6 +82,8 @@ Body scaled to mode: direct note, spike question, small plan, phase plan, or epi
 
 Render `docs/history/<feature>/implement-plan.md` via `bee-briefing` only where the fan-out table calls for it (decision 0009): **high-risk** always; **standard** on-demand (default: `plan.md` + the Gate 2 chat layer are the review record — render the brief only when the user asks or the slice spans multiple domains); **small** optional mini-brief on request; **tiny**/**spike** none. When a brief is rendered, the Gate 2 message links it as the review document; when not, the Gate 2 message links `plan.md` directly. Present **Gate 2** per the Gate Presentation Contract (bee-hive routing reference): plain-language layer in chat — what I plan to build / why this size / cost if the shape is wrong / what you are deciding — in the user's language, the review document linked not pasted; then verbatim: "Work shape is ready. Approve before current-work preparation?" — then **stop**. No pseudo-cells in markdown, no prep, no cells.
 
+**Tiny/small merged gate (fast path).** For `tiny` and `small`, run the validating reality check inline first — MODE FIT / REPO FIT / ASSUMPTIONS / SMALLER PATH / PROOF SURFACE, each with one line of file/command evidence, 2 minutes not a report — then present **one merged question** in place of Gates 2 and 3: "Work shape + execution: I'm about to do [X] via [Y], verified by [Z]. Approve?" Approval records **both** `approved_gates.shape` and `approved_gates.execution`. A reality-check FAIL is presented before asking, never buried. `bee-validating` is not separately invoked for these lanes; its subagents (plan-checker, cell reviewer) do not run — the plan is one direct task a stranger could pick up from `plan.md` alone, and the cold-pickup criteria are self-checked when writing the cell.
+
 ## 6. Prep (after Gate 2 approval only)
 
 1. Enrich the **same** `plan.md` in place to `artifact_readiness: implementation-ready`: current slice selected, files bounded, verification commands named.
@@ -90,7 +93,7 @@ Render `docs/history/<feature>/implement-plan.md` via `bee-briefing` only where 
    ```
    Every cell is an executable prompt: `files`, `read_first`, directive `action` citing D-IDs, `must_haves` (truths / artifacts / key_links / prohibitions), a runnable `verify` command, and `behavior_change: true` whenever the cell changes observable behavior. You may leave the model `tier` unset — the orchestrator judges each cell's difficulty and assigns the tier when it dispatches (decision 0016); set `tier` only as a hint when a cell is obviously mechanical (`extraction`) or obviously a hard integration/architecture call (`ceiling`), and even then swarming may override it. Cell quality rules and a schema example live in `references/planning-reference.md`.
 3. If an implement plan was rendered at §5 (high-risk, or a standard/small feature where one was produced on request), invoke `bee-briefing` in refresh mode so its Affected Files and Implementation Steps re-project from the created cells. If no brief exists, skip — there is nothing to refresh.
-4. Update `.bee/state.json`: `phase: planning-complete`, `next_action: "Invoke bee-validating."`
+4. Update `.bee/state.json` and hand off by lane: `tiny`/`small` (merged gate already approved) → `phase: validated`, `next_action: "Invoke bee-swarming (solo execution)."`; every other lane → `phase: planning-complete`, `next_action: "Invoke bee-validating."`
 
 ## Scope-Reduction Prohibition
 
@@ -113,4 +116,4 @@ With `mode:headless`: run bootstrap, discovery, mode gate, and synthesis without
 
 Violating the letter of the rules is violating the spirit of the rules.
 
-Plan shaped and current-slice cells prepared. Invoke bee-validating skill.
+Plan shaped and current-slice cells prepared. `tiny`/`small`: invoke bee-swarming skill (solo execution — the merged gate already covers execution approval). All other lanes: invoke bee-validating skill.

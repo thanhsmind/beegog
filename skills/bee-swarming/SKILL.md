@@ -15,7 +15,11 @@ metadata:
 
 # Swarming — Orchestrator
 
-You are the orchestrator. Launch workers, tend results, handle rescues, keep the swarm moving. You never implement cells yourself — spawned workers load bee-executing and do the work.
+You are the orchestrator. Launch workers, tend results, handle rescues, keep the swarm moving. In `standard`/`high-risk` lanes you never implement cells yourself — spawned workers load bee-executing and do the work.
+
+## Solo execution (tiny/small lanes)
+
+For `tiny` and `small`, **no workers are spawned** — you implement the cell(s) directly in-session, keeping the cell discipline intact: claim the cell, read its `read_first`, implement within its `files`, run its `verify` command and quote the fresh output, record `verification_evidence` (and `red_failure_evidence` for `behavior_change` cells per the cap rules), cap it. Reservations are unnecessary with one actor; the frozen-judge check (`node .bee/bin/bee_cells.mjs judge --id <id>`) still runs before capping. Then hand off: `tiny` → present the done-report (diff + fresh verify output + capture line) and invoke bee-scribing; `small` → invoke bee-reviewing (light: one correctness reviewer). Everything below this section is the worker protocol for `standard`/`high-risk`.
 
 ## Preconditions
 
@@ -68,7 +72,7 @@ Before declaring completion: all wave cells capped or explicitly blocked/dropped
 
 ## Hard Rules
 
-- Never implement cells yourself — not even a one-line fix; make it a cell and dispatch it.
+- In `standard`/`high-risk` lanes, never implement cells yourself — not even a one-line fix; make it a cell and dispatch it. (`tiny`/`small` run solo by design — see Solo execution.)
 - Never spawn before Gate 3 approval.
 - Never let workers self-select cells; pass one explicit cell id each.
 - Never resolve file conflicts by "being careful" — fix reservations or cell scope.
@@ -88,7 +92,8 @@ With `mode:headless`: waves run without check-ins; unrescuable blockers and anyt
 - two in-flight workers holding overlapping paths
 - passive waiting while cells/reservations look unhealthy
 - state.json missing in-flight workers
-- orchestrator editing source files
+- orchestrator editing source files in a `standard`/`high-risk` wave
+- workers spawned for a `tiny`/`small` lane (solo execution owns those)
 
 Violating the letter of the rules is violating the spirit of the rules.
 

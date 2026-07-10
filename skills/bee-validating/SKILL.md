@@ -15,7 +15,9 @@ metadata:
 
 # Validating — Guard Bees
 
-Validating is the hard gate between planning and execution. It rejects beautiful fantasy plans by demanding repo/system evidence, feasibility proof, and cells a stranger could pick up cold. Never skip validating — in tiny mode it collapses to a 2-minute reality check; it does not disappear.
+Validating is the hard gate between planning and execution. It rejects beautiful fantasy plans by demanding repo/system evidence, feasibility proof, and cells a stranger could pick up cold. Never skip validating — it scales down, it does not disappear.
+
+**Lane scaling.** For `tiny` and `small`, this skill is **not separately invoked**: the reality check runs inline inside bee-planning before the merged shape+execution gate (see bee-planning §5), and no validating subagents are spawned. This skill's full protocol below applies from `standard` upward — `standard` runs the plan-checker and cell reviewer; `high-risk` scales the checker to a persona panel. A `spike` runs whatever single proof its question demands, nothing more.
 
 Start with `node .bee/bin/bee_status.mjs --json`. If onboarding is missing or stale, stop and invoke bee-hive.
 
@@ -88,6 +90,7 @@ With `mode:headless`: run every check, apply unambiguous cell repairs, and defer
 ## Red Flags
 
 - skipping the reality gate or feasibility matrix
+- spawning the plan-checker or cell reviewer for a tiny/small lane (their reality check lives inline in planning)
 - accepting plausibility language as evidence
 - continuing after a NO spike because a workaround "probably works"
 - running a 4th plan-checker iteration instead of escalating

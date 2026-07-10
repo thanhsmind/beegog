@@ -4,6 +4,8 @@ Load this when executing go mode. Go mode is the full bee pipeline from raw feat
 
 Trigger: `/go [feature]`, "run the full pipeline", or "go mode".
 
+**Lane fast paths short-circuit this diagram** (bee-hive Modes and Lanes): `docs` lane skips the pipeline entirely (announce → write → format-check → capture). `tiny`/`small` collapse Steps 2–5 into: short plan.md → inline reality check → **one merged shape+execution gate** → solo in-session execution → self-review (`tiny`) or one correctness reviewer (`small`) → scribing. The full diagram below is the `standard`/`high-risk` pipeline.
+
 ```text
 User: "/go [feature]"
        │
@@ -62,7 +64,7 @@ Before invoking `bee-exploring`:
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
 
-Each gate is one question in the standard CONTEXT / QUESTION / RECOMMENDATION / options format, presented per the **Gate Presentation Contract** (`routing-and-contracts.md`): plain-language layer in chat, in the user's language; full mechanical report written to `docs/history/<feature>/reports/` and linked, never pasted. Gates are asked **one at a time** — never batch Gate 2 and Gate 3 into a single question, even when validation looks trivially clean. Optional at Gates 2–4: a cross-model second opinion; disagreement is quoted to the user, never auto-resolved.
+Each gate is one question in the standard CONTEXT / QUESTION / RECOMMENDATION / options format, presented per the **Gate Presentation Contract** (`routing-and-contracts.md`): plain-language layer in chat, in the user's language; full mechanical report written to `docs/history/<feature>/reports/` and linked, never pasted. Gates are asked **one at a time** — never batch Gate 2 and Gate 3 into a single question for `standard`/`high-risk` work, even when validation looks trivially clean. The **one designed exception** is the `tiny`/`small` merged shape+execution gate (bee-hive Modes and Lanes): there the inline reality check plus one merged question IS the contract, and `tiny` closes with a done-report instead of Gate 4. Optional at Gates 2–4: a cross-model second opinion; disagreement is quoted to the user, never auto-resolved.
 
 ## Gate Presentations
 

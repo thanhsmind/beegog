@@ -28,6 +28,8 @@ Gate wording (fixed, from khuym):
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
 
+Lane exceptions (lane scaling v2, decision d02a6bc6): the `docs` lane has no gates; `tiny`/`small` merge Gates 2+3 into one shape+execution question, and `tiny` closes with a done-report instead of the Gate 4 merge question. A defect found in any lane's review still stops for the human.
+
 **Gate Presentation Contract** (owner feedback, dogfood): a gate is presented in two layers. The chat message is the plain-language layer only, in the user's language — *what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding* — followed by the fixed question. The full mechanical material (reality-gate tables, matrices, plan-checker findings, cell lists) goes to `docs/history/<feature>/reports/` and is linked, never pasted. Litmus: the user can restate what they are approving in their own words — a gate the user cannot restate is a dead gate that manufactures false confidence. Normative text in `bee-hive/references/routing-and-contracts.md`.
 
 Optional at Gates 2–4: a **cross-model second opinion** (gstack). If the other runtime's model is available, ask it to challenge the artifact. Agreement → mention it. Disagreement → quote both positions to the user. Never auto-resolve.
@@ -53,9 +55,10 @@ Every planning pass starts by classifying the work. Classification is **mechanic
 
 | Mode | Trigger | Workflow |
 |---|---|---|
-| `tiny` | 0–1 flags, ≤2 files, no API/data change, one direct task | one cell → single worker → lightweight review → scribing sync if behavior changed → compound only if a lesson emerged |
+| `docs` | every touched file is knowledge, not runtime: `docs/`, specs, README, sample/example configs, plans | announce one line → write → format check → capture stub/decision if an outcome settled. No cells, no gates, no reviewers (lane scaling v2, decision d02a6bc6) |
+| `tiny` | 0–1 flags, ≤2 files, no API/data change, one direct task | short plan note → inline 2-min reality check → **one merged shape+execution gate** → solo in-session execution (one cell, no worker) → self-review + done-report (diff + fresh verify output; no merge question) → scribing sync if behavior changed → compound only if a lesson emerged |
 | `spike` | one yes/no proof decides whether the plan is real | spike cell in `.spikes/` → answer → return to planning |
-| `small` | 0–1 flags, ≤3 files, no gray areas | light plan (one shape note) → validating reality gate → single worker → light review → scribing sync if behavior changed |
+| `small` | 0–1 flags, ≤3 files, no gray areas | light plan → inline reality gate (no validating subagents) → merged shape+execution gate → solo in-session execution → one correctness reviewer → Gate 4 → scribing sync if behavior changed |
 | `standard` | 2–3 flags, or story-sized behavior | full chain; phase plan or epic map, whichever explains the work honestly |
 | `high-risk` | 4+ flags **or any hard-gate flag** (auth, authorization, data loss, audit/security, external provider, validation removal) | epic map → current-story pack → mandatory feasibility spikes → slower Gate 3 → detailed traces |
 
