@@ -1,0 +1,52 @@
+{
+  "id": "evolving-8",
+  "feature": "evolving-loop",
+  "pbi": "P18",
+  "title": "Mechanize two critical patterns instead of trusting prose",
+  "lane": "small",
+  "deps": [],
+  "decisions": [
+    "D4"
+  ],
+  "behavior_change": true,
+  "files": [
+    "skills/bee-hive/templates/tests/test_lib.mjs"
+  ],
+  "read_first": [
+    "docs/history/learnings/critical-patterns.md",
+    "skills/bee-hive/templates/tests/test_lib.mjs"
+  ],
+  "action": "bee-compounding step 4: the first-choice promotion target for a lesson is an EXECUTABLE CHECK, not prose — prose taxes every session preamble and relies on being read. Two of the patterns just written into critical-patterns.md are mechanizable, and one of them already fooled the orchestrator during this very feature. Add both as assertions to tests/test_lib.mjs. (1) NO CONTROL BYTES IN VENDORED SOURCE: assert that every skills/bee-hive/templates/**/*.mjs file contains no C0 control character other than tab, newline, and carriage return. Today lib/feedback.mjs joins sort-key fields with a NUL separator, which makes grep and ripgrep treat the whole file as BINARY and print nothing at all — not even a zero count — so a source-level drift guard silently matches nothing and a reader concludes a symbol has vanished. The fix in feedback.mjs is to switch sortKey's separator from U+0000 to U+001F (unit separator, not a C0 control the check bans — pick any non-C0 sentinel that cannot appear in the data, and say why in a comment). Both the assertion and the separator change belong to this cell. (2) EVERY ALLOWLIST FIELD OWNS A VALIDATOR, generalized: the structural guard added by evolving-7 asserts this for ENTRY_FIELD_SPEC specifically. Keep it, and add a sibling assertion that ENTRY_FIELDS is derived (not a literal) by checking that the module source contains no `ENTRY_FIELDS = [` literal assignment — the inverse of the drift guard that was removed under decision b8fe5c81, and this time it pins the CORRECT shape rather than the defective one. Note the irony explicitly in a comment: the previous guard pinned syntax and pinned the wrong syntax; this one pins the absence of the defective syntax, which is a different and weaker claim, so it is paired with the behavioral structural guard rather than replacing it. Do NOT weaken any of the 108 existing assertions.",
+  "must_haves": {
+    "artifacts": [
+      {
+        "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+        "substantive": "control-byte sweep over vendored template sources; assertion that ENTRY_FIELDS is derived, paired with the existing behavioral structural guard"
+      }
+    ],
+    "key_links": [
+      "the control-byte assertion exists because a NUL separator made grep silently match nothing during this feature's own review",
+      "sortKey's separator changes in the same cell, since the new assertion would otherwise fail on the file that motivated it"
+    ],
+    "prohibitions": [
+      "Never weaken, skip, or delete any of the 108 existing assertions",
+      "Never use a C0 control character as a data separator in vendored source",
+      "Do not replace evolving-7's behavioral structural guard with a source-grep — pair them"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs",
+  "tier": "generation",
+  "status": "open",
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

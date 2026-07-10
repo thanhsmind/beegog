@@ -374,7 +374,7 @@
       "path": "skills/bee-hive/templates/lib/feedback.mjs",
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-10T07:50:26.772Z",
-      "released_at": null
+      "released_at": "2026-07-10T07:55:17.430Z"
     },
     {
       "agent": "forager-8",
@@ -382,7 +382,55 @@
       "path": "skills/bee-hive/templates/tests/test_lib.mjs",
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-10T07:50:26.810Z",
-      "released_at": null
+      "released_at": "2026-07-10T07:55:17.430Z"
+    },
+    {
+      "agent": "forager-9",
+      "cell": "evolving-6",
+      "path": "skills/bee-hive/templates/lib/feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T07:58:37.968Z",
+      "released_at": "2026-07-10T08:02:27.808Z"
+    },
+    {
+      "agent": "forager-9",
+      "cell": "evolving-6",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T07:58:38.002Z",
+      "released_at": "2026-07-10T08:02:27.808Z"
+    },
+    {
+      "agent": "forager-10",
+      "cell": "evolving-7",
+      "path": "skills/bee-hive/templates/lib/feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T08:16:58.092Z",
+      "released_at": "2026-07-10T08:24:34.163Z"
+    },
+    {
+      "agent": "forager-10",
+      "cell": "evolving-7",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T08:16:58.132Z",
+      "released_at": "2026-07-10T08:24:34.163Z"
+    },
+    {
+      "agent": "forager-11",
+      "cell": "evolving-7",
+      "path": "skills/bee-hive/templates/lib/feedback.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T08:27:36.647Z",
+      "released_at": "2026-07-10T08:30:15.991Z"
+    },
+    {
+      "agent": "forager-11",
+      "cell": "evolving-7",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-10T08:27:36.682Z",
+      "released_at": "2026-07-10T08:30:15.991Z"
     }
   ]
 }

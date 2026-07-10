@@ -10,19 +10,34 @@
     "review": false
   },
   "workers": [],
-  "summary": "harness10 closed: 8 cells capped, backlog+fresh-session machinery shipped and dogfooded live (docs/backlog.md seeded, vendored helpers synced). Review P1=P2=0, 1 P3 fixed + 2 filed. Learnings + critical promotion recorded.",
-  "next_action": "Invoke bee-hive. docs/backlog.md now carries 3 proposed PBIs (init lane, priority scoring, README badges). Open P3s in .bee/backlog.jsonl.",
+  "summary": "P18 slice A shipped: feedback digest + consumer revalidation + close-time refresh. 108 tests. Spec at docs/specs/feedback-digest.md. Slice B (bee-evolving) not planned.",
+  "next_action": "Invoke bee-hive. evolving-8 (mechanize control-byte guard) is open; slice B needs planning.",
   "last_scribing_run": {
-    "feature": "harness10-backlog-and-fresh-session",
-    "date": "2026-07-08",
-    "synced": "docs/02-architecture.md (target-repo layout: docs/backlog.md added, bin/lib backlog+commands_detect, backlog.jsonl disambiguated as machine backlog, preamble project-map+PBI description); docs/10 is the canonical spec artifact for this feature and was written during exploring. No docs/specs layer in this repo — design docs are the spec layer.",
-    "cells_covered": "harness10-1..8"
+    "feature": "evolving-loop",
+    "date": "2026-07-10",
+    "at": "2026-07-10T08:40:17.526Z",
+    "areas_synced": [
+      "feedback-digest"
+    ],
+    "capture_stubs_flushed": 4,
+    "next_action": "Invoke bee-compounding."
   },
   "last_compounding_run": {
-    "feature": "harness10-backlog-and-fresh-session",
-    "date": "2026-07-08",
-    "learnings_file": "docs/history/learnings/20260708-harness10.md",
-    "critical_promotions": 1,
-    "scribing_verified": true
-  }
+    "feature": "evolving-loop",
+    "at": "2026-07-10T08:45:20.690Z",
+    "learnings": "docs/history/learnings/20260710-evolving-loop.md",
+    "critical_promotions": 6,
+    "mechanized": [
+      "evolving-7 structural guard",
+      "evolving-6 round-trip"
+    ],
+    "open_cell": "evolving-8"
+  },
+  "cells": {
+    "open": 1,
+    "claimed": 0,
+    "capped": 25,
+    "blocked": 0
+  },
+  "last_activity": "2026-07-10T08:45:59.948Z"
 }
