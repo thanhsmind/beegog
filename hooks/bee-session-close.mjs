@@ -156,6 +156,35 @@ async function maybeCaptureNudge(root) {
   }
 }
 
+// Decision 0017: capture stubs queued mid-flow must not die with the context.
+// On Stop the warning is deduped (same pending set warns once per interval);
+// on PreCompact it always fires — compaction is the point where an unflushed
+// queue would silently outlive the conversation that explains it.
+async function maybeCaptureQueueNudge(root, { force = false } = {}) {
+  try {
+    const captureLib = await import(libModuleUrl(root, "capture.mjs"));
+    const injectLib = await import(libModuleUrl(root, "inject.mjs"));
+    const pending = captureLib.pendingCaptureStubs(root);
+    if (pending.length === 0) {
+      return;
+    }
+    const hash = pending.map((stub) => stub.id).sort().join("|");
+    if (!force) {
+      if (!injectLib.shouldInject(root, "capture-queue-nudge", hash)) {
+        return;
+      }
+      injectLib.markInjected(root, "capture-queue-nudge", hash);
+    }
+    process.stdout.write(
+      `bee capture queue (decision 0017): ${pending.length} settlement stub(s) are queued and ` +
+        "unflushed. Flush them now via bee-scribing (drain oldest-first, merge each into its " +
+        "area spec) — or they must survive into the next session's preamble, never be dropped.\n",
+    );
+  } catch {
+    // fail-open: no lib, no problem
+  }
+}
+
 async function main() {
   const payload = await readStdinPayload();
   const root = findRepoRoot(payload.cwd || process.cwd());
@@ -171,6 +200,9 @@ async function main() {
     if (!stateLib.hookEnabled(root, HOOK_NAME)) {
       return 0;
     }
+    await maybeCaptureQueueNudge(root, {
+      force: payload.hook_event_name === "PreCompact",
+    });
     await maybeCaptureNudge(root);
     const state = stateLib.readState(root);
     const phase = state.phase || "idle";

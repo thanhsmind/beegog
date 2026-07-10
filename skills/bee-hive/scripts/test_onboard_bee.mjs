@@ -114,6 +114,13 @@ try {
   check(apply1.payload.notices.some((n) => n.includes("Ask the user")) &&
     !apply1.payload.notices.some((n) => n.includes("Detected candidates")),
     "notice stays the open question when detection finds nothing");
+  // P1 / docs/09 item 6: first onboard without a build carries the init-lane offer.
+  check(apply1.payload.notices.some((n) => n.includes("init lane") && n.includes("init cell")),
+    "first onboard without a build surfaces the greenfield init-lane notice");
+  const reapplyNotice = runOnboard(["--repo-root", tmp, "--json"]);
+  check(!(reapplyNotice.payload?.notices || []).some((n) => n.includes("init lane")),
+    "init-lane notice fires on the FIRST onboard only",
+    JSON.stringify(reapplyNotice.payload?.notices || null));
   const cfgPath = path.join(tmp, ".bee", "config.json");
   const cfgRaw = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
   cfgRaw.commands = { verify: "npm test" };
@@ -147,6 +154,8 @@ try {
       JSON.stringify(detNotices));
     check(detNotices.some((n) => n.includes("confirmation question") && n.includes("confirmed")),
       "candidate notice instructs confirm-before-write");
+    check(!detNotices.some((n) => n.includes("init lane")),
+      "a repo WITH a detectable build never gets the init-lane notice");
     const detConfig = JSON.parse(
       fs.readFileSync(path.join(detTmp, ".bee", "config.json"), "utf8"));
     check(detConfig.commands === undefined,

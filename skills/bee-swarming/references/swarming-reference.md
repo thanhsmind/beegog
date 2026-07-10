@@ -25,14 +25,16 @@ On both runtimes the integrity rails are identical because they live in the help
 
 ## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
 
-Only the **cheaper** tiers are configured, in `.bee/config.json` `models`, keyed by runtime first (bee is dual-runtime and each names models differently), then tier. **The ceiling is never configured** — it is always the session/orchestrator model (decision 0015):
+Only the **cheaper** slots are configured, in `.bee/config.json` `models`, keyed by runtime first (bee is dual-runtime and each names models differently), then slot. **The ceiling is never configured** — it is always the session/orchestrator model (decision 0015). The default is the all-Claude role split (decision 0021) — session model orchestrates, opus reviews, sonnet implements, haiku extracts — and **every slot is editable to whatever models the user actually has** (only a Claude subscription → keep all-Claude; a Codex plan too → point slots at GPT via cli executors):
 
 ```json
 "models": {
-  "claude": { "extraction": "haiku", "generation": "sonnet" },
-  "codex":  { "extraction": null,    "generation": null }
+  "claude": { "extraction": "haiku", "generation": "sonnet", "review": "opus" },
+  "codex":  { "extraction": null,    "generation": null,     "review": null }
 }
 ```
+
+A slot value may also be `{ "model": "opus", "effort": "xhigh" }` (P17 — per-agent reasoning effort, applied where the runtime supports it, silently recorded where it does not; levels: low/medium/high/xhigh/max) or `{ "kind": "cli", "command": "..." }` (external executor, section below — effort rides inside the command). The `review` slot is consumed by bee-reviewing's specialists, exploring's fresh-eyes, and validating's plan-checker/cell-reviewer; `null` review falls back to generation. **Copy-paste presets** (all-claude, tuned, GPT adversarial review, codex-implements, budget): `docs/model-presets.md` in the bee repo.
 
 - **ceiling** = the strongest model in play = **the session model itself** (no config entry). A ceiling cell inherits the session model — omit the `model` param. Keep it scarce: planning, integration, architecture, final review only. Touch it on every dispatch and the saving evaporates.
 - **generation** = the mid worker that runs the loops (implementation, test writing). Where the bulk of dispatches go.
@@ -45,7 +47,30 @@ Resolve a tier for the active runtime before spawning:
 node .bee/bin/bee_status.mjs --json    # .models shows both runtime maps
 ```
 
-Or in code: `modelForTier(root, tier, runtime)` from `lib/state.mjs` returns the model name or `null` (→ budget/cap fallback). Two shapes, one map: keep the strongest model as `ceiling` and it stays scarce whether it is the orchestrator (fan-out) or a called-only advisor (rescue ladder).
+Or in code: `resolveTier(root, tier, runtime)` from `lib/state.mjs` returns a typed dispatch — `{type:'inherit'}` (ceiling → omit the model param), `{type:'model', model}`, `{type:'budget'}` (prompt-enforced tier), or `{type:'cli', command}` (external executor, below). The legacy `modelForTier` still returns a model name or `null`. Two shapes, one map: keep the strongest model as `ceiling` and it stays scarce whether it is the orchestrator (fan-out) or a called-only advisor (rescue ladder).
+
+## External Executors — Multi-Provider Workers (P14, decision 0019)
+
+A configurable tier may name an **external CLI executor** instead of a model — that is how GPT/Codex, GLM, Kimi, or any other provider's CLI becomes a bee worker while Claude (or Codex) stays the orchestrator:
+
+```json
+"models": {
+  "claude": {
+    "extraction": "haiku",
+    "generation": { "kind": "cli", "command": "codex exec --json -m gpt-5.3-codex -c model_reasoning_effort=high --full-auto" }
+  }
+}
+```
+
+**Dispatch protocol** (`resolveTier(...).type === 'cli'`):
+
+1. **Prompt file, never shell-quoted args:** write the standard worker prompt (template above, verbatim — same contract, same status tokens) to `.bee/workers/<cell-id>.prompt.md`.
+2. **Spawn detached, output to a job log:** run the configured command as a background process with the prompt supplied via stdin redirect and output captured — e.g. `<command> < .bee/workers/<cell-id>.prompt.md > .bee/workers/<cell-id>.out.log 2>&1` via the runtime's background-shell facility. Record the worker (nickname, cell, `executor: cli`) in `.bee/state.json` as usual.
+3. **Tend by artifact, not by chat:** the external worker runs the same `.bee/bin` helpers (reserve → verify → cap → release) because they are plain node scripts — the cell status and reservations ARE the progress signal. Poll `node .bee/bin/bee_cells.mjs show --id <id>` and tail the job log for the final status token; no streaming needed.
+4. **Trust boundary is decision 0018, doubly:** an external worker's `[DONE]` is never accepted on its word — the orchestrator ALWAYS re-runs the cell's verify itself and runs `bee_cells.mjs judge --id <id>`. External executors never get the tiny/small spot-check relaxation; every external cell is goal-checked.
+5. **Rescue:** a stuck/garbled external run is killed and the cell re-dispatched — same rescue ladder; the tier rung may swap `cli` for a native model tier when the provider itself is failing.
+
+Constraints: the external CLI must be able to edit the repo working tree and run node (the `.bee/bin` contract); a sandboxed CLI that cannot write is dispatched with its sandbox opened for the repo root only, per that CLI's own flags. Secrets: the external process gets only its own provider's credentials from the user's environment — bee passes none.
 
 ## Worker Prompt Template
 

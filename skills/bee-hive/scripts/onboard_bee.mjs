@@ -334,7 +334,7 @@ function mergeRepoSettings(settingsPath) {
 
 const COMMAND_KEYS = ["setup", "start", "test", "verify"];
 
-function commandsNotices(repoRoot) {
+function commandsNotices(repoRoot, { firstOnboard = false } = {}) {
   const config = readJsonIfExists(path.join(repoRoot, ".bee", "config.json")) || {};
   const raw = config.commands && typeof config.commands === "object" ? config.commands : {};
   const recorded = COMMAND_KEYS.filter(
@@ -359,9 +359,18 @@ function commandsNotices(repoRoot) {
       `No standard commands recorded. Detected candidates: ${proposals}. Present them to the user as one pre-filled confirmation question (skippable) and write only confirmed values to .bee/config.json \`commands\` — never write unconfirmed values (D3). They power the session baseline gate.`,
     ];
   }
-  return [
+  const notices = [
     "No standard commands recorded. Ask the user for the host project's setup/start/test/verify commands and write them to .bee/config.json `commands` (skippable — never invent values). They power the session baseline gate.",
   ];
+  // P1 / docs/09 item 6: first onboard of a repo without any detectable build →
+  // offer the init lane. Planning convention, not a new skill: the first slice
+  // is one init cell whose must_haves are the initialization checklist.
+  if (firstOnboard) {
+    notices.push(
+      "Greenfield init lane (docs/09 item 6): this is the first onboard and no build was detected. Offer the init lane before any feature work — the first planning slice is one init cell whose must_haves are exactly: setup succeeds from scratch, one passing test exists, standard commands are recorded in .bee/config.json, and the repo has a clean first commit.",
+    );
+  }
+  return notices;
 }
 
 // ---------- plan computation ----------
@@ -711,6 +720,8 @@ export function main(argv = process.argv.slice(2)) {
   }
 
   const repoRoot = path.resolve(args.repoRoot || process.cwd());
+  // Captured before any apply: "first onboard" means no onboarding marker yet.
+  const firstOnboard = !fs.existsSync(path.join(repoRoot, ".bee", "onboarding.json"));
 
   try {
     const options = { repoHooks: args.repoHooks, claudeMd: args.claudeMd };
@@ -722,7 +733,7 @@ export function main(argv = process.argv.slice(2)) {
           status: plan.length === 0 ? "up_to_date" : "changes_needed",
           bee_version: beeVersion,
           plan,
-          notices: commandsNotices(repoRoot),
+          notices: commandsNotices(repoRoot, { firstOnboard }),
         },
         args.json,
       );
@@ -740,7 +751,7 @@ export function main(argv = process.argv.slice(2)) {
         recheck: recheck.plan.length === 0 ? "up_to_date" : "changes_needed",
         recheck_plan: recheck.plan,
         onboarding: result.onboarding,
-        notices: commandsNotices(repoRoot),
+        notices: commandsNotices(repoRoot, { firstOnboard }),
       },
       args.json,
     );

@@ -99,6 +99,8 @@ Sections (full template in `references/walkthrough-template.md`):
 - **Deviations from plan** — what execution changed from the implement plan and why (from cell `deviations`); silent divergence misleads the next reader.
 - **Known limitations / follow-ups** — deferred P2/P3 findings with their backlog links, and open gaps. Polished means honest, not curated to look finished.
 
+**Quiz offer (P10, decision 0020):** when presenting the walkthrough, offer a 3–5 question quiz on the change — what behavior changed, what each actor observes now, what was NOT verified, what deviated from plan. Questions derive only from the walkthrough's own sections; the user opts in; a miss means walking that section together. It mechanizes the gate litmus ("a gate the user cannot restate is dead") — never forced, never a blocker. Protocol in `references/walkthrough-template.md`.
+
 Then set the implement plan's `status: Shipped`.
 
 ## Hard Gates

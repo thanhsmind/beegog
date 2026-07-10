@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 
-export const BEE_VERSION = '0.1.15';
+export const BEE_VERSION = '0.1.18';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -63,13 +63,25 @@ export const MODEL_TIERS = ['extraction', 'generation', 'ceiling'];
 // The ceiling is never configured: it is always the session/orchestrator model,
 // so it has no entry and resolves to "inherit the session model".
 export const CONFIGURABLE_TIERS = ['extraction', 'generation'];
+// Decision 0021 (P16) — `review` is a configurable ROLE beside the tiers: the
+// model that reviews what generation implemented (reviewing specialists,
+// fresh-eyes, plan-checker). Independent reviewer > self-review; a review slot
+// stronger than generation catches what the implementer's own model misses.
+// null → falls back to the generation tier.
+export const CONFIGURABLE_SLOTS = [...CONFIGURABLE_TIERS, 'review'];
+// Decision 0021 (P17) — per-slot reasoning effort, applied where the runtime
+// has a per-agent effort switch; ignored (recorded only) where it does not.
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const RUNTIMES = ['claude', 'codex'];
 const DEFAULT_MODELS = {
   // Claude Code Agent tool accepts short model names: haiku | sonnet | opus | fable.
-  claude: { extraction: 'haiku', generation: 'sonnet' },
+  // The all-Claude default role split (owner, 2026-07-10): session model
+  // orchestrates (ceiling), opus reviews, sonnet implements, haiku extracts —
+  // every slot editable per repo to whatever models the user actually has.
+  claude: { extraction: 'haiku', generation: 'sonnet', review: 'opus' },
   // Codex has no per-agent model selection today → null tiers = budget/cap fallback.
   // Set real model ids here if your runtime supports switching (e.g. generation: 'gpt-5').
-  codex: { extraction: null, generation: null },
+  codex: { extraction: null, generation: null, review: null },
 };
 
 // Decision 0013 — advisor mode. Run the session on the generation tier and
@@ -95,6 +107,34 @@ function normalizeAdvisor(raw) {
   return out;
 }
 
+// Decisions 0019/0021 (P14/P16/P17) — a configurable slot value is one of:
+//   "model-name"                       → the runtime's per-agent model switch
+//   null                               → budget/cap fallback (no per-agent
+//     switch); for the `review` slot: fall back to the generation tier
+//   { model: "...", effort: "..." }    → model + reasoning effort, applied
+//     where the runtime has a per-agent effort switch (invalid efforts drop)
+//   { kind: "cli", command: "..." }    → an EXTERNAL executor: a separate CLI
+//     process (codex exec, a GLM/Kimi CLI, ...) dispatched by the orchestrator
+//     under the same bee-executing contract; effort rides inside the command.
+// Invalid shapes are ignored (the default for that slot stays).
+function normalizeTierValue(value) {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value === null) return null;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    if (value.kind === 'cli' && typeof value.command === 'string' && value.command.trim()) {
+      return { kind: 'cli', command: value.command.trim() };
+    }
+    if (value.kind === undefined && typeof value.model === 'string' && value.model.trim()) {
+      const out = { model: value.model.trim() };
+      if (typeof value.effort === 'string' && EFFORT_LEVELS.includes(value.effort.trim())) {
+        out.effort = value.effort.trim();
+      }
+      return out;
+    }
+  }
+  return undefined;
+}
+
 function normalizeModels(raw) {
   const out = {
     claude: { ...DEFAULT_MODELS.claude },
@@ -104,9 +144,9 @@ function normalizeModels(raw) {
     for (const rt of RUNTIMES) {
       const src = raw[rt];
       if (!src || typeof src !== 'object' || Array.isArray(src)) continue;
-      for (const tier of CONFIGURABLE_TIERS) {
-        if (typeof src[tier] === 'string' && src[tier].trim()) out[rt][tier] = src[tier].trim();
-        else if (src[tier] === null) out[rt][tier] = null;
+      for (const slot of CONFIGURABLE_SLOTS) {
+        const value = normalizeTierValue(src[slot]);
+        if (value !== undefined) out[rt][slot] = value;
       }
     }
   }
@@ -211,12 +251,43 @@ export function modelForTier(root, tier, runtime = 'claude') {
   // The ceiling tier is never configured — it is always the session/orchestrator
   // model (decision 0015). null means "inherit the session model" (omit the
   // subagent model param). Only generation/extraction resolve to a pinned model.
-  if (tier === 'ceiling') return null;
+  // A cli-executor tier (decision 0019) has no model NAME — callers that can
+  // dispatch externally should use resolveTier(); here it degrades to null.
+  const resolved = resolveTier(root, tier, runtime);
+  return resolved.type === 'model' ? resolved.model : null;
+}
+
+/**
+ * Typed slot resolution (decisions 0019/0021). `slot` is a tier
+ * (extraction/generation/ceiling) or the `review` role. Returns one of:
+ *   { type: 'inherit' }                — ceiling: omit the model param, the
+ *     worker inherits the session model (decision 0015)
+ *   { type: 'model', model, effort? }  — spawn a subagent with this model
+ *     (and per-agent reasoning effort where the runtime supports it)
+ *   { type: 'budget' }                 — no per-agent switch: enforce the tier
+ *     as a read budget + output cap in the worker prompt
+ *   { type: 'cli', command }           — dispatch an EXTERNAL executor process
+ *     (protocol: bee-swarming reference, External Executors section)
+ * A null `review` slot falls back to the generation tier (decision 0021).
+ */
+export function resolveTier(root, slot, runtime = 'claude') {
+  if (slot === 'ceiling') return { type: 'inherit' };
   const { models } = readConfig(root);
   const rt = RUNTIMES.includes(runtime) ? runtime : 'claude';
-  const t = CONFIGURABLE_TIERS.includes(tier) ? tier : 'generation';
-  const value = models[rt] ? models[rt][t] : null;
-  return value == null ? null : value;
+  const s = CONFIGURABLE_SLOTS.includes(slot) ? slot : 'generation';
+  let value = models[rt] ? models[rt][s] : null;
+  if (value == null && s === 'review') {
+    value = models[rt] ? models[rt].generation : null; // review falls back to generation
+  }
+  if (value == null) return { type: 'budget' };
+  if (typeof value === 'string') return { type: 'model', model: value };
+  if (value.kind === 'cli') return { type: 'cli', command: value.command };
+  if (typeof value.model === 'string') {
+    return value.effort
+      ? { type: 'model', model: value.model, effort: value.effort }
+      : { type: 'model', model: value.model };
+  }
+  return { type: 'budget' };
 }
 
 /**

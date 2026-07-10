@@ -32,14 +32,16 @@ Dispatch reviewers with ISOLATED context: the diff + CONTEXT.md + plan.md ONLY. 
 
 **Spawn contract:** spawn every reviewer as the runtime's default/general subagent type with the persona prompt from the reference pasted inline. NEVER use an agent type registered by another plugin, even when its name matches the role (`*-correctness-reviewer`, `*-security-reviewer`, …) — a same-named agent carries a different contract (finding format, severity scale, report paths), silently breaks bee's synthesis rules, and makes the run depend on which plugins happen to be installed on this machine.
 
-| Reviewer | Focus | Tier | Order |
+| Reviewer | Focus | Slot | Order |
 |---|---|---|---|
-| `code-quality` | correctness, readability, type safety | generation | parallel |
-| `architecture` | boundaries, coupling, API design, maintainability | generation | parallel |
-| `security` | auth, secrets, injection, permissions, data exposure | generation | parallel |
-| `test-coverage` | missing edge cases, regression paths, weak assertions | generation | parallel |
+| `code-quality` | correctness, readability, type safety | review | parallel |
+| `architecture` | boundaries, coupling, API design, maintainability | review | parallel |
+| `security` | auth, secrets, injection, permissions, data exposure | review | parallel |
+| `test-coverage` | missing edge cases, regression paths, weak assertions | review | parallel |
 | `learnings-researcher` | searches `docs/history/learnings/` for precedent on the touched modules | extraction | parallel |
 | `learnings-synthesizer` | dedupe, corroboration, known-pattern notes | ceiling | AFTER all of the above |
+
+**The `review` slot (P16, decision 0021):** reviewers resolve `resolveTier(root, 'review', runtime)` — a dedicated, per-repo-editable model for review work, default `opus` on Claude (independent reviewer > self-review: the model that reviews should not be the model that implemented). A `null` review slot falls back to `generation`; a `{kind:'cli'}` value dispatches an external adversarial reviewer (e.g. GPT via codex CLI) under the External Executors protocol. Conditional reviewers (below) use the same slot.
 
 **Conditional reviewers** join the same parallel wave when the diff mechanically matches their trigger: `performance` (queries in loops, caching), `api-contract` (routes, public shapes), `data-migration` (spawn gate: migration/schema files only), `reliability` (retries, queues, external calls). Scan the diff once before dispatch; spawn every matched trigger; cap the wave at 7. Trigger table and focus lines in `references/reviewing-reference.md`.
 
@@ -60,6 +62,8 @@ Finding format, in this order: plain-language summary → what the code does tod
 For every capped cell with `behavior_change: true`, inspect the recorded `verification_evidence` in the cell trace. Missing or vague evidence ("tests pass", "should be covered") is itself a P1 finding — the work goes back; it does not pass forward.
 
 This is now a **backstop, not the primary catch** (decision 0009): the cap helper already refuses a `behavior_change` cell without a "before" characterization (`red_failure_evidence`, or a `deliberate_exceptions` note for a genuinely new surface), so an assertion-capped cell should not reach review. If one does, treat it as a helper bypass and a P1. Do **not** raise a P1 whose only remedy is "record the missing before-state in a new evidence cell" — that backfill loop is exactly what the cap-time enforcement exists to prevent; a real evidence gap means the behavior was never actually proven, which the worker fixes by re-verifying, not by writing a document. Read evidence from the cell trace — the single source — never from a parallel `reports/*-evidence.*` file.
+
+**Frozen-judge flags (P12, decision 0018):** any cell the orchestrator flagged with judge hits — undeclared test/CI/lockfile/verify-config changes (`node .bee/bin/bee_cells.mjs judge --id <id>`) — is reviewed assuming the judge was *moved*, not passed: diff each flagged file; verify no assertion weakened, no test skipped or deleted, no verify command softened, no dependency silently repinned. A weakened judge is a P1 (it invalidates the wave's evidence), never a cleanup note.
 
 ## 4. Artifact Verification
 

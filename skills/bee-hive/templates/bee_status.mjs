@@ -18,6 +18,7 @@ import {
   readOnboarding,
 } from './lib/state.mjs';
 import { listCells, readyCells, scribingDebt, tierMix, ceilingScarcityWarning } from './lib/cells.mjs';
+import { captureQueue } from './lib/capture.mjs';
 import { readBacklogCounts } from './lib/backlog.mjs';
 import { listReservations } from './lib/reservations.mjs';
 import { activeDecisions, datamark } from './lib/decisions.mjs';
@@ -110,6 +111,10 @@ function buildStatus(root) {
     handoff,
     cells: counts,
     scribing_debt: scribingDebt(root),
+    capture_queue: (() => {
+      const queue = captureQueue(root);
+      return { count: queue.count, ids: queue.stubs.map((s) => s.id) };
+    })(),
     pbi: backlog
       ? { proposed: backlog.proposed, in_flight: backlog.inFlight, done: backlog.done }
       : null,
@@ -128,6 +133,16 @@ function buildStatus(root) {
   };
 }
 
+// Slot values may be a model name, null, {model, effort}, or {kind:'cli'}
+// (decisions 0019/0021) — render each honestly in one token.
+function formatSlot(value) {
+  if (value == null) return 'null';
+  if (typeof value === 'string') return value;
+  if (value.kind === 'cli') return `cli(${String(value.command).split(/\s+/)[0]})`;
+  if (value.model) return value.effort ? `${value.model}@${value.effort}` : value.model;
+  return 'null';
+}
+
 function renderText(status) {
   const lines = [
     `bee status (plugin v${BEE_VERSION})`,
@@ -142,6 +157,9 @@ function renderText(status) {
     ...(status.scribing_debt && status.scribing_debt.count > 0
       ? [`Scribing debt: ${status.scribing_debt.count} behavior_change cell(s) uncaptured (${status.scribing_debt.cells.join(', ')}) — run bee-scribing capture (decision 0011)`]
       : []),
+    ...(status.capture_queue && status.capture_queue.count > 0
+      ? [`Capture queue: ${status.capture_queue.count} stub(s) pending flush — run bee-scribing flush at wrap-up, before compact/clear, or now if idle (decision 0017)`]
+      : []),
     ...(status.pbi
       ? [`PBI: ${status.pbi.done} done / ${status.pbi.in_flight} in-flight / ${status.pbi.proposed} proposed`]
       : []),
@@ -153,7 +171,9 @@ function renderText(status) {
     `Active reservations: ${status.active_reservations.length}`,
     `Critical patterns file: ${status.critical_patterns_present ? 'present' : 'absent'}`,
     ...(status.models
-      ? [`Models (claude): generation=${status.models.claude.generation} extraction=${status.models.claude.extraction} · ceiling = the session model (keep it scarce; decisions 0012/0015)`]
+      ? [
+          `Models (claude): generation=${formatSlot(status.models.claude.generation)} extraction=${formatSlot(status.models.claude.extraction)} review=${formatSlot(status.models.claude.review)} · ceiling = the session model (keep it scarce; decisions 0012/0015/0021)`,
+        ]
       : []),
     ...(status.advisor && status.advisor.enabled
       ? [`🧭 ADVISOR MODE ON — session on generation; consult ${status.advisor.model ?? 'the strong model'} at: ${status.advisor.at.join(', ')} (decision 0013)`]

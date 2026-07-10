@@ -59,6 +59,8 @@ Count risk flags — do not vibe it:
 
 Record the count and the flags in `plan.md`. Above `small`, state why smaller modes are insufficient. Use the least workflow that honestly protects the work.
 
+**Greenfield init lane (P1, docs/09 item 6):** when the repo has no build and the init-lane offer was accepted at onboarding, the first slice is **one init cell** — `must_haves`: setup succeeds from scratch, one passing test exists, standard commands recorded in `.bee/config.json`, clean first commit — before any feature cell. Infrastructure first; the init cell's verify command is the recorded `test` command itself.
+
 ## 4. Synthesis — approach (section by default, file when earned)
 
 Produce the approach: chosen path and rejected alternatives, risk map (component / LOW–MEDIUM–HIGH / proof needed), likely files and order, relevant learnings, and open questions for validating. MEDIUM/HIGH unknowns need a validating proof or a spike before execution cells exist.

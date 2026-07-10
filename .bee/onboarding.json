@@ -1,26 +1,29 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.4",
+  "bee_version": "0.1.18",
   "managed": {
-    "agents_block": "b8c495fab04a99da1cd4137fa762da38063824f6aaf6530f191d8926e18c735b",
+    "agents_block": "2b1561be670adc571676fff44a8b5fd9649a43523cab0995fe9f16a57419fcd8",
     "helpers": {
-      "bee_cells.mjs": "635f169e03173edefe7a809cc2e3dff7d200131e59cf209d356c014e4ef13e0f",
+      "bee_backlog.mjs": "138c3d8e5c828ba79a776b3120791dbf2699ea22335f21f44fc83a8574183eea",
+      "bee_capture.mjs": "11dc00e64b8926bc1f53961d128e9eee46dd397442bae360d27feaa775bef2a8",
+      "bee_cells.mjs": "1097fa1814caf6f43c0ad9826f6cede693502ec1a33fddd864bc0c88a2d7abdc",
       "bee_decisions.mjs": "1a5e1b02d66ee55416c52e5eac29d7c0ee623cf9b8a79a8f84d0eef43d91973b",
       "bee_reservations.mjs": "02b0b1fe84e994a5a33bf4aaf181317d0b4fa88b064a5b53f800af8a0ccf9fd8",
-      "bee_status.mjs": "d01c3f335d013d7794b95ef20f30a529f81e13f54938fef239b35a0f9f41f860"
+      "bee_status.mjs": "bb8c9fcd47bdbc27aa39bd918f92facce0816d42b2f066fa0ebc2d080b1081d5"
     },
     "lib": {
-      "backlog.mjs": "17fcfaf90af6866932494bdbcb18c2cbc3c5143931f0c7007457f70ab804b294",
-      "cells.mjs": "b9e06e2be3e491cc9f49be511e5775ba903642853c32260273cce4f5bb20ca57",
+      "backlog.mjs": "849881ecdf0a9431c15c81a61a08a734292c871fdb5b616e168396417e6014fd",
+      "capture.mjs": "6ce4fa5947a015f156468aa5bc40e264a9d7a170744e8700de1d90b969b3908c",
+      "cells.mjs": "852836af6411e654a96f5e03bc5b007d31df95194a44fadc611d5704e3aadf6a",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
       "fsutil.mjs": "303ed5d4b11b71038856208ff37d7342e3435b0776e07b7094dd9476dd6dd036",
-      "guards.mjs": "6f53032bd113f14425ba04b033258a0383d4689b2020a998625e95770dd1a99d",
-      "inject.mjs": "d0afca33c91566f77f5ca392af70b9621406d16e6fcc47294ce5c8ec4125b6aa",
+      "guards.mjs": "7c5c0669a0482e3640edb365cc68b33ec59e14a5524762947f80ad12496f8f9d",
+      "inject.mjs": "0763fa9856ed15827ed7c62d34fb66129a63722dcd554bf485da61ff0906fae8",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
-      "state.mjs": "3d20e4a987988ea2d3234f04cd410ab13fd6782f4a3fbe077de85615e6deaee8"
+      "state.mjs": "4607cf38f738538b2297fbef810be2725c18f8b6c3c7c9a3977d1849a52cdf5c"
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-08T08:50:34.798Z"
+  "updated_at": "2026-07-10T04:19:54.714Z"
 }

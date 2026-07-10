@@ -26,7 +26,8 @@ Scribing is bee's BA. It owns the state layer: `docs/specs/<area>.md` (one BA-gr
 | Mode | Trigger | Does |
 |---|---|---|
 | **sync** (chain default) | reviewing completed with `behavior_change` cells capped | merge the feature's behavior deltas into the touched areas' specs |
-| **capture** | any discuss → build → test → adjust loop **settles an outcome**, any phase — a rule agreed, a behavior confirmed by test, a threshold/tuning value chosen, an error policy adjusted; an explicit user settlement signal ("chốt", "final", "ok ship it") makes capture **mandatory in the same turn** (decision 0003) | log the decision, then merge the settled truth into the area's spec immediately — discussion knowledge never waits for feature close |
+| **capture** | any discuss → build → test → adjust loop **settles an outcome**, any phase — a rule agreed, a behavior confirmed by test, a threshold/tuning value chosen, an error policy adjusted; an explicit user settlement signal ("chốt", "final", "ok ship it") makes capture **mandatory in the same turn** (decision 0003) | log the decision same turn, then: **high-risk lane → merge into the spec immediately**; every other lane → append a capture stub (`node .bee/bin/bee_capture.mjs add`) and keep working — the merge happens at flush (decision 0017) |
+| **flush** | capture queue non-empty at a flush point — session wrap-up, the PreCompact/close warning, or the session-start offer (decision 0017) | drain the queue oldest-first: full merge of each stub into its area's spec, mark it flushed (`bee_capture.mjs flush --id <id> --into <spec>`), record the scribing run |
 | **harvest** | user asks to document an existing area, or grooming files a missing-spec item | write the first spec for an area built before/outside bee |
 | **bootstrap** | `docs/specs/` lacks `system-overview.md` or `reading-map.md` — typically right after onboarding | **offer — never auto-run** (D2 of harness10) a bounded skeleton pass creating ONLY the missing map file(s) from mechanically provable facts; an existing map file is never touched. Full binding rules + skeleton shapes: the reference's Bootstrap section |
 
@@ -67,23 +68,28 @@ Merge rules:
 
 ## 4. Capture Mode — Settled Outcomes from the Vibe Loop
 
-The trigger is **settlement**, not subject matter: whenever a discuss → build → test → adjust loop lands on an outcome that is now "how it works" — a business rule agreed, a behavior confirmed by a test run, a retry/threshold/tuning value chosen after experiment, an error-handling policy adjusted — capture it in the same session. When the user says the settlement out loud — "chốt", "final", "ok ship it", any equivalent — capture happens **in that same turn**, never deferred (decision 0003); the session-close hook warns when a decision exists that no spec update followed.
+The trigger is **settlement**, not subject matter: whenever a discuss → build → test → adjust loop lands on an outcome that is now "how it works" — a business rule agreed, a behavior confirmed by a test run, a retry/threshold/tuning value chosen after experiment, an error-handling policy adjusted — capture it in the same session. When the user says the settlement out loud — "chốt", "final", "ok ship it", any equivalent — capture happens **in that same turn**, never deferred (decision 0003). What "capture" costs in that turn is lane-scaled (decision 0017): high-risk = the full spec merge; every other lane = decision log + a one-line queue stub, with the merge at flush — the flow is never held hostage to the elaboration. The session-close hook warns when a decision exists that no spec update followed, and when queued stubs await their flush.
 
 **The debt signal backs this up (decision 0011).** Every `behavior_change` cell capped since the last scribing run is counted as *scribing debt* and surfaced mechanically — in the session preamble, in `bee_status`, and in the chain-nudge fired when a worker returns during swarming. Debt > 0 means a settlement already landed in a capped cell and belongs in a spec **now**, not at feature close. Self-detection is still the first duty; the debt count is the backstop for the settlements the agent's own watching missed. Running capture (or sync) and recording the run in state clears it.
 
 **Detection is the scribe's duty, unprompted (decision 0007).** The explicit signal is the *loud* case; most settlements are silent — the user confirms a behavior works, accepts an explanation, picks an option, moves on. The agent watches for these itself, every turn, and captures without being asked. Do not ask "should I document this?" — announce in one line what settled and where it goes ("chốt: X — ghi vào `docs/specs/<area>.md` + decision log"), then do it in the same turn. Capture writes only `docs/` and `.bee/` — allowed in every phase, no gate. A user having to say "ghi lại" means detection already failed once:
 
-1. Log it first: `node .bee/bin/bee_decisions.mjs log --decision "..." --rationale "..."` — the decision log is the durable anchor; the rationale records *why* this outcome won over what was tried.
-2. Merge the settled truth into the area's spec (Business Rules for policy; Behaviors & Operations for confirmed behavior; Data Dictionary for a value's meaning) citing the new D-ID, same message.
+1. Log it first: `node .bee/bin/bee_decisions.mjs log --decision "..." --rationale "..."` — the decision log is the durable anchor; the rationale records *why* this outcome won over what was tried. This is always same-turn, every lane.
+2. **High-risk lane:** merge the settled truth into the area's spec now (Business Rules for policy; Behaviors & Operations for confirmed behavior; Data Dictionary for a value's meaning) citing the new D-ID, same message. A spec lagging high-risk behavior even briefly is dangerous — never queue it.
+   **Every other lane (decision 0017):** append a stub instead — `node .bee/bin/bee_capture.mjs add --outcome "..." --did <D-IDs> [--area <area>] [--files ...]` — one line, seconds, then keep working. Durability now, elaboration at flush.
 3. If it contradicts current shipped behavior, record it as a rule with a note "not yet implemented — see backlog" and file a backlog item; do NOT state it as current behavior.
 
-Litmus: if the session ended right now, would this outcome exist anywhere but the chat? If no — capture it now.
+Litmus: if the session ended right now, would this outcome exist anywhere but the chat? If no — capture it now. (A queued stub passes the litmus — the chat can die and the stub survives into the next session's preamble.)
+
+### Flush — draining the queue (decision 0017)
+
+Flush points, whichever comes first: **wrap-up** (the working session is ending), the **PreCompact/close warning** (the hook fires when the queue is non-empty), or the **session-start offer** (bee-hive surfaces a non-empty queue before new work). At flush: `node .bee/bin/bee_capture.mjs list`, then oldest-first give each stub the full capture treatment — merge into its area's spec per the section-3 rules, `bee_capture.mjs flush --id <id> --into <spec>` — and record the scribing run in state (section 8). A stub is never dropped, summarized away, or flushed without its merge; if a stub's meaning is no longer reconstructable, ask the user rather than invent — that cost is the signal to flush earlier next time.
 
 ### Deferred requests → product-backlog rows (D8, decision 0007 pattern)
 
 The same unprompted-capture duty covers **deferred work**, not just settled truths. When the user pushes work out of the current scope — "để sau", "phase 2", "later", "not now" — or a Deferred Idea leaves exploring, the agent appends a `proposed` row to `docs/backlog.md` (the product backlog) **in the same turn, announce-then-do**: "ghi vào backlog: <story> (proposed)", then write it. A user having to say "ghi vào backlog" means detection already failed once. Backlog writes are `docs/`-layer — allowed in every phase, no gate. The row's ID/columns/merge rules live in the reference's Product Backlog section; do not duplicate the table schema here. This is prose-ruled, never hook-enforced (D7).
 
-At sync, close the loop the other way: when this scribing run closes a feature that matches a backlog row, flip that row to `done` and link `docs/history/<feature>/` (D11b) — the sync pass owns the done-flip.
+At sync, close the loop the other way: when this scribing run closes a feature that matches a backlog row, flip that row to `done` and link `docs/history/<feature>/` (D11b) — the sync pass owns the done-flip. After any row flip, run the mechanical passes so the surfaces stay honest: `node .bee/bin/bee_backlog.mjs rank --write` (in-flight rows float to the top, done sinks — P2) and, when README carries the badge block, `node .bee/bin/bee_backlog.mjs badges --write` (P3).
 
 ## 5. Harvest Mode — Backfill Without Inventing
 
@@ -126,7 +132,9 @@ Record the scribing run in `.bee/state.json` under `last_scribing_run` with `fea
 - harvest answers invented from field or symbol names instead of asked
 - "I'll write the spec after compounding" — scribing runs first, while evidence is fresh
 - a settled outcome (rule, confirmed behavior, chosen value) that exists nowhere but the chat
-- the user said "chốt"/"final" and the turn ended with no decision logged and no spec merged
+- the user said "chốt"/"final" and the turn ended with no decision logged and neither a spec merge nor a queued stub (decision 0017: the stub is the same-turn minimum outside high-risk)
+- a high-risk settlement queued as a stub instead of synced inline
+- a capture stub surviving past a flush point (wrap-up, PreCompact warning, session-start offer) without being flushed
 - a capture that ran only because the user asked "ghi lại" — a silent settlement the agent should have caught itself (decision 0007)
 - the user deferred work ("để sau", "phase 2", "later") and the turn ended with no `proposed` row appended to `docs/backlog.md` — the missed-capture failure applied to backlog items (D8)
 - asking "should I document this?" instead of announcing the capture and doing it

@@ -1,5 +1,7 @@
-// backlog.mjs — read-only parser for docs/backlog.md (the product-backlog layer, D6).
-// Reads ONLY the Status column; never writes (transitions are prose-ruled per D7).
+// backlog.mjs — parser + mechanical passes for docs/backlog.md (the product-backlog
+// layer, D6). Status TRANSITIONS stay prose-ruled (per D7) and are never written
+// here; the two mechanical passes below (P2 rank = reorder rows by status group,
+// P3 badges = render counts into README markers) change no row's content.
 // One parser, shared by bee_status and the session preamble.
 
 import fs from 'node:fs';
@@ -71,4 +73,146 @@ export function readBacklogCounts(root) {
 
   const total = BACKLOG_STATUSES.reduce((sum, status) => sum + counts[tokenKey(status)], 0);
   return { ...counts, total };
+}
+
+// ─── P2: mechanical rank pass ───────────────────────────────────────────────
+// Reorders the table's data rows by status group — in-flight first (active work
+// on top), then proposed, then done (history sinks) — stable within each group
+// so hand-ordering inside a group is preserved. Rows whose status is not in the
+// enum keep a neutral weight between proposed and done. No cell is edited.
+
+const RANK_WEIGHT = { 'in-flight': 0, proposed: 1, done: 3 };
+const RANK_UNKNOWN_WEIGHT = 2;
+
+/**
+ * Compute (and with `write: true` apply) the rank pass.
+ * @returns {{changed:boolean, order:string[]}|null} null when the file is
+ *   absent or has no parseable table; `order` lists the first cell (ID) of each
+ *   data row in ranked order.
+ */
+export function rankBacklog(root, { write = false } = {}) {
+  const file = backlogPath(root);
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+
+  const lines = text.split(/\r?\n/);
+  let statusIndex = -1;
+  let headerLine = -1;
+  let separatorLine = -1;
+  const rows = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!lines[i].includes('|')) {
+      // A non-table line after the table body ends the block.
+      if (separatorLine !== -1 && rows.length > 0) break;
+      continue;
+    }
+    const cells = splitRow(lines[i]);
+    if (statusIndex === -1) {
+      const idx = cells.findIndex((cell) => normalizeStatus(cell) === 'status');
+      if (idx !== -1) {
+        statusIndex = idx;
+        headerLine = i;
+      }
+      continue;
+    }
+    if (separatorLine === -1) {
+      separatorLine = i; // the |---| row right after the header
+      continue;
+    }
+    const token = cells.length > statusIndex ? normalizeStatus(cells[statusIndex]) : '';
+    rows.push({
+      line: lines[i],
+      lineIndex: i,
+      id: cells[0] ? cells[0].replace(/[*`_]/g, '').trim() : '',
+      weight: RANK_WEIGHT[token] !== undefined ? RANK_WEIGHT[token] : RANK_UNKNOWN_WEIGHT,
+      position: rows.length,
+    });
+  }
+  if (statusIndex === -1 || separatorLine === -1 || rows.length === 0) return null;
+
+  const ranked = [...rows].sort(
+    (a, b) => a.weight - b.weight || a.position - b.position,
+  );
+  const changed = ranked.some((row, i) => row !== rows[i]);
+  const order = ranked.map((row) => row.id);
+
+  if (write && changed) {
+    // Write ranked lines back into the rows' original line slots, so any
+    // surrounding non-table content is untouched even if rows are not contiguous.
+    const slots = rows.map((row) => row.lineIndex);
+    for (let i = 0; i < ranked.length; i += 1) {
+      lines[slots[i]] = ranked[i].line;
+    }
+    fs.writeFileSync(file, lines.join('\n'), 'utf8');
+  }
+  return { changed, order };
+}
+
+// ─── P3: README badges ──────────────────────────────────────────────────────
+// Renders the counts as shields.io static badges between BEE markers in
+// README.md. Idempotent; creates the marker block after the first heading when
+// absent. Counts-only — no row content leaves the backlog file.
+
+export const BADGE_MARKER_START = '<!-- BEE:BACKLOG-BADGES:START -->';
+export const BADGE_MARKER_END = '<!-- BEE:BACKLOG-BADGES:END -->';
+
+const BADGE_COLORS = { done: 'brightgreen', 'in-flight': 'blue', proposed: 'lightgrey' };
+
+function shieldsEscape(text) {
+  // shields.io static badges: '-' doubles, '_' doubles, space becomes '%20'.
+  return String(text).replace(/-/g, '--').replace(/_/g, '__').replace(/ /g, '%20');
+}
+
+export function renderBacklogBadges(root) {
+  const counts = readBacklogCounts(root);
+  if (!counts) return null;
+  const badges = BACKLOG_STATUSES.slice()
+    .reverse() // done first — the headline number
+    .map((status) => {
+      const label = shieldsEscape(`backlog ${status}`);
+      const value = counts[tokenKey(status)];
+      return `![backlog ${status}](https://img.shields.io/badge/${label}-${value}-${BADGE_COLORS[status]})`;
+    });
+  return badges.join(' ');
+}
+
+/**
+ * Insert or refresh the badge block in README.md.
+ * @returns {{changed:boolean, badges:string}|null} null when README.md or the
+ *   backlog is absent.
+ */
+export function updateReadmeBadges(root, { write = false } = {}) {
+  const badges = renderBacklogBadges(root);
+  if (badges == null) return null;
+  const file = path.join(root, 'README.md');
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+
+  const block = `${BADGE_MARKER_START}\n${badges}\n${BADGE_MARKER_END}`;
+  let next;
+  if (text.includes(BADGE_MARKER_START) && text.includes(BADGE_MARKER_END)) {
+    const pattern = new RegExp(
+      `${BADGE_MARKER_START.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?${BADGE_MARKER_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+    );
+    next = text.replace(pattern, block);
+  } else {
+    // No markers yet: place the block right under the first heading line.
+    const lines = text.split(/\r?\n/);
+    const headingIdx = lines.findIndex((line) => line.startsWith('#'));
+    const at = headingIdx === -1 ? 0 : headingIdx + 1;
+    lines.splice(at, 0, '', block);
+    next = lines.join('\n');
+  }
+
+  const changed = next !== text;
+  if (write && changed) fs.writeFileSync(file, next, 'utf8');
+  return { changed, badges };
 }

@@ -34,6 +34,8 @@ For the full routing table, state bootstrap, resume logic, chaining contracts, a
 
 If onboarding is not complete, do not continue into the rest of the bee workflow.
 
+**Greenfield init lane (P1, docs/09 item 6):** when the onboarding result carries the init-lane notice (first onboard, no detectable build), offer it before any feature work: the first planning slice is **one init cell** whose `must_haves` are exactly the initialization checklist — setup succeeds from scratch, one passing test exists, standard commands recorded in `.bee/config.json`, clean first commit. The user may decline; a declined offer is recorded as a deferred idea, never silently dropped.
+
 ## Session Scout
 
 After onboarding succeeds, run the read-only scout on every session start and after compaction:
@@ -47,6 +49,8 @@ Orient on: onboarding health, phase, mode, feature, gate states, cell counts, ac
 **Baseline gate (docs/09 item 1):** if `.bee/config.json` records `commands.verify`, run it once per session before any cell is claimed. A red baseline is surfaced to the user and becomes its own fix-first tiny cell — never build on red. Commands come free in the session preamble; when none are recorded, `bee_status` warns and the capture belongs to exploring or onboarding, never to guesswork.
 
 **HANDOFF:** if `.bee/HANDOFF.json` exists, present its phase, feature, cells in flight, and next action to the user and **wait for confirmation. Never auto-resume.**
+
+**Capture queue (decision 0017):** when `bee_status` reports pending capture stubs, offer the flush before new work — "N settlement(s) from a previous session await their spec merge — flush now (a few minutes) or after the current task?" One line, user chooses; the queue is never silently ignored and never silently dropped.
 
 Then read `docs/history/learnings/critical-patterns.md` and surface recent active decisions (`node .bee/bin/bee_decisions.mjs active --recent 3`).
 
@@ -111,7 +115,7 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 6. Never skip validating — in tiny mode it collapses to a 2-minute reality check, it does not disappear.
 7. `docs/history/learnings/critical-patterns.md` and recent active decisions are mandatory context before planning or executing.
 8. Evidence before claims: any "done/passing/fixed" statement requires fresh command output in the same message.
-9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` sync in every lane — tiny included — and a settled discussion outcome (rule, behavior, tuned value; backend or frontend alike) is captured the moment it settles. **Settlement detection is the agent's duty, unprompted:** the routing row "user asks to document" is the fallback, not the norm — the norm is the agent noticing "this just settled", announcing it in one line, and invoking bee-scribing capture in the same turn without being asked. Capture writes only `docs/` + `.bee/` — no gate applies.
+9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` sync in every lane — tiny included — and a settled discussion outcome (rule, behavior, tuned value; backend or frontend alike) is captured the moment it settles. **Settlement detection is the agent's duty, unprompted:** the routing row "user asks to document" is the fallback, not the norm — the norm is the agent noticing "this just settled", announcing it in one line, and capturing in the same turn without being asked. What same-turn capture costs is lane-scaled (decision 0017): high-risk = full spec sync inline; every other lane = decision log + a one-line capture stub (`bee_capture.mjs add`), with the full merge at a flush point (wrap-up, PreCompact warning, or next session's offer). Capture writes only `docs/` + `.bee/` — no gate applies.
 10. **The agent runs the machinery, not the user.** Every bee command (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, onboarding, cell verify commands) is run by the agent itself the moment the workflow calls for it — never printed for the user to execute, never "run this and tell me the output". The only human actions in bee are gate approvals, decision answers, and privacy approvals.
 
 ## Runtime Files
@@ -122,8 +126,9 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 - `.bee/HANDOFF.json` — pause/resume data
 - `.bee/reservations.json` — file reservations
 - `.bee/decisions.jsonl` / `.bee/backlog.jsonl` — decision log / friction items
+- `.bee/capture-queue.jsonl` — settlement stubs awaiting their flush (decision 0017)
 - `.bee/cells/<id>.json` — one cell per file
-- `.bee/bin/` — vendored helpers (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`) + `lib/`
+- `.bee/bin/` — vendored helpers (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, `bee_capture`) + `lib/`
 - `docs/history/<feature>/CONTEXT.md` — locked decisions, source of truth
 - `docs/history/learnings/critical-patterns.md` — mandatory pre-work reading
 - `docs/specs/<area>.md` + `docs/specs/reading-map.md` — state layer, owned by `bee-scribing`: BA-grade tech-agnostic spec per area, and what lives where (read spec before code)

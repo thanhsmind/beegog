@@ -351,6 +351,94 @@ export function scribingDebt(root) {
   return { count: cells.length, cells };
 }
 
+// P12 / decision 0018 — the frozen judge. A worker that rewrites the test
+// suite, CI config, lockfiles, or the verify configuration has not passed the
+// judge — it has replaced the judge. Files matching these patterns that were
+// changed WITHOUT being declared in the cell's `files` scope are tamper
+// signals: the orchestrator never counts such a cell toward a clean wave and
+// flags it for review (source: delegator's frozen-judge globs, LOOP survey).
+export const FROZEN_JUDGE_PATTERNS = [
+  { rule: 'test sources', pattern: /(^|\/)(tests?|__tests__|specs?)\//i },
+  { rule: 'test file', pattern: /\.(test|spec)\.[a-z]+$/i },
+  { rule: 'snapshot', pattern: /(^|\/)__snapshots__\/|\.snap$/i },
+  {
+    rule: 'CI config',
+    pattern: /(^|\/)\.github\/workflows\/|(^|\/)\.gitlab-ci\.yml$|(^|\/)Jenkinsfile$|(^|\/)azure-pipelines\.yml$|(^|\/)\.circleci\//i,
+  },
+  {
+    rule: 'lockfile',
+    pattern:
+      /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock|go\.sum|composer\.lock|Gemfile\.lock)$/i,
+  },
+  {
+    rule: 'package manifest',
+    pattern: /(^|\/)(package\.json|pyproject\.toml|Cargo\.toml|go\.mod|composer\.json|Gemfile)$/i,
+  },
+  {
+    rule: 'test config',
+    pattern: /(^|\/)(jest\.config|vitest\.config|playwright\.config|karma\.conf|pytest\.ini|tox\.ini|phpunit\.xml)[^/]*$/i,
+  },
+  { rule: 'bee verify config', pattern: /(^|\/)\.bee\/config\.json$/i },
+];
+
+function normalizePath(p) {
+  return String(p).replace(/\\/g, '/').replace(/^\.\//, '').trim();
+}
+
+// A declared entry covers a changed file when it matches exactly, is a
+// directory prefix (entry ends with '/'), or is a simple '*' glob.
+function declaredCovers(declared, file) {
+  for (const raw of declared) {
+    const entry = normalizePath(raw);
+    if (!entry) continue;
+    if (entry === file) return true;
+    if (entry.endsWith('/') && file.startsWith(entry)) return true;
+    if (entry.includes('*')) {
+      // '**' crosses directories, '*' stays within one segment. Escape regex
+      // metacharacters first, then translate the stars via a placeholder that
+      // cannot appear in an escaped path (escaping leaves no bare '+').
+      const DOUBLE_STAR = '+';
+      const source = entry
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*\*/g, DOUBLE_STAR)
+        .replace(/\*/g, '[^/]*')
+        .split(DOUBLE_STAR)
+        .join('.*');
+      if (new RegExp(`^${source}$`).test(file)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Frozen-judge check: judge-pattern files changed outside the declared scope.
+ * @param {string[]} changedFiles - the worker's trace.files_changed
+ * @param {string[]} declaredFiles - the cell's declared `files` scope
+ * @returns {{file:string, rule:string}[]} hits — empty means the judge is intact.
+ */
+export function frozenJudgeHits(changedFiles, declaredFiles = []) {
+  const declared = Array.isArray(declaredFiles) ? declaredFiles : [];
+  const hits = [];
+  for (const raw of Array.isArray(changedFiles) ? changedFiles : []) {
+    const file = normalizePath(raw);
+    if (!file) continue;
+    const match = FROZEN_JUDGE_PATTERNS.find(({ pattern }) => pattern.test(file));
+    if (!match) continue;
+    if (declaredCovers(declared, file)) continue;
+    hits.push({ file, rule: match.rule });
+  }
+  return hits;
+}
+
+/** Convenience: run the frozen-judge check on a capped/claimed cell's trace. */
+export function judgeCell(root, id) {
+  const cell = readCell(root, id);
+  if (!cell) throw new Error(`judgeCell: cell "${id}" not found.`);
+  const changed = (cell.trace && cell.trace.files_changed) || [];
+  const declared = Array.isArray(cell.files) ? cell.files : [];
+  return { id: cell.id, hits: frozenJudgeHits(changed, declared) };
+}
+
 // Decision 0012 / P7 — keep the ceiling (strongest) model scarce, measurably.
 // Above this share of tiered cells on the ceiling tier, the scarcity is at risk
 // (the cost lever of "the strong model touches few dispatches" is eroding).

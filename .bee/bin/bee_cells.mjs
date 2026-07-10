@@ -35,6 +35,7 @@ import {
   blockCell,
   dropCell,
   setTier,
+  judgeCell,
 } from './lib/cells.mjs';
 
 function parseArgs(argv) {
@@ -198,9 +199,21 @@ function run(args) {
       const cell = setTier(root, requireFlag(flags, 'id'), String(requireFlag(flags, 'tier')));
       return { result: cell, text: `Cell ${cell.id} tier set to ${cell.tier}.` };
     }
+    case 'judge': {
+      // P12 / decision 0018 — frozen-judge check: judge-pattern files changed
+      // outside the cell's declared scope. Hits mean the worker touched the
+      // test/CI/lockfile surface it was not asked to touch — flag for review.
+      const verdict = judgeCell(root, requireFlag(flags, 'id'));
+      const text = verdict.hits.length
+        ? `FROZEN-JUDGE HITS for ${verdict.id}: ${verdict.hits
+            .map((h) => `${h.file} (${h.rule})`)
+            .join('; ')} — do not count this cell toward a clean wave; flag it for review (decision 0018).`
+        : `Judge intact for ${verdict.id}: no undeclared test/CI/lockfile changes.`;
+      return { result: verdict, text };
+    }
     default:
       throw new Error(
-        `Unknown command "${args.command || '(missing)'}". Use: list, ready, show, add, claim, verify, cap, block, drop, tier.`,
+        `Unknown command "${args.command || '(missing)'}". Use: list, ready, show, add, claim, verify, cap, block, drop, tier, judge.`,
       );
   }
 }

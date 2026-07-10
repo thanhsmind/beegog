@@ -18,7 +18,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 
 - Ask **one question per message**; wait for the user before asking the next.
 - Do not answer your own question — even when you are sure of the answer.
-- Do not research implementation, propose architecture, create cells, or write code.
+- Do not research implementation, propose architecture, create cells, or write code — the sole exception is a throwaway SEE mock under `.spikes/<feature>/mocks/` (P11, decision 0020; step 4).
 - Do not invoke planning yourself. End by handing the user to `bee-planning`.
 
 ## Flow
@@ -51,6 +51,8 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 4. **Socratic Locking**
    - One concise question per message, preferably single-choice, **outcome-framed** ("what breaks for users if…"), using the standard CONTEXT / QUESTION / RECOMMENDATION / options format.
    - Start broad, then narrow into constraints.
+   - **Blindspot pass — teach before asking (P9, decision 0020):** when the user signals unfamiliarity with a gray area's domain — says so, answers with guesses ("chắc là…"), or asks what the options mean — invert for that area: explain the 2–3 concepts needed to answer well (one short outcome-framed message, no jargon), *then* ask. A decision locked from a guessed answer is a fake decision. The user can also request a full "blindspot pass" by name: sweep the unknown-unknowns (what good looks like, common potholes, prior art in this repo) before locking begins.
+   - **SEE mock — react instead of describe (P11, decision 0020):** for a `SEE` gray area the user knows-when-they-see-it but cannot describe, you MAY build a throwaway HTML mock (2–4 variants, fake data, zero wiring) under `.spikes/<feature>/mocks/` and lock the decision from the user's reaction, citing the chosen variant. This is the ONE exception to "exploring never writes code": mock files only, only under `.spikes/`, never imported by anything, never promoted to production (spike-code rule applies).
    - After each answer, confirm the decision back and assign a stable ID: `D1`, `D2`, `D3`…
    - If one answer contains several decisions: lock the one your question asked about, echo the others as candidate decisions to confirm one at a time.
    - Scope creep (new features, adjacent work): mark it deferred with one line, return to the current question.
@@ -60,7 +62,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
    - Include boundary, domain types, locked decisions table with D-IDs, scout paths, canonical references, open questions, and deferred ideas.
    - **Deferred Ideas also feed the product backlog (D8):** each Deferred Ideas entry that is real future work appends a `proposed` row to `docs/backlog.md` in the same turn (announce-then-do) — the CONTEXT.md list is the record for this feature, the backlog row is the durable product-level intent. Do not wait to be asked.
    - Concrete language only. No placeholders, TODOs, or vague preferences.
-   - **Fresh-eyes review:** spawn one reviewer with no conversation history (tier: `generation`). It checks completeness, contradictions, vague decisions, missing D-IDs, and blockers. Fix findings and re-review — max two loops, then present remaining doubts to the user.
+   - **Fresh-eyes review:** spawn one reviewer with no conversation history (slot: `review`, decision 0021 — default opus on Claude, falls back to generation) — **in the background where the runtime supports it** (decision 0017): keep assembling CONTEXT.md, keep talking to the user; the review blocks nothing until Gate 1. Collect the verdict before presenting the gate — Gate 1 is never presented with the review still outstanding. It checks completeness, contradictions, vague decisions, missing D-IDs, and blockers. Fix findings and re-review — max two loops, then present remaining doubts to the user.
 
 6. **State And Handoff**
    - Update `.bee/state.json`:
@@ -83,7 +85,9 @@ With `mode:headless`: no Socratic dialogue. Lock only decisions the request stat
 
 - bundled questions, or a question answered by the asker
 - deep implementation analysis or architecture proposals during exploring
-- creating cells or writing code
+- creating cells or writing code (except a `.spikes/<feature>/mocks/` SEE mock per decision 0020)
+- a SEE mock imported by production code, or surviving outside `.spikes/`
+- teaching skipped when the user is visibly guessing — a decision locked from a guess
 - locking a "decision" that is really an implementation choice
 - scope creep absorbed instead of deferred
 - CONTEXT.md with placeholders, or skipping the fresh-eyes review
