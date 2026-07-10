@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "phase": "reviewing",
-  "feature": "external-result-contract",
-  "mode": "small",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
     "context": true,
     "shape": true,
@@ -10,23 +10,22 @@
     "review": true
   },
   "workers": [],
-  "summary": "external-result-contract reviewed and merge-approved (user, Gate 4): P1 + 3 P2 + 1 round-2 finding all fixed and confirmed; verify green 124/0. Finish contract (result.json) + durable workspace contract live in swarming-reference.md.",
-  "next_action": "bee-scribing sync (behavior_change cell), then bee-compounding.",
-  "uat_skip_reason": "external-result-contract: docs-only change, no CONTEXT.md SEE/CALL/RUN decisions exist — no UAT items to walk",
+  "summary": "external-result-contract closed: finish contract + durable workspace contract shipped in swarming-reference.md (commit af64c89), review clean after fixes, first real external cli dispatch field-tested. Learnings + decision 9d9591ca logged; reviewer scope-out friction filed.",
+  "next_action": null,
   "last_scribing_run": {
-    "feature": "config-sample-move",
+    "feature": "external-result-contract",
     "date": "2026-07-10",
-    "at": "2026-07-10T15:33:24.898Z",
+    "at": "2026-07-10T16:35:58.232Z",
     "areas_synced": [
-      "no sync needed — no behavior_change cells; supersede recorded in decision log"
+      "skills-as-spec convention (reading-map): protocol lives in swarming-reference.md itself; docs/backlog.md P14 note refreshed (first external run recorded)"
     ],
-    "next_action": null
+    "next_action": "bee-compounding"
   },
   "last_compounding_run": {
-    "feature": "evolving-loop",
-    "at": "2026-07-10T10:55:51.891Z",
-    "learnings": "docs/history/learnings/20260710-evolving-loop-slice-b.md",
-    "critical_promotions": 2,
+    "feature": "external-result-contract",
+    "at": "2026-07-10T16:39:36.363Z",
+    "learnings": "docs/history/learnings/20260710-external-result-contract.md",
+    "critical_promotions": 0,
     "decisions_logged": 1,
     "friction_filed": 1
   },
@@ -36,5 +35,5 @@
     "capped": 33,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T16:32:13.482Z"
+  "last_activity": "2026-07-10T16:38:06.975Z"
 }
