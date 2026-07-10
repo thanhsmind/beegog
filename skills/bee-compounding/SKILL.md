@@ -78,7 +78,23 @@ Log choices future planning must honor. Supersede outdated decisions (`bee_decis
 
 Unresolved friction from cell traces or the session → `.bee/backlog.jsonl` entries with a predicted impact, so `bee-grooming` can hunt them later. Entry format in the reference.
 
-## 8. Update State
+## 8. Refresh the Feedback Digest (D1 — warn, never block)
+
+After the learnings file is written, refresh the local feedback digest so the evolving-loop telemetry stays current:
+
+```
+node .bee/bin/bee_feedback.mjs digest
+```
+
+Run this unprompted at every close — it is part of compounding, not an optional extra, and no user, teammate, or missing skill mention excuses skipping it. Per D1 the dogfood side stays zero-effort: this is a compounding side effect, never a task the host project has to think about.
+
+**Warn, never block.** A failing or absent refresh — the command throws, `bee_feedback.mjs` is missing, or the helper is not installed — is a one-line warning in the run summary and **nothing more**. It NEVER blocks, fails, delays, or reverses a host project's feature close. A host project's close must never fail because bee wanted telemetry; a thrown digest is bee's problem to file as friction (step 7), not the feature's problem. "Something threw during close, stop the line" does not apply here — the digest is side-channel telemetry, explicitly non-load-bearing for the feature's correctness.
+
+This holds **regardless of whether you recognize the error**. An unfamiliar, never-seen-before, or scary-looking stack trace (`TypeError`, `undefined`, "corrupted", anything) from `bee_feedback.mjs` is STILL just a telemetry failure — it cannot corrupt the feature, its data, or its correctness, because the digest is a read-only side effect that runs after all feature work is already done and committed. "But I don't understand this specific error yet, so I should block until I do" is the loophole, not the exception: warn, file the exact error as friction (step 7) for bee to investigate later, and let the close proceed **now**. You never need to understand a digest error before closing; understanding it is post-close cleanup, never a gate.
+
+**Never skip silently.** If the refresh is not run — for any reason, including context pressure, exhaustion, or an unfamiliar error — say so explicitly in the run summary and Handoff line (e.g. "digest refresh skipped: <reason>"). A silent omission is a violation even when the surrounding handoff template has no field for it; extend the handoff rather than emit a clean-looking close that hides the skip.
+
+## 9. Update State
 
 Record the completed compounding run in `.bee/state.json` (phase, learnings file path, promotion count, next_action).
 
@@ -104,6 +120,10 @@ Record the completed compounding run in `.bee/state.json` (phase, learnings file
 - an analyst subagent writing to `docs/history/learnings/` directly
 - an API key, token, or credential in an evidence snippet
 - `behavior_change` cells capped but no scribing record — and compounding "fixing" it by editing `docs/specs/` itself
+- closing without running the digest refresh because "the skill/teammate didn't ask for it" — it is a step, not an optional extra (Scenario 1)
+- blocking or failing a host project's feature close because `bee_feedback.mjs digest` threw — telemetry never stops the line; warn and file friction (Scenario 2)
+- treating an *unfamiliar* digest error as exempt from warn-never-block — "I must understand this throw before I can close" is the loophole; a digest error never gates a close, understanding it is post-close cleanup (Scenario 2 REFACTOR)
+- skipping the digest refresh under context/exhaustion pressure and saying nothing — a silent skip is a violation; disclose it in the summary and Handoff (Scenario 3)
 
 Violating the letter of these rules is violating the spirit of these rules.
 

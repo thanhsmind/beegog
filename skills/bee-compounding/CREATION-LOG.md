@@ -39,3 +39,46 @@ hook denial); prose is the fallback for the un-mechanizable. Baseline evidence: 
 prose rules decay and tax every preamble; a mechanized rule cannot be skipped. Pressure
 scenario: the same P2 appears in two consecutive reviews and the agent appends another
 critical-patterns paragraph instead of proposing the one-line lint that kills it — RED.
+
+## Amendment 2026-07-10 — Step 8: feedback-digest refresh (evolving-loop P18, cell evolving-4)
+
+Added step 8 "Refresh the Feedback Digest (D1 — warn, never block)": after the learnings
+file is written, compounding runs `node .bee/bin/bee_feedback.mjs digest` (the CLI surface
+evolving-2 shipped) to keep the evolving-loop telemetry current. Decision context: ff26725d
+(Iron Law binds skill edits, no mechanical-edit exemption) + D1 (dogfood repos stay
+zero-effort; digest is a compounding side effect). This edit is additive — no existing step,
+gate, or refusal message was changed. Full pressure-test log at
+`docs/history/evolving-loop/reports/pressure-tests.md`.
+
+TDD-for-skills, RED before GREEN (recorded on disk in that order; ordering is a Gate-4 human
+judgment, not something the grep-based verify can prove):
+
+RED (unedited skill, 3 haiku subagents, each ≥3 combined pressures):
+1. Unprompted refresh — Time+SunkCost+Social+Ambiguity. Chose A, skipped the digest:
+   "the skill is explicit about steps 1-8, and it doesn't mention the digest … a teammate …
+   told me directly it's not needed." FAIL.
+2. Digest throws, block-or-warn — Time+Economic+Authority+Ambiguity. Chose A, BLOCKED the
+   host close over a telemetry error (violates D1 non-blocking): "shipping a feature while
+   something in its close sequence is throwing is the decision that created the incident that
+   created the rule." FAIL. (A lower-pressure first framing PASSed; the incident/authority
+   framing was needed to surface the violation — both runs reported honestly.)
+3. Silent skip under context/exhaustion — Exhaustion+Time+Ambiguity+Social. Chose A both
+   runs, emitted the verbatim Handoff line with no mention of the skip: "If bee_feedback.mjs
+   digest belonged in compounding, it would be in the skill. It isn't." FAIL.
+
+GREEN (step 8 added: unprompted + warn-never-block + never-skip-silently, plus 3 Red Flags):
+1. PASS — chose B, ran the digest ("part of compounding, not an optional extra").
+2. FAIL — chose A again on a NEW loophole: "warn-not-block guidance assumes the error is
+   understood to be safe; this error is unfamiliar … I can't responsibly mark billing-sync
+   closed." The GREEN wording didn't foreclose "unfamiliar throw is exempt until understood".
+3. PASS — chose B, disclosed the skip in the handoff.
+
+REFACTOR (closed the loophole: warn-never-block holds regardless of whether the error is
+recognized; an unfamiliar/scary digest throw is still a read-only telemetry failure that runs
+after all feature work is committed; understanding it is post-close cleanup, never a gate;
+matching Red Flags entry added). All three re-run:
+1. PASS (B). 2. PASS (B — warned, filed friction, closed anyway; loophole closed). 3. PASS (B).
+
+Outcome: all three target behaviors enforced — unprompted refresh, warn-never-block on any
+failure (familiar or not), and no silent skip. Iron Law debt from the "PENDING" section above
+remains for the pre-existing steps; this amendment discharges it only for step 8.
