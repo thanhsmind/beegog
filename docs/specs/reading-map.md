@@ -5,13 +5,16 @@ Where things live. Read the touched area's spec before its code.
 ## Area specs
 
 - [`feedback-digest.md`](./feedback-digest.md) — how a repository turns its own workflow records into a
-  safe portable snapshot, and how the maintainers' repository reads other repositories' snapshots
-  without trusting them.
+  safe portable snapshot, how the maintainers' repository reads other repositories' snapshots
+  without trusting them, and how the collected view is ranked and fed to the gated
+  self-improvement process.
 
 ## Not yet specced
 
-- The workflow's skills themselves (`skills/bee-*`) have no area specs. Their contracts live in
-  `docs/07-contracts.md` and in each skill's own `SKILL.md` + `CREATION-LOG.md`.
+- The workflow's skills themselves (`skills/bee-*`, including the new `bee-evolving`) have no area
+  specs by convention. Their contracts live in `docs/07-contracts.md` and in each skill's own
+  `SKILL.md` + `CREATION-LOG.md`; the self-improvement *process* behavior is specced in
+  `feedback-digest.md` (B5).
 - `docs/specs/system-overview.md` does not exist. Offered, not yet written.
 
 ## Elsewhere

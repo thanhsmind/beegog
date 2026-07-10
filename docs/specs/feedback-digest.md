@@ -3,12 +3,15 @@ area: feedback-digest
 updated: 2026-07-10
 coverage: full
 sources:
-  - docs/history/evolving-loop/ (cells evolving-1 … evolving-7, capped)
+  - docs/history/evolving-loop/ (cells evolving-1 … evolving-11, capped)
   - docs/history/evolving-loop/reports/review-slice-a.md
+  - docs/history/evolving-loop/reports/review-slice-b.md
 decisions:
   - 8cd4c84e (D1, D2 allowlist, D2b consumer revalidation, D3, D4, D5)
   - c45d0fb3 (a defect-encoding frozen assertion is unfrozen by the planner, never the worker)
   - b8fe5c81 (a drift guard that greps its own source pins syntax, not behavior)
+  - 0022 (ranking, the comparison-form rule, the self-improvement process gates)
+  - c75fed88 (two acknowledged open findings at review close, filed to the friction backlog)
 ---
 
 # Feedback Digest
@@ -193,6 +196,45 @@ cannot damage the feature.
 If the refresh is skipped for any reason, the skip is **stated out loud** in the closing summary. A
 silent omission is a violation even when the summary has no obvious place to put it.
 
+### B4 — Ranking the collected view
+
+**Triggers:** an operator asks for a ranking; or the self-improvement process (below) starts.
+
+**What it does.** All entries — local and collected — are grouped by what their title *means*, then
+each group is scored and the groups are returned most-pressing-first.
+
+- **Grouping ignores the safety wrapping.** A collected entry's title arrives wrapped in
+  neutralization marks; the same title recorded locally is bare. Grouping compares an internal
+  cleaned form of the title (wrapping removed to a fixed point, the same neutralization cleanups
+  applied, case and spacing normalized), so wrapped and bare twins — and even double-wrapped ones —
+  land in one group. The stored titles themselves stay wrapped; only the invisible comparison form
+  is cleaned.
+- **Score** = the group's highest severity × how many entries it holds × how many distinct
+  repositories contributed (the local repository counts as one). Ties are broken by earliest first
+  observation, then by the comparison form — so the same records always rank in the same order.
+- **A group whose entries carry no severity scores at the floor value (one), never at zero** — a
+  hole in the data must not bury a group.
+
+**What blocks it:** nothing new — it consumes only the already-validated collected view (B2) and
+reads nothing itself.
+
+**What each actor observes:** the operator sees each group's representative title (**still wrapped
+exactly as stored**), its score and score components, and where its entries came from. The internal
+comparison form exists only to group; it is never meant for display, because displaying it would
+undo the neutralization the reader applied (see Open Gaps — today the machine-readable output still
+carries it).
+
+### B5 — The self-improvement process
+
+The maintainers' repository can run a gated process that turns the ranked groups into a shipped
+improvement of the workflow itself: rank → a human chooses **what** to fix → the fix is built under
+the discipline that a failing check exists before any content → the checks pass → a human approves
+**the exact change** → publication as a deliberate, named, manual step.
+
+The process refuses to run anywhere but the maintainers' repository, refuses to skip either human
+choice, and never publishes on its own. Approval of a plan, a schedule, a standing rule, or a
+previous change never counts as approval of the next publication.
+
 ## Actors & Access
 
 | Actor | May |
@@ -231,6 +273,17 @@ location with a friendly label; a location with no label is labelled by its own 
 - **R10** — A digest is a snapshot, regenerated whole. It is never appended to.
 - **R11** — Generation never fails on bad input. Malformed, unreadable, and absent records are
   skipped and counted.
+- **R12** (0022) — A neutralization-wrapped title and its bare twin are **the same title** for
+  grouping. The comparison uses an internal cleaned form; the stored value keeps its wrapping.
+- **R13** (0022) — The internal comparison form is never displayed and never placed where something
+  that acts on instructions can read it — showing it would strip the reader's own neutralization.
+  (Enforced in the process's instructions today, not yet in the tool — see Open Gaps.)
+- **R14** (0022) — Ranking is deterministic: the same collected view always yields the same order.
+  Severity × occurrences × distinct contributing repositories, ties broken by earliest first
+  observation then the comparison form.
+- **R15** (0022, D3, D5) — The self-improvement process runs only in the maintainers' repository,
+  only on demand, with two human decisions (what to fix; approve the exact change), and never
+  publishes automatically. No standing rule or prior approval transfers.
 
 ## Edge Cases Settled
 
@@ -259,22 +312,36 @@ location with a friendly label; a location with no label is labelled by its own 
   which contradicts the rule that one dead source never stops the reader.
 - **`oversize` is a declared drop reason that nothing can currently produce**: over-long titles are
   shortened rather than dropped.
-- **A digest has never been consumed by the process it exists to serve.** Nothing yet reads a merged
-  digest and proposes a change to the workflow. The boundary is proven against payloads, not against
-  a live reader.
-- **The richest planned input is empty in practice.** In the only repository with substantial history,
-  every single work item recorded no friction at all. Whether the digest carries enough signal to rank
-  anything is unanswered until something tries.
+- **The internal comparison form leaks into the machine-readable ranking output** (acknowledged at
+  review close, 2026-07-10, decision `c75fed88`): the ranked groups carry the cleaned, unwrapped
+  form of every title alongside the wrapped one, so a consumer that dumps the raw output re-exposes
+  what the reader neutralized. Keeping it out of a prompt currently rests on the process's written
+  instructions, not on the tool. Fix filed in the friction backlog.
+- **The grouping's cleanup rules are a hand-copied twin of the neutralizer's** (same acknowledgment):
+  if the neutralizer's cleanups are ever extended, wrapped and bare twins silently stop grouping and
+  nothing goes red. Fix (one shared cleanup, plus a coupling check) filed in the friction backlog.
+- **Accent-form twins do not group.** The same title written with composed vs decomposed accented
+  characters (common across editors and platforms, and this corpus is bilingual) produces two groups.
+- **A title that is only wrapping, or a title legitimately quoted with the wrapping marks, may
+  collapse toward the empty comparison form** and falsely group.
+- **The severity floor and the missing-date tie-break are believed but untested** — the behavior is
+  read from the implementation; no check pins it.
+- **Cross-repository corroboration is real but inert in practice**: measured on the live two-repository
+  corpus, no group spans both repositories (titles are in different languages), so the distinct-repository
+  factor is one everywhere until two repositories share a friction.
 
 ## Pointers (implementation)
 
-- Collector, boundary, and merge: `skills/bee-hive/templates/lib/feedback.mjs`
-  (`ENTRY_FIELD_SPEC`, `resolveInScope`, `listInScope`, `buildDigest`, `mergeDigests`)
-- Command surface: `skills/bee-hive/templates/bee_feedback.mjs` (`digest`, `count`, `collect`)
+- Collector, boundary, merge, and ranking: `skills/bee-hive/templates/lib/feedback.mjs`
+  (`ENTRY_FIELD_SPEC`, `resolveInScope`, `listInScope`, `buildDigest`, `mergeDigests`,
+  `normalizeTitle`, `clusterEntries`, `rankClusters`)
+- Command surface: `skills/bee-hive/templates/bee_feedback.mjs` (`digest`, `count`, `collect`, `rank`)
+- The self-improvement process: `skills/bee-evolving/SKILL.md`; contract in `docs/07-contracts.md`;
+  decision record `docs/decisions/0022-evolving-loop.md`
 - Source-repository list: `.bee/config.json` → `dogfood_repos`, normalized in
   `skills/bee-hive/templates/lib/state.mjs`
 - Credential / instruction patterns and the neutralizer: `skills/bee-hive/templates/lib/decisions.mjs`
 - Close-time refresh: `skills/bee-compounding/SKILL.md` step 8
 - Written artifact: `.bee/feedback-digest.json`
-- Tests: `skills/bee-hive/templates/tests/test_lib.mjs` (108 assertions, incl. a table-driven payload
-  sweep over every allowed field)
+- Tests: `skills/bee-hive/templates/tests/test_lib.mjs` (124 assertions, incl. a table-driven payload
+  sweep over every allowed field, the ranking matrix, and a control-byte sweep over vendored sources)
