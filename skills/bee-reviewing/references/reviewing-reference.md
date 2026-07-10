@@ -29,7 +29,7 @@ Orchestrator synthesis (after all reviewers return): deduplicate overlaps, mark 
 
 ## Conditional Reviewers (selected by diff analysis)
 
-Before dispatch, scan the diff ONCE and spawn any conditional reviewer whose trigger matches, in the same parallel wave as the always-on four. Same isolation contract, same prompt shape, same generation tier — only the focus line differs. Personas stay thin lens contracts: no failure-mode catalogs (the model already knows the domain; the trigger and the lens are the value).
+Before dispatch, scan the diff ONCE and spawn any conditional reviewer whose trigger matches, in the same parallel wave as the always-on four. Same isolation contract, same prompt shape, same review slot — only the focus line differs. Personas stay thin lens contracts: no failure-mode catalogs (the model already knows the domain; the trigger and the lens are the value).
 
 | Reviewer | Spawn when the diff touches | Focus line |
 |---|---|---|
@@ -41,7 +41,7 @@ Before dispatch, scan the diff ONCE and spawn any conditional reviewer whose tri
 Rules:
 
 - Triggers are mechanical — grep the diff's file paths and hunks; do not spawn on vibes, and do not skip a matched trigger to save time.
-- Cap the wave at 7 reviewers total. If more triggers match, fold the extra lens into the closest always-on reviewer's focus line and say so in the synthesis.
+- Cap the wave at 6 reviewers total (4 core + 2 conditionals). If more triggers match, fold the extra lens into the closest always-on reviewer's focus line and say so in the synthesis.
 - A `security` overlap (auth/payments/data-mutation files with ≥50 changed lines) is also the signal for the optional cross-model second opinion at Gate 4 (see 06-runtime-integration.md) — surface the option to the user; never auto-run it.
 
 ## Finding Schema

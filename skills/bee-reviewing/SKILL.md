@@ -27,7 +27,7 @@ Lanes scale ceremony, never memory. The specialist wave in §1 is the `standard`
 | `tiny` | **self-review, 0 subagents**: re-run the verify command fresh; walk the diff against the self-check list below; verify the promised artifact EXISTS/SUBSTANTIVE/WIRED | **done-report, not a question**: diff + fresh verify output + capture line. A blocking problem found → stop and ask; otherwise proceed to scribing |
 | `small` | **1 correctness reviewer** (review slot, isolated context: diff + CONTEXT.md/plan.md only) + the tiny self-checks | asked normally |
 | `standard` | 4 core reviewers (§1 table) | asked normally |
-| `high-risk` | full wave + conditional reviewers, cap 7 | asked normally, UAT always |
+| `high-risk` | full wave + conditional reviewers, cap 6 | asked normally, UAT always |
 
 **Tiny self-check list:** does the diff do what the merged gate promised and nothing beyond its cell scope · fresh verify output green · no secret/credential touched · no test/CI/lockfile/verify-config change the cell didn't declare (frozen judge) · new artifact actually wired, not just present. Finding a real defect here is treated exactly like a P1: stop, tell the user, fix before proceeding — the fast path never ships a known defect.
 
@@ -59,7 +59,7 @@ Precedent arrives pre-loaded: planning's bootstrap owns the `docs/history/learni
 
 **The `review` slot (P16, decision 0021):** reviewers resolve `resolveTier(root, 'review', runtime)` — a dedicated, per-repo-editable model for review work, default `opus` on Claude (independent reviewer > self-review: the model that reviews should not be the model that implemented). A `null` review slot falls back to `generation`; a `{kind:'cli'}` value dispatches an external adversarial reviewer (e.g. GPT via codex CLI) under the External Executors protocol. Conditional reviewers (below) use the same slot.
 
-**Conditional reviewers** join the same parallel wave when the diff mechanically matches their trigger: `performance` (queries in loops, caching), `api-contract` (routes, public shapes), `data-migration` (spawn gate: migration/schema files only), `reliability` (retries, queues, external calls). Scan the diff once before dispatch; spawn every matched trigger; cap the wave at 7. Trigger table and focus lines in `references/reviewing-reference.md`.
+**Conditional reviewers** join the same parallel wave when the diff mechanically matches their trigger: `performance` (queries in loops, caching), `api-contract` (routes, public shapes), `data-migration` (spawn gate: migration/schema files only), `reliability` (retries, queues, external calls). Scan the diff once before dispatch; spawn every matched trigger; cap the wave at 6 (4 core + 2 conditionals — the cap tracks the roster). Trigger table and focus lines in `references/reviewing-reference.md`.
 
 Full prompts in `references/reviewing-reference.md`.
 
@@ -69,7 +69,7 @@ Full prompts in `references/reviewing-reference.md`.
 - **P2** — real performance, architecture, reliability, or important test gap.
 - **P3** — cleanup, docs, future debt.
 
-The orchestrator performs synthesis itself, only after every reviewer has returned — it already runs on the strongest model in the wave, so a dispatched synthesis agent adds a hop, not a mind.
+The orchestrator performs synthesis itself, only after every reviewer has returned — the old synthesis agent ran on the orchestrator's own model anyway, so dispatching it added a hop, not a mind.
 
 Rules: uncertain → P2. Reviewers score independently; corroboration across independent reviewers promotes a finding one level. On disagreement, take the more conservative route. Every finding carries an `autofix_class` — `gated_auto` (concrete fix, apply after judgment), `manual` (needs design input), `advisory` (report-only) — as a routing SIGNAL, never an apply gate.
 

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "phase": "swarming",
+  "phase": "reviewing",
   "feature": "learnings-pair-relocation",
   "mode": "small",
   "approved_gates": {
@@ -10,8 +10,8 @@
     "review": false
   },
   "workers": [],
-  "summary": "learnings-pair-relocation (small): merged Gate 2+3 approved by owner 2026-07-11; solo in-session execution",
-  "next_action": "Execute cell learnings-pair-relocation-1 solo, then light review (1 correctness reviewer)",
+  "summary": "learnings-pair-relocation review done: 3 findings (2 P1 incl. 1 pre-existing, 1 P3), all gated_auto one-phrase fixes; Gate 4 pending",
+  "next_action": "Gate 4: P1 findings block merge — awaiting owner decision",
   "last_scribing_run": {
     "feature": "external-result-contract",
     "date": "2026-07-10",
@@ -32,8 +32,8 @@
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 33,
+    "capped": 34,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T17:34:48.626Z"
+  "last_activity": "2026-07-10T17:51:19.143Z"
 }
