@@ -1,10 +1,17 @@
 #!/usr/bin/env node
 // onboard_bee.mjs - install/update bee in a target repo.
 //
-//   node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md]
+//   node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks]
+//                        [--claude-md] [--force-downgrade]
 //
-// Plan mode (default) reports {status: 'up_to_date'|'changes_needed', plan:[...]}.
+// Plan mode (default) reports {status: 'up_to_date'|'changes_needed'|
+// 'blocked_downgrade'|'blocked_no_source', plan:[...]}.
 // --apply applies the plan and writes .bee/onboarding.json with managed versions.
+// Every apply also mirrors the bee-* skill set into the user's global
+// ~/.claude/skills (D1-D5): drift shows up as sync_skill/remove_skill plan
+// items, an older source refuses with zero mutations (--force-downgrade
+// overrides only a fully-resolved version refusal), and non-bee skills are
+// structurally untouchable.
 // --repo-hooks additionally vendors the plugin hooks into <repo>/.bee/bin/hooks/
 // and merges the 6 hook entries into <repo>/.claude/settings.json (with a .bak
 // backup) for environments that do not load plugin hooks.
@@ -13,6 +20,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -150,10 +158,451 @@ function nodeRuntimeStatus() {
   };
 }
 
+// Legacy reporting-only reader: silently falls back to 0.1.0. NEVER used for
+// skill-sync preflight decisions (D3) - see readVersionStrict below.
 function readBeeVersion() {
   const stateSource = readTextIfExists(path.join(TEMPLATES_LIB_DIR, "state.mjs"));
   const match = stateSource.match(/BEE_VERSION\s*=\s*['"]([^'"]+)['"]/);
   return match ? match[1] : FALLBACK_BEE_VERSION;
+}
+
+// ---------- global skill sync (D1-D5) ----------
+//
+// Source = the skill tree the RUNNING script belongs to (D2), proven by a
+// realpath identity with its own bee-hive dir (F2: a misplaced launcher never
+// adopts a sibling tree). Target = the user's global skills dir - there is
+// deliberately NO override of any kind, env or CLI (D1/F5: an override would
+// widen the deletion root to arbitrary paths). Tests isolate by redirecting
+// HOME/USERPROFILE for the spawned process, which os.homedir() honors.
+
+const SKILL_DIR_RE = /^bee-/;
+
+function skillsTargetRoot() {
+  return path.join(os.homedir(), ".claude", "skills");
+}
+
+function lstatIfExists(p) {
+  try {
+    return fs.lstatSync(p);
+  } catch {
+    return null;
+  }
+}
+
+// Fallback-free version reader (D3). The legacy readBeeVersion() silently
+// returns 0.1.0 on a missing/unparsable state.mjs, which would let a
+// resolution failure masquerade as an old version and become force-able.
+// Here: treeExists=false -> "absent" (fresh install / first onboard, proceed);
+// an EXISTING tree whose version cannot be read -> "unknown" (refuse, never
+// forceable).
+function readVersionStrict(stateFile, treeExists) {
+  if (!treeExists) {
+    return { state: "absent", value: null };
+  }
+  let text = null;
+  try {
+    text = fs.existsSync(stateFile) ? fs.readFileSync(stateFile, "utf8") : null;
+  } catch {
+    text = null;
+  }
+  const match = text ? text.match(/BEE_VERSION\s*=\s*['"]([^'"]+)['"]/) : null;
+  const value = match && /^\d+\.\d+\.\d+$/.test(match[1]) ? match[1] : null;
+  return value ? { state: "resolved", value } : { state: "unknown", value: null };
+}
+
+function compareVersions(a, b) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i += 1) {
+    if (pa[i] !== pb[i]) {
+      return pa[i] - pb[i];
+    }
+  }
+  return 0;
+}
+
+function versionLabel(v) {
+  return v.state === "resolved" ? v.value : v.state;
+}
+
+// lstat-only walk of one skill dir: symlinks are never followed. The first
+// symlink (or other non-file/dir entry) found blocks the WHOLE skill (F6 - a
+// symlinked skill dir is plausibly a developer's live checkout; writing
+// through or unlinking it would destroy real work).
+function walkSkillTree(rootDir) {
+  const files = new Map(); // rel path ("/"-joined) -> sha256
+  const dirs = [];
+  let blocked = null;
+  const walk = (dir, relPrefix) => {
+    const entries = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (blocked) {
+        return;
+      }
+      const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      const abs = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        blocked = { path: rel, reason: "symlink" };
+        return;
+      }
+      if (entry.isDirectory()) {
+        dirs.push(rel);
+        walk(abs, rel);
+      } else if (entry.isFile()) {
+        files.set(rel, sha256(fs.readFileSync(abs)));
+      } else {
+        blocked = { path: rel, reason: "unsupported entry type" };
+        return;
+      }
+    }
+  };
+  walk(rootDir, "");
+  return { files, dirs, blocked };
+}
+
+function manifestFingerprint(files) {
+  return JSON.stringify([...files.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+}
+
+// The deletion domain is constructed here: only /^bee-/ entries are ever
+// enumerated, so non-bee skills are structurally unreachable - the fence is
+// the iteration domain, not a guard clause (D4).
+function listBeeSkillEntries(root) {
+  if (!fs.existsSync(root)) {
+    return [];
+  }
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((entry) => SKILL_DIR_RE.test(entry.name))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+// D4/D5 drift plan items. Content difference IS drift, at any version (D5);
+// a bee-* skill absent from the anchored source IS an intentional removal (D2).
+function computeSkillItems(sourceRoot, targetRoot) {
+  const items = [];
+  const sourceEntries = listBeeSkillEntries(sourceRoot);
+  const sourceNames = new Set(sourceEntries.map((entry) => entry.name));
+
+  for (const entry of sourceEntries) {
+    const name = entry.name;
+    if (entry.isSymbolicLink()) {
+      items.push({
+        action: "blocked_symlink",
+        skill: name,
+        path: name,
+        reason: `source ${name} is a symlink - skipped, never followed`,
+      });
+      continue;
+    }
+    if (!entry.isDirectory()) {
+      continue; // stray bee-* file in source: not a skill dir
+    }
+    const sourceWalk = walkSkillTree(path.join(sourceRoot, name));
+    if (sourceWalk.blocked) {
+      items.push({
+        action: "blocked_symlink",
+        skill: name,
+        path: `${name}/${sourceWalk.blocked.path}`,
+        reason: `source ${name} contains a ${sourceWalk.blocked.reason} at ${sourceWalk.blocked.path} - skipped`,
+      });
+      continue;
+    }
+    const targetDir = path.join(targetRoot, name);
+    const targetStat = lstatIfExists(targetDir);
+    if (targetStat && targetStat.isSymbolicLink()) {
+      items.push({
+        action: "blocked_symlink",
+        skill: name,
+        path: name,
+        reason: `installed ${name} is a symlink (plausibly a live checkout) - skipped, never written through or unlinked`,
+      });
+      continue;
+    }
+    if (!targetStat || !targetStat.isDirectory()) {
+      // absent, or a non-link type collision (remove entry, write source shape)
+      items.push({ action: "sync_skill", skill: name, path: name });
+      continue;
+    }
+    const targetWalk = walkSkillTree(targetDir);
+    if (targetWalk.blocked) {
+      items.push({
+        action: "blocked_symlink",
+        skill: name,
+        path: `${name}/${targetWalk.blocked.path}`,
+        reason: `installed ${name} contains a ${targetWalk.blocked.reason} at ${targetWalk.blocked.path} - skipped, nothing inside it written or deleted`,
+      });
+      continue;
+    }
+    if (manifestFingerprint(sourceWalk.files) !== manifestFingerprint(targetWalk.files)) {
+      items.push({ action: "sync_skill", skill: name, path: name });
+    }
+  }
+
+  for (const entry of listBeeSkillEntries(targetRoot)) {
+    const name = entry.name;
+    if (sourceNames.has(name)) {
+      continue;
+    }
+    if (entry.isSymbolicLink()) {
+      items.push({
+        action: "blocked_symlink",
+        skill: name,
+        path: name,
+        reason: `installed ${name} is a symlink (plausibly a live checkout) - skipped, never unlinked`,
+      });
+      continue;
+    }
+    if (!entry.isDirectory()) {
+      continue; // deletion domain is /^bee-/ DIRECTORY entries only (D4)
+    }
+    const targetWalk = walkSkillTree(path.join(targetRoot, name));
+    if (targetWalk.blocked) {
+      items.push({
+        action: "blocked_symlink",
+        skill: name,
+        path: `${name}/${targetWalk.blocked.path}`,
+        reason: `installed ${name} contains a ${targetWalk.blocked.reason} at ${targetWalk.blocked.path} - skipped, nothing deleted`,
+      });
+      continue;
+    }
+    items.push({ action: "remove_skill", skill: name, path: name });
+  }
+
+  return items;
+}
+
+// D2 resolution + D3 three-version preflight. Fully read-only.
+function computeSkillSync(repoRoot) {
+  const sourceRoot = path.dirname(HIVE_DIR);
+  const targetRoot = skillsTargetRoot();
+  const result = {
+    mode: null, // "sync" | "fresh" | "noop" | null (blocked before resolution)
+    source_root: sourceRoot,
+    target_root: targetRoot,
+    versions: null,
+    blocked: null, // { status, reason, forceable }
+    items: [],
+  };
+
+  // Identity anchor (F2): the source is authoritative only if the running
+  // script's own skill dir IS <sourceRoot>/bee-hive by realpath.
+  let identityOk = false;
+  try {
+    identityOk =
+      fs.realpathSync(HIVE_DIR) === fs.realpathSync(path.join(sourceRoot, "bee-hive"));
+  } catch {
+    identityOk = false;
+  }
+  if (!identityOk) {
+    result.blocked = {
+      status: "blocked_no_source",
+      reason:
+        "no authoritative skill source: the running script's tree failed the bee-hive realpath identity check",
+      forceable: false,
+    };
+    return result;
+  }
+
+  // Source/target relationship. Never realpath a nonexistent target (absent
+  // target = fresh install); ancestor overlap fails closed (F6).
+  const realSource = fs.realpathSync(sourceRoot);
+  const targetExists = fs.existsSync(targetRoot);
+  const realTarget = targetExists ? fs.realpathSync(targetRoot) : path.resolve(targetRoot);
+  if (targetExists && realSource === realTarget) {
+    result.mode = "noop"; // running the installed copy itself (D2)
+  } else if (
+    realTarget.startsWith(realSource + path.sep) ||
+    realSource.startsWith(realTarget + path.sep)
+  ) {
+    result.blocked = {
+      status: "blocked_no_source",
+      reason:
+        "source and target skill roots overlap (one contains the other) - refusing fail-closed",
+      forceable: false,
+    };
+    return result;
+  } else {
+    result.mode = targetExists ? "sync" : "fresh";
+  }
+
+  // Three-version preflight (D3): source, host vendored helpers (the physical
+  // bytes - onboarding.json can lie), installed skills (the installed tree
+  // carries its own version; no separate marker file).
+  const sourceVersion = readVersionStrict(
+    path.join(HIVE_DIR, "templates", "lib", "state.mjs"),
+    true, // the running script's tree exists by definition
+  );
+  const hostStateFile = path.join(repoRoot, ".bee", "bin", "lib", "state.mjs");
+  const hostVersion = readVersionStrict(hostStateFile, fs.existsSync(hostStateFile));
+  const installedHive = path.join(targetRoot, "bee-hive");
+  const installedVersion =
+    result.mode === "noop"
+      ? sourceVersion
+      : readVersionStrict(
+          path.join(installedHive, "templates", "lib", "state.mjs"),
+          fs.existsSync(installedHive),
+        );
+  result.versions = {
+    source: versionLabel(sourceVersion),
+    host_helpers: versionLabel(hostVersion),
+    installed_skills: versionLabel(installedVersion),
+  };
+
+  const unknowns = [
+    ["source", sourceVersion],
+    ["host_helpers", hostVersion],
+    ["installed_skills", installedVersion],
+  ]
+    .filter(([, v]) => v.state === "unknown")
+    .map(([name]) => name);
+  if (unknowns.length > 0) {
+    result.blocked = {
+      status: "blocked_downgrade",
+      reason: `version unresolvable for ${unknowns.join(", ")}: tree exists but its version cannot be read - refusing (never forceable)`,
+      forceable: false,
+    };
+    return result;
+  }
+  const older = [];
+  if (hostVersion.state === "resolved" && compareVersions(sourceVersion.value, hostVersion.value) < 0) {
+    older.push(`host_helpers ${hostVersion.value}`);
+  }
+  if (
+    installedVersion.state === "resolved" &&
+    compareVersions(sourceVersion.value, installedVersion.value) < 0
+  ) {
+    older.push(`installed_skills ${installedVersion.value}`);
+  }
+  if (older.length > 0) {
+    // --force-downgrade may override ONLY when all three versions resolved
+    // numeric (D3): absent/unknown trees are resolution states, not versions.
+    const allNumeric = [sourceVersion, hostVersion, installedVersion].every(
+      (v) => v.state === "resolved",
+    );
+    result.blocked = {
+      status: "blocked_downgrade",
+      reason: `source ${sourceVersion.value} is older than ${older.join(" and ")}${
+        allNumeric ? " - refusing (--force-downgrade overrides after review)" : " - refusing (not forceable: not all versions resolved numeric)"
+      }`,
+      forceable: allNumeric,
+    };
+  }
+
+  if (result.mode === "sync" || result.mode === "fresh") {
+    if (!result.blocked || result.blocked.forceable) {
+      result.items = computeSkillItems(sourceRoot, targetRoot);
+    }
+  }
+  return result;
+}
+
+// Unpredictable temp names inside the managed namespace (F6): a predictable
+// <file>.tmp under ~/.claude/skills would be a symlink-swap target.
+function writeFileAtomicRandom(filePath, buffer) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.${crypto.randomBytes(8).toString("hex")}.tmp`;
+  fs.writeFileSync(tmp, buffer);
+  fs.renameSync(tmp, filePath);
+}
+
+// Mirror one bee-* skill dir into the target (D4/D5). Re-verifies the symlink
+// policy at apply time so plan-to-apply races fail closed.
+function applySyncSkill(sourceRoot, targetRoot, name) {
+  const sourceDir = path.join(sourceRoot, name);
+  const sourceStat = lstatIfExists(sourceDir);
+  if (!sourceStat || sourceStat.isSymbolicLink() || !sourceStat.isDirectory()) {
+    return { blocked: `source ${name} is not a plain directory - skipped` };
+  }
+  const sourceWalk = walkSkillTree(sourceDir);
+  if (sourceWalk.blocked) {
+    return {
+      blocked: `source ${name} contains a ${sourceWalk.blocked.reason} at ${sourceWalk.blocked.path} - skipped`,
+    };
+  }
+  const targetDir = path.join(targetRoot, name);
+  let targetStat = lstatIfExists(targetDir);
+  if (targetStat && targetStat.isSymbolicLink()) {
+    return {
+      blocked: `installed ${name} is a symlink (plausibly a live checkout) - skipped, never written through or unlinked`,
+    };
+  }
+  let targetWalk = { files: new Map(), dirs: [] };
+  if (targetStat && targetStat.isDirectory()) {
+    const walked = walkSkillTree(targetDir);
+    if (walked.blocked) {
+      return {
+        blocked: `installed ${name} contains a ${walked.blocked.reason} at ${walked.blocked.path} - skipped, nothing inside it written or deleted`,
+      };
+    }
+    targetWalk = walked;
+  } else if (targetStat) {
+    // non-link type collision: remove the entry, write the source shape
+    fs.rmSync(targetDir, { force: true });
+    targetStat = null;
+  }
+  fs.mkdirSync(targetDir, { recursive: true });
+  const sourceDirSet = new Set(sourceWalk.dirs);
+  for (const rel of sourceWalk.dirs) {
+    const abs = path.join(targetDir, ...rel.split("/"));
+    const st = lstatIfExists(abs);
+    if (st && !st.isDirectory()) {
+      fs.rmSync(abs, { force: true }); // walked above: cannot be a symlink
+    }
+    fs.mkdirSync(abs, { recursive: true });
+  }
+  for (const [rel, hash] of sourceWalk.files) {
+    const abs = path.join(targetDir, ...rel.split("/"));
+    const st = lstatIfExists(abs);
+    if (st && st.isDirectory()) {
+      fs.rmSync(abs, { recursive: true, force: true }); // contents walked symlink-free
+    }
+    if (!st || !st.isFile() || targetWalk.files.get(rel) !== hash) {
+      writeFileAtomicRandom(abs, fs.readFileSync(path.join(sourceDir, ...rel.split("/"))));
+    }
+  }
+  for (const rel of targetWalk.files.keys()) {
+    if (!sourceWalk.files.has(rel)) {
+      fs.rmSync(path.join(targetDir, ...rel.split("/")), { force: true });
+    }
+  }
+  for (const rel of [...targetWalk.dirs].sort((a, b) => b.length - a.length)) {
+    if (!sourceDirSet.has(rel)) {
+      fs.rmSync(path.join(targetDir, ...rel.split("/")), { recursive: true, force: true });
+    }
+  }
+  return { blocked: null };
+}
+
+// Remove one bee-* skill dir from the target (D4). The /^bee-/ recheck is a
+// structural backstop; the iteration domain already guarantees it.
+function applyRemoveSkill(targetRoot, name) {
+  if (!SKILL_DIR_RE.test(name)) {
+    return { blocked: `refusing to remove ${name}: outside the bee-* namespace` };
+  }
+  const targetDir = path.join(targetRoot, name);
+  const st = lstatIfExists(targetDir);
+  if (!st) {
+    return { blocked: null }; // already gone
+  }
+  if (st.isSymbolicLink()) {
+    return {
+      blocked: `installed ${name} is a symlink (plausibly a live checkout) - skipped, never unlinked`,
+    };
+  }
+  if (!st.isDirectory()) {
+    return { blocked: `installed ${name} is not a directory - outside the deletion domain, skipped` };
+  }
+  const walked = walkSkillTree(targetDir);
+  if (walked.blocked) {
+    return {
+      blocked: `installed ${name} contains a ${walked.blocked.reason} at ${walked.blocked.path} - skipped, nothing deleted`,
+    };
+  }
+  fs.rmSync(targetDir, { recursive: true, force: true });
+  return { blocked: null };
 }
 
 // ---------- template sources ----------
@@ -487,7 +936,14 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
     plan.push({ action: "write_onboarding", path: ".bee/onboarding.json" });
   }
 
-  return { plan, beeVersion, renderedBlock, desiredManaged };
+  // 7. global skill sync (D1-D5): drift between the running tree and the
+  // installed ~/.claude/skills/bee-* set appears as plan items. Read-only.
+  const skillSync = computeSkillSync(repoRoot);
+  if (!skillSync.blocked) {
+    plan.push(...skillSync.items);
+  }
+
+  return { plan, beeVersion, renderedBlock, desiredManaged, skillSync };
 }
 
 function buildManagedVersions(renderedBlock, repoHooks) {
@@ -527,12 +983,30 @@ function subsetManaged(managed, repoHooks) {
 
 // ---------- apply ----------
 
-function applyPlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
-  const { plan, beeVersion, renderedBlock, desiredManaged } = computePlan(repoRoot, {
+function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngrade = false } = {}) {
+  const { plan, beeVersion, renderedBlock, desiredManaged, skillSync } = computePlan(repoRoot, {
     repoHooks,
     claudeMd,
   });
+
+  // D3 preflight: refusal aborts the ENTIRE apply BEFORE any write - the item
+  // loop below and the unconditional onboarding.json rewrite after it are
+  // unreachable on refusal, so a refused apply mutates nothing anywhere
+  // (repo or global). --force-downgrade overrides only a version refusal in
+  // which all three versions resolved numeric; unknown and blocked_no_source
+  // are resolution failures and are never forceable.
+  let forcedDowngrade = false;
+  if (skillSync.blocked) {
+    if (forceDowngrade && skillSync.blocked.forceable) {
+      forcedDowngrade = true;
+      plan.push(...skillSync.items); // computePlan withholds items while blocked
+    } else {
+      return { blocked: skillSync.blocked, versions: skillSync.versions, beeVersion };
+    }
+  }
+
   const applied = [];
+  const skippedSkills = [];
 
   // Compose the header BEFORE any mergeAgentsContent call (decision D4): it
   // rides the existing-content input of the same merge - one write mechanism,
@@ -624,6 +1098,27 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
         // handled after the loop so managed versions reflect the final state
         break;
       }
+      case "sync_skill": {
+        const result = applySyncSkill(skillSync.source_root, skillSync.target_root, item.skill);
+        if (result.blocked) {
+          skippedSkills.push({ skill: item.skill, reason: result.blocked });
+          continue; // skipped loudly, not applied
+        }
+        break;
+      }
+      case "remove_skill": {
+        const result = applyRemoveSkill(skillSync.target_root, item.skill);
+        if (result.blocked) {
+          skippedSkills.push({ skill: item.skill, reason: result.blocked });
+          continue; // skipped loudly, not applied
+        }
+        break;
+      }
+      case "blocked_symlink": {
+        // Loud per-skill report (F6): never written through, unlinked, or deleted.
+        skippedSkills.push({ skill: item.skill, reason: item.reason });
+        continue;
+      }
       default:
         break;
     }
@@ -647,13 +1142,32 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
   };
   writeFileAtomic(onboardingPath, `${JSON.stringify(onboardingPayload, null, 2)}\n`);
 
-  return { applied, onboarding: onboardingPayload, beeVersion };
+  return {
+    applied,
+    onboarding: onboardingPayload,
+    beeVersion,
+    forcedDowngrade,
+    skills: {
+      mode: skillSync.mode,
+      source_root: skillSync.source_root,
+      target_root: skillSync.target_root,
+      versions: skillSync.versions,
+      skipped: skippedSkills,
+    },
+  };
 }
 
 // ---------- CLI ----------
 
 function parseArgs(argv) {
-  const args = { repoRoot: null, apply: false, json: false, repoHooks: false, claudeMd: false };
+  const args = {
+    repoRoot: null,
+    apply: false,
+    json: false,
+    repoHooks: false,
+    claudeMd: false,
+    forceDowngrade: false,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--repo-root") {
@@ -669,9 +1183,11 @@ function parseArgs(argv) {
       args.repoHooks = true;
     } else if (arg === "--claude-md") {
       args.claudeMd = true;
+    } else if (arg === "--force-downgrade") {
+      args.forceDowngrade = true;
     } else if (arg === "--help" || arg === "-h") {
       process.stdout.write(
-        "Usage: onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md]\n",
+        "Usage: onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md] [--force-downgrade]\n",
       );
       process.exit(0);
     } else {
@@ -694,6 +1210,17 @@ function emit(payload, asJson) {
   }
   if (items.length === 0) {
     process.stdout.write("  (nothing to do)\n");
+  }
+  if (payload.reason) {
+    process.stdout.write(`reason: ${payload.reason}\n`);
+  }
+  if (payload.versions) {
+    process.stdout.write(
+      `versions: source=${payload.versions.source} host_helpers=${payload.versions.host_helpers} installed_skills=${payload.versions.installed_skills}\n`,
+    );
+  }
+  for (const skipped of payload.skills?.skipped || []) {
+    process.stdout.write(`skipped skill: ${skipped.skill} - ${skipped.reason}\n`);
   }
   for (const notice of payload.notices || []) {
     process.stdout.write(`notice: ${notice}\n`);
@@ -727,37 +1254,72 @@ export function main(argv = process.argv.slice(2)) {
   const firstOnboard = !fs.existsSync(path.join(repoRoot, ".bee", "onboarding.json"));
 
   try {
-    const options = { repoHooks: args.repoHooks, claudeMd: args.claudeMd };
+    const options = {
+      repoHooks: args.repoHooks,
+      claudeMd: args.claudeMd,
+      forceDowngrade: args.forceDowngrade,
+    };
     if (!args.apply) {
-      const { plan, beeVersion } = computePlan(repoRoot, options);
-      emit(
-        {
-          repo_root: repoRoot,
-          status: plan.length === 0 ? "up_to_date" : "changes_needed",
-          bee_version: beeVersion,
-          plan,
-          notices: commandsNotices(repoRoot, { firstOnboard }),
+      const { plan, beeVersion, skillSync } = computePlan(repoRoot, options);
+      const payload = {
+        repo_root: repoRoot,
+        status: skillSync.blocked
+          ? skillSync.blocked.status
+          : plan.length === 0
+            ? "up_to_date"
+            : "changes_needed",
+        bee_version: beeVersion,
+        plan,
+        skills: {
+          mode: skillSync.mode,
+          source_root: skillSync.source_root,
+          target_root: skillSync.target_root,
+          versions: skillSync.versions,
         },
-        args.json,
-      );
+        notices: commandsNotices(repoRoot, { firstOnboard }),
+      };
+      if (skillSync.blocked) {
+        // Reporting is not failing: plan mode exits 0 with the blocked status.
+        payload.reason = skillSync.blocked.reason;
+        payload.versions = skillSync.versions;
+      }
+      emit(payload, args.json);
       return 0;
     }
 
     const result = applyPlan(repoRoot, options);
+    if (result.blocked) {
+      // Refused apply: zero mutations happened; exit nonzero (D3).
+      emit(
+        {
+          repo_root: repoRoot,
+          status: result.blocked.status,
+          bee_version: result.beeVersion,
+          reason: result.blocked.reason,
+          versions: result.versions,
+        },
+        args.json,
+      );
+      return 1;
+    }
     const recheck = computePlan(repoRoot, options);
-    emit(
-      {
-        repo_root: repoRoot,
-        status: "applied",
-        bee_version: result.beeVersion,
-        applied: result.applied,
-        recheck: recheck.plan.length === 0 ? "up_to_date" : "changes_needed",
-        recheck_plan: recheck.plan,
-        onboarding: result.onboarding,
-        notices: commandsNotices(repoRoot, { firstOnboard }),
-      },
-      args.json,
-    );
+    const payload = {
+      repo_root: repoRoot,
+      status: "applied",
+      bee_version: result.beeVersion,
+      applied: result.applied,
+      recheck: recheck.plan.length === 0 ? "up_to_date" : "changes_needed",
+      recheck_plan: recheck.plan,
+      skills: result.skills,
+      onboarding: result.onboarding,
+      notices: commandsNotices(repoRoot, { firstOnboard }),
+    };
+    if (result.forcedDowngrade) {
+      // F9: a forced apply reports the fact machine-readably, with versions.
+      payload.forced_downgrade = true;
+      payload.versions = result.skills.versions;
+    }
+    emit(payload, args.json);
     return 0;
   } catch (error) {
     process.stdout.write(
