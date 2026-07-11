@@ -3127,6 +3127,73 @@ check('vendored source: every skills/bee-hive/templates/**/*.mjs file contains n
   }
 });
 
+// ─── template↔vendor byte-equality standing guard (P1-2, review cli-mutations) ─
+// Tests import the template tree directly; live sessions execute .bee/bin/.
+// Equality between the two was only ever proven once, at cell-verify time
+// (`cmp`) — a future one-sided edit to either copy goes green here forever
+// while sessions run the stale/drifted file. This sweep mirrors onboard_bee.mjs
+// listTemplateHelpers/listTemplateLibModules (readdir over templates/*.mjs and
+// templates/lib/*.mjs, sorted) and onboard_bee.mjs's copy_helper/copy_lib
+// mapping (templates/<name> -> .bee/bin/<name>, templates/lib/<name> ->
+// .bee/bin/lib/<name>) so a newly added template is covered with no test edit.
+
+check('vendored source: every templates/*.mjs and templates/lib/*.mjs is byte-identical to its .bee/bin sibling (no standing guard existed before — a one-sided edit went green forever)', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const templatesLibRoot = path.join(templatesRoot, 'lib');
+  const repoRoot = findRepoRoot(templatesRoot);
+  const beeBinRoot = repoRoot ? path.join(repoRoot, '.bee', 'bin') : null;
+
+  if (!beeBinRoot || !fs.existsSync(beeBinRoot)) {
+    // Bare checkout with no vendored copy yet (e.g. before first onboarding
+    // run) — nothing to compare against, not a drift. Any repo that HAS a
+    // .bee/bin (this one included) falls through to the real sweep below,
+    // where a missing sibling is a failure, not a skip.
+    return;
+  }
+
+  function listMjsFiles(dir) {
+    if (!fs.existsSync(dir)) return [];
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.mjs'))
+      .map((entry) => entry.name)
+      .sort();
+  }
+
+  const pairs = [
+    ...listMjsFiles(templatesRoot).map((name) => ({
+      templatePath: path.join(templatesRoot, name),
+      vendorPath: path.join(beeBinRoot, name),
+      rel: name,
+    })),
+    ...listMjsFiles(templatesLibRoot).map((name) => ({
+      templatePath: path.join(templatesLibRoot, name),
+      vendorPath: path.join(beeBinRoot, 'lib', name),
+      rel: `lib/${name}`,
+    })),
+  ];
+
+  assert(
+    pairs.length > 0,
+    'the sweep finds at least one templates/*.mjs or templates/lib/*.mjs file (an empty result would silently pass on a broken readdir, not prove parity)',
+  );
+
+  for (const { templatePath, vendorPath, rel } of pairs) {
+    if (!fs.existsSync(vendorPath)) {
+      throw new Error(
+        `${rel}: no vendored sibling at .bee/bin/${rel} — this repo has a .bee/bin, so a missing sibling is drift, not a bare checkout. Re-copy the template over the vendored copy.`,
+      );
+    }
+    const templateBuf = fs.readFileSync(templatePath);
+    const vendorBuf = fs.readFileSync(vendorPath);
+    if (!templateBuf.equals(vendorBuf)) {
+      throw new Error(
+        `${rel}: templates/${rel} and .bee/bin/${rel} have diverged (byte mismatch) — re-copy the template over the vendored copy.`,
+      );
+    }
+  }
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 fs.rmSync(detectRoot, { recursive: true, force: true });
