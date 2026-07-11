@@ -10,31 +10,31 @@
     "review": true
   },
   "workers": [],
-  "summary": "skill-sync closed: one-command helper+skill sync with downgrade guard shipped (6 cells, 9 review P1s fixed red-first, UAT live pass); learnings + 1 critical promotion + decision e7a54e78; P19 done",
+  "summary": "model-tier-guard closed: explicit-tier dispatch enforcement shipped (hook+registration+docs+0023, 7 cells, 5 P1s fixed red-first, live-fire UAT); learnings + 1 critical promotion + decision c05613d9; 4 backlog rows (2 P3 findings, 2 friction)",
   "next_action": null,
   "last_scribing_run": {
-    "feature": "skill-sync",
+    "feature": "model-tier-guard",
     "date": "2026-07-11",
-    "at": "2026-07-11T03:26:14.123Z",
+    "at": "2026-07-11T06:43:10.190Z",
     "areas_synced": [
-      "no docs/specs sync needed - skills-as-spec convention (reading-map): the onboarding/skill-sync contract lives in skills/bee-hive/SKILL.md (updated by cells 3 and 5) and the script itself; no docs/specs area covers bee skills"
+      "no docs/specs area sync needed — skills-as-spec convention (reading-map): the explicit-tier transport contract lives in docs/decisions/0023 + skills/bee-swarming SKILL.md/reference + hooks/bee-model-guard.mjs, all updated by cells 3/5/7; reading-map gained one Elsewhere line pointing at the hooks contract"
     ],
     "next_action": "bee-compounding"
   },
   "last_compounding_run": {
-    "feature": "skill-sync",
-    "at": "2026-07-11T03:28:40.849Z",
-    "learnings": "docs/history/learnings/20260711-skill-sync.md",
+    "feature": "model-tier-guard",
+    "at": "2026-07-11T06:46:39.638Z",
+    "learnings": "docs/history/learnings/20260711-model-tier-guard.md",
     "critical_promotions": 1,
-    "decisions_logged": 2,
-    "friction_filed": 6,
-    "digest_refresh": "green (47 entries; 8 unknown_type drops filed as friction)"
+    "decisions_logged": 1,
+    "friction_filed": 2,
+    "digest_refresh": "green (48 entries; 13 unknown_type drops pre-existing)"
   },
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 41,
+    "capped": 48,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T03:42:47.695Z"
+  "last_activity": "2026-07-11T06:46:39.638Z"
 }

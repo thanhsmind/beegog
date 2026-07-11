@@ -1,0 +1,6 @@
+{"ts":"2026-07-11T06:07:35.659Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["prompt"]}
+{"ts":"2026-07-11T06:07:47.760Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["prompt"]}
+{"ts":"2026-07-11T06:10:17.406Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["prompt"]}
+{"ts":"2026-07-11T06:10:32.145Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["description","prompt","run_in_background"]}
+{"ts":"2026-07-11T06:36:25.572Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["description","prompt","run_in_background"]}
+{"ts":"2026-07-11T06:36:34.389Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["description","prompt","run_in_background"]}

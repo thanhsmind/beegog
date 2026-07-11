@@ -727,6 +727,214 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-11T03:08:46.154Z",
       "released_at": "2026-07-11T03:11:42.925Z"
+    },
+    {
+      "agent": "docbee",
+      "cell": "model-tier-guard-3",
+      "path": "skills/bee-swarming/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:54:53.932Z",
+      "released_at": "2026-07-11T05:59:27.231Z"
+    },
+    {
+      "agent": "docbee",
+      "cell": "model-tier-guard-3",
+      "path": "skills/bee-swarming/references/swarming-reference.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:54:53.966Z",
+      "released_at": "2026-07-11T05:59:27.231Z"
+    },
+    {
+      "agent": "docbee",
+      "cell": "model-tier-guard-3",
+      "path": "skills/bee-planning/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:54:53.995Z",
+      "released_at": "2026-07-11T05:59:27.231Z"
+    },
+    {
+      "agent": "docbee",
+      "cell": "model-tier-guard-3",
+      "path": "skills/bee-grooming/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:54:54.028Z",
+      "released_at": "2026-07-11T05:59:27.231Z"
+    },
+    {
+      "agent": "docbee",
+      "cell": "model-tier-guard-3",
+      "path": "skills/bee-scribing/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:54:54.065Z",
+      "released_at": "2026-07-11T05:59:27.231Z"
+    },
+    {
+      "agent": "docbee",
+      "cell": "model-tier-guard-3",
+      "path": "skills/bee-xia/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:54:54.096Z",
+      "released_at": "2026-07-11T05:59:27.231Z"
+    },
+    {
+      "agent": "docbee",
+      "cell": "model-tier-guard-3",
+      "path": "skills/bee-exploring/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:54:54.127Z",
+      "released_at": "2026-07-11T05:59:27.231Z"
+    },
+    {
+      "agent": "hookbee",
+      "cell": "model-tier-guard-1",
+      "path": "hooks/bee-model-guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:55:37.315Z",
+      "released_at": "2026-07-11T05:58:18.834Z"
+    },
+    {
+      "agent": "hookbee",
+      "cell": "model-tier-guard-1",
+      "path": "hooks/test_model_guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T05:55:37.358Z",
+      "released_at": "2026-07-11T05:58:18.834Z"
+    },
+    {
+      "agent": "regbee",
+      "cell": "model-tier-guard-2",
+      "path": "hooks/hooks.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:01:59.433Z",
+      "released_at": "2026-07-11T06:03:51.159Z"
+    },
+    {
+      "agent": "regbee",
+      "cell": "model-tier-guard-2",
+      "path": "skills/bee-hive/scripts/onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:01:59.466Z",
+      "released_at": "2026-07-11T06:03:51.159Z"
+    },
+    {
+      "agent": "regbee",
+      "cell": "model-tier-guard-2",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:01:59.502Z",
+      "released_at": "2026-07-11T06:03:51.159Z"
+    },
+    {
+      "agent": "applybee",
+      "cell": "model-tier-guard-4",
+      "path": "docs/decisions/0023-explicit-tier-transport.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:05:59.397Z",
+      "released_at": "2026-07-11T06:09:00.773Z"
+    },
+    {
+      "agent": "applybee",
+      "cell": "model-tier-guard-4",
+      "path": "docs/decisions/0015-ceiling-is-the-session-model.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:05:59.430Z",
+      "released_at": "2026-07-11T06:09:00.773Z"
+    },
+    {
+      "agent": "applybee",
+      "cell": "model-tier-guard-4",
+      "path": ".bee/decisions.jsonl",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:05:59.462Z",
+      "released_at": "2026-07-11T06:09:00.773Z"
+    },
+    {
+      "agent": "applybee",
+      "cell": "model-tier-guard-4",
+      "path": ".claude/settings.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:05:59.491Z",
+      "released_at": "2026-07-11T06:09:00.773Z"
+    },
+    {
+      "agent": "applybee",
+      "cell": "model-tier-guard-4",
+      "path": ".bee/bin/hooks/bee-model-guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:05:59.523Z",
+      "released_at": "2026-07-11T06:09:00.773Z"
+    },
+    {
+      "agent": "anchorbee",
+      "cell": "model-tier-guard-5",
+      "path": "hooks/bee-model-guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:24:42.503Z",
+      "released_at": "2026-07-11T06:29:51.344Z"
+    },
+    {
+      "agent": "anchorbee",
+      "cell": "model-tier-guard-5",
+      "path": "hooks/test_model_guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:24:42.542Z",
+      "released_at": "2026-07-11T06:29:51.344Z"
+    },
+    {
+      "agent": "structbee",
+      "cell": "model-tier-guard-6",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:25:06.435Z",
+      "released_at": "2026-07-11T06:28:11.859Z"
+    },
+    {
+      "agent": "amendbee",
+      "cell": "model-tier-guard-7",
+      "path": "docs/decisions/0015-ceiling-is-the-session-model.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:32:48.588Z",
+      "released_at": "2026-07-11T06:35:12.837Z"
+    },
+    {
+      "agent": "amendbee",
+      "cell": "model-tier-guard-7",
+      "path": "docs/decisions/0023-explicit-tier-transport.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:32:48.619Z",
+      "released_at": "2026-07-11T06:35:12.837Z"
+    },
+    {
+      "agent": "amendbee",
+      "cell": "model-tier-guard-7",
+      "path": "skills/bee-swarming/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:32:48.651Z",
+      "released_at": "2026-07-11T06:35:12.837Z"
+    },
+    {
+      "agent": "amendbee",
+      "cell": "model-tier-guard-7",
+      "path": "skills/bee-swarming/references/swarming-reference.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:32:48.689Z",
+      "released_at": "2026-07-11T06:35:12.837Z"
+    },
+    {
+      "agent": "amendbee",
+      "cell": "model-tier-guard-7",
+      "path": ".bee/bin/hooks/bee-model-guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:32:48.721Z",
+      "released_at": "2026-07-11T06:35:12.837Z"
+    },
+    {
+      "agent": "amendbee",
+      "cell": "model-tier-guard-7",
+      "path": ".claude/settings.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T06:32:48.753Z",
+      "released_at": "2026-07-11T06:35:12.837Z"
     }
   ]
 }
