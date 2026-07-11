@@ -10,31 +10,31 @@
     "review": true
   },
   "workers": [],
-  "summary": "release-0120 done: BEE_VERSION+plugin manifest 0.1.20, onboarding applied (all three copies 0.1.20), suites green, pushed",
+  "summary": "grill-deltas closed: P20+P21 shipped (materiality test + Terms glossary), review PASS after 2 P1 fixes, scribing skills-as-spec, compounding done (1 critical promotion, decision 71eca844, 2 friction filed, digest 49 entries)",
   "next_action": null,
   "last_scribing_run": {
-    "feature": "model-tier-guard",
+    "feature": "grill-deltas",
     "date": "2026-07-11",
-    "at": "2026-07-11T06:43:10.190Z",
+    "at": "2026-07-11T07:20:00.000Z",
     "areas_synced": [
-      "no docs/specs area sync needed — skills-as-spec convention (reading-map): the explicit-tier transport contract lives in docs/decisions/0023 + skills/bee-swarming SKILL.md/reference + hooks/bee-model-guard.mjs, all updated by cells 3/5/7; reading-map gained one Elsewhere line pointing at the hooks contract"
+      "no docs/specs area sync needed — skills-as-spec convention (reading-map): P20 materiality test and P21 Terms glossary live in skills/bee-exploring SKILL.md + context-template.md + skills/bee-scribing SKILL.md, all updated by the cells themselves; reading-map gained one Elsewhere line for docs/history/research/ (standalone xia briefs); backlog P20/P21 flipped done, rank + badges refreshed (20 done / 1 in-flight / 0 proposed)"
     ],
     "next_action": "bee-compounding"
   },
   "last_compounding_run": {
-    "feature": "model-tier-guard",
-    "at": "2026-07-11T06:46:39.638Z",
-    "learnings": "docs/history/learnings/20260711-model-tier-guard.md",
+    "feature": "grill-deltas",
+    "at": "2026-07-11T07:24:00.000Z",
+    "learnings": "docs/history/learnings/20260711-grill-deltas.md",
     "critical_promotions": 1,
-    "decisions_logged": 1,
+    "decisions_logged": 2,
     "friction_filed": 2,
-    "digest_refresh": "green (48 entries; 13 unknown_type drops pre-existing)"
+    "digest_refresh": "green (49 entries; 15 unknown_type drops pre-existing class)"
   },
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 49,
+    "capped": 53,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T06:52:15.821Z"
+  "last_activity": "2026-07-11T07:21:36.625Z"
 }

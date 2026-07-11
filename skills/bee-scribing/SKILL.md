@@ -40,7 +40,7 @@ Bootstrap is inventory, harvest is meaning: bootstrap writes only what code, tre
 | Source | May feed | Never feeds |
 |---|---|---|
 | capped `behavior_change` cells + `verification_evidence` (`node .bee/bin/bee_cells.mjs list --feature <feature>`) | Entry Points & Triggers, Data Dictionary, Behaviors & Operations, Actors & Access | — |
-| gate-locked `CONTEXT.md` + active decisions (`node .bee/bin/bee_decisions.mjs active`) | Business Rules (cited by D-ID) | Behaviors stated as current reality, unless also evidenced |
+| gate-locked `CONTEXT.md` + active decisions (`node .bee/bin/bee_decisions.mjs active`) | Business Rules (cited by D-ID); the `Terms` section seeds the Data Dictionary | Behaviors stated as current reality, unless also evidenced |
 | worker reports, UAT records in `docs/history/<feature>/reports/` | Behaviors ("what each actor sees") | — |
 | code reading (harvest mode) | observable behavior, field inventory | field *meanings* and rules — code shows what, not why |
 | user answers (harvest/capture) | any section, after confirmation | — |
