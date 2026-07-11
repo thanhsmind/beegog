@@ -631,6 +631,14 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-10T11:17:03.755Z",
       "released_at": "2026-07-10T11:18:54.797Z"
+    },
+    {
+      "agent": "mason-0",
+      "cell": "skill-sync-0",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T01:34:21.570Z",
+      "released_at": "2026-07-11T01:36:50.253Z"
     }
   ]
 }

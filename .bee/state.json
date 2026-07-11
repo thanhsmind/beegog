@@ -1,17 +1,25 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "swarming",
+  "feature": "skill-sync",
+  "mode": "high-risk",
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": true
+    "review": false
   },
-  "workers": [],
-  "summary": "learnings-pair-relocation closed (4-core review wave shipped, pushed 841dab0). Vendored-helper regression fixed: a stale 0.1.18 plugin onboarding apply had overwritten fsutil/state/onboarding.json (killed readText -> digest crash); restored to HEAD 0.1.19, digest green (46 entries), plugin synced to 0.1.19.",
-  "next_action": null,
+  "workers": [
+    {
+      "nickname": "mason-0",
+      "cell": "skill-sync-0",
+      "tier": "generation",
+      "executor": "native",
+      "status": "running"
+    }
+  ],
+  "summary": "skill-sync swarming: wave 1 (skill-sync-0, isolation retrofit) dispatched",
+  "next_action": "Tend wave 1, goal-check, then wave 2 (skill-sync-1)",
   "last_scribing_run": {
     "feature": "learnings-pair-relocation",
     "date": "2026-07-11",
@@ -31,10 +39,10 @@
     "digest_refresh": "recovered 2026-07-11: regression restored, digest green (46 entries)"
   },
   "cells": {
-    "open": 0,
+    "open": 4,
     "claimed": 0,
     "capped": 35,
     "blocked": 0
   },
-  "last_activity": "2026-07-10T18:15:50.420Z"
+  "last_activity": "2026-07-11T01:33:25.910Z"
 }

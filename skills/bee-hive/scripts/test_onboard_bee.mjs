@@ -34,8 +34,24 @@ function skip(label, why) {
   process.stdout.write(`skip  - ${label} (${why})\n`);
 }
 
-function runOnboard(args) {
-  const result = spawnSync(process.execPath, [ONBOARD, ...args], { encoding: "utf8" });
+// --- hermetic per-case fake HOME/USERPROFILE isolation ----------------------
+// The real home must be unreachable by construction: every spawned onboard
+// process gets HOME and USERPROFILE pointed at a fake per-case temp dir, never
+// at the developer's real home. Single-call cases get a fresh fake home per
+// call (default param below); multi-call cases (apply-then-recheck, etc.)
+// create ONE fake home explicitly and pass it to every call in that case.
+const REAL_HOME = process.env.HOME;
+const REAL_USERPROFILE = process.env.USERPROFILE;
+const spawnedHomes = [];
+
+function makeFakeHome() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "bee-onboard-home-"));
+}
+
+function runOnboard(args, fakeHome = makeFakeHome()) {
+  const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome };
+  spawnedHomes.push({ HOME: env.HOME, USERPROFILE: env.USERPROFILE });
+  const result = spawnSync(process.execPath, [ONBOARD, ...args], { encoding: "utf8", env });
   let payload = null;
   try {
     payload = JSON.parse(result.stdout || "null");
@@ -58,10 +74,12 @@ function listMjs(dir) {
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-onboard-test-"));
 process.stdout.write(`test repo: ${tmp}\n`);
+// Main flow reuses `tmp` across many runOnboard calls -> one shared fake home.
+const tmpHome = makeFakeHome();
 
 try {
   // --- 1. plan mode on empty repo -> changes_needed -----------------------
-  const plan1 = runOnboard(["--repo-root", tmp, "--json"]);
+  const plan1 = runOnboard(["--repo-root", tmp, "--json"], tmpHome);
   check(plan1.status === 0, "plan mode exits 0", plan1.stderr);
   check(plan1.payload?.status === "changes_needed", "empty repo reports changes_needed",
     `got: ${plan1.payload?.status}`);
@@ -78,7 +96,7 @@ try {
     "propose_agents_header ordered after create_agents_block");
 
   // --- 2. apply ------------------------------------------------------------
-  const apply1 = runOnboard(["--repo-root", tmp, "--apply", "--json"]);
+  const apply1 = runOnboard(["--repo-root", tmp, "--apply", "--json"], tmpHome);
   check(apply1.status === 0, "apply exits 0", apply1.stderr);
   check(apply1.payload?.status === "applied", "apply reports applied");
   check(apply1.payload?.recheck === "up_to_date", "apply recheck is up_to_date",
@@ -101,7 +119,7 @@ try {
     "header carries the loud [unknown] fill-me gap line");
   check(!agentsText.includes("- README.md") && !agentsText.includes("- docs/specs/"),
     "no pointer lines for files that do not exist");
-  const applyHeaderAgain = runOnboard(["--repo-root", tmp, "--apply", "--json"]);
+  const applyHeaderAgain = runOnboard(["--repo-root", tmp, "--apply", "--json"], tmpHome);
   check(applyHeaderAgain.payload?.status === "applied", "re-apply after header succeeds");
   check(fs.readFileSync(path.join(tmp, "AGENTS.md"), "utf8") === agentsText,
     "re-apply leaves header AGENTS.md byte-identical (idempotent)");
@@ -117,7 +135,7 @@ try {
   // P1 / docs/09 item 6: first onboard without a build carries the init-lane offer.
   check(apply1.payload.notices.some((n) => n.includes("init lane") && n.includes("init cell")),
     "first onboard without a build surfaces the greenfield init-lane notice");
-  const reapplyNotice = runOnboard(["--repo-root", tmp, "--json"]);
+  const reapplyNotice = runOnboard(["--repo-root", tmp, "--json"], tmpHome);
   check(!(reapplyNotice.payload?.notices || []).some((n) => n.includes("init lane")),
     "init-lane notice fires on the FIRST onboard only",
     JSON.stringify(reapplyNotice.payload?.notices || null));
@@ -125,7 +143,7 @@ try {
   const cfgRaw = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
   cfgRaw.commands = { verify: "npm test" };
   fs.writeFileSync(cfgPath, `${JSON.stringify(cfgRaw, null, 2)}\n`, "utf8");
-  const planNotice = runOnboard(["--repo-root", tmp, "--json"]);
+  const planNotice = runOnboard(["--repo-root", tmp, "--json"], tmpHome);
   check(Array.isArray(planNotice.payload?.notices) && planNotice.payload.notices.length === 0,
     "notice disappears once commands are recorded",
     JSON.stringify(planNotice.payload?.notices || null));
@@ -218,7 +236,7 @@ try {
     "AGENTS.block.md is NOT copied into .bee/bin");
 
   // --- 6. plan mode again -> up_to_date --------------------------------------
-  const plan2 = runOnboard(["--repo-root", tmp, "--json"]);
+  const plan2 = runOnboard(["--repo-root", tmp, "--json"], tmpHome);
   check(plan2.payload?.status === "up_to_date", "second plan run reports up_to_date",
     JSON.stringify(plan2.payload?.plan || []));
 
@@ -234,12 +252,12 @@ try {
   );
   fs.writeFileSync(path.join(tmp, "AGENTS.md"), userHeader + tampered + userFooter, "utf8");
 
-  const plan3 = runOnboard(["--repo-root", tmp, "--json"]);
+  const plan3 = runOnboard(["--repo-root", tmp, "--json"], tmpHome);
   check(plan3.payload?.status === "changes_needed", "tampered block detected as changes_needed");
   check(plan3.payload?.plan?.some((i) => i.action === "update_agents_block"),
     "plan includes update_agents_block");
 
-  const apply2 = runOnboard(["--repo-root", tmp, "--apply", "--json"]);
+  const apply2 = runOnboard(["--repo-root", tmp, "--apply", "--json"], tmpHome);
   check(apply2.payload?.status === "applied", "re-apply after tamper succeeds");
   const restored = fs.readFileSync(path.join(tmp, "AGENTS.md"), "utf8");
   check(restored.includes("Hand-written intro that bee must not touch."),
@@ -251,7 +269,7 @@ try {
     restored.indexOf("<!-- BEE:START -->") === restored.lastIndexOf("<!-- BEE:START -->"),
     "exactly one BEE block after re-apply");
 
-  const apply3 = runOnboard(["--repo-root", tmp, "--apply", "--json"]);
+  const apply3 = runOnboard(["--repo-root", tmp, "--apply", "--json"], tmpHome);
   const afterThird = fs.readFileSync(path.join(tmp, "AGENTS.md"), "utf8");
   check(afterThird === restored, "third apply is byte-identical (idempotent)");
   check(apply3.payload?.recheck === "up_to_date", "third apply recheck up_to_date");
@@ -259,14 +277,15 @@ try {
   // --- 7b. propose_agents_header semantics (D4) -------------------------------
   // Prose outside the markers -> never proposed, prose preserved byte-for-byte.
   const proseTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-header-prose-"));
+  const proseHome = makeFakeHome();
   try {
     const prose = "# Handwritten\n\nThis project does X.";
     fs.writeFileSync(path.join(proseTmp, "AGENTS.md"), `${prose}\n`, "utf8");
-    const prosePlan = runOnboard(["--repo-root", proseTmp, "--json"]);
+    const prosePlan = runOnboard(["--repo-root", proseTmp, "--json"], proseHome);
     check(!(prosePlan.payload?.plan || []).some((i) => i.action === "propose_agents_header"),
       "prose outside markers never yields propose_agents_header",
       JSON.stringify(prosePlan.payload?.plan || []));
-    runOnboard(["--repo-root", proseTmp, "--apply", "--json"]);
+    runOnboard(["--repo-root", proseTmp, "--apply", "--json"], proseHome);
     const proseAfter = fs.readFileSync(path.join(proseTmp, "AGENTS.md"), "utf8");
     check(proseAfter.startsWith(prose),
       "existing prose preserved byte-for-byte ahead of the appended block");
@@ -275,6 +294,7 @@ try {
   } finally {
     try {
       fs.rmSync(proseTmp, { recursive: true, force: true });
+      fs.rmSync(proseHome, { recursive: true, force: true });
     } catch {
       // best-effort cleanup
     }
@@ -303,30 +323,32 @@ try {
   // Block-only AGENTS.md (already-onboarded, pre-header) flips up_to_date ->
   // changes_needed with only the propose item: intended propose-only upgrade.
   const flipTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-header-flip-"));
+  const flipHome = makeFakeHome();
   try {
-    runOnboard(["--repo-root", flipTmp, "--apply", "--json"]);
+    runOnboard(["--repo-root", flipTmp, "--apply", "--json"], flipHome);
     const flipFull = fs.readFileSync(path.join(flipTmp, "AGENTS.md"), "utf8");
     const blockOnly = flipFull.slice(flipFull.indexOf("<!-- BEE:START -->"));
     fs.writeFileSync(path.join(flipTmp, "AGENTS.md"),
       `<!-- keep\nthis multi-line comment -->\n${blockOnly}`, "utf8");
-    const flipPlan = runOnboard(["--repo-root", flipTmp, "--json"]);
+    const flipPlan = runOnboard(["--repo-root", flipTmp, "--json"], flipHome);
     check(flipPlan.payload?.status === "changes_needed" &&
       (flipPlan.payload?.plan || []).length > 0 &&
       flipPlan.payload.plan.every((i) => i.action === "propose_agents_header"),
       "block-only AGENTS.md flips up_to_date -> changes_needed with only propose_agents_header",
       JSON.stringify(flipPlan.payload?.plan || []));
-    runOnboard(["--repo-root", flipTmp, "--apply", "--json"]);
+    runOnboard(["--repo-root", flipTmp, "--apply", "--json"], flipHome);
     const flipAfter = fs.readFileSync(path.join(flipTmp, "AGENTS.md"), "utf8");
     check(flipAfter.startsWith(`# ${path.basename(flipTmp)}\n`),
       "header prepended at the top of a block-only AGENTS.md");
     check(flipAfter.includes("<!-- keep\nthis multi-line comment -->"),
       "comment-only content outside markers preserved (comments are not prose)");
-    const flipRecheck = runOnboard(["--repo-root", flipTmp, "--json"]);
+    const flipRecheck = runOnboard(["--repo-root", flipTmp, "--json"], flipHome);
     check(flipRecheck.payload?.status === "up_to_date",
       "header apply settles the flip back to up_to_date");
   } finally {
     try {
       fs.rmSync(flipTmp, { recursive: true, force: true });
+      fs.rmSync(flipHome, { recursive: true, force: true });
     } catch {
       // best-effort cleanup
     }
@@ -341,7 +363,7 @@ try {
   fs.writeFileSync(path.join(tmp, ".bee", "cells", "demo-1.json"),
     `${JSON.stringify({ id: "demo-1", status: "open" })}\n`, "utf8");
 
-  runOnboard(["--repo-root", tmp, "--apply", "--json"]);
+  runOnboard(["--repo-root", tmp, "--apply", "--json"], tmpHome);
   const stateAfter = JSON.parse(fs.readFileSync(path.join(tmp, ".bee", "state.json"), "utf8"));
   check(stateAfter.marker === "user-owned" && stateAfter.phase === "swarming",
     "existing state.json never overwritten");
@@ -351,7 +373,7 @@ try {
     "existing cells never removed");
 
   // --- 9. --repo-hooks --------------------------------------------------------
-  const hooksPlan = runOnboard(["--repo-root", tmp, "--repo-hooks", "--json"]);
+  const hooksPlan = runOnboard(["--repo-root", tmp, "--repo-hooks", "--json"], tmpHome);
   check(hooksPlan.payload?.status === "changes_needed", "--repo-hooks plan reports changes_needed");
 
   // Pre-seed a settings.json so the .bak backup path is exercised.
@@ -359,7 +381,7 @@ try {
   fs.writeFileSync(path.join(tmp, ".claude", "settings.json"),
     `${JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } }, null, 2)}\n`, "utf8");
 
-  const hooksApply = runOnboard(["--repo-root", tmp, "--apply", "--repo-hooks", "--json"]);
+  const hooksApply = runOnboard(["--repo-root", tmp, "--apply", "--repo-hooks", "--json"], tmpHome);
   check(hooksApply.payload?.status === "applied", "--repo-hooks apply succeeds");
   check(hooksApply.payload?.recheck === "up_to_date", "--repo-hooks recheck up_to_date",
     JSON.stringify(hooksApply.payload?.recheck_plan || []));
@@ -388,7 +410,7 @@ try {
     "settings.json.bak backup created");
 
   // --repo-hooks apply twice -> no duplicate bee entries.
-  runOnboard(["--repo-root", tmp, "--apply", "--repo-hooks", "--json"]);
+  runOnboard(["--repo-root", tmp, "--apply", "--repo-hooks", "--json"], tmpHome);
   const settings2 = JSON.parse(
     fs.readFileSync(path.join(tmp, ".claude", "settings.json"), "utf8"));
   const initCount = JSON.stringify(settings2).split("bee-session-init.mjs").length - 1;
@@ -397,18 +419,19 @@ try {
 
   // --claude-md: fresh repo -> created with header + bare import.
   const cmTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-claudemd-test-"));
+  const cmHome = makeFakeHome();
   try {
-    runOnboard(["--repo-root", cmTmp, "--apply", "--claude-md", "--json"]);
+    runOnboard(["--repo-root", cmTmp, "--apply", "--claude-md", "--json"], cmHome);
     const created = fs.readFileSync(path.join(cmTmp, "CLAUDE.md"), "utf8");
     check(created.startsWith("# Project Rules"), "--claude-md creates CLAUDE.md with header");
     check(/^@AGENTS\.md\s*$/m.test(created), "created CLAUDE.md carries a bare @AGENTS.md import");
-    const cmRecheck = runOnboard(["--repo-root", cmTmp, "--claude-md", "--json"]);
+    const cmRecheck = runOnboard(["--repo-root", cmTmp, "--claude-md", "--json"], cmHome);
     check(cmRecheck.payload && cmRecheck.payload.status === "up_to_date",
       "--claude-md recheck up_to_date");
 
     // existing CLAUDE.md without the import -> appended, user content preserved.
     fs.writeFileSync(path.join(cmTmp, "CLAUDE.md"), "# My rules\n\nDo X.\n", "utf8");
-    runOnboard(["--repo-root", cmTmp, "--apply", "--claude-md", "--json"]);
+    runOnboard(["--repo-root", cmTmp, "--apply", "--claude-md", "--json"], cmHome);
     const appended = fs.readFileSync(path.join(cmTmp, "CLAUDE.md"), "utf8");
     check(appended.startsWith("# My rules"), "--claude-md preserves existing CLAUDE.md content");
     check(/^@AGENTS\.md\s*$/m.test(appended), "--claude-md appends the import to existing CLAUDE.md");
@@ -417,6 +440,7 @@ try {
   } finally {
     try {
       fs.rmSync(cmTmp, { recursive: true, force: true });
+      fs.rmSync(cmHome, { recursive: true, force: true });
     } catch {
       // best-effort cleanup
     }
@@ -424,10 +448,25 @@ try {
 } finally {
   try {
     fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true });
   } catch {
     // best-effort cleanup
   }
 }
+
+// --- suite-wide isolation invariant -----------------------------------------
+// Helper-level check: not a single spawn across the whole suite inherited the
+// real HOME/USERPROFILE unmodified. spawnedHomes is populated by runOnboard
+// itself, so this covers every call site regardless of case.
+check(spawnedHomes.length > 0, "at least one onboard process was spawned",
+  `count: ${spawnedHomes.length}`);
+check(spawnedHomes.every((h) => h.HOME !== REAL_HOME && h.HOME && h.HOME.length > 0),
+  "no spawn ever inherited the real HOME unmodified",
+  JSON.stringify({ real: REAL_HOME, count: spawnedHomes.length }));
+check(spawnedHomes.every((h) => h.USERPROFILE !== REAL_USERPROFILE &&
+  h.USERPROFILE && h.USERPROFILE.length > 0),
+  "no spawn ever inherited the real USERPROFILE unmodified",
+  JSON.stringify({ real: REAL_USERPROFILE, count: spawnedHomes.length }));
 
 process.stdout.write(`\n${failures === 0 ? "PASS" : "FAIL"} - failures: ${failures}, skipped: ${skips}\n`);
 process.exitCode = failures === 0 ? 0 : 1;
