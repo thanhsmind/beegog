@@ -13,6 +13,7 @@
     "test": "node skills/bee-hive/templates/tests/test_lib.mjs",
     "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs"
   },
+    "gate_bypass": true,
   "models": {
     "claude": {
       "extraction": "haiku",

@@ -1,0 +1,127 @@
+FINDINGS: 9
+
+### [P1] A partial installed bee set is misclassified as absent
+
+**Summary:** Existing global bee skills can bypass the downgrade guard when only `bee-hive` is missing.
+
+**What the code does today:** Installed-tree existence is determined solely from `<target>/bee-hive`. Other existing `bee-*` directories are ignored, producing `installed_skills: "absent"`.
+
+**Why it matters:** D3 permits `"absent"` only when the skill tree does not exist at all. An existing tree without a readable version must be `"unknown"` and blocked.
+
+**Failure scenario:** Newer `bee-reviewing` and `bee-swarming` directories exist, but `bee-hive` was partially deleted. An older source proceeds as a fresh install and overwrites or removes those skills.
+
+**Evidence:** [onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/onboard_bee.mjs:440), lines 198–210 and 440–447; [CONTEXT.md](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:28), D3.
+
+**Smallest credible fix:** Detect any lstat-visible `bee-*` entry. Report `"absent"` only when none exist; otherwise report `"unknown"` and refuse if no version marker is readable. Add a partial-tree test.
+
+### [P1] Forced apply executes skill mutations hidden from dry-run
+
+**Summary:** A user can authorize a forced downgrade without seeing the global skill updates or deletions it will perform.
+
+**What the code does today:** Forceable downgrade items are computed, suppressed from `plan`, then appended only inside forced apply.
+
+**Why it matters:** D2 requires skill drift to appear in the JSON dry-run. Hidden `remove_skill` operations make approval uninformed.
+
+**Failure scenario:** An older source lacks `bee-obsolete`. Dry-run shows only `blocked_downgrade`; after authorization, forced apply deletes the skill without that deletion ever appearing in the reviewed plan.
+
+**Evidence:** [onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/onboard_bee.mjs:494), lines 494–497, 939–944, and 999–1003; [CONTEXT.md](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:27), D2; [SKILL.md](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/SKILL.md:32).
+
+**Smallest credible fix:** Expose the computed items in the blocked dry-run, at least when `--force-downgrade` is supplied, and make forced apply reuse exactly that plan.
+
+### [P1] New plan-item paths silently change their root
+
+**Summary:** The flat `plan[].path` field now mixes incompatible path bases without a discriminator.
+
+**What the code does today:** Legacy paths are relative to `repo_root`. New sync/removal paths are relative to the global skills target, while `blocked_symlink.path` may reference either source or installed skills.
+
+**Why it matters:** This breaks generic plan consumers and is especially dangerous for D4 deletions.
+
+**Failure scenario:** An approval client renders `bee-obsolete` as `<repo>/bee-obsolete`, but apply actually deletes `~/.claude/skills/bee-obsolete`.
+
+**Evidence:** [onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/onboard_bee.mjs:289), new shapes at lines 289–371; repo-relative items at 835–936; actual global mutations at 1101–1115.
+
+**Smallest credible fix:** Add an explicit per-item `scope` or root discriminator, plus `side: "source" | "installed"` for blocked entries, and document the path base.
+
+### [P1] Post-apply recheck can falsely report `up_to_date`
+
+**Summary:** The JSON can claim parity even when the post-write skill preflight is blocked.
+
+**What the code does today:** `recheck` considers only `recheck.plan.length`. Blocked skill items are suppressed, and the blocked status, reason, and versions are discarded.
+
+**Why it matters:** D5 defines recheck as a content-parity guarantee.
+
+**Failure scenario:** Force a numeric downgrade while installed `bee-hive` is a newer symlink. Apply skips that skill and downgrades helpers. Recheck detects `blocked_downgrade`, but its empty visible plan produces `recheck: "up_to_date"`.
+
+**Evidence:** [onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/onboard_bee.mjs:1305), lines 939–944 and 1305–1312; [CONTEXT.md](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:30), D5.
+
+**Smallest credible fix:** Give recheck the same blocked-first status precedence as dry-run and expose its reason and versions. Add the force-plus-symlink regression case.
+
+### [P1] `blocked_no_source` omits the required version triple
+
+**Summary:** Source-resolution failures return `versions: null`.
+
+**What the code does today:** `versions` starts as null, and identity/overlap failures return before source, host-helper, and installed-skill versions are populated.
+
+**Why it matters:** D3 explicitly requires source-resolution failures to report all three versions.
+
+**Failure scenario:** A relocated launcher returns `blocked_no_source`, but the agent cannot distinguish unknown source, absent helpers, and an unreadable installed set.
+
+**Evidence:** [onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/onboard_bee.mjs:381), lines 381–451 and 1281–1300; [CONTEXT.md](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:28), D3.
+
+**Smallest credible fix:** Populate `{source, host_helpers, installed_skills}` for every blocked outcome, using `"unknown"` where authority prevents resolution.
+
+### [P2] Malformed-source responses publish contradictory versions
+
+**Summary:** One response can describe the source as both a concrete version and `"unknown"`.
+
+**What the code does today:** Strict parsing sets `versions.source: "unknown"`, while legacy `readBeeVersion()` returns a malformed matched value or silently falls back to `0.1.0` for `bee_version`.
+
+**Why it matters:** Old and new clients receive incompatible version truths.
+
+**Failure scenario:** A corrupt source returns `bee_version: "0.1.0"` or `"not-a-version"` alongside `versions.source: "unknown"`.
+
+**Evidence:** [onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/onboard_bee.mjs:161), lines 161–167, 198–210, 1263–1284, and 1294–1300.
+
+**Smallest credible fix:** Derive both public fields from one strict source-version result; emit `"unknown"` consistently when resolution fails.
+
+### [P2] `blocked_symlink` also represents unsupported entry types
+
+**Summary:** The documented action token does not uniquely mean a symlink.
+
+**What the code does today:** FIFOs, sockets, devices, and other unsupported entries become internal `"unsupported entry type"` blocks but are serialized as `action: "blocked_symlink"`.
+
+**Why it matters:** `SKILL.md` promises agents that this token identifies a symlink, leading them toward incorrect remediation.
+
+**Failure scenario:** A FIFO inside a skill is reported as `blocked_symlink`; the agent asks the user to remove a link that does not exist.
+
+**Evidence:** [onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/onboard_bee.mjs:253), lines 253–257, 304–310, 329–336, and 361–368; [SKILL.md](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/SKILL.md:34).
+
+**Smallest credible fix:** Reserve `blocked_symlink` for actual links and introduce a generic blocked-skill action or structured `reason_code` for other entry types.
+
+### [P2] Successful apply exposes pre-write versions as current-looking values
+
+**Summary:** `skills.versions` in a successful response is the preflight snapshot, although its name does not say so.
+
+**What the code does today:** Versions are captured before writes and returned unchanged after synchronization.
+
+**Why it matters:** This conflicts observably with the one-command consistency promise.
+
+**Failure scenario:** Source `0.2.0` successfully upgrades installed `0.1.19`, but the response still reports `skills.versions.installed_skills: "0.1.19"` alongside `recheck: "up_to_date"`.
+
+**Evidence:** [onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/onboard_bee.mjs:431), lines 431–452, 1145–1156, and 1305–1320; [test_onboard_bee.mjs](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/scripts/test_onboard_bee.mjs:1107), lines 1107–1116; [SKILL.md](/home/thanhsmind/projects/goglbe/beegog/skills/bee-hive/SKILL.md:31).
+
+**Smallest credible fix:** Document the existing field as preflight and add a post-recheck version triple, preserving the old field for compatibility.
+
+### [P3] README still instructs the obsolete manual-copy workflow
+
+**Summary:** The README simultaneously promises automatic sync and says onboarding only refreshes helpers.
+
+**What the code does today:** The new section describes automatic Claude-global sync, while a later note still instructs manual copying into both Claude and Codex skill directories.
+
+**Why it matters:** This contradicts D1/D2 and encourages bypassing the guarded script.
+
+**Failure scenario:** A user follows the later note, manually updates the out-of-scope Codex directory, and skips downgrade preflight and dry-run review.
+
+**Evidence:** [README.md](/home/thanhsmind/projects/goglbe/beegog/README.md:346), lines 346 and 408; [CONTEXT.md](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:26), D1–D2.
+
+**Smallest credible fix:** Remove the stale parenthetical and state the locked contract: onboarding synchronizes only global `~/.claude/skills/bee-*`.

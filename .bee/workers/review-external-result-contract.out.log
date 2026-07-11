@@ -1,0 +1,3 @@
+Review blocked by `bee-hive`: onboarding is outdated and requires updating `.bee/bin/lib/fsutil.mjs`, `.bee/bin/lib/state.mjs`, and `.bee/onboarding.json`. Your “do not modify any files” constraint prevents applying those updates. No files were changed.
+
+Please explicitly approve the onboarding updates if you want me to continue.

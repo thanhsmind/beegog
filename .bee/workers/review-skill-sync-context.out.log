@@ -1,0 +1,9 @@
+VERDICT: FINDINGS
+
+1. **Lines 13–14, 28 —** “a stale 0.1.18 plugin’s onboard apply overwrote … 0.1.19” / “when the source version is older … apply STOPS.” An old launcher does not contain D3, so new code cannot make it refuse; retroactive protection is unbuildable as stated. **Smallest fix:** lock a compatibility boundary: D3 starts with guarded onboarder versions; protecting older launchers requires a stable launcher/version handshake in scope.
+
+2. **Line 27 —** “Source of skills = the `skills/` dir of the bee repo the running script belongs to.” In an installed `~/.claude/skills/bee-hive` invocation, source may resolve to the target itself rather than a distinct checkout. Implementers could reasonably no-op, mirror stale/partial content, or reject. **Smallest fix:** define supported invocation roots, deterministic source discovery, and fail-closed behavior when no complete authoritative source exists.
+
+3. **Line 28 —** “apply STOPS.” The current apply pipeline writes sequentially; a guard added at the skill-sync stage could refuse only after helpers were already changed. **Smallest fix:** require one preflight across host helpers and global skills before any write; if either target is newer, exit nonzero with zero mutations unless `--force-downgrade` is set.
+
+4. **Lines 59–63 —** “hash or version-level only” and “planning decides sync-on-diff vs sync-on-version-bump.” This is observable product policy, not implementation detail, and version-only behavior conflicts with D2’s drift visibility and D4’s mirror semantics. **Smallest fix:** add a D-ID stating that every equal-version file-set/content difference is drift and must be planned, mirrored, and parity-checked; version comparison only governs downgrade refusal.

@@ -1,0 +1,9 @@
+VERDICT: FINDINGS
+
+1. [L28](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:28) — “source vs installed versions across BOTH vendored helpers and skills.” There are three versions: source, host helpers, and global skills. Mixed states leave the refusal predicate ambiguous. Fix: define `refuse iff source < helpers OR source < skills`, including unknown versions, and report all three.
+
+2. [L27, D2](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:27) — “no complete authoritative source resolves” conflicts ambiguously with [D4’s source removals](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:29). A missing skill could mean intentional deletion or an incomplete checkout. Fix: define how a source proves its authoritative inventory and how declared removals differ from corruption.
+
+3. [L27](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:27) — “the stage fails closed (reported, nothing written).” “Stage” does not establish whether earlier helper/AGENTS writes remain; the current apply pipeline writes sequentially. Fix: state that source-resolution failure aborts the entire apply during preflight with zero repo or global mutations.
+
+4. [L27–28](/home/thanhsmind/projects/goglbe/beegog/docs/history/skill-sync/CONTEXT.md:27) — dry-run exposes drift, but only apply’s downgrade failure is defined. The current CLI has only `up_to_date`/`changes_needed`, so planning must invent blocked JSON and exit semantics. Fix: lock dry-run status, diagnostic fields, exit code, and `--force-downgrade` behavior for downgrade and unavailable-source cases.
