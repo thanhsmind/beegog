@@ -2808,6 +2808,155 @@ check('bee_state.mjs worker add rejects an unknown tier', () => {
   }
 });
 
+// ─── bee_state.mjs worker prune (workers-prune-1) ────────────────────────────
+
+function makePruneRepo(prefix) {
+  const dir = makeStateRepo(prefix);
+  fs.mkdirSync(path.join(dir, '.bee', 'workers'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+    schema_version: '1.0',
+    phase: 'swarming',
+    workers: [
+      { nickname: 'kevin', cell: 'live-1', tier: 'generation', status: 'in-flight' },
+      { nickname: 'bob', cell: 'alpha.out10', tier: 'generation', status: 'in-flight' },
+    ],
+  });
+  writeJsonAtomic(path.join(dir, '.bee', 'cells', 'done-1.json'), { id: 'done-1', status: 'capped' });
+  writeJsonAtomic(path.join(dir, '.bee', 'cells', 'open-1.json'), { id: 'open-1', status: 'open' });
+  const w = (name) => fs.writeFileSync(path.join(dir, '.bee', 'workers', name), 'x', 'utf8');
+  w('done-1.prompt.md'); // capped cell -> prunable
+  w('done-1.out.log'); // capped cell -> prunable
+  w('done-1.out2.log'); // .outN.log belongs to the same cell id -> prunable
+  w('done-1.result.json'); // capped cell -> prunable
+  w('open-1.prompt.md'); // open cell -> kept
+  w('live-1.result.md'); // active worker's cell (no cell file) -> kept
+  w('alpha.out10.log'); // dotted active cell id: suffix regex must not mis-stem it -> kept
+  w('review-arch.log'); // no cell, no active worker -> prunable
+  w('evidence-pre.json'); // bare .json outside the suffix set -> never touched
+  w('.log'); // empty stem -> not a dispatch transient, never touched
+  w('.out10.log'); // empty stem -> never touched
+  fs.mkdirSync(path.join(dir, '.bee', 'workers', 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.bee', 'workers', 'nested', 'sub.prompt.md'), 'x', 'utf8'); // subdir contents -> never touched
+  return dir;
+}
+
+const PRUNE_EXPECTED = ['done-1.out.log', 'done-1.out2.log', 'done-1.prompt.md', 'done-1.result.json', 'review-arch.log'];
+const PRUNE_SURVIVORS = ['.log', '.out10.log', 'alpha.out10.log', 'evidence-pre.json', 'live-1.result.md', 'nested', 'open-1.prompt.md'];
+
+function workerFiles(dir) {
+  return fs.readdirSync(path.join(dir, '.bee', 'workers')).sort();
+}
+
+check('bee_state.mjs worker prune deletes only capped/orphan transients and keeps open-cell, active-worker (dotted ids included), subdir, and non-transient files', () => {
+  const dir = makePruneRepo('bee-state-prune-');
+  try {
+    const stateBefore = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    const result = runBeeState(dir, ['worker', 'prune', '--json']);
+    assert(result.status === 0, `prune should succeed, got ${result.status}: ${result.stderr}`);
+    const out = JSON.parse(result.stdout);
+    assert(
+      JSON.stringify(out.pruned) === JSON.stringify(PRUNE_EXPECTED),
+      `pruned set, got ${JSON.stringify(out.pruned)}`,
+    );
+    assert(
+      JSON.stringify(workerFiles(dir)) === JSON.stringify(PRUNE_SURVIVORS),
+      `survivors, got ${JSON.stringify(workerFiles(dir))}`,
+    );
+    assert(
+      fs.existsSync(path.join(dir, '.bee', 'workers', 'nested', 'sub.prompt.md')),
+      'subdirectory contents untouched',
+    );
+    const stateAfter = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    assert(stateBefore === stateAfter, 'prune never writes state.json');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune --dry-run reports the exact same candidate set and deletes nothing', () => {
+  const dir = makePruneRepo('bee-state-prune-dry-');
+  try {
+    const before = workerFiles(dir);
+    const result = runBeeState(dir, ['worker', 'prune', '--dry-run', '--json']);
+    assert(result.status === 0, `dry-run should succeed, got ${result.status}: ${result.stderr}`);
+    const out = JSON.parse(result.stdout);
+    assert(out.dry_run === true, 'dry_run flagged in output');
+    assert(
+      JSON.stringify(out.pruned) === JSON.stringify(PRUNE_EXPECTED),
+      `dry-run candidate set is exactly the real prune set, got ${JSON.stringify(out.pruned)}`,
+    );
+    assert(JSON.stringify(workerFiles(dir)) === JSON.stringify(before), 'no file deleted under --dry-run');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune rejects unknown flags (a --dryrun typo must never delete) and non-prune verbs reject --dry-run', () => {
+  const dir = makePruneRepo('bee-state-prune-strictflags-');
+  try {
+    const before = workerFiles(dir);
+    const typo = runBeeState(dir, ['worker', 'prune', '--dryrun', '--json']);
+    assert(typo.status !== 0, `--dryrun typo exits non-zero, got ${typo.status}`);
+    assert(/dryrun/.test(typo.stderr), `error names the unknown flag, got ${typo.stderr}`);
+    assert(JSON.stringify(workerFiles(dir)) === JSON.stringify(before), 'zero deletions on an unknown flag');
+    const stateBefore = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    const clearDry = runBeeState(dir, ['worker', 'clear', '--dry-run']);
+    assert(clearDry.status !== 0, `worker clear --dry-run exits non-zero, got ${clearDry.status}`);
+    assert(/dry-run/.test(clearDry.stderr), `error names --dry-run, got ${clearDry.stderr}`);
+    const stateAfter = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    assert(stateBefore === stateAfter, 'a refused dry-run mutation leaves state.json untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune fails closed when state.workers is not an array (semantic corruption, valid JSON)', () => {
+  const dir = makePruneRepo('bee-state-prune-badworkers-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'swarming',
+      workers: { nickname: 'kevin', cell: 'live-1' },
+    });
+    const before = workerFiles(dir);
+    const result = runBeeState(dir, ['worker', 'prune']);
+    assert(result.status !== 0, `malformed workers exits non-zero, got ${result.status}`);
+    assert(/workers/.test(result.stderr), `error names state.workers, got ${result.stderr}`);
+    assert(JSON.stringify(workerFiles(dir)) === JSON.stringify(before), 'zero deletions when the keep set is malformed');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune over a corrupt state.json exits non-zero and deletes nothing (readStateStrict before any rm)', () => {
+  const dir = makePruneRepo('bee-state-prune-corrupt-');
+  try {
+    fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '{ not json', 'utf8');
+    const before = workerFiles(dir);
+    const result = runBeeState(dir, ['worker', 'prune']);
+    assert(result.status !== 0, `corrupt state exits non-zero, got ${result.status}`);
+    assert(JSON.stringify(workerFiles(dir)) === JSON.stringify(before), 'zero deletions on a corrupt state');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune with no .bee/workers dir succeeds with 0 pruned, and the unknown-action Use: line lists prune', () => {
+  const dir = makeStateRepo('bee-state-prune-nodir-');
+  try {
+    const result = runBeeState(dir, ['worker', 'prune', '--json']);
+    assert(result.status === 0, `missing dir is success, got ${result.status}: ${result.stderr}`);
+    const out = JSON.parse(result.stdout);
+    assert(out.pruned.length === 0, 'nothing pruned when the dir is absent');
+    const bad = runBeeState(dir, ['worker', 'shave']);
+    assert(bad.status !== 0, 'unknown worker action exits non-zero');
+    assert(/prune/.test(bad.stderr), `Use: line lists prune, got ${bad.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 check('bee_state.mjs scribing-run stamps the exact key set from bee-scribing SKILL.md:112 including an ISO-precise at', () => {
   const dir = makeStateRepo('bee-state-scribing-');
   try {

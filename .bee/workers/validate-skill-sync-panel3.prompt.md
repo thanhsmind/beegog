@@ -1,5 +1,0 @@
-Adversarial plan-checker PANEL, ITERATION 3 (FINAL) for the bee repo (current dir). NO session history. Iteration 2 left open: F1 (unknown-vs-forceable wording in CONTEXT D3 + brief rollback), F3 (source-unknown branch missing in cell 2), F5 (stale target-override wording in approach.md risk map, plan.md Approach, brief Security), F7 (plan.md Slices described the obsolete 3-cell graph), F11 (brief "suite unchanged" + cell-2 override), NEW-1 (cell-0 suite-wide sentinel invariant impossible vs cell-1 intentional home writes), NEW-2 (nested symlink + ancestor-overlap zero-mutation tests missing).
-
-Re-read ONLY what settles those: docs/history/skill-sync/CONTEXT.md (D3 row), approach.md (risk map + suite-consequence section), plan.md (Approach + Slices), implement-plan.md (Technical Design, Validation Plan, Security, Rollback), .bee/cells/skill-sync-0.json, skill-sync-1.json, skill-sync-2.json.
-
-For each of F1, F3, F5, F7, F11, NEW-1, NEW-2: CLOSED (quote the settling line) or STILL OPEN (what is missing). Then any NEW blocker introduced. Output: `ITERATION 3: <n> still open, <m> new` + per-finding lines. Terse. Do not modify files.

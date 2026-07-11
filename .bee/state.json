@@ -2,16 +2,16 @@
   "schema_version": "1.0",
   "phase": "compounding-complete",
   "feature": "",
-  "mode": "standard",
+  "mode": "small",
   "approved_gates": {
-    "context": false,
+    "context": true,
     "shape": true,
     "execution": true,
     "review": true
   },
   "workers": [],
-  "summary": "cli-mutations closed: learnings 20260711-cli-mutations.md, 1 critical promotion, decision bb4bb18e, digest refreshed (70 entries)",
-  "next_action": "Idle. Next evolving pick available (kind:type drift migration ranks top among filed friction).",
+  "summary": "workers-prune shipped: worker prune verb, 4 review P1s fixed same-session, live prune 64 files",
+  "next_action": "Idle. workers-prune shipped and closed.",
   "last_scribing_run": {
     "feature": "cli-mutations",
     "date": "2026-07-11",
@@ -33,8 +33,8 @@
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 65,
+    "capped": 67,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T11:31:21.370Z"
+  "last_activity": "2026-07-11T12:33:39.007Z"
 }

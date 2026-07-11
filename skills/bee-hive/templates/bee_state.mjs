@@ -22,6 +22,21 @@
 //      entry found by nickname; remove drops the matching entry; clear empties
 //      the whole array. --tier, when given, is validated against MODEL_TIERS —
 //      the same locked enum bee_cells.mjs tier already uses.)
+//   node .bee/bin/bee_state.mjs worker prune [--dry-run] [--json]
+//     (deletes stale dispatch transients from .bee/workers/: only files whose
+//      name matches the transient suffix set — .prompt.md, .result.md,
+//      .result.json, .out*.log, .log — with a non-empty stem, and which no
+//      keep rule protects: a file is KEPT when its name is "<id>" or starts
+//      with "<id>." for any active worker's cell or any non-capped cell —
+//      prefix matching, so dotted cell ids can never be mis-stemmed by the
+//      suffix regex. Anything else — evidence snapshots, cell payloads,
+//      subdirectories, empty-stem names like ".log" — is never touched.
+//      Reads state via readStateStrict and never writes state.json: a corrupt
+//      state, or a state.workers that is not an array, fails loud and deletes
+//      nothing; the keep set is re-read immediately before the destructive
+//      loop (C1). prune rejects unknown flags, and --dry-run is rejected on
+//      every other verb — a safety flag must never ride along with a real
+//      mutation.)
 //   node .bee/bin/bee_state.mjs scribing-run --feature F --areas "a,b" --next-action S [--json]
 //     (stamps last_scribing_run.date + an ISO-precise last_scribing_run.at,
 //      decision 0011 — the .at stamp is what clears scribing debt, per
@@ -30,6 +45,9 @@
 //      "compounding" — the fixed next node after bee-scribing in the
 //      workflow chain (AGENTS.md) — per SKILL.md:112's "plus top-level
 //      phase/next_action".)
+
+import fs from 'node:fs';
+import path from 'node:path';
 
 import {
   findRepoRoot,
@@ -40,6 +58,12 @@ import {
   GATE_NAMES,
   MODEL_TIERS,
 } from './lib/state.mjs';
+
+// Dispatch transients written by bee-swarming (swarming-reference.md External
+// Executors): <cell-id>.prompt.md / .out*.log / .result.md|json, plus reviewer
+// and plan-check logs from the same protocol. Files outside this suffix set
+// (evidence snapshots, cell payloads) are never prune candidates.
+const WORKER_TRANSIENT_SUFFIX = /\.(prompt\.md|result\.md|result\.json|out\d*\.log|log)$/;
 
 function parseArgs(argv) {
   const args = { command: '', sub: '', flags: {}, json: false };
@@ -55,7 +79,7 @@ function parseArgs(argv) {
     const name = eq === -1 ? arg.slice(2) : arg.slice(2, eq);
     let value;
     if (eq !== -1) value = arg.slice(eq + 1);
-    else if (name === 'json') value = true;
+    else if (name === 'json' || name === 'dry-run') value = true;
     else {
       value = argv[i + 1];
       if (value === undefined) throw new Error(`Flag --${name} requires a value.`);
@@ -154,7 +178,100 @@ function runGate(root, flags) {
   return { result: state, text: `Gate "${name}" set to ${approved}.` };
 }
 
+function readPruneKeepSet(root) {
+  // Strict read: a corrupt state.json fails loud here, before any deletion.
+  // Prune never writes state.json — it is a read-only verb on state.
+  const state = readStateStrict(root);
+  if (state.workers !== undefined && state.workers !== null && !Array.isArray(state.workers)) {
+    throw new Error(
+      'worker prune: state.workers is not an array — refusing to prune against a malformed keep set (a destructive verb fails closed). FIX: repair .bee/state.json via the bee_state.mjs worker verbs first.',
+    );
+  }
+  const keep = new Set();
+  for (const w of state.workers || []) {
+    if (w && w.cell !== undefined && w.cell !== null) keep.add(String(w.cell));
+  }
+  // Every non-capped cell keeps its transients; an unreadable cell file
+  // counts as not-capped — keep, don't guess.
+  const cellsDir = path.join(root, '.bee', 'cells');
+  if (fs.existsSync(cellsDir)) {
+    for (const file of fs.readdirSync(cellsDir)) {
+      if (!file.endsWith('.json')) continue;
+      let cell;
+      try {
+        cell = JSON.parse(fs.readFileSync(path.join(cellsDir, file), 'utf8'));
+      } catch {
+        cell = null;
+      }
+      if (!cell || cell.status !== 'capped') keep.add(file.slice(0, -'.json'.length));
+    }
+  }
+  return keep;
+}
+
+// Prefix keep-check: "<id>" or "<id>.<anything>" is protected. The suffix
+// regex never decides what is kept — only what class of file is a prune
+// candidate — so a dotted cell id (e.g. "alpha.out10") can never be
+// mis-stemmed into deletion.
+function keptByPruneKeepSet(name, keep) {
+  for (const id of keep) {
+    if (name === id || name.startsWith(`${id}.`)) return true;
+  }
+  return false;
+}
+
+function runWorkerPrune(root, flags) {
+  for (const name of Object.keys(flags)) {
+    if (name !== 'dry-run') {
+      throw new Error(`worker prune: unknown flag --${name}. Use: worker prune [--dry-run] [--json].`);
+    }
+  }
+  const dryRun = flags['dry-run'] !== undefined;
+  const workersDir = path.join(root, '.bee', 'workers');
+  let keep = readPruneKeepSet(root);
+  const entries = fs.existsSync(workersDir)
+    ? fs.readdirSync(workersDir, { withFileTypes: true })
+    : [];
+  const candidates = [];
+  const kept = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const name = entry.name;
+    const match = name.match(WORKER_TRANSIENT_SUFFIX);
+    if (!match) continue;
+    // Empty stem (".log", ".out10.log") is not a dispatch transient.
+    if (name.length === match[0].length) continue;
+    if (keptByPruneKeepSet(name, keep)) {
+      kept.push(name);
+      continue;
+    }
+    candidates.push(name);
+  }
+  const pruned = [];
+  if (dryRun) {
+    pruned.push(...candidates);
+  } else if (candidates.length > 0) {
+    // C1: re-read the keep set immediately before the destructive loop, so a
+    // dispatch recorded after the first read still protects its transients.
+    keep = readPruneKeepSet(root);
+    for (const name of candidates) {
+      if (keptByPruneKeepSet(name, keep)) {
+        kept.push(name);
+        continue;
+      }
+      fs.rmSync(path.join(workersDir, name));
+      pruned.push(name);
+    }
+  }
+  pruned.sort();
+  kept.sort();
+  const verb = dryRun ? 'Would prune' : 'Pruned';
+  const text = `${verb} ${pruned.length} worker transient(s) from .bee/workers/ (kept ${kept.length} still-active).`;
+  return { result: { dry_run: dryRun, pruned, kept }, text };
+}
+
 function runWorker(root, sub, flags) {
+  if (sub === 'prune') return runWorkerPrune(root, flags);
   // Re-read immediately before the atomic write (C1) — the find/merge/filter
   // below is pure in-memory work on the array, so reading here keeps the
   // read-to-write window at its minimum.
@@ -221,7 +338,7 @@ function runWorker(root, sub, flags) {
       break;
     }
     default:
-      throw new Error(`Unknown worker action "${sub || '(missing)'}". Use: add, update, remove, clear.`);
+      throw new Error(`Unknown worker action "${sub || '(missing)'}". Use: add, update, remove, clear, prune.`);
   }
   state.workers = workers;
   writeState(root, state);
@@ -255,6 +372,15 @@ function run(args) {
     );
   }
   const { flags } = args;
+
+  // A safety flag must never ride along with a real mutation: every verb
+  // except "worker prune" mutates state, so --dry-run there is a hard error,
+  // not an ignored no-op that mutates anyway.
+  if (flags['dry-run'] !== undefined && !(args.command === 'worker' && args.sub === 'prune')) {
+    throw new Error(
+      '--dry-run is only supported by "worker prune" — refusing to run a mutating verb with a dry-run flag.',
+    );
+  }
 
   switch (args.command) {
     case 'set':
