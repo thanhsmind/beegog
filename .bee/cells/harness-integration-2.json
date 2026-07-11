@@ -1,0 +1,77 @@
+{
+  "id": "harness-integration-2",
+  "feature": "harness-integration",
+  "title": "Build the bee.mjs unified dispatcher (--help, --help --json, nearest-match, manifest hash)",
+  "lane": "high-risk",
+  "status": "capped",
+  "deps": [
+    "harness-integration-1"
+  ],
+  "decisions": [
+    "D2",
+    "D3",
+    "D5"
+  ],
+  "files": [
+    "skills/bee-hive/templates/bee.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+  ],
+  "read_first": [
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "skills/bee-hive/templates/lib/validate-args.mjs",
+    "skills/bee-hive/templates/lib/state.mjs",
+    "skills/bee-hive/templates/lib/cells.mjs",
+    "skills/bee-hive/templates/lib/reservations.mjs",
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/lib/capture.mjs",
+    "skills/bee-hive/templates/lib/backlog.mjs",
+    "skills/bee-hive/templates/bee_status.mjs",
+    "skills/bee-hive/templates/bee_cells.mjs",
+    "skills/bee-hive/templates/bee_reservations.mjs",
+    "skills/bee-hive/templates/bee_decisions.mjs"
+  ],
+  "action": "CORRECTED MECHANISM (validating iteration 1 found the original 'delegate to the helper module's handler' framing unbuildable - the 4 CLI files export nothing; fix per user decision 2026-07-11): all 4 existing CLI entrypoints are already thin wrappers importing exported functions from lib/*.mjs (bee_cells.mjs imports listCells/readyCells/readCell/addCell/claimCell/recordVerify/capCell/blockCell/dropCell/setTier/judgeCell from lib/cells.mjs; the other 3 follow the identical pattern from their own lib modules). Write bee.mjs as a thin dispatcher that imports the SAME lib/*.mjs functions directly - zero import of, or dependency on, the 4 CLI files' own unexported main()/argv-parsing code. Parse the first argv token as a command group (status/cells/reservations/decisions), validate the call via validate-args.mjs against the matching registry entry, and only on a valid call invoke the matching lib function directly, formatting output to match what the existing CLI's main() currently prints for that same call (read each existing CLI's output-formatting logic in read_first to replicate it exactly - this is what the parity must-have below checks). On an invalid call, return the structured {ok:false,error} shape instead of calling the lib function. Implement --help (prose rendering of the registry) and --help --json (raw registry, Claude-tool-schema shaped per D3), both reading the one registry from cell harness-integration-1. Add nearest-match suggestion (edit-distance against registered command names) for an unrecognized command. Add manifest content-hash tracking: hash the registry content each call; persist the last-seen hash in a small state file (name/location: agent's choice, document it) since bee.mjs runs as a fresh process per invocation with no built-in session concept; if the hash differs from what's persisted, include manifest_changed:true plus a one-line hint in the response. SCOPE GAP CLOSED (validating iteration 1, coherence lens): implement a deprecated/use_instead redirect - if the matched registry entry has a non-null `deprecated: {since, use_instead}` field (cell harness-integration-1 defines the field shape; entries are null until a future phase actually deprecates something, but the DISPATCH LOGIC for honoring a non-null value must exist now), respond with a redirect message naming `use_instead` instead of executing or returning a bare not-found - this is required by implement-plan.md's Scope and plan.md's test matrix, not optional polish.",
+  "must_haves": {
+    "truths": [
+      "bee --help --json parses as valid JSON and lists every existing subcommand",
+      "bee cells ready output is byte-identical to bee_cells.mjs ready output (parity, per D5) - verified by running both and diffing stdout",
+      "a call with a typo'd command name returns a nearest-match suggestion, not a bare not-found",
+      "a registry content change is reflected as manifest_changed:true on the next call",
+      "a call matching a registry entry with a non-null deprecated field returns a redirect naming use_instead, not a bare execution or not-found"
+    ],
+    "artifacts": [
+      {
+        "path": "skills/bee-hive/templates/bee.mjs",
+        "substantive": "working dispatcher, no TODO stubs, routes to all 4 existing helper groups by calling their lib/*.mjs functions directly"
+      }
+    ],
+    "key_links": [
+      "bee.mjs imports command-registry.mjs and validate-args.mjs from cell harness-integration-1",
+      "bee.mjs imports its command logic from lib/cells.mjs, lib/state.mjs, lib/reservations.mjs, lib/decisions.mjs, and (for the status group specifically) lib/capture.mjs + lib/backlog.mjs - the same lib modules the 4 existing CLI files already import, never from the CLI files themselves"
+    ],
+    "prohibitions": [
+      "No edits to bee_status.mjs, bee_cells.mjs, bee_reservations.mjs, or bee_decisions.mjs - these files are read for reference (output-format parity) only, never imported or modified",
+      "No edits to any lib/*.mjs file's existing exported functions - bee.mjs is a new consumer of them, not a modifier"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_bee_cli.mjs",
+  "trace": {
+    "worker": "worker-w2",
+    "outcome": "Built skills/bee-hive/templates/bee.mjs, the unified CLI dispatcher: parses \"bee <group> [<action>] [--flags]\" (status has no subcommand; cells/reservations/decisions dot-join group.action), validates every call via validate-args.mjs against cell harness-integration-1's registry, and on a valid call invokes the SAME lib/*.mjs functions the 4 existing entrypoints already import (D5) — reimplementing each one's exact output-formatting logic for byte-identical parity, never importing/spawning the 4 CLI files themselves. Implements --help / --help --json (D3 tool-schema manifest, helper field stripped), Levenshtein nearest-match suggestion on an unrecognized command, sha256 manifest content-hash drift tracking persisted at .bee/manifest-hash.json (manifest_changed only appears in the response when true, preserving byte-parity in the steady state), and the deprecated/use_instead redirect dispatch logic (no live registry entry is deprecated yet; exercised via a synthetic entry in tests). Extended tests/test_bee_cli.mjs (cell harness-integration-1's file) with 35 new checks: pure-logic units (parseFlags/resolveCommand/nearestCommandName/deprecatedRedirect/computeManifestHash) plus end-to-end dispatcher coverage in a second isolated temp repo — including literal stdout diffs against bee_status.mjs, bee_cells.mjs ready (json+text), bee_reservations.mjs list, and bee_decisions.mjs active. 67/67 passing; zero regression (test_lib.mjs 124/124, test_onboard_bee.mjs unaffected).",
+    "files_changed": [
+      "skills/bee-hive/templates/bee.mjs",
+      "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+    ],
+    "deviations": [],
+    "friction": null,
+    "capped_at": "2026-07-11T15:58:52.952Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\"skills/bee-hive/templates/tests/test_bee_cli.mjs\"],\n  \"tests_added_or_changed\": [\"skills/bee-hive/templates/tests/test_bee_cli.mjs (extended in place, +35 checks: 12 pure-logic unit tests for bee.mjs's exported parseFlags/resolveCommand/splitCommandTokens/nearestCommandName/deprecatedRedirect/computeManifestHash, plus 23 end-to-end spawnSync checks against a second isolated temp repo covering --help/--help --json, the full demo-2 cells chain, reservations, decisions, unknown-command/malformed-input structured errors, and manifest-hash drift)\"],\n  \"red_failure_evidence\": \"bee.mjs did not exist before this cell (git show HEAD:skills/bee-hive/templates/bee.mjs -> \\\"fatal: path exists on disk, but not in 'HEAD'\\\" against the pre-cell tree) — there was no unified CLI dispatcher; the 4 entrypoints were only invocable as 4 separate scripts with no --help/--help --json discovery, no nearest-match suggestion on a typo'd command, no deprecated/use_instead redirect, and no manifest drift signal anywhere in the codebase.\",\n  \"verification_run\": \"node skills/bee-hive/templates/tests/test_bee_cli.mjs -> 67 passed, 0 failed. Regression: node skills/bee-hive/templates/tests/test_lib.mjs -> 124 passed, 0 failed. node skills/bee-hive/scripts/test_onboard_bee.mjs -> PASS (failures: 0, skipped: 1, pre-existing unrelated skip).\",\n  \"deliberate_exceptions\": []\n}\n",
+    "verify_output": "PASS  SCHEMA_VERSION is the top-level manifest field, not per-entry\nPASS  every registry entry has the required manifest fields, no TODO/stub entries\nPASS  every registry entry's parameters is valid JSON-Schema (D3 shape: type/properties/required)\nPASS  registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*)\nPASS  registry covers every subcommand of the 4 existing helpers\nPASS  validate() rejects a missing required field with the structured {field,reason,command} shape\nPASS  validate() accepts a call with every required field present\nPASS  validate() flags a wrong-typed value without throwing\nPASS  validate() never throws on a malformed commandEntry\nPASS  isValidParameterSchema() rejects a bespoke (non-JSON-Schema) shape\nPASS  cells.add example creates the fixture cell used by the rest of the chain\nPASS  cells.list example runs against the real helper\nPASS  cells.ready example runs against the real helper\nPASS  cells.show example runs against the real helper\nPASS  cells.claim example runs against the real helper\nPASS  cells.verify example runs against the real helper\nPASS  cells.cap example runs against the real helper\nPASS  cells.judge example runs against the real helper\nPASS  cells.tier example runs against the real helper\nPASS  cells.block example runs against the real helper\nPASS  cells.drop example runs against the real helper\nPASS  reservations.reserve example runs against the real helper\nPASS  reservations.list example runs against the real helper\nPASS  reservations.release example runs against the real helper\nPASS  reservations.sweep example runs against the real helper\nPASS  decisions.log example runs against the real helper\nPASS  decisions.active example runs against the real helper\nPASS  decisions.search example runs against the real helper\nPASS  decisions.supersede example runs against the real helper (arbitrary id — event-sourced, no existence check)\nPASS  decisions.redact example runs against the real helper (arbitrary id — event-sourced, no existence check)\nPASS  status example runs against the real helper\nPASS  every registry entry had its example executed at least once (nothing silently skipped)\nPASS  splitCommandTokens separates leading command tokens from the flag section\nPASS  resolveCommand special-cases \"status\" (no subcommand) and dot-joins other groups\nPASS  parseFlags treats json/stdin/behavior-change/evidence-stdin/active-only as flag-alone booleans\nPASS  parseFlags requires an explicit value for a non-boolean-alone flag, even one the schema types boolean (cells.verify --passed)\nPASS  parseFlags returns a structured error (never throws) for a flag missing its value\nPASS  parseFlags returns a structured error for a stray non-flag argument\nPASS  parseFlags supports the --name=value form for any flag, taking precedence over the boolean-alone default\nPASS  nearestCommandName suggests the closest real command for a typo\nPASS  deprecatedRedirect is null for a live (non-deprecated) registry entry\nPASS  deprecatedRedirect returns a structured redirect naming use_instead for a synthetic deprecated entry, without executing anything\nPASS  computeManifestHash is deterministic and sensitive to content\nPASS  bee --help --json parses as valid JSON and lists every existing subcommand\nPASS  bee --help renders non-empty prose naming known commands\nPASS  bee status --json is byte-identical to bee_status.mjs --json (D5 parity)\nPASS  bee cells add creates the demo-2 fixture cell used by the rest of this dispatcher chain\nPASS  bee cells list --json includes demo-2\nPASS  bee cells ready output is byte-identical to bee_cells.mjs ready output (parity, per D5) — verified by running both and diffing stdout\nPASS  bee cells ready (text form) is also byte-identical to bee_cells.mjs ready (text form)\nPASS  bee cells show --id demo-2 --json returns the cell\nPASS  bee cells claim --id demo-2 --worker claims it\nPASS  bee cells verify --passed true (explicit \"true\" argument, not a bare flag) records a passing verify\nPASS  bee cells cap --id demo-2 caps the cell\nPASS  bee cells judge --id demo-2 reports no frozen-judge hits\nPASS  bee cells tier --id demo-2 --tier generation sets the tier\nPASS  bee cells block --id demo-2 --reason blocks the cell\nPASS  bee cells drop --id demo-2 --reason drops the cell\nPASS  bee reservations reserve/list/release/sweep round-trip through the dispatcher\nPASS  bee reservations list --active-only is byte-identical to bee_reservations.mjs list --active-only (parity, per D5)\nPASS  bee reservations reserve returns a CONFLICT (exit 1) when another agent already holds an overlapping path\nPASS  bee decisions log/active/search round-trip through the dispatcher\nPASS  bee decisions active is byte-identical to bee_decisions.mjs active (parity, per D5)\nPASS  a call missing a required parameter returns a structured {ok:false,error} shape, never a stack trace\nPASS  an unrecognized command returns a nearest-match suggestion, not a bare not-found\nPASS  a call shaped like a bee.mjs invocation with an unregistered command is denied with a structured error, never executed\nPASS  a registry content change is reflected as manifest_changed:true on the next call\n\n67 passed, 0 failed\n",
+    "verify_passed": true,
+    "claimed_at": "2026-07-11T15:46:22.655Z",
+    "verify_command": "node skills/bee-hive/templates/tests/test_bee_cli.mjs",
+    "verified_at": "2026-07-11T15:58:25.472Z"
+  },
+  "tier": "ceiling"
+}

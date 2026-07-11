@@ -23,6 +23,14 @@ import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
 import { defaultState, writeState } from '../lib/state.mjs';
+import {
+  splitCommandTokens,
+  resolveCommand,
+  parseFlags,
+  nearestCommandName,
+  deprecatedRedirect,
+  computeManifestHash,
+} from '../bee.mjs';
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.dirname(TESTS_DIR);
@@ -323,6 +331,316 @@ check('every registry entry had its example executed at least once (nothing sile
   const missing = [...allNames].filter((name) => !executedNames.has(name));
   assert(missing.length === 0, `these registry entries were never exercised: ${missing.join(', ')}`);
   assert(executedNames.size === allNames.size, 'executed-name count should match registry size exactly');
+});
+
+// ─── bee.mjs (harness-integration-2): unified dispatcher tests ─────────────
+// A SECOND isolated temp repo, kept fully separate from the demo-1 fixture
+// chain above so bee.mjs's own mutating calls never collide with it.
+
+const root2 = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-mjs-test-'));
+fs.mkdirSync(path.join(root2, '.bee'), { recursive: true });
+writeJsonAtomic(path.join(root2, '.bee', 'onboarding.json'), {
+  schema_version: '1.0',
+  bee_version: '0.1.0',
+});
+writeState(root2, {
+  ...defaultState(),
+  phase: 'swarming',
+  feature: 'demo2',
+  approved_gates: { context: true, shape: true, execution: true, review: false },
+});
+
+const BEE_MJS = path.join(TEMPLATES_DIR, 'bee.mjs');
+const BEE_STATUS = path.join(TEMPLATES_DIR, 'bee_status.mjs');
+const BEE_CELLS = path.join(TEMPLATES_DIR, 'bee_cells.mjs');
+const BEE_RESERVATIONS = path.join(TEMPLATES_DIR, 'bee_reservations.mjs');
+const BEE_DECISIONS = path.join(TEMPLATES_DIR, 'bee_decisions.mjs');
+
+function runBee(args, cwd = root2) {
+  return spawnSync(process.execPath, [BEE_MJS, ...args], { cwd, encoding: 'utf8' });
+}
+function runScript(scriptPath, args, cwd = root2) {
+  return spawnSync(process.execPath, [scriptPath, ...args], { cwd, encoding: 'utf8' });
+}
+
+// ─── pure-logic unit tests (direct import, no spawn — no side effects since
+// bee.mjs guards main() behind a direct-run check) ──────────────────────────
+
+check('splitCommandTokens separates leading command tokens from the flag section', () => {
+  const { leading, rest } = splitCommandTokens(['cells', 'show', '--id', 'demo-1', '--json']);
+  assert(leading.length === 2 && leading[0] === 'cells' && leading[1] === 'show', `leading: ${JSON.stringify(leading)}`);
+  assert(rest.length === 3 && rest[0] === '--id', `rest: ${JSON.stringify(rest)}`);
+});
+
+check('resolveCommand special-cases "status" (no subcommand) and dot-joins other groups', () => {
+  assert(resolveCommand([]).commandName === null, 'empty leading -> no command');
+  assert(resolveCommand(['status']).commandName === 'status', 'status alone');
+  const statusExtra = resolveCommand(['status', 'extra']);
+  assert(statusExtra.commandName === 'status' && statusExtra.extra.length === 1, `status extra: ${JSON.stringify(statusExtra)}`);
+  const ready = resolveCommand(['cells', 'ready']);
+  assert(ready.commandName === 'cells.ready' && ready.extra.length === 0, `cells ready: ${JSON.stringify(ready)}`);
+  const bareGroup = resolveCommand(['cells']);
+  assert(bareGroup.commandName === 'cells' && bareGroup.extra.length === 0, 'a bare group with no action stays ungrouped (misses the registry -> nearest-match)');
+});
+
+check('parseFlags treats json/stdin/behavior-change/evidence-stdin/active-only as flag-alone booleans', () => {
+  const { flags, json } = parseFlags(['--stdin', '--json']);
+  assert(json === true, 'json should be stripped into the json flag');
+  assert(flags.stdin === true, 'stdin should be boolean true with no value consumed');
+});
+
+check('parseFlags requires an explicit value for a non-boolean-alone flag, even one the schema types boolean (cells.verify --passed)', () => {
+  const { flags, error } = parseFlags(['--id', 'demo-1', '--command', 'manual check', '--passed', 'true']);
+  assert(!error, `unexpected parse error: ${JSON.stringify(error)}`);
+  assert(flags.id === 'demo-1' && flags.command === 'manual check' && flags.passed === 'true', `flags: ${JSON.stringify(flags)}`);
+});
+
+check('parseFlags returns a structured error (never throws) for a flag missing its value', () => {
+  const { error } = parseFlags(['--id']);
+  assert(error && error.field === 'id' && /requires a value/.test(error.reason), `error: ${JSON.stringify(error)}`);
+});
+
+check('parseFlags returns a structured error for a stray non-flag argument', () => {
+  const { error } = parseFlags(['not-a-flag']);
+  assert(error && /unexpected argument/.test(error.reason), `error: ${JSON.stringify(error)}`);
+});
+
+check("parseFlags supports the --name=value form for any flag, taking precedence over the boolean-alone default", () => {
+  const { flags } = parseFlags(['--id=demo-1', '--behavior-change=false']);
+  assert(flags.id === 'demo-1', 'id should read from the = form');
+  assert(flags['behavior-change'] === 'false', '= form overrides flag-alone boolean handling, matching the original CLIs\' own eq-first parsing order');
+});
+
+check('nearestCommandName suggests the closest real command for a typo', () => {
+  assert(nearestCommandName('cells.lst') === 'cells.list', `got ${nearestCommandName('cells.lst')}`);
+  assert(nearestCommandName('staus') === 'status', `got ${nearestCommandName('staus')}`);
+});
+
+check('deprecatedRedirect is null for a live (non-deprecated) registry entry', () => {
+  assert(deprecatedRedirect(entryByName('status')) === null, 'status.deprecated is null -> no redirect');
+});
+
+check('deprecatedRedirect returns a structured redirect naming use_instead for a synthetic deprecated entry, without executing anything', () => {
+  const fakeEntry = { name: 'cells.oldAction', deprecated: { since: '2026-01-01', use_instead: 'cells.newAction' } };
+  const redirect = deprecatedRedirect(fakeEntry);
+  assert(redirect && redirect.result.ok === false && redirect.result.deprecated === true, `redirect: ${JSON.stringify(redirect)}`);
+  assert(redirect.result.use_instead === 'cells.newAction', 'use_instead should name the replacement');
+  assert(/use "cells.newAction" instead/.test(redirect.text), `text: ${redirect.text}`);
+});
+
+check('computeManifestHash is deterministic and sensitive to content', () => {
+  const h1 = computeManifestHash();
+  const h2 = computeManifestHash();
+  assert(h1 === h2, 'the same registry content must hash the same');
+  const h3 = computeManifestHash([{ name: 'x' }], '1.0');
+  assert(h3 !== h1, 'different registry content must hash differently');
+});
+
+// ─── end-to-end: --help / --help --json (D3 tool-schema manifest) ─────────
+
+check('bee --help --json parses as valid JSON and lists every existing subcommand', () => {
+  const result = runBee(['--help', '--json']);
+  assert(result.status === 0, `exit ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  assert(manifest.schema_version === SCHEMA_VERSION, `schema_version: ${manifest.schema_version}`);
+  const names = new Set(manifest.commands.map((c) => c.name));
+  for (const entry of COMMAND_REGISTRY) {
+    assert(names.has(entry.name), `--help --json is missing "${entry.name}"`);
+  }
+  assert(manifest.commands.every((c) => !('helper' in c)), 'the public manifest must never leak the internal `helper` dispatch field');
+});
+
+check('bee --help renders non-empty prose naming known commands', () => {
+  const result = runBee(['--help']);
+  assert(result.status === 0, `exit ${result.status}: ${result.stderr}`);
+  assert(result.stdout.includes('bee cells ready'), `expected "bee cells ready" invoke text, got: ${result.stdout}`);
+});
+
+// ─── end-to-end parity: bee.mjs vs. the 4 existing entrypoints (D5) ────────
+
+check('bee status --json is byte-identical to bee_status.mjs --json (D5 parity)', () => {
+  const beeResult = runBee(['status', '--json']);
+  const origResult = runScript(BEE_STATUS, ['--json']);
+  assert(beeResult.status === 0 && origResult.status === 0, `exit codes: bee=${beeResult.status} orig=${origResult.status}`);
+  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
+});
+
+// ─── demo-2 fixture chain, driven entirely through the bee.mjs dispatcher ──
+
+check('bee cells add creates the demo-2 fixture cell used by the rest of this dispatcher chain', () => {
+  const cellFixture = {
+    id: 'demo-2',
+    feature: 'demo2',
+    title: 'Demo cell for bee.mjs dispatcher test',
+    lane: 'small',
+    action: 'Exercise every cells.* command through the bee.mjs dispatcher.',
+    verify: 'node -e "process.exit(0)"',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-demo-2.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = runBee(['cells', 'add', '--file', 'cell-demo-2.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(fs.existsSync(path.join(root2, '.bee', 'cells', 'demo-2.json')), 'demo-2 cell file should now exist');
+});
+
+check('bee cells list --json includes demo-2', () => {
+  const result = runBee(['cells', 'list', '--json']);
+  assert(result.status === 0, `exit ${result.status}`);
+  const cells = JSON.parse(result.stdout);
+  assert(cells.some((c) => c.id === 'demo-2'), `expected demo-2 in list, got ${result.stdout}`);
+});
+
+check('bee cells ready output is byte-identical to bee_cells.mjs ready output (parity, per D5) — verified by running both and diffing stdout', () => {
+  const beeResult = runBee(['cells', 'ready', '--json']);
+  const origResult = runScript(BEE_CELLS, ['ready', '--json']);
+  assert(beeResult.status === 0 && origResult.status === 0, `exit codes: bee=${beeResult.status} orig=${origResult.status}`);
+  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
+  assert(JSON.parse(beeResult.stdout).some((c) => c.id === 'demo-2'), 'demo-2 should be ready (open, no deps)');
+});
+
+check('bee cells ready (text form) is also byte-identical to bee_cells.mjs ready (text form)', () => {
+  const beeResult = runBee(['cells', 'ready']);
+  const origResult = runScript(BEE_CELLS, ['ready']);
+  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
+});
+
+check('bee cells show --id demo-2 --json returns the cell', () => {
+  const result = runBee(['cells', 'show', '--id', 'demo-2', '--json']);
+  assert(JSON.parse(result.stdout).id === 'demo-2', `expected demo-2, got ${result.stdout}`);
+});
+
+check('bee cells claim --id demo-2 --worker claims it', () => {
+  const result = runBee(['cells', 'claim', '--id', 'demo-2', '--worker', 'worker-test', '--json']);
+  assert(JSON.parse(result.stdout).status === 'claimed', `expected claimed, got ${result.stdout}`);
+});
+
+check('bee cells verify --passed true (explicit "true" argument, not a bare flag) records a passing verify', () => {
+  const result = runBee([
+    'cells', 'verify', '--id', 'demo-2', '--command', 'manual check', '--output', '0 failing', '--passed', 'true', '--json',
+  ]);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(JSON.parse(result.stdout).trace.verify_passed === true, `expected verify_passed true, got ${result.stdout}`);
+});
+
+check('bee cells cap --id demo-2 caps the cell', () => {
+  const result = runBee(['cells', 'cap', '--id', 'demo-2', '--outcome', 'dispatcher test cap', '--files', 'cell-demo-2.json', '--json']);
+  assert(JSON.parse(result.stdout).status === 'capped', `expected capped, got ${result.stdout}`);
+});
+
+check('bee cells judge --id demo-2 reports no frozen-judge hits', () => {
+  const result = runBee(['cells', 'judge', '--id', 'demo-2', '--json']);
+  assert(JSON.parse(result.stdout).hits.length === 0, `expected no hits, got ${result.stdout}`);
+});
+
+check('bee cells tier --id demo-2 --tier generation sets the tier', () => {
+  const result = runBee(['cells', 'tier', '--id', 'demo-2', '--tier', 'generation', '--json']);
+  assert(JSON.parse(result.stdout).tier === 'generation', `expected generation, got ${result.stdout}`);
+});
+
+check('bee cells block --id demo-2 --reason blocks the cell', () => {
+  const result = runBee(['cells', 'block', '--id', 'demo-2', '--reason', 'dispatcher test block', '--json']);
+  assert(JSON.parse(result.stdout).status === 'blocked', `expected blocked, got ${result.stdout}`);
+});
+
+check('bee cells drop --id demo-2 --reason drops the cell', () => {
+  const result = runBee(['cells', 'drop', '--id', 'demo-2', '--reason', 'dispatcher test drop', '--json']);
+  assert(JSON.parse(result.stdout).status === 'dropped', `expected dropped, got ${result.stdout}`);
+});
+
+// ─── reservations, through the dispatcher ──────────────────────────────────
+
+check('bee reservations reserve/list/release/sweep round-trip through the dispatcher', () => {
+  const reserveResult = runBee(['reservations', 'reserve', '--agent', 'worker-test', '--cell', 'demo-2', '--path', 'src/dispatcher-test.js', '--json']);
+  assert(JSON.parse(reserveResult.stdout).ok === true, `reserve failed: ${reserveResult.stdout}`);
+
+  const listResult = runBee(['reservations', 'list', '--active-only', '--json']);
+  assert(listResult.stdout.includes('worker-test'), `expected worker-test in list, got ${listResult.stdout}`);
+
+  const releaseResult = runBee(['reservations', 'release', '--agent', 'worker-test', '--json']);
+  assert(JSON.parse(releaseResult.stdout).released >= 1, `expected at least 1 released, got ${releaseResult.stdout}`);
+
+  const sweepResult = runBee(['reservations', 'sweep', '--json']);
+  assert(typeof JSON.parse(sweepResult.stdout).released === 'number', `expected a released count, got ${sweepResult.stdout}`);
+});
+
+check('bee reservations list --active-only is byte-identical to bee_reservations.mjs list --active-only (parity, per D5)', () => {
+  const beeResult = runBee(['reservations', 'list', '--active-only', '--json']);
+  const origResult = runScript(BEE_RESERVATIONS, ['list', '--active-only', '--json']);
+  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
+});
+
+check('bee reservations reserve returns a CONFLICT (exit 1) when another agent already holds an overlapping path', () => {
+  const first = runBee(['reservations', 'reserve', '--agent', 'agent-a', '--cell', 'demo-2', '--path', 'src/conflict-test.js', '--json']);
+  assert(JSON.parse(first.stdout).ok === true, `first reserve should succeed: ${first.stdout}`);
+  const second = runBee(['reservations', 'reserve', '--agent', 'agent-b', '--cell', 'demo-2', '--path', 'src/conflict-test.js', '--json']);
+  assert(second.status === 1, `expected exit 1 on conflict, got ${second.status}`);
+  assert(JSON.parse(second.stdout).ok === false, `expected ok:false on conflict, got ${second.stdout}`);
+});
+
+// ─── decisions, through the dispatcher ─────────────────────────────────────
+
+check('bee decisions log/active/search round-trip through the dispatcher', () => {
+  const logResult = runBee(['decisions', 'log', '--decision', 'Use the unified bee.mjs dispatcher', '--rationale', 'Single discoverable CLI surface', '--json']);
+  assert(typeof JSON.parse(logResult.stdout).id === 'string', `log failed: ${logResult.stdout}`);
+
+  const activeResult = runBee(['decisions', 'active', '--recent', '5', '--json']);
+  assert(JSON.parse(activeResult.stdout).decisions.length >= 1, `expected at least 1 active decision, got ${activeResult.stdout}`);
+
+  const searchResult = runBee(['decisions', 'search', '--text', 'dispatcher', '--json']);
+  assert(JSON.parse(searchResult.stdout).decisions.length >= 1, `expected the logged decision to match, got ${searchResult.stdout}`);
+});
+
+check('bee decisions active is byte-identical to bee_decisions.mjs active (parity, per D5)', () => {
+  const beeResult = runBee(['decisions', 'active', '--recent', '5', '--json']);
+  const origResult = runScript(BEE_DECISIONS, ['active', '--recent', '5', '--json']);
+  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
+});
+
+// ─── malformed input / unknown command (never a bare not-found or a stack trace) ─
+
+check('a call missing a required parameter returns a structured {ok:false,error} shape, never a stack trace', () => {
+  const result = runBee(['cells', 'show', '--json']);
+  assert(result.status === 1, `expected exit 1, got ${result.status}`);
+  const parsed = JSON.parse(result.stdout);
+  assert(parsed.ok === false && parsed.error && parsed.error.field === 'id', `expected structured id-missing error, got ${result.stdout}`);
+  assert(!result.stdout.includes('at Object.'), 'a stack trace must never reach stdout');
+});
+
+check('an unrecognized command returns a nearest-match suggestion, not a bare not-found', () => {
+  const result = runBee(['cells', 'lst', '--json']);
+  assert(result.status === 1, `expected exit 1, got ${result.status}`);
+  const parsed = JSON.parse(result.stdout);
+  assert(parsed.ok === false && parsed.suggestion === 'cells.list', `expected suggestion "cells.list", got ${result.stdout}`);
+});
+
+check('a call shaped like a bee.mjs invocation with an unregistered command is denied with a structured error, never executed', () => {
+  const result = runBee(['not', 'a-real-command', '--json']);
+  assert(result.status === 1, `expected exit 1, got ${result.status}`);
+  assert(JSON.parse(result.stdout).ok === false, `expected ok:false, got ${result.stdout}`);
+});
+
+// ─── manifest content-hash drift ───────────────────────────────────────────
+
+check('a registry content change is reflected as manifest_changed:true on the next call', () => {
+  // Baseline call: persists the real hash to .bee/manifest-hash.json, and the
+  // steady-state response must carry no extra field (byte-parity requirement).
+  const baseline = runBee(['status', '--json']);
+  assert(baseline.status === 0, `baseline exit ${baseline.status}`);
+  assert(!('manifest_changed' in JSON.parse(baseline.stdout)), 'steady state must never carry manifest_changed (byte-parity requirement)');
+
+  // Simulate drift by corrupting the persisted hash directly — this cell
+  // never edits the real command-registry.mjs (out of its file scope).
+  const hashFile = path.join(root2, '.bee', 'manifest-hash.json');
+  writeJsonAtomic(hashFile, { hash: 'deadbeef', checked_at: new Date().toISOString() });
+
+  const drifted = runBee(['status', '--json']);
+  const driftedBody = JSON.parse(drifted.stdout);
+  assert(driftedBody.manifest_changed === true, `expected manifest_changed:true, got ${drifted.stdout}`);
+  assert(typeof driftedBody.manifest_changed_hint === 'string' && driftedBody.manifest_changed_hint.length > 0, 'a one-line hint must accompany manifest_changed');
+  assert(driftedBody.result && driftedBody.result.phase === 'swarming', 'the underlying result must still be present alongside the drift signal');
+
+  // The drifted call re-persists the real hash, so the very next call is steady again.
+  const settled = runBee(['status', '--json']);
+  assert(!('manifest_changed' in JSON.parse(settled.stdout)), 'the hash should self-heal to steady state after one drift report');
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────
