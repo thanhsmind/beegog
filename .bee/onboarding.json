@@ -16,6 +16,7 @@
       "backlog.mjs": "849881ecdf0a9431c15c81a61a08a734292c871fdb5b616e168396417e6014fd",
       "capture.mjs": "6ce4fa5947a015f156468aa5bc40e264a9d7a170744e8700de1d90b969b3908c",
       "cells.mjs": "852836af6411e654a96f5e03bc5b007d31df95194a44fadc611d5704e3aadf6a",
+      "command-registry.mjs": "b8a781296873b2b5a42abf85ba503159b5890b634bf43e214c6df87740731f7f",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
@@ -23,7 +24,8 @@
       "guards.mjs": "7c5c0669a0482e3640edb365cc68b33ec59e14a5524762947f80ad12496f8f9d",
       "inject.mjs": "0763fa9856ed15827ed7c62d34fb66129a63722dcd554bf485da61ff0906fae8",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
-      "state.mjs": "f55d1ffc23586a5976cd93f4036a05c6625d20e9bab15a8e5be24c6626a0d70d"
+      "state.mjs": "f55d1ffc23586a5976cd93f4036a05c6625d20e9bab15a8e5be24c6626a0d70d",
+      "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
     },
     "repo_hooks": {
       "bee-session-init.mjs": "553fb75679c922e9eb08a1dd49e51f9168950007041c74b8e23c866ca8078b6c",
@@ -36,5 +38,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-11T06:50:48.997Z"
+  "updated_at": "2026-07-11T15:46:48.060Z"
 }

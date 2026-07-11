@@ -1,0 +1,75 @@
+{
+  "id": "harness-integration-3",
+  "feature": "harness-integration",
+  "title": "Extend bee-write-guard.mjs with CLI-shape validation (4th check)",
+  "lane": "high-risk",
+  "status": "capped",
+  "deps": [
+    "harness-integration-1"
+  ],
+  "decisions": [
+    "D4"
+  ],
+  "files": [
+    "hooks/bee-write-guard.mjs",
+    "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
+  ],
+  "read_first": [
+    "hooks/bee-write-guard.mjs",
+    ".bee/bin/lib/guards.mjs",
+    "skills/bee-hive/templates/lib/validate-args.mjs",
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "skills/bee-hive/scripts/onboard_bee.mjs"
+  ],
+  "action": "PREREQUISITE (validating iteration 1, Blocker 4): hooks/bee-write-guard.mjs imports shared lib modules dynamically from the VENDORED copy (.bee/bin/lib/<name>, via libModuleUrl), never from the template tree directly - so before writing or testing this cell's change, run `node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply` once to vendor cell harness-integration-1's validate-args.mjs into .bee/bin/lib/ (this is generic, automatic, and safe to re-run per cell harness-integration-4's own finding - no code change needed for the vendoring itself). Then add a 4th check to bee-write-guard.mjs's existing three-check pass (gate guard, reservation guard, privacy/scout guard): when a Bash tool call is shaped like a bee.mjs or legacy bee_*.mjs invocation, parse its command+args and run them through validate-args.mjs (imported the same way main() already imports guards.mjs, via libModuleUrl) against the registry from cell harness-integration-1; on mismatch, deny (exit 2) with the same structured correction the dispatcher itself would give, before the shell executes it. CRITICAL (validating iteration 1, Blocker 3): main()'s existing checks all share ONE try/catch and ONE `denial` variable - the new check's logic must be written so it can NEVER overwrite or discard a denial already set by checks 1-3, whether via an early unconditional assignment, a wrong early-return, or an uncaught exception in the new Bash-parsing logic (which the shared catch would turn into a silent fail-open for ALL FOUR checks, not just the new one). Write skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs as an end-to-end integration test that spawns hooks/bee-write-guard.mjs itself (not just guards.mjs's exported functions - test_lib.mjs's existing tests cannot reach this file's own dispatch logic) with crafted stdin JSON payloads, asserting: (a) a malformed bee.mjs-shaped call is denied, (b) the three existing checks still deny/allow exactly as before this cell for their own test cases, (c) a case where the new check's parsing logic is forced to throw does NOT erase a denial already computed by an existing check in the same call. This check must be strictly additive - appended after the three existing checks, never modifying their logic (per D4, the highest-risk file in this slice). Capture the before-state (a malformed bee.mjs-shaped call is NOT denied by write-guard today, only gate/reservation/privacy checks apply) as this cell's red_failure_evidence at cap time.",
+  "must_haves": {
+    "truths": [
+      "a malformed bee.mjs-shaped Bash call is denied before it executes, with a structured correction on stderr",
+      "the existing gate guard, reservation guard, and privacy/scout guard behave exactly as before this cell - zero regression, proven by test_bee_write_guard_hook.mjs spawning the actual hook script, not just by re-running test_lib.mjs",
+      "the new check's logic never overwrites or discards a denial already computed by checks 1-3 in the same invocation - proven by a test that forces the new check to throw while a prior check has already denied, asserting the original deny still wins"
+    ],
+    "artifacts": [
+      {
+        "path": "hooks/bee-write-guard.mjs",
+        "substantive": "contains the new 4th check as an isolated, additive block that cannot clobber an existing denial"
+      },
+      {
+        "path": "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
+        "substantive": "spawns the real hook script with crafted stdin, not a stub"
+      }
+    ],
+    "key_links": [
+      "the new check imports validate-args.mjs the same way (libModuleUrl against the vendored .bee/bin/lib/ copy) main() already imports guards.mjs"
+    ],
+    "notes": [
+      "The prerequisite onboarding-vendoring step touches .bee/bin/lib/validate-args.mjs and .bee/onboarding.json (both git-tracked, generated/managed files) outside this cell's declared `files` array - record both in trace.files_changed at cap time for disclosure completeness, even though they are not hand-edited (validating iteration 2, informational note)."
+    ],
+    "prohibitions": [
+      "No change whatsoever to the existing gate-guard, reservation-guard, or privacy/scout-guard logic in this file - this is the single highest-risk prohibition in the entire feature"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
+  "trace": {
+    "worker": "worker-w3",
+    "outcome": "Extended hooks/bee-write-guard.mjs with an additive 4th check (CLI-shape validation, D4): a Bash call shaped like a bee.mjs/bee_*.mjs invocation is parsed and validated against the vendored command-registry.mjs/validate-args.mjs; on schema mismatch it denies with a structured correction. The new check runs unconditionally for Bash calls but can only ASSIGN denial when none exists yet, and its own try/catch is separate from the shared outer catch, so it can never overwrite or discard a denial from checks 1-3 even when forced to throw. Wrote test_bee_write_guard_hook.mjs (15 checks) spawning the real hook script end-to-end: malformed-call denial, well-formed-call allow, all three pre-existing checks' deny/allow paths unchanged, and the forced-throw-preserves-prior-denial scenario. Ran the onboarding-vendoring prerequisite first (validating iteration 1 Blocker 4) to populate .bee/bin/lib/validate-args.mjs + command-registry.mjs. Zero regression: test_lib.mjs 124/124 and test_bee_cli.mjs 32/32 still passing.",
+    "files_changed": [
+      "hooks/bee-write-guard.mjs",
+      "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
+      ".bee/bin/lib/validate-args.mjs",
+      ".bee/bin/lib/command-registry.mjs",
+      ".bee/onboarding.json"
+    ],
+    "deviations": [],
+    "friction": null,
+    "capped_at": "2026-07-11T15:55:16.026Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\n    \"skills/bee-hive/templates/tests/test_lib.mjs\",\n    \"skills/bee-hive/templates/tests/test_bee_cli.mjs\"\n  ],\n  \"tests_added_or_changed\": [\n    \"skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs (new, 15 cases: CLI-shape malformed/well-formed/unrecognized, gate guard idle+gated deny/allow, reservation guard deny/allow, privacy+scout guard deny, plain read allow, forced-throw-preserves-prior-denial, forced-throw-fails-open-with-no-prior-denial)\"\n  ],\n  \"red_failure_evidence\": \"Ran the pre-change hooks/bee-write-guard.mjs (git show HEAD:hooks/bee-write-guard.mjs, before this cell's edit) against the same malformed call ('node .bee/bin/bee_cells.mjs show', missing required --id) in an isolated fixture repo: exit status 0, empty stderr — the call was NOT denied before this cell (only gate/reservation/privacy checks existed). After the change, the identical call is denied: exit status 2, stderr 'bee CLI-shape guard: ... cells.show ... field: id ...'.\",\n  \"verification_run\": \"node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs -> test_lib.mjs 124 passed/0 failed, test_bee_write_guard_hook.mjs 15 passed/0 failed, exit 0. Also re-ran test_bee_cli.mjs standalone: 32 passed/0 failed (harness-integration-1 regression check).\",\n  \"deliberate_exceptions\": []\n}\n",
+    "verify_output": "test_lib.mjs: 124 passed, 0 failed; test_bee_write_guard_hook.mjs: 15 passed, 0 failed; exit 0",
+    "verify_passed": true,
+    "claimed_at": "2026-07-11T15:46:16.820Z",
+    "verify_command": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
+    "verified_at": "2026-07-11T15:55:01.794Z"
+  },
+  "tier": "ceiling"
+}
