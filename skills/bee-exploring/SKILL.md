@@ -68,14 +68,9 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
    - **Fresh-eyes review:** spawn one reviewer with no conversation history (slot: `review`, decision 0021 — default opus on Claude, falls back to generation) — **in the background where the runtime supports it** (decision 0017): keep assembling CONTEXT.md, keep talking to the user; the review blocks nothing until Gate 1. Collect the verdict before presenting the gate — Gate 1 is never presented with the review still outstanding. It checks completeness, contradictions, vague decisions, missing D-IDs, and blockers. Fix findings and re-review — max two loops, then present remaining doubts to the user.
 
 6. **State And Handoff**
-   - Update `.bee/state.json`:
-     ```json
-     {
-       "phase": "exploring-complete",
-       "feature": "<feature>",
-       "summary": "Exploring complete. CONTEXT.md is ready for planning.",
-       "next_action": "Gate 1, then invoke bee-planning."
-     }
+   - Update state:
+     ```
+     node .bee/bin/bee_state.mjs set --phase exploring-complete --feature "<feature>" --summary "Exploring complete. CONTEXT.md is ready for planning." --next-action "Gate 1, then invoke bee-planning."
      ```
    - Present **Gate 1** per the Gate Presentation Contract (bee-hive routing reference): plain-language layer in chat — what we decided / why trustworthy / cost if wrong / what you are deciding — in the user's language, CONTEXT.md linked not pasted; then verbatim: "Decisions locked. Approve CONTEXT.md before planning?"
    - CONTEXT.md is the source of truth for every downstream agent; decision IDs are stable and cited, never reinterpreted.

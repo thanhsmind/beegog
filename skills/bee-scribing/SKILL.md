@@ -109,7 +109,7 @@ Before finishing, re-read the spec with the Pointers section covered and ask: co
 
 ## 8. Update State
 
-Record the scribing run in `.bee/state.json` under `last_scribing_run` with `feature`, `date`, an **ISO-precise `at` timestamp** (e.g. `2026-07-09T14:03:00Z`), `areas_synced`, and `next_action` (plus top-level `phase`/`next_action`). The `at` stamp is what clears **scribing debt** (decision 0011): the harness counts `behavior_change` cells capped *after* it, so a missing or day-only stamp leaves just-synced cells still showing as debt. No `behavior_change` cells and nothing to capture → still record the run ("scribing: no sync needed", current `at`) and hand off, so the debt signal resets.
+Record the scribing run: `node .bee/bin/bee_state.mjs scribing-run --feature <feature> --areas "<a,b>" --next-action "<next action>"`. This stamps `last_scribing_run` (`feature`, `date`, an **ISO-precise `at` timestamp**, `areas_synced`, `next_action`) and mirrors `next_action` plus advances `phase` to `compounding` at the top level. The `at` stamp is what clears **scribing debt** (decision 0011): the harness counts `behavior_change` cells capped *after* it, so a missing or day-only stamp leaves just-synced cells still showing as debt. No `behavior_change` cells and nothing to capture → still run it (`--areas "none"`, `--next-action` reflecting "scribing: no sync needed") so the debt signal resets.
 
 ## Hard Gates
 

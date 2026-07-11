@@ -76,7 +76,7 @@ Log choices future planning must honor. Supersede outdated decisions (`bee_decis
 
 ## 7. File Unresolved Friction
 
-Unresolved friction from cell traces or the session → `.bee/backlog.jsonl` entries with a predicted impact, so `bee-grooming` can hunt them later. Entry format in the reference.
+Unresolved friction from cell traces or the session → `node .bee/bin/bee_backlog.mjs add --type friction --severity <P1|P2|P3> --layer <layer> --title "<friction>" --detail "<predicted impact>" --feature <feature>`, so `bee-grooming` can hunt them later. Field guidance in the reference.
 
 ## 8. Refresh the Feedback Digest (D1 — warn, never block)
 
@@ -96,7 +96,7 @@ This holds **regardless of whether you recognize the error**. An unfamiliar, nev
 
 ## 9. Update State
 
-Record the completed compounding run in `.bee/state.json` (phase, learnings file path, promotion count, next_action).
+Record the completed compounding run: `node .bee/bin/bee_state.mjs set --phase compounding-complete --next-action "<next action>" --summary "learnings: <file path>; promoted: <count>"`.
 
 ## Hard Gates
 
