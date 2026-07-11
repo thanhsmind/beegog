@@ -32,6 +32,20 @@ export const GATE_ALLOWED_PREFIXES = ['.bee/', 'docs/', '.spikes/', 'plans/', 'A
 
 const GATED_PHASES = new Set(['exploring', 'planning', 'validating']);
 
+// Direct hand-edits to these two files are denied in every phase, first-hit,
+// before any other checkWrite logic (including GATE_ALLOWED_PREFIXES —
+// `.bee/` is an allowed prefix today, so this precedence is mandatory, not
+// incidental). Both files now have a validating, atomic-write CLI
+// (cli-mutations plan.md: bee_state.mjs, bee_backlog.mjs) — a direct
+// Edit/Write/Bash-redirect bypasses that validation and reintroduces the
+// schema-drift class the CLIs exist to close. This does not touch the CLIs'
+// own writes: hooks see tool calls (Edit/Write/MultiEdit/Bash), never the
+// bee_state.mjs / bee_backlog.mjs child process's internal file I/O.
+const DIRECT_EDIT_DENY = {
+  '.bee/state.json': 'bee_state.mjs set/gate/worker/scribing-run',
+  '.bee/backlog.jsonl': 'bee_backlog.mjs add',
+};
+
 function normalizeRel(relPath) {
   return String(relPath || '')
     .replace(/\\/g, '/')
@@ -50,6 +64,11 @@ function underAllowedPrefix(relPath) {
 
 /**
  * Gate + reservation write check.
+ * - Direct-edit deny (first hit, every phase): `.bee/state.json` and
+ *   `.bee/backlog.jsonl` must go through their CLI (bee_state.mjs /
+ *   bee_backlog.mjs), never a direct Edit/Write/Bash-redirect. Checked before
+ *   phase logic and before GATE_ALLOWED_PREFIXES, since `.bee/` is itself an
+ *   allowed prefix in gated phases.
  * - Idle (intake gate): no bee work is active, so source writes are blocked
  *   until the request is routed through bee-hive. Repository-harness lesson:
  *   a default-open first move is the hole every ad-hoc edit slips through.
@@ -61,6 +80,19 @@ function underAllowedPrefix(relPath) {
  */
 export function checkWrite(root, state, relPath, agentName = null) {
   const normalized = normalizeRel(relPath);
+
+  const directEditVerb = DIRECT_EDIT_DENY[normalized];
+  if (directEditVerb) {
+    return {
+      allow: false,
+      kind: 'direct-edit',
+      reason:
+        `bee direct-edit guard: "${normalized}" is CLI-owned — direct edits are blocked in every phase. ` +
+        'Hand-edited state files reintroduce schema drift (the exact class the CLI validates away). ' +
+        `FIX: use ${directEditVerb} instead of editing this file directly.`,
+    };
+  }
+
   const phase = state?.phase || 'idle';
 
   if (phase === 'idle') {
