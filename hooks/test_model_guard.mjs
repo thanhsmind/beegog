@@ -74,6 +74,23 @@ function buildNoRepoFixture() {
   return mkFixture("bee-model-guard-norepo-");
 }
 
+// A fixture whose vendored state.mjs throws on import (module-level throw),
+// exercising the P1-2 catch path that a working fixture can never reach.
+function buildThrowingStateFixture() {
+  const root = mkFixture("bee-model-guard-throwstate-");
+  fs.mkdirSync(path.join(root, ".bee"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".bee", "onboarding.json"), "{}\n");
+  copyLib(root);
+  if (fs.existsSync(REAL_CONFIG_PATH)) {
+    fs.copyFileSync(REAL_CONFIG_PATH, path.join(root, ".bee", "config.json"));
+  }
+  fs.writeFileSync(
+    path.join(root, ".bee", "bin", "lib", "state.mjs"),
+    "throw new Error('boom: fixture state.mjs deliberately throws on import');\n",
+  );
+  return root;
+}
+
 // --- hook invocation -----------------------------------------------------
 
 function runHookPayload(payload, cwd) {
@@ -114,9 +131,11 @@ async function main() {
   const enabledRoot = buildEnabledFixture();
   const disabledRoot = buildDisabledFixture();
   const noRepoRoot = buildNoRepoFixture();
-  process.stdout.write(`enabled fixture:  ${enabledRoot}\n`);
-  process.stdout.write(`disabled fixture: ${disabledRoot}\n`);
-  process.stdout.write(`no-repo fixture:  ${noRepoRoot}\n`);
+  const throwStateRoot = buildThrowingStateFixture();
+  process.stdout.write(`enabled fixture:      ${enabledRoot}\n`);
+  process.stdout.write(`disabled fixture:     ${disabledRoot}\n`);
+  process.stdout.write(`no-repo fixture:      ${noRepoRoot}\n`);
+  process.stdout.write(`throw-state fixture:  ${throwStateRoot}\n`);
 
   const expectedGenerationModel = await computeExpectedGenerationModel(enabledRoot);
   process.stdout.write(`expected generation model: ${expectedGenerationModel}\n`);
@@ -185,19 +204,44 @@ async function main() {
   );
   check(r5.status === 0, "row5: case-insensitive marker is allowed", `status=${r5.status} stderr=${r5.stderr}`);
 
-  // --- 6. marker ending exactly at prompt char 500 -> exit 0 --------------
+  // --- 6. marker at head of prompt with leading whitespace -> exit 0 -------
+  // (P1-1: leading whitespace is allowed before the anchored marker)
   const marker = "[bee-tier: ceiling]";
-  const pad500 = "a".repeat(500 - marker.length);
-  const promptAt500 = pad500 + marker;
-  check(promptAt500.length === 500, "row6 setup: prompt is exactly 500 chars");
-  const r6 = runHookPayload({ tool_name: "Agent", tool_input: { prompt: promptAt500 } }, enabledRoot);
-  check(r6.status === 0, "row6: marker ending at char 500 is allowed", `status=${r6.status} stderr=${r6.stderr}`);
+  const r6 = runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: `   ${marker} do the thing, with lots of trailing detail after it too` } },
+    enabledRoot,
+  );
+  check(r6.status === 0, "row6: head-of-prompt marker with leading whitespace is allowed",
+    `status=${r6.status} stderr=${r6.stderr}`);
 
-  // --- 7. marker starting after char 500 -> exit 2 -------------------------
-  const pad600 = "a".repeat(600);
-  const promptAfter500 = pad600 + marker;
-  const r7 = runHookPayload({ tool_name: "Agent", tool_input: { prompt: promptAfter500 } }, enabledRoot);
-  check(r7.status === 2, "row7: marker starting after char 500 is denied", `status=${r7.status} stderr=${r7.stderr}`);
+  // --- 7. marker embedded after other prompt text (e.g. char 100) -> exit 2
+  // (P1-1 CONFIRMED red: this was previously ALLOWED via the unanchored
+  // 500-char scan window; the marker must anchor to the head of the prompt)
+  const pad100 = "x".repeat(100);
+  const promptEmbedded = `${pad100} ${marker} rest of prompt`;
+  const r7 = runHookPayload({ tool_name: "Agent", tool_input: { prompt: promptEmbedded } }, enabledRoot);
+  check(r7.status === 2, "row7: marker embedded after other prompt text (char ~100) is denied",
+    `status=${r7.status} stderr=${r7.stderr}`);
+
+  // --- 7b. marker embedded mid-description (not at the start) -> exit 2 ---
+  // (P1-1 CONFIRMED red: this was previously ALLOWED)
+  const r7b = runHookPayload(
+    { tool_name: "Agent", tool_input: { description: `some description text before ${marker} marker` } },
+    enabledRoot,
+  );
+  check(r7b.status === 2, "row7b: marker mid-description (not at the start) is denied",
+    `status=${r7b.status} stderr=${r7b.stderr}`);
+
+  // --- 7c. marker at start of a very long prompt (no window cutoff) -> exit 0
+  // (P1-1: proves the window logic is truly gone — a head-anchored marker
+  // stays valid no matter how long the rest of the prompt is)
+  const longTail = "y".repeat(2000);
+  const r7c = runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: `${marker} ${longTail}` } },
+    enabledRoot,
+  );
+  check(r7c.status === 0, "row7c: head-of-prompt marker followed by a long tail is allowed",
+    `status=${r7c.status} stderr=${r7c.stderr}`);
 
   // --- 8. tool_input absent -> exit 0, empty stderr ------------------------
   const r8 = runHookPayload({ tool_name: "Agent" }, enabledRoot);
@@ -231,6 +275,80 @@ async function main() {
   );
   check(r13.status === 0, "row13: model-guard disabled via config toggle is allowed",
     `status=${r13.status} stderr=${r13.stderr}`);
+
+  // --- 15. null top-level payload -> exit 0, empty stderr ------------------
+  // (P1-2 CONFIRMED red: `echo null | node hooks/bee-model-guard.mjs` crashed
+  // with an uncaught TypeError on `payload.cwd`, exit 1)
+  const r15 = runHookRaw("null");
+  check(r15.status === 0, "row15: null top-level payload is allowed (fail-open)",
+    `status=${r15.status} stderr=${r15.stderr}`);
+  check(r15.stderr === "", "row15: null top-level payload produces empty stderr", JSON.stringify(r15.stderr));
+
+  // --- 16. array top-level payload -> exit 0, empty stderr ------------------
+  const r16 = runHookRaw("[]");
+  check(r16.status === 0, "row16: array top-level payload is allowed (fail-open)",
+    `status=${r16.status} stderr=${r16.stderr}`);
+  check(r16.stderr === "", "row16: array top-level payload produces empty stderr", JSON.stringify(r16.stderr));
+
+  // --- 17. cwd as a non-string (object) -> exit 0, dispatch still evaluated
+  // via the process.cwd() fallback (P1-2: normalize cwd before ANY use, never
+  // let a non-string reach findRepoRoot/path.resolve) -----------------------
+  const r17 = runHookRaw(
+    JSON.stringify({ tool_name: "Agent", cwd: { not: "a string" }, tool_input: { model: "sonnet" } }),
+  );
+  check(
+    r17.status === 0,
+    "row17: cwd as an object falls back to process.cwd() and the dispatch is still evaluated",
+    `status=${r17.status} stderr=${r17.stderr}`,
+  );
+
+  // --- 18. vendored state.mjs throws on import -> exit 0, empty stderr, one
+  // parseable model-guard crash line in that fixture's hooks.jsonl (P1-2) ---
+  const r18 = runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "no marker, no model" } },
+    throwStateRoot,
+  );
+  check(r18.status === 0, "row18: throwing state.mjs fail-opens (exit 0)", `status=${r18.status} stderr=${r18.stderr}`);
+  check(r18.stderr === "", "row18: throwing state.mjs produces empty stderr", JSON.stringify(r18.stderr));
+  const throwLog = path.join(throwStateRoot, ".bee", "logs", "hooks.jsonl");
+  const throwEvent = readLastJsonl(throwLog);
+  check(!!throwEvent, "row18: a crash line was appended to that fixture's hooks.jsonl", String(throwEvent));
+  check(throwEvent && throwEvent.hook === "model-guard", "row18: crash line's hook is model-guard",
+    JSON.stringify(throwEvent));
+  check(
+    throwEvent && typeof throwEvent.error === "string" && throwEvent.error.includes("boom"),
+    "row18: crash line carries the underlying error",
+    JSON.stringify(throwEvent),
+  );
+
+  // --- 19+. table-drive the tool-name dimension (P1-3): DISPATCH_TOOLS covers
+  // both "Agent" and "Task", but every row above only ever exercised "Agent" —
+  // a refactor dropping Task would stay green. Run bare-deny + model-allow +
+  // anchored-marker-allow for BOTH names. ------------------------------------
+  for (const toolName of ["Agent", "Task"]) {
+    const bare = runHookPayload(
+      { tool_name: toolName, tool_input: { prompt: "implement the widget with no tier given" } },
+      enabledRoot,
+    );
+    check(bare.status === 2, `row-table[${toolName}]: bare dispatch is denied (exit 2)`,
+      `status=${bare.status} stderr=${bare.stderr}`);
+    check(
+      bare.stderr.includes("bee-tier") && bare.stderr.includes("FIX"),
+      `row-table[${toolName}]: deny stderr has bee-tier + FIX`,
+      bare.stderr,
+    );
+
+    const withModel = runHookPayload({ tool_name: toolName, tool_input: { model: "sonnet" } }, enabledRoot);
+    check(withModel.status === 0, `row-table[${toolName}]: model param set is allowed`,
+      `status=${withModel.status} stderr=${withModel.stderr}`);
+
+    const withMarker = runHookPayload(
+      { tool_name: toolName, tool_input: { prompt: "[bee-tier: generation] do the thing" } },
+      enabledRoot,
+    );
+    check(withMarker.status === 0, `row-table[${toolName}]: anchored marker is allowed`,
+      `status=${withMarker.status} stderr=${withMarker.stderr}`);
+  }
 
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
