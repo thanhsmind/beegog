@@ -39,6 +39,7 @@ reservation-conflict.
 .bee/cells/<id>.json   one cell per file
 .bee/logs/hooks.jsonl  hook crash/audit log
 .bee/.inject-cache.json injection dedup state
+.bee/manifest-hash.json { hash, checked_at } — bee.mjs's persisted sha256 of {schema_version, COMMAND_REGISTRY}, for cross-invocation drift detection
 ```
 
 `state.json` default:
@@ -110,6 +111,14 @@ All functions are sync unless noted. `root` = absolute repo root path.
 - `activeDecisions(root, {recent=null})` — decide events not superseded/redacted, newest first.
 - `datamark(text)` — strip/neutralize backticks fences, role tags, control chars; wrap in `«…»`.
 
+### `command-registry.mjs` (harness-integration D3)
+- `SCHEMA_VERSION` — manifest schema version string (currently `'1.0'`).
+- `COMMAND_REGISTRY` — array of entries, one per subcommand across all 4 helpers: `{name, helper, invoke, description, parameters, examples, deprecated}`. `parameters` is JSON-Schema in the exact shape Claude Code's own tool definitions use (`{type:"object", properties, required}`). `helper` names which of the 4 template scripts implements the command — internal dispatch metadata, stripped before `bee.mjs --help --json` renders the public manifest. `examples[]` are literal, tested argument strings (`tests/test_bee_cli.mjs` runs every one against the real underlying helper).
+
+### `validate-args.mjs` (harness-integration D3/D4)
+- `isValidParameterSchema(schema)` → boolean — structural check that a `parameters` value is well-formed JSON-Schema in the D3 shape (object type, every `required` name present in `properties`, every property carrying a `type`).
+- `validate(commandEntry, parsedArgs={})` → `{ok:true}` or `{ok:false, error:{field, reason, command}}` — never throws. Checks every schema-required field is present, then that every present field's CLI-string value type-matches its schema `type` (CLI flags arrive as strings; a schema `type:"boolean"` accepts `"true"`/`"false"` as well as a native boolean). Shared by `bee.mjs` (dispatch-time validation) and `hooks/bee-write-guard.mjs`'s CLI-shape check (pre-execution validation of Bash calls, D4) — one validator, two call sites, never duplicated.
+
 ## Helper CLI surface (`skills/bee-hive/templates/*.mjs`)
 
 Thin argv wrappers over lib. All support `--json`. Non-zero exit + `{error}` JSON on failure.
@@ -135,6 +144,26 @@ bee_decisions.mjs log --decision D --rationale R [--alternatives A] [--scope S] 
                  | supersede --id UUID --decision D --rationale R
                  | redact --id UUID --reason R
                  | active [--recent N] | search --text T
+
+bee.mjs <group> [<action>] [--flags]   (harness-integration Phase 1: unified dispatcher, D2/D3/D5)
+  status [--json]
+  cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge> ... [--json]
+  reservations <reserve|release|list|sweep> ... [--json]
+  decisions <log|supersede|redact|active|search> ... [--json]
+  --help [--json]
+    Same subcommands as the 4 helpers above, one entrypoint; imports the SAME lib/*.mjs functions
+    those helpers already import (D5) — never imports, spawns, or edits the 4 files themselves, so
+    both surfaces stay valid permanently, side by side (not a migration).
+    --help --json emits {schema_version, commands:[{name, invoke, description, parameters, examples,
+    deprecated}]} — the same JSON-Schema tool-definition shape Claude Code's own tool/subagent surface
+    uses (D3); command-registry.mjs's internal `helper` dispatch field is stripped from this public view.
+    Manifest drift: a sha256 of {schema_version, COMMAND_REGISTRY} is persisted to
+    .bee/manifest-hash.json; when it differs from the prior persisted hash, every response gets an
+    additive manifest_changed:true + hint field (steady-state output is otherwise byte-identical to
+    the 4 original CLIs).
+    Unknown command → a Levenshtein nearest-match suggestion, never a bare not-found.
+    Deferred (D6): an MCP server wrapper and a mandatory every-session --help --json discovery call —
+    foundation-add without demonstrated need.
 
 bee_feedback.mjs digest [--out PATH] [--json]     (P18, evolving loop; decision 8cd4c84e / D2)
                  | count [--json]
@@ -181,7 +210,7 @@ Enforced invariants only — this section states no promise the code above does 
 |---|---|---|
 | `bee-session-init.mjs` | SessionStart `startup\|resume\|clear\|compact` | print `buildSessionPreamble` to stdout; exit 0 |
 | `bee-prompt-context.mjs` | UserPromptSubmit | `buildPromptReminder`; print only when `shouldInject(root,'prompt',hash)`; mark; exit 0 |
-| `bee-write-guard.mjs` | PreToolUse `Edit\|Write\|MultiEdit\|Bash\|Read\|Glob\|Grep` | parse stdin payload (`tool_name`, `tool_input`); for reads → `checkRead`; for writes/Bash → `checkWrite` (+`extractBashTargets`). Deny = **exit 2 with reason on stderr** (include marker text for privacy). Allow = exit 0 silent. |
+| `bee-write-guard.mjs` | PreToolUse `Edit\|Write\|MultiEdit\|Bash\|Read\|Glob\|Grep` | parse stdin payload (`tool_name`, `tool_input`); for reads → `checkRead`; for writes/Bash → `checkWrite` (+`extractBashTargets`); for Bash, an additive 4th check (D4, harness-integration) recognizes a call shaped like a `bee.mjs`/`bee_*.mjs` invocation and validates it against `command-registry.mjs`'s schema via `validate-args.mjs` before the shell executes it — malformed calls deny with a structured correction, unrecognized shapes fail open, and this check can only ever *assign* a denial (never overwrite one the other three checks already set). Deny = **exit 2 with reason on stderr** (include marker text for privacy). Allow = exit 0 silent. |
 | `bee-state-sync.mjs` | PostToolUse `TaskCreate\|TaskUpdate\|TodoWrite` + SubagentStop + Stop | refresh cell counts + last_activity into state.json; exit 0 |
 | `bee-chain-nudge.mjs` | SubagentStop | if state.workers lists this agent or phase=swarming → print nudge ("collect [STATUS], update cell, check reservations; when wave clean → next step"); phase=reviewing → reviewer-synthesis nudge; else silent |
 | `bee-session-close.mjs` | Stop | if phase not idle/compounding-complete and no HANDOFF → print warning listing claimed-uncapped cells + active reservations. If phase IS idle: decision-review nudge (v0.1.1) — when `git status` shows changed source files and no decision was logged in the last 6h, print a deduped (`shouldInject`) reminder to ask the user about recording a decision/learning. Never blocks; exit 0 |
