@@ -31,9 +31,10 @@
       "bee-write-guard.mjs": "731d83f7e83c294f3092ccd69f163cd564070f4c4c407885ebf0f3f014f7ecd0",
       "bee-state-sync.mjs": "e453dd036189a07c85e676836185138a82f72b74647a69f4e4585f941ae9f870",
       "bee-chain-nudge.mjs": "19fb72e383eacb42d5d4a5813f8399b7ea32bd870df44b91e3675cd5ead10d97",
-      "bee-session-close.mjs": "905d5c6dafb061d6f7180584c184f9fd2586593afc7364a03ffc528cc98d7e5b"
+      "bee-session-close.mjs": "905d5c6dafb061d6f7180584c184f9fd2586593afc7364a03ffc528cc98d7e5b",
+      "bee-model-guard.mjs": "fc622b1f7170a3663dd2601d258184dba004a55838c77bdd0775584a84a9769e"
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-11T03:14:27.438Z"
+  "updated_at": "2026-07-11T06:33:56.520Z"
 }

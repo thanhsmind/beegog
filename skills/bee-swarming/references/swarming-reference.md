@@ -36,7 +36,7 @@ Only the **cheaper** slots are configured, in `.bee/config.json` `models`, keyed
 
 A slot value may also be `{ "model": "opus", "effort": "xhigh" }` (P17 — per-agent reasoning effort, applied where the runtime supports it, silently recorded where it does not; levels: low/medium/high/xhigh/max) or `{ "kind": "cli", "command": "..." }` (external executor, section below — effort rides inside the command). The `review` slot is consumed by bee-reviewing's specialists, exploring's fresh-eyes, and validating's plan-checker/cell-reviewer; `null` review falls back to generation. **Copy-paste presets** (all-claude, tuned, GPT adversarial review, codex-implements, budget): `docs/model-presets.md` in the bee repo.
 
-- **ceiling** = the strongest model in play = **the session model itself** (no config entry). A ceiling cell inherits the session model — omit the `model` param. Keep it scarce: planning, integration, architecture, final review only. Touch it on every dispatch and the saving evaporates.
+- **ceiling** = the strongest model in play = **the session model itself** (no config entry). A ceiling cell inherits the session model — omit the `model` param **and** carry the `[bee-tier: ceiling]` marker, anchored to the first non-whitespace token of the prompt or the start of the description (decision 0023 — a marker anywhere else never counts). Keep it scarce: planning, integration, architecture, final review only. Touch it on every dispatch and the saving evaporates.
 - **generation** = the mid worker that runs the loops (implementation, test writing). Where the bulk of dispatches go.
 - **extraction** = cheapest capable (retrieval, mechanical edits).
 - A **null** tier means the runtime cannot switch per-agent models (Codex today) → state the tier in the worker prompt and enforce it as a read budget + output cap. Set real ids (e.g. `"generation": "gpt-5"`) only if your runtime supports per-agent selection.
@@ -47,9 +47,9 @@ Resolve a tier for the active runtime before spawning:
 node .bee/bin/bee_status.mjs --json    # .models shows both runtime maps
 ```
 
-Or in code: `resolveTier(root, tier, runtime)` from `lib/state.mjs` returns a typed dispatch — `{type:'inherit'}` (ceiling → omit the model param), `{type:'model', model}`, `{type:'budget'}` (prompt-enforced tier), or `{type:'cli', command}` (external executor, below). The legacy `modelForTier` still returns a model name or `null`. Two shapes, one map: keep the strongest model as `ceiling` and it stays scarce whether it is the orchestrator (fan-out) or a called-only advisor (rescue ladder).
+Or in code: `resolveTier(root, tier, runtime)` from `lib/state.mjs` returns a typed dispatch — `{type:'inherit'}` (ceiling → omit the model param and carry the anchored `[bee-tier: ceiling]` marker), `{type:'model', model}`, `{type:'budget'}` (prompt-enforced tier, anchored `[bee-tier: <tier>]` marker), or `{type:'cli', command}` (external executor, below). The legacy `modelForTier` still returns a model name or `null`. Two shapes, one map: keep the strongest model as `ceiling` and it stays scarce whether it is the orchestrator (fan-out) or a called-only advisor (rescue ladder).
 
-Every dispatch carries an explicit tier marker (decision 0023): `inherit` needs the [bee-tier: ceiling] marker in the prompt or description, and `budget` needs the matching [bee-tier: <tier>] marker stated alongside the budget in the prompt — a bare dispatch with neither the model param nor a marker is denied by the model-guard hook.
+Every dispatch carries an explicit tier marker (decision 0023, hardened per P1-1): `inherit` needs the [bee-tier: ceiling] marker anchored to the first non-whitespace token of the prompt, or the description must start with it; `budget` needs the matching [bee-tier: <tier>] marker anchored the same way, stated alongside the budget in the prompt. A marker anywhere else — embedded mid-prompt or mid-description — never satisfies the transport, and a bare dispatch with neither the model param nor an anchored marker is denied by the model-guard hook.
 
 ## External Executors — Multi-Provider Workers (P14, decision 0019)
 

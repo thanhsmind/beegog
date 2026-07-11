@@ -1,6 +1,6 @@
 # 0023 — Explicit-tier transport for Agent/Task dispatch
 
-- **Status:** active — owner-approved 2026-07-11 (gate bypass, standard lane); built in the model-tier-guard feature. Amends the transport clause of decision 0015 only.
+- **Status:** active — owner-approved 2026-07-11 (gate bypass, standard lane); built in the model-tier-guard feature. Amends the transport clause of decision 0015 only. **Hardened 2026-07-11** (review-findings.md P1-1): the marker transport is anchored to a reserved position, not a scan window — see the Decision section below.
 - **Date:** 2026-07-11
 - **Source:** owner observation 2026-07-11, made while dogfooding a live session: `bee_status` showed `tier_mix.ceilingShare = 0.4` with 21 untiered cells — the session was running on Fable (the expensive ceiling model) and many subagent dispatches were silently inheriting it instead of running on the configured generation tier. Root-cause review found the Agent tool inherits the parent model whenever `model` is omitted, and until now bee's ceiling transport (0015, `bee-swarming/SKILL.md:40`) was simply "inherit → omit the `model` param" — so *deliberate ceiling* and *forgot to set a tier* were indistinguishable at the call site, and every miss silently landed on the priciest model. Only the pipeline-core skills carried tier instructions; aux dispatches (planning research, grooming, scribing, xia) said nothing about model and inherited by default.
 - **Confidence:** 0.75 (the hook logic and skill wording are proven in-repo; the payload field names for the Agent/Task PreToolUse tool were confirmed by design plus a fail-open default, with a live-fire deny recorded as the Gate 4 UAT acceptance item).
@@ -10,7 +10,7 @@
 **Every Agent/Task dispatch must carry an explicit tier.** A dispatch expresses its tier one of two ways:
 
 1. the `model` param (`resolveTier {type:'model'}`), or
-2. a `[bee-tier: <tier>]` marker, case-insensitive, in the first 500 characters of the prompt or in the description.
+2. a `[bee-tier: <tier>]` marker, case-insensitive, **anchored to a reserved position**: the first non-whitespace token of the prompt, or the description beginning with it (leading whitespace allowed either way). A marker occurring anywhere else — embedded after other prompt text, or mid-description — never satisfies the transport; it would let quoted plan text, user content, or retrieved docs forge the tier with no real decision made. (Hardened 2026-07-11 per review-findings.md P1-1; the original first-500-characters scan window is removed.)
 
 Ceiling is expressed by **omitting** `model` **and** adding `[bee-tier: ceiling]` — that combination, not omission alone, is what now means "run this on the session model." Budget dispatches (external/runtime-can't-select-a-model calls) omit `model` and carry `[bee-tier: <tier>]` with the budget stated in the prompt, exactly as before. A **bare** dispatch — no `model` param and no marker — is an error: it is denied by the new `bee-model-guard.mjs` PreToolUse hook (matcher `Agent|Task`), which exits 2 with a FIX line naming the configured generation model, and fails open (exit 0) on any crash, missing state, or unrecognized payload shape.
 

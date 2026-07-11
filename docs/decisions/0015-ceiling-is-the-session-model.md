@@ -16,7 +16,7 @@
 }
 ```
 
-- `modelForTier(root, 'ceiling', …)` returns **null** = "inherit the session model" → swarming omits the Agent `model` param, so a ceiling cell runs on whatever the session runs on.
+- `modelForTier(root, 'ceiling', …)` returns **null** = "inherit the session model" → swarming omits the Agent `model` param **and** carries the `[bee-tier: ceiling]` marker (decision 0023), so a ceiling cell runs on whatever the session runs on.
 - `CONFIGURABLE_TIERS = ['extraction', 'generation']`; `normalizeModels` reads only those, and a stray `ceiling` key in a config file is ignored.
 - `MODEL_TIERS` still lists `ceiling` — cells can be **tiered** ceiling ("keep this on the session model, don't downgrade"), and the scarcity warning still counts them.
 
