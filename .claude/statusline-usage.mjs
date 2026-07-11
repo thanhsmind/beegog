@@ -16,7 +16,7 @@ const PRICES = [
   [/sonnet/, [3, 15]],
   [/haiku/, [1, 5]],
 ];
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 6;
 const priceFor = (model) => (PRICES.find(([re]) => re.test(model)) ?? [null, [5, 25]])[1];
 const shortName = (model) => model.replace(/^claude-/, "").replace(/-\d{8}$/, "");
 
@@ -126,13 +126,13 @@ function main(input) {
   parts.sort((a, b) => b.cost - a.cost);
 
   const total = parts.reduce((a, p) => a + p.cost, 0);
-  const line =
-    parts
-      .map(
-        (p) =>
-          `${p.model} ${fmtUsd(p.cost)} · ${fmtTok(p.newTokens)} new · ${fmtTok(p.cachedTokens)} cached`
-      )
-      .join("\n") + (parts.length > 1 ? `\ntotal ${fmtUsd(total)} billed` : "");
+  const usageLine = parts
+    .map((p) => `${p.model} ${fmtTok(p.newTokens)} new/${fmtTok(p.cachedTokens)} cached`)
+    .join(" + ");
+  const costLine =
+    parts.map((p) => `${p.model} ${fmtUsd(p.cost)}`).join(" + ") +
+    (parts.length > 1 ? ` = ${fmtUsd(total)} billed` : " billed");
+  const line = `${usageLine}\n${costLine}`;
 
   try {
     fs.writeFileSync(cacheFile, JSON.stringify({ sig, line }));
