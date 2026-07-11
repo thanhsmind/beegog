@@ -935,6 +935,30 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-11T06:32:48.753Z",
       "released_at": "2026-07-11T06:35:12.837Z"
+    },
+    {
+      "agent": "worker-w1",
+      "cell": "harness-integration-1",
+      "path": "skills/bee-hive/templates/lib/command-registry.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T15:36:48.575Z",
+      "released_at": "2026-07-11T15:42:02.622Z"
+    },
+    {
+      "agent": "worker-w1",
+      "cell": "harness-integration-1",
+      "path": "skills/bee-hive/templates/lib/validate-args.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T15:36:48.594Z",
+      "released_at": "2026-07-11T15:42:02.622Z"
+    },
+    {
+      "agent": "worker-w1",
+      "cell": "harness-integration-1",
+      "path": "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T15:36:48.623Z",
+      "released_at": "2026-07-11T15:42:02.622Z"
     }
   ]
 }

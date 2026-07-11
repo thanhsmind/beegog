@@ -1,17 +1,24 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "swarming",
+  "feature": "harness-integration",
+  "mode": "high-risk",
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": true
+    "review": false
   },
-  "workers": [],
-  "summary": "release-0120 done: BEE_VERSION+plugin manifest 0.1.20, onboarding applied (all three copies 0.1.20), suites green, pushed",
-  "next_action": null,
+  "workers": [
+    {
+      "nickname": "worker-w1",
+      "cell": "harness-integration-1",
+      "tier": "generation",
+      "status": "dispatched"
+    }
+  ],
+  "summary": "harness-integration: Gate 3 approved. bee-swarming wave 1 (cell-1) dispatched to worker-w1 (generation tier).",
+  "next_action": "Dispatch wave 1 (harness-integration-1), goal-check, cap. Then wave 2 (harness-integration-2 + -3 parallel). Then wave 3 (harness-integration-4). Then invoke bee-reviewing.",
   "last_scribing_run": {
     "feature": "model-tier-guard",
     "date": "2026-07-11",
@@ -31,10 +38,10 @@
     "digest_refresh": "green (48 entries; 13 unknown_type drops pre-existing)"
   },
   "cells": {
-    "open": 0,
+    "open": 4,
     "claimed": 0,
     "capped": 49,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T14:37:39.570Z"
+  "last_activity": "2026-07-11T15:29:28.374Z"
 }
