@@ -6,6 +6,9 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
+  "enabledPlugins": {
+    "compound-engineering@compound-engineering-plugin": false
+  },
 
   "hooks": {
     "SessionStart": [
