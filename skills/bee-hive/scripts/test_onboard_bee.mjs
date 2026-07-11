@@ -415,6 +415,73 @@ try {
   check(fs.existsSync(path.join(tmp, ".claude", "settings.json.bak")),
     "settings.json.bak backup created");
 
+  // --- 9a. structural PreToolUse wiring (P1-4): parse, don't string-search ---
+  // A wrong event, wrong matcher, or model-guard folded into the write-guard
+  // entry must all turn this red; string containment (above) cannot tell.
+  const preToolUse = Array.isArray(settings.hooks?.PreToolUse) ? settings.hooks.PreToolUse : [];
+  const modelGuardEntries = preToolUse.filter((e) =>
+    (e.hooks || []).some((h) => String(h.command || "").includes("bee-model-guard.mjs")));
+  check(modelGuardEntries.length === 1 && modelGuardEntries[0].matcher === "Agent|Task",
+    "exactly one PreToolUse entry wires bee-model-guard.mjs, matcher is exactly 'Agent|Task'",
+    JSON.stringify(modelGuardEntries));
+
+  const writeGuardEntries = preToolUse.filter((e) =>
+    (e.hooks || []).some((h) => String(h.command || "").includes("bee-write-guard.mjs")));
+  check(writeGuardEntries.length === 1 &&
+    writeGuardEntries[0].matcher === "Edit|Write|MultiEdit|Bash|Read|Glob|Grep",
+    "exactly one PreToolUse entry wires bee-write-guard.mjs, matcher is byte-identical to the write-guard matcher",
+    JSON.stringify(writeGuardEntries));
+
+  // model-guard must not be folded into any other event or entry anywhere in
+  // the applied settings tree.
+  const modelGuardSightings = [];
+  for (const [eventName, entries] of Object.entries(settings.hooks || {})) {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      for (const hook of entry.hooks || []) {
+        if (String(hook.command || "").includes("bee-model-guard.mjs")) {
+          modelGuardSightings.push({ event: eventName, matcher: entry.matcher ?? null });
+        }
+      }
+    }
+  }
+  check(modelGuardSightings.length === 1 &&
+    modelGuardSightings[0].event === "PreToolUse" && modelGuardSightings[0].matcher === "Agent|Task",
+    "bee-model-guard.mjs appears exactly once anywhere in settings.hooks: PreToolUse / Agent|Task",
+    JSON.stringify(modelGuardSightings));
+
+  // --- 9b. plugin <-> repo parity: same (event, matcher, filename) triples ---
+  // hooks/hooks.json (plugin, CLAUDE_PLUGIN_ROOT) and renderRepoHookEntries()'s
+  // applied output (repo, CLAUDE_PROJECT_DIR) must expose an identical hook
+  // contract once command roots are normalized away and statusMessage ignored.
+  function hookFilenameFromCommand(command) {
+    const m = String(command || "").match(/([A-Za-z0-9_.-]+\.mjs)/);
+    return m ? m[1] : null;
+  }
+  function flattenHookTriples(hooksObj) {
+    const triples = [];
+    for (const [eventName, entries] of Object.entries(hooksObj || {})) {
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        const matcher = entry.matcher ?? null;
+        for (const hook of entry.hooks || []) {
+          const filename = hookFilenameFromCommand(hook.command);
+          if (filename) {
+            triples.push(`${eventName}::${matcher}::${filename}`);
+          }
+        }
+      }
+    }
+    return triples.sort();
+  }
+  const pluginHooksJsonPath = path.join(SCRIPTS_DIR, "..", "..", "..", "hooks", "hooks.json");
+  const pluginHooksJson = JSON.parse(fs.readFileSync(pluginHooksJsonPath, "utf8"));
+  const pluginTriples = flattenHookTriples(pluginHooksJson.hooks);
+  const repoTriples = flattenHookTriples(settings.hooks);
+  check(pluginTriples.length > 0, "plugin hooks/hooks.json parsed at least one hook triple",
+    JSON.stringify(pluginTriples));
+  check(JSON.stringify(pluginTriples) === JSON.stringify(repoTriples),
+    "hooks/hooks.json and the applied repo settings expose identical (event, matcher, filename) triples",
+    `plugin: ${JSON.stringify(pluginTriples)}\nrepo:   ${JSON.stringify(repoTriples)}`);
+
   // --repo-hooks apply twice -> no duplicate bee entries.
   runOnboard(["--repo-root", tmp, "--apply", "--repo-hooks", "--json"], tmpHome);
   const settings2 = JSON.parse(
@@ -422,6 +489,11 @@ try {
   const initCount = JSON.stringify(settings2).split("bee-session-init.mjs").length - 1;
   check(initCount === 1, "no duplicate hook entries after second --repo-hooks apply",
     `count: ${initCount}`);
+  const preToolUse2 = Array.isArray(settings2.hooks?.PreToolUse) ? settings2.hooks.PreToolUse : [];
+  const agentTaskEntries2 = preToolUse2.filter((e) => e.matcher === "Agent|Task");
+  check(agentTaskEntries2.length === 1,
+    "exactly one PreToolUse Agent|Task entry survives a second --repo-hooks apply",
+    `count: ${agentTaskEntries2.length}`);
 
   // --claude-md: fresh repo -> created with header + bare import.
   const cmTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-claudemd-test-"));
