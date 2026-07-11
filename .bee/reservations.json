@@ -663,6 +663,70 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-11T02:01:21.279Z",
       "released_at": "2026-07-11T02:03:22.530Z"
+    },
+    {
+      "agent": "mason-3",
+      "cell": "skill-sync-3",
+      "path": "skills/bee-hive/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T02:07:05.720Z",
+      "released_at": "2026-07-11T02:07:50.183Z"
+    },
+    {
+      "agent": "mason-3",
+      "cell": "skill-sync-3",
+      "path": "README.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T02:07:05.759Z",
+      "released_at": "2026-07-11T02:07:50.183Z"
+    },
+    {
+      "agent": "mason-4",
+      "cell": "skill-sync-4",
+      "path": "skills/bee-hive/scripts/onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T02:38:49.934Z",
+      "released_at": "2026-07-11T02:55:57.168Z"
+    },
+    {
+      "agent": "mason-4",
+      "cell": "skill-sync-4",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T02:38:49.965Z",
+      "released_at": "2026-07-11T02:55:57.168Z"
+    },
+    {
+      "agent": "mason-5",
+      "cell": "skill-sync-5",
+      "path": "skills/bee-hive/scripts/onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T03:08:46.053Z",
+      "released_at": "2026-07-11T03:11:42.925Z"
+    },
+    {
+      "agent": "mason-5",
+      "cell": "skill-sync-5",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T03:08:46.085Z",
+      "released_at": "2026-07-11T03:11:42.925Z"
+    },
+    {
+      "agent": "mason-5",
+      "cell": "skill-sync-5",
+      "path": "skills/bee-hive/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T03:08:46.120Z",
+      "released_at": "2026-07-11T03:11:42.925Z"
+    },
+    {
+      "agent": "mason-5",
+      "cell": "skill-sync-5",
+      "path": "README.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T03:08:46.154Z",
+      "released_at": "2026-07-11T03:11:42.925Z"
     }
   ]
 }

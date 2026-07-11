@@ -189,6 +189,16 @@ function lstatIfExists(p) {
   }
 }
 
+// Review P1-8: every blocked_no_source return happens BEFORE the three-version
+// preflight ever runs (identity/overlap are structural checks, independent of
+// file content) - so none of the three versions were, or could be, resolved.
+// D3's letter requires all three reported on every blocked return; "unknown"
+// is the honest label for "resolution was impossible", distinct from the
+// version-preflight's own "absent" state (a tree that provably does not exist).
+function unknownVersionsTriple() {
+  return { source: "unknown", host_helpers: "unknown", installed_skills: "unknown" };
+}
+
 // Fallback-free version reader (D3, hardened per review P1-1/P1-2). The
 // legacy readBeeVersion() silently returns 0.1.0 on a missing/unparsable
 // state.mjs, which would let a resolution failure masquerade as an old version
@@ -377,11 +387,20 @@ function detectNestedAlias(targetDir, sourceWalk, targetWalk) {
   return null;
 }
 
+// Review P1-9: every plan item's `path` is root-relative, but legacy items
+// (repo files) and skill-stage items (global ~/.claude/skills entries) are
+// relative to TWO DIFFERENT roots - an approval surface reading `path` alone
+// could render a global deletion against repoRoot. `scope` disambiguates:
+// "installed" = target_root-relative (skillsTargetRoot()), "source" =
+// source_root-relative (the running script's own tree). Legacy items carry no
+// `scope` at all (unchanged) - their root is always repoRoot, documented in
+// SKILL.md alongside this field.
 function aliasBlockedItem(name, detail) {
   return {
     action: "blocked_alias",
     skill: name,
     path: name,
+    scope: "installed", // alias identity is always probed under targetRoot
     reason: `installed ${name} ${detail} - blocked, never sync-then-delete`,
   };
 }
@@ -406,6 +425,7 @@ function computeSkillItems(sourceRoot, targetRoot) {
         action: "blocked_symlink",
         skill: name,
         path: name,
+        scope: "source",
         reason: `source ${name} is a symlink - skipped, never followed`,
       });
       continue;
@@ -419,6 +439,7 @@ function computeSkillItems(sourceRoot, targetRoot) {
         action: "blocked_symlink",
         skill: name,
         path: `${name}/${sourceWalk.blocked.path}`,
+        scope: "source",
         reason: `source ${name} contains a ${sourceWalk.blocked.reason} at ${sourceWalk.blocked.path} - skipped`,
       });
       continue;
@@ -430,13 +451,14 @@ function computeSkillItems(sourceRoot, targetRoot) {
         action: "blocked_symlink",
         skill: name,
         path: name,
+        scope: "installed",
         reason: `installed ${name} is a symlink (plausibly a live checkout) - skipped, never written through or unlinked`,
       });
       continue;
     }
     if (!targetStat || !targetStat.isDirectory()) {
       // absent, or a non-link type collision (remove entry, write source shape)
-      items.push({ action: "sync_skill", skill: name, path: name });
+      items.push({ action: "sync_skill", skill: name, path: name, scope: "installed" });
       continue;
     }
     const targetWalk = walkSkillTree(targetDir);
@@ -445,6 +467,7 @@ function computeSkillItems(sourceRoot, targetRoot) {
         action: "blocked_symlink",
         skill: name,
         path: `${name}/${targetWalk.blocked.path}`,
+        scope: "installed",
         reason: `installed ${name} contains a ${targetWalk.blocked.reason} at ${targetWalk.blocked.path} - skipped, nothing inside it written or deleted`,
       });
       continue;
@@ -456,7 +479,7 @@ function computeSkillItems(sourceRoot, targetRoot) {
       continue;
     }
     if (manifestFingerprint(sourceWalk.files) !== manifestFingerprint(targetWalk.files)) {
-      items.push({ action: "sync_skill", skill: name, path: name });
+      items.push({ action: "sync_skill", skill: name, path: name, scope: "installed" });
     }
   }
 
@@ -475,6 +498,7 @@ function computeSkillItems(sourceRoot, targetRoot) {
         action: "blocked_symlink",
         skill: name,
         path: name,
+        scope: "installed",
         reason: `installed ${name} is a symlink (plausibly a live checkout) - skipped, never unlinked`,
       });
       continue;
@@ -488,11 +512,12 @@ function computeSkillItems(sourceRoot, targetRoot) {
         action: "blocked_symlink",
         skill: name,
         path: `${name}/${targetWalk.blocked.path}`,
+        scope: "installed",
         reason: `installed ${name} contains a ${targetWalk.blocked.reason} at ${targetWalk.blocked.path} - skipped, nothing deleted`,
       });
       continue;
     }
-    items.push({ action: "remove_skill", skill: name, path: name });
+    items.push({ action: "remove_skill", skill: name, path: name, scope: "installed" });
   }
 
   return items;
@@ -521,6 +546,7 @@ function computeSkillSync(repoRoot) {
     identityOk = false;
   }
   if (!identityOk) {
+    result.versions = unknownVersionsTriple();
     result.blocked = {
       status: "blocked_no_source",
       reason:
@@ -551,6 +577,7 @@ function computeSkillSync(repoRoot) {
     realRepo.startsWith(realTarget + path.sep) ||
     realTarget.startsWith(realRepo + path.sep)
   ) {
+    result.versions = unknownVersionsTriple();
     result.blocked = {
       status: "blocked_no_source",
       reason:
@@ -566,6 +593,7 @@ function computeSkillSync(repoRoot) {
     realTarget.startsWith(realSource + path.sep) ||
     realSource.startsWith(realTarget + path.sep)
   ) {
+    result.versions = unknownVersionsTriple();
     result.blocked = {
       status: "blocked_no_source",
       reason:
@@ -1190,7 +1218,21 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngra
       forcedDowngrade = true;
       plan.push(...skillSync.items); // computePlan withholds items while blocked
     } else {
-      return { blocked: skillSync.blocked, versions: skillSync.versions, beeVersion };
+      // Review P1-6: computeSkillSync() already computed skillSync.items
+      // whenever the refusal is forceable (empty [] otherwise) - a human
+      // deciding whether to pass --force-downgrade must see exactly what it
+      // will overwrite/delete BEFORE authorizing it, not only after the fact
+      // in a forced apply's own report. Surfaced here so the refused-apply
+      // response (the response most users actually see first) carries it.
+      return {
+        blocked: skillSync.blocked,
+        versions: skillSync.versions,
+        items: skillSync.items,
+        mode: skillSync.mode,
+        source_root: skillSync.source_root,
+        target_root: skillSync.target_root,
+        beeVersion,
+      };
     }
   }
 
@@ -1466,6 +1508,11 @@ export function main(argv = process.argv.slice(2)) {
           source_root: skillSync.source_root,
           target_root: skillSync.target_root,
           versions: skillSync.versions,
+          // Review P1-6: computeSkillSync() already computes these whenever
+          // the refusal is forceable (empty [] otherwise) - a blocked dry-run
+          // must still show exactly which skills a --force-downgrade would
+          // overwrite/delete, not just the general-item plan.
+          items: skillSync.items,
         },
         notices: commandsNotices(repoRoot, { firstOnboard }),
       };
@@ -1488,19 +1535,44 @@ export function main(argv = process.argv.slice(2)) {
           bee_version: result.beeVersion,
           reason: result.blocked.reason,
           versions: result.versions,
+          // Review P1-6: same forced-apply-transparency payload as plan mode
+          // - this refused response is what most users see BEFORE deciding
+          // whether to pass --force-downgrade, so it must carry the items too.
+          skills: {
+            mode: result.mode,
+            source_root: result.source_root,
+            target_root: result.target_root,
+            versions: result.versions,
+            items: result.items,
+          },
         },
         args.json,
       );
       return 1;
     }
     const recheck = computePlan(repoRoot, options);
+    // Review P1-7: computePlan() withholds skill items from `plan` while its
+    // skillSync stage is blocked (see step 7 above), so `recheck.plan.length`
+    // alone can go to zero - and falsely report up_to_date - while the skill
+    // stage itself is still genuinely blocked (reachable after a forced
+    // downgrade that left one skill mid-refusal, e.g. a residual per-skill
+    // symlink/alias block that keeps its version marker un-synced). Blocked-
+    // first precedence: a blocked skill stage can NEVER yield "up_to_date".
+    const recheckBlocked = recheck.skillSync.blocked;
     const payload = {
       repo_root: repoRoot,
       status: "applied",
       bee_version: result.beeVersion,
       applied: result.applied,
-      recheck: recheck.plan.length === 0 ? "up_to_date" : "changes_needed",
+      recheck: recheckBlocked
+        ? recheckBlocked.status
+        : recheck.plan.length === 0
+          ? "up_to_date"
+          : "changes_needed",
       recheck_plan: recheck.plan,
+      recheck_skills: recheckBlocked
+        ? { blocked: true, reason: recheckBlocked.reason, versions: recheck.skillSync.versions }
+        : null,
       skills: result.skills,
       onboarding: result.onboarding,
       notices: commandsNotices(repoRoot, { firstOnboard }),

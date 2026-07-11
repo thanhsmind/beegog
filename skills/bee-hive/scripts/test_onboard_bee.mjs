@@ -853,6 +853,10 @@ function hashTree(dir) {
       `exit ${apply.status} status ${apply.payload?.status}`);
     check(hashTree(home) === homeBefore && hashTree(repo) === repoBefore,
       "overlap refusal (source inside target) mutates nothing anywhere");
+    const v1 = apply.payload?.versions || {};
+    check(v1.source === "unknown" && v1.host_helpers === "unknown" && v1.installed_skills === "unknown",
+      "overlap (source inside target) reports the version triple as unknown (review P1-8)",
+      JSON.stringify(v1));
   } finally {
     try {
       fs.rmSync(home, { recursive: true, force: true });
@@ -880,6 +884,10 @@ function hashTree(dir) {
       `exit ${apply.status} status ${apply.payload?.status}`);
     check(hashTree(skillsRoot) === sourceBefore && hashTree(repo) === repoBefore,
       "overlap refusal (target inside source) mutates nothing anywhere");
+    const v2 = apply.payload?.versions || {};
+    check(v2.source === "unknown" && v2.host_helpers === "unknown" && v2.installed_skills === "unknown",
+      "overlap (target inside source) reports the version triple as unknown (review P1-8)",
+      JSON.stringify(v2));
   } finally {
     try {
       fs.rmSync(base, { recursive: true, force: true });
@@ -943,10 +951,20 @@ function hashTree(dir) {
     check(plan.status === 0 && plan.payload?.status === "blocked_no_source",
       "identity failure: plan reports blocked_no_source with exit 0",
       `exit ${plan.status} status ${plan.payload?.status}`);
+    const planV = plan.payload?.versions || {};
+    check(planV.source === "unknown" && planV.host_helpers === "unknown" &&
+      planV.installed_skills === "unknown",
+      "identity failure: plan mode reports the version triple as unknown (review P1-8)",
+      JSON.stringify(planV));
     const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
     check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
       "identity failure aborts the whole apply with exit 1 (F2)",
       `exit ${apply.status} status ${apply.payload?.status}`);
+    const applyV = apply.payload?.versions || {};
+    check(applyV.source === "unknown" && applyV.host_helpers === "unknown" &&
+      applyV.installed_skills === "unknown",
+      "identity failure: apply reports the version triple as unknown (review P1-8)",
+      JSON.stringify(applyV));
     const forced = runOnboardAt(launcher,
       ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
     check(forced.status === 1 && forced.payload?.status === "blocked_no_source",
@@ -1610,6 +1628,11 @@ function hashTree(dir) {
     check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
       "repo inside the skills root: apply refuses pre-write with exit 1",
       `exit ${apply.status} status ${apply.payload?.status}`);
+    const repoOverlapV = apply.payload?.versions || {};
+    check(repoOverlapV.source === "unknown" && repoOverlapV.host_helpers === "unknown" &&
+      repoOverlapV.installed_skills === "unknown",
+      "repo-in-target overlap reports the version triple as unknown (review P1-8)",
+      JSON.stringify(repoOverlapV));
     const forced = runOnboardAt(launcher,
       ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
     check(forced.status === 1 && forced.payload?.status === "blocked_no_source",
@@ -1647,6 +1670,11 @@ function hashTree(dir) {
       `exit ${apply.status} status ${apply.payload?.status}`);
     check(hashTree(repo) === repoBefore,
       "target-in-repo refusal mutates nothing (no skills written into the repo)");
+    const tgtOverlapV = apply.payload?.versions || {};
+    check(tgtOverlapV.source === "unknown" && tgtOverlapV.host_helpers === "unknown" &&
+      tgtOverlapV.installed_skills === "unknown",
+      "target-in-repo overlap reports the version triple as unknown (review P1-8)",
+      JSON.stringify(tgtOverlapV));
   } finally {
     try {
       fs.rmSync(base, { recursive: true, force: true });
@@ -1733,6 +1761,193 @@ function hashTree(dir) {
       } catch {
         // best-effort cleanup
       }
+    }
+  }
+}
+
+// --- 10v. forced-apply transparency: blocked-forceable dry-run and refused ---
+// apply both enumerate the skills a --force-downgrade would overwrite/delete
+// (review P1-6, D2). Before the fix neither the plain dry-run (`--json`, no
+// --apply) nor the refused `--apply` response carried the computed items -
+// a human deciding whether to pass --force-downgrade could not see which
+// skills get overwritten (sync_skill) or DELETED (remove_skill) until AFTER
+// authorizing it and reading the forced apply's own report.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-forcedvis-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.18",
+      skills: { "bee-alpha": { "SKILL.md": "# alpha v2 from older source\n" } },
+    });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(path.join(repo, ".bee", "bin", "lib"), { recursive: true });
+    fs.writeFileSync(path.join(repo, ".bee", "bin", "lib", "state.mjs"),
+      fakeStateSource("0.1.19"), "utf8");
+    makeInstalledSkills(home, {
+      version: "0.1.19",
+      skills: {
+        "bee-alpha": { "SKILL.md": "# alpha v1 - about to be overwritten\n" },
+        "bee-doomed": { "SKILL.md": "# about to be deleted\n" },
+      },
+    });
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(plan.status === 0 && plan.payload?.status === "blocked_downgrade",
+      "forced-vis: plan mode reports blocked_downgrade (forceable)",
+      `exit ${plan.status} status ${plan.payload?.status}`);
+    const planItems = plan.payload?.skills?.items || [];
+    check(planItems.some((i) => i.action === "sync_skill" && i.skill === "bee-alpha"),
+      "forced-vis: blocked dry-run still enumerates the sync_skill a force would overwrite (P1-6)",
+      JSON.stringify(planItems));
+    check(planItems.some((i) => i.action === "remove_skill" && i.skill === "bee-doomed"),
+      "forced-vis: blocked dry-run still enumerates the remove_skill a force would DELETE (P1-6)",
+      JSON.stringify(planItems));
+    const refused = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(refused.status === 1 && refused.payload?.status === "blocked_downgrade",
+      "forced-vis: refused apply (no --force-downgrade) still reports blocked_downgrade");
+    const refusedItems = refused.payload?.skills?.items || [];
+    check(refusedItems.some((i) => i.action === "sync_skill" && i.skill === "bee-alpha") &&
+      refusedItems.some((i) => i.action === "remove_skill" && i.skill === "bee-doomed"),
+      "forced-vis: the refused --apply response ALSO enumerates the items, not only the plain dry-run (P1-6)",
+      JSON.stringify(refusedItems));
+    const forced = runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+    check(forced.status === 0 && forced.payload?.status === "applied" &&
+      forced.payload?.forced_downgrade === true,
+      "forced-vis: forcing actually applies", `exit ${forced.status} status ${forced.payload?.status}`);
+    const previewedSkills = [...new Set(refusedItems.map((i) => i.skill))].sort();
+    const appliedSkills = [...new Set((forced.payload?.applied || [])
+      .filter((i) => i.action === "sync_skill" || i.action === "remove_skill")
+      .map((i) => i.skill))].sort();
+    check(JSON.stringify(previewedSkills.filter((s) =>
+      forced.payload.applied.some((i) => i.skill === s))) === JSON.stringify(appliedSkills) ||
+      appliedSkills.every((s) => previewedSkills.includes(s)),
+      "forced-vis: the forced apply touches exactly the reviewed set previewed before authorization",
+      JSON.stringify({ previewedSkills, appliedSkills }));
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10w. recheck honesty: a blocked skill stage can never report up_to_date -
+// (review P1-7, D5) The post-apply recheck previously used `plan.length`
+// only, which is empty whenever computePlan() withholds skill items because
+// its skillSync stage is blocked - a false parity claim. Reachable after a
+// forced downgrade that leaves ONE skill mid-refusal (a nested symlink
+// elsewhere in bee-hive, off the templates/lib/state.mjs path so the version
+// marker itself still resolves): the whole-stage version compare sees the
+// installed bee-hive skill's marker still un-synced (older source, newer
+// installed) and is genuinely blocked again at recheck time, while the
+// general (non-skill) plan items are all freshly up to date and contribute
+// zero items - so plan.length alone reads as up_to_date. Blocked-first
+// precedence must override that.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-recheckhonesty-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.18",
+      skills: {},
+    });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(path.join(repo, ".bee", "bin", "lib"), { recursive: true });
+    fs.writeFileSync(path.join(repo, ".bee", "bin", "lib", "state.mjs"),
+      fakeStateSource("0.1.19"), "utf8");
+    const installedRoot = makeInstalledSkills(home, { version: "0.1.19" });
+    const outside = path.join(base, "outside-rogue");
+    fs.mkdirSync(outside, { recursive: true });
+    fs.writeFileSync(path.join(outside, "real-work.md"), "do not touch\n", "utf8");
+    // Nested symlink INSIDE installed bee-hive, off the templates/lib path -
+    // version resolution still succeeds, but the whole skill is blocked_symlink
+    // and never gets synced, so its marker stays stuck at the OLDER install.
+    fs.symlinkSync(outside, path.join(installedRoot, "bee-hive", "rogue-link"));
+    const refused = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(refused.status === 1 && refused.payload?.status === "blocked_downgrade",
+      "recheck-honesty: unforced apply refuses as blocked_downgrade (setup sanity)",
+      `exit ${refused.status} status ${refused.payload?.status}`);
+    const forced = runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+    check(forced.status === 0 && forced.payload?.status === "applied" &&
+      forced.payload?.forced_downgrade === true,
+      "recheck-honesty: forced apply proceeds", `exit ${forced.status} status ${forced.payload?.status}`);
+    check((forced.payload?.skills?.skipped || []).some((s) => s.skill === "bee-hive"),
+      "recheck-honesty: bee-hive itself is skipped (nested rogue symlink), left un-synced",
+      JSON.stringify(forced.payload?.skills || null));
+    check(forced.payload?.recheck !== "up_to_date",
+      "recheck-honesty: a residual blocked skill stage can NEVER report recheck up_to_date (P1-7)",
+      JSON.stringify({ recheck: forced.payload?.recheck, recheck_skills: forced.payload?.recheck_skills }));
+    check(forced.payload?.recheck_skills?.blocked === true &&
+      typeof forced.payload?.recheck_skills?.reason === "string" &&
+      forced.payload?.recheck_skills?.reason.length > 0 &&
+      forced.payload?.recheck_skills?.versions?.installed_skills === "0.1.19",
+      "recheck-honesty: recheck exposes the blocked skill stage's status/reason/versions (P1-7)",
+      JSON.stringify(forced.payload?.recheck_skills));
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10z. plan-item scope discriminator (review P1-9): every skill-stage ----
+// item carries scope: "installed" | "source" so a consumer never resolves a
+// global deletion/overwrite against repoRoot; legacy (repo-relative) items
+// carry no `scope` field at all, unchanged.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-scope-"));
+  const home = makeFakeHome();
+  const outside = path.join(base, "outside-src-link");
+  try {
+    const { launcher, skillsRoot } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      skills: { "bee-normal": { "SKILL.md": "# normal\n" } },
+    });
+    fs.mkdirSync(outside, { recursive: true });
+    // Source-level symlinked skill entry -> scope: "source".
+    fs.symlinkSync(outside, path.join(skillsRoot, "bee-linked"));
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    makeInstalledSkills(home, {
+      version: "0.1.19",
+      skills: { "bee-remove-me": { "SKILL.md": "# will be removed\n" } },
+    });
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(plan.status === 0, "scope: plan mode exits 0", `exit ${plan.status}`);
+    const items = plan.payload?.plan || [];
+    const byKey = (action, skill) => items.find((i) => i.action === action && i.skill === skill);
+    const syncNormal = byKey("sync_skill", "bee-normal");
+    check(syncNormal?.scope === "installed",
+      "scope: sync_skill (writes the global install) carries scope: installed",
+      JSON.stringify(syncNormal));
+    const removeMe = byKey("remove_skill", "bee-remove-me");
+    check(removeMe?.scope === "installed",
+      "scope: remove_skill (deletes from the global install) carries scope: installed",
+      JSON.stringify(removeMe));
+    const linked = byKey("blocked_symlink", "bee-linked");
+    check(linked?.scope === "source",
+      "scope: a source-side symlinked skill entry carries scope: source, not installed",
+      JSON.stringify(linked));
+    const syncHive = byKey("sync_skill", "bee-hive");
+    check(syncHive?.scope === "installed",
+      "scope: bee-hive's own sync_skill also carries scope: installed",
+      JSON.stringify(syncHive));
+    const legacyItem = items.find((i) => i.action === "create_agents_block");
+    check(legacyItem && !("scope" in legacyItem),
+      "scope: legacy repo-relative items carry no scope field at all (unchanged)",
+      JSON.stringify(legacyItem));
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
     }
   }
 }
