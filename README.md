@@ -338,10 +338,12 @@ Copied into every onboarded repo, so enforcement works even for agents that igno
 ### Onboarding — `skills/bee-hive/scripts/onboard_bee.mjs`
 
 ```bash
-node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md]
+node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md] [--force-downgrade]
 ```
 
 Without `--apply` it only reports the plan. With `--apply` it installs/refreshes the AGENTS.md BEE block, `.bee/` runtime files, and the vendored helpers — **never** overwriting your `state.json`, `decisions.jsonl`, or `cells/`. Re-run after pulling a new bee version; it detects drift via managed hashes in `.bee/onboarding.json`.
+
+Every `--apply` now updates helpers and skills together: it also mirrors the global skill set (`~/.claude/skills/bee-*`) from this repo's `skills/` tree in the same run, so the two can no longer drift apart. Downgrades are refused by default — if the source tree is older than the repo's vendored helpers or the installed skills, apply refuses with zero mutations (`blocked_downgrade`); an unidentifiable source refuses too (`blocked_no_source`), and only `blocked_downgrade` is escapable, via `--force-downgrade`, and only when every version resolves numeric.
 
 ### Hooks — `hooks/` (Claude Code; the plugin route loads them automatically)
 

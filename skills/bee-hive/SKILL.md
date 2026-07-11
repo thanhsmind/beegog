@@ -28,7 +28,10 @@ For the full routing table, state bootstrap, resume logic, chaining contracts, a
    ```
 3. Inspect the result:
    - `status: "up_to_date"` → continue.
-   - `status: "changes_needed"` → summarize the plan to the user, ask for approval, and only then re-run with `--apply`. Never apply silently. Never replace an existing compact prompt or AGENTS.md content outside the BEE markers without explicit consent.
+   - `status: "changes_needed"` → summarize the plan to the user, ask for approval, and only then re-run with `--apply`. Never apply silently. Never replace an existing compact prompt or AGENTS.md content outside the BEE markers without explicit consent. Every `--apply` also syncs the global bee skill set (`~/.claude/skills/bee-*`) in the same run — one command keeps vendored helpers and installed skills at the same version.
+   - `status: "blocked_downgrade"` → the source tree is older than the repo's vendored helpers or the installed skills (or a version could not be read — reported as `unknown`, refused the same way). Zero mutations happen anywhere. Surface the reported `versions` to the user; only pass `--force-downgrade` on explicit user instruction, and only when all three versions resolved numeric — an `unknown` version is never forceable.
+   - `status: "blocked_no_source"` → no authoritative skill source resolved for this run (or source/target roots overlap). Fail-closed, zero mutations, never forceable with `--force-downgrade` — surface it to the user and resolve the source location before retrying.
+   - A `blocked_symlink` item inside `plan` means one skill directory is a symlink and was skipped (not synced, not deleted) — surface it to the user; it does not block the rest of the apply.
    - `--repo-hooks` only when the user asks for repo-local hook wiring.
    - `--claude-md` only when plugin hooks are unavailable and the user wants the CLAUDE.md `@AGENTS.md` import fallback.
 
