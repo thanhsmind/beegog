@@ -92,6 +92,9 @@ Constraints: the external CLI must be able to edit the repo working tree and run
 
 ## Worker Prompt Template
 
+Nicknames are Minions character names (decision 3d55b976, human-confirmed f4c4a162) — recognizable,
+consistent worker identities; the assigned cell stays authoritative for responsibilities.
+
 ```text
 You are a bee worker subagent.
 

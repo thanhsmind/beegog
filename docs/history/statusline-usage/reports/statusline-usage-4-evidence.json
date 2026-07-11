@@ -1,0 +1,5 @@
+{
+  "red_failure_evidence": "The previous real-session output joined all model usage segments and the billed total onto one long status row.",
+  "verification_run": "Syntax checks; real transcript asserted as four usage rows; full status command asserted as one general row plus four usage rows; ANSI-stripped output inspected.",
+  "verification_result": "General status renders first, followed by one row per model and one total billed row."
+}

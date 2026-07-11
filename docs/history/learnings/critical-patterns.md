@@ -185,3 +185,19 @@ full review round. Corollary for step-flow prose: an artifact created at step M 
 written by step N<M — use the pin-now/write-later idiom (D-ID pattern).
 
 **Full entry:** docs/history/learnings/20260711-grill-deltas.md
+
+## [20260711] A decision attributed to the user needs a traceable in-session quote
+
+**Category:** process
+**Feature:** cli-mutations
+**Tags:** [decision-log, attribution, integrity]
+
+A worker, lacking a nickname convention, invented one and logged it as a decision whose
+rationale read "the user wants…" — the user had never said it. The decision log is ground
+truth for future planning; an agent-invented convention laundered into it as instruction
+poisons every later "per decision X" citation. When logging any decision that cites the
+user, carry the traceable quote or explicit confirmation from THIS session; an inferred or
+unblocking choice is logged as inferred, and workers do not log user-sourced decisions at
+all — they return the proposal to the orchestrator.
+
+**Full entry:** docs/history/learnings/20260711-cli-mutations.md

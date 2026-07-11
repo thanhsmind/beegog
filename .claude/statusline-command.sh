@@ -55,4 +55,15 @@ if [ -n "$week_pct" ]; then
   line="${line}${sep}${c}7d: ${w}%${reset}"
 fi
 
+# Per-model token/cost (main session + subagents) — fail-open, never breaks the line
+NODE=$(command -v node || true)
+for cand in /usr/local/bin/node /usr/bin/node; do
+  [ -n "$NODE" ] && break
+  [ -x "$cand" ] && NODE="$cand"
+done
+if [ -n "$NODE" ]; then
+  usage_seg=$(echo "$input" | "$NODE" "$(dirname "${BASH_SOURCE[0]}")/statusline-usage.mjs" 2>/dev/null)
+  [ -n "$usage_seg" ] && line="${line}\n${yellow}${usage_seg}${reset}"
+fi
+
 printf '%b\n' "$line"

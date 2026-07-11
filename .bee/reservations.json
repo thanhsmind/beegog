@@ -1159,6 +1159,30 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-11T11:12:01.284Z",
       "released_at": "2026-07-11T11:17:19.895Z"
+    },
+    {
+      "agent": "tam",
+      "cell": "cli-mutations-fix-2",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:22:49.386Z",
+      "released_at": "2026-07-11T11:24:13.939Z"
+    },
+    {
+      "agent": "main-session",
+      "cell": "statusline-usage-4",
+      "path": ".claude/statusline-usage.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:23:54.531Z",
+      "released_at": "2026-07-11T11:24:30.382Z"
+    },
+    {
+      "agent": "main-session",
+      "cell": "statusline-usage-4",
+      "path": ".claude/statusline-command.sh",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:23:54.642Z",
+      "released_at": "2026-07-11T11:24:30.382Z"
     }
   ]
 }

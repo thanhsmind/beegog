@@ -1,12 +1,14 @@
 ---
 area: feedback-digest
-updated: 2026-07-10
+updated: 2026-07-11
 coverage: full
 sources:
   - docs/history/evolving-loop/ (cells evolving-1 … evolving-11, capped)
   - docs/history/evolving-loop/reports/review-slice-a.md
   - docs/history/evolving-loop/reports/review-slice-b.md
+  - docs/history/cli-mutations/ (cell cli-mutations-2, capped; walkthrough.md)
 decisions:
+  - 9880542e (friction records validated at intake; unrecognized-type drops now signal a bypassing writer)
   - 8cd4c84e (D1, D2 allowlist, D2b consumer revalidation, D3, D4, D5)
   - c45d0fb3 (a defect-encoding frozen assertion is unfrozen by the planner, never the worker)
   - b8fe5c81 (a drift guard that greps its own source pins syntax, not behavior)
@@ -42,6 +44,7 @@ Two properties define the area, and everything else follows from them:
 | An operator asks for the digest directly | Operator | Same regeneration, written to a chosen location |
 | An operator asks for a count only | Operator | Entry and drop counts reported, nothing written |
 | An operator asks the maintainers' repository to collect | Operator | Every configured source repository's already-written digest is read and merged into one view |
+| An operator or agent files a friction/finding record | Operator or any agent, at any time | The record is validated **at intake** — its type must belong to the closed vocabulary (either spelling the digest accepts), its severity to the three-level scale, its label capped in length — and only then appended to the repository's raw records. A record that fails validation is refused with a corrective message naming the allowed values, and nothing is written |
 
 The digest is **regenerated, never appended to**. It is a photograph of standing friction, not a
 ledger. An append log would count the same friction once for every time it was re-observed and so
@@ -122,6 +125,11 @@ Each dropped record carries the same identifying fields as an entry, plus a **re
 It carries the reason **category only** — never the text that matched. A bare count would not
 distinguish one careless author from a repository systematically probing the reader every time it
 closes a feature.
+
+Records filed through the validating intake (Entry Points, last row) cannot reach `unrecognized
+type` — the intake refuses the record before it is stored. Drops of that reason therefore indicate
+records written by some other hand (historical rows, or a writer bypassing the intake), which is
+itself a signal worth reading.
 
 ## Behaviors & Operations
 

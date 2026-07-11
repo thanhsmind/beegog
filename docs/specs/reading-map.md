@@ -23,5 +23,6 @@ Where things live. Read the touched area's spec before its code.
 - `docs/history/<feature>/` — how a feature was decided, planned, validated, reviewed, and shipped.
 - `docs/decisions/` — numbered design decisions. `.bee/decisions.jsonl` — the live decision log.
 - `docs/backlog.md` — the product backlog. `.bee/backlog.jsonl` — friction and findings.
+- `.bee/state.json` and `.bee/backlog.jsonl` are **CLI-owned**: every mutation goes through `bee_state.mjs` (set/gate/worker/scribing-run) or `bee_backlog.mjs add` (source: `skills/bee-hive/templates/`); direct edits are denied by the write-guard, and a standing suite test keeps templates byte-identical to `.bee/bin/`. Shipped as `docs/history/cli-mutations/` (`walkthrough.md` carries the full contract).
 - `docs/history/research/` — standalone bee-xia research briefs (topic-slug files; each leads with its Bottom Line).
 - `hooks/` — plugin runtime hooks (source of truth; vendored to `.bee/bin/hooks/` by onboarding). The subagent model-tier guard contract (explicit tier per dispatch, anchored `[bee-tier]` marker) lives in `docs/decisions/0023-explicit-tier-transport.md` + `skills/bee-swarming/`, enforced by `hooks/bee-model-guard.mjs`, tested by `hooks/test_model_guard.mjs`. The same hook audit-logs every evaluated dispatch (transport, model, tier) to `.bee/logs/dispatch.jsonl` (P22).

@@ -1,0 +1,5 @@
+{
+  "red_failure_evidence": "Before the change, the real-session check printed `fable-5 7.6M/$16 + sonnet-5 10.6M/$3.79 + opus-4-8 1.3M/$2.46 = $22`, combining cache-read tokens into per-model token totals and obscuring billed versus cached usage.",
+  "verification_run": "node --check .claude/statusline-usage.mjs; bash -n .claude/statusline-command.sh; real transcript output assertion; cached replay assertion",
+  "verification_result": "$22 billed · 1.1M new · 18.5M cached"
+}

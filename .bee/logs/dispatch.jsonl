@@ -5,3 +5,17 @@
 {"ts":"2026-07-11T08:51:04.225Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[opus] Plan-checker: cli-mutations"}
 {"ts":"2026-07-11T08:51:09.320Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[opus] Cell reviewer: cold pickup"}
 {"ts":"2026-07-11T08:59:48.000Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker sate: cli-mutations-1"}
+{"ts":"2026-07-11T09:10:38.036Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker bora: cli-mutations-2"}
+{"ts":"2026-07-11T09:18:57.055Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker mumi: cli-mutations-3"}
+{"ts":"2026-07-11T09:19:05.495Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker keo: cli-mutations-4"}
+{"ts":"2026-07-11T10:53:11.696Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker mumi: cli-mutations-3 (retry)"}
+{"ts":"2026-07-11T10:53:19.420Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker keo: cli-mutations-4 (retry)"}
+{"ts":"2026-07-11T11:00:36.304Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[opus] Reviewer: code-quality"}
+{"ts":"2026-07-11T11:00:43.649Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[opus] Reviewer: architecture"}
+{"ts":"2026-07-11T11:00:53.569Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[opus] Reviewer: security"}
+{"ts":"2026-07-11T11:01:01.263Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[opus] Reviewer: test-coverage"}
+{"ts":"2026-07-11T11:10:35.808Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker vun: cli-mutations-fix-1"}
+{"ts":"2026-07-11T11:21:36.621Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker tam: cli-mutations-fix-2"}
+{"ts":"2026-07-11T11:29:48.964Z","tool":"Agent","transport":"model-param","model":"haiku","tier":null,"subagent_type":null,"description":"[haiku] Pattern extractor: cli-mutations"}
+{"ts":"2026-07-11T11:29:54.058Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Decision analyst: cli-mutations"}
+{"ts":"2026-07-11T11:30:00.252Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Failure analyst: cli-mutations"}
