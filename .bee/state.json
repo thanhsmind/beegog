@@ -10,7 +10,7 @@
     "review": true
   },
   "workers": [],
-  "summary": "model-tier-guard closed: explicit-tier dispatch enforcement shipped (hook+registration+docs+0023, 7 cells, 5 P1s fixed red-first, live-fire UAT); learnings + 1 critical promotion + decision c05613d9; 4 backlog rows (2 P3 findings, 2 friction)",
+  "summary": "release-0120 done: BEE_VERSION+plugin manifest 0.1.20, onboarding applied (all three copies 0.1.20), suites green, pushed",
   "next_action": null,
   "last_scribing_run": {
     "feature": "model-tier-guard",
@@ -36,5 +36,5 @@
     "capped": 48,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T06:46:39.638Z"
+  "last_activity": "2026-07-11T06:51:47.447Z"
 }

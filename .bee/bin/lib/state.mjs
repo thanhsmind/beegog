@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 
-export const BEE_VERSION = '0.1.19';
+export const BEE_VERSION = '0.1.20';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 

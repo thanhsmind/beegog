@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.19",
+  "bee_version": "0.1.20",
   "managed": {
     "agents_block": "2b1561be670adc571676fff44a8b5fd9649a43523cab0995fe9f16a57419fcd8",
     "helpers": {
@@ -23,7 +23,7 @@
       "guards.mjs": "7c5c0669a0482e3640edb365cc68b33ec59e14a5524762947f80ad12496f8f9d",
       "inject.mjs": "0763fa9856ed15827ed7c62d34fb66129a63722dcd554bf485da61ff0906fae8",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
-      "state.mjs": "f756d86b68cd5d05e025fbe7773c22441c0e00cee48c503d61973c3650d12565"
+      "state.mjs": "f55d1ffc23586a5976cd93f4036a05c6625d20e9bab15a8e5be24c6626a0d70d"
     },
     "repo_hooks": {
       "bee-session-init.mjs": "553fb75679c922e9eb08a1dd49e51f9168950007041c74b8e23c866ca8078b6c",
@@ -36,5 +36,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-11T06:33:56.520Z"
+  "updated_at": "2026-07-11T06:50:48.997Z"
 }
