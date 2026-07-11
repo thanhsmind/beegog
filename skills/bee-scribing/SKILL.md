@@ -17,6 +17,8 @@ metadata:
 
 Scribing is bee's BA. It owns the state layer: `docs/specs/<area>.md` (one BA-grade functional spec per long-lived area), `docs/specs/system-overview.md` (the cross-area glue — area map, shared entities, global roles, cross-area flows; decision 0003), `docs/specs/visuals/<area>/` (settled screen snapshots for UI areas), and `docs/specs/reading-map.md`. An **area is domain-general**: a screen or form, an API, a background job, an integration, a data pipeline, a CLI command, a business process — any unit with observable behavior that outlives features. Code is the implementation; the spec is the *meaning* — it must survive a full rewrite on a different stack (decision 0002).
 
+Any ad-hoc subagent dispatches scribing makes (for example, a harvest research pass) default to the generation slot model; ceiling requires the [bee-tier: ceiling] marker plus a one-line justification.
+
 **The rebuild bar (acceptance test for every spec):** a competent agent given ONLY this spec — with the Pointers section deleted — rebuilds the same observable behavior on a different technology. A human reading it understands every field, behavior, rule, and role without opening the code.
 
 **The tech-agnostic rule:** outside the final `Pointers (implementation)` section, a spec names NO language, framework, library, class, table, component, or file. Fields, screens, roles, actions, jobs, and messages are named in business vocabulary. "The React hook debounces and PATCHes /api/jobs" is a violation; "edits are saved automatically shortly after typing stops" is the spec. "A Celery beat task scans the `applications` table" is a violation; "every night, applications idle for 30 days are marked expired and the applicant is notified" is the spec.

@@ -20,6 +20,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 - Do not answer your own question — even when you are sure of the answer.
 - Do not research implementation, propose architecture, create cells, or write code — the sole exception is a throwaway SEE mock under `.spikes/<feature>/mocks/` (P11, decision 0020; step 4).
 - Do not invoke planning yourself. End by handing the user to `bee-planning`.
+- Any other ad-hoc subagent dispatches exploring makes, beyond the fresh-eyes reviewer's named review slot, default to the generation slot model; ceiling requires the [bee-tier: ceiling] marker plus a one-line justification.
 
 ## Flow
 

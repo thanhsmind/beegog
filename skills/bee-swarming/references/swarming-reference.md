@@ -49,6 +49,8 @@ node .bee/bin/bee_status.mjs --json    # .models shows both runtime maps
 
 Or in code: `resolveTier(root, tier, runtime)` from `lib/state.mjs` returns a typed dispatch — `{type:'inherit'}` (ceiling → omit the model param), `{type:'model', model}`, `{type:'budget'}` (prompt-enforced tier), or `{type:'cli', command}` (external executor, below). The legacy `modelForTier` still returns a model name or `null`. Two shapes, one map: keep the strongest model as `ceiling` and it stays scarce whether it is the orchestrator (fan-out) or a called-only advisor (rescue ladder).
 
+Every dispatch carries an explicit tier marker (decision 0023): `inherit` needs the [bee-tier: ceiling] marker in the prompt or description, and `budget` needs the matching [bee-tier: <tier>] marker stated alongside the budget in the prompt — a bare dispatch with neither the model param nor a marker is denied by the model-guard hook.
+
 ## External Executors — Multi-Provider Workers (P14, decision 0019)
 
 A configurable tier may name an **external CLI executor** instead of a model — that is how GPT/Codex, GLM, Kimi, or any other provider's CLI becomes a bee worker while Claude (or Codex) stays the orchestrator:

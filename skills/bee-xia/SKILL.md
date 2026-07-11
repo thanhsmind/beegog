@@ -27,6 +27,7 @@ If `.bee/onboarding.json` is missing or stale, stop and invoke `bee-hive`.
 - **Research only.** No source edits, no cells, no architecture commitments. The output is a brief, never code.
 - **Locked decisions win.** A finding that contradicts an active D-ID is *noted* with its evidence; superseding the D-ID is the user's move, never xia's.
 - **Finish the brief before recommending.** Ask one targeted question only when viable paths differ materially in behavior, operational risk, or migration cost — otherwise recommend from evidence.
+- Ad-hoc subagent dispatches xia makes beyond its own research steps default to the generation slot model; ceiling requires the [bee-tier: ceiling] marker plus a one-line justification.
 
 ## Depth
 

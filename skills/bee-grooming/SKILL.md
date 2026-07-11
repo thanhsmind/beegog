@@ -67,7 +67,7 @@ Each kill candidate becomes a backlog item with three fields: **pain** (what it 
 
 ## 4. Execute
 
-Approved kills run as normal tiny/small cells through the `bee-executing` worker loop — reserve, verify, cap. Grooming never edits files directly.
+Approved kills run as normal tiny/small cells through the `bee-executing` worker loop — reserve, verify, cap. Grooming never edits files directly. Ad-hoc subagent dispatches grooming makes while investigating a kill candidate default to the generation slot model; ceiling requires the [bee-tier: ceiling] marker plus a one-line justification.
 
 One approved kill per cell. Approval of one kill is not approval of its "related" neighbors — never batch unapproved kills into an approved cell.
 
