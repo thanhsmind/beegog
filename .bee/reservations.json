@@ -639,6 +639,30 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-11T01:34:21.570Z",
       "released_at": "2026-07-11T01:36:50.253Z"
+    },
+    {
+      "agent": "mason-1",
+      "cell": "skill-sync-1",
+      "path": "skills/bee-hive/scripts/onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T01:39:16.301Z",
+      "released_at": "2026-07-11T01:55:55.809Z"
+    },
+    {
+      "agent": "mason-1",
+      "cell": "skill-sync-1",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T01:39:16.336Z",
+      "released_at": "2026-07-11T01:55:55.809Z"
+    },
+    {
+      "agent": "mason-2",
+      "cell": "skill-sync-2",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T02:01:21.279Z",
+      "released_at": "2026-07-11T02:03:22.530Z"
     }
   ]
 }

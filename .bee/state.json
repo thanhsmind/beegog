@@ -11,15 +11,15 @@
   },
   "workers": [
     {
-      "nickname": "mason-0",
-      "cell": "skill-sync-0",
+      "nickname": "mason-2",
+      "cell": "skill-sync-2",
       "tier": "generation",
       "executor": "native",
       "status": "running"
     }
   ],
-  "summary": "skill-sync swarming: wave 1 (skill-sync-0, isolation retrofit) dispatched",
-  "next_action": "Tend wave 1, goal-check, then wave 2 (skill-sync-1)",
+  "summary": "skill-sync swarming: waves 1-2 clean (61b314c, 62b0a51); wave 3 (skill-sync-2 matrix tests) dispatched",
+  "next_action": "Tend wave 3, goal-check, then wave 4 (docs)",
   "last_scribing_run": {
     "feature": "learnings-pair-relocation",
     "date": "2026-07-11",
@@ -39,10 +39,10 @@
     "digest_refresh": "recovered 2026-07-11: regression restored, digest green (46 entries)"
   },
   "cells": {
-    "open": 4,
+    "open": 2,
     "claimed": 0,
-    "capped": 35,
+    "capped": 37,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T01:33:25.910Z"
+  "last_activity": "2026-07-11T01:57:17.143Z"
 }
