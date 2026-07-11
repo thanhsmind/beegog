@@ -48,6 +48,7 @@ const HOOK_FILENAMES = [
   "bee-state-sync.mjs",
   "bee-chain-nudge.mjs",
   "bee-session-close.mjs",
+  "bee-model-guard.mjs",
 ];
 
 const DEFAULT_STATE = {
@@ -957,6 +958,7 @@ function renderRepoHookEntries() {
     UserPromptSubmit: [{ hooks: [entry("bee-prompt-context.mjs")] }],
     PreToolUse: [
       { matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep", hooks: [entry("bee-write-guard.mjs")] },
+      { matcher: "Agent|Task", hooks: [entry("bee-model-guard.mjs")] },
     ],
     PostToolUse: [
       { matcher: "TaskCreate|TaskUpdate|TodoWrite", hooks: [entry("bee-state-sync.mjs")] },

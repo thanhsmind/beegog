@@ -403,6 +403,7 @@ try {
     "bee-state-sync.mjs",
     "bee-chain-nudge.mjs",
     "bee-session-close.mjs",
+    "bee-model-guard.mjs",
   ]) {
     check(settingsText.includes(`.bee/bin/hooks/${name}`), `settings.json wires ${name}`);
     check(fs.existsSync(path.join(tmp, ".bee", "bin", "hooks", name)),
