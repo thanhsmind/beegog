@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "phase": "swarming",
+  "phase": "reviewing",
   "feature": "cli-mutations",
   "mode": "standard",
   "approved_gates": {
@@ -11,14 +11,14 @@
   },
   "workers": [
     {
-      "nickname": "sate",
-      "cell": "cli-mutations-1",
+      "nickname": "vun",
+      "cell": "cli-mutations-fix-1",
       "tier": "generation",
       "status": "in-flight"
     }
   ],
-  "summary": "cli-mutations validated READY WITH CONSTRAINTS: 4 cells, wave order 1->2->{3,4}",
-  "next_action": "Tend wave 1 (cell 1), then waves 2 and 3.",
+  "summary": "cli-mutations review (4 native opus reviewers) found P1-1 (corrupt state.json silently clobbered to defaults) + P1-2 (template<->vendor byte-equality unguarded); fix-first cells dispatched, cli-mutations-fix-1 in flight (worker vun).",
+  "next_action": "Invoke bee-reviewing.",
   "last_scribing_run": {
     "feature": "dispatch-log",
     "date": "2026-07-11",
@@ -38,10 +38,10 @@
     "digest_refresh": "green (50 entries; 17 unknown_type drops pre-existing class)"
   },
   "cells": {
-    "open": 4,
+    "open": 2,
     "claimed": 0,
-    "capped": 56,
+    "capped": 62,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T08:59:53.809Z"
+  "last_activity": "2026-07-11T11:10:49.950Z"
 }

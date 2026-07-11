@@ -13,6 +13,7 @@ import {
   findRepoRoot,
   defaultState,
   readState,
+  readStateStrict,
   writeState,
   gateApproved,
   isKnownPhase,
@@ -145,6 +146,72 @@ check('readState returns defaults when state.json missing', () => {
   const state = readState(root);
   assert(state.phase === 'idle', `default phase should be idle, got ${state.phase}`);
   assert(gateApproved(state, 'execution') === false, 'execution gate should default false');
+});
+
+// ─── readStateStrict (review P1-1: a present-but-corrupt state.json must ────
+// fail loud, never be silently clobbered to defaults by a bee_state mutation).
+// readState itself stays fail-open — hooks and bee_status depend on that
+// shape — so these tests pin readStateStrict's distinct absent-vs-corrupt
+// behavior AND that readState's own semantics are unchanged.
+
+check('readStateStrict returns defaults when state.json is absent (same as readState)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-strict-absent-'));
+  try {
+    const state = readStateStrict(dir);
+    assert(state.phase === 'idle', `default phase should be idle, got ${state.phase}`);
+    assert(gateApproved(state, 'execution') === false, 'execution gate should default false');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('readStateStrict throws on a present-but-unparseable state.json, naming the file and a FIX', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-strict-corrupt-'));
+  try {
+    fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '{ not valid json', 'utf8');
+    let threw = null;
+    try {
+      readStateStrict(dir);
+    } catch (err) {
+      threw = err instanceof Error ? err.message : String(err);
+    }
+    assert(threw !== null, 'readStateStrict throws on unparseable JSON');
+    assert(/state\.json/.test(threw), `error names the state.json file, got ${threw}`);
+    assert(/not valid json/i.test(threw), `error says the file is not valid JSON, got ${threw}`);
+    assert(/refuses to rebuild state from defaults/i.test(threw), `error says the CLI refuses to rebuild from defaults, got ${threw}`);
+    assert(/FIX:/.test(threw), `error carries a FIX:, got ${threw}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('readStateStrict throws when state.json parses but is not a JSON object', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-strict-nonobject-'));
+  try {
+    fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '[1,2,3]', 'utf8');
+    assertThrows(
+      () => readStateStrict(dir),
+      'not a json object',
+      'readStateStrict rejects a non-object JSON value (an array)',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('readState (non-strict) still returns defaults for the same corrupt input — fail-open shape unchanged', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-nonstrict-corrupt-'));
+  try {
+    fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '{ not valid json', 'utf8');
+    const state = readState(dir);
+    assert(state.phase === 'idle', `readState should fail open to defaults, got phase ${state.phase}`);
+    assert(gateApproved(state, 'execution') === false, 'execution gate should default false');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ─── cells: add validation ──────────────────────────────────────────────────
@@ -2565,6 +2632,23 @@ check('bee_state.mjs set rejects an unknown phase (isKnownPhase, not the bare PH
     assert(/phase/i.test(result.stderr), `error names the phase, got ${result.stderr}`);
     const after = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
     assert(before === after, 'file untouched after a rejected set');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set refuses to mutate a present-but-corrupt state.json (review P1-1: never clobber to defaults)', () => {
+  const dir = makeStateRepo('bee-state-set-corrupt-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    fs.writeFileSync(statePath, '{ this is not json', 'utf8');
+    const before = fs.readFileSync(statePath, 'utf8');
+    const result = runBeeState(dir, ['set', '--summary', 'x']);
+    assert(result.status !== 0, `set over a corrupt state.json exits non-zero, got ${result.status}`);
+    assert(/state\.json/.test(result.stderr), `error names state.json, got ${result.stderr}`);
+    assert(/FIX:/.test(result.stderr), `error carries a FIX:, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'corrupt file is byte-identical after the refused mutation — never clobbered to defaults');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

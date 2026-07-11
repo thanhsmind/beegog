@@ -33,7 +33,7 @@
 
 import {
   findRepoRoot,
-  readState,
+  readStateStrict,
   writeState,
   isKnownPhase,
   KNOWN_PHASES,
@@ -113,7 +113,7 @@ function runSet(root, flags) {
   // Re-read immediately before the atomic write (C1) — no I/O happens between
   // this read and the write below, so the read-modify-write window stays at
   // its minimum, matching bee_cells.mjs's own claim/verify/cap pattern.
-  const state = readState(root);
+  const state = readStateStrict(root);
   const changed = [];
   if (flags.phase !== undefined) {
     state.phase = String(flags.phase);
@@ -148,7 +148,7 @@ function runGate(root, flags) {
   }
   const approved = requireBoolFlag(flags, 'approved');
   // Re-read immediately before the atomic write (C1).
-  const state = readState(root);
+  const state = readStateStrict(root);
   state.approved_gates = { ...state.approved_gates, [name]: approved };
   writeState(root, state);
   return { result: state, text: `Gate "${name}" set to ${approved}.` };
@@ -158,7 +158,7 @@ function runWorker(root, sub, flags) {
   // Re-read immediately before the atomic write (C1) — the find/merge/filter
   // below is pure in-memory work on the array, so reading here keeps the
   // read-to-write window at its minimum.
-  const state = readState(root);
+  const state = readStateStrict(root);
   const workers = Array.isArray(state.workers) ? [...state.workers] : [];
   let text;
   switch (sub) {
@@ -236,7 +236,7 @@ function runScribingRun(root, flags) {
   const at = now.toISOString();
   const date = at.slice(0, 10);
   // Re-read immediately before the atomic write (C1).
-  const state = readState(root);
+  const state = readStateStrict(root);
   state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
   // "plus top-level phase/next_action" (bee-scribing SKILL.md:112): mirror
   // next_action at the top level, and advance phase to "compounding" — the
