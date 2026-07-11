@@ -100,8 +100,15 @@ function runHookPayload(payload, cwd) {
   return result;
 }
 
-function runHookRaw(rawInput) {
-  return spawnSync(process.execPath, [HOOK_PATH], { input: rawInput, encoding: "utf8" });
+// spawnCwd pins the child's process.cwd() so cwd-fallback paths inside the
+// hook always resolve to a fixture, never to the real repo the suite runs
+// from (row17 previously appended a real .bee/logs/dispatch.jsonl line).
+function runHookRaw(rawInput, spawnCwd) {
+  return spawnSync(process.execPath, [HOOK_PATH], {
+    input: rawInput,
+    encoding: "utf8",
+    cwd: spawnCwd,
+  });
 }
 
 // --- expectation: read the SAME state.mjs module the hook will import,
@@ -258,7 +265,7 @@ async function main() {
   check(r10.status === 0, "row10: non-dispatch tool_name is allowed", `status=${r10.status} stderr=${r10.stderr}`);
 
   // --- 11. junk stdin -> exit 0 ---------------------------------------------
-  const r11 = runHookRaw("not json at all {{{");
+  const r11 = runHookRaw("not json at all {{{", noRepoRoot);
   check(r11.status === 0, "row11: junk stdin is allowed", `status=${r11.status} stderr=${r11.stderr}`);
 
   // --- 12. cwd with no .bee anywhere -> exit 0 ------------------------------
@@ -279,13 +286,13 @@ async function main() {
   // --- 15. null top-level payload -> exit 0, empty stderr ------------------
   // (P1-2 CONFIRMED red: `echo null | node hooks/bee-model-guard.mjs` crashed
   // with an uncaught TypeError on `payload.cwd`, exit 1)
-  const r15 = runHookRaw("null");
+  const r15 = runHookRaw("null", noRepoRoot);
   check(r15.status === 0, "row15: null top-level payload is allowed (fail-open)",
     `status=${r15.status} stderr=${r15.stderr}`);
   check(r15.stderr === "", "row15: null top-level payload produces empty stderr", JSON.stringify(r15.stderr));
 
   // --- 16. array top-level payload -> exit 0, empty stderr ------------------
-  const r16 = runHookRaw("[]");
+  const r16 = runHookRaw("[]", noRepoRoot);
   check(r16.status === 0, "row16: array top-level payload is allowed (fail-open)",
     `status=${r16.status} stderr=${r16.stderr}`);
   check(r16.stderr === "", "row16: array top-level payload produces empty stderr", JSON.stringify(r16.stderr));
@@ -295,11 +302,20 @@ async function main() {
   // let a non-string reach findRepoRoot/path.resolve) -----------------------
   const r17 = runHookRaw(
     JSON.stringify({ tool_name: "Agent", cwd: { not: "a string" }, tool_input: { model: "sonnet" } }),
+    enabledRoot,
   );
   check(
     r17.status === 0,
     "row17: cwd as an object falls back to process.cwd() and the dispatch is still evaluated",
     `status=${r17.status} stderr=${r17.stderr}`,
+  );
+  // The fallback evaluation must log into the fixture (the child's cwd), never
+  // into the directory the suite happens to run from.
+  const d17 = readLastJsonl(path.join(enabledRoot, ".bee", "logs", "dispatch.jsonl"));
+  check(
+    d17 && d17.transport === "model-param" && d17.model === "sonnet",
+    "row17: fallback-evaluated dispatch logged in the fixture's dispatch.jsonl",
+    JSON.stringify(d17),
   );
 
   // --- 18. vendored state.mjs throws on import -> exit 0, empty stderr, one
@@ -349,6 +365,74 @@ async function main() {
     check(withMarker.status === 0, `row-table[${toolName}]: anchored marker is allowed`,
       `status=${withMarker.status} stderr=${withMarker.stderr}`);
   }
+
+  // --- 20. dispatch audit log (P22, feature dispatch-log): every evaluated
+  // dispatch appends one line to .bee/logs/dispatch.jsonl recording its
+  // transport; logging is fail-open and never changes the guard's decision ---
+  const dispatchLog = path.join(enabledRoot, ".bee", "logs", "dispatch.jsonl");
+
+  const r20a = runHookPayload(
+    {
+      tool_name: "Agent",
+      tool_input: { model: "haiku", description: "pattern extractor", subagent_type: "general-purpose" },
+    },
+    enabledRoot,
+  );
+  check(r20a.status === 0, "row20a: model-param dispatch still allowed", `status=${r20a.status} stderr=${r20a.stderr}`);
+  const d20a = readLastJsonl(dispatchLog);
+  check(
+    d20a &&
+      d20a.transport === "model-param" &&
+      d20a.model === "haiku" &&
+      d20a.tool === "Agent" &&
+      d20a.description === "pattern extractor" &&
+      d20a.subagent_type === "general-purpose",
+    "row20a: dispatch line records model-param transport with the model name",
+    JSON.stringify(d20a),
+  );
+
+  const r20b = runHookPayload(
+    { tool_name: "Task", tool_input: { prompt: "[bee-tier: review] check the diff" } },
+    enabledRoot,
+  );
+  check(r20b.status === 0, "row20b: marker dispatch still allowed", `status=${r20b.status} stderr=${r20b.stderr}`);
+  const d20b = readLastJsonl(dispatchLog);
+  check(
+    d20b && d20b.transport === "marker" && d20b.tier === "review" && d20b.tool === "Task",
+    "row20b: dispatch line records marker transport with the extracted tier",
+    JSON.stringify(d20b),
+  );
+
+  const r20c = runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "bare dispatch with nothing declared" } },
+    enabledRoot,
+  );
+  const d20c = readLastJsonl(dispatchLog);
+  check(
+    r20c.status === 2 && d20c && d20c.transport === "bare-denied",
+    "row20c: denied bare dispatch is logged as bare-denied (deny semantics unchanged)",
+    `status=${r20c.status} line=${JSON.stringify(d20c)}`,
+  );
+
+  const r20d = runHookPayload(
+    { tool_name: "Agent", tool_input: { model: "sonnet", description: "z".repeat(300) } },
+    enabledRoot,
+  );
+  check(r20d.status === 0, "row20d: long-description dispatch still allowed", `status=${r20d.status}`);
+  const d20d = readLastJsonl(dispatchLog);
+  check(
+    d20d && typeof d20d.description === "string" && d20d.description.length <= 120,
+    "row20d: logged description is truncated to <=120 chars",
+    JSON.stringify(d20d && d20d.description ? d20d.description.length : d20d),
+  );
+
+  const disabledDispatchLog = path.join(disabledRoot, ".bee", "logs", "dispatch.jsonl");
+  runHookPayload({ tool_name: "Agent", tool_input: { model: "sonnet" } }, disabledRoot);
+  check(
+    !fs.existsSync(disabledDispatchLog),
+    "row20e: disabled guard writes no dispatch log",
+    disabledDispatchLog,
+  );
 
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;

@@ -10,31 +10,31 @@
     "review": true
   },
   "workers": [],
-  "summary": "grill-deltas closed: P20+P21 shipped (materiality test + Terms glossary), review PASS after 2 P1 fixes, scribing skills-as-spec, compounding done (1 critical promotion, decision 71eca844, 2 friction filed, digest 49 entries)",
+  "summary": "dispatch-log (P22) closed: fail-open dispatch audit log in bee-model-guard (RED-first, ALL PASS, vendor synced, live-fired same session) + row17 isolation fix; backlog P22 done; learnings 20260711-dispatch-log.md; decision 3fd0a7aa; 2 friction filed; digest 50 entries",
   "next_action": null,
   "last_scribing_run": {
-    "feature": "grill-deltas",
+    "feature": "dispatch-log",
     "date": "2026-07-11",
-    "at": "2026-07-11T07:20:00.000Z",
+    "at": "2026-07-11T07:38:00.000Z",
     "areas_synced": [
-      "no docs/specs area sync needed — skills-as-spec convention (reading-map): P20 materiality test and P21 Terms glossary live in skills/bee-exploring SKILL.md + context-template.md + skills/bee-scribing SKILL.md, all updated by the cells themselves; reading-map gained one Elsewhere line for docs/history/research/ (standalone xia briefs); backlog P20/P21 flipped done, rank + badges refreshed (20 done / 1 in-flight / 0 proposed)"
+      "no docs/specs area sync needed — hooks-as-source convention (reading-map): the dispatch-log contract lives in hooks/bee-model-guard.mjs + its test + decision 3fd0a7aa; reading-map's hooks line extended with the .bee/logs/dispatch.jsonl audit log (P22); backlog P22 flipped done, rank + badges refreshed (21 done / 1 in-flight / 0 proposed)"
     ],
     "next_action": "bee-compounding"
   },
   "last_compounding_run": {
-    "feature": "grill-deltas",
-    "at": "2026-07-11T07:24:00.000Z",
-    "learnings": "docs/history/learnings/20260711-grill-deltas.md",
-    "critical_promotions": 1,
-    "decisions_logged": 2,
+    "feature": "dispatch-log",
+    "at": "2026-07-11T07:40:00.000Z",
+    "learnings": "docs/history/learnings/20260711-dispatch-log.md",
+    "critical_promotions": 0,
+    "decisions_logged": 1,
     "friction_filed": 2,
-    "digest_refresh": "green (49 entries; 15 unknown_type drops pre-existing class)"
+    "digest_refresh": "green (50 entries; 17 unknown_type drops pre-existing class)"
   },
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 53,
+    "capped": 54,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T07:21:36.625Z"
+  "last_activity": "2026-07-11T07:36:05.585Z"
 }
