@@ -189,25 +189,57 @@ function lstatIfExists(p) {
   }
 }
 
-// Fallback-free version reader (D3). The legacy readBeeVersion() silently
-// returns 0.1.0 on a missing/unparsable state.mjs, which would let a
-// resolution failure masquerade as an old version and become force-able.
-// Here: treeExists=false -> "absent" (fresh install / first onboard, proceed);
-// an EXISTING tree whose version cannot be read -> "unknown" (refuse, never
-// forceable).
-function readVersionStrict(stateFile, treeExists) {
+// Fallback-free version reader (D3, hardened per review P1-1/P1-2). The
+// legacy readBeeVersion() silently returns 0.1.0 on a missing/unparsable
+// state.mjs, which would let a resolution failure masquerade as an old version
+// and become force-able. Here: treeExists=false -> "absent" (fresh install /
+// first onboard, proceed); an EXISTING tree whose version cannot be read ->
+// "unknown" (refuse, never forceable). "Read" is strict: the marker must be a
+// REGULAR, non-symlinked file - when componentRoot is given, every path
+// component from that root down to the marker is lstat'ed (a symlinked
+// directory on the way is as untrusted as a symlinked marker); without it the
+// marker file itself is lstat'ed - and the content must carry exactly ONE
+// line-anchored `export const BEE_VERSION = 'x.y.z'` declaration. Substring
+// matches (comment decoys) never resolve; multiple declarations are unknown.
+const BEE_VERSION_LINE_RE = /^export const BEE_VERSION = ['"]([^'"]*)['"];?[ \t]*\r?$/gm;
+
+function readVersionStrict(stateFile, treeExists, { componentRoot = null } = {}) {
   if (!treeExists) {
     return { state: "absent", value: null };
   }
+  const unknown = { state: "unknown", value: null };
+  const components = [];
+  if (componentRoot) {
+    const rel = path.relative(componentRoot, stateFile);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+      return unknown; // marker escaped the managed root: never trusted
+    }
+    let current = componentRoot;
+    for (const part of rel.split(path.sep)) {
+      current = path.join(current, part);
+      components.push(current);
+    }
+  } else {
+    components.push(stateFile);
+  }
+  for (let i = 0; i < components.length; i += 1) {
+    const st = lstatIfExists(components[i]);
+    const isMarker = i === components.length - 1;
+    if (!st || st.isSymbolicLink() || (isMarker ? !st.isFile() : !st.isDirectory())) {
+      return unknown;
+    }
+  }
   let text = null;
   try {
-    text = fs.existsSync(stateFile) ? fs.readFileSync(stateFile, "utf8") : null;
+    text = fs.readFileSync(stateFile, "utf8");
   } catch {
-    text = null;
+    return unknown;
   }
-  const match = text ? text.match(/BEE_VERSION\s*=\s*['"]([^'"]+)['"]/) : null;
-  const value = match && /^\d+\.\d+\.\d+$/.test(match[1]) ? match[1] : null;
-  return value ? { state: "resolved", value } : { state: "unknown", value: null };
+  const matches = [...text.matchAll(BEE_VERSION_LINE_RE)];
+  if (matches.length !== 1 || !/^\d+\.\d+\.\d+$/.test(matches[0][1])) {
+    return unknown;
+  }
+  return { state: "resolved", value: matches[0][1] };
 }
 
 function compareVersions(a, b) {
@@ -279,15 +311,96 @@ function listBeeSkillEntries(root) {
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
+// Canonical filesystem identity for case-alias detection (review P1-5): on a
+// case-insensitive filesystem, `bee-hive` and `bee-Hive` are two NAMES for one
+// physical entry - exact-case string comparison would let the sync pass write
+// it and the removal pass then delete it. Identity is dev:ino via lstat (never
+// follows links); any two bee-* names resolving to one identity block those
+// skills loudly - never sync-then-delete.
+function entryIdentity(p) {
+  const st = lstatIfExists(p);
+  return st ? `${st.dev}:${st.ino}` : null;
+}
+
+// Probe every candidate name (source names + installed entries) under the
+// target root; two DIFFERENT names on one physical identity collide - all
+// names involved are returned as blocked.
+function detectAliasCollisions(sourceNames, targetRoot) {
+  const names = new Set(sourceNames);
+  for (const entry of listBeeSkillEntries(targetRoot)) {
+    names.add(entry.name);
+  }
+  const byIdentity = new Map();
+  for (const name of names) {
+    const id = entryIdentity(path.join(targetRoot, name));
+    if (!id) {
+      continue;
+    }
+    if (!byIdentity.has(id)) {
+      byIdentity.set(id, []);
+    }
+    byIdentity.get(id).push(name);
+  }
+  const collided = new Set();
+  for (const aliasNames of byIdentity.values()) {
+    if (aliasNames.length > 1) {
+      for (const n of aliasNames) {
+        collided.add(n);
+      }
+    }
+  }
+  return collided;
+}
+
+// Nested variant of the same check inside ONE skill: every source and target
+// rel path is probed under the installed skill dir; two different rels
+// resolving to one physical entry (e.g. references/ vs References/ on a
+// case-insensitive fs) block the whole skill.
+function detectNestedAlias(targetDir, sourceWalk, targetWalk) {
+  const rels = new Set([
+    ...sourceWalk.files.keys(),
+    ...sourceWalk.dirs,
+    ...targetWalk.files.keys(),
+    ...targetWalk.dirs,
+  ]);
+  const byIdentity = new Map();
+  for (const rel of rels) {
+    const id = entryIdentity(path.join(targetDir, ...rel.split("/")));
+    if (!id) {
+      continue;
+    }
+    if (byIdentity.has(id) && byIdentity.get(id) !== rel) {
+      return { a: byIdentity.get(id), b: rel };
+    }
+    byIdentity.set(id, rel);
+  }
+  return null;
+}
+
+function aliasBlockedItem(name, detail) {
+  return {
+    action: "blocked_alias",
+    skill: name,
+    path: name,
+    reason: `installed ${name} ${detail} - blocked, never sync-then-delete`,
+  };
+}
+
 // D4/D5 drift plan items. Content difference IS drift, at any version (D5);
 // a bee-* skill absent from the anchored source IS an intentional removal (D2).
 function computeSkillItems(sourceRoot, targetRoot) {
   const items = [];
   const sourceEntries = listBeeSkillEntries(sourceRoot);
   const sourceNames = new Set(sourceEntries.map((entry) => entry.name));
+  const aliasCollisions = detectAliasCollisions(sourceNames, targetRoot);
 
   for (const entry of sourceEntries) {
     const name = entry.name;
+    if (aliasCollisions.has(name)) {
+      items.push(aliasBlockedItem(name,
+        "shares one physical entry with a differently-named bee-* entry (case-insensitive alias)"));
+      continue;
+    }
     if (entry.isSymbolicLink()) {
       items.push({
         action: "blocked_symlink",
@@ -336,6 +449,12 @@ function computeSkillItems(sourceRoot, targetRoot) {
       });
       continue;
     }
+    const nestedAlias = detectNestedAlias(targetDir, sourceWalk, targetWalk);
+    if (nestedAlias) {
+      items.push(aliasBlockedItem(name,
+        `has nested entries ${nestedAlias.a} and ${nestedAlias.b} resolving to one physical entry (case-insensitive alias)`));
+      continue;
+    }
     if (manifestFingerprint(sourceWalk.files) !== manifestFingerprint(targetWalk.files)) {
       items.push({ action: "sync_skill", skill: name, path: name });
     }
@@ -344,6 +463,11 @@ function computeSkillItems(sourceRoot, targetRoot) {
   for (const entry of listBeeSkillEntries(targetRoot)) {
     const name = entry.name;
     if (sourceNames.has(name)) {
+      continue;
+    }
+    if (aliasCollisions.has(name)) {
+      items.push(aliasBlockedItem(name,
+        "shares one physical entry with a differently-named bee-* entry (case-insensitive alias)"));
       continue;
     }
     if (entry.isSymbolicLink()) {
@@ -411,6 +535,31 @@ function computeSkillSync(repoRoot) {
   const realSource = fs.realpathSync(sourceRoot);
   const targetExists = fs.existsSync(targetRoot);
   const realTarget = targetExists ? fs.realpathSync(targetRoot) : path.resolve(targetRoot);
+
+  // Repo<->target overlap (review P1-4): a repo living under the skills root
+  // (or containing it) must never be mutable or deletable by its own onboard -
+  // the remove_skill pass could erase the live checkout, git history included.
+  // Refused at preflight, never forceable, zero mutations.
+  let realRepo;
+  try {
+    realRepo = fs.realpathSync(repoRoot);
+  } catch {
+    realRepo = path.resolve(repoRoot);
+  }
+  if (
+    realRepo === realTarget ||
+    realRepo.startsWith(realTarget + path.sep) ||
+    realTarget.startsWith(realRepo + path.sep)
+  ) {
+    result.blocked = {
+      status: "blocked_no_source",
+      reason:
+        "repo root and the global skills root overlap (one contains the other) - a repo inside the managed skill target must never be touched by its own onboard, refusing fail-closed",
+      forceable: false,
+    };
+    return result;
+  }
+
   if (targetExists && realSource === realTarget) {
     result.mode = "noop"; // running the installed copy itself (D2)
   } else if (
@@ -437,13 +586,29 @@ function computeSkillSync(repoRoot) {
   );
   const hostStateFile = path.join(repoRoot, ".bee", "bin", "lib", "state.mjs");
   const hostVersion = readVersionStrict(hostStateFile, fs.existsSync(hostStateFile));
+  // Review P1-1: "absent" is earned only by a target with NO lstat-visible
+  // bee-* entry at all (a true fresh install). ANY bee-* presence without a
+  // readable bee-hive version marker is "unknown" - refuse, never forceable:
+  // a target holding newer bee-* skills but no readable bee-hive must never
+  // read as fresh and get overwritten/deleted by an older source.
   const installedHive = path.join(targetRoot, "bee-hive");
+  let installedTreeExists = false;
+  if (targetExists) {
+    try {
+      installedTreeExists = fs
+        .readdirSync(targetRoot, { withFileTypes: true })
+        .some((entry) => SKILL_DIR_RE.test(entry.name));
+    } catch {
+      installedTreeExists = true; // unreadable target: fail closed -> unknown
+    }
+  }
   const installedVersion =
     result.mode === "noop"
       ? sourceVersion
       : readVersionStrict(
           path.join(installedHive, "templates", "lib", "state.mjs"),
-          fs.existsSync(installedHive),
+          installedTreeExists,
+          { componentRoot: targetRoot }, // lstat every component inside the managed target (review P1-2)
         );
   result.versions = {
     source: versionLabel(sourceVersion),
@@ -522,6 +687,12 @@ function applySyncSkill(sourceRoot, targetRoot, name) {
       blocked: `source ${name} contains a ${sourceWalk.blocked.reason} at ${sourceWalk.blocked.path} - skipped`,
     };
   }
+  // Apply-time alias recheck (review P1-5): plan-to-apply races fail closed.
+  if (detectAliasCollisions(new Set([name]), targetRoot).has(name)) {
+    return {
+      blocked: `installed ${name} shares one physical entry with a differently-named bee-* entry (case-insensitive alias) - skipped, never sync-then-delete`,
+    };
+  }
   const targetDir = path.join(targetRoot, name);
   let targetStat = lstatIfExists(targetDir);
   if (targetStat && targetStat.isSymbolicLink()) {
@@ -543,35 +714,46 @@ function applySyncSkill(sourceRoot, targetRoot, name) {
     fs.rmSync(targetDir, { force: true });
     targetStat = null;
   }
+  const nestedAlias = detectNestedAlias(targetDir, sourceWalk, targetWalk);
+  if (nestedAlias) {
+    return {
+      blocked: `installed ${name} has nested entries ${nestedAlias.a} and ${nestedAlias.b} resolving to one physical entry (case-insensitive alias) - skipped, never sync-then-delete`,
+    };
+  }
   fs.mkdirSync(targetDir, { recursive: true });
   const sourceDirSet = new Set(sourceWalk.dirs);
+  // Phase 1 - cleanup, deepest-first, BEFORE materializing anything (review
+  // P1-3: the old order ran cleanup from the stale target snapshot AFTER
+  // writing the source shape, deleting freshly written content on dir<->file
+  // transitions). Every removal below targets a pre-write snapshot entry that
+  // is stale or of the opposite type; source-shaped paths are never touched
+  // (a source file's ancestors are all source dirs, so no stale dir can
+  // contain a kept file).
+  const staleEntries = [
+    ...[...targetWalk.files.keys()]
+      .filter((rel) => !sourceWalk.files.has(rel))
+      .map((rel) => ({ rel, recursive: false })),
+    ...targetWalk.dirs
+      .filter((rel) => !sourceDirSet.has(rel))
+      .map((rel) => ({ rel, recursive: true })),
+  ].sort((a, b) => b.rel.split("/").length - a.rel.split("/").length);
+  for (const { rel, recursive } of staleEntries) {
+    fs.rmSync(path.join(targetDir, ...rel.split("/")), { recursive, force: true });
+  }
+  // Phase 2 - materialize the source shape onto the cleaned target: every
+  // remaining target entry now matches its source type, so a plain mkdir +
+  // atomic write per path suffices.
   for (const rel of sourceWalk.dirs) {
-    const abs = path.join(targetDir, ...rel.split("/"));
-    const st = lstatIfExists(abs);
-    if (st && !st.isDirectory()) {
-      fs.rmSync(abs, { force: true }); // walked above: cannot be a symlink
-    }
-    fs.mkdirSync(abs, { recursive: true });
+    fs.mkdirSync(path.join(targetDir, ...rel.split("/")), { recursive: true });
   }
   for (const [rel, hash] of sourceWalk.files) {
-    const abs = path.join(targetDir, ...rel.split("/"));
-    const st = lstatIfExists(abs);
-    if (st && st.isDirectory()) {
-      fs.rmSync(abs, { recursive: true, force: true }); // contents walked symlink-free
+    if (targetWalk.files.get(rel) === hash) {
+      continue; // already byte-identical; cleanup above never touches source-shaped rels
     }
-    if (!st || !st.isFile() || targetWalk.files.get(rel) !== hash) {
-      writeFileAtomicRandom(abs, fs.readFileSync(path.join(sourceDir, ...rel.split("/"))));
-    }
-  }
-  for (const rel of targetWalk.files.keys()) {
-    if (!sourceWalk.files.has(rel)) {
-      fs.rmSync(path.join(targetDir, ...rel.split("/")), { force: true });
-    }
-  }
-  for (const rel of [...targetWalk.dirs].sort((a, b) => b.length - a.length)) {
-    if (!sourceDirSet.has(rel)) {
-      fs.rmSync(path.join(targetDir, ...rel.split("/")), { recursive: true, force: true });
-    }
+    writeFileAtomicRandom(
+      path.join(targetDir, ...rel.split("/")),
+      fs.readFileSync(path.join(sourceDir, ...rel.split("/"))),
+    );
   }
   return { blocked: null };
 }
@@ -594,6 +776,13 @@ function applyRemoveSkill(targetRoot, name) {
   }
   if (!st.isDirectory()) {
     return { blocked: `installed ${name} is not a directory - outside the deletion domain, skipped` };
+  }
+  // Apply-time alias recheck (review P1-5): never delete a physical entry that
+  // another bee-* name (e.g. the sync pass's fresh output) also resolves to.
+  if (detectAliasCollisions(new Set([name]), targetRoot).has(name)) {
+    return {
+      blocked: `installed ${name} shares one physical entry with a differently-named bee-* entry (case-insensitive alias) - skipped, never sync-then-delete`,
+    };
   }
   const walked = walkSkillTree(targetDir);
   if (walked.blocked) {
@@ -1114,8 +1303,10 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngra
         }
         break;
       }
-      case "blocked_symlink": {
-        // Loud per-skill report (F6): never written through, unlinked, or deleted.
+      case "blocked_symlink":
+      case "blocked_alias": {
+        // Loud per-skill report (F6 / review P1-5): never written through,
+        // unlinked, deleted, or sync-then-deleted.
         skippedSkills.push({ skill: item.skill, reason: item.reason });
         continue;
       }

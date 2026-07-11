@@ -1267,6 +1267,476 @@ function hashTree(dir) {
   }
 }
 
+// --- 10q. partial install: bee-* present without readable bee-hive = unknown ---
+// (review P1-1) A target holding bee-* skills but NO readable bee-hive version
+// marker must resolve installed_skills to "unknown" (refuse, never forceable) -
+// never "absent": an older source would otherwise overwrite/delete newer
+// foreign bee-* skills with no refusal. "absent" is earned only by a target
+// with zero lstat-visible bee-* entries.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-partial-"));
+  const home = makeFakeHome();
+  const home2 = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.19",
+      skills: {},
+    });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    const installedRoot = makeInstalledSkills(home, {
+      version: null, // NO bee-hive at all - only a foreign bee-* skill
+      skills: { "bee-newer": { "SKILL.md": "# from a newer layout\n" } },
+    });
+    const homeBefore = hashTree(home);
+    const repoBefore = hashTree(repo);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(plan.status === 0 && plan.payload?.status === "blocked_downgrade",
+      "partial install (bee-* without bee-hive) refuses as unknown, never fresh (review P1-1)",
+      `exit ${plan.status} status ${plan.payload?.status}`);
+    check(plan.payload?.versions?.installed_skills === "unknown",
+      "partial install reports installed_skills unknown, not absent",
+      JSON.stringify(plan.payload?.versions || null));
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(apply.status === 1 && apply.payload?.status === "blocked_downgrade",
+      "partial install: apply refuses with exit 1",
+      `exit ${apply.status} status ${apply.payload?.status}`);
+    const forced = runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+    check(forced.status === 1 && forced.payload?.status === "blocked_downgrade",
+      "partial-install unknown is NEVER forceable",
+      `exit ${forced.status} status ${forced.payload?.status}`);
+    check(fs.existsSync(path.join(installedRoot, "bee-newer")) &&
+      readInstalled(home, "bee-newer/SKILL.md") === "# from a newer layout\n",
+      "the foreign bee-* skill survives byte-identical (never deleted as 'fresh')");
+    check(hashTree(home) === homeBefore && hashTree(repo) === repoBefore,
+      "partial-install refusal mutates nothing anywhere");
+    // Contrast: an EXISTING target dir with ONLY non-bee entries is still a
+    // fresh install ("absent" = no lstat-visible bee-* entry at all).
+    fs.mkdirSync(path.join(home2, ".claude", "skills", "agent-browser"), { recursive: true });
+    fs.writeFileSync(path.join(home2, ".claude", "skills", "agent-browser", "SKILL.md"),
+      "# not bee's\n", "utf8");
+    const fresh = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home2);
+    check(fresh.status === 0 && fresh.payload?.status === "applied",
+      "a target with only non-bee entries still reads absent -> fresh install proceeds",
+      `exit ${fresh.status} status ${fresh.payload?.status}`);
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(home2, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10r. version reader: ONE line-anchored declaration on a regular file ----
+// (review P1-2) The preflight reader must accept exactly one line-anchored
+// `export const BEE_VERSION = 'x.y.z'` read from a REGULAR, non-symlinked file
+// (every path component under the managed target lstat'ed; source side lstats
+// the marker file itself). Comment decoys never resolve, multiple declarations
+// are unknown, symlinked markers or components are unknown - and unknown
+// always refuses, never forceable.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-reader-"));
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.19",
+      skills: {},
+    });
+    let repoN = 0;
+    const nextRepo = () => {
+      repoN += 1;
+      const r = path.join(base, `repo-${repoN}`);
+      fs.mkdirSync(r, { recursive: true });
+      return r;
+    };
+
+    // (a) decoy comment above the real declaration -> the REAL version wins
+    {
+      const home = makeFakeHome();
+      try {
+        makeInstalledSkills(home, {
+          stateText: "// BEE_VERSION = '0.1.18' decoy comment - never the version\n" +
+            "export const BEE_VERSION = '0.1.20';\n",
+        });
+        const homeBefore = hashTree(home);
+        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--json"], home);
+        check(apply.status === 1 && apply.payload?.status === "blocked_downgrade",
+          "decoy BEE_VERSION comment never resolves: the real 0.1.20 refuses a 0.1.19 source (review P1-2)",
+          `exit ${apply.status} status ${apply.payload?.status}`);
+        check(apply.payload?.versions?.installed_skills === "0.1.20",
+          "reader reports the real line-anchored version, never the decoy",
+          JSON.stringify(apply.payload?.versions || null));
+        check(hashTree(home) === homeBefore,
+          "decoy-refused apply mutates nothing in the target");
+      } finally {
+        try {
+          fs.rmSync(home, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    }
+
+    // (b) multiple line-anchored declarations -> unknown, never forceable
+    {
+      const home = makeFakeHome();
+      try {
+        makeInstalledSkills(home, {
+          stateText: "export const BEE_VERSION = '0.1.18';\n" +
+            "export const BEE_VERSION = '0.1.20';\n",
+        });
+        const homeBefore = hashTree(home);
+        const forced = runOnboardAt(launcher,
+          ["--repo-root", nextRepo(), "--apply", "--force-downgrade", "--json"], home);
+        check(forced.status === 1 && forced.payload?.status === "blocked_downgrade" &&
+          forced.payload?.versions?.installed_skills === "unknown",
+          "multiple BEE_VERSION declarations resolve to unknown and refuse even --force-downgrade",
+          `exit ${forced.status} versions ${JSON.stringify(forced.payload?.versions || null)}`);
+        check(hashTree(home) === homeBefore,
+          "multi-declaration refusal mutates nothing in the target");
+      } finally {
+        try {
+          fs.rmSync(home, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    }
+
+    // (c) symlinked marker FILE -> unknown (the reader lstats the marker)
+    {
+      const home = makeFakeHome();
+      try {
+        const root = makeInstalledSkills(home, {
+          version: null,
+          skills: { "bee-hive": { "SKILL.md": "# installed hive\n" } },
+        });
+        const outsideMarker = path.join(base, "outside-marker-c.mjs");
+        fs.writeFileSync(outsideMarker, fakeStateSource("0.1.18"), "utf8");
+        fs.mkdirSync(path.join(root, "bee-hive", "templates", "lib"), { recursive: true });
+        fs.symlinkSync(outsideMarker,
+          path.join(root, "bee-hive", "templates", "lib", "state.mjs"));
+        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--json"], home);
+        check(apply.status === 1 && apply.payload?.status === "blocked_downgrade" &&
+          apply.payload?.versions?.installed_skills === "unknown",
+          "symlinked version marker is never followed: unknown, refused",
+          `exit ${apply.status} versions ${JSON.stringify(apply.payload?.versions || null)}`);
+        check(fs.readFileSync(outsideMarker, "utf8") === fakeStateSource("0.1.18"),
+          "symlink target file untouched by the refused apply");
+      } finally {
+        try {
+          fs.rmSync(home, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    }
+
+    // (d) symlinked path COMPONENT (templates/) -> unknown
+    {
+      const home = makeFakeHome();
+      try {
+        const root = makeInstalledSkills(home, {
+          version: null,
+          skills: { "bee-hive": { "SKILL.md": "# installed hive\n" } },
+        });
+        const outsideTemplates = path.join(base, "outside-templates-d");
+        fs.mkdirSync(path.join(outsideTemplates, "lib"), { recursive: true });
+        fs.writeFileSync(path.join(outsideTemplates, "lib", "state.mjs"),
+          fakeStateSource("0.1.18"), "utf8");
+        fs.symlinkSync(outsideTemplates, path.join(root, "bee-hive", "templates"));
+        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--json"], home);
+        check(apply.status === 1 && apply.payload?.status === "blocked_downgrade" &&
+          apply.payload?.versions?.installed_skills === "unknown",
+          "symlinked path component under the managed target is never trusted: unknown, refused",
+          `exit ${apply.status} versions ${JSON.stringify(apply.payload?.versions || null)}`);
+      } finally {
+        try {
+          fs.rmSync(home, { recursive: true, force: true });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    }
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10s. dir<->file transitions converge without deleting fresh output -----
+// (review P1-3) The old apply materialized the source shape FIRST and ran
+// stale-entry cleanup from the pre-write snapshot AFTERWARDS: on a dir->file
+// transition the stale-dirs pass rm -rf'ed the freshly written file; on
+// file->dir the stale-files pass hit a directory mid-apply. Both directions
+// (including nested paths) must converge to full manifest parity (D5).
+{
+  // Direction A: installed DIRECTORY -> source FILE (top-level and nested)
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-dir2file-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.19",
+      skills: {
+        "bee-doc": {
+          "SKILL.md": "# doc\n",
+          "guide": "# guide is now a FILE\n",
+          "refs/data": "# data is now a FILE\n",
+        },
+      },
+    });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    makeInstalledSkills(home, {
+      version: "0.1.19",
+      skills: {
+        "bee-doc": {
+          "SKILL.md": "# doc\n",
+          "guide/intro.md": "# old intro\n",
+          "guide/deep/note.md": "# old nested note\n",
+          "refs/data/x.md": "# old nested data\n",
+        },
+      },
+    });
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(apply.status === 0 && apply.payload?.status === "applied",
+      "dir->file transition: apply succeeds",
+      `exit ${apply.status} stdout ${apply.stdout}`);
+    check(readInstalled(home, "bee-doc/guide") === "# guide is now a FILE\n",
+      "dir->file: freshly materialized top-level file survives cleanup (review P1-3)",
+      String(readInstalled(home, "bee-doc/guide")));
+    check(readInstalled(home, "bee-doc/refs/data") === "# data is now a FILE\n",
+      "dir->file: freshly materialized NESTED file survives cleanup",
+      String(readInstalled(home, "bee-doc/refs/data")));
+    check(apply.payload?.recheck === "up_to_date",
+      "dir->file: recheck lands up_to_date (full manifest parity, D5)",
+      JSON.stringify(apply.payload?.recheck_plan || []));
+    check(hashTree(path.join(base, "skills", "bee-doc")) ===
+      hashTree(path.join(home, ".claude", "skills", "bee-doc")),
+      "dir->file: installed bee-doc byte-identical to source");
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+{
+  // Direction B: installed FILE -> source DIRECTORY (top-level and nested)
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-file2dir-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.19",
+      skills: {
+        "bee-doc": {
+          "SKILL.md": "# doc\n",
+          "guide/intro.md": "# new intro\n",
+          "guide/deep/note.md": "# new nested note\n",
+          "refs/data/x.md": "# new nested data\n",
+        },
+      },
+    });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    makeInstalledSkills(home, {
+      version: "0.1.19",
+      skills: {
+        "bee-doc": {
+          "SKILL.md": "# doc\n",
+          "guide": "# guide was a file\n",
+          "refs/data": "# data was a file\n",
+        },
+      },
+    });
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(apply.status === 0 && apply.payload?.status === "applied",
+      "file->dir transition: apply succeeds without throwing mid-apply (review P1-3)",
+      `exit ${apply.status} stdout ${apply.stdout}`);
+    check(readInstalled(home, "bee-doc/guide/intro.md") === "# new intro\n" &&
+      readInstalled(home, "bee-doc/guide/deep/note.md") === "# new nested note\n",
+      "file->dir: directory content fully materialized");
+    check(readInstalled(home, "bee-doc/refs/data/x.md") === "# new nested data\n",
+      "file->dir: NESTED file->dir transition materialized");
+    check(apply.payload?.recheck === "up_to_date",
+      "file->dir: recheck lands up_to_date (full manifest parity, D5)",
+      JSON.stringify(apply.payload?.recheck_plan || []));
+    check(hashTree(path.join(base, "skills", "bee-doc")) ===
+      hashTree(path.join(home, ".claude", "skills", "bee-doc")),
+      "file->dir: installed bee-doc byte-identical to source");
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10t. repo root and skills root overlap (either direction) refuses ------
+// (review P1-4) A repo living under ~/.claude/skills must never be deletable
+// by its own onboard: the remove_skill pass would erase the live checkout,
+// git history included. realpath(repoRoot)<->targetRoot overlap refuses
+// blocked_no_source at preflight, never forceable, zero mutations.
+{
+  // Direction 1: repo INSIDE the target skills root
+  const home = fs.realpathSync(makeFakeHome());
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-repoingt-"));
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.19",
+      skills: {},
+    });
+    const installedRoot = makeInstalledSkills(home, { version: "0.1.19" });
+    const repo = path.join(installedRoot, "bee-local");
+    fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(repo, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
+    fs.writeFileSync(path.join(repo, "work.md"), "irreplaceable checkout\n", "utf8");
+    const homeBefore = hashTree(home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(plan.status === 0 && plan.payload?.status === "blocked_no_source",
+      "repo inside the skills root: plan reports blocked_no_source (review P1-4)",
+      `exit ${plan.status} status ${plan.payload?.status}`);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
+      "repo inside the skills root: apply refuses pre-write with exit 1",
+      `exit ${apply.status} status ${apply.payload?.status}`);
+    const forced = runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+    check(forced.status === 1 && forced.payload?.status === "blocked_no_source",
+      "repo-in-target refusal is NEVER forceable",
+      `exit ${forced.status} status ${forced.payload?.status}`);
+    check(fs.existsSync(path.join(repo, ".git", "HEAD")) &&
+      fs.readFileSync(path.join(repo, "work.md"), "utf8") === "irreplaceable checkout\n",
+      "the live checkout (git history included) survives untouched");
+    check(hashTree(home) === homeBefore,
+      "repo-in-target refusal performs zero mutations anywhere");
+  } finally {
+    try {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(base, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+{
+  // Direction 2: target skills root INSIDE the repo
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-tgtinrepo-")));
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.19",
+      skills: {},
+    });
+    const repo = path.join(base, "repo");
+    const innerHome = path.join(repo, "nested-home");
+    fs.mkdirSync(innerHome, { recursive: true });
+    const repoBefore = hashTree(repo);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], innerHome);
+    check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
+      "target skills root inside the repo refuses fail-closed (review P1-4)",
+      `exit ${apply.status} status ${apply.payload?.status}`);
+    check(hashTree(repo) === repoBefore,
+      "target-in-repo refusal mutates nothing (no skills written into the repo)");
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10u. case-insensitive fs: alias collision fails closed (review P1-5) ---
+// Exact-case name comparison would sync via one name and delete via the other
+// - one physical directory. Detection must be by canonical filesystem
+// identity, simulated on the running platform (probe: does bee-Hive resolve
+// to a created bee-hive?) and skipped with a named reason when the fs is
+// case-sensitive. BEE_CASE_FS_DIR points the case at a case-insensitive
+// mount when the default tmpdir is case-sensitive (e.g. /mnt/c on WSL).
+{
+  const caseBase = process.env.BEE_CASE_FS_DIR || os.tmpdir();
+  let caseInsensitive = false;
+  let probe = null;
+  try {
+    probe = fs.mkdtempSync(path.join(caseBase, "bee-caseprobe-"));
+    fs.mkdirSync(path.join(probe, "bee-hive"));
+    caseInsensitive = fs.existsSync(path.join(probe, "bee-Hive"));
+  } catch {
+    caseInsensitive = false;
+  } finally {
+    if (probe) {
+      try {
+        fs.rmSync(probe, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+  if (!caseInsensitive) {
+    skip("case-alias fail-closed (review P1-5)",
+      `filesystem at ${caseBase} is case-sensitive - bee-Hive does not resolve to bee-hive; set BEE_CASE_FS_DIR to a case-insensitive mount to exercise`);
+  } else {
+    const srcBase = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-aliassrc-"));
+    const aliasBase = fs.mkdtempSync(path.join(caseBase, "bee-skillsync-alias-"));
+    const home = path.join(aliasBase, "home");
+    fs.mkdirSync(home, { recursive: true });
+    try {
+      const { launcher } = makeFakeSkillsRoot(path.join(srcBase, "skills"), {
+        version: "0.1.19",
+        skills: { "bee-alpha": { "SKILL.md": "# alpha source\n" } },
+      });
+      const repo = path.join(srcBase, "repo");
+      fs.mkdirSync(repo, { recursive: true });
+      const installedRoot = makeInstalledSkills(home, {
+        version: "0.1.19",
+        skills: { "bee-Alpha": { "SKILL.md": "# alpha installed, other case\n" } },
+      });
+      const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+      const planItems = plan.payload?.plan || [];
+      check(!planItems.some((i) =>
+        (i.action === "sync_skill" || i.action === "remove_skill") &&
+        ["bee-alpha", "bee-Alpha"].includes(i.skill)),
+        "alias collision: neither sync_skill nor remove_skill planned for the aliased names",
+        JSON.stringify(planItems));
+      check(planItems.some((i) => i.action === "blocked_alias"),
+        "alias collision is reported loudly as a blocked plan item",
+        JSON.stringify(planItems));
+      const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+      check(apply.status === 0 && apply.payload?.status === "applied",
+        "alias: apply still proceeds for unaffected skills", `exit ${apply.status}`);
+      check((apply.payload?.skills?.skipped || []).some((s) =>
+        ["bee-alpha", "bee-Alpha"].includes(s.skill)),
+        "apply reports the alias-blocked skill as skipped (loud per-skill report)",
+        JSON.stringify(apply.payload?.skills || null));
+      check(fs.existsSync(path.join(installedRoot, "bee-Alpha")),
+        "the physical skill directory survives (never sync-then-delete)");
+      check(readInstalled(home, "bee-Alpha/SKILL.md") === "# alpha installed, other case\n",
+        "aliased skill content byte-identical (never written through the alias)",
+        String(readInstalled(home, "bee-Alpha/SKILL.md")));
+      check(apply.payload?.recheck === "changes_needed",
+        "recheck stays changes_needed while a skill is alias-blocked (parity unresolved)",
+        JSON.stringify(apply.payload?.recheck_plan || []));
+    } finally {
+      try {
+        fs.rmSync(srcBase, { recursive: true, force: true });
+        fs.rmSync(aliasBase, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+}
+
 // --- suite-wide isolation invariant -----------------------------------------
 // Helper-level check: not a single spawn across the whole suite inherited the
 // real HOME/USERPROFILE unmodified. spawnedHomes is populated by runOnboard
