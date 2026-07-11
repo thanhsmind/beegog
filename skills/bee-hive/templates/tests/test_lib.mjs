@@ -2799,6 +2799,215 @@ check('bee_state.mjs rejects an unknown verb with a Use: line, exit non-zero', (
   }
 });
 
+// ─── bee_backlog.mjs add verb (cli-mutations-2, decision from cli-mutations
+// plan.md: agents never hand-edit .bee/*.json(l)) ─────────────────────────────
+// counts/rank/badges already have direct lib/backlog.mjs coverage above (the
+// harness10-6 suite); this block covers the new `add` mutation surface only,
+// reusing the generic makeStateRepo scaffold. --type validation imports
+// KIND_ALIASES/NORMALIZED_KINDS from lib/feedback.mjs rather than a
+// duplicated literal list, so these tests reuse that same import.
+
+function beeBacklogModulePath() {
+  return fileURLToPath(new URL('../bee_backlog.mjs', import.meta.url));
+}
+
+function runBeeBacklog(cwd, args) {
+  return spawnSync(process.execPath, [beeBacklogModulePath(), ...args], { cwd, encoding: 'utf8' });
+}
+
+function readBacklogJsonlLines(repoRoot) {
+  const file = path.join(repoRoot, '.bee', 'backlog.jsonl');
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+}
+
+check('bee_backlog.mjs add appends a validated row and buildDigest picks it up (never dropped as unknown_type)', () => {
+  const dir = makeStateRepo('bee-backlog-add-');
+  try {
+    const result = runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'agents hand-edit .bee state',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--detail',
+      'CLI-ify all mutations',
+      '--feature',
+      'cli-mutations',
+    ]);
+    assert(result.status === 0, `add should succeed, got ${result.status}: ${result.stderr}`);
+    const lines = readBacklogJsonlLines(dir);
+    assert(lines.length === 1, `one row appended, got ${lines.length}`);
+    const row = lines[0];
+    assert(row.type === 'friction', `type recorded, got ${row.type}`);
+    assert(row.title === 'agents hand-edit .bee state', 'title recorded');
+    assert(row.severity === 'P2', 'severity recorded');
+    assert(row.layer === 'state', 'layer recorded');
+    assert(row.detail === 'CLI-ify all mutations', 'detail recorded');
+    assert(row.feature === 'cli-mutations', 'feature recorded');
+    assert(typeof row.ts === 'string' && !Number.isNaN(Date.parse(row.ts)), `ts is a real ISO date, got ${row.ts}`);
+    assert(
+      !('source' in row),
+      'no source field — the collector overrides source with SRC_BACKLOG and never reads a row-supplied value',
+    );
+
+    const digest = buildDigest(dir, { now: PIN });
+    assert(digest.counts.dropped === 0, `nothing dropped, got ${JSON.stringify(digest.dropped)}`);
+    assert(
+      digest.entries.length === 1 && digest.entries[0].kind === 'friction',
+      `entry present with kind friction, got ${JSON.stringify(digest.entries)}`,
+    );
+    assert(digest.entries[0].title === 'agents hand-edit .bee state', 'entry title matches the appended row');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs add accepts an already-normalized NORMALIZED_KINDS value for --type, not only a KIND_ALIASES key', () => {
+  const dir = makeStateRepo('bee-backlog-add-normalized-');
+  try {
+    assert(
+      !Object.prototype.hasOwnProperty.call(KIND_ALIASES, 'approval'),
+      'test premise: "approval" is a NORMALIZED_KINDS value (from kill-approval), not itself a KIND_ALIASES key',
+    );
+    const result = runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'approval',
+      '--title',
+      'kill-approval normalized',
+      '--severity',
+      'P3',
+      '--layer',
+      'review',
+    ]);
+    assert(result.status === 0, `add should accept an already-normalized kind, got ${result.status}: ${result.stderr}`);
+    const digest = buildDigest(dir, { now: PIN });
+    assert(
+      digest.entries.length === 1 && digest.entries[0].kind === 'approval',
+      `kind carried through unchanged, got ${JSON.stringify(digest.entries)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs add rejects --type "kind" (the literal word) and any other unrecognized type before any write', () => {
+  const dir = makeStateRepo('bee-backlog-add-badtype-');
+  try {
+    const result = runBeeBacklog(dir, ['add', '--type', 'kind', '--title', 'x', '--severity', 'P1', '--layer', 'state']);
+    assert(result.status !== 0, 'the literal word "kind" is not a valid type — exits non-zero');
+    assert(/--type/.test(result.stderr), `error names --type, got ${result.stderr}`);
+    assert(!fs.existsSync(path.join(dir, '.bee', 'backlog.jsonl')), 'file untouched (never created) after a rejected add');
+
+    const alsoBad = runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'not-a-real-kind',
+      '--title',
+      'x',
+      '--severity',
+      'P1',
+      '--layer',
+      'state',
+    ]);
+    assert(alsoBad.status !== 0, 'a wholly unrecognized type is rejected too');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs add rejects an oversize title, a bad severity, and an oversize/empty layer, leaving the file untouched', () => {
+  const dir = makeStateRepo('bee-backlog-add-badfields-');
+  try {
+    const good = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'baseline row', '--severity', 'P2', '--layer', 'state']);
+    assert(good.status === 0, `baseline add should succeed, got ${good.status}: ${good.stderr}`);
+    const before = fs.readFileSync(path.join(dir, '.bee', 'backlog.jsonl'), 'utf8');
+
+    const longTitle = 'x'.repeat(201);
+    const badTitle = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', longTitle, '--severity', 'P2', '--layer', 'state']);
+    assert(badTitle.status !== 0, 'a title over 200 chars is rejected');
+    assert(/--title/.test(badTitle.stderr), `error names --title, got ${badTitle.stderr}`);
+
+    const badSeverity = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P4', '--layer', 'state']);
+    assert(badSeverity.status !== 0, 'an out-of-range severity is rejected');
+    assert(/--severity/.test(badSeverity.stderr), `error names --severity, got ${badSeverity.stderr}`);
+
+    const longLayer = 'y'.repeat(41);
+    const badLayer = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P2', '--layer', longLayer]);
+    assert(badLayer.status !== 0, 'a layer over 40 chars is rejected');
+    assert(/--layer/.test(badLayer.stderr), `error names --layer, got ${badLayer.stderr}`);
+
+    const emptyLayer = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P2', '--layer', '']);
+    assert(emptyLayer.status !== 0, 'an empty layer is rejected (non-empty required — still no fixed allowlist)');
+
+    const missingType = runBeeBacklog(dir, ['add', '--title', 'x', '--severity', 'P2', '--layer', 'state']);
+    assert(missingType.status !== 0, 'a missing --type is rejected');
+
+    const after = fs.readFileSync(path.join(dir, '.bee', 'backlog.jsonl'), 'utf8');
+    assert(before === after, 'every rejected add left the file byte-for-byte untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs add accepts an arbitrary free-string --layer with no allowlist (e.g. "security", already live in backlog data)', () => {
+  const dir = makeStateRepo('bee-backlog-add-freelayer-');
+  try {
+    const result = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P2', '--layer', 'security']);
+    assert(result.status === 0, `a free-string layer with no fixed enum is accepted, got ${result.status}: ${result.stderr}`);
+    const lines = readBacklogJsonlLines(dir);
+    assert(lines[0].layer === 'security', 'layer stored as given, no allowlist rewriting');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs counts/rank/badges verbs are unchanged by the add verb addition', () => {
+  const dir = makeStateRepo('bee-backlog-counts-');
+  try {
+    fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'docs', 'backlog.md'),
+      '# Backlog\n\n| ID | Story | Status |\n|----|-------|--------|\n| 1 | A | done |\n| 2 | B | proposed |\n',
+      'utf8',
+    );
+    const result = runBeeBacklog(dir, ['counts', '--json']);
+    assert(result.status === 0, `counts should succeed, got ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    assert(parsed.done === 1 && parsed.proposed === 1 && parsed.total === 2, `counts unchanged, got ${JSON.stringify(parsed)}`);
+
+    const badFlag = runBeeBacklog(dir, ['counts', '--bogus']);
+    assert(badFlag.status !== 0, 'an unknown flag on counts is still rejected (strict parsing preserved for non-add verbs)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs with no command prints a Use: line listing all four verbs and exits non-zero', () => {
+  const dir = makeStateRepo('bee-backlog-noverb-');
+  try {
+    const result = runBeeBacklog(dir, []);
+    assert(result.status !== 0, 'no-command invocation exits non-zero');
+    assert(/Use:/.test(result.stderr), `expected a "Use:" line, got stderr="${result.stderr}"`);
+    assert(
+      /counts/.test(result.stderr) && /rank/.test(result.stderr) && /badges/.test(result.stderr) && /add/.test(result.stderr),
+      `Use: line should list all four verbs, got ${result.stderr}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ─── vendored source hygiene (P18, bee-compounding mechanization) ────────────
 // A NUL byte in lib/feedback.mjs's sortKey separator made grep/rg treat the
 // whole file as BINARY and print nothing — not even a zero count — so a
