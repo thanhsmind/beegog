@@ -134,3 +134,18 @@ table totals) — put the recomputed number in the positive verify grep. A capac
 that encodes the old roster size will silently refill the freed slots.
 
 **Full entry:** docs/history/learnings/20260711-learnings-pair-relocation.md
+
+## [20260711] Pre-code gates filter spec defects; only diff review catches implementation defects
+**Category:** process
+**Feature:** skill-sync
+**Tags:** [review, stage-capability, destructive-code]
+
+Three adversarial panel iterations, an advisor consult, and a 232-check red-first suite all
+passed — then five isolated reviewers reading the ACTUAL DIFF found 9 real P1s (three of
+them data-loss paths: stale-snapshot deletes, decoy version parsing, case-alias
+sync-then-delete). Panels review artifacts → they catch specification defects; tests written
+from the same spec share the code's blind spots → green proves conformance, not safety. For
+destructive/mirror/guard logic, never skip or shrink the post-implementation isolated
+review, and never count pre-code ceremony or test volume as implementation assurance.
+
+**Full entry:** docs/history/learnings/20260711-skill-sync.md

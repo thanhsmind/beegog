@@ -1,48 +1,40 @@
 {
   "schema_version": "1.0",
-  "phase": "swarming",
-  "feature": "skill-sync",
-  "mode": "high-risk",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": false
+    "review": true
   },
-  "workers": [
-    {
-      "nickname": "mason-2",
-      "cell": "skill-sync-2",
-      "tier": "generation",
-      "executor": "native",
-      "status": "running"
-    }
-  ],
-  "summary": "skill-sync swarming: waves 1-2 clean (61b314c, 62b0a51); wave 3 (skill-sync-2 matrix tests) dispatched",
-  "next_action": "Tend wave 3, goal-check, then wave 4 (docs)",
+  "workers": [],
+  "summary": "skill-sync closed: one-command helper+skill sync with downgrade guard shipped (6 cells, 9 review P1s fixed red-first, UAT live pass); learnings + 1 critical promotion + decision e7a54e78; P19 done",
+  "next_action": null,
   "last_scribing_run": {
-    "feature": "learnings-pair-relocation",
+    "feature": "skill-sync",
     "date": "2026-07-11",
-    "at": "2026-07-10T17:57:35.912Z",
+    "at": "2026-07-11T03:26:14.123Z",
     "areas_synced": [
-      "no spec sync needed - skills-as-spec convention (reading-map): the review-wave contract lives in the edited bee-reviewing SKILL.md/reference themselves; no docs/specs area covers bee skills"
+      "no docs/specs sync needed - skills-as-spec convention (reading-map): the onboarding/skill-sync contract lives in skills/bee-hive/SKILL.md (updated by cells 3 and 5) and the script itself; no docs/specs area covers bee skills"
     ],
     "next_action": "bee-compounding"
   },
   "last_compounding_run": {
-    "feature": "learnings-pair-relocation",
-    "at": "2026-07-10T17:59:58.652Z",
-    "learnings": "docs/history/learnings/20260711-learnings-pair-relocation.md",
+    "feature": "skill-sync",
+    "at": "2026-07-11T03:28:40.849Z",
+    "learnings": "docs/history/learnings/20260711-skill-sync.md",
     "critical_promotions": 1,
     "decisions_logged": 2,
-    "friction_filed": 2,
-    "digest_refresh": "recovered 2026-07-11: regression restored, digest green (46 entries)"
+    "friction_filed": 6,
+    "digest_refresh": "green (47 entries; 8 unknown_type drops filed as friction)"
   },
   "cells": {
-    "open": 2,
+    "open": 0,
     "claimed": 0,
-    "capped": 37,
+    "capped": 41,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T01:57:17.143Z"
+  "last_activity": "2026-07-11T03:28:40.849Z"
 }
