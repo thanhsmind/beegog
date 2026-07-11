@@ -2495,6 +2495,310 @@ check('bee_feedback.mjs rank run directly prints valid JSON (CLI entry, like the
   }
 });
 
+// ─── bee_state.mjs CLI (cli-mutations-1, decision 0011 primitive) ───────────
+// No dedicated lib/state-mutations module backs this CLI (file-bounds forbid
+// touching lib/state.mjs semantics), so its verb logic is only exercised at
+// the process level — mirroring the existing bee_feedback.mjs / commands_detect.mjs
+// "CLI entry" tests above.
+
+function beeStateModulePath() {
+  return fileURLToPath(new URL('../bee_state.mjs', import.meta.url));
+}
+
+function makeStateRepo(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  return dir;
+}
+
+function runBeeState(cwd, args) {
+  return spawnSync(process.execPath, [beeStateModulePath(), ...args], { cwd, encoding: 'utf8' });
+}
+
+function readStateFile(repoRoot) {
+  return readJson(path.join(repoRoot, '.bee', 'state.json'), null);
+}
+
+check('bee_state.mjs with no verb prints a Use: line listing all four verbs and exits non-zero', () => {
+  const dir = makeStateRepo('bee-state-noverb-');
+  try {
+    const result = runBeeState(dir, []);
+    assert(result.status !== 0, 'no-verb invocation exits non-zero');
+    assert(/Use:/.test(result.stderr), `expected a "Use:" line, got stderr="${result.stderr}"`);
+    assert(
+      /set/.test(result.stderr) &&
+        /gate/.test(result.stderr) &&
+        /worker/.test(result.stderr) &&
+        /scribing-run/.test(result.stderr),
+      `Use: line should list all four verbs, got ${result.stderr}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set writes only the provided fields and creates state.json on a fresh repo', () => {
+  const dir = makeStateRepo('bee-state-set-');
+  try {
+    const result = runBeeState(dir, ['set', '--phase', 'planning', '--summary', 'kickoff']);
+    assert(result.status === 0, `set should succeed, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.phase === 'planning', `phase written, got ${state.phase}`);
+    assert(state.summary === 'kickoff', `summary written, got ${state.summary}`);
+    assert(state.mode === null, 'mode left at default when its flag is not given');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set rejects an unknown phase (isKnownPhase, not the bare PHASES array) and leaves the file untouched', () => {
+  const dir = makeStateRepo('bee-state-set-badphase-');
+  try {
+    runBeeState(dir, ['set', '--phase', 'swarming', '--summary', 'before']);
+    const before = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    const result = runBeeState(dir, ['set', '--phase', 'not-a-real-phase']);
+    assert(result.status !== 0, 'invalid phase exits non-zero');
+    assert(/phase/i.test(result.stderr), `error names the phase, got ${result.stderr}`);
+    const after = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    assert(before === after, 'file untouched after a rejected set');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set accepts the compounding-complete terminal alias (isKnownPhase, not PHASES)', () => {
+  const dir = makeStateRepo('bee-state-set-terminal-');
+  try {
+    const result = runBeeState(dir, ['set', '--phase', 'compounding-complete']);
+    assert(result.status === 0, `terminal alias should be accepted, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.phase === 'compounding-complete', 'terminal alias written');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set preserves unrelated fields (workers, cells, last_scribing_run) byte-for-byte', () => {
+  const dir = makeStateRepo('bee-state-set-preserve-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, {
+      schema_version: '1.0',
+      phase: 'swarming',
+      feature: 'demo',
+      mode: 'standard',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      workers: [{ nickname: 'sate', cell: 'demo-1', tier: 'generation', status: 'in-flight' }],
+      summary: 'old summary',
+      next_action: 'old next action',
+      cells: { open: 1, claimed: 0, capped: 2, blocked: 0 },
+      last_scribing_run: {
+        feature: 'other',
+        date: '2026-01-01',
+        at: '2026-01-01T00:00:00.000Z',
+        areas_synced: ['x'],
+        next_action: 'y',
+      },
+    });
+    const result = runBeeState(dir, ['set', '--summary', 'new summary']);
+    assert(result.status === 0, `set should succeed, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.summary === 'new summary', 'summary updated');
+    assert(state.phase === 'swarming', 'phase untouched');
+    assert(state.feature === 'demo', 'feature untouched');
+    assert(state.next_action === 'old next action', 'next_action untouched (flag not given)');
+    assert(state.workers.length === 1 && state.workers[0].nickname === 'sate', 'workers array untouched');
+    assert(state.cells.capped === 2, 'cells counts untouched');
+    assert(state.last_scribing_run.feature === 'other', 'last_scribing_run untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs gate approves a named gate and is idempotent (same call twice = identical file)', () => {
+  const dir = makeStateRepo('bee-state-gate-');
+  try {
+    const first = runBeeState(dir, ['gate', '--name', 'execution', '--approved', 'true']);
+    assert(first.status === 0, `gate should succeed, got ${first.status}: ${first.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.approved_gates.execution === true, 'execution gate approved');
+    assert(state.approved_gates.review === false, 'other gates untouched');
+    const afterFirst = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    const second = runBeeState(dir, ['gate', '--name', 'execution', '--approved', 'true']);
+    assert(second.status === 0, 'second identical gate call also succeeds');
+    const afterSecond = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    assert(afterFirst === afterSecond, 'gate --approved true run twice yields an identical file (idempotent)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs gate rejects an unknown gate name and a non-boolean --approved', () => {
+  const dir = makeStateRepo('bee-state-gate-bad-');
+  try {
+    const badName = runBeeState(dir, ['gate', '--name', 'launch', '--approved', 'true']);
+    assert(badName.status !== 0, 'unknown gate name rejected');
+    assert(/gate name/i.test(badName.stderr), `error names the bad gate, got ${badName.stderr}`);
+    const badBool = runBeeState(dir, ['gate', '--name', 'context', '--approved', 'yes']);
+    assert(badBool.status !== 0, 'non-boolean --approved rejected');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker add -> update -> remove -> clear round-trips and preserves unrelated fields', () => {
+  const dir = makeStateRepo('bee-state-worker-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, { schema_version: '1.0', phase: 'swarming', feature: 'demo', summary: 'keep-me' });
+
+    const add = runBeeState(dir, [
+      'worker',
+      'add',
+      '--nickname',
+      'sate',
+      '--cell',
+      'demo-1',
+      '--tier',
+      'generation',
+      '--status',
+      'in-flight',
+    ]);
+    assert(add.status === 0, `worker add should succeed, got ${add.status}: ${add.stderr}`);
+    let state = readStateFile(dir);
+    assert(state.workers.length === 1, 'one worker added');
+    assert(
+      state.workers[0].nickname === 'sate' &&
+        state.workers[0].cell === 'demo-1' &&
+        state.workers[0].tier === 'generation' &&
+        state.workers[0].status === 'in-flight',
+      'worker fields recorded',
+    );
+    assert(state.summary === 'keep-me', 'unrelated field untouched by worker add');
+
+    const update = runBeeState(dir, ['worker', 'update', '--nickname', 'sate', '--status', 'done']);
+    assert(update.status === 0, `worker update should succeed, got ${update.status}: ${update.stderr}`);
+    state = readStateFile(dir);
+    assert(
+      state.workers.length === 1 && state.workers[0].status === 'done' && state.workers[0].cell === 'demo-1',
+      'update merges only the given field',
+    );
+
+    const badUpdate = runBeeState(dir, ['worker', 'update', '--nickname', 'ghost', '--status', 'done']);
+    assert(badUpdate.status !== 0, 'update on a missing nickname is rejected');
+
+    const remove = runBeeState(dir, ['worker', 'remove', '--nickname', 'sate']);
+    assert(remove.status === 0, `worker remove should succeed, got ${remove.status}: ${remove.stderr}`);
+    state = readStateFile(dir);
+    assert(state.workers.length === 0, 'worker removed');
+
+    const badRemove = runBeeState(dir, ['worker', 'remove', '--nickname', 'sate']);
+    assert(badRemove.status !== 0, 'removing an already-absent nickname is rejected');
+
+    runBeeState(dir, ['worker', 'add', '--nickname', 'a', '--cell', 'c1']);
+    runBeeState(dir, ['worker', 'add', '--nickname', 'b', '--cell', 'c2']);
+    state = readStateFile(dir);
+    assert(state.workers.length === 2, 'two workers present before clear');
+    const clear = runBeeState(dir, ['worker', 'clear']);
+    assert(clear.status === 0, `worker clear should succeed, got ${clear.status}: ${clear.stderr}`);
+    state = readStateFile(dir);
+    assert(Array.isArray(state.workers) && state.workers.length === 0, 'clear empties the array');
+    assert(state.summary === 'keep-me', 'unrelated field survives the full round-trip');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker add rejects an unknown tier', () => {
+  const dir = makeStateRepo('bee-state-worker-badtier-');
+  try {
+    const result = runBeeState(dir, ['worker', 'add', '--nickname', 'x', '--cell', 'c1', '--tier', 'super-strong']);
+    assert(result.status !== 0, 'unknown tier rejected');
+    assert(/tier/i.test(result.stderr), `error names the tier, got ${result.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs scribing-run stamps the exact key set from bee-scribing SKILL.md:112 including an ISO-precise at', () => {
+  const dir = makeStateRepo('bee-state-scribing-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'scribing',
+      feature: 'demo',
+    });
+    const result = runBeeState(dir, [
+      'scribing-run',
+      '--feature',
+      'demo',
+      '--areas',
+      'auth,billing',
+      '--next-action',
+      'bee-compounding',
+    ]);
+    assert(result.status === 0, `scribing-run should succeed, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    const run = state.last_scribing_run;
+    assert(run && run.feature === 'demo', 'feature stamped');
+    assert(typeof run.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(run.date), `date is day-precise, got ${run.date}`);
+    assert(
+      typeof run.at === 'string' && !Number.isNaN(Date.parse(run.at)) && run.at.length > run.date.length,
+      `at is ISO-precise, got ${run.at}`,
+    );
+    assert(
+      Array.isArray(run.areas_synced) && run.areas_synced.join(',') === 'auth,billing',
+      `areas_synced parsed from the comma list, got ${JSON.stringify(run.areas_synced)}`,
+    );
+    assert(run.next_action === 'bee-compounding', 'next_action stamped in last_scribing_run');
+    assert(
+      state.next_action === 'bee-compounding',
+      'top-level next_action mirrors the flag (SKILL.md:112 "plus top-level phase/next_action")',
+    );
+    assert(
+      state.phase === 'compounding',
+      'top-level phase advances to compounding, the fixed next chain node after bee-scribing',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs scribing-run accepts a single descriptive area with no comma (real-world shape)', () => {
+  const dir = makeStateRepo('bee-state-scribing-single-');
+  try {
+    const result = runBeeState(dir, [
+      'scribing-run',
+      '--feature',
+      'demo',
+      '--areas',
+      'no docs/specs area sync needed — hooks-as-source convention',
+      '--next-action',
+      'bee-compounding',
+    ]);
+    assert(result.status === 0, `scribing-run should succeed, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.last_scribing_run.areas_synced.length === 1, 'a single descriptive sentence stays one array element');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs rejects an unknown verb with a Use: line, exit non-zero', () => {
+  const dir = makeStateRepo('bee-state-unknown-');
+  try {
+    const result = runBeeState(dir, ['launch']);
+    assert(result.status !== 0, 'unknown verb exits non-zero');
+    assert(/Use:/.test(result.stderr), `error names the Use: line, got ${result.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ─── vendored source hygiene (P18, bee-compounding mechanization) ────────────
 // A NUL byte in lib/feedback.mjs's sortKey separator made grep/rg treat the
 // whole file as BINARY and print nothing — not even a zero count — so a

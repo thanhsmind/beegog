@@ -935,6 +935,30 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-11T06:32:48.753Z",
       "released_at": "2026-07-11T06:35:12.837Z"
+    },
+    {
+      "agent": "sate",
+      "cell": "cli-mutations-1",
+      "path": "skills/bee-hive/templates/bee_state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:06:06.839Z",
+      "released_at": "2026-07-11T09:08:49.434Z"
+    },
+    {
+      "agent": "sate",
+      "cell": "cli-mutations-1",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:06:06.874Z",
+      "released_at": "2026-07-11T09:08:49.434Z"
+    },
+    {
+      "agent": "sate",
+      "cell": "cli-mutations-1",
+      "path": ".bee/bin/bee_state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:06:06.909Z",
+      "released_at": "2026-07-11T09:08:49.434Z"
     }
   ]
 }

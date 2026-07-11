@@ -1,3 +1,7 @@
 {"ts":"2026-07-11T07:34:32.822Z","tool":"Agent","transport":"model-param","model":"haiku","tier":null,"subagent_type":null,"description":"Pattern extractor [haiku] dispatch-log"}
 {"ts":"2026-07-11T07:34:37.963Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"Decision analyst [sonnet] dispatch-log"}
 {"ts":"2026-07-11T07:34:43.544Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"Failure analyst [sonnet] dispatch-log"}
+{"ts":"2026-07-11T08:41:50.823Z","tool":"Agent","transport":"model-param","model":"fable","tier":null,"subagent_type":null,"description":"[fable] Advisor consult: shape review"}
+{"ts":"2026-07-11T08:51:04.225Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[opus] Plan-checker: cli-mutations"}
+{"ts":"2026-07-11T08:51:09.320Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[opus] Cell reviewer: cold pickup"}
+{"ts":"2026-07-11T08:59:48.000Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Worker sate: cli-mutations-1"}

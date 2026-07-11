@@ -1,17 +1,24 @@
 {
   "schema_version": "1.0",
-  "phase": "idle",
-  "feature": null,
-  "mode": null,
+  "phase": "swarming",
+  "feature": "cli-mutations",
+  "mode": "standard",
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
-    "review": true
+    "review": false
   },
-  "workers": [],
-  "summary": "dispatch-log (P22) closed: fail-open dispatch audit log in bee-model-guard (RED-first, ALL PASS, vendor synced, live-fired same session) + row17 isolation fix; backlog P22 done; learnings 20260711-dispatch-log.md; decision 3fd0a7aa; 2 friction filed; digest 50 entries",
-  "next_action": null,
+  "workers": [
+    {
+      "nickname": "sate",
+      "cell": "cli-mutations-1",
+      "tier": "generation",
+      "status": "in-flight"
+    }
+  ],
+  "summary": "cli-mutations validated READY WITH CONSTRAINTS: 4 cells, wave order 1->2->{3,4}",
+  "next_action": "Tend wave 1 (cell 1), then waves 2 and 3.",
   "last_scribing_run": {
     "feature": "dispatch-log",
     "date": "2026-07-11",
@@ -31,10 +38,10 @@
     "digest_refresh": "green (50 entries; 17 unknown_type drops pre-existing class)"
   },
   "cells": {
-    "open": 0,
+    "open": 4,
     "claimed": 0,
-    "capped": 54,
+    "capped": 56,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T07:36:05.585Z"
+  "last_activity": "2026-07-11T08:59:53.809Z"
 }
