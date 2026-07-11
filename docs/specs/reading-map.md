@@ -8,6 +8,9 @@ Where things live. Read the touched area's spec before its code.
   safe portable snapshot, how the maintainers' repository reads other repositories' snapshots
   without trusting them, and how the collected view is ranked and fed to the gated
   self-improvement process.
+- [`onboarding.md`](./onboarding.md) — what onboarding installs and keeps current in a host
+  project; currently full on the opt-in status-display (statusline) vendoring, the rest of the
+  surface is declared Open Gaps (`coverage: partial`).
 
 ## Not yet specced
 

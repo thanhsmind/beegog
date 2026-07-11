@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.21",
+  "bee_version": "0.1.22",
   "managed": {
     "agents_block": "2b1561be670adc571676fff44a8b5fd9649a43523cab0995fe9f16a57419fcd8",
     "helpers": {
@@ -24,7 +24,7 @@
       "guards.mjs": "82d0319fcfdea4e438eb313c79afa579d53b97e9d957504dde3cec141da0f335",
       "inject.mjs": "0763fa9856ed15827ed7c62d34fb66129a63722dcd554bf485da61ff0906fae8",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
-      "state.mjs": "abd3efde5fe408dc9b335b3c23a124d6a33c56442e9ba245a6a46ffa227d97c3"
+      "state.mjs": "c2be6c6f5fff5d2014608ff5a9ea7542c3483df69111a934266f74000341761f"
     },
     "repo_hooks": {
       "bee-session-init.mjs": "553fb75679c922e9eb08a1dd49e51f9168950007041c74b8e23c866ca8078b6c",
@@ -34,8 +34,12 @@
       "bee-chain-nudge.mjs": "19fb72e383eacb42d5d4a5813f8399b7ea32bd870df44b91e3675cd5ead10d97",
       "bee-session-close.mjs": "905d5c6dafb061d6f7180584c184f9fd2586593afc7364a03ffc528cc98d7e5b",
       "bee-model-guard.mjs": "bf0e3f1f027d7574a101df50ebb4d84bcd5c89942b17607ddf4e3c36bbbd301b"
+    },
+    "statusline": {
+      "statusline-command.sh": "0965ae1c0d95a96fd7899df7549893e94fcc59693cab3b23da8dc228aa870b0e",
+      "statusline-usage.mjs": "1914f6e7d421b240be3987f50d40a5151723b5302866b8838f6fb5a8de438f01"
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-11T13:02:59.664Z"
+  "updated_at": "2026-07-11T14:00:41.744Z"
 }

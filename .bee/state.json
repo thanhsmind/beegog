@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "phase": "compounding-complete",
-  "feature": "",
+  "feature": "onboard-statusline",
   "mode": "small",
   "approved_gates": {
     "context": true,
@@ -10,16 +10,16 @@
     "review": true
   },
   "workers": [],
-  "summary": "workers-prune shipped: worker prune verb, 4 review P1s fixed same-session, live prune 64 files",
-  "next_action": "Idle. workers-prune shipped and closed.",
+  "summary": "learnings: docs/history/learnings/20260711-onboard-statusline.md; promoted: 0 (existing criticals cover the class — model-tier-guard anchoring + grill-deltas class sweep, cited as precedent)",
+  "next_action": "release 0.1.22 per decision 0083835c",
   "last_scribing_run": {
-    "feature": "cli-mutations",
+    "feature": "onboard-statusline",
     "date": "2026-07-11",
-    "at": "2026-07-11T11:29:24.318Z",
+    "at": "2026-07-11T13:59:34.830Z",
     "areas_synced": [
-      "feedback-digest"
+      "onboarding"
     ],
-    "next_action": "Invoke bee-compounding."
+    "next_action": "bee-compounding, then release 0.1.22 per decision 0083835c"
   },
   "last_compounding_run": {
     "feature": "dispatch-log",
@@ -36,5 +36,5 @@
     "capped": 67,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T13:00:27.174Z"
+  "last_activity": "2026-07-11T13:38:25.991Z"
 }

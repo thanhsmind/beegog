@@ -3343,6 +3343,63 @@ check('vendored source: every templates/*.mjs and templates/lib/*.mjs is byte-id
   }
 });
 
+check('vendored statusline: every templates/statusline/* is byte-identical to its .claude/ sibling when the repo opted in (same one-sided-edit guard as the .bee/bin sweep)', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const statuslineRoot = path.join(templatesRoot, 'statusline');
+  const repoRoot = findRepoRoot(templatesRoot);
+
+  if (!fs.existsSync(statuslineRoot) || !repoRoot) {
+    return; // no statusline templates in this tree — nothing to guard
+  }
+
+  const names = fs
+    .readdirSync(statuslineRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort();
+  assert(
+    names.length > 0,
+    'the statusline template dir is non-empty (an empty dir would silently pass on a broken readdir, not prove parity)',
+  );
+
+  // Opt-in is read from settings, not inferred from sibling presence — if
+  // BOTH vendored copies were deleted while the repo still opts in, that is
+  // exactly the drift this sweep exists to catch (review P2-3), not a skip.
+  const settings = (() => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(repoRoot, '.claude', 'settings.json'), 'utf8'));
+    } catch {
+      return null;
+    }
+  })();
+  const statusLineCommand =
+    settings && settings.statusLine && typeof settings.statusLine === 'object'
+      ? settings.statusLine.command
+      : null;
+  const optedIn =
+    typeof statusLineCommand === 'string' &&
+    statusLineCommand.includes('.claude/statusline-command.sh');
+  if (!optedIn) {
+    return; // repo did not opt in — the onboard stage owns that case
+  }
+
+  for (const name of names) {
+    const siblingPath = path.join(repoRoot, '.claude', name);
+    if (!fs.existsSync(siblingPath)) {
+      throw new Error(
+        `statusline/${name}: the repo carries part of the statusline pair but .claude/${name} is missing — run onboarding --apply to restore the pair.`,
+      );
+    }
+    const templateBuf = fs.readFileSync(path.join(statuslineRoot, name));
+    const siblingBuf = fs.readFileSync(siblingPath);
+    if (!templateBuf.equals(siblingBuf)) {
+      throw new Error(
+        `statusline/${name}: templates/statusline/${name} and .claude/${name} have diverged (byte mismatch) — edit the template as source of truth, then re-run onboarding --apply (or re-copy) so both sides match.`,
+      );
+    }
+  }
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 fs.rmSync(detectRoot, { recursive: true, force: true });
