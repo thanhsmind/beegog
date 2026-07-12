@@ -90,7 +90,12 @@ A configurable tier may name an **external CLI executor** instead of a model —
 
 Constraints: the external CLI must be able to edit the repo working tree and run node (the `.bee/bin` contract); grant write access scoped to the repo only (codex: `-s workspace-write`) — never a machine-wide bypass (`--yolo`-style flags) as the house default; the 0018 goal-check exists so bee does not have to *trust* the worker, not so it can hand over the machine. Secrets: the external process gets only its own provider's credentials from the user's environment — bee passes none.
 
+**Transient hygiene (workers-prune):** dispatch transients (`<cell-id>.prompt.md`, `.out*.log`, `.result.md|json`, reviewer/plan-check logs) accumulate in `.bee/workers/` and are never needed after the feature closes. At feature close — after review acceptance, before the closing commit — the orchestrator runs `node .bee/bin/bee_state.mjs worker prune` (`--dry-run` to preview). Keep-rules protect transients of active workers and non-capped cells (re-read immediately before the destructive loop, C1), and files outside the transient suffix set (evidence snapshots, cell payloads, subdirectories) are never touched — but prune is still the orchestrator's feature-close verb, not something to race against an in-flight dispatch round.
+
 ## Worker Prompt Template
+
+Nicknames are Minions character names (decision 3d55b976, human-confirmed f4c4a162) — recognizable,
+consistent worker identities; the assigned cell stays authoritative for responsibilities.
 
 ```text
 You are a bee worker subagent.

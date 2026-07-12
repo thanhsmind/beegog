@@ -32,6 +32,15 @@ a silent edit.
 
 <What the user delegated to the agent, with constraints. Remove if none.>
 
+## Terms
+
+Pin a fuzzy domain word here the moment Socratic locking settles its meaning —
+scribing seeds the spec's Data Dictionary from this table. Remove if none came up.
+
+| Term | Meaning in this feature |
+|------|-------------------------|
+| <term> | <settled meaning, one line> |
+
 ## Specific Ideas And References
 
 - <Mockup/example/reference the user mentioned, and what it means for the work.>

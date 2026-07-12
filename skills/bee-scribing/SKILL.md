@@ -40,7 +40,7 @@ Bootstrap is inventory, harvest is meaning: bootstrap writes only what code, tre
 | Source | May feed | Never feeds |
 |---|---|---|
 | capped `behavior_change` cells + `verification_evidence` (`node .bee/bin/bee_cells.mjs list --feature <feature>`) | Entry Points & Triggers, Data Dictionary, Behaviors & Operations, Actors & Access | — |
-| gate-locked `CONTEXT.md` + active decisions (`node .bee/bin/bee_decisions.mjs active`) | Business Rules (cited by D-ID) | Behaviors stated as current reality, unless also evidenced |
+| gate-locked `CONTEXT.md` + active decisions (`node .bee/bin/bee_decisions.mjs active`) | Business Rules (cited by D-ID); the `Terms` section seeds the Data Dictionary | Behaviors stated as current reality, unless also evidenced |
 | worker reports, UAT records in `docs/history/<feature>/reports/` | Behaviors ("what each actor sees") | — |
 | code reading (harvest mode) | observable behavior, field inventory | field *meanings* and rules — code shows what, not why |
 | user answers (harvest/capture) | any section, after confirmation | — |
@@ -109,7 +109,7 @@ Before finishing, re-read the spec with the Pointers section covered and ask: co
 
 ## 8. Update State
 
-Record the scribing run in `.bee/state.json` under `last_scribing_run` with `feature`, `date`, an **ISO-precise `at` timestamp** (e.g. `2026-07-09T14:03:00Z`), `areas_synced`, and `next_action` (plus top-level `phase`/`next_action`). The `at` stamp is what clears **scribing debt** (decision 0011): the harness counts `behavior_change` cells capped *after* it, so a missing or day-only stamp leaves just-synced cells still showing as debt. No `behavior_change` cells and nothing to capture → still record the run ("scribing: no sync needed", current `at`) and hand off, so the debt signal resets.
+Record the scribing run: `node .bee/bin/bee_state.mjs scribing-run --feature <feature> --areas "<a,b>" --next-action "<next action>"`. This stamps `last_scribing_run` (`feature`, `date`, an **ISO-precise `at` timestamp**, `areas_synced`, `next_action`) and mirrors `next_action` plus advances `phase` to `compounding` at the top level. The `at` stamp is what clears **scribing debt** (decision 0011): the harness counts `behavior_change` cells capped *after* it, so a missing or day-only stamp leaves just-synced cells still showing as debt. No `behavior_change` cells and nothing to capture → still run it (`--areas "none"`, `--next-action` reflecting "scribing: no sync needed") so the debt signal resets.
 
 ## Hard Gates
 

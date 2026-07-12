@@ -937,6 +937,254 @@
       "released_at": "2026-07-11T06:35:12.837Z"
     },
     {
+      "agent": "sate",
+      "cell": "cli-mutations-1",
+      "path": "skills/bee-hive/templates/bee_state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:06:06.839Z",
+      "released_at": "2026-07-11T09:08:49.434Z"
+    },
+    {
+      "agent": "sate",
+      "cell": "cli-mutations-1",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:06:06.874Z",
+      "released_at": "2026-07-11T09:08:49.434Z"
+    },
+    {
+      "agent": "sate",
+      "cell": "cli-mutations-1",
+      "path": ".bee/bin/bee_state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:06:06.909Z",
+      "released_at": "2026-07-11T09:08:49.434Z"
+    },
+    {
+      "agent": "bora",
+      "cell": "cli-mutations-2",
+      "path": "skills/bee-hive/templates/bee_backlog.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:10:56.015Z",
+      "released_at": "2026-07-11T09:17:30.015Z"
+    },
+    {
+      "agent": "bora",
+      "cell": "cli-mutations-2",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:10:56.058Z",
+      "released_at": "2026-07-11T09:17:30.015Z"
+    },
+    {
+      "agent": "bora",
+      "cell": "cli-mutations-2",
+      "path": ".bee/bin/bee_backlog.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:10:56.092Z",
+      "released_at": "2026-07-11T09:17:30.015Z"
+    },
+    {
+      "agent": "main-session",
+      "cell": "statusline-usage-2",
+      "path": ".claude/statusline-usage.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T09:33:02.637Z",
+      "released_at": "2026-07-11T09:34:02.805Z"
+    },
+    {
+      "agent": "main-session",
+      "cell": "statusline-usage-3",
+      "path": ".claude/statusline-usage.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:53:26.221Z",
+      "released_at": "2026-07-11T10:54:05.958Z"
+    },
+    {
+      "agent": "keo",
+      "cell": "cli-mutations-4",
+      "path": "skills/bee-hive/templates/lib/guards.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:54:40.902Z",
+      "released_at": "2026-07-11T10:58:19.414Z"
+    },
+    {
+      "agent": "keo",
+      "cell": "cli-mutations-4",
+      "path": ".bee/bin/lib/guards.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:54:40.939Z",
+      "released_at": "2026-07-11T10:58:19.414Z"
+    },
+    {
+      "agent": "keo",
+      "cell": "cli-mutations-4",
+      "path": "hooks/test_write_guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:54:40.973Z",
+      "released_at": "2026-07-11T10:58:19.414Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-hive/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.503Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-hive/templates/AGENTS.block.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.540Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-bypass-gate/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.573Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-compounding/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.606Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-exploring/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.640Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-swarming/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.676Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-planning/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.709Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-scribing/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.741Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-reviewing/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.779Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-grooming/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.817Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "mumi",
+      "cell": "cli-mutations-3",
+      "path": "skills/bee-validating/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T10:55:33.854Z",
+      "released_at": "2026-07-11T10:57:45.643Z"
+    },
+    {
+      "agent": "keo",
+      "cell": "cli-mutations-4",
+      "path": "docs/history/cli-mutations/reports/cli-mutations-4.md",
+      "ttl_seconds": 600,
+      "reserved_at": "2026-07-11T10:58:27.218Z",
+      "released_at": "2026-07-11T10:58:36.636Z"
+    },
+    {
+      "agent": "vun",
+      "cell": "cli-mutations-fix-1",
+      "path": "skills/bee-hive/templates/lib/state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:12:01.146Z",
+      "released_at": "2026-07-11T11:17:19.895Z"
+    },
+    {
+      "agent": "vun",
+      "cell": "cli-mutations-fix-1",
+      "path": "skills/bee-hive/templates/bee_state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:12:01.182Z",
+      "released_at": "2026-07-11T11:17:19.895Z"
+    },
+    {
+      "agent": "vun",
+      "cell": "cli-mutations-fix-1",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:12:01.217Z",
+      "released_at": "2026-07-11T11:17:19.895Z"
+    },
+    {
+      "agent": "vun",
+      "cell": "cli-mutations-fix-1",
+      "path": ".bee/bin/lib/state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:12:01.250Z",
+      "released_at": "2026-07-11T11:17:19.895Z"
+    },
+    {
+      "agent": "vun",
+      "cell": "cli-mutations-fix-1",
+      "path": ".bee/bin/bee_state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:12:01.284Z",
+      "released_at": "2026-07-11T11:17:19.895Z"
+    },
+    {
+      "agent": "tam",
+      "cell": "cli-mutations-fix-2",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:22:49.386Z",
+      "released_at": "2026-07-11T11:24:13.939Z"
+    },
+    {
+      "agent": "main-session",
+      "cell": "statusline-usage-4",
+      "path": ".claude/statusline-usage.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:23:54.531Z",
+      "released_at": "2026-07-11T11:24:30.382Z"
+    },
+    {
+      "agent": "main-session",
+      "cell": "statusline-usage-4",
+      "path": ".claude/statusline-command.sh",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T11:23:54.642Z",
+      "released_at": "2026-07-11T11:24:30.382Z"
+    },
+    {
       "agent": "worker-w1",
       "cell": "harness-integration-1",
       "path": "skills/bee-hive/templates/lib/command-registry.mjs",

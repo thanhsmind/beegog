@@ -99,16 +99,44 @@ function libModuleUrl(root, name) {
 }
 
 function startsWithTierMarker(text) {
-  return typeof text === "string" && ANCHORED_TIER_MARKER_RE.test(text);
+  if (typeof text !== "string") {
+    return null;
+  }
+  const match = ANCHORED_TIER_MARKER_RE.exec(text);
+  return match ? match[1].toLowerCase() : null;
 }
 
-function hasTierMarker(toolInput) {
-  const description = typeof toolInput.description === "string" ? toolInput.description : "";
-  if (startsWithTierMarker(description)) {
-    return true;
+function markerTier(toolInput) {
+  return (
+    startsWithTierMarker(toolInput.description) || startsWithTierMarker(toolInput.prompt) || null
+  );
+}
+
+// Dispatch audit log (P22, feature dispatch-log): one line per evaluated
+// Agent/Task dispatch — allowed or denied — so the resolved model/tier is
+// auditable independent of what the UI shows. Fail-open like logDeny: a log
+// failure never changes the guard's decision or exit code.
+function logDispatch(root, toolName, toolInput, transport, model, tier) {
+  try {
+    const logsDir = path.join(root, ".bee", "logs");
+    fs.mkdirSync(logsDir, { recursive: true });
+    const description =
+      typeof toolInput.description === "string" ? toolInput.description.slice(0, 120) : "";
+    fs.appendFileSync(
+      path.join(logsDir, "dispatch.jsonl"),
+      `${JSON.stringify({
+        ts: new Date().toISOString(),
+        tool: toolName,
+        transport,
+        model: model || null,
+        tier: tier || null,
+        subagent_type: typeof toolInput.subagent_type === "string" ? toolInput.subagent_type : null,
+        description,
+      })}\n`,
+    );
+  } catch {
+    // fail-open — auditing never blocks a dispatch
   }
-  const prompt = typeof toolInput.prompt === "string" ? toolInput.prompt : "";
-  return startsWithTierMarker(prompt);
 }
 
 async function main() {
@@ -155,9 +183,12 @@ async function main() {
     const toolInput = rawToolInput;
 
     if (typeof toolInput.model === "string" && toolInput.model.trim()) {
+      logDispatch(root, toolName, toolInput, "model-param", toolInput.model.trim(), null);
       return 0;
     }
-    if (hasTierMarker(toolInput)) {
+    const tier = markerTier(toolInput);
+    if (tier) {
+      logDispatch(root, toolName, toolInput, "marker", null, tier);
       return 0;
     }
 
@@ -169,6 +200,7 @@ async function main() {
       `FIX: pass model: "${generationModel}" for the generation tier, or add ` +
       "[bee-tier: ceiling] (or another tier: generation/extraction/review) to the prompt/description.";
 
+    logDispatch(root, toolName, toolInput, "bare-denied", null, null);
     logDeny(root, toolName, toolInput);
     // Deliberate deny: exit 2 with the reason on stderr (Claude Code feeds
     // stderr back to the model on PreToolUse exit 2).

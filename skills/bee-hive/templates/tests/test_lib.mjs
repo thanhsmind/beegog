@@ -13,6 +13,7 @@ import {
   findRepoRoot,
   defaultState,
   readState,
+  readStateStrict,
   writeState,
   gateApproved,
   isKnownPhase,
@@ -145,6 +146,72 @@ check('readState returns defaults when state.json missing', () => {
   const state = readState(root);
   assert(state.phase === 'idle', `default phase should be idle, got ${state.phase}`);
   assert(gateApproved(state, 'execution') === false, 'execution gate should default false');
+});
+
+// ─── readStateStrict (review P1-1: a present-but-corrupt state.json must ────
+// fail loud, never be silently clobbered to defaults by a bee_state mutation).
+// readState itself stays fail-open — hooks and bee_status depend on that
+// shape — so these tests pin readStateStrict's distinct absent-vs-corrupt
+// behavior AND that readState's own semantics are unchanged.
+
+check('readStateStrict returns defaults when state.json is absent (same as readState)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-strict-absent-'));
+  try {
+    const state = readStateStrict(dir);
+    assert(state.phase === 'idle', `default phase should be idle, got ${state.phase}`);
+    assert(gateApproved(state, 'execution') === false, 'execution gate should default false');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('readStateStrict throws on a present-but-unparseable state.json, naming the file and a FIX', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-strict-corrupt-'));
+  try {
+    fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '{ not valid json', 'utf8');
+    let threw = null;
+    try {
+      readStateStrict(dir);
+    } catch (err) {
+      threw = err instanceof Error ? err.message : String(err);
+    }
+    assert(threw !== null, 'readStateStrict throws on unparseable JSON');
+    assert(/state\.json/.test(threw), `error names the state.json file, got ${threw}`);
+    assert(/not valid json/i.test(threw), `error says the file is not valid JSON, got ${threw}`);
+    assert(/refuses to rebuild state from defaults/i.test(threw), `error says the CLI refuses to rebuild from defaults, got ${threw}`);
+    assert(/FIX:/.test(threw), `error carries a FIX:, got ${threw}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('readStateStrict throws when state.json parses but is not a JSON object', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-strict-nonobject-'));
+  try {
+    fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '[1,2,3]', 'utf8');
+    assertThrows(
+      () => readStateStrict(dir),
+      'not a json object',
+      'readStateStrict rejects a non-object JSON value (an array)',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('readState (non-strict) still returns defaults for the same corrupt input — fail-open shape unchanged', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-nonstrict-corrupt-'));
+  try {
+    fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '{ not valid json', 'utf8');
+    const state = readState(dir);
+    assert(state.phase === 'idle', `readState should fail open to defaults, got phase ${state.phase}`);
+    assert(gateApproved(state, 'execution') === false, 'execution gate should default false');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ─── cells: add validation ──────────────────────────────────────────────────
@@ -2495,6 +2562,685 @@ check('bee_feedback.mjs rank run directly prints valid JSON (CLI entry, like the
   }
 });
 
+// ─── bee_state.mjs CLI (cli-mutations-1, decision 0011 primitive) ───────────
+// No dedicated lib/state-mutations module backs this CLI (file-bounds forbid
+// touching lib/state.mjs semantics), so its verb logic is only exercised at
+// the process level — mirroring the existing bee_feedback.mjs / commands_detect.mjs
+// "CLI entry" tests above.
+
+function beeStateModulePath() {
+  return fileURLToPath(new URL('../bee_state.mjs', import.meta.url));
+}
+
+function makeStateRepo(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  return dir;
+}
+
+function runBeeState(cwd, args) {
+  return spawnSync(process.execPath, [beeStateModulePath(), ...args], { cwd, encoding: 'utf8' });
+}
+
+function readStateFile(repoRoot) {
+  return readJson(path.join(repoRoot, '.bee', 'state.json'), null);
+}
+
+check('bee_state.mjs with no verb prints a Use: line listing all four verbs and exits non-zero', () => {
+  const dir = makeStateRepo('bee-state-noverb-');
+  try {
+    const result = runBeeState(dir, []);
+    assert(result.status !== 0, 'no-verb invocation exits non-zero');
+    assert(/Use:/.test(result.stderr), `expected a "Use:" line, got stderr="${result.stderr}"`);
+    assert(
+      /set/.test(result.stderr) &&
+        /gate/.test(result.stderr) &&
+        /worker/.test(result.stderr) &&
+        /scribing-run/.test(result.stderr),
+      `Use: line should list all four verbs, got ${result.stderr}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set writes only the provided fields and creates state.json on a fresh repo', () => {
+  const dir = makeStateRepo('bee-state-set-');
+  try {
+    const result = runBeeState(dir, ['set', '--phase', 'planning', '--summary', 'kickoff']);
+    assert(result.status === 0, `set should succeed, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.phase === 'planning', `phase written, got ${state.phase}`);
+    assert(state.summary === 'kickoff', `summary written, got ${state.summary}`);
+    assert(state.mode === null, 'mode left at default when its flag is not given');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set rejects an unknown phase (isKnownPhase, not the bare PHASES array) and leaves the file untouched', () => {
+  const dir = makeStateRepo('bee-state-set-badphase-');
+  try {
+    runBeeState(dir, ['set', '--phase', 'swarming', '--summary', 'before']);
+    const before = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    const result = runBeeState(dir, ['set', '--phase', 'not-a-real-phase']);
+    assert(result.status !== 0, 'invalid phase exits non-zero');
+    assert(/phase/i.test(result.stderr), `error names the phase, got ${result.stderr}`);
+    const after = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    assert(before === after, 'file untouched after a rejected set');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set refuses to mutate a present-but-corrupt state.json (review P1-1: never clobber to defaults)', () => {
+  const dir = makeStateRepo('bee-state-set-corrupt-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    fs.writeFileSync(statePath, '{ this is not json', 'utf8');
+    const before = fs.readFileSync(statePath, 'utf8');
+    const result = runBeeState(dir, ['set', '--summary', 'x']);
+    assert(result.status !== 0, `set over a corrupt state.json exits non-zero, got ${result.status}`);
+    assert(/state\.json/.test(result.stderr), `error names state.json, got ${result.stderr}`);
+    assert(/FIX:/.test(result.stderr), `error carries a FIX:, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'corrupt file is byte-identical after the refused mutation — never clobbered to defaults');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set accepts the compounding-complete terminal alias (isKnownPhase, not PHASES)', () => {
+  const dir = makeStateRepo('bee-state-set-terminal-');
+  try {
+    const result = runBeeState(dir, ['set', '--phase', 'compounding-complete']);
+    assert(result.status === 0, `terminal alias should be accepted, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.phase === 'compounding-complete', 'terminal alias written');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs set preserves unrelated fields (workers, cells, last_scribing_run) byte-for-byte', () => {
+  const dir = makeStateRepo('bee-state-set-preserve-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, {
+      schema_version: '1.0',
+      phase: 'swarming',
+      feature: 'demo',
+      mode: 'standard',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      workers: [{ nickname: 'sate', cell: 'demo-1', tier: 'generation', status: 'in-flight' }],
+      summary: 'old summary',
+      next_action: 'old next action',
+      cells: { open: 1, claimed: 0, capped: 2, blocked: 0 },
+      last_scribing_run: {
+        feature: 'other',
+        date: '2026-01-01',
+        at: '2026-01-01T00:00:00.000Z',
+        areas_synced: ['x'],
+        next_action: 'y',
+      },
+    });
+    const result = runBeeState(dir, ['set', '--summary', 'new summary']);
+    assert(result.status === 0, `set should succeed, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.summary === 'new summary', 'summary updated');
+    assert(state.phase === 'swarming', 'phase untouched');
+    assert(state.feature === 'demo', 'feature untouched');
+    assert(state.next_action === 'old next action', 'next_action untouched (flag not given)');
+    assert(state.workers.length === 1 && state.workers[0].nickname === 'sate', 'workers array untouched');
+    assert(state.cells.capped === 2, 'cells counts untouched');
+    assert(state.last_scribing_run.feature === 'other', 'last_scribing_run untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs gate approves a named gate and is idempotent (same call twice = identical file)', () => {
+  const dir = makeStateRepo('bee-state-gate-');
+  try {
+    const first = runBeeState(dir, ['gate', '--name', 'execution', '--approved', 'true']);
+    assert(first.status === 0, `gate should succeed, got ${first.status}: ${first.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.approved_gates.execution === true, 'execution gate approved');
+    assert(state.approved_gates.review === false, 'other gates untouched');
+    const afterFirst = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    const second = runBeeState(dir, ['gate', '--name', 'execution', '--approved', 'true']);
+    assert(second.status === 0, 'second identical gate call also succeeds');
+    const afterSecond = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    assert(afterFirst === afterSecond, 'gate --approved true run twice yields an identical file (idempotent)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs gate rejects an unknown gate name and a non-boolean --approved', () => {
+  const dir = makeStateRepo('bee-state-gate-bad-');
+  try {
+    const badName = runBeeState(dir, ['gate', '--name', 'launch', '--approved', 'true']);
+    assert(badName.status !== 0, 'unknown gate name rejected');
+    assert(/gate name/i.test(badName.stderr), `error names the bad gate, got ${badName.stderr}`);
+    const badBool = runBeeState(dir, ['gate', '--name', 'context', '--approved', 'yes']);
+    assert(badBool.status !== 0, 'non-boolean --approved rejected');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker add -> update -> remove -> clear round-trips and preserves unrelated fields', () => {
+  const dir = makeStateRepo('bee-state-worker-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, { schema_version: '1.0', phase: 'swarming', feature: 'demo', summary: 'keep-me' });
+
+    const add = runBeeState(dir, [
+      'worker',
+      'add',
+      '--nickname',
+      'sate',
+      '--cell',
+      'demo-1',
+      '--tier',
+      'generation',
+      '--status',
+      'in-flight',
+    ]);
+    assert(add.status === 0, `worker add should succeed, got ${add.status}: ${add.stderr}`);
+    let state = readStateFile(dir);
+    assert(state.workers.length === 1, 'one worker added');
+    assert(
+      state.workers[0].nickname === 'sate' &&
+        state.workers[0].cell === 'demo-1' &&
+        state.workers[0].tier === 'generation' &&
+        state.workers[0].status === 'in-flight',
+      'worker fields recorded',
+    );
+    assert(state.summary === 'keep-me', 'unrelated field untouched by worker add');
+
+    const update = runBeeState(dir, ['worker', 'update', '--nickname', 'sate', '--status', 'done']);
+    assert(update.status === 0, `worker update should succeed, got ${update.status}: ${update.stderr}`);
+    state = readStateFile(dir);
+    assert(
+      state.workers.length === 1 && state.workers[0].status === 'done' && state.workers[0].cell === 'demo-1',
+      'update merges only the given field',
+    );
+
+    const badUpdate = runBeeState(dir, ['worker', 'update', '--nickname', 'ghost', '--status', 'done']);
+    assert(badUpdate.status !== 0, 'update on a missing nickname is rejected');
+
+    const remove = runBeeState(dir, ['worker', 'remove', '--nickname', 'sate']);
+    assert(remove.status === 0, `worker remove should succeed, got ${remove.status}: ${remove.stderr}`);
+    state = readStateFile(dir);
+    assert(state.workers.length === 0, 'worker removed');
+
+    const badRemove = runBeeState(dir, ['worker', 'remove', '--nickname', 'sate']);
+    assert(badRemove.status !== 0, 'removing an already-absent nickname is rejected');
+
+    runBeeState(dir, ['worker', 'add', '--nickname', 'a', '--cell', 'c1']);
+    runBeeState(dir, ['worker', 'add', '--nickname', 'b', '--cell', 'c2']);
+    state = readStateFile(dir);
+    assert(state.workers.length === 2, 'two workers present before clear');
+    const clear = runBeeState(dir, ['worker', 'clear']);
+    assert(clear.status === 0, `worker clear should succeed, got ${clear.status}: ${clear.stderr}`);
+    state = readStateFile(dir);
+    assert(Array.isArray(state.workers) && state.workers.length === 0, 'clear empties the array');
+    assert(state.summary === 'keep-me', 'unrelated field survives the full round-trip');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker add rejects an unknown tier', () => {
+  const dir = makeStateRepo('bee-state-worker-badtier-');
+  try {
+    const result = runBeeState(dir, ['worker', 'add', '--nickname', 'x', '--cell', 'c1', '--tier', 'super-strong']);
+    assert(result.status !== 0, 'unknown tier rejected');
+    assert(/tier/i.test(result.stderr), `error names the tier, got ${result.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── bee_state.mjs worker prune (workers-prune-1) ────────────────────────────
+
+function makePruneRepo(prefix) {
+  const dir = makeStateRepo(prefix);
+  fs.mkdirSync(path.join(dir, '.bee', 'workers'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+    schema_version: '1.0',
+    phase: 'swarming',
+    workers: [
+      { nickname: 'kevin', cell: 'live-1', tier: 'generation', status: 'in-flight' },
+      { nickname: 'bob', cell: 'alpha.out10', tier: 'generation', status: 'in-flight' },
+    ],
+  });
+  writeJsonAtomic(path.join(dir, '.bee', 'cells', 'done-1.json'), { id: 'done-1', status: 'capped' });
+  writeJsonAtomic(path.join(dir, '.bee', 'cells', 'open-1.json'), { id: 'open-1', status: 'open' });
+  const w = (name) => fs.writeFileSync(path.join(dir, '.bee', 'workers', name), 'x', 'utf8');
+  w('done-1.prompt.md'); // capped cell -> prunable
+  w('done-1.out.log'); // capped cell -> prunable
+  w('done-1.out2.log'); // .outN.log belongs to the same cell id -> prunable
+  w('done-1.result.json'); // capped cell -> prunable
+  w('open-1.prompt.md'); // open cell -> kept
+  w('live-1.result.md'); // active worker's cell (no cell file) -> kept
+  w('alpha.out10.log'); // dotted active cell id: suffix regex must not mis-stem it -> kept
+  w('review-arch.log'); // no cell, no active worker -> prunable
+  w('evidence-pre.json'); // bare .json outside the suffix set -> never touched
+  w('.log'); // empty stem -> not a dispatch transient, never touched
+  w('.out10.log'); // empty stem -> never touched
+  fs.mkdirSync(path.join(dir, '.bee', 'workers', 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.bee', 'workers', 'nested', 'sub.prompt.md'), 'x', 'utf8'); // subdir contents -> never touched
+  return dir;
+}
+
+const PRUNE_EXPECTED = ['done-1.out.log', 'done-1.out2.log', 'done-1.prompt.md', 'done-1.result.json', 'review-arch.log'];
+const PRUNE_SURVIVORS = ['.log', '.out10.log', 'alpha.out10.log', 'evidence-pre.json', 'live-1.result.md', 'nested', 'open-1.prompt.md'];
+
+function workerFiles(dir) {
+  return fs.readdirSync(path.join(dir, '.bee', 'workers')).sort();
+}
+
+check('bee_state.mjs worker prune deletes only capped/orphan transients and keeps open-cell, active-worker (dotted ids included), subdir, and non-transient files', () => {
+  const dir = makePruneRepo('bee-state-prune-');
+  try {
+    const stateBefore = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    const result = runBeeState(dir, ['worker', 'prune', '--json']);
+    assert(result.status === 0, `prune should succeed, got ${result.status}: ${result.stderr}`);
+    const out = JSON.parse(result.stdout);
+    assert(
+      JSON.stringify(out.pruned) === JSON.stringify(PRUNE_EXPECTED),
+      `pruned set, got ${JSON.stringify(out.pruned)}`,
+    );
+    assert(
+      JSON.stringify(workerFiles(dir)) === JSON.stringify(PRUNE_SURVIVORS),
+      `survivors, got ${JSON.stringify(workerFiles(dir))}`,
+    );
+    assert(
+      fs.existsSync(path.join(dir, '.bee', 'workers', 'nested', 'sub.prompt.md')),
+      'subdirectory contents untouched',
+    );
+    const stateAfter = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    assert(stateBefore === stateAfter, 'prune never writes state.json');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune --dry-run reports the exact same candidate set and deletes nothing', () => {
+  const dir = makePruneRepo('bee-state-prune-dry-');
+  try {
+    const before = workerFiles(dir);
+    const result = runBeeState(dir, ['worker', 'prune', '--dry-run', '--json']);
+    assert(result.status === 0, `dry-run should succeed, got ${result.status}: ${result.stderr}`);
+    const out = JSON.parse(result.stdout);
+    assert(out.dry_run === true, 'dry_run flagged in output');
+    assert(
+      JSON.stringify(out.pruned) === JSON.stringify(PRUNE_EXPECTED),
+      `dry-run candidate set is exactly the real prune set, got ${JSON.stringify(out.pruned)}`,
+    );
+    assert(JSON.stringify(workerFiles(dir)) === JSON.stringify(before), 'no file deleted under --dry-run');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune rejects unknown flags (a --dryrun typo must never delete) and non-prune verbs reject --dry-run', () => {
+  const dir = makePruneRepo('bee-state-prune-strictflags-');
+  try {
+    const before = workerFiles(dir);
+    const typo = runBeeState(dir, ['worker', 'prune', '--dryrun', '--json']);
+    assert(typo.status !== 0, `--dryrun typo exits non-zero, got ${typo.status}`);
+    assert(/dryrun/.test(typo.stderr), `error names the unknown flag, got ${typo.stderr}`);
+    assert(JSON.stringify(workerFiles(dir)) === JSON.stringify(before), 'zero deletions on an unknown flag');
+    const stateBefore = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    const clearDry = runBeeState(dir, ['worker', 'clear', '--dry-run']);
+    assert(clearDry.status !== 0, `worker clear --dry-run exits non-zero, got ${clearDry.status}`);
+    assert(/dry-run/.test(clearDry.stderr), `error names --dry-run, got ${clearDry.stderr}`);
+    const stateAfter = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
+    assert(stateBefore === stateAfter, 'a refused dry-run mutation leaves state.json untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune fails closed when state.workers is not an array (semantic corruption, valid JSON)', () => {
+  const dir = makePruneRepo('bee-state-prune-badworkers-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'swarming',
+      workers: { nickname: 'kevin', cell: 'live-1' },
+    });
+    const before = workerFiles(dir);
+    const result = runBeeState(dir, ['worker', 'prune']);
+    assert(result.status !== 0, `malformed workers exits non-zero, got ${result.status}`);
+    assert(/workers/.test(result.stderr), `error names state.workers, got ${result.stderr}`);
+    assert(JSON.stringify(workerFiles(dir)) === JSON.stringify(before), 'zero deletions when the keep set is malformed');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune over a corrupt state.json exits non-zero and deletes nothing (readStateStrict before any rm)', () => {
+  const dir = makePruneRepo('bee-state-prune-corrupt-');
+  try {
+    fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '{ not json', 'utf8');
+    const before = workerFiles(dir);
+    const result = runBeeState(dir, ['worker', 'prune']);
+    assert(result.status !== 0, `corrupt state exits non-zero, got ${result.status}`);
+    assert(JSON.stringify(workerFiles(dir)) === JSON.stringify(before), 'zero deletions on a corrupt state');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs worker prune with no .bee/workers dir succeeds with 0 pruned, and the unknown-action Use: line lists prune', () => {
+  const dir = makeStateRepo('bee-state-prune-nodir-');
+  try {
+    const result = runBeeState(dir, ['worker', 'prune', '--json']);
+    assert(result.status === 0, `missing dir is success, got ${result.status}: ${result.stderr}`);
+    const out = JSON.parse(result.stdout);
+    assert(out.pruned.length === 0, 'nothing pruned when the dir is absent');
+    const bad = runBeeState(dir, ['worker', 'shave']);
+    assert(bad.status !== 0, 'unknown worker action exits non-zero');
+    assert(/prune/.test(bad.stderr), `Use: line lists prune, got ${bad.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs scribing-run stamps the exact key set from bee-scribing SKILL.md:112 including an ISO-precise at', () => {
+  const dir = makeStateRepo('bee-state-scribing-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'scribing',
+      feature: 'demo',
+    });
+    const result = runBeeState(dir, [
+      'scribing-run',
+      '--feature',
+      'demo',
+      '--areas',
+      'auth,billing',
+      '--next-action',
+      'bee-compounding',
+    ]);
+    assert(result.status === 0, `scribing-run should succeed, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    const run = state.last_scribing_run;
+    assert(run && run.feature === 'demo', 'feature stamped');
+    assert(typeof run.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(run.date), `date is day-precise, got ${run.date}`);
+    assert(
+      typeof run.at === 'string' && !Number.isNaN(Date.parse(run.at)) && run.at.length > run.date.length,
+      `at is ISO-precise, got ${run.at}`,
+    );
+    assert(
+      Array.isArray(run.areas_synced) && run.areas_synced.join(',') === 'auth,billing',
+      `areas_synced parsed from the comma list, got ${JSON.stringify(run.areas_synced)}`,
+    );
+    assert(run.next_action === 'bee-compounding', 'next_action stamped in last_scribing_run');
+    assert(
+      state.next_action === 'bee-compounding',
+      'top-level next_action mirrors the flag (SKILL.md:112 "plus top-level phase/next_action")',
+    );
+    assert(
+      state.phase === 'compounding',
+      'top-level phase advances to compounding, the fixed next chain node after bee-scribing',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs scribing-run accepts a single descriptive area with no comma (real-world shape)', () => {
+  const dir = makeStateRepo('bee-state-scribing-single-');
+  try {
+    const result = runBeeState(dir, [
+      'scribing-run',
+      '--feature',
+      'demo',
+      '--areas',
+      'no docs/specs area sync needed — hooks-as-source convention',
+      '--next-action',
+      'bee-compounding',
+    ]);
+    assert(result.status === 0, `scribing-run should succeed, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.last_scribing_run.areas_synced.length === 1, 'a single descriptive sentence stays one array element');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs rejects an unknown verb with a Use: line, exit non-zero', () => {
+  const dir = makeStateRepo('bee-state-unknown-');
+  try {
+    const result = runBeeState(dir, ['launch']);
+    assert(result.status !== 0, 'unknown verb exits non-zero');
+    assert(/Use:/.test(result.stderr), `error names the Use: line, got ${result.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── bee_backlog.mjs add verb (cli-mutations-2, decision from cli-mutations
+// plan.md: agents never hand-edit .bee/*.json(l)) ─────────────────────────────
+// counts/rank/badges already have direct lib/backlog.mjs coverage above (the
+// harness10-6 suite); this block covers the new `add` mutation surface only,
+// reusing the generic makeStateRepo scaffold. --type validation imports
+// KIND_ALIASES/NORMALIZED_KINDS from lib/feedback.mjs rather than a
+// duplicated literal list, so these tests reuse that same import.
+
+function beeBacklogModulePath() {
+  return fileURLToPath(new URL('../bee_backlog.mjs', import.meta.url));
+}
+
+function runBeeBacklog(cwd, args) {
+  return spawnSync(process.execPath, [beeBacklogModulePath(), ...args], { cwd, encoding: 'utf8' });
+}
+
+function readBacklogJsonlLines(repoRoot) {
+  const file = path.join(repoRoot, '.bee', 'backlog.jsonl');
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+}
+
+check('bee_backlog.mjs add appends a validated row and buildDigest picks it up (never dropped as unknown_type)', () => {
+  const dir = makeStateRepo('bee-backlog-add-');
+  try {
+    const result = runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'agents hand-edit .bee state',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--detail',
+      'CLI-ify all mutations',
+      '--feature',
+      'cli-mutations',
+    ]);
+    assert(result.status === 0, `add should succeed, got ${result.status}: ${result.stderr}`);
+    const lines = readBacklogJsonlLines(dir);
+    assert(lines.length === 1, `one row appended, got ${lines.length}`);
+    const row = lines[0];
+    assert(row.type === 'friction', `type recorded, got ${row.type}`);
+    assert(row.title === 'agents hand-edit .bee state', 'title recorded');
+    assert(row.severity === 'P2', 'severity recorded');
+    assert(row.layer === 'state', 'layer recorded');
+    assert(row.detail === 'CLI-ify all mutations', 'detail recorded');
+    assert(row.feature === 'cli-mutations', 'feature recorded');
+    assert(typeof row.ts === 'string' && !Number.isNaN(Date.parse(row.ts)), `ts is a real ISO date, got ${row.ts}`);
+    assert(
+      !('source' in row),
+      'no source field — the collector overrides source with SRC_BACKLOG and never reads a row-supplied value',
+    );
+
+    const digest = buildDigest(dir, { now: PIN });
+    assert(digest.counts.dropped === 0, `nothing dropped, got ${JSON.stringify(digest.dropped)}`);
+    assert(
+      digest.entries.length === 1 && digest.entries[0].kind === 'friction',
+      `entry present with kind friction, got ${JSON.stringify(digest.entries)}`,
+    );
+    assert(digest.entries[0].title === 'agents hand-edit .bee state', 'entry title matches the appended row');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs add accepts an already-normalized NORMALIZED_KINDS value for --type, not only a KIND_ALIASES key', () => {
+  const dir = makeStateRepo('bee-backlog-add-normalized-');
+  try {
+    assert(
+      !Object.prototype.hasOwnProperty.call(KIND_ALIASES, 'approval'),
+      'test premise: "approval" is a NORMALIZED_KINDS value (from kill-approval), not itself a KIND_ALIASES key',
+    );
+    const result = runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'approval',
+      '--title',
+      'kill-approval normalized',
+      '--severity',
+      'P3',
+      '--layer',
+      'review',
+    ]);
+    assert(result.status === 0, `add should accept an already-normalized kind, got ${result.status}: ${result.stderr}`);
+    const digest = buildDigest(dir, { now: PIN });
+    assert(
+      digest.entries.length === 1 && digest.entries[0].kind === 'approval',
+      `kind carried through unchanged, got ${JSON.stringify(digest.entries)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs add rejects --type "kind" (the literal word) and any other unrecognized type before any write', () => {
+  const dir = makeStateRepo('bee-backlog-add-badtype-');
+  try {
+    const result = runBeeBacklog(dir, ['add', '--type', 'kind', '--title', 'x', '--severity', 'P1', '--layer', 'state']);
+    assert(result.status !== 0, 'the literal word "kind" is not a valid type — exits non-zero');
+    assert(/--type/.test(result.stderr), `error names --type, got ${result.stderr}`);
+    assert(!fs.existsSync(path.join(dir, '.bee', 'backlog.jsonl')), 'file untouched (never created) after a rejected add');
+
+    const alsoBad = runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'not-a-real-kind',
+      '--title',
+      'x',
+      '--severity',
+      'P1',
+      '--layer',
+      'state',
+    ]);
+    assert(alsoBad.status !== 0, 'a wholly unrecognized type is rejected too');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs add rejects an oversize title, a bad severity, and an oversize/empty layer, leaving the file untouched', () => {
+  const dir = makeStateRepo('bee-backlog-add-badfields-');
+  try {
+    const good = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'baseline row', '--severity', 'P2', '--layer', 'state']);
+    assert(good.status === 0, `baseline add should succeed, got ${good.status}: ${good.stderr}`);
+    const before = fs.readFileSync(path.join(dir, '.bee', 'backlog.jsonl'), 'utf8');
+
+    const longTitle = 'x'.repeat(201);
+    const badTitle = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', longTitle, '--severity', 'P2', '--layer', 'state']);
+    assert(badTitle.status !== 0, 'a title over 200 chars is rejected');
+    assert(/--title/.test(badTitle.stderr), `error names --title, got ${badTitle.stderr}`);
+
+    const badSeverity = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P4', '--layer', 'state']);
+    assert(badSeverity.status !== 0, 'an out-of-range severity is rejected');
+    assert(/--severity/.test(badSeverity.stderr), `error names --severity, got ${badSeverity.stderr}`);
+
+    const longLayer = 'y'.repeat(41);
+    const badLayer = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P2', '--layer', longLayer]);
+    assert(badLayer.status !== 0, 'a layer over 40 chars is rejected');
+    assert(/--layer/.test(badLayer.stderr), `error names --layer, got ${badLayer.stderr}`);
+
+    const emptyLayer = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P2', '--layer', '']);
+    assert(emptyLayer.status !== 0, 'an empty layer is rejected (non-empty required — still no fixed allowlist)');
+
+    const missingType = runBeeBacklog(dir, ['add', '--title', 'x', '--severity', 'P2', '--layer', 'state']);
+    assert(missingType.status !== 0, 'a missing --type is rejected');
+
+    const after = fs.readFileSync(path.join(dir, '.bee', 'backlog.jsonl'), 'utf8');
+    assert(before === after, 'every rejected add left the file byte-for-byte untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs add accepts an arbitrary free-string --layer with no allowlist (e.g. "security", already live in backlog data)', () => {
+  const dir = makeStateRepo('bee-backlog-add-freelayer-');
+  try {
+    const result = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P2', '--layer', 'security']);
+    assert(result.status === 0, `a free-string layer with no fixed enum is accepted, got ${result.status}: ${result.stderr}`);
+    const lines = readBacklogJsonlLines(dir);
+    assert(lines[0].layer === 'security', 'layer stored as given, no allowlist rewriting');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs counts/rank/badges verbs are unchanged by the add verb addition', () => {
+  const dir = makeStateRepo('bee-backlog-counts-');
+  try {
+    fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'docs', 'backlog.md'),
+      '# Backlog\n\n| ID | Story | Status |\n|----|-------|--------|\n| 1 | A | done |\n| 2 | B | proposed |\n',
+      'utf8',
+    );
+    const result = runBeeBacklog(dir, ['counts', '--json']);
+    assert(result.status === 0, `counts should succeed, got ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    assert(parsed.done === 1 && parsed.proposed === 1 && parsed.total === 2, `counts unchanged, got ${JSON.stringify(parsed)}`);
+
+    const badFlag = runBeeBacklog(dir, ['counts', '--bogus']);
+    assert(badFlag.status !== 0, 'an unknown flag on counts is still rejected (strict parsing preserved for non-add verbs)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_backlog.mjs with no command prints a Use: line listing all four verbs and exits non-zero', () => {
+  const dir = makeStateRepo('bee-backlog-noverb-');
+  try {
+    const result = runBeeBacklog(dir, []);
+    assert(result.status !== 0, 'no-command invocation exits non-zero');
+    assert(/Use:/.test(result.stderr), `expected a "Use:" line, got stderr="${result.stderr}"`);
+    assert(
+      /counts/.test(result.stderr) && /rank/.test(result.stderr) && /badges/.test(result.stderr) && /add/.test(result.stderr),
+      `Use: line should list all four verbs, got ${result.stderr}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ─── vendored source hygiene (P18, bee-compounding mechanization) ────────────
 // A NUL byte in lib/feedback.mjs's sortKey separator made grep/rg treat the
 // whole file as BINARY and print nothing — not even a zero count — so a
@@ -2526,6 +3272,130 @@ check('vendored source: every skills/bee-hive/templates/**/*.mjs file contains n
           `${path.relative(templatesRoot, file)} contains a raw C0 control byte 0x${byte.toString(16).padStart(2, '0')} at offset ${i} — grep/rg will silently treat this file as binary and print nothing, hiding real drift guards`,
         );
       }
+    }
+  }
+});
+
+// ─── template↔vendor byte-equality standing guard (P1-2, review cli-mutations) ─
+// Tests import the template tree directly; live sessions execute .bee/bin/.
+// Equality between the two was only ever proven once, at cell-verify time
+// (`cmp`) — a future one-sided edit to either copy goes green here forever
+// while sessions run the stale/drifted file. This sweep mirrors onboard_bee.mjs
+// listTemplateHelpers/listTemplateLibModules (readdir over templates/*.mjs and
+// templates/lib/*.mjs, sorted) and onboard_bee.mjs's copy_helper/copy_lib
+// mapping (templates/<name> -> .bee/bin/<name>, templates/lib/<name> ->
+// .bee/bin/lib/<name>) so a newly added template is covered with no test edit.
+
+check('vendored source: every templates/*.mjs and templates/lib/*.mjs is byte-identical to its .bee/bin sibling (no standing guard existed before — a one-sided edit went green forever)', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const templatesLibRoot = path.join(templatesRoot, 'lib');
+  const repoRoot = findRepoRoot(templatesRoot);
+  const beeBinRoot = repoRoot ? path.join(repoRoot, '.bee', 'bin') : null;
+
+  if (!beeBinRoot || !fs.existsSync(beeBinRoot)) {
+    // Bare checkout with no vendored copy yet (e.g. before first onboarding
+    // run) — nothing to compare against, not a drift. Any repo that HAS a
+    // .bee/bin (this one included) falls through to the real sweep below,
+    // where a missing sibling is a failure, not a skip.
+    return;
+  }
+
+  function listMjsFiles(dir) {
+    if (!fs.existsSync(dir)) return [];
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.mjs'))
+      .map((entry) => entry.name)
+      .sort();
+  }
+
+  const pairs = [
+    ...listMjsFiles(templatesRoot).map((name) => ({
+      templatePath: path.join(templatesRoot, name),
+      vendorPath: path.join(beeBinRoot, name),
+      rel: name,
+    })),
+    ...listMjsFiles(templatesLibRoot).map((name) => ({
+      templatePath: path.join(templatesLibRoot, name),
+      vendorPath: path.join(beeBinRoot, 'lib', name),
+      rel: `lib/${name}`,
+    })),
+  ];
+
+  assert(
+    pairs.length > 0,
+    'the sweep finds at least one templates/*.mjs or templates/lib/*.mjs file (an empty result would silently pass on a broken readdir, not prove parity)',
+  );
+
+  for (const { templatePath, vendorPath, rel } of pairs) {
+    if (!fs.existsSync(vendorPath)) {
+      throw new Error(
+        `${rel}: no vendored sibling at .bee/bin/${rel} — this repo has a .bee/bin, so a missing sibling is drift, not a bare checkout. Re-copy the template over the vendored copy.`,
+      );
+    }
+    const templateBuf = fs.readFileSync(templatePath);
+    const vendorBuf = fs.readFileSync(vendorPath);
+    if (!templateBuf.equals(vendorBuf)) {
+      throw new Error(
+        `${rel}: templates/${rel} and .bee/bin/${rel} have diverged (byte mismatch) — re-copy the template over the vendored copy.`,
+      );
+    }
+  }
+});
+
+check('vendored statusline: every templates/statusline/* is byte-identical to its .claude/ sibling when the repo opted in (same one-sided-edit guard as the .bee/bin sweep)', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const statuslineRoot = path.join(templatesRoot, 'statusline');
+  const repoRoot = findRepoRoot(templatesRoot);
+
+  if (!fs.existsSync(statuslineRoot) || !repoRoot) {
+    return; // no statusline templates in this tree — nothing to guard
+  }
+
+  const names = fs
+    .readdirSync(statuslineRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort();
+  assert(
+    names.length > 0,
+    'the statusline template dir is non-empty (an empty dir would silently pass on a broken readdir, not prove parity)',
+  );
+
+  // Opt-in is read from settings, not inferred from sibling presence — if
+  // BOTH vendored copies were deleted while the repo still opts in, that is
+  // exactly the drift this sweep exists to catch (review P2-3), not a skip.
+  const settings = (() => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(repoRoot, '.claude', 'settings.json'), 'utf8'));
+    } catch {
+      return null;
+    }
+  })();
+  const statusLineCommand =
+    settings && settings.statusLine && typeof settings.statusLine === 'object'
+      ? settings.statusLine.command
+      : null;
+  const optedIn =
+    typeof statusLineCommand === 'string' &&
+    statusLineCommand.includes('.claude/statusline-command.sh');
+  if (!optedIn) {
+    return; // repo did not opt in — the onboard stage owns that case
+  }
+
+  for (const name of names) {
+    const siblingPath = path.join(repoRoot, '.claude', name);
+    if (!fs.existsSync(siblingPath)) {
+      throw new Error(
+        `statusline/${name}: the repo carries part of the statusline pair but .claude/${name} is missing — run onboarding --apply to restore the pair.`,
+      );
+    }
+    const templateBuf = fs.readFileSync(path.join(statuslineRoot, name));
+    const siblingBuf = fs.readFileSync(siblingPath);
+    if (!templateBuf.equals(siblingBuf)) {
+      throw new Error(
+        `statusline/${name}: templates/statusline/${name} and .claude/${name} have diverged (byte mismatch) — edit the template as source of truth, then re-run onboarding --apply (or re-copy) so both sides match.`,
+      );
     }
   }
 });

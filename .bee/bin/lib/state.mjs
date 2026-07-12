@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 
-export const BEE_VERSION = '0.1.20';
+export const BEE_VERSION = '0.1.22';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -243,6 +243,59 @@ export function readState(root) {
   if (!state || typeof state !== 'object' || Array.isArray(state)) return defaultState();
   const merged = { ...defaultState(), ...state };
   merged.approved_gates = { ...defaultState().approved_gates, ...(state.approved_gates || {}) };
+  return merged;
+}
+
+// readStateStrict — the CLI-only sibling of readState (review P1-1). readState
+// stays fail-open on purpose: hooks (bee-state-sync, bee-write-guard) and
+// bee_status read it constantly and must never throw on a corrupt file mid-
+// session, so its "present-but-unparseable -> defaultState()" shape is untouched
+// here and must stay untouched. readStateStrict is for bee_state.mjs's mutation
+// verbs only, which is the one place a fail-open read is actively harmful: every
+// verb re-reads-then-writes, so a corrupt file silently read as defaults gets
+// written straight back as a fresh skeleton — gates reset, workers emptied,
+// feature nulled, exit 0, no trace anything was lost. readStateStrict instead
+// distinguishes:
+//   - absent state.json           -> defaultState() (same as readState; a
+//     first mutation on a fresh repo must still be able to create the file)
+//   - present but unparseable, or -> throws, so the caller (bee_state.mjs's
+//     present but not a JSON object    main()) prints the message to stderr and
+//                                       exits non-zero with the file untouched
+export function readStateStrict(root) {
+  const file = statePath(root);
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return defaultState();
+    throw new Error(
+      `readStateStrict: could not read "${file}" (${err && err.code ? err.code : err}). ` +
+        'The bee CLI refuses to rebuild state from defaults when it cannot read the existing file — that could ' +
+        'silently clobber real state (gates, workers, feature). ' +
+        `FIX: inspect/restore the file (e.g. "git checkout -- ${path.relative(root, file)}"), then retry.`,
+    );
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `readStateStrict: "${file}" exists but is not valid JSON. ` +
+        'The bee CLI refuses to rebuild state from defaults over a present-but-corrupt file — that would silently ' +
+        'clobber real state (gates, workers, feature) while reporting success. ' +
+        `FIX: inspect/restore the file (e.g. "git checkout -- ${path.relative(root, file)}"), then retry.`,
+    );
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(
+      `readStateStrict: "${file}" exists but is not a JSON object (found ${Array.isArray(parsed) ? 'an array' : typeof parsed}). ` +
+        'The bee CLI refuses to rebuild state from defaults over a present-but-corrupt file — that would silently ' +
+        'clobber real state (gates, workers, feature) while reporting success. ' +
+        `FIX: inspect/restore the file (e.g. "git checkout -- ${path.relative(root, file)}"), then retry.`,
+    );
+  }
+  const merged = { ...defaultState(), ...parsed };
+  merged.approved_gates = { ...defaultState().approved_gates, ...(parsed.approved_gates || {}) };
   return merged;
 }
 

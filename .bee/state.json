@@ -10,37 +10,13 @@
     "review": false
   },
   "workers": [],
-  "summary": "harness-integration Phase 1 CLOSED: merged, walkthrough written, scribing synced (reading-map only, per bee-tooling convention), 3 critical patterns promoted, 1 durable decision logged (review-tier deviation), feedback digest refreshed. 15 P2/P3 findings remain in backlog for future work. Phases 2-6 (intervention log, tool registry, task-management index, input-type classification, worktree isolation) return to bee-planning as their own future slices.",
-  "next_action": "Idle. Next: route a new request through bee-hive (e.g. Phase 2 of harness-integration, or anything else).",
-  "last_scribing_run": {
-    "feature": "harness-integration",
-    "date": "2026-07-12",
-    "at": "2026-07-12T03:46:23.823Z",
-    "areas_synced": [
-      "no docs/specs/<area>.md area applies - per reading-map.md convention, bee own skills/CLI/hooks are documented via docs/07-contracts.md + SKILL.md, not area specs (already updated by cells 4 and 7); reading-map.md gained one Elsewhere line pointing at .bee/bin/bee.mjs"
-    ],
-    "next_action": "bee-compounding"
-  },
-  "last_compounding_run": {
-    "feature": "harness-integration",
-    "at": "2026-07-12T03:49:46.923Z",
-    "learnings": "docs/history/learnings/20260712-harness-integration.md",
-    "critical_promotions": 3,
-    "decisions_logged": 1,
-    "friction_filed": 0,
-    "digest_refresh": "green (64 entries; 13 unknown_type drops pre-existing)"
-  },
+  "summary": "harness-integration Phase 1 CLOSED and merged into main alongside main's own shipped features (onboard-statusline 0.1.22, workers-prune, cli-mutations, grill-deltas, dispatch-log). Merge conflicts in bee-runtime bookkeeping files (reservations.json, onboarding.json, decisions.jsonl, backlog.jsonl, reading-map.md, state.json) resolved by union/regeneration.",
+  "next_action": "Idle. Next: route a new request through bee-hive, or run the full test suite to confirm the merge is regression-free before completing the PR merge.",
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 56,
+    "capped": 75,
     "blocked": 0
   },
-  "last_activity": "2026-07-12T03:50:51.214Z",
-  "uat_results": {
-    "D3 manifest valid": "pass",
-    "D4 hook denies malformed call": "pass",
-    "D5 parity with legacy entrypoint": "pass",
-    "P1 fixes (examples runnable + flag-value fix)": "pass"
-  }
+  "last_activity": "2026-07-12T06:05:25.277Z"
 }

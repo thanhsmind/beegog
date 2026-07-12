@@ -523,6 +523,122 @@ try {
       // best-effort cleanup
     }
   }
+
+  // --- 9c. statusline opt-in vendor -----------------------------------------
+  // The pair templates/statusline/{statusline-command.sh,statusline-usage.mjs}
+  // is synced ONLY into repos whose .claude/settings.json already points
+  // statusLine at .claude/statusline-command.sh. Onboarding never creates the
+  // opt-in and never mutates settings.json in this stage.
+  const SL_NAMES = ["statusline-command.sh", "statusline-usage.mjs"];
+  const SL_TEMPLATES_DIR = path.join(TEMPLATES_DIR, "statusline");
+
+  // opted-in repo: settings entry present BEFORE first onboard
+  const slTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-statusline-test-"));
+  const slHome = makeFakeHome();
+  try {
+    fs.mkdirSync(path.join(slTmp, ".claude"), { recursive: true });
+    const slSettingsPath = path.join(slTmp, ".claude", "settings.json");
+    const slSettingsText = `${JSON.stringify({
+      statusLine: {
+        type: "command",
+        command: 'bash "${CLAUDE_PROJECT_DIR:-.}/.claude/statusline-command.sh"',
+      },
+      permissions: { allow: ["Bash(ls:*)"] },
+    }, null, 2)}\n`;
+    fs.writeFileSync(slSettingsPath, slSettingsText, "utf8");
+
+    const slPlan = runOnboard(["--repo-root", slTmp, "--json"], slHome);
+    const slPlanItems = (slPlan.payload?.plan || []).filter((i) => i.action === "copy_statusline");
+    check(slPlanItems.length === SL_NAMES.length &&
+      SL_NAMES.every((n) => slPlanItems.some((i) => i.path === `.claude/${n}`)),
+      "opted-in repo: plan carries one copy_statusline item per missing pair file",
+      JSON.stringify(slPlanItems));
+
+    const slApply = runOnboard(["--repo-root", slTmp, "--apply", "--json"], slHome);
+    check(slApply.payload?.status === "applied", "opted-in apply succeeds");
+    check(slApply.payload?.recheck === "up_to_date", "opted-in recheck up_to_date",
+      JSON.stringify(slApply.payload?.recheck_plan || []));
+    for (const n of SL_NAMES) {
+      const vendoredPath = path.join(slTmp, ".claude", n);
+      const vendored = fs.existsSync(vendoredPath) ? fs.readFileSync(vendoredPath, "utf8") : null;
+      const template = fs.readFileSync(path.join(SL_TEMPLATES_DIR, n), "utf8");
+      check(vendored === template, `.claude/${n} vendored byte-identical to template`);
+    }
+    check(fs.readFileSync(slSettingsPath, "utf8") === slSettingsText,
+      "settings.json byte-untouched by the statusline stage");
+    check(!fs.existsSync(`${slSettingsPath}.bak`),
+      "no settings.json.bak from the statusline stage");
+    const slOnboarding = JSON.parse(
+      fs.readFileSync(path.join(slTmp, ".bee", "onboarding.json"), "utf8"));
+    check(SL_NAMES.every((n) => typeof slOnboarding.managed?.statusline?.[n] === "string"),
+      "onboarding.json managed.statusline records a hash per pair file",
+      JSON.stringify(slOnboarding.managed?.statusline || null));
+
+    // drift exactly one file -> exactly one item, apply heals, recheck clean
+    fs.appendFileSync(path.join(slTmp, ".claude", "statusline-command.sh"), "# local drift\n");
+    const slDriftPlan = runOnboard(["--repo-root", slTmp, "--json"], slHome);
+    const slDriftItems = (slDriftPlan.payload?.plan || []).filter((i) => i.action === "copy_statusline");
+    check(slDriftItems.length === 1 && slDriftItems[0].path === ".claude/statusline-command.sh",
+      "drifted pair file: exactly the drifted file is re-planned",
+      JSON.stringify(slDriftItems));
+    const slHeal = runOnboard(["--repo-root", slTmp, "--apply", "--json"], slHome);
+    check(slHeal.payload?.recheck === "up_to_date", "drift healed: recheck up_to_date");
+  } finally {
+    try {
+      fs.rmSync(slTmp, { recursive: true, force: true });
+      fs.rmSync(slHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // non-opted variants: user-level statusLine path, unparseable settings,
+  // non-string command. None throws, none plans or writes the pair, and the
+  // managed manifest never grows a statusline key.
+  const slCases = [
+    ["statusline points at the user-level script", JSON.stringify({
+      statusLine: { type: "command", command: "bash /home/someone/.claude/statusline-command.sh" },
+    })],
+    ["settings.json is unparseable", "{ not json"],
+    ["statusLine.command is not a string", JSON.stringify({ statusLine: { command: 42 } })],
+    // review P2-1: CLAUDE_PROJECT_DIR appearing anywhere must not opt in when
+    // the script path itself is user-level.
+    ["CLAUDE_PROJECT_DIR present but the script path is user-level", JSON.stringify({
+      statusLine: {
+        type: "command",
+        command: 'test -n "$CLAUDE_PROJECT_DIR" && bash ~/.claude/statusline-command.sh',
+      },
+    })],
+  ];
+  for (const [why, settingsText] of slCases) {
+    const noTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-statusline-no-"));
+    const noHome = makeFakeHome();
+    try {
+      fs.mkdirSync(path.join(noTmp, ".claude"), { recursive: true });
+      fs.writeFileSync(path.join(noTmp, ".claude", "settings.json"), settingsText, "utf8");
+      const noApply = runOnboard(["--repo-root", noTmp, "--apply", "--json"], noHome);
+      check(noApply.payload?.status === "applied" &&
+        !(noApply.payload?.applied || []).some((i) => i.action === "copy_statusline"),
+        `non-opted (${why}): apply succeeds with zero copy_statusline items`,
+        JSON.stringify((noApply.payload?.applied || []).map((i) => i.action)));
+      check(SL_NAMES.every((n) => !fs.existsSync(path.join(noTmp, ".claude", n))),
+        `non-opted (${why}): no pair file created`);
+      const noOnboarding = JSON.parse(
+        fs.readFileSync(path.join(noTmp, ".bee", "onboarding.json"), "utf8"));
+      check(!("statusline" in (noOnboarding.managed || {})),
+        `non-opted (${why}): managed manifest carries no statusline key`);
+      const noRecheck = runOnboard(["--repo-root", noTmp, "--json"], noHome);
+      check(noRecheck.payload?.status === "up_to_date",
+        `non-opted (${why}): recheck up_to_date`);
+    } finally {
+      try {
+        fs.rmSync(noTmp, { recursive: true, force: true });
+        fs.rmSync(noHome, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
 } finally {
   try {
     fs.rmSync(tmp, { recursive: true, force: true });

@@ -21,7 +21,7 @@ If `.bee/onboarding.json` is missing or stale, stop and invoke `bee-hive`.
 
 ## What bypass does (say this when turning it on)
 
-When `gate_bypass: true`, the agent stops asking the human at **Gates 1, 2, and 3** and instead takes the RECOMMENDATION option, records the approval in `.bee/state.json`, logs a one-line audit decision, and continues — posting a short `⚡ auto-approved Gate N` line, not a question.
+When `gate_bypass: true`, the agent stops asking the human at **Gates 1, 2, and 3** and instead takes the RECOMMENDATION option, records the approval with `node .bee/bin/bee_state.mjs gate --name context|shape|execution --approved true`, logs a one-line audit decision, and continues — posting a short `⚡ auto-approved Gate N` line, not a question.
 
 What bypass **never** touches (the safety floor, all absolute):
 

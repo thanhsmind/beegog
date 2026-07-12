@@ -95,14 +95,14 @@ All three = OK. EXISTS + SUBSTANTIVE only = P2. Missing or EXISTS-only = P1.
 
 ## 5. Human UAT
 
-Walk the user through every SEE/CALL/RUN decision in CONTEXT.md (wording in the reference). Failure → P1 fix cell + rerun the item. Skip requires a recorded reason in `.bee/state.json`. UAT failures are never logged as passes.
+Walk the user through every SEE/CALL/RUN decision in CONTEXT.md (wording in the reference). Failure → P1 fix cell + rerun the item. Skip requires a recorded reason: `node .bee/bin/bee_state.mjs set --summary "<skip reason>"`. UAT failures are never logged as passes.
 
 ## 6. Finishing
 
 1. Run the project build/test/lint gates; quote fresh command output — never claim "passing" without it.
-2. P2/P3 findings → `.bee/backlog.jsonl` entries (plus grooming cells where warranted) with non-blocking traceability to the feature. They never block the current work.
+2. P2/P3 findings → `node .bee/bin/bee_backlog.mjs add --type review-finding --severity P2|P3 --layer <layer> --title "<finding>" --feature <feature>` (plus grooming cells where warranted) with non-blocking traceability to the feature. They never block the current work.
 3. If filing a residual finding anywhere fails, write it to `docs/history/<feature>/reports/residual-findings.md` so nothing evaporates.
-4. Close out `.bee/state.json`: phase, summary, next_action.
+4. Close out state: `node .bee/bin/bee_state.mjs set --phase <phase> --summary "<summary>" --next-action "<next action>"`.
 
 ## Gate 4 (wording is fixed)
 

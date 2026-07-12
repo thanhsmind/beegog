@@ -8,6 +8,9 @@ Where things live. Read the touched area's spec before its code.
   safe portable snapshot, how the maintainers' repository reads other repositories' snapshots
   without trusting them, and how the collected view is ranked and fed to the gated
   self-improvement process.
+- [`onboarding.md`](./onboarding.md) — what onboarding installs and keeps current in a host
+  project; currently full on the opt-in status-display (statusline) vendoring, the rest of the
+  surface is declared Open Gaps (`coverage: partial`).
 
 ## Not yet specced
 
@@ -23,5 +26,7 @@ Where things live. Read the touched area's spec before its code.
 - `docs/history/<feature>/` — how a feature was decided, planned, validated, reviewed, and shipped.
 - `docs/decisions/` — numbered design decisions. `.bee/decisions.jsonl` — the live decision log.
 - `docs/backlog.md` — the product backlog. `.bee/backlog.jsonl` — friction and findings.
-- `hooks/` — plugin runtime hooks (source of truth; vendored to `.bee/bin/hooks/` by onboarding). The subagent model-tier guard contract (explicit tier per dispatch, anchored `[bee-tier]` marker) lives in `docs/decisions/0023-explicit-tier-transport.md` + `skills/bee-swarming/`, enforced by `hooks/bee-model-guard.mjs`, tested by `hooks/test_model_guard.mjs`.
+- `.bee/state.json` and `.bee/backlog.jsonl` are **CLI-owned**: every mutation goes through `bee_state.mjs` (set/gate/worker/scribing-run; `worker prune` cleans `.bee/workers` transients — prefix keep-set, fail-closed destructive verbs; contract in the script's usage comment + swarming-reference Transient hygiene, decision a0285993) or `bee_backlog.mjs add` (source: `skills/bee-hive/templates/`); direct edits are denied by the write-guard, and a standing suite test keeps templates byte-identical to `.bee/bin/`. Shipped as `docs/history/cli-mutations/` (`walkthrough.md` carries the full contract).
+- `docs/history/research/` — standalone bee-xia research briefs (topic-slug files; each leads with its Bottom Line).
+- `hooks/` — plugin runtime hooks (source of truth; vendored to `.bee/bin/hooks/` by onboarding). The subagent model-tier guard contract (explicit tier per dispatch, anchored `[bee-tier]` marker) lives in `docs/decisions/0023-explicit-tier-transport.md` + `skills/bee-swarming/`, enforced by `hooks/bee-model-guard.mjs`, tested by `hooks/test_model_guard.mjs`. The same hook audit-logs every evaluated dispatch (transport, model, tier) to `.bee/logs/dispatch.jsonl` (P22).
 - `.bee/bin/bee.mjs` — the unified CLI dispatcher over the 4 legacy helpers (`bee_status/cells/reservations/decisions.mjs`, still valid side by side). `bee --help --json` is the manifest contract; full detail in `docs/02-architecture.md` and `docs/07-contracts.md`. The 4th write-guard check (`hooks/bee-write-guard.mjs`) validates CLI-shaped Bash calls against the same registry (`.bee/bin/lib/command-registry.mjs`). History: `docs/history/harness-integration/`.

@@ -31,6 +31,7 @@ const SCRIPTS_DIR = path.dirname(SCRIPT_PATH);
 const HIVE_DIR = path.dirname(SCRIPTS_DIR);
 const TEMPLATES_DIR = path.join(HIVE_DIR, "templates");
 const TEMPLATES_LIB_DIR = path.join(TEMPLATES_DIR, "lib");
+const TEMPLATES_STATUSLINE_DIR = path.join(TEMPLATES_DIR, "statusline");
 const AGENTS_BLOCK_TEMPLATE = path.join(TEMPLATES_DIR, "AGENTS.block.md");
 const PLUGIN_ROOT = path.dirname(path.dirname(HIVE_DIR));
 const PLUGIN_HOOKS_DIR = path.join(PLUGIN_ROOT, "hooks");
@@ -847,6 +848,43 @@ function listTemplateLibModules() {
     .sort();
 }
 
+function listTemplateStatusline() {
+  if (!fs.existsSync(TEMPLATES_STATUSLINE_DIR)) {
+    return [];
+  }
+  return fs
+    .readdirSync(TEMPLATES_STATUSLINE_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+// A repo opts in to the vendored statusline by already pointing its
+// .claude/settings.json statusLine at the project-level script. Onboarding
+// then keeps the pair current; it never creates the opt-in, never touches
+// settings.json in this stage, and any unparseable/unexpected settings shape
+// simply means "not opted in" (fail-safe, never a throw).
+function statuslineOptIn(repoRoot) {
+  const settings = readJsonIfExists(path.join(repoRoot, ".claude", "settings.json"));
+  const command =
+    settings && settings.statusLine && typeof settings.statusLine === "object"
+      ? settings.statusLine.command
+      : null;
+  if (typeof command !== "string" || !command.includes(".claude/statusline-command.sh")) {
+    return false;
+  }
+  // Project-level references only: a $CLAUDE_PROJECT_DIR-anchored path
+  // (the variable must anchor the script path itself, not merely appear
+  // anywhere in the command — review P2-1), or a bare repo-relative
+  // ".claude/…" (nothing before the dot). A user-level "~/.claude/…" or
+  // "/home/x/.claude/…" contains the same substring but is NOT this repo's
+  // script — vendoring there would shadow the user's own copy.
+  return (
+    /\$\{?CLAUDE_PROJECT_DIR[^"'\s{}]*\}?\/\.claude\/statusline-command\.sh/.test(command) ||
+    /(^|[\s"'=(])\.claude\/statusline-command\.sh/.test(command)
+  );
+}
+
 function listPluginHooks() {
   if (!fs.existsSync(PLUGIN_HOOKS_DIR)) {
     return [];
@@ -1106,6 +1144,19 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
     }
   }
 
+  // 3b. statusline pair (opt-in sync): only for repos whose settings.json
+  // already points statusLine at .claude/statusline-command.sh. Byte-compare
+  // like the vendored helpers; never creates the opt-in on other repos.
+  if (statuslineOptIn(repoRoot)) {
+    for (const name of listTemplateStatusline()) {
+      const source = fs.readFileSync(path.join(TEMPLATES_STATUSLINE_DIR, name), "utf8");
+      const target = path.join(repoRoot, ".claude", name);
+      if (readTextIfExists(target) !== source) {
+        plan.push({ action: "copy_statusline", path: `.claude/${name}` });
+      }
+    }
+  }
+
   // 4. learnings stub
   if (!fs.existsSync(path.join(repoRoot, "docs", "history", "learnings", "critical-patterns.md"))) {
     plan.push({ action: "create_stub", path: "docs/history/learnings/critical-patterns.md" });
@@ -1143,14 +1194,15 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
   }
 
   // 6. onboarding.json drift (managed versions)
-  const desiredManaged = buildManagedVersions(renderedBlock, repoHooks);
+  const statusline = statuslineOptIn(repoRoot);
+  const desiredManaged = buildManagedVersions(renderedBlock, repoHooks, statusline);
   const onboarding = readJsonIfExists(path.join(repoRoot, ".bee", "onboarding.json"));
   const onboardingCurrent =
     onboarding &&
     onboarding.schema_version === ONBOARDING_SCHEMA_VERSION &&
     onboarding.bee_version === beeVersion &&
-    JSON.stringify(subsetManaged(onboarding.managed, repoHooks)) ===
-      JSON.stringify(subsetManaged(desiredManaged, repoHooks));
+    JSON.stringify(subsetManaged(onboarding.managed, repoHooks, statusline)) ===
+      JSON.stringify(subsetManaged(desiredManaged, repoHooks, statusline));
   if (!onboardingCurrent) {
     plan.push({ action: "write_onboarding", path: ".bee/onboarding.json" });
   }
@@ -1165,7 +1217,7 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
   return { plan, beeVersion, renderedBlock, desiredManaged, skillSync };
 }
 
-function buildManagedVersions(renderedBlock, repoHooks) {
+function buildManagedVersions(renderedBlock, repoHooks, statusline = false) {
   const helpers = {};
   for (const name of listTemplateHelpers()) {
     helpers[name] = sha256(fs.readFileSync(path.join(TEMPLATES_DIR, name), "utf8"));
@@ -1182,12 +1234,20 @@ function buildManagedVersions(renderedBlock, repoHooks) {
     }
     managed.repo_hooks = hooks;
   }
+  if (statusline) {
+    const pair = {};
+    for (const name of listTemplateStatusline()) {
+      pair[name] = sha256(fs.readFileSync(path.join(TEMPLATES_STATUSLINE_DIR, name), "utf8"));
+    }
+    managed.statusline = pair;
+  }
   return managed;
 }
 
 // Compare only the parts we manage in this run: without --repo-hooks, ignore
-// any repo_hooks entry recorded by a previous --repo-hooks run.
-function subsetManaged(managed, repoHooks) {
+// any repo_hooks entry recorded by a previous --repo-hooks run; without the
+// statusline opt-in, ignore any statusline entry the same way.
+function subsetManaged(managed, repoHooks, statusline = false) {
   const src = managed && typeof managed === "object" ? managed : {};
   const out = {
     agents_block: src.agents_block || null,
@@ -1196,6 +1256,9 @@ function subsetManaged(managed, repoHooks) {
   };
   if (repoHooks) {
     out.repo_hooks = src.repo_hooks || {};
+  }
+  if (statusline) {
+    out.statusline = src.statusline || {};
   }
   return out;
 }
@@ -1303,6 +1366,11 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngra
       case "copy_repo_hook": {
         const name = path.basename(item.path);
         writeFileAtomic(target, fs.readFileSync(path.join(PLUGIN_HOOKS_DIR, name), "utf8"));
+        break;
+      }
+      case "copy_statusline": {
+        const name = path.basename(item.path);
+        writeFileAtomic(target, fs.readFileSync(path.join(TEMPLATES_STATUSLINE_DIR, name), "utf8"));
         break;
       }
       case "create_stub": {

@@ -1,16 +1,17 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.20",
+  "bee_version": "0.1.22",
   "managed": {
     "agents_block": "50b507c729c27bbb347ed7bd4b2bdf0782bd041b6177e394d487b359acb596d0",
     "helpers": {
       "bee.mjs": "7ca7ac1a0a6185ba2ab9132b48c59765e4302ec594973f0d8d27444748696147",
-      "bee_backlog.mjs": "138c3d8e5c828ba79a776b3120791dbf2699ea22335f21f44fc83a8574183eea",
+      "bee_backlog.mjs": "1256aeb2c797ca8d118379a2f770ccf5b3b663d2f6ef2ce034ee845f8b077d31",
       "bee_capture.mjs": "11dc00e64b8926bc1f53961d128e9eee46dd397442bae360d27feaa775bef2a8",
       "bee_cells.mjs": "1097fa1814caf6f43c0ad9826f6cede693502ec1a33fddd864bc0c88a2d7abdc",
       "bee_decisions.mjs": "1a5e1b02d66ee55416c52e5eac29d7c0ee623cf9b8a79a8f84d0eef43d91973b",
       "bee_feedback.mjs": "0e01eb9e93f37b83aa2683f29438969076f8c05b4aeacf40fa26eae3f92e7990",
       "bee_reservations.mjs": "02b0b1fe84e994a5a33bf4aaf181317d0b4fa88b064a5b53f800af8a0ccf9fd8",
+      "bee_state.mjs": "43cfdeede5fc9bf9902b7be7da2db552ef965b11c59183e9924e99f439a43b3a",
       "bee_status.mjs": "bb8c9fcd47bdbc27aa39bd918f92facce0816d42b2f066fa0ebc2d080b1081d5"
     },
     "lib": {
@@ -22,10 +23,10 @@
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
       "fsutil.mjs": "7bbfb70e5f6bcf3b18d4c4be9342d55bb748683d419a219b3406dae0a04b3691",
-      "guards.mjs": "7c5c0669a0482e3640edb365cc68b33ec59e14a5524762947f80ad12496f8f9d",
+      "guards.mjs": "82d0319fcfdea4e438eb313c79afa579d53b97e9d957504dde3cec141da0f335",
       "inject.mjs": "0763fa9856ed15827ed7c62d34fb66129a63722dcd554bf485da61ff0906fae8",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
-      "state.mjs": "f55d1ffc23586a5976cd93f4036a05c6625d20e9bab15a8e5be24c6626a0d70d",
+      "state.mjs": "c2be6c6f5fff5d2014608ff5a9ea7542c3483df69111a934266f74000341761f",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
     },
     "repo_hooks": {
@@ -35,9 +36,13 @@
       "bee-state-sync.mjs": "e453dd036189a07c85e676836185138a82f72b74647a69f4e4585f941ae9f870",
       "bee-chain-nudge.mjs": "19fb72e383eacb42d5d4a5813f8399b7ea32bd870df44b91e3675cd5ead10d97",
       "bee-session-close.mjs": "905d5c6dafb061d6f7180584c184f9fd2586593afc7364a03ffc528cc98d7e5b",
-      "bee-model-guard.mjs": "fc622b1f7170a3663dd2601d258184dba004a55838c77bdd0775584a84a9769e"
+      "bee-model-guard.mjs": "bf0e3f1f027d7574a101df50ebb4d84bcd5c89942b17607ddf4e3c36bbbd301b"
+    },
+    "statusline": {
+      "statusline-command.sh": "0965ae1c0d95a96fd7899df7549893e94fcc59693cab3b23da8dc228aa870b0e",
+      "statusline-usage.mjs": "1914f6e7d421b240be3987f50d40a5151723b5302866b8838f6fb5a8de438f01"
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-12T03:08:35.351Z"
+  "updated_at": "2026-07-12T06:08:36.573Z"
 }

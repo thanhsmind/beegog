@@ -73,7 +73,7 @@ One approved kill per cell. Approval of one kill is not approval of its "related
 
 ## 5. Close the Loop
 
-After execution, record the actual outcome against the prediction in `.bee/backlog.jsonl` (template in the reference). Prediction wrong? That is signal, not embarrassment. Feed durable lessons to `bee-compounding` — grooming that never learns just mows the same grass.
+After execution, record the actual outcome against the prediction: `node .bee/bin/bee_backlog.mjs add --type kill-outcome --severity <P1|P2|P3> --layer <layer> --title "<outcome>" --detail "<predicted vs actual>" --feature <feature>` (field guidance in the reference). Prediction wrong? That is signal, not embarrassment. Feed durable lessons to `bee-compounding` — grooming that never learns just mows the same grass.
 
 ## Headless
 

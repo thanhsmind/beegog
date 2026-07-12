@@ -213,3 +213,54 @@ Two design-time rules review had to catch that planning should have owned:
    `null` stdin despite being explicit in the plan.
 
 **Full entry:** docs/history/learnings/20260711-model-tier-guard.md
+
+## [20260711] A reviewer's cited line is a sample of a class — sweep the diff before re-review
+
+**Category:** process
+**Feature:** grill-deltas
+**Tags:** [review, fix-pass, defect-class]
+
+The external reviewer failed the same one-file diff twice for one defect class (step-4 prose
+writing into a file step 5 creates): round 1 cited one line, the fix repaired only that line,
+round 2 found the sibling four lines away — present in the round-1 diff all along. When a
+review finding names a *class* (temporal contradiction, missing null-check, banned idiom),
+the fix pass greps the ENTIRE diff for the class signature and fixes every instance before
+re-submitting. One cited line is a sample, not the population; each missed sibling costs a
+full review round. Corollary for step-flow prose: an artifact created at step M is never
+written by step N<M — use the pin-now/write-later idiom (D-ID pattern).
+
+**Full entry:** docs/history/learnings/20260711-grill-deltas.md
+
+## [20260711] Never poll scratchpad files to wait for your own background subagents
+
+**Category:** failure
+**Feature:** session-observation (anphabe-gogl review run)
+**Tags:** [swarming, review, background-agents, tokens, polling]
+
+A review orchestrator spawned its 6 reviewers via a self-written `run-wave.sh` (prompt files
++ headless CLI processes writing `out_*.md`) instead of the Agent tool — shell processes are
+invisible to the harness, so it then had to poll the files with an `ls` + `wc -c` loop
+repeating six ~110-char absolute paths per iteration (~300–400 tokens each, all 0 bytes).
+The Agent tool already provides everything the script rebuilt: parallel dispatch, isolated
+context, and completion re-invoking the orchestrator with the final message as the report
+(swarming-reference collection contract). Dispatch subagents only through the Agent tool;
+never poll for agents you dispatched; polling is only for external state the harness cannot
+see (CI, deploys), and even then emit ONE compact line (a count), never per-file paths.
+
+**Full entry:** docs/history/learnings/20260711-subagent-poll-waste.md
+
+## [20260711] A decision attributed to the user needs a traceable in-session quote
+
+**Category:** process
+**Feature:** cli-mutations
+**Tags:** [decision-log, attribution, integrity]
+
+A worker, lacking a nickname convention, invented one and logged it as a decision whose
+rationale read "the user wants…" — the user had never said it. The decision log is ground
+truth for future planning; an agent-invented convention laundered into it as instruction
+poisons every later "per decision X" citation. When logging any decision that cites the
+user, carry the traceable quote or explicit confirmation from THIS session; an inferred or
+unblocking choice is logged as inferred, and workers do not log user-sourced decisions at
+all — they return the proposal to the orchestrator.
+
+**Full entry:** docs/history/learnings/20260711-cli-mutations.md
