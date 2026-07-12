@@ -1,27 +1,27 @@
 #!/usr/bin/env node
-// bee.mjs — unified CLI dispatcher (harness-integration Phase 1, D2/D3/D5).
+// bee.mjs — unified CLI dispatcher covering all 9 command groups (status,
+// cells, reservations, decisions, state, backlog, capture, reviews,
+// feedback; dispatcher-unify DB1/DB2).
 //
-// D5 (locked, CONTEXT.md + this cell's own action): this dispatcher imports
-// the SAME lib/*.mjs functions the 4 existing entrypoints (bee_status.mjs,
-// bee_cells.mjs, bee_reservations.mjs, bee_decisions.mjs) already import —
-// it never imports, spawns, or edits those 4 files. Each handler below
-// reimplements that file's own run()/render logic against the shared lib
-// functions so `bee <group> <action>` output is byte-identical to invoking
-// the original helper directly (verified by tests/test_bee_cli.mjs).
-//
-// Note on command-registry.mjs's header comment (informational, not a bug in
-// this file): it describes an earlier "spawnSync the helper script" delegation
-// idea that predates the CORRECTED MECHANISM recorded in CONTEXT.md's D5 and
-// in this cell's own action text (both authoritative, both say "import lib
-// functions directly"). That comment is stale documentation in an already-
-// capped cell (harness-integration-1) — out of this cell's file scope to fix,
-// noted here so a future reader is not misled by it.
+// This dispatcher imports the SAME lib/*.mjs functions the 9 bee_*.mjs
+// entrypoints (bee_status.mjs, bee_cells.mjs, bee_reservations.mjs,
+// bee_decisions.mjs, bee_state.mjs, bee_backlog.mjs, bee_capture.mjs,
+// bee_reviews.mjs, bee_feedback.mjs) used to import directly — those 9
+// files are now thin shims that prepend their group name and call this
+// file's exported `main()` (DB2), so handlers run in-process (no spawnSync,
+// no subprocess) and `bee <group> <verb>` output is byte-identical to
+// invoking a shim directly (verified by tests/test_bee_cli.mjs).
 //
 // Usage:
 //   bee status [--json]
 //   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
+//   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature> ... [--json]
+//   bee backlog <add|counts|rank|badges> ... [--json]
+//   bee capture <add|list|flush|count> ... [--json]
+//   bee reviews <create|list|show|record|candidate add|candidates|status> ... [--json]
+//   bee feedback <digest|count|collect|rank> ... [--json]
 //   bee --help [--json]
 //
 // D3: `bee --help --json` emits {schema_version, commands:[{name, invoke,

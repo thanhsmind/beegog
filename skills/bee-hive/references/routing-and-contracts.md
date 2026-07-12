@@ -223,10 +223,24 @@ docs/specs/
 
 ## Helper CLI Quick Reference
 
+`node .bee/bin/bee.mjs <group> <verb>` is the canonical form for all 9 groups
+(`status`, `cells`, `reservations`, `decisions`, `state`, `backlog`, `capture`,
+`reviews`, `feedback`) — one dispatcher, one registry. The original
+`bee_*.mjs` scripts (`bee_status.mjs`, `bee_cells.mjs`, `bee_reservations.mjs`,
+`bee_decisions.mjs`, `bee_state.mjs`, `bee_backlog.mjs`, `bee_capture.mjs`,
+`bee_reviews.mjs`, `bee_feedback.mjs`) remain valid — each is a thin shim that
+calls `bee.mjs`'s exported `main()` with its group prepended, so both forms
+produce byte-identical output.
+
 ```text
-node .bee/bin/bee_status.mjs --json
-node .bee/bin/bee_cells.mjs list [--feature F] [--status S] | ready [--feature F] | show --id ID
-node .bee/bin/bee_cells.mjs add --stdin   # one cell object or a whole-slice JSON array (all-or-nothing); --file cell.json also accepted
-node .bee/bin/bee_reservations.mjs list [--active-only] | sweep
-node .bee/bin/bee_decisions.mjs active [--recent N] | search --text T
+node .bee/bin/bee.mjs status [--json]
+node .bee/bin/bee.mjs cells list [--feature F] [--status S] | ready [--feature F] | show --id ID
+node .bee/bin/bee.mjs cells add --stdin   # one cell object or a whole-slice JSON array (all-or-nothing); --file cell.json also accepted
+node .bee/bin/bee.mjs reservations list [--active-only] | sweep
+node .bee/bin/bee.mjs decisions active [--recent N] | search --text T
+node .bee/bin/bee.mjs state set | gate | worker add/update/remove/clear/prune | scribing-run | start-feature
+node .bee/bin/bee.mjs backlog add | counts | rank | badges
+node .bee/bin/bee.mjs capture add | list | flush | count
+node .bee/bin/bee.mjs reviews create | list | show | record | candidate add | candidates | status
+node .bee/bin/bee.mjs feedback digest | count | collect | rank
 ```

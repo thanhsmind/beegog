@@ -1,28 +1,29 @@
-// command-registry.mjs — the single source of truth for every subcommand the
-// 4 existing helper CLIs (bee_status/cells/reservations/decisions.mjs) accept.
+// command-registry.mjs — the single source of truth for every subcommand
+// bee.mjs's dispatcher accepts, across all 9 groups (status, cells,
+// reservations, decisions, state, backlog, capture, reviews, feedback).
 //
 // D3 (harness-integration CONTEXT.md): each entry's `parameters` field is
 // JSON-Schema in the exact shape Claude Code's own tool definitions use —
 // {type:"object", properties, required} — never a bespoke shape. This is what
-// makes the future `bee --help --json` manifest (harness-integration-2)
-// zero-translation for any Claude-based agent.
+// makes the `bee --help --json` manifest zero-translation for any
+// Claude-based agent.
 //
-// `helper` is dispatch metadata, not part of the public manifest shape: it
-// names which of the 4 existing template scripts actually implements the
-// command, for the subprocess-spawn delegation mechanism the validating
-// phase settled on (bee.mjs never imports the 4 CLI files — each already
-// runs its handler immediately on import against real argv/stdout/exitCode,
-// so delegation is a `spawnSync` per call, keyed off this field). Cell 2's
-// dispatcher strips `helper` when rendering the public `--help --json`
-// manifest; only {name, invoke, description, parameters, examples,
-// deprecated} are shown to agents there.
+// `helper` is informational dispatch metadata, not part of the public
+// manifest shape: it names the bee_*.mjs shim that historically implemented
+// the command and still accepts the same invocation today (each shim is now
+// a thin wrapper that prepends its group name and calls bee.mjs's exported
+// `main()` in-process — dispatcher-unify DB2 — there is no spawnSync or
+// subprocess delegation). bee.mjs's own handlers import the shared
+// lib/*.mjs functions directly, the same functions the shims used to import
+// before they were collapsed. The dispatcher strips `helper` when rendering
+// the public `--help --json` manifest; only {name, invoke, description,
+// parameters, examples, deprecated} are shown to agents there.
 //
-// `examples[]` are literal, runnable argument strings for the named `helper`
-// script (not the future `bee <group> <action>` form) — the manifest-as-
-// tested-contract discipline (every example is executed by
-// tests/test_bee_cli.mjs and asserted not to error) only holds today against
-// the real, already-shipped helpers; the unified dispatcher does not exist
-// yet (that is harness-integration-2).
+// `examples[]` are literal, runnable `bee <group> <verb> ...` argument
+// strings — the manifest-as-tested-contract discipline (every example is
+// executed by tests/test_bee_cli.mjs and asserted not to error) holds
+// against the unified dispatcher and, via the shims, against every
+// bee_*.mjs entrypoint too.
 
 import { MODEL_TIERS, KNOWN_PHASES, GATE_NAMES } from './state.mjs';
 import { REVIEW_MODES } from './reviews.mjs';
