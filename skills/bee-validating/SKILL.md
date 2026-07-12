@@ -32,7 +32,7 @@ If `plan.md` is absent, unapproved, or its `artifact_readiness` is not `implemen
 
 ## Operating Contract
 
-1. **Orient** on state, mode/lane, the approved shape, and the current-work cells.
+1. **Orient** on state, mode/lane, the approved shape, and the current-work cells. The orient read (CONTEXT.md, plan.md, discovery/approach, cells) delegates as an extraction-tier I/O worker per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`) when it crosses the >3-file threshold; judgment (mode fit, reality-gate scoring) stays on the session model.
 2. **Reality gate:** MODE FIT / REPO FIT / ASSUMPTIONS / SMALLER PATH / PROOF SURFACE — each scored PASS|FAIL with file/command evidence. Fail on nonexistent code paths, unsupported commands, stale versions, missing credentials, hidden architecture work, or excess ceremony. A failed reality gate halts the pipeline and returns to bee-planning.
 3. **Feasibility matrix:** every blocking assumption gets a row — assumption | risk | proof required | evidence | result. Accepted evidence only (below). Plausibility language is an automatic NOT READY.
 4. **Spikes** for unproven assumptions that can invalidate the current work.

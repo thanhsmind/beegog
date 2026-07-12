@@ -62,6 +62,8 @@ Then read `docs/history/learnings/critical-patterns.md` and surface recent activ
 
 **State layer:** when `docs/specs/` exists, note it in the orientation summary. Before working in any area, the reading order is **spec → decisions → history**: read `docs/specs/<area>.md` (what the area does now) before its code, decisions for the why, `docs/history/` only for archaeology. `docs/specs/reading-map.md` answers "where does X live" before any broad grep. When `docs/specs/` lacks `system-overview.md` or `reading-map.md`, offer a `bee-scribing` bootstrap pass to skeleton the missing file(s) — user-approved, never silent, never auto-run (D2 of harness10).
 
+**Delegation:** onboarding/version scans and any multi-file skill-inventory diff dispatch down-tier as I/O workers per the Delegation contract (`references/routing-and-contracts.md`) when the D2 rubric fires (>3 files or digest-only content); routing, mode gate, and gate decisions always stay on the session model.
+
 ## Routing
 
 | Request | Route |
@@ -106,8 +108,8 @@ Use the least workflow that honestly protects the work. A tiny fix wearing epic 
 | Lane | Plan | Validate | Execute | Review | Human stops |
 |---|---|---|---|---|---|
 | `docs` | none — announce one line | format check (parse/lint if applicable) | direct, in-session | none | 0 |
-| `tiny` | short `plan.md` direct note | 2-minute reality check inline, 0 subagents | direct, in-session (solo) | self-review + done-report (diff + fresh verify output) | 1 — the merged shape+execution gate |
-| `small` | short `plan.md` | inline reality gate + matrix, 0 subagents; spike only if a blocking assumption demands it | direct, in-session (solo) | 1 correctness reviewer + self-checks | 2 — merged shape+execution gate, Gate 4 |
+| `tiny` | short `plan.md` direct note | 2-minute reality check inline, 0 ceremony subagents (I/O-offload workers exempt — Delegation contract) | direct, in-session (solo) | self-review + done-report (diff + fresh verify output) | 1 — the merged shape+execution gate |
+| `small` | short `plan.md` | inline reality gate + matrix, 0 ceremony subagents (I/O-offload workers exempt — Delegation contract); spike only if a blocking assumption demands it | direct, in-session (solo) | 1 correctness reviewer + self-checks | 2 — merged shape+execution gate, Gate 4 |
 | `standard` | full `plan.md` | plan-checker + cell reviewer | swarm workers | 4 core reviewers | 4 gates |
 | `high-risk` | `plan.md` + brief | persona panel | swarm workers | full wave + conditionals | 4 gates |
 

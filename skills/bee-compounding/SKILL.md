@@ -26,6 +26,8 @@ Compounding captures reusable lessons from completed work and feeds them back in
 
 If history artifacts are incomplete, fall back to the session summary and recent git diff. NEVER fabricate learnings — a thin honest entry beats an invented rich one.
 
+§1 evidence gather and the §8 digest refresh delegate as extraction-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`) — the three analysts below are already tiered.
+
 ## 2. Analyze — Three Parallel Analysts
 
 Launch three temp-finding subagents in parallel (prompts in `references/compounding-reference.md`):

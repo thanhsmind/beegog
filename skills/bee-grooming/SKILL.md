@@ -67,7 +67,7 @@ Each kill candidate becomes a backlog item with three fields: **pain** (what it 
 
 ## 4. Execute
 
-Approved kills run as normal tiny/small cells through the `bee-executing` worker loop — reserve, verify, cap. Grooming never edits files directly. Ad-hoc subagent dispatches grooming makes while investigating a kill candidate default to the generation slot model; ceiling requires the [bee-tier: ceiling] marker plus a one-line justification.
+Approved kills run as normal tiny/small cells through the `bee-executing` worker loop — reserve, verify, cap. Grooming never edits files directly. §1 entropy inputs and §2's mechanical debt scans delegate as extraction/generation-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`) — dead-code proof stays generation; any other ad-hoc dispatch grooming makes while investigating a kill candidate defaults to the generation slot model, and ceiling requires the [bee-tier: ceiling] marker plus a one-line justification.
 
 One approved kill per cell. Approval of one kill is not approval of its "related" neighbors — never batch unapproved kills into an approved cell.
 

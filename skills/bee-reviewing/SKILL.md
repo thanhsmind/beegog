@@ -42,6 +42,8 @@ Everything below is the `standard`/`high-risk` protocol (`small` borrows only §
 
 Missing CONTEXT.md or plan.md → stop and return to the stage that owns it.
 
+**Delegation:** the required-inputs gather, §3 evidence-gate mining, and the §4 artifact EXISTS/SUBSTANTIVE scan delegate as extraction/generation-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`); WIRED judgment and severity synthesis stay on the orchestrator.
+
 ## 1. Specialist Review
 
 Dispatch reviewers with ISOLATED context: the diff + CONTEXT.md + plan.md ONLY. Never session history.

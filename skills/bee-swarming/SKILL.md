@@ -29,7 +29,7 @@ For `tiny` and `small`, **no workers are spawned** — you implement the cell(s)
 
 ## Operating Contract
 
-1. **Wave analysis.** List claimable cells with `node .bee/bin/bee_cells.mjs ready` and walk their deps: cells with all deps capped and no shared files run in parallel within one wave; dependent or file-overlapping cells go to later waves. Two ready cells sharing a file means fix the reservations or split the cell scope — never "spawn both and be careful".
+1. **Wave analysis.** List claimable cells with `node .bee/bin/bee_cells.mjs ready` and walk their deps: cells with all deps capped and no shared files run in parallel within one wave; dependent or file-overlapping cells go to later waves. Two ready cells sharing a file means fix the reservations or split the cell scope — never "spawn both and be careful". The dep/overlap walk and verify-output capture delegate as extraction-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`); judgment (assignment, tier choice, goal-check verdicts) stays on the orchestrator.
 2. **Assign.** The orchestrator picks exactly **one cell per worker**. Workers never self-select, browse the ready list, or take a second cell.
 3. **Spawn with the isolation contract.** Each worker prompt contains: the cell id, the path to `docs/history/<feature>/CONTEXT.md` and `docs/history/<feature>/plan.md`, the global constraints, its reservation identity (agent nickname), and the status-token protocol (`[DONE] [BLOCKED] [HANDOFF] [NOOP]`) — **nothing else, never session history**. Use the template in `references/swarming-reference.md`. Spawn as the runtime's default/general subagent type with that template inline — NEVER as an agent type registered by another plugin, even when the name matches the role: a same-named agent carries a different contract and makes the run depend on what happens to be installed.
 4. **Judge each cell's model tier at dispatch** — you (the orchestrator) assess the task in front of you and pick the fitting tier; it is NOT fixed by planning (a planning `tier` is at most a hint you may override; decision 0016). Rubric from the cell's lane + action + must_haves + files:
@@ -52,7 +52,7 @@ Load `references/swarming-reference.md` for runtime spawn mechanics, the worker 
 Escalate in order, one rung at a time:
 
 1. **More context** — re-dispatch the same cell with the specific missing information (a file path, a decision quote, a reservation fix).
-2. **Stronger tier** — re-dispatch at the next model tier up (extraction → generation → ceiling). In advisor mode (decision 0013), the `blocked` consult point makes this explicit: spawn one ceiling-tier advisor for a verdict on the blocker, record it, then continue on the main model.
+2. **Stronger tier** — re-dispatch at the next model tier up (extraction → generation → ceiling); ceiling is the session model (decision 0015), so the top rung is handing the blocker back to the orchestrator itself with the worker's evidence attached.
 3. **Escalate** — surface the blocker to the user with the worker's diagnosis; if it invalidates the plan, return to bee-planning.
 
 A reservation conflict is rescued by adjusting reservations or cell scope — never by telling workers to be careful.

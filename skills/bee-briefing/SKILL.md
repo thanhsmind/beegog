@@ -66,6 +66,8 @@ Every section is projected from a named source. If the source is silent, the sec
 
 Full template with per-section prose: `references/implement-plan-template.md`.
 
+**Delegation:** the section→source projection walk and walkthrough reconstruction delegate as generation-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`); the two authored sections (§2) stay on the session model.
+
 ## 2. The Two Authored Sections
 
 These are the only sections briefing writes from its own judgment — and even here, judgment means *reading what the artifacts imply*, not designing anew.

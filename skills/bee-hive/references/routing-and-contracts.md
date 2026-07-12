@@ -169,21 +169,15 @@ When `config.gate_bypass` is `true`, at **Gate 1, 2, or 3**:
 
 The mechanical guards do not change: `claimCell` and the write-guard still require `approved_gates.execution: true` — bypass simply means the agent records that approval itself for eligible work instead of waiting for the human. Bypass state is surfaced every session (the preamble and `bee_status` both print a loud `GATE BYPASS ON` line) so it is never silently in effect.
 
-### Advisor mode (cheap main loop, ceiling consulted on demand — decision 0013)
+### Delegation contract (fan-out: decide-altitude vs gather-altitude)
 
-The inverse of the fan-out orchestrator: run the **whole session on the generation tier** (the cheaper model) and consult a **stronger model** only at the hard calls. This is the "advisor" cost pattern — the strongest model is a phone-a-friend, not a full-time seat. Because the session is cheap here, the advisor model is **named explicitly** in config (it is not the session model, and not the ceiling — which in advisor mode IS the cheap session; decision 0015). Off by default; enabled per-repo in `.bee/config.json`:
+The one orchestration pattern bee runs: the session model (the owner's best model) stays the orchestrator in every phase, and mechanical gather/render/mine steps dispatch down-tier as I/O workers that return digests (D1 — replaces the advisor pattern in full, decisions 0013/0015 reversed).
 
-```json
-"advisor": { "enabled": true, "at": ["shape", "execution", "blocked"], "model": "fable" }
-```
-
-`at` lists the consult points (subset of `context` · `shape` · `execution` · `review` · `blocked`); `model` is the stronger model to consult. When `advisor.enabled` is true, at each listed point the agent:
-
-1. **Frames one tight question** for the advisor — the specific decision, the minimal context (diff / CONTEXT / the blocker), and the exact verdict wanted (approve / choose-A-vs-B / find-the-flaw). Never the session transcript.
-2. **Spawns one subagent on the advisor model** (`advisorModel(root, point)` = `config.advisor.model`) for that verdict, then continues on the main (generation) model. One advisor call per point — the strong model stays scarce.
-3. **Records the verdict** where it belongs (a decision at a gate, the `[BLOCKED]` resolution in swarming, a review note) so it is auditable.
-
-Advisor mode is **not** gate-bypass and **not** a substitute for the human gates — the human still approves Gates 1–4. The advisor informs the agent's recommendation; it never self-approves. It composes with the rescue ladder (`blocked` is the ladder's "stronger tier" rung made explicit) and with review synthesis. State is surfaced loudly every session (preamble + `bee_status` print `ADVISOR MODE ON`) so a cheap-model session is never silently running without its safety consult.
+- **Decide-altitude stays on the session model**: gates, Socratic questions, the mode gate, synthesis of findings, accept/reject of worker results, state writes, human conversation.
+- **D2 rubric** — a mechanical step delegates down-tier when it needs reading >3 files OR content the main model only needs as a digest, not verbatim; the orchestrator may override either way at dispatch, same spirit as tier-judging (decision 0016). Prose-ruled — no new hook enforces the threshold.
+- **D3 lane rule** — the rubric applies in every lane and every phase, tiny/small included. Lane scaling v2's (d02a6bc6) "0 subagents" for tiny/small means zero *ceremony* subagents (reviewers/checkers/panels); I/O workers are exempt. A 1-file tiny fix never crosses the rubric, so it stays inline naturally.
+- **Digest contract** — an I/O worker returns paths read, the facts extracted (with file:line anchors), and verbatim quotes only where asked; the orchestrator never re-reads what a digest already answers.
+- **Transport unchanged** — anchored `[bee-tier: <tier>]` marker or `model` param (decision 0023), model name in the Agent description, background dispatch where the runtime supports it (decision 0017), P22 dispatch log as the audit trail. I/O workers do **not** register in `bee_state.mjs worker add` — the registry stays swarm-cell-scoped (reservations/status are execution concerns); the dispatch log is the audit surface for gathers.
 
 ## Question Format
 
