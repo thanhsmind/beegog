@@ -37,13 +37,18 @@ import {
   findRepoRoot,
   readConfig,
   readState,
+  readStateStrict,
+  writeState,
   readHandoff,
   readOnboarding,
   BEE_VERSION,
   COMMAND_KEYS,
   GATE_NAMES,
   PHASES,
+  KNOWN_PHASES,
+  MODEL_TIERS,
   isKnownPhase,
+  startFeature,
   hasStaleAdvisorKey,
   STALE_ADVISOR_KEY_WARNING,
 } from './lib/state.mjs';
@@ -66,10 +71,21 @@ import {
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
-import { captureQueue } from './lib/capture.mjs';
-import { readBacklogCounts } from './lib/backlog.mjs';
-import { listCandidates, listReviews, deriveCandidateStatus } from './lib/reviews.mjs';
-import { readJson, writeJsonAtomic } from './lib/fsutil.mjs';
+import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
+import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
+import {
+  createReview,
+  listReviews,
+  readReview,
+  recordOnReview,
+  addCandidate,
+  listCandidates,
+  deriveCandidateStatus,
+  CANDIDATE_STATUSES,
+  REVIEW_MODES,
+} from './lib/reviews.mjs';
+import { readJson, writeJsonAtomic, appendJsonl } from './lib/fsutil.mjs';
+import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
 
@@ -593,6 +609,667 @@ function handleDecisionsSearch(root, flags) {
   return { result: { decisions }, text };
 }
 
+// ─── state: full port of bee_state.mjs's verb logic (dispatcher-unify du-1).
+// Reuses lib/state.mjs's read/write/validation exports exactly as bee_state.mjs
+// did — no logic change in lib/state.mjs. Every stdout/stderr byte and exit
+// code stays as the existing test_lib bee_state checks pin them (DB3). ────────
+
+// Dispatch transients written by bee-swarming: <cell-id>.prompt.md / .out*.log
+// / .result.md|json. Files outside this suffix set are never prune candidates.
+const WORKER_TRANSIENT_SUFFIX = /\.(prompt\.md|result\.md|result\.json|out\d*\.log|log)$/;
+
+function requireBoolFlag(flags, name) {
+  const raw = requireFlag(flags, name);
+  if (raw !== 'true' && raw !== 'false') {
+    throw new Error(`--${name} must be "true" or "false", got "${raw}".`);
+  }
+  return raw === 'true';
+}
+
+function splitList(raw) {
+  return String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// A safety flag must never ride along with a real mutation: every state verb
+// except "worker prune" mutates state, so --dry-run there is a hard error, not
+// an ignored no-op that mutates anyway (bee_state.mjs:405-409, a cross-verb rule).
+function rejectDryRun(flags) {
+  if (flags['dry-run'] !== undefined) {
+    throw new Error(
+      '--dry-run is only supported by "worker prune" — refusing to run a mutating verb with a dry-run flag.',
+    );
+  }
+}
+
+function handleStateSet(root, flags) {
+  rejectDryRun(flags);
+  if (flags.phase !== undefined) {
+    const phase = String(flags.phase);
+    if (!isKnownPhase(phase)) {
+      throw new Error(
+        `set: invalid phase "${phase}" — not in the known-phase enum (isKnownPhase, not the bare PHASES array — the terminal alias "compounding-complete" must pass). FIX: use one of ${KNOWN_PHASES.join(', ')}.`,
+      );
+    }
+  }
+  if (
+    flags.phase === undefined &&
+    flags.mode === undefined &&
+    flags.feature === undefined &&
+    flags['next-action'] === undefined &&
+    flags.summary === undefined
+  ) {
+    throw new Error(
+      'set: at least one of --phase, --mode, --feature, --next-action, --summary is required.',
+    );
+  }
+  const state = readStateStrict(root);
+  const changed = [];
+  if (flags.phase !== undefined) {
+    state.phase = String(flags.phase);
+    changed.push(`phase=${state.phase}`);
+  }
+  if (flags.mode !== undefined) {
+    state.mode = String(flags.mode);
+    changed.push(`mode=${state.mode}`);
+  }
+  if (flags.feature !== undefined) {
+    state.feature = String(flags.feature);
+    changed.push(`feature=${state.feature}`);
+  }
+  if (flags['next-action'] !== undefined) {
+    state.next_action = String(flags['next-action']);
+    changed.push('next_action');
+  }
+  if (flags.summary !== undefined) {
+    state.summary = String(flags.summary);
+    changed.push('summary');
+  }
+  writeState(root, state);
+  return { result: state, text: `Updated state: ${changed.join(' ')}.` };
+}
+
+function handleStateGate(root, flags) {
+  rejectDryRun(flags);
+  const name = requireFlag(flags, 'name');
+  if (!GATE_NAMES.includes(name)) {
+    throw new Error(
+      `gate: invalid gate name "${name}" — must be one of ${GATE_NAMES.join(', ')}. FIX: pass --name <one of these>.`,
+    );
+  }
+  const approved = requireBoolFlag(flags, 'approved');
+  const state = readStateStrict(root);
+  state.approved_gates = { ...state.approved_gates, [name]: approved };
+  writeState(root, state);
+  return { result: state, text: `Gate "${name}" set to ${approved}.` };
+}
+
+function stateWorkerMutate(root, flags, mutate, text) {
+  rejectDryRun(flags);
+  const state = readStateStrict(root);
+  const workers = Array.isArray(state.workers) ? [...state.workers] : [];
+  const resultText = mutate(workers);
+  state.workers = workers;
+  writeState(root, state);
+  return { result: state, text: text ?? resultText };
+}
+
+function handleStateWorkerAdd(root, flags) {
+  return stateWorkerMutate(root, flags, (workers) => {
+    const nickname = requireFlag(flags, 'nickname');
+    const cell = requireFlag(flags, 'cell');
+    let tier = null;
+    if (flags.tier !== undefined) {
+      tier = String(flags.tier);
+      if (!MODEL_TIERS.includes(tier)) {
+        throw new Error(`worker add: invalid tier "${tier}" — must be one of ${MODEL_TIERS.join(', ')}.`);
+      }
+    }
+    const status = flags.status !== undefined ? String(flags.status) : null;
+    workers.push({ nickname, cell, tier, status });
+    return `Added worker "${nickname}" (cell ${cell}).`;
+  });
+}
+
+function handleStateWorkerUpdate(root, flags) {
+  return stateWorkerMutate(root, flags, (workers) => {
+    const nickname = requireFlag(flags, 'nickname');
+    const idx = workers.findIndex((w) => w && w.nickname === nickname);
+    if (idx === -1) {
+      throw new Error(
+        `worker update: nickname "${nickname}" not found — use "worker add" to create it first.`,
+      );
+    }
+    const worker = { ...workers[idx] };
+    if (flags.cell !== undefined) worker.cell = String(flags.cell);
+    if (flags.tier !== undefined) {
+      const tier = String(flags.tier);
+      if (!MODEL_TIERS.includes(tier)) {
+        throw new Error(`worker update: invalid tier "${tier}" — must be one of ${MODEL_TIERS.join(', ')}.`);
+      }
+      worker.tier = tier;
+    }
+    if (flags.status !== undefined) worker.status = String(flags.status);
+    workers[idx] = worker;
+    return `Updated worker "${nickname}".`;
+  });
+}
+
+function handleStateWorkerRemove(root, flags) {
+  return stateWorkerMutate(root, flags, (workers) => {
+    const nickname = requireFlag(flags, 'nickname');
+    const next = workers.filter((w) => !(w && w.nickname === nickname));
+    if (next.length === workers.length) {
+      throw new Error(`worker remove: nickname "${nickname}" not found.`);
+    }
+    workers.length = 0;
+    workers.push(...next);
+    return `Removed worker "${nickname}".`;
+  });
+}
+
+function handleStateWorkerClear(root, flags) {
+  return stateWorkerMutate(root, flags, (workers) => {
+    const removedCount = workers.length;
+    workers.length = 0;
+    return `Cleared ${removedCount} worker(s).`;
+  });
+}
+
+function readPruneKeepSet(root) {
+  // Strict read: a corrupt state.json fails loud here, before any deletion.
+  // Prune never writes state.json — it is a read-only verb on state.
+  const state = readStateStrict(root);
+  if (state.workers !== undefined && state.workers !== null && !Array.isArray(state.workers)) {
+    throw new Error(
+      'worker prune: state.workers is not an array — refusing to prune against a malformed keep set (a destructive verb fails closed). FIX: repair .bee/state.json via the bee_state.mjs worker verbs first.',
+    );
+  }
+  const keep = new Set();
+  for (const w of state.workers || []) {
+    if (w && w.cell !== undefined && w.cell !== null) keep.add(String(w.cell));
+  }
+  const cellsDir = path.join(root, '.bee', 'cells');
+  if (fs.existsSync(cellsDir)) {
+    for (const file of fs.readdirSync(cellsDir)) {
+      if (!file.endsWith('.json')) continue;
+      let cell;
+      try {
+        cell = JSON.parse(fs.readFileSync(path.join(cellsDir, file), 'utf8'));
+      } catch {
+        cell = null;
+      }
+      if (!cell || cell.status !== 'capped') keep.add(file.slice(0, -'.json'.length));
+    }
+  }
+  return keep;
+}
+
+// Prefix keep-check: "<id>" or "<id>.<anything>" is protected. The suffix
+// regex never decides what is kept — only what class of file is a prune
+// candidate — so a dotted cell id can never be mis-stemmed into deletion.
+function keptByPruneKeepSet(name, keep) {
+  for (const id of keep) {
+    if (name === id || name.startsWith(`${id}.`)) return true;
+  }
+  return false;
+}
+
+function handleStateWorkerPrune(root, flags) {
+  for (const name of Object.keys(flags)) {
+    if (name !== 'dry-run') {
+      throw new Error(`worker prune: unknown flag --${name}. Use: worker prune [--dry-run] [--json].`);
+    }
+  }
+  const dryRun = flags['dry-run'] !== undefined;
+  const workersDir = path.join(root, '.bee', 'workers');
+  let keep = readPruneKeepSet(root);
+  const entries = fs.existsSync(workersDir)
+    ? fs.readdirSync(workersDir, { withFileTypes: true })
+    : [];
+  const candidates = [];
+  const kept = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const name = entry.name;
+    const match = name.match(WORKER_TRANSIENT_SUFFIX);
+    if (!match) continue;
+    if (name.length === match[0].length) continue; // empty stem is not a transient
+    if (keptByPruneKeepSet(name, keep)) {
+      kept.push(name);
+      continue;
+    }
+    candidates.push(name);
+  }
+  const pruned = [];
+  if (dryRun) {
+    pruned.push(...candidates);
+  } else if (candidates.length > 0) {
+    // C1: re-read the keep set immediately before the destructive loop.
+    keep = readPruneKeepSet(root);
+    for (const name of candidates) {
+      if (keptByPruneKeepSet(name, keep)) {
+        kept.push(name);
+        continue;
+      }
+      fs.rmSync(path.join(workersDir, name));
+      pruned.push(name);
+    }
+  }
+  pruned.sort();
+  kept.sort();
+  const verb = dryRun ? 'Would prune' : 'Pruned';
+  const text = `${verb} ${pruned.length} worker transient(s) from .bee/workers/ (kept ${kept.length} still-active).`;
+  return { result: { dry_run: dryRun, pruned, kept }, text };
+}
+
+function handleStateScribingRun(root, flags) {
+  rejectDryRun(flags);
+  const feature = requireFlag(flags, 'feature');
+  const areas = splitList(requireFlag(flags, 'areas'));
+  const nextAction = requireFlag(flags, 'next-action');
+  const now = new Date();
+  const at = now.toISOString();
+  const date = at.slice(0, 10);
+  const state = readStateStrict(root);
+  state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
+  // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
+  state.phase = 'compounding';
+  state.next_action = nextAction;
+  writeState(root, state);
+  return { result: state, text: `Recorded scribing run for "${feature}" at ${at}.` };
+}
+
+function handleStateStartFeature(root, flags) {
+  rejectDryRun(flags);
+  const feature = requireFlag(flags, 'feature');
+  const mode = flags.mode !== undefined ? String(flags.mode) : null;
+  const phase = flags.phase !== undefined ? String(flags.phase) : 'exploring';
+  // startFeature() re-reads state and performs every precondition check (C1).
+  const state = startFeature(root, { feature, mode, phase });
+  return {
+    result: state,
+    text: `Started feature "${state.feature}" at phase "${state.phase}" (mode ${state.mode ?? 'null'}); all four gates reset.`,
+  };
+}
+
+// ─── backlog: full port of bee_backlog.mjs's counts/rank/badges/add verbs
+// (dispatcher-unify du-2). Reuses lib/backlog.mjs's read/rank/badge exports
+// and lib/feedback.mjs's KIND_ALIASES/NORMALIZED_KINDS exactly as
+// bee_backlog.mjs did — no logic change in either lib file. `add`'s
+// validation refusal texts and exit codes stay as the existing test_lib
+// bee_backlog checks pin them (DB3). ───────────────────────────────────────
+
+const BACKLOG_SEVERITIES = ['P1', 'P2', 'P3'];
+const BACKLOG_MAX_TITLE = 200;
+const BACKLOG_MAX_LAYER = 40;
+
+function backlogAllowedTypes() {
+  return [...new Set([...Object.keys(KIND_ALIASES), ...NORMALIZED_KINDS])].sort();
+}
+
+function handleBacklogCounts(root) {
+  const counts = readBacklogCounts(root);
+  if (!counts) return { result: null, text: 'No docs/backlog.md found.' };
+  return {
+    result: counts,
+    text: `PBI: ${counts.done} done / ${counts.inFlight} in-flight / ${counts.proposed} proposed (${counts.total} total)`,
+  };
+}
+
+function handleBacklogRank(root, flags) {
+  const write = flags.write === true;
+  const ranked = rankBacklog(root, { write });
+  if (!ranked) return { result: null, text: 'No parseable backlog table in docs/backlog.md.' };
+  const verb = write ? (ranked.changed ? 'Reordered' : 'Already ordered') : ranked.changed ? 'Would reorder to' : 'Already ordered';
+  return {
+    result: ranked,
+    text: `${verb}: ${ranked.order.join(', ')}${write || !ranked.changed ? '' : ' (re-run with --write to apply)'}`,
+  };
+}
+
+function handleBacklogBadges(root, flags) {
+  const write = flags.write === true;
+  const badges = updateReadmeBadges(root, { write });
+  if (!badges) return { result: null, text: 'README.md or docs/backlog.md missing — nothing to badge.' };
+  const verb = write ? (badges.changed ? 'README badges refreshed' : 'README badges already current') : badges.changed ? 'README badges stale (re-run with --write to apply)' : 'README badges already current';
+  return { result: badges, text: `${verb}: ${badges.badges}` };
+}
+
+function handleBacklogAdd(root, flags) {
+  const type = requireFlag(flags, 'type');
+  if (!Object.prototype.hasOwnProperty.call(KIND_ALIASES, type) && !NORMALIZED_KINDS.has(type)) {
+    throw new Error(
+      `add: invalid --type "${type}" — not a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value (lib/feedback.mjs), so buildDigest would drop it as unknown_type. FIX: use one of ${backlogAllowedTypes().join(', ')}.`,
+    );
+  }
+  const title = requireFlag(flags, 'title');
+  if (title.length > BACKLOG_MAX_TITLE) {
+    throw new Error(`add: --title is ${title.length} chars, over the ${BACKLOG_MAX_TITLE}-char limit. FIX: shorten the title.`);
+  }
+  const severity = requireFlag(flags, 'severity');
+  if (!BACKLOG_SEVERITIES.includes(severity)) {
+    throw new Error(`add: invalid --severity "${severity}". FIX: use one of ${BACKLOG_SEVERITIES.join(', ')}.`);
+  }
+  const layer = requireFlag(flags, 'layer');
+  if (layer.length > BACKLOG_MAX_LAYER) {
+    throw new Error(`add: --layer is ${layer.length} chars, over the ${BACKLOG_MAX_LAYER}-char limit. FIX: shorten the layer.`);
+  }
+  const detail = flags.detail !== undefined && flags.detail !== true ? String(flags.detail) : '';
+  const feature = flags.feature !== undefined && flags.feature !== true ? String(flags.feature) : '';
+  const line = {
+    ts: new Date().toISOString(),
+    type,
+    title,
+    detail,
+    severity,
+    layer,
+    feature,
+  };
+  appendJsonl(path.join(root, '.bee', 'backlog.jsonl'), line);
+  return { result: line, text: `Appended ${severity} ${type} row to .bee/backlog.jsonl: "${title}"` };
+}
+
+// ─── capture: full port of bee_capture.mjs's add/list/flush/count verbs
+// (dispatcher-unify du-2). Reuses lib/capture.mjs's exports exactly as
+// bee_capture.mjs did — no logic change there. ─────────────────────────────
+
+function formatCaptureStub(stub) {
+  const parts = [`[${stub.at}] ${stub.outcome} (id ${stub.id})`];
+  if (stub.dids && stub.dids.length) parts.push(`  decisions: ${stub.dids.join(', ')}`);
+  if (stub.area) parts.push(`  area: ${stub.area}`);
+  if (stub.files && stub.files.length) parts.push(`  files: ${stub.files.join(', ')}`);
+  return parts.join('\n');
+}
+
+function handleCaptureAdd(root, flags) {
+  const stub = addCaptureStub(root, {
+    outcome: requireFlag(flags, 'outcome'),
+    dids: flags.did ? String(flags.did) : null,
+    area: flags.area ? String(flags.area) : null,
+    files: flags.files ? String(flags.files) : null,
+    lane: flags.lane ? String(flags.lane) : null,
+  });
+  return {
+    result: stub,
+    text: `Queued capture stub ${stub.id}. Flush via bee-scribing at wrap-up, before compact/clear, or next session (decision 0017).`,
+  };
+}
+
+function handleCaptureList(root) {
+  const stubs = pendingCaptureStubs(root);
+  const text = stubs.length ? stubs.map(formatCaptureStub).join('\n') : 'Capture queue is empty.';
+  return { result: { count: stubs.length, stubs }, text };
+}
+
+function handleCaptureFlush(root, flags) {
+  const record = flushCaptureStub(root, requireFlag(flags, 'id'), {
+    into: flags.into ? String(flags.into) : null,
+  });
+  return {
+    result: record,
+    text: `Flushed stub ${record.id}${record.into ? ` into ${record.into}` : ''}.`,
+  };
+}
+
+function handleCaptureCount(root) {
+  const queue = captureQueue(root);
+  return { result: { count: queue.count }, text: `${queue.count} pending capture stub(s).` };
+}
+
+// ─── reviews: full port of bee_reviews.mjs's create/list/show/record/
+// candidate add/candidates/status verbs (dispatcher-unify du-3). Reuses
+// lib/reviews.mjs's exports exactly as bee_reviews.mjs did — no logic change
+// there. `required: []` on every reviews registry entry is deliberate (DB3,
+// same discipline as state.*/backlog.*): the generic validate() layer would
+// emit its structured error on STDOUT, but the legacy bee_reviews.mjs
+// contract (pinned by test_lib.mjs) emits its validation refusals on
+// STDERR. So each handler owns its own required-flag / enum checks (via the
+// shared requireFlag above), throwing the legacy message text — which the
+// dispatcher routes to STDERR through the catch-block -> emitError path.
+// reviews.candidate.add is a NESTED 3-segment name resolved by the
+// dispatcher's longest-prefix match (du-1), sitting alongside the separate
+// FLAT reviews.candidates verb (bee_reviews.mjs:186-207/199-207) — two
+// distinct verbs, both pinned.
+
+function readReviewsJsonInput(flags, label) {
+  const text = flags.stdin === true ? fs.readFileSync(0, 'utf8') : readFileText(requireFlag(flags, 'file'), label);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${label}: input is not valid JSON.`);
+  }
+}
+
+function summarizeReview(session) {
+  return `${session.id} [${session.decision && session.decision.status}] ${session.scope_description}`;
+}
+
+// A7: a candidate reviewed by an unchanged approved session names the
+// covering review-id so the orchestrator never re-dispatches a full panel.
+function candidateStatusLine(candidate, derived) {
+  const target = `${candidate.feature}@${candidate.head} (${candidate.mode})`;
+  if (derived.status === 'reviewed') {
+    return `${target} — reviewed (covered by ${derived.session})`;
+  }
+  if (derived.status === 'review stale') {
+    const note = derived.note ? `, ${derived.note}` : '';
+    return `${target} — review stale (was covered by ${derived.session}${note})`;
+  }
+  if (derived.status === 'in review') {
+    return `${target} — in review (session ${derived.session})`;
+  }
+  return `${target} — unreviewed`;
+}
+
+function buildReviewsStatusSummary(root, { feature } = {}) {
+  const candidates = listCandidates(root).filter((c) => !feature || c.feature === feature);
+  const sessions = listReviews(root);
+  const counts = { verified: candidates.length };
+  for (const label of CANDIDATE_STATUSES) counts[label] = 0;
+
+  const rows = candidates.map((candidate) => {
+    const derived = deriveCandidateStatus(root, candidate, { sessions });
+    counts[derived.status] += 1;
+    return {
+      ...candidate,
+      review_status: derived.status,
+      review_session: derived.session || null,
+      note: derived.note || null,
+    };
+  });
+
+  return { counts, candidates: rows };
+}
+
+function renderReviewsStatusText(summary) {
+  const counts = summary.counts;
+  const headline =
+    `verified: ${counts.verified}  unreviewed: ${counts.unreviewed}  ` +
+    `in review: ${counts['in review']}  reviewed: ${counts.reviewed}  review stale: ${counts['review stale']}`;
+  if (summary.candidates.length === 0) return `${headline}\nNo review candidates.`;
+  return [headline, ...summary.candidates.map((c) => candidateStatusLine(c, { status: c.review_status, session: c.review_session, note: c.note }))].join('\n');
+}
+
+function handleReviewsCreate(root, flags) {
+  const scope = readReviewsJsonInput(flags, 'scope');
+  const session = createReview(root, scope);
+  return { result: session, text: `Created review session ${session.id}.` };
+}
+
+function handleReviewsList(root) {
+  const sessions = listReviews(root);
+  return {
+    result: sessions,
+    text: sessions.length ? sessions.map(summarizeReview).join('\n') : 'No review sessions.',
+  };
+}
+
+function handleReviewsShow(root, flags) {
+  const id = requireFlag(flags, 'id');
+  const session = readReview(root, id);
+  if (!session) throw new Error(`Review session "${id}" not found.`);
+  return { result: session, text: JSON.stringify(session, null, 2) };
+}
+
+function handleReviewsRecord(root, flags) {
+  const id = requireFlag(flags, 'id');
+  const kind = requireFlag(flags, 'kind');
+  const payload = readReviewsJsonInput(flags, 'payload');
+  const session = recordOnReview(root, id, { kind, payload });
+  return { result: session, text: `Recorded ${kind} on ${session.id} (updated_at ${session.updated_at}).` };
+}
+
+function handleReviewsCandidateAdd(root, flags) {
+  const entry = addCandidate(root, {
+    feature: requireFlag(flags, 'feature'),
+    head: requireFlag(flags, 'head'),
+    mode: requireFlag(flags, 'mode'),
+    baseline: flags.baseline ? String(flags.baseline) : null,
+    cells: flags.cells ? splitList(flags.cells) : [],
+  });
+  return { result: entry, text: `Added candidate ${entry.id} for feature "${entry.feature}" (mode ${entry.mode}).` };
+}
+
+function handleReviewsCandidates(root) {
+  const entries = listCandidates(root);
+  return {
+    result: entries,
+    text: entries.length
+      ? entries.map((e) => `${e.date} ${e.feature} @${e.head} (${e.mode})`).join('\n')
+      : 'No review candidates.',
+  };
+}
+
+function handleReviewsStatus(root, flags) {
+  const feature = flags.feature ? String(flags.feature) : null;
+  const summary = buildReviewsStatusSummary(root, { feature });
+  return { result: summary, text: renderReviewsStatusText(summary) };
+}
+
+// ─── feedback: full port of bee_feedback.mjs's digest/count/collect/rank
+// verbs (dispatcher-unify du-3). Reuses lib/feedback.mjs's buildDigest/
+// mergeDigests/clusterEntries/rankClusters exactly as bee_feedback.mjs did —
+// no logic change there. NO collection, redaction, or pain logic lives here.
+
+const DEFAULT_FEEDBACK_DIGEST_PATH = path.join('.bee', 'feedback-digest.json');
+
+// Presentation only — groups the digest's own `dropped[].reason` values for a
+// human-readable one-line summary. No new drop reasons are invented here; the
+// category vocabulary is DROP_REASONS in lib/feedback.mjs.
+function summarizeDropped(dropped) {
+  const byReason = {};
+  for (const d of dropped) {
+    const key = (d && d.reason) || 'unknown';
+    byReason[key] = (byReason[key] || 0) + 1;
+  }
+  const keys = Object.keys(byReason).sort();
+  if (keys.length === 0) return 'none';
+  return keys.map((k) => `${k}: ${byReason[k]}`).join(', ');
+}
+
+function feedbackSummaryLine(digest) {
+  const { counts, dropped } = digest;
+  const entryWord = counts.entries === 1 ? 'entry' : 'entries';
+  return `${counts.entries} ${entryWord}, ${counts.dropped} dropped (${summarizeDropped(dropped)})`;
+}
+
+function handleFeedbackDigest(root, flags) {
+  const digest = buildDigest(root, { now: new Date() });
+  const outRel = flags.out ? String(flags.out) : DEFAULT_FEEDBACK_DIGEST_PATH;
+  const outPath = path.resolve(root, outRel);
+  writeJsonAtomic(outPath, digest);
+  return {
+    result: { path: outRel, digest },
+    text: `Digest written to ${outRel} — ${feedbackSummaryLine(digest)}.`,
+  };
+}
+
+function handleFeedbackCount(root) {
+  const digest = buildDigest(root, { now: new Date() });
+  return {
+    result: digest.counts,
+    text: `${feedbackSummaryLine(digest)}.`,
+  };
+}
+
+function handleFeedbackCollect(root) {
+  const digest = mergeDigests(root, { now: new Date() });
+  const foreign = Array.isArray(digest.merged) ? digest.merged.length : 0;
+  const suffix = foreign > 0 ? ` + ${foreign} dogfood repo${foreign === 1 ? '' : 's'}` : '';
+  return {
+    result: digest,
+    text: `Merged digest — ${feedbackSummaryLine(digest)}${suffix}.`,
+  };
+}
+
+function handleFeedbackRank(root) {
+  const digest = mergeDigests(root, { now: new Date() });
+  const clusters = clusterEntries(digest);
+  const ranked = rankClusters(clusters);
+  const top = ranked.length > 0 ? ranked[0] : null;
+  const topWord = top ? `top rank ${top.rank} (pain ${top.pain} × frequency ${top.frequency} × corroboration ${top.corroboration})` : 'no clusters';
+  return {
+    result: ranked,
+    text: `${ranked.length} cluster${ranked.length === 1 ? '' : 's'} — ${topWord}.`,
+  };
+}
+
+// Per-group usage fallback (dispatcher-unify du-1): the shim always supplies
+// the group token, so the generic no-command path can never fire for helper
+// calls. When a leading group token resolves to no registry entry, its group's
+// fallback emits the legacy "Use:" line byte-exact and exits non-zero.
+function stateUsageFallback(leading) {
+  const verb = leading[1];
+  if (verb === 'worker') {
+    const sub = leading[2];
+    return `Unknown worker action "${sub || '(missing)'}". Use: add, update, remove, clear, prune.`;
+  }
+  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature.`;
+}
+
+function backlogUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add.`;
+}
+
+function captureUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: add, list, flush, count.`;
+}
+
+// bee_reviews.mjs's own 'candidate' verb has a nested sub-action ('add')
+// with its own distinct legacy error text (bee_reviews.mjs:186-189); every
+// other unknown top-level verb falls through to the default review-modes
+// message (bee_reviews.mjs:213-217), preserved byte-exact including its
+// trailing "(review modes: ...)" annotation (DB3).
+function reviewsUsageFallback(leading) {
+  const verb = leading[1];
+  if (verb === 'candidate') {
+    const sub = leading[2];
+    return `Unknown "candidate" subcommand "${sub || '(missing)'}". Use: candidate add.`;
+  }
+  return (
+    `Unknown command "${verb || '(missing)'}". Use: create, list, show, record, candidate add, candidates, status. ` +
+    `(review modes: ${REVIEW_MODES.join(', ')})`
+  );
+}
+
+function feedbackUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: digest, count, collect, rank.`;
+}
+
+const GROUP_USAGE_FALLBACKS = {
+  state: stateUsageFallback,
+  backlog: backlogUsageFallback,
+  capture: captureUsageFallback,
+  reviews: reviewsUsageFallback,
+  feedback: feedbackUsageFallback,
+};
+
 const HANDLERS = {
   status: handleStatus,
   'cells.list': handleCellsList,
@@ -616,17 +1293,50 @@ const HANDLERS = {
   'decisions.redact': handleDecisionsRedact,
   'decisions.active': handleDecisionsActive,
   'decisions.search': handleDecisionsSearch,
+  'state.set': handleStateSet,
+  'state.gate': handleStateGate,
+  'state.worker.add': handleStateWorkerAdd,
+  'state.worker.update': handleStateWorkerUpdate,
+  'state.worker.remove': handleStateWorkerRemove,
+  'state.worker.clear': handleStateWorkerClear,
+  'state.worker.prune': handleStateWorkerPrune,
+  'state.scribing-run': handleStateScribingRun,
+  'state.start-feature': handleStateStartFeature,
+  'backlog.counts': handleBacklogCounts,
+  'backlog.rank': handleBacklogRank,
+  'backlog.badges': handleBacklogBadges,
+  'backlog.add': handleBacklogAdd,
+  'capture.add': handleCaptureAdd,
+  'capture.list': handleCaptureList,
+  'capture.flush': handleCaptureFlush,
+  'capture.count': handleCaptureCount,
+  'reviews.create': handleReviewsCreate,
+  'reviews.list': handleReviewsList,
+  'reviews.show': handleReviewsShow,
+  'reviews.record': handleReviewsRecord,
+  'reviews.candidate.add': handleReviewsCandidateAdd,
+  'reviews.candidates': handleReviewsCandidates,
+  'reviews.status': handleReviewsStatus,
+  'feedback.digest': handleFeedbackDigest,
+  'feedback.count': handleFeedbackCount,
+  'feedback.collect': handleFeedbackCollect,
+  'feedback.rank': handleFeedbackRank,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─
-// The flag-alone boolean set is the exact union of the 3 existing helper
-// files' own hardcoded boolean-flag lists (bee_cells: json/stdin/
-// behavior-change/evidence-stdin; bee_reservations: json/active-only;
-// bee_decisions: json) — every OTHER flag, even one the registry declares as
-// JSON-Schema type "boolean" (e.g. cells.verify's --passed), takes an
-// explicit "true"/"false" argument exactly as the original CLIs parse it;
-// this keeps `bee cells verify ... --passed true` byte-parity-correct.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only']);
+// The flag-alone boolean set is the closed union of the helper files' own
+// hardcoded boolean-flag lists (bee_cells: json/stdin/behavior-change/
+// evidence-stdin; bee_reservations: json/active-only; bee_decisions: json;
+// bee_state: json/dry-run; bee_backlog: json/write) — every OTHER flag, even
+// one the registry declares as JSON-Schema type "boolean" (e.g. cells.verify's
+// --passed), takes an explicit "true"/"false" argument exactly as the
+// original CLIs parse it; this keeps `bee cells verify ... --passed true`
+// byte-parity-correct. `dry-run` MUST be here or `state worker prune
+// --dry-run --json` would consume `--json` as the value of `--dry-run`
+// (bee_state.mjs parsed it boolean-alone too); `write` MUST be here for the
+// same reason on `backlog rank --write --json` / `backlog badges --write --json`
+// (bee_backlog.mjs parsed it boolean-alone too).
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write']);
 
 export function splitCommandTokens(argv) {
   const leading = [];
@@ -638,10 +1348,22 @@ export function splitCommandTokens(argv) {
   return { leading, rest: argv.slice(i) };
 }
 
-/** "status" takes no subcommand; every other group takes exactly one. */
+/**
+ * Longest-prefix match over the registry names, so a 3-token command like
+ * "state worker add" resolves to state.worker.add while a 2-token one like
+ * "cells ready" resolves to cells.ready and a no-subcommand group like
+ * "status" resolves to status (with any trailing tokens as `extra`). When no
+ * prefix matches a registry entry, fall back to the legacy shaping (bare token
+ * for length 1, "<group>.<verb>" for length ≥ 2) so the unknown-command /
+ * nearest-match / group-usage-fallback paths downstream behave as before.
+ */
 export function resolveCommand(leading) {
   if (leading.length === 0) return { commandName: null, extra: [] };
-  if (leading[0] === 'status') return { commandName: 'status', extra: leading.slice(1) };
+  const names = new Set(COMMAND_REGISTRY.map((e) => e.name));
+  for (let n = leading.length; n >= 1; n -= 1) {
+    const candidate = leading.slice(0, n).join('.');
+    if (names.has(candidate)) return { commandName: candidate, extra: leading.slice(n) };
+  }
   if (leading.length === 1) return { commandName: leading[0], extra: [] };
   return { commandName: `${leading[0]}.${leading[1]}`, extra: leading.slice(2) };
 }
@@ -849,20 +1571,6 @@ export function main(argv) {
       null,
     );
   }
-  if (extra.length > 0) {
-    return emit(
-      {
-        result: {
-          ok: false,
-          error: { field: null, reason: `unexpected argument "${extra[0]}"`, command: commandName },
-        },
-        text: `Unexpected argument "${extra[0]}" after "${commandName}".`,
-        exitCode: 1,
-      },
-      jsonRequested,
-      null,
-    );
-  }
 
   let root;
   try {
@@ -880,6 +1588,17 @@ export function main(argv) {
   const entry = COMMAND_REGISTRY.find((e) => e.name === commandName);
 
   if (!entry) {
+    // Group-usage fallback (du-1): a leading group token that resolves to no
+    // registry entry (bare group, unknown verb, or unknown nested action)
+    // emits that group's legacy "Use:" line byte-exact on stderr — the shim
+    // always supplies the group token, so the generic no-command path can
+    // never fire for helper calls. The full `leading` tokens (not `extra`) are
+    // passed so the fallback can reconstruct the attempted verb/sub-action.
+    const group = commandName.includes('.') ? commandName.split('.')[0] : commandName;
+    const fallback = GROUP_USAGE_FALLBACKS[group];
+    if (fallback) {
+      return emitError(fallback(leading), jsonRequested);
+    }
     const suggestion = nearestCommandName(commandName);
     return emit(
       {
@@ -893,6 +1612,25 @@ export function main(argv) {
       },
       jsonRequested,
       drift,
+    );
+  }
+
+  // A resolved entry with leftover leading tokens is a stray argument (e.g.
+  // "cells ready foo") — refuse before dispatch. Ordered after the group
+  // fallback so a nested-action miss ("state worker shave") reaches the
+  // fallback's richer legacy message instead of this generic one.
+  if (extra.length > 0) {
+    return emit(
+      {
+        result: {
+          ok: false,
+          error: { field: null, reason: `unexpected argument "${extra[0]}"`, command: commandName },
+        },
+        text: `Unexpected argument "${extra[0]}" after "${commandName}".`,
+        exitCode: 1,
+      },
+      jsonRequested,
+      null,
     );
   }
 
@@ -914,6 +1652,14 @@ export function main(argv) {
     );
   }
 
+  // After a successful parse, the authoritative "was --json requested" signal
+  // is parsed.json, NOT the pre-parse rest-scan (jsonRequested): a non-boolean
+  // flag can consume the "--json" token as its value (e.g. the `worker prune
+  // --dryrun --json` typo, where --dryrun eats --json), in which case --json is
+  // NOT a real flag and errors must go to stderr — byte-parity with the legacy
+  // helpers, which read json only from their own parsed args.
+  const useJson = parsed.json;
+
   const validation = validate(entry, parsed.flags);
   if (!validation.ok) {
     const { field, reason, command } = validation.error;
@@ -923,7 +1669,7 @@ export function main(argv) {
         text: `Invalid call to "${command}": ${reason}${field ? ` (--${field})` : ''}.`,
         exitCode: 1,
       },
-      jsonRequested,
+      useJson,
       drift,
     );
   }
@@ -931,9 +1677,9 @@ export function main(argv) {
   const handler = HANDLERS[commandName];
   try {
     const response = handler(root, parsed.flags);
-    return emit(response, jsonRequested, drift);
+    return emit(response, useJson, drift);
   } catch (error) {
-    return emitError(error instanceof Error ? error.message : String(error), jsonRequested);
+    return emitError(error instanceof Error ? error.message : String(error), useJson);
   }
 }
 

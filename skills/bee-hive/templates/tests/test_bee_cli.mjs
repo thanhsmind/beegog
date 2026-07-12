@@ -43,6 +43,11 @@ const BEE_STATUS = path.join(TEMPLATES_DIR, 'bee_status.mjs');
 const BEE_CELLS = path.join(TEMPLATES_DIR, 'bee_cells.mjs');
 const BEE_RESERVATIONS = path.join(TEMPLATES_DIR, 'bee_reservations.mjs');
 const BEE_DECISIONS = path.join(TEMPLATES_DIR, 'bee_decisions.mjs');
+const BEE_STATE = path.join(TEMPLATES_DIR, 'bee_state.mjs');
+const BEE_BACKLOG = path.join(TEMPLATES_DIR, 'bee_backlog.mjs');
+const BEE_CAPTURE = path.join(TEMPLATES_DIR, 'bee_capture.mjs');
+const BEE_REVIEWS = path.join(TEMPLATES_DIR, 'bee_reviews.mjs');
+const BEE_FEEDBACK = path.join(TEMPLATES_DIR, 'bee_feedback.mjs');
 
 let passed = 0;
 let failed = 0;
@@ -108,7 +113,7 @@ const executedNames = new Set();
  * `invoke` string. Execute them through the real dispatcher (bee.mjs) — the
  * surface the manifest actually advertises — rather than the legacy helper,
  * which the manifest-as-tested-contract claim did not previously cover. */
-function runExample(entryName, { exampleIndex = 0 } = {}) {
+function runExample(entryName, { exampleIndex = 0, cwd = root } = {}) {
   const entry = entryByName(entryName);
   executedNames.add(entry.name);
   const exampleString = entry.examples[exampleIndex];
@@ -117,7 +122,7 @@ function runExample(entryName, { exampleIndex = 0 } = {}) {
   assert(tokens[0] === 'bee', `${entry.name}: example must be full dispatcher-form starting with "bee", got "${exampleString}"`);
   const args = tokens.slice(1);
   const result = spawnSync(process.execPath, [BEE_MJS, ...args], {
-    cwd: root,
+    cwd,
     encoding: 'utf8',
   });
   return { entry, result };
@@ -161,12 +166,12 @@ check('every registry entry\'s parameters is valid JSON-Schema (D3 shape: type/p
   }
 });
 
-check('registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*)', () => {
+check('registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*, state.*, backlog.*, capture.*, reviews.*, feedback.*)', () => {
   const names = COMMAND_REGISTRY.map((e) => e.name);
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'cells', 'reservations', 'decisions'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -197,6 +202,11 @@ const GROUP_HELPERS = {
   cells: BEE_CELLS,
   reservations: BEE_RESERVATIONS,
   decisions: BEE_DECISIONS,
+  state: BEE_STATE,
+  backlog: BEE_BACKLOG,
+  capture: BEE_CAPTURE,
+  reviews: BEE_REVIEWS,
+  feedback: BEE_FEEDBACK,
 };
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
@@ -217,20 +227,39 @@ function helperRuntimeVerbs(scriptPath) {
     contractLine,
     `${scriptPath}: expected a stderr line starting with "Unknown command" for an unrecognized top-level command, got stdout=${result.stdout} stderr=${result.stderr}`,
   );
-  const match = contractLine.match(/Use: (.+)$/);
-  assert(match, `${scriptPath}: "Unknown command" line has no "Use: ..." suffix: ${contractLine}`);
-  // trap t1: the contract line ends with a period, so the last verb parses
-  // as e.g. "judge." unless the trailing period is stripped first.
-  const verbList = match[1].replace(/\.\s*$/, '');
-  return verbList.split(',').map((v) => v.trim()).filter(Boolean);
+  // Stop at the FIRST verb-list-terminating period, not necessarily end of
+  // line: bee_reviews.mjs's default message appends a trailing "(review
+  // modes: ...)" annotation AFTER the verb list's own period (dispatcher-
+  // unify du-3) — a greedy-to-end-of-line capture would swallow that
+  // annotation as bogus extra "verbs". Every other group's Use: line puts
+  // its own terminating period at the true end of the string, so this is a
+  // no-op there (trap t1 still applies: without stopping at the period, the
+  // last verb would parse as e.g. "judge.").
+  const match = contractLine.match(/Use: (.+?)\.(?:\s|$)/);
+  assert(match, `${scriptPath}: "Unknown command" line has no "Use: ..." verb-list clause: ${contractLine}`);
+  // Each comma-separated segment's FIRST word is the runtime verb: every
+  // group spells a single-word verb per segment except bee_reviews.mjs's
+  // nested "candidate add" (two words) — collapsing to its first word
+  // matches the registry-side collapse (name.split('.')[0] on the nested
+  // "candidate.add" segment -> "candidate", dispatcher-unify du-3).
+  return match[1]
+    .split(',')
+    .map((v) => v.trim().split(/\s+/)[0])
+    .filter(Boolean);
 }
 
 check('DA5 bijection: every runtime verb of bee_cells/reservations/decisions.mjs has a matching cells.*/reservations.*/decisions.* registry entry, and vice versa', () => {
   for (const [group, scriptPath] of Object.entries(GROUP_HELPERS)) {
     const runtimeVerbs = new Set(helperRuntimeVerbs(scriptPath));
     assert(runtimeVerbs.size > 0, `${scriptPath}: parsed zero runtime verbs — the parser is broken, not the helper`);
+    // Collapse nested verbs to their top-level segment (state.worker.add ->
+    // worker) so the bijection matches the helper's runtime "Use:" line, which
+    // lists only top-level verbs. For flat groups (cells/reservations/decisions)
+    // this is a no-op — every verb is already single-segment.
     const registryVerbs = new Set(
-      COMMAND_REGISTRY.filter((e) => e.name.startsWith(`${group}.`)).map((e) => e.name.slice(group.length + 1)),
+      COMMAND_REGISTRY.filter((e) => e.name.startsWith(`${group}.`)).map(
+        (e) => e.name.slice(group.length + 1).split('.')[0],
+      ),
     );
 
     // (a) every runtime verb has a registry entry named `<group>.<verb>`
@@ -249,11 +278,11 @@ check('DA5 bijection: every runtime verb of bee_cells/reservations/decisions.mjs
   }
 });
 
-check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions', () => {
-  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions']);
+check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback', () => {
+  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
-    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions`);
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback`);
     if (!entry.name.includes('.')) {
       assert(entry.name === 'status', `dot-free registry entry "${entry.name}" is not "status" — only "status" may be dot-free`);
     }
@@ -423,6 +452,262 @@ check('decisions.redact example runs through the real dispatcher (arbitrary id �
 check('status example runs through the real dispatcher', () => {
   const result = assertExampleOk('status');
   assert(JSON.parse(result.stdout).phase === 'swarming', 'status should reflect the fixture repo\'s phase');
+});
+
+// ─── state.* examples: run in a dedicated fresh repo (dispatcher-unify du-1) ─
+// State verbs mutate .bee/state.json, so they get their own isolated repo,
+// never the demo-1 fixture chain. Order matters: start-feature requires a
+// clean idle workspace, so it runs first, before any other state mutation.
+
+const rootState = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-state-example-'));
+fs.mkdirSync(path.join(rootState, '.bee'), { recursive: true });
+writeJsonAtomic(path.join(rootState, '.bee', 'onboarding.json'), {
+  schema_version: '1.0',
+  bee_version: '0.1.0',
+});
+
+check('state.start-feature example runs through the real dispatcher (clean idle repo)', () => {
+  const result = assertExampleOk('state.start-feature', { cwd: rootState });
+  assert(JSON.parse(result.stdout).feature === 'newf', `expected feature newf, got ${result.stdout}`);
+});
+
+check('state.set example runs through the real dispatcher', () => {
+  const result = assertExampleOk('state.set', { cwd: rootState });
+  assert(JSON.parse(result.stdout).phase === 'planning', `expected phase planning, got ${result.stdout}`);
+});
+
+check('state.gate example runs through the real dispatcher', () => {
+  const result = assertExampleOk('state.gate', { cwd: rootState });
+  assert(JSON.parse(result.stdout).approved_gates.execution === true, `expected execution approved, got ${result.stdout}`);
+});
+
+check('state.worker.add example runs through the real dispatcher', () => {
+  const result = assertExampleOk('state.worker.add', { cwd: rootState });
+  assert(JSON.parse(result.stdout).workers.some((w) => w.nickname === 'w1'), `expected worker w1, got ${result.stdout}`);
+});
+
+check('state.worker.update example runs through the real dispatcher (w1 added above)', () => {
+  const result = assertExampleOk('state.worker.update', { cwd: rootState });
+  assert(JSON.parse(result.stdout).workers.find((w) => w.nickname === 'w1').status === 'done', `expected w1 status done, got ${result.stdout}`);
+});
+
+check('state.worker.remove example runs through the real dispatcher', () => {
+  const result = assertExampleOk('state.worker.remove', { cwd: rootState });
+  assert(!JSON.parse(result.stdout).workers.some((w) => w.nickname === 'w1'), `expected w1 removed, got ${result.stdout}`);
+});
+
+check('state.worker.clear example runs through the real dispatcher', () => {
+  const result = assertExampleOk('state.worker.clear', { cwd: rootState });
+  assert(JSON.parse(result.stdout).workers.length === 0, `expected empty workers, got ${result.stdout}`);
+});
+
+check('state.worker.prune example runs through the real dispatcher (no workers dir -> 0 pruned)', () => {
+  const result = assertExampleOk('state.worker.prune', { cwd: rootState });
+  assert(JSON.parse(result.stdout).pruned.length === 0, `expected 0 pruned, got ${result.stdout}`);
+});
+
+check('state.scribing-run example runs through the real dispatcher', () => {
+  const result = assertExampleOk('state.scribing-run', { cwd: rootState });
+  assert(JSON.parse(result.stdout).phase === 'compounding', `expected phase compounding, got ${result.stdout}`);
+});
+
+// ─── backlog.* / capture.* examples: run in a dedicated fresh repo
+// (dispatcher-unify du-2). Neither group touches .bee/state.json or the
+// demo-1/demo-2 cell fixtures, so they get their own isolated repo with a
+// docs/backlog.md table and a README.md heading for the badges pass to
+// insert under.
+
+const rootBacklogCapture = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-backlog-capture-example-'));
+fs.mkdirSync(path.join(rootBacklogCapture, '.bee'), { recursive: true });
+writeJsonAtomic(path.join(rootBacklogCapture, '.bee', 'onboarding.json'), {
+  schema_version: '1.0',
+  bee_version: '0.1.0',
+});
+fs.mkdirSync(path.join(rootBacklogCapture, 'docs'), { recursive: true });
+fs.writeFileSync(
+  path.join(rootBacklogCapture, 'docs', 'backlog.md'),
+  '# Backlog\n\n| ID | Story | Status |\n|----|-------|--------|\n| 1 | A | done |\n| 2 | B | proposed |\n| 3 | C | in-flight |\n',
+  'utf8',
+);
+fs.writeFileSync(path.join(rootBacklogCapture, 'README.md'), '# Demo repo\n', 'utf8');
+
+check('backlog.counts example runs through the real dispatcher', () => {
+  const result = assertExampleOk('backlog.counts', { cwd: rootBacklogCapture });
+  const counts = JSON.parse(result.stdout);
+  assert(counts.done === 1 && counts.proposed === 1 && counts.inFlight === 1, `expected 1/1/1, got ${result.stdout}`);
+});
+
+check('backlog.rank example runs through the real dispatcher', () => {
+  const result = assertExampleOk('backlog.rank', { cwd: rootBacklogCapture });
+  assert(Array.isArray(JSON.parse(result.stdout).order), `expected an order array, got ${result.stdout}`);
+});
+
+check('backlog.badges example runs through the real dispatcher', () => {
+  const result = assertExampleOk('backlog.badges', { cwd: rootBacklogCapture });
+  assert(typeof JSON.parse(result.stdout).badges === 'string', `expected a badges string, got ${result.stdout}`);
+});
+
+check('backlog.add example runs through the real dispatcher and appends to .bee/backlog.jsonl', () => {
+  const result = assertExampleOk('backlog.add', { cwd: rootBacklogCapture });
+  const row = JSON.parse(result.stdout);
+  assert(row.type === 'friction' && row.severity === 'P2', `expected the example row, got ${result.stdout}`);
+  assert(fs.existsSync(path.join(rootBacklogCapture, '.bee', 'backlog.jsonl')), 'backlog.jsonl should now exist');
+});
+
+check('capture.add example runs through the real dispatcher and returns a stub id', () => {
+  const result = assertExampleOk('capture.add', { cwd: rootBacklogCapture });
+  const stub = JSON.parse(result.stdout);
+  assert(typeof stub.id === 'string' && stub.id, `expected a stub id, got ${result.stdout}`);
+});
+
+check('capture.list example runs through the real dispatcher and includes the stub just added', () => {
+  const result = assertExampleOk('capture.list', { cwd: rootBacklogCapture });
+  const listed = JSON.parse(result.stdout);
+  assert(listed.count >= 1, `expected at least 1 pending stub, got ${result.stdout}`);
+});
+
+check('capture.flush example runs through the real dispatcher against a pre-seeded stub id', () => {
+  // flushCaptureStub refuses an id with no matching pending stub (lib/capture.mjs,
+  // never edited by this cell) — capture.add's own example generates a random
+  // crypto.randomUUID(), so the literal fixed id in capture.flush's own
+  // registry example is seeded directly into the queue file here first.
+  const seededId = '00000000-0000-0000-0000-000000000000';
+  fs.appendFileSync(
+    path.join(rootBacklogCapture, '.bee', 'capture-queue.jsonl'),
+    `${JSON.stringify({ kind: 'stub', id: seededId, at: new Date().toISOString(), outcome: 'seeded for capture.flush example', dids: [], area: null, files: [], lane: null })}\n`,
+    'utf8',
+  );
+  const result = assertExampleOk('capture.flush', { cwd: rootBacklogCapture });
+  const record = JSON.parse(result.stdout);
+  assert(record.id === seededId, `expected the seeded stub id flushed, got ${result.stdout}`);
+});
+
+check('capture.count example runs through the real dispatcher', () => {
+  const result = assertExampleOk('capture.count', { cwd: rootBacklogCapture });
+  assert(typeof JSON.parse(result.stdout).count === 'number', `expected a numeric count, got ${result.stdout}`);
+});
+
+// ─── reviews.* / feedback.* examples: run in a dedicated fresh repo
+// (dispatcher-unify du-3). reviews.create's A10 preflight requires a real
+// capped behavior_change cell WITH recorded verification_evidence in scope,
+// so a fixture cell ("ok-1") is built here through the real dispatcher
+// (add/claim/verify/cap) before the reviews.create example runs. feedback's
+// digest/count/collect/rank examples run over whatever sources are in scope
+// in this same repo (an empty/near-empty source set is fine — buildDigest
+// degrades to a low-count snapshot rather than throwing).
+
+const rootReviewsFeedback = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-reviews-feedback-example-'));
+fs.mkdirSync(path.join(rootReviewsFeedback, '.bee'), { recursive: true });
+writeJsonAtomic(path.join(rootReviewsFeedback, '.bee', 'onboarding.json'), {
+  schema_version: '1.0',
+  bee_version: '0.1.0',
+});
+writeState(rootReviewsFeedback, {
+  ...defaultState(),
+  phase: 'swarming',
+  feature: 'demo3',
+  approved_gates: { context: true, shape: true, execution: true, review: false },
+});
+
+function runBeeReviewsFeedbackFixture(args) {
+  return spawnSync(process.execPath, [BEE_MJS, ...args], { cwd: rootReviewsFeedback, encoding: 'utf8' });
+}
+
+check('reviews fixture setup: a capped behavior_change cell ("ok-1") with recorded verification_evidence exists in scope', () => {
+  const cellFixture = {
+    id: 'ok-1',
+    feature: 'demo3',
+    title: 'Fixture cell for reviews.* registry examples',
+    lane: 'small',
+    action: 'Exercise every reviews.* example against a real fixture cell.',
+    verify: 'node -e "process.exit(0)"',
+    behavior_change: true,
+  };
+  fs.writeFileSync(path.join(rootReviewsFeedback, 'cell-ok-1.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const added = runBeeReviewsFeedbackFixture(['cells', 'add', '--file', 'cell-ok-1.json', '--json']);
+  assert(added.status === 0, `cells add setup failed: ${added.status}: stdout=${added.stdout} stderr=${added.stderr}`);
+
+  const claimed = runBeeReviewsFeedbackFixture(['cells', 'claim', '--id', 'ok-1', '--worker', 'worker-rev', '--json']);
+  assert(claimed.status === 0, `cells claim setup failed: ${claimed.status}: stdout=${claimed.stdout} stderr=${claimed.stderr}`);
+
+  const verified = runBeeReviewsFeedbackFixture(['cells', 'verify', '--id', 'ok-1', '--command', 'node -e 0', '--output', 'ok', '--passed', 'true', '--json']);
+  assert(verified.status === 0, `cells verify setup failed: ${verified.status}: stdout=${verified.stdout} stderr=${verified.stderr}`);
+
+  const capped = spawnSync(
+    process.execPath,
+    [BEE_MJS, 'cells', 'cap', '--id', 'ok-1', '--outcome', 'done', '--files', 'a.js', '--behavior-change', '--evidence-stdin', '--json'],
+    { cwd: rootReviewsFeedback, encoding: 'utf8', input: JSON.stringify({ red_failure_evidence: 'prior behavior', verification_run: 'node -e 0' }) },
+  );
+  assert(capped.status === 0, `cells cap setup failed: ${capped.status}: stdout=${capped.stdout} stderr=${capped.stderr}`);
+  assert(JSON.parse(capped.stdout).trace.verification_evidence, 'ok-1 should carry recorded verification_evidence for the A10 preflight');
+});
+
+check('reviews.create example runs through the real dispatcher (A10 preflight satisfied by the ok-1 fixture cell)', () => {
+  const scope = {
+    id: 'rev-example',
+    requested_by: 'user',
+    scope_description: 'review the demo3 feature',
+    included: [{ type: 'cell', id: 'ok-1' }],
+    baseline: 'sha-base',
+    head: 'sha-head',
+  };
+  fs.writeFileSync(path.join(rootReviewsFeedback, 'scope.json'), JSON.stringify(scope), 'utf8');
+  const result = assertExampleOk('reviews.create', { cwd: rootReviewsFeedback });
+  assert(JSON.parse(result.stdout).id === 'rev-example', `expected rev-example, got ${result.stdout}`);
+});
+
+check('reviews.list example runs through the real dispatcher', () => {
+  const result = assertExampleOk('reviews.list', { cwd: rootReviewsFeedback });
+  assert(result.stdout.includes('rev-example'), `expected rev-example in list output, got ${result.stdout}`);
+});
+
+check('reviews.show example runs through the real dispatcher', () => {
+  const result = assertExampleOk('reviews.show', { cwd: rootReviewsFeedback });
+  assert(JSON.parse(result.stdout).id === 'rev-example', `expected rev-example, got ${result.stdout}`);
+});
+
+check('reviews.record example runs through the real dispatcher', () => {
+  fs.writeFileSync(path.join(rootReviewsFeedback, 'finding.json'), JSON.stringify({ severity: 'P2', description: 'nit' }), 'utf8');
+  const result = assertExampleOk('reviews.record', { cwd: rootReviewsFeedback });
+  assert(JSON.parse(result.stdout).id === 'rev-example', `expected the updated rev-example session, got ${result.stdout}`);
+});
+
+check('reviews.candidate.add example runs through the real dispatcher (nested 3-token verb)', () => {
+  const result = assertExampleOk('reviews.candidate.add', { cwd: rootReviewsFeedback });
+  const entry = JSON.parse(result.stdout);
+  assert(entry.feature === 'demo3' && entry.mode === 'standard', `expected the example candidate, got ${result.stdout}`);
+});
+
+check('reviews.candidates example runs through the real dispatcher (flat 2-token verb, distinct from candidate add)', () => {
+  const result = assertExampleOk('reviews.candidates', { cwd: rootReviewsFeedback });
+  const entries = JSON.parse(result.stdout);
+  assert(entries.length === 1 && entries[0].feature === 'demo3', `expected the candidate just added, got ${result.stdout}`);
+});
+
+check('reviews.status example runs through the real dispatcher', () => {
+  const result = assertExampleOk('reviews.status', { cwd: rootReviewsFeedback });
+  const summary = JSON.parse(result.stdout);
+  assert(summary.counts.verified === 1, `expected 1 verified candidate, got ${result.stdout}`);
+});
+
+check('feedback.digest example runs through the real dispatcher', () => {
+  const result = assertExampleOk('feedback.digest', { cwd: rootReviewsFeedback });
+  assert(typeof JSON.parse(result.stdout).digest === 'object', `expected a digest object, got ${result.stdout}`);
+});
+
+check('feedback.count example runs through the real dispatcher', () => {
+  const result = assertExampleOk('feedback.count', { cwd: rootReviewsFeedback });
+  assert(typeof JSON.parse(result.stdout).entries === 'number', `expected a numeric entries count, got ${result.stdout}`);
+});
+
+check('feedback.collect example runs through the real dispatcher', () => {
+  const result = assertExampleOk('feedback.collect', { cwd: rootReviewsFeedback });
+  assert(typeof JSON.parse(result.stdout).counts === 'object', `expected a counts object, got ${result.stdout}`);
+});
+
+check('feedback.rank example runs through the real dispatcher', () => {
+  const result = assertExampleOk('feedback.rank', { cwd: rootReviewsFeedback });
+  assert(Array.isArray(JSON.parse(result.stdout)), `expected a ranked cluster array, got ${result.stdout}`);
 });
 
 check('every registry entry had its example executed at least once (nothing silently skipped)', () => {

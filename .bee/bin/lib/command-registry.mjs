@@ -24,7 +24,8 @@
 // the real, already-shipped helpers; the unified dispatcher does not exist
 // yet (that is harness-integration-2).
 
-import { MODEL_TIERS } from './state.mjs';
+import { MODEL_TIERS, KNOWN_PHASES, GATE_NAMES } from './state.mjs';
+import { REVIEW_MODES } from './reviews.mjs';
 
 export const SCHEMA_VERSION = '1.0';
 
@@ -429,6 +430,525 @@ export const COMMAND_REGISTRY = [
       required: ['text'],
     },
     examples: ['bee decisions search --text "registry" --json'],
+    deprecated: null,
+  },
+
+  // ─── state (bee_state.mjs — .bee/state.json mutation verbs) ───────────────
+  // Nested worker verbs use a 3-segment name (state.worker.add) resolved by
+  // the dispatcher's longest-prefix match; every other verb is 2-segment.
+  //
+  // `required: []` on every state entry is deliberate (DB3): the generic
+  // validate() layer emits a structured error on STDOUT, but the legacy
+  // bee_state.mjs contract (pinned by test_lib.mjs) emits missing-flag / bad-
+  // value errors on STDERR. So each state handler owns its own required-flag
+  // and enum checks (requireFlag / requireBoolFlag / MODEL_TIERS / GATE_NAMES),
+  // throwing the legacy message text — which the dispatcher routes to STDERR —
+  // rather than letting validate() preempt it onto STDOUT. Types stay 'string'
+  // for the same reason (a bad --approved must reach the handler, not validate).
+  {
+    name: 'state.set',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state set',
+    description:
+      'Set one or more top-level state fields; only the flags given are written and every other field is preserved. --phase is validated against the known-phase enum (including the terminal alias compounding-complete).',
+    parameters: {
+      type: 'object',
+      properties: {
+        phase: { type: 'string', description: 'Workflow phase to set.', enum: [...KNOWN_PHASES] },
+        mode: { type: 'string', description: 'Mode to set.' },
+        feature: { type: 'string', description: 'Feature slug to set.' },
+        'next-action': { type: 'string', description: 'Top-level next_action string.' },
+        summary: { type: 'string', description: 'Session summary string.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state set --phase planning --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.gate',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state gate',
+    description: 'Approve or unapprove a named gate. Idempotent: the same call run twice yields an identical file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Gate name.', enum: [...GATE_NAMES] },
+        approved: { type: 'string', description: 'Whether the gate is approved ("true" or "false").' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state gate --name execution --approved true --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.worker.add',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state worker add',
+    description: 'Append a worker entry (nickname + cell, optional tier/status) to state.workers.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nickname: { type: 'string', description: 'Worker nickname.' },
+        cell: { type: 'string', description: 'Cell id the worker is assigned.' },
+        tier: { type: 'string', description: 'Model tier chosen at dispatch.', enum: [...MODEL_TIERS] },
+        status: { type: 'string', description: 'Worker status.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state worker add --nickname w1 --cell c1 --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.worker.update',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state worker update',
+    description: 'Merge the given fields onto an existing worker entry found by nickname.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nickname: { type: 'string', description: 'Worker nickname to update.' },
+        cell: { type: 'string', description: 'New cell id.' },
+        tier: { type: 'string', description: 'New model tier.', enum: [...MODEL_TIERS] },
+        status: { type: 'string', description: 'New worker status.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state worker update --nickname w1 --status done --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.worker.remove',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state worker remove',
+    description: 'Drop the worker entry matching the given nickname.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nickname: { type: 'string', description: 'Worker nickname to remove.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state worker remove --nickname w1 --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.worker.clear',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state worker clear',
+    description: 'Empty the whole state.workers array.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state worker clear --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.worker.prune',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state worker prune',
+    description: 'Delete stale dispatch transients from .bee/workers/ (keeps active-worker and non-capped-cell files). Reads state via readStateStrict and never writes state.json.',
+    parameters: {
+      type: 'object',
+      properties: {
+        'dry-run': { type: 'boolean', description: 'Report the candidate set without deleting anything.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state worker prune --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.scribing-run',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state scribing-run',
+    description: 'Stamp last_scribing_run (date + ISO-precise at), mirror --next-action to the top-level next_action, and advance phase to compounding.',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Feature slug the scribing run covers.' },
+        areas: { type: 'string', description: 'Comma-separated areas synced.' },
+        'next-action': { type: 'string', description: 'Next action after scribing.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state scribing-run --feature demo --areas auth --next-action bee-compounding --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.start-feature',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state start-feature',
+    description: 'Guarded atomic feature start: fails closed with zero mutations unless the workspace is clean (idle/terminal phase, no handoff/workers/reservations/claimed or nonterminal prior cells); on success sets feature/mode/phase and resets all four gates.',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'New feature slug.' },
+        mode: { type: 'string', description: 'Mode for the new feature.' },
+        phase: { type: 'string', description: 'Entry phase (defaults to exploring).', enum: [...KNOWN_PHASES] },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee state start-feature --feature newf --json'],
+    deprecated: null,
+  },
+
+  // ─── backlog (bee_backlog.mjs — docs/backlog.md mechanical passes + the
+  // .bee/backlog.jsonl `add` verb). `required: []` on `backlog.add` is
+  // deliberate (DB3, same discipline as the state.* entries above): the
+  // generic validate() layer would emit its structured error on STDOUT, but
+  // the legacy bee_backlog.mjs `add` contract (pinned by test_lib.mjs) emits
+  // its validation refusals on STDERR. So the handler owns every required-
+  // flag / enum / length check itself, throwing the legacy message text —
+  // which the dispatcher routes to STDERR. ─────────────────────────────────
+  {
+    name: 'backlog.counts',
+    helper: 'bee_backlog.mjs',
+    invoke: 'bee backlog counts',
+    description: 'Render PBI backlog counts (done/in-flight/proposed/total) parsed from docs/backlog.md.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee backlog counts --json'],
+    deprecated: null,
+  },
+  {
+    name: 'backlog.rank',
+    helper: 'bee_backlog.mjs',
+    invoke: 'bee backlog rank',
+    description: 'P2 mechanical pass: reorder docs/backlog.md rows by status group (in-flight, proposed, done). Reports the resulting order; --write persists it, otherwise nothing is changed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        write: { type: 'boolean', description: 'Persist the reordering to docs/backlog.md.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee backlog rank --json'],
+    deprecated: null,
+  },
+  {
+    name: 'backlog.badges',
+    helper: 'bee_backlog.mjs',
+    invoke: 'bee backlog badges',
+    description: "P3 mechanical pass: refresh README.md's backlog badges from docs/backlog.md counts. --write persists, otherwise nothing is changed.",
+    parameters: {
+      type: 'object',
+      properties: {
+        write: { type: 'boolean', description: 'Persist the refreshed badges to README.md.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee backlog badges --json'],
+    deprecated: null,
+  },
+  {
+    name: 'backlog.add',
+    helper: 'bee_backlog.mjs',
+    invoke: 'bee backlog add',
+    description:
+      'Validate then append one row to .bee/backlog.jsonl (the feedback-digest source lib/feedback.mjs\'s collectFeedback reads) — agents never hand-edit .bee state. --type must be a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value (lib/feedback.mjs), --severity is P1|P2|P3, --layer is a free non-empty string <=40 chars (no allowlist), --title is required and <=200 chars. Any rejection leaves the file untouched.',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Backlog row type (a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value).' },
+        title: { type: 'string', description: 'Row title, <=200 chars.' },
+        severity: { type: 'string', description: 'Row severity.', enum: ['P1', 'P2', 'P3'] },
+        layer: { type: 'string', description: 'Free non-empty layer string, <=40 chars.' },
+        detail: { type: 'string', description: 'Optional detail text.' },
+        feature: { type: 'string', description: 'Optional feature slug.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee backlog add --type friction --title "example backlog row" --severity P2 --layer state --json'],
+    deprecated: null,
+  },
+
+  // ─── capture (bee_capture.mjs — the capture-queue CLI, decision 0017) ─────
+  {
+    name: 'capture.add',
+    helper: 'bee_capture.mjs',
+    invoke: 'bee capture add',
+    description: 'Append a capture-queue stub for a same-turn settlement (decision 0017); the full BA-grade spec merge happens later at flush. High-risk lane never queues.',
+    parameters: {
+      type: 'object',
+      properties: {
+        outcome: { type: 'string', description: 'Outcome text for the stub.' },
+        did: { type: 'string', description: 'Comma-separated decision ids the settlement relates to.' },
+        area: { type: 'string', description: 'Spec area the stub belongs to.' },
+        files: { type: 'string', description: 'Comma-separated list of files touched.' },
+        lane: { type: 'string', description: 'Lane the settlement ran at (high-risk never queues).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee capture add --outcome "example capture stub outcome" --json'],
+    deprecated: null,
+  },
+  {
+    name: 'capture.list',
+    helper: 'bee_capture.mjs',
+    invoke: 'bee capture list',
+    description: 'List pending (not yet flushed) capture stubs, oldest first.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a formatted list.' },
+      },
+      required: [],
+    },
+    examples: ['bee capture list --json'],
+    deprecated: null,
+  },
+  {
+    name: 'capture.flush',
+    helper: 'bee_capture.mjs',
+    invoke: 'bee capture flush',
+    description: 'Mark a pending capture stub flushed (its content merged into a spec by bee-scribing). Refuses when the id names no pending stub.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Stub id to flush.' },
+        into: { type: 'string', description: 'Where the stub content landed, e.g. docs/specs/<area>.md.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee capture flush --id 00000000-0000-0000-0000-000000000000 --json'],
+    deprecated: null,
+  },
+  {
+    name: 'capture.count',
+    helper: 'bee_capture.mjs',
+    invoke: 'bee capture count',
+    description: 'Report the pending capture-stub count.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee capture count --json'],
+    deprecated: null,
+  },
+
+  // ─── reviews (bee_reviews.mjs — review-session store + candidates ledger,
+  // dispatcher-unify du-3). `reviews.candidate.add` is a NESTED 3-segment
+  // name resolved by the dispatcher's longest-prefix match (du-1), sitting
+  // alongside the separate FLAT `reviews.candidates` verb (bee_reviews.mjs
+  // :186-207/199-207) — two distinct verbs, both pinned. `required: []` on
+  // every reviews entry is deliberate (DB3, same discipline as state.*/
+  // backlog.*): the generic validate() layer would emit its structured error
+  // on STDOUT, but the legacy bee_reviews.mjs contract (pinned by
+  // test_lib.mjs) emits its validation refusals on STDERR. So each handler
+  // owns its own required-flag / enum checks, throwing the legacy message
+  // text — which the dispatcher routes to STDERR. ─────────────────────────
+  {
+    name: 'reviews.create',
+    helper: 'bee_reviews.mjs',
+    invoke: 'bee reviews create',
+    description:
+      'Freeze a review scope (R5) into .bee/reviews/<id>.json. Runs the A10 verification-evidence preflight and A6 in-progress auto-exclusion BEFORE any write; fails closed with zero files written on missing evidence or an id that already exists (ids are never reused). Exactly one of --file / --stdin is required at call time (both satisfy the schema; the handler itself enforces the choice, same discipline as cells.add).',
+    parameters: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', description: 'Path to a scope JSON file (id, requested_by, scope_description, included, excluded?, baseline, head). Required unless --stdin is set.' },
+        stdin: { type: 'boolean', description: 'Read the scope JSON from stdin instead of --file.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee reviews create --file scope.json --json'],
+    deprecated: null,
+  },
+  {
+    name: 'reviews.list',
+    helper: 'bee_reviews.mjs',
+    invoke: 'bee reviews list',
+    description: 'List every review session, one line per session (id, decision status, scope description).',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line-per-session summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee reviews list --json'],
+    deprecated: null,
+  },
+  {
+    name: 'reviews.show',
+    helper: 'bee_reviews.mjs',
+    invoke: 'bee reviews show',
+    description: 'Show one review session by id, full contents.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Review session id.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of pretty-printed JSON (show always prints JSON; flag kept for surface consistency).' },
+      },
+      required: [],
+    },
+    examples: ['bee reviews show --id rev-example --json'],
+    deprecated: null,
+  },
+  {
+    name: 'reviews.record',
+    helper: 'bee_reviews.mjs',
+    invoke: 'bee reviews record',
+    description:
+      'Set or append a sub-record on an existing session: manifest/preflight/decision SET the field, finding/uat APPEND one entry per call. Refuses any payload touching baseline/head/included/excluded — those are frozen at create (R5). Exactly one of --file / --stdin is required at call time (both satisfy the schema; the handler itself enforces the choice).',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Review session id.' },
+        kind: { type: 'string', description: 'Sub-record kind.', enum: ['manifest', 'preflight', 'finding', 'uat', 'decision'] },
+        file: { type: 'string', description: 'Path to the payload JSON file. Required unless --stdin is set.' },
+        stdin: { type: 'boolean', description: 'Read the payload JSON from stdin instead of --file.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee reviews record --id rev-example --kind finding --file finding.json --json'],
+    deprecated: null,
+  },
+  {
+    name: 'reviews.candidate.add',
+    helper: 'bee_reviews.mjs',
+    invoke: 'bee reviews candidate add',
+    description:
+      "Append one entry to .bee/review-candidates.jsonl for a closing feature. --mode is required and must be the closing feature's lane.",
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Closing feature slug.' },
+        head: { type: 'string', description: 'Head commit sha.' },
+        mode: { type: 'string', description: "The closing feature's lane.", enum: [...REVIEW_MODES] },
+        baseline: { type: 'string', description: 'Optional baseline commit sha.' },
+        cells: { type: 'string', description: 'Optional comma-separated cell ids covered by this candidate.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee reviews candidate add --feature demo3 --head sha1 --mode standard --json'],
+    deprecated: null,
+  },
+  {
+    name: 'reviews.candidates',
+    helper: 'bee_reviews.mjs',
+    invoke: 'bee reviews candidates',
+    description: 'List every review-candidate ledger entry (append-only, one per feature close), oldest first.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line-per-entry summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee reviews candidates --json'],
+    deprecated: null,
+  },
+  {
+    name: 'reviews.status',
+    helper: 'bee_reviews.mjs',
+    invoke: 'bee reviews status',
+    description:
+      'Derived coverage summary (R10 — status is never stored): verified count plus the four coverage labels unreviewed/in review/reviewed/review stale, one line per candidate. A candidate reviewed by an unchanged approved session reports "reviewed (covered by <review-id>)" (A7).',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Restrict to one feature slug.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a formatted summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee reviews status --json'],
+    deprecated: null,
+  },
+
+  // ─── feedback (bee_feedback.mjs — the dogfood feedback digest CLI, P18,
+  // dispatcher-unify du-3). NO collection, redaction, or pain logic lives in
+  // the dispatcher — that all lives in lib/feedback.mjs. ───────────────────
+  {
+    name: 'feedback.digest',
+    helper: 'bee_feedback.mjs',
+    invoke: 'bee feedback digest',
+    description: 'Build the allowlist feedback digest (P18) and write it to disk (default .bee/feedback-digest.json).',
+    parameters: {
+      type: 'object',
+      properties: {
+        out: { type: 'string', description: 'Output path, relative to repo root (default .bee/feedback-digest.json).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee feedback digest --json'],
+    deprecated: null,
+  },
+  {
+    name: 'feedback.count',
+    helper: 'bee_feedback.mjs',
+    invoke: 'bee feedback count',
+    description: 'Report the local feedback digest counts without writing anything to disk.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee feedback count --json'],
+    deprecated: null,
+  },
+  {
+    name: 'feedback.collect',
+    helper: 'bee_feedback.mjs',
+    invoke: 'bee feedback collect',
+    description:
+      "Merge the local digest with every configured dogfood repo's already-written digest (D2b — the consumer revalidates every foreign entry). With no dogfood_repos configured, returns the local digest only.",
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee feedback collect --json'],
+    deprecated: null,
+  },
+  {
+    name: 'feedback.rank',
+    helper: 'bee_feedback.mjs',
+    invoke: 'bee feedback rank',
+    description: 'Cluster the merged digest view by normalized title and rank clusters by pain x frequency x corroboration, descending.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee feedback rank --json'],
     deprecated: null,
   },
 ];
