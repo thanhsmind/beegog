@@ -38,6 +38,7 @@ import {
 } from '../lib/backlog.mjs';
 import {
   addCell,
+  updateCell,
   readCell,
   writeCell,
   readyCells,
@@ -255,6 +256,103 @@ check('addCell accepts a valid small cell and a standard cell with truths', () =
   );
   assert(readCell(root, 'demo-1') !== null, 'demo-1 should exist');
   assert(readCell(root, 'demo-2') !== null, 'demo-2 should exist');
+});
+
+// ─── cells: update verb (cells-update-verb) ─────────────────────────────────
+
+check('updateCell lands patched fields on an open cell; unpatched fields, status, trace byte-stable', () => {
+  addCell(root, makeCell('upd-1', { action: 'Old action per D1.' }));
+  const before = readCell(root, 'upd-1');
+  const updated = updateCell(root, 'upd-1', { action: 'New action per D2.', files: ['a.txt'] });
+  assert(updated.action === 'New action per D2.', 'action updated');
+  assert(updated.files.length === 1 && updated.files[0] === 'a.txt', 'files updated');
+  assert(updated.title === before.title, 'unpatched field unchanged');
+  assert(updated.status === before.status, 'status unchanged');
+  assert(JSON.stringify(updated.trace) === JSON.stringify(before.trace), 'trace unchanged');
+});
+
+check('updateCell works on a blocked cell (rescue path), refuses an empty patch', () => {
+  addCell(root, makeCell('upd-2', { status: 'blocked' }));
+  const updated = updateCell(root, 'upd-2', { verify: 'node -e "process.exit(0)" # v2' });
+  assert(updated.verify.includes('v2'), 'verify updated on blocked cell');
+  assertThrows(() => updateCell(root, 'upd-2', {}), 'empty', 'empty patch refused');
+});
+
+check('updateCell refuses claimed, capped, and dropped cells with the file byte-unchanged', () => {
+  for (const status of ['claimed', 'capped', 'dropped']) {
+    const id = `upd-door-${status}`;
+    addCell(root, makeCell(id, { status }));
+    const file = path.join(root, '.bee', 'cells', `${id}.json`);
+    const before = fs.readFileSync(file, 'utf8');
+    assertThrows(() => updateCell(root, id, { title: 'nope' }), status, `${status} cell refused`);
+    assert(fs.readFileSync(file, 'utf8') === before, `${id} file byte-unchanged after refusal`);
+  }
+});
+
+check('updateCell refuses every frozen key and unknown keys — whole patch, file untouched', () => {
+  addCell(root, makeCell('upd-3'));
+  const file = path.join(root, '.bee', 'cells', 'upd-3.json');
+  const before = fs.readFileSync(file, 'utf8');
+  for (const key of ['id', 'feature', 'status', 'trace', 'tier']) {
+    assertThrows(
+      () => updateCell(root, 'upd-3', { title: 'ok', [key]: 'x' }),
+      'frozen',
+      `frozen key ${key} refuses the whole patch`,
+    );
+  }
+  assertThrows(() => updateCell(root, 'upd-3', { totally_new: 1 }), 'unknown field', 'unknown key refused');
+  assertThrows(() => updateCell(root, 'upd-3', { title: '' }), 'non-empty string', 'invalid value refused');
+  assert(fs.readFileSync(file, 'utf8') === before, 'upd-3 file untouched after all refusals');
+});
+
+check('updateCell fails closed on a present-but-corrupt cell file and on a missing cell', () => {
+  const file = path.join(root, '.bee', 'cells', 'upd-corrupt.json');
+  fs.writeFileSync(file, '{ not json');
+  assertThrows(() => updateCell(root, 'upd-corrupt', { title: 'x' }), 'not valid JSON', 'corrupt cell refused');
+  assert(fs.readFileSync(file, 'utf8') === '{ not json', 'corrupt file untouched');
+  fs.rmSync(file);
+  assertThrows(() => updateCell(root, 'upd-nope', { title: 'x' }), 'not found', 'missing cell refused');
+});
+
+check('updateCell re-checks the standard/high-risk truths invariant on the merged result', () => {
+  addCell(root, makeCell('upd-4', { lane: 'standard', must_haves: { truths: ['t1'] } }));
+  assertThrows(
+    () => updateCell(root, 'upd-4', { must_haves: { truths: [] } }),
+    'truths',
+    'emptied truths refused',
+  );
+  const ok = updateCell(root, 'upd-4', { must_haves: { truths: ['t1', 't2'] } });
+  assert(ok.must_haves.truths.length === 2, 'valid must_haves patch lands');
+  assertThrows(
+    () => updateCell(root, 'upd-1', { lane: 'standard' }),
+    'truths',
+    'lane upgrade without truths refused',
+  );
+});
+
+check('bee_cells.mjs update CLI: --file works one-line; unknown flag and missing --id refuse', () => {
+  const cliPath = fileURLToPath(new URL('../bee_cells.mjs', import.meta.url));
+  addCell(root, makeCell('upd-cli-1'));
+  const patchFile = path.join(root, 'upd-cli-patch.json');
+  fs.writeFileSync(patchFile, JSON.stringify({ title: 'CLI updated title' }));
+  const ok = spawnSync(process.execPath, [cliPath, 'update', '--id', 'upd-cli-1', '--file', patchFile], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  assert(ok.status === 0, `update CLI exits 0, got ${ok.status}: ${ok.stderr}`);
+  assert(ok.stdout.includes('Updated upd-cli-1'), 'one-line confirmation printed');
+  assert(readCell(root, 'upd-cli-1').title === 'CLI updated title', 'patch landed via CLI');
+  const badFlag = spawnSync(
+    process.execPath,
+    [cliPath, 'update', '--id', 'upd-cli-1', '--file', patchFile, '--dry-run', 'x'],
+    { cwd: root, encoding: 'utf8' },
+  );
+  assert(badFlag.status !== 0, 'unknown flag refuses');
+  const noId = spawnSync(process.execPath, [cliPath, 'update', '--file', patchFile], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  assert(noId.status !== 0, 'missing --id refuses');
 });
 
 // ─── cells: gate-locked claiming + deps ─────────────────────────────────────

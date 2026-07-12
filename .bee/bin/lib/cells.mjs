@@ -128,6 +128,126 @@ export function addCell(root, cell) {
   return writeCell(root, normalized);
 }
 
+// ─── updateCell — door-validated in-place revision (cells-update-verb) ─────
+// Validation repair loops legitimately revise a cell after creation (a plan
+// checker or cell reviewer prescribes a fix). Before this verb the only path
+// was rule 11's hand-edit fallback, which renders full JSON diffs into the
+// user's working view — the exact noise the CLI-owned-state contract
+// (decision bb4bb18e) removed for state.json/backlog.jsonl.
+//
+// The field list is derived FROM the validator map (critical pattern
+// 20260710: a boundary that lists names leaks the field you forgot — an
+// unmapped key is a refusal, not a pass-through). Frozen surfaces are named
+// in the refusal so the caller learns the right verb: status/trace belong to
+// claim/verify/cap/block/drop, tier to the tier verb, id/feature to nothing.
+
+const UPDATE_FIELD_VALIDATORS = {
+  title: (v) => (typeof v === 'string' && v.trim() ? null : 'must be a non-empty string'),
+  action: (v) => (typeof v === 'string' && v.trim() ? null : 'must be a non-empty string'),
+  verify: (v) => (typeof v === 'string' && v.trim() ? null : 'must be a non-empty string'),
+  files: (v) => (isStringArray(v) ? null : 'must be an array of strings'),
+  read_first: (v) => (isStringArray(v) ? null : 'must be an array of strings'),
+  deps: (v) => (isStringArray(v) ? null : 'must be an array of strings'),
+  decisions: (v) => (isStringArray(v) ? null : 'must be an array of strings'),
+  must_haves: (v) =>
+    v && typeof v === 'object' && !Array.isArray(v) ? null : 'must be a JSON object',
+  behavior_change: (v) => (typeof v === 'boolean' ? null : 'must be a boolean'),
+  lane: (v) => (LANES.includes(v) ? null : `must be one of: ${LANES.join(', ')}`),
+  pbi: (v) => (v === null || typeof v === 'string' ? null : 'must be a string or null'),
+};
+
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+const UPDATE_FROZEN_HINTS = {
+  id: 'a cell id is permanent — add a new cell instead',
+  feature: 'a cell never moves between features — drop and re-add instead',
+  status: 'status moves only through claim/verify/cap/block/drop',
+  trace: 'the trace is the frozen audit record — claim/verify/cap own it',
+  tier: 'use the tier verb (bee_cells.mjs tier --id ID --tier T)',
+};
+
+// Strict read for the update path only (readReviewStrict/readStateStrict
+// pattern): fail-open reads elsewhere are untouched; a write verb must never
+// merge a patch into defaults over a present-but-corrupt file.
+function readCellStrictForUpdate(root, id) {
+  const file = cellFile(root, id);
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      throw new Error(`updateCell: cell "${id}" not found.`);
+    }
+    throw new Error(
+      `updateCell: could not read "${file}" (${err && err.code ? err.code : err}) — refusing to touch it. FIX: inspect/restore the file, then retry.`,
+    );
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `updateCell: "${file}" exists but is not valid JSON — refusing to merge a patch over a corrupt cell. FIX: inspect/restore the file (e.g. "git checkout -- ${path.relative(root, file)}"), then retry.`,
+    );
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(
+      `updateCell: "${file}" exists but is not a JSON object — refusing to merge a patch over a corrupt cell.`,
+    );
+  }
+  return parsed;
+}
+
+export function updateCell(root, id, patch) {
+  if (!id || !ID_PATTERN.test(String(id))) {
+    throw new Error(`updateCell: invalid id "${id}".`);
+  }
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    throw new Error('updateCell: patch must be a JSON object.');
+  }
+  const keys = Object.keys(patch);
+  if (keys.length === 0) {
+    throw new Error('updateCell: patch is empty — nothing to update.');
+  }
+  for (const key of keys) {
+    const validator = UPDATE_FIELD_VALIDATORS[key];
+    if (!validator) {
+      const hint = UPDATE_FROZEN_HINTS[key];
+      throw new Error(
+        hint
+          ? `updateCell: field "${key}" is frozen — ${hint}. The whole patch is refused; the cell is untouched.`
+          : `updateCell: unknown field "${key}" — updatable fields: ${Object.keys(UPDATE_FIELD_VALIDATORS).join(', ')}. The whole patch is refused; the cell is untouched.`,
+      );
+    }
+    const problem = validator(patch[key]);
+    if (problem) {
+      throw new Error(
+        `updateCell: field "${key}" ${problem}. The whole patch is refused; the cell is untouched.`,
+      );
+    }
+  }
+
+  const cell = readCellStrictForUpdate(root, id);
+  if (cell.status !== 'open' && cell.status !== 'blocked') {
+    throw new Error(
+      `updateCell: cell "${id}" has status "${cell.status}" — only open or blocked cells are updatable (claimed = a live worker owns it; capped/dropped = frozen audit). The cell is untouched.`,
+    );
+  }
+
+  const merged = { ...cell, ...patch };
+  if (merged.lane === 'standard' || merged.lane === 'high-risk') {
+    const truths = merged.must_haves && merged.must_haves.truths;
+    if (!Array.isArray(truths) || truths.length === 0) {
+      throw new Error(
+        `updateCell: lane "${merged.lane}" requires non-empty must_haves.truths — the patch would leave "${id}" without them. The cell is untouched.`,
+      );
+    }
+  }
+  return writeCell(root, merged);
+}
+
 function depsAllCapped(root, cell) {
   const missing = [];
   for (const dep of cell.deps || []) {

@@ -17,6 +17,10 @@
 //      red_failure_evidence in the evidence JSON, or a deliberate_exceptions note
 //      for a brand-new surface — decision 0009. Evidence lives in the cell trace,
 //      the single source; reports/<cell>.md links it, never re-embeds the JSON.)
+//   node .bee/bin/bee_cells.mjs update --id ID --file patch.json | --stdin [--json]
+//     (door-validated in-place revision for validation-repair loops: only
+//      open|blocked cells; plan fields only — id/feature/status/trace/tier and
+//      unknown keys refuse the whole patch; corrupt cell files fail closed)
 //   node .bee/bin/bee_cells.mjs block --id ID --reason R [--json]
 //   node .bee/bin/bee_cells.mjs drop --id ID --reason R [--json]
 //   node .bee/bin/bee_cells.mjs tier --id ID --tier extraction|generation|ceiling [--json]
@@ -29,6 +33,7 @@ import {
   readyCells,
   readCell,
   addCell,
+  updateCell,
   claimCell,
   recordVerify,
   capCell,
@@ -128,6 +133,30 @@ function run(args) {
       const added = addCell(root, cell);
       return { result: added, text: `Added ${summarize(added)}` };
     }
+    case 'update': {
+      // Strict flag validation (workers-prune discipline): a typoed flag on a
+      // mutating verb must refuse, never silently no-op into a bad patch.
+      for (const name of Object.keys(flags)) {
+        if (!['id', 'file', 'stdin'].includes(name)) {
+          throw new Error(`update: unknown flag --${name}. Use: --id ID --file patch.json | --stdin [--json].`);
+        }
+      }
+      const id = requireFlag(flags, 'id');
+      let text;
+      if (flags.stdin === true) text = fs.readFileSync(0, 'utf8');
+      else text = readFileText(requireFlag(flags, 'file'), 'patch');
+      let patch;
+      try {
+        patch = JSON.parse(text);
+      } catch {
+        throw new Error('update: patch input is not valid JSON.');
+      }
+      const updated = updateCell(root, id, patch);
+      return {
+        result: updated,
+        text: `Updated ${updated.id} (${Object.keys(patch).join(', ')}).`,
+      };
+    }
     case 'claim': {
       const cell = claimCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'worker'));
       return { result: cell, text: `Claimed ${cell.id} for ${cell.trace.worker}.` };
@@ -213,7 +242,7 @@ function run(args) {
     }
     default:
       throw new Error(
-        `Unknown command "${args.command || '(missing)'}". Use: list, ready, show, add, claim, verify, cap, block, drop, tier, judge.`,
+        `Unknown command "${args.command || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge.`,
       );
   }
 }
