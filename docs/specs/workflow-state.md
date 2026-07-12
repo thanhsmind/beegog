@@ -1,7 +1,7 @@
 ---
 area: workflow-state
 updated: 2026-07-12
-sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12)]
+sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12)]
 decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015)]
 coverage: partial
 ---
@@ -96,6 +96,21 @@ runs only on user request. The recommended-next-step line never proposes
 starting a review by itself. A range already covered by an approved, unchanged
 session is answered "reviewed (covered by that session)" so no second review
 is dispatched for unchanged content.
+
+**B7 — Cell plans are revisable in place, execution records never.** A unit of
+work's PLAN fields (title, action, scope files, reading list, dependencies,
+cited decisions, acceptance contracts, verify command, lane, behavior flag)
+can be revised after creation through one guarded operation — the normal path
+when a pre-execution review prescribes a fix. The door: only open or blocked
+units accept revision (claimed = a live worker owns it; capped/dropped = the
+frozen audit record); identity (id, feature), status, the execution trace, and
+the model tier are refused by name with a hint at the owning operation; an
+unknown field refuses the whole patch (the updatable list is derived from the
+validator map, so a forgotten field is a refusal, not a leak); a
+present-but-corrupt record refuses loudly with the file untouched; a revision
+that would leave a standard/high-risk unit without acceptance truths is
+refused. Observers see either the old plan or the fully revised plan — never a
+partial merge.
 
 ## Actors & Access
 
@@ -204,6 +219,10 @@ is dispatched for unchanged content.
   and `skills/bee-hive/scripts/onboard_bee.mjs` (`staleAdvisorNotices`).
   Evidence: fanout-delegation cells fanout-1/fanout-4 (commits 0056eda,
   79d96df).
+- Cell revision: `updateCell` + `UPDATE_FIELD_VALIDATORS`/`UPDATE_FROZEN_HINTS`
+  in `skills/bee-hive/templates/lib/cells.mjs`; CLI `bee_cells.mjs update --id ID
+  --file patch.json | --stdin` (byte-mirrored to `.bee/bin/`). Evidence: cell
+  `.bee/cells/cuv-1.json` (commit 127abb0), 7 suite checks.
 - Review records: `.bee/reviews/<id>.json` (sessions) + `.bee/review-candidates.jsonl`
   (ledger), CLI `bee_reviews.mjs` (create/list/show/record/candidate add/
   candidates/status), lib `skills/bee-hive/templates/lib/reviews.mjs`
