@@ -1321,6 +1321,7 @@ const EXPECTED_STATE_EXPORTS = [
   'hasStaleAdvisorKey',
   'modelForTier',
   'resolveTier',
+  'resolveAdvisor',
   'startFeature',
 ];
 
@@ -1501,6 +1502,149 @@ check('review slot: opus default, generation fallback, cli allowed, effort knob'
     assert(adv.type === 'cli' && adv.command.includes('gpt-5.5'), 'review slot accepts an external executor');
   } finally {
     fs.rmSync(rRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── advisor slot (D2, advisor feature) ──────────────────────────────────────
+// A separate normalize path from CONFIGURABLE_SLOTS/CONFIGURABLE_TIERS
+// (decision 0015 collision avoided — the ceiling tier stays unconfigured and
+// `advisor` is never added as a tier or a resolveTier-recognized slot).
+// resolveAdvisor NEVER returns a budget type and NEVER falls back to
+// generation: null means "no advisor" (D2), unlike the review slot.
+
+check('resolveAdvisor: unset -> null, string/object/cli shapes resolve, never falls back to generation, never budget', () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-advisor-'));
+  fs.mkdirSync(path.join(aRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(aRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  const { resolveAdvisor, CONFIGURABLE_SLOTS } = stateModuleExports;
+  try {
+    // (a) unset slot -> null (no advisor configured; default models carry no advisor key)
+    assert(resolveAdvisor(aRoot) === null, 'unset advisor slot resolves to null');
+    assert(resolveAdvisor(aRoot, 'codex') === null, 'unset advisor slot resolves to null on codex too');
+
+    // (b) string shape -> {type:'model', model}
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: 'opus' } },
+    });
+    const strAdv = resolveAdvisor(aRoot);
+    assert(strAdv && strAdv.type === 'model' && strAdv.model === 'opus', `string advisor slot resolves to a model — got ${JSON.stringify(strAdv)}`);
+    assert(readConfig(aRoot).models.claude.advisor === 'opus', 'normalized map carries the advisor slot');
+
+    // (c) {model, effort} shape passes effort through
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: { model: 'opus', effort: 'xhigh' } } },
+    });
+    const effAdv = resolveAdvisor(aRoot);
+    assert(
+      effAdv && effAdv.type === 'model' && effAdv.model === 'opus' && effAdv.effort === 'xhigh',
+      `advisor slot carries model + effort — got ${JSON.stringify(effAdv)}`,
+    );
+
+    // (d) cli shape -> {type:'cli', command}
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: { kind: 'cli', command: 'codex exec -m gpt-5.5 advisor' } } },
+    });
+    const cliAdv = resolveAdvisor(aRoot);
+    assert(
+      cliAdv && cliAdv.type === 'cli' && cliAdv.command.includes('gpt-5.5'),
+      `advisor slot accepts an external executor — got ${JSON.stringify(cliAdv)}`,
+    );
+
+    // (e) cli shape without a command -> null (never a bogus advisor)
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: { kind: 'cli' } } }, // missing command
+    });
+    assert(resolveAdvisor(aRoot) === null, 'cli advisor without a command resolves to null');
+
+    // (f) junk shapes -> null
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: 42 } },
+    });
+    assert(resolveAdvisor(aRoot) === null, 'a junk advisor value (number) resolves to null');
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: {} } },
+    });
+    assert(resolveAdvisor(aRoot) === null, 'a junk advisor value (empty object) resolves to null');
+
+    // (g) explicit null -> null, and crucially NEVER falls back to generation
+    // (D2 — unlike the review slot). generation is configured to something
+    // else so a fallback would be observable if it happened.
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: null, generation: 'sonnet' } },
+    });
+    const nullAdv = resolveAdvisor(aRoot);
+    assert(
+      nullAdv === null,
+      `explicit null advisor slot resolves to null, never budget/generation fallback — got ${JSON.stringify(nullAdv)}`,
+    );
+
+    // (h) unset advisor slot alongside a configured generation tier still
+    // resolves to null — no fallback path exists at all for this slot.
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { generation: 'sonnet' } },
+    });
+    assert(resolveAdvisor(aRoot) === null, 'no advisor key at all still resolves to null beside a configured generation tier');
+
+    // (i) resolveTier's existing returns for extraction/generation/ceiling/review
+    // stay byte-unchanged when an advisor slot is present alongside them, and
+    // `advisor` is never added to CONFIGURABLE_SLOTS/CONFIGURABLE_TIERS (0015).
+    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: 'opus', extraction: 'haiku', generation: 'sonnet', review: 'opus' } },
+    });
+    assert(resolveTier(aRoot, 'ceiling').type === 'inherit', 'ceiling stays inherit with an advisor slot present');
+    assert(
+      resolveTier(aRoot, 'extraction').type === 'model' && resolveTier(aRoot, 'extraction').model === 'haiku',
+      'extraction unaffected by advisor slot',
+    );
+    assert(
+      resolveTier(aRoot, 'generation').type === 'model' && resolveTier(aRoot, 'generation').model === 'sonnet',
+      'generation unaffected by advisor slot',
+    );
+    assert(
+      resolveTier(aRoot, 'review').type === 'model' && resolveTier(aRoot, 'review').model === 'opus',
+      'review unaffected by advisor slot',
+    );
+    assert(!CONFIGURABLE_SLOTS.includes('advisor'), 'advisor is never added to CONFIGURABLE_SLOTS (0015 collision)');
+    assert(!CONFIGURABLE_TIERS.includes('advisor'), 'advisor is never added to CONFIGURABLE_TIERS (0015 collision)');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+check('advisor slot vs top-level stale advisor key: the nested models.<runtime>.advisor slot resolves normally while a stale TOP-LEVEL advisor key is independently warned', () => {
+  const bRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-advisor-stale-'));
+  fs.mkdirSync(path.join(bRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(bRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  const { resolveAdvisor, hasStaleAdvisorKey, STALE_ADVISOR_KEY_WARNING: warningText } = stateModuleExports;
+  try {
+    writeJsonAtomic(path.join(bRoot, '.bee', 'config.json'), {
+      advisor: { enabled: true, at: ['execution'], model: 'opus' }, // stale top-level key
+      models: { claude: { advisor: 'opus' } }, // new nested slot, same repo
+    });
+    assert(
+      hasStaleAdvisorKey(bRoot) === true,
+      'a stale TOP-LEVEL advisor key is still detected even when a nested advisor slot is also configured',
+    );
+    const resolved = resolveAdvisor(bRoot);
+    assert(
+      resolved && resolved.type === 'model' && resolved.model === 'opus',
+      'the nested models.claude.advisor slot resolves normally despite the stale top-level key',
+    );
+    assert(!('advisor' in readConfig(bRoot)), 'the stale top-level advisor key is stripped from readConfig as before');
+    assert(readConfig(bRoot).models.claude.advisor === 'opus', 'the nested advisor slot survives inside the normalized models map');
+
+    // A nested advisor slot ALONE (no top-level stale key) reports false.
+    writeJsonAtomic(path.join(bRoot, '.bee', 'config.json'), {
+      models: { claude: { advisor: 'opus' } },
+    });
+    assert(hasStaleAdvisorKey(bRoot) === false, 'a nested advisor slot alone (no top-level key) is not a stale key');
+
+    // The warning copy explicitly names the top-level key so it cannot be
+    // read as covering models.<runtime>.advisor.
+    assert(/top-level/i.test(warningText), `STALE_ADVISOR_KEY_WARNING names the top-level key explicitly — got: ${warningText}`);
+    assert(/models\./.test(warningText), `STALE_ADVISOR_KEY_WARNING mentions the models.<runtime>.advisor slot to disambiguate — got: ${warningText}`);
+  } finally {
+    fs.rmSync(bRoot, { recursive: true, force: true });
   }
 });
 

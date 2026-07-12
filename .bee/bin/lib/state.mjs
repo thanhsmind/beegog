@@ -69,6 +69,14 @@ export const CONFIGURABLE_TIERS = ['extraction', 'generation'];
 // stronger than generation catches what the implementer's own model misses.
 // null → falls back to the generation tier.
 export const CONFIGURABLE_SLOTS = [...CONFIGURABLE_TIERS, 'review'];
+// Decision D2 (advisor feature) — `advisor` is normalized alongside the
+// configurable slots but is deliberately NOT one of them: CONFIGURABLE_SLOTS
+// stays exactly [extraction, generation, review] so resolveTier's slot gate
+// and its review-falls-back-to-generation semantics never apply to it
+// (decision 0015 collision avoided — the ceiling tier stays unconfigured and
+// `advisor` is not a tier either). Only normalizeModels loops this extended
+// list; resolveAdvisor (below, beside resolveTier) is the sole reader.
+const MODEL_NORMALIZE_SLOTS = [...CONFIGURABLE_SLOTS, 'advisor'];
 // Decision 0021 (P17) — per-slot reasoning effort, applied where the runtime
 // has a per-agent effort switch; ignored (recorded only) where it does not.
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -162,7 +170,7 @@ function normalizeModels(raw) {
     for (const rt of RUNTIMES) {
       const src = raw[rt];
       if (!src || typeof src !== 'object' || Array.isArray(src)) continue;
-      for (const slot of CONFIGURABLE_SLOTS) {
+      for (const slot of MODEL_NORMALIZE_SLOTS) {
         const value = normalizeTierValue(src[slot]);
         if (value !== undefined) out[rt][slot] = value;
       }
@@ -322,8 +330,12 @@ export function hookEnabled(root, name) {
 // D1 — one shared warning line for both surfacers (bee_status.mjs and
 // onboard_bee.mjs) so a stale `advisor` key reads identically wherever it is
 // noticed. Warn only, never error: readConfig above already tolerates the key.
+// Names the TOP-LEVEL key explicitly (advisor feature, D2 open question) so
+// it cannot be misread as covering the new models.<runtime>.advisor slot,
+// which is a different, still-valid config path resolved by resolveAdvisor.
 export const STALE_ADVISOR_KEY_WARNING =
-  'advisor mode was removed in 0.1.23; the advisor key in .bee/config.json is ignored — delete it.';
+  'advisor mode was removed in 0.1.23; the top-level advisor key in .bee/config.json is ignored — delete it. ' +
+  '(This does not affect the models.<runtime>.advisor slot, which is separate and still valid.)';
 
 export function hasStaleAdvisorKey(root) {
   const raw = readJson(path.join(root, '.bee', 'config.json'), null);
@@ -377,6 +389,33 @@ export function resolveTier(root, slot, runtime = 'claude') {
       : { type: 'model', model: value.model };
   }
   return { type: 'budget' };
+}
+
+/**
+ * Resolve the advisor slot (decision D2, advisor feature) for a runtime:
+ * `models.<runtime>.advisor`, the `review`-slot shape reused for a new
+ * purpose. Unlike resolveTier, this NEVER returns a budget type and NEVER
+ * falls back to another tier — null unambiguously means "no advisor" (unset,
+ * invalid, or a cli shape missing its command), which is exactly what a
+ * degenerate-consult check (D2/D3) needs to skip straight to `[BLOCKED]`.
+ * Deliberately NOT routed through resolveTier: `advisor` is not in
+ * CONFIGURABLE_SLOTS (decision 0015 collision avoided), so resolveTier would
+ * silently coerce an unrecognized slot to 'generation' — the one behavior
+ * this function must never exhibit.
+ */
+export function resolveAdvisor(root, runtime = 'claude') {
+  const { models } = readConfig(root);
+  const rt = RUNTIMES.includes(runtime) ? runtime : 'claude';
+  const value = models[rt] ? models[rt].advisor : undefined;
+  if (value == null) return null; // unset, absent runtime, or explicit null -> no advisor
+  if (typeof value === 'string') return { type: 'model', model: value };
+  if (value.kind === 'cli') return { type: 'cli', command: value.command };
+  if (typeof value.model === 'string') {
+    return value.effort
+      ? { type: 'model', model: value.model, effort: value.effort }
+      : { type: 'model', model: value.model };
+  }
+  return null;
 }
 
 // ─── startFeature: guarded atomic feature start (decision D2, plan.md test ──
