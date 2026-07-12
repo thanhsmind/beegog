@@ -1008,10 +1008,20 @@ check('a call missing a required parameter returns a structured {ok:false,error}
 });
 
 check('an unrecognized command returns a nearest-match suggestion, not a bare not-found', () => {
-  const result = runBee(['cells', 'lst', '--json']);
+  // Retargeted off "cells lst" (dispatcher-unify du-4): now that "cells" is
+  // one of the 9 GROUP_USAGE_FALLBACKS groups (DB3 — cells is shimmed and
+  // must reproduce bee_cells.mjs's own legacy "Use: ..." text for ANY
+  // unrecognized cells.* command, not just a bare group), that probe now
+  // legitimately hits the group fallback instead of the generic nearest-
+  // match path — a deliberate, cell-mandated behavior change, not a
+  // weakening. A single unregistered top-level token ("staus", a typo of
+  // "status", the one dot-free registry entry) has no group of its own to
+  // fall back to, so it still exercises the exact same generic
+  // nearestCommandName suggestion path end-to-end.
+  const result = runBee(['staus', '--json']);
   assert(result.status === 1, `expected exit 1, got ${result.status}`);
   const parsed = JSON.parse(result.stdout);
-  assert(parsed.ok === false && parsed.suggestion === 'cells.list', `expected suggestion "cells.list", got ${result.stdout}`);
+  assert(parsed.ok === false && parsed.suggestion === 'status', `expected suggestion "status", got ${result.stdout}`);
 });
 
 check('a call shaped like a bee.mjs invocation with an unregistered command is denied with a structured error, never executed', () => {

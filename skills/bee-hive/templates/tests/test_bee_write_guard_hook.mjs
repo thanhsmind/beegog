@@ -55,6 +55,10 @@ function assert(condition, message) {
 // directly), so a realistic fixture must vendor real copies there — the
 // exact prerequisite this cell's own action names (validating iteration 1,
 // Blocker 4).
+// Must track command-registry.mjs's transitive lib imports: it imports
+// reviews.mjs (REVIEW_MODES), which in turn imports cells.mjs (readCell).
+// Missing either here throws at import time in the fixture root, which
+// makes the hook's own resolver fail open (2 denial tests regress to exit 0).
 const VENDORED_LIB_MODULES = [
   'fsutil.mjs',
   'state.mjs',
@@ -62,6 +66,8 @@ const VENDORED_LIB_MODULES = [
   'guards.mjs',
   'validate-args.mjs',
   'command-registry.mjs',
+  'reviews.mjs',
+  'cells.mjs',
 ];
 
 // A valid-shaped registry whose one entry throws when its `parameters`
@@ -191,6 +197,45 @@ check('a legacy bee_reservations.mjs boolean flag does not over-consume a traili
   // is well-formed, so this call is expected to be ALLOWED, proving the
   // parser does not over-consume trailing positional noise.
   assert(result.status === 0, `expected exit 0 (json is a no-value boolean flag), got ${result.status} (stderr: ${result.stderr})`);
+});
+
+check('a valid 3-token helper call (state worker add, longest-prefix resolution) passes schema validation (du-6)', () => {
+  const root = makeFixtureRoot();
+  const result = runHook(root, {
+    tool_name: 'Bash',
+    tool_input: { command: 'node .bee/bin/bee_state.mjs worker add --nickname w1 --cell c1 --json' },
+  });
+  assert(result.status === 0, `expected exit 0, got ${result.status} (stderr: ${result.stderr})`);
+});
+
+check('an invalid 3-token helper call is BLOCKED with the schema-guard message, not silently fail-open (du-6)', () => {
+  const root = makeFixtureRoot();
+  const result = runHook(root, {
+    tool_name: 'Bash',
+    tool_input: {
+      // Before the fix, resolveCliCommandName's hardcoded 2-token shape
+      // resolved this to the bogus name "state.worker" (no such registry
+      // entry), so check (d) broke out and fail-opened at exit 0 — losing
+      // schema validation entirely for every 3-token command. --json is
+      // boolean-typed; giving it a non-boolean value is what the extended
+      // registry's own validate() catches once resolution correctly lands
+      // on "state.worker.add".
+      command: 'node .bee/bin/bee_state.mjs worker add --nickname w1 --cell c1 --json=notaboolean',
+    },
+  });
+  assert(result.status === 2, `expected exit 2, got ${result.status} (stderr: ${result.stderr})`);
+  assert(result.stderr.includes('bee CLI-shape guard'), `expected CLI-shape guard reason, got: ${result.stderr}`);
+  assert(result.stderr.includes('state.worker.add'), `expected the resolved 3-token command name, got: ${result.stderr}`);
+  assert(result.stderr.includes('field: json'), `expected the offending field named, got: ${result.stderr}`);
+});
+
+check('a valid 3-token dispatcher-shaped call (bee.mjs state worker add) passes schema validation (du-6)', () => {
+  const root = makeFixtureRoot();
+  const result = runHook(root, {
+    tool_name: 'Bash',
+    tool_input: { command: 'node .bee/bin/bee.mjs state worker add --nickname w1 --cell c1 --json' },
+  });
+  assert(result.status === 0, `expected exit 0, got ${result.status} (stderr: ${result.stderr})`);
 });
 
 check('an unrecognized (non-bee-shaped) Bash call is left alone by check (d)', () => {

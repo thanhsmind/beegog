@@ -57,6 +57,7 @@ import {
   readyCells,
   readCell,
   addCell,
+  addCells,
   updateCell,
   claimCell,
   recordVerify,
@@ -406,6 +407,18 @@ function handleCellsAdd(root, flags) {
     cell = JSON.parse(text);
   } catch {
     throw new Error('add: input is not valid JSON.');
+  }
+  // A JSON array is a batch: every cell validated before any is written
+  // (all-or-nothing), so one heredoc creates a whole slice in one call
+  // (ported from bee_cells.mjs's own add case, dispatcher-unify du-4 —
+  // the cells-batch-add regression the pinned test_lib "a JSON array on
+  // --stdin creates the whole slice in one call" check exercises).
+  if (Array.isArray(cell)) {
+    const added = addCells(root, cell);
+    return {
+      result: added,
+      text: added.map((c) => `Added ${summarizeCell(c)}`).join('\n'),
+    };
   }
   const added = addCell(root, cell);
   return { result: added, text: `Added ${summarizeCell(added)}` };
@@ -1262,7 +1275,31 @@ function feedbackUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: digest, count, collect, rank.`;
 }
 
+// Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
+// bee_reservations.mjs/bee_decisions.mjs are now shims, so their own
+// default-case "Unknown command ... Use: ..." messages (previously emitted
+// by each helper's own run() switch) must be reproduced byte-exact here —
+// the DA5 bijection probe (test_bee_cli.mjs) still spawns the shims
+// directly and parses this exact stderr line.
+function cellsUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge.`;
+}
+
+function reservationsUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: reserve, release, list, sweep.`;
+}
+
+function decisionsUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search.`;
+}
+
 const GROUP_USAGE_FALLBACKS = {
+  cells: cellsUsageFallback,
+  reservations: reservationsUsageFallback,
+  decisions: decisionsUsageFallback,
   state: stateUsageFallback,
   backlog: backlogUsageFallback,
   capture: captureUsageFallback,
