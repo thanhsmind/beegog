@@ -79,7 +79,7 @@
 - Create: `skills/bee-hive/templates/lib/validate-args.mjs` (schema validation used by both `bee.mjs` at dispatch time and `bee-write-guard.mjs` at PreToolUse time — one validator, two call sites, no duplicated logic)
 - Modify: `skills/bee-hive/scripts/onboard_bee.mjs` (vendor + hash-track the new files)
 - Modify: `hooks/bee-write-guard.mjs` (add the registry-shape check to its existing PreToolUse pass)
-- Modify: `AGENTS.template.md` (bootstrap step referencing `bee --help --json`)
+- Modify: `skills/bee-hive/templates/AGENTS.block.md` (bootstrap step referencing `bee --help --json`)
 - Modify: `docs/02-architecture.md`, `docs/07-contracts.md` (document the new CLI surface, the manifest shape, and the hash-change-detection behavior)
 
 ## Implementation steps
@@ -92,7 +92,7 @@
 6. Add manifest content-hash tracking; surface `manifest_changed` on the next call after a detected change.
 7. Extend `hooks/bee-write-guard.mjs`: reuse `validate-args.mjs` against any Bash call shaped like a `bee`/`bee_*.mjs` invocation; deny with the same structured correction on mismatch.
 8. Wire `onboard_bee.mjs --apply` to vendor `bee.mjs`, the registry, and the validator, with managed-hash drift detection.
-9. Update `AGENTS.template.md`'s bootstrap block to reference `bee --help --json` once, noting the `manifest_changed` hint replaces the need for a mandatory re-read every session.
+9. Update `skills/bee-hive/templates/AGENTS.block.md`'s bootstrap block to reference `bee --help --json` once, noting the `manifest_changed` hint replaces the need for a mandatory re-read every session.
 10. Keep the 4 existing entrypoints as thin wrappers around the same modules `bee.mjs` uses, so nothing currently referencing them breaks.
 
 ## Tests / validation

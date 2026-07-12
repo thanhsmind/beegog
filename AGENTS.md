@@ -17,6 +17,7 @@ Use `bee-hive` first in this repo unless you are resuming an already approved be
 4. If `.bee/HANDOFF.json` exists, **never auto-resume**. Surface the saved state to the user and wait for explicit confirmation.
 5. If `docs/history/learnings/critical-patterns.md` exists, read it before any planning or execution work.
 6. **Baseline gate:** if `.bee/config.json` records `commands.verify`, run it once per session before claiming any cell. A red baseline is surfaced to the user and becomes its own fix-first tiny cell — never build on red. If no commands are recorded, capture the host project's `setup/start/test/verify` into `.bee/config.json` `commands` at the first natural moment (exploring or onboarding).
+7. **Optional discovery:** `.bee/bin/bee.mjs` is a single dispatcher covering the same 4 command groups as the helpers below (`bee.mjs status`, `bee.mjs cells <action>`, `bee.mjs reservations <action>`, `bee.mjs decisions <action>`). Run `node .bee/bin/bee.mjs --help --json` any time to see the full command surface as a Claude-Code tool-schema-shaped manifest (`{name, invoke, description, parameters, examples, deprecated}`). This is a discovery aid available on request, not a mandatory every-session call — an MCP server wrapper and a mandatory per-session discovery step were both considered and explicitly deferred (no such mandatory mechanism existed before this, so nothing here replaces one). The 4 existing helpers keep working unchanged, invoked directly exactly as in steps 1–6.
 
 ## Chain and gates
 
@@ -63,8 +64,8 @@ The four gates are **human** gates. Never self-approve a gate, in any mode, incl
   backlog.jsonl       <- friction + grooming items
   cells/              <- one JSON file per cell: <feature>-<n>.json
   logs/hooks.jsonl    <- fail-open hook crash/audit log
-  bin/                <- vendored helpers: bee_status, bee_cells, bee_reservations, bee_decisions
-  bin/lib/            <- shared modules used by helpers and hooks
+  bin/                <- vendored helpers: bee_status, bee_cells, bee_reservations, bee_decisions, plus bee.mjs (unified dispatcher over the same 4 command groups)
+  bin/lib/            <- shared modules used by helpers, bee.mjs, and hooks
 
 docs/history/<feature>/    <- always: CONTEXT.md, plan.md, reports/; conditional (decision 0009): discovery.md/approach.md/implement-plan.md only for L2+ discovery or high-risk, else folded into plan.md sections
 docs/history/learnings/    <- critical-patterns.md + dated learnings
@@ -98,3 +99,48 @@ Before ending a substantial bee work chunk:
 3. If `commands.verify` is recorded, run it: end green, or end red only with a fix-first cell filed and the red result reported — never left silent.
 4. Mention remaining blockers, open questions, and the next action in the final response.
 <!-- BEE:END -->
+
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+This project is indexed by GitNexus as **beegog** (2981 symbols, 4819 relationships, 209 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+
+> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
+- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
+- NEVER commit changes without running `detect_changes()` to check affected scope.
+
+## Resources
+
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/beegog/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/beegog/clusters` | All functional areas |
+| `gitnexus://repo/beegog/processes` | All execution flows |
+| `gitnexus://repo/beegog/process/{name}` | Step-by-step execution trace |
+
+## CLI
+
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+
+<!-- gitnexus:end -->
