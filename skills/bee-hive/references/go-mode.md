@@ -1,6 +1,6 @@
 # Go Mode — Step-by-Step Reference
 
-Load this when executing go mode. Go mode is the full bee pipeline from raw feature request to merged, compounded learnings. It chains every skill in sequence with up to **4 human gates** (fewer when the opt-in gate-bypass switch is on — see the end of this file). Each gate protects the next irreversible commitment.
+Load this when executing go mode. Go mode is the full bee pipeline from raw feature request to compounded learnings, closing verified but `unreviewed` (decision 565e68d0). It chains every skill in sequence with up to **3 human gates** (fewer when the opt-in gate-bypass switch is on — see the end of this file). Each gate protects the next irreversible commitment. **Go mode never auto-enters independent review** (SPEC R1) — `bee-reviewing` and its Gate 4 are a separate, user-invoked flow layered over a completed scope; see the boxed note after the diagram.
 
 Trigger: `/go [feature]`, "run the full pipeline", or "go mode".
 
@@ -35,17 +35,26 @@ User: "/go [feature]"
        │
        ├── more approved work remains → return to STEP 3 for the next slice
        ▼
-[STEP 6] bee-reviewing        → P1/P2/P3, artifact verification, UAT (after final slice only)
+[STEP 6] bee-scribing         → docs/specs/<area>.md BA-grade sync, reading map (feature closes unreviewed)
        ▼
-[GATE 4] ← HARD STOP (never auto-merge)
+[STEP 7] bee-compounding      → docs/history/learnings/, decision log, review-candidate report
        ▼
-         bee-briefing (walkthrough) → walkthrough.md, implement-plan status → Shipped (standard/high-risk)
-       ▼
-[STEP 7] bee-scribing         → docs/specs/<area>.md BA-grade sync, reading map
-       ▼
-[STEP 8] bee-compounding      → docs/history/learnings/, decision log
-       ▼
-DONE
+DONE — verified, unreviewed, development continues
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Independent review is a SEPARATE, user-invoked flow, not a pipeline     │
+│ step (SPEC R1/R3, decision 565e68d0). Go mode never dispatches it       │
+│ automatically — not after the final slice, not at DONE. When the user   │
+│ explicitly asks for review (any time, any scope: this feature, a named  │
+│ batch, a commit range), invoke bee-reviewing over that immutable scope: │
+│ P1/P2/P3 findings, artifact verification, UAT, then [GATE 4] ← HARD     │
+│ STOP (never auto-merge) inside that session, followed by bee-briefing   │
+│ (walkthrough) for standard/high-risk. A merge/ship/release request      │
+│ while candidates sit unreviewed/stale reports the count + risk level    │
+│ and asks ONE question before ever spending a reviewer token (7.4/A9).   │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Pre-Pipeline: Bootstrap
@@ -109,7 +118,7 @@ Feasibility validated. Approve execution? (yes / review cells / no — revise pl
 
 Approval covers the **current slice only**. No → return to planning or validating.
 
-**GATE 4** — after reviewing the final slice:
+**GATE 4** — inside a user-invoked `bee-reviewing` session only (never at the end of go mode's default chain):
 
 ```text
 What was built: [the shipped change in one plain sentence].
@@ -126,7 +135,7 @@ Fix cells created for P1s run through swarming, then reviewing re-runs (targeted
 
 ## The Slice Loop
 
-After each slice's swarm completes: later approved work remains → return to Step 3 (planning prep for the next slice) then Step 4 (validating) then Gate 3 again. Final slice done → Step 6. Reviewing runs once, after the final slice.
+After each slice's swarm completes: later approved work remains → return to Step 3 (planning prep for the next slice) then Step 4 (validating) then Gate 3 again. Final slice done → Step 6 (bee-scribing) directly. `bee-reviewing` is never part of this loop — it is a separate flow the user invokes on demand, over whatever scope they choose, independent of slice boundaries.
 
 ## Fallback Paths
 
@@ -138,7 +147,7 @@ After each slice's swarm completes: later approved work remains → return to St
 
 ## Close-out
 
-After compounding: set state `phase: idle`, `feature: null`, `mode: null`, summary "Go mode complete for <feature>", and delete `.bee/HANDOFF.json` if present.
+After compounding: set state `phase: idle`, `feature: null`, `mode: null`, summary "Go mode complete for <feature>", and delete `.bee/HANDOFF.json` if present. Report the §9 completion line from `bee_status` (verified/unreviewed candidate count) — never state or imply the feature was reviewed unless a review session actually ran and approved it.
 
 ## Headless Go Mode
 
@@ -146,4 +155,6 @@ After compounding: set state `phase: idle`, `feature: null`, `mode: null`, summa
 
 ## Gate bypass in go mode (opt-in)
 
-Separate from headless. When `.bee/config.json` `gate_bypass: true` (set via `bee-bypass-gate`), go mode does not stop at Gates 1-3 for `tiny`/`small`/`standard` non-hard-gate work: at each, the agent takes the RECOMMENDATION, records the approval, logs a one-line audit decision, posts a short `⚡ auto-approved Gate N` line, and continues to the next step. The **safety floor is absolute** — `high-risk` lane or any hard-gate flag (auth, authorization, data loss, audit/security, external provider, validation removal, migration) stops for the human as normal; Gate 4 UAT and P1 always stop; secret reads always ask. Full rule: the Gate Presentation Contract in `routing-and-contracts.md`. With bypass off (the default), the four gates are never self-approved.
+Separate from headless. When `.bee/config.json` `gate_bypass: true` (set via `bee-bypass-gate`), go mode does not stop at Gates 1-3 for `tiny`/`small`/`standard` non-hard-gate work: at each, the agent takes the RECOMMENDATION, records the approval, logs a one-line audit decision, posts a short `⚡ auto-approved Gate N` line, and continues to the next step. The **safety floor is absolute** — `high-risk` lane or any hard-gate flag (auth, authorization, data loss, audit/security, external provider, validation removal, migration) stops for the human as normal; secret reads always ask. Full rule: the Gate Presentation Contract in `routing-and-contracts.md`. With bypass off (the default), Gates 1-3 are never self-approved.
+
+Gate 4 sits outside this entirely (SPEC R8, decision 565e68d0): bypass never creates or auto-approves a review session, so go mode reaching DONE never triggers it. If the user later invokes `bee-reviewing`, bypass may auto-approve the merge question only once P1 = 0 and every UAT item passed; any P1 or UAT fail/skip always stops for the human inside that session.

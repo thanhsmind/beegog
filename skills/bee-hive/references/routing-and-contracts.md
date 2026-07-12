@@ -12,7 +12,7 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | 4 | `bee-validating` | Reality gate, feasibility matrix, spikes, plan-checker, cell review. | Work shape is approved |
 | 5 | `bee-swarming` | Launch and tend bounded workers with reservations. | Gate 3 approved |
 | 6 | `bee-executing` | Bounded worker loop for one cell. | Spawned by swarming |
-| 7 | `bee-reviewing` | Parallel review gate with P1/P2/P3 findings. | Final slice complete |
+| 7 | `bee-reviewing` | Parallel review gate with P1/P2/P3 findings, user-invoked over a scope the user chooses. | User explicitly requests review (decision 565e68d0) — never automatic after a final slice or feature close |
 | 8 | `bee-scribing` | BA-grade tech-agnostic area specs: sync, capture, harvest. | Review approved; documenting any area (UI/API/job); a settled outcome must be kept |
 | 9 | `bee-compounding` | Capture durable learnings and decisions. | Scribing done or work abandoned |
 | 10 | `bee-grooming` | Entropy audit, debt hunt, approved kills. | Cleanup/audit requested; hive idle |
@@ -30,7 +30,7 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | (Re)generate or read a feature's implement plan or walkthrough | `bee-briefing` | Consolidates the truth artifacts into `docs/history/<feature>/implement-plan.md`, any phase; writes `walkthrough.md` post-Gate-4 for `standard`/`high-risk`; renders nothing for `tiny`/`spike` |
 | Research inside a scoped feature | `bee-planning` | Discovery L2/L3 invokes `bee-xia` in-chain |
 | "Just fix this" / small change | `bee-planning` | Route in tiny or small mode |
-| Review code | `bee-reviewing` | Load directly |
+| Review code | `bee-reviewing` | Load directly — only on an explicit review request (decision 565e68d0); never automatic after execution completes |
 | Document a screen/API/job/area; keep a settled outcome (rule agreed, behavior confirmed, value tuned); spec a legacy area | `bee-scribing` | Load directly, any phase — capture never waits for feature close |
 | Clean up / tech debt / audit | `bee-grooming` | Load directly |
 | Capture learnings | `bee-compounding` | Load directly |
@@ -104,10 +104,12 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 | validating | CONTEXT.md, discovery, approach, approved shape, cells | reality-gate report, feasibility matrix, spike results in `.bee/spikes/`, repaired cells |
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
 | executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `docs/history/<feature>/reports/` |
-| reviewing | diff, CONTEXT.md, plan.md, capped cells | P1/P2/P3 findings, backlog items, `residual-findings.md` fallback |
+| reviewing | user-selected immutable scope (a `bee_reviews` session — never triggered by phase or cell completion) | session findings (P1/P2/P3) and the Gate 4 decision recorded on that session, backlog items, `residual-findings.md` fallback |
 | scribing | `behavior_change` cells + verification evidence, CONTEXT.md, active decisions, UAT/worker reports, code + user interview (harvest) | `docs/specs/<area>.md` (BA-grade merge), `docs/specs/reading-map.md`, capture-mode decision log entries, state record |
 | compounding | feature history, traces, findings, commits, scribing state record | `docs/history/learnings/YYYYMMDD-<slug>.md`, critical-patterns promotions, decision log, backlog friction, state-layer guard verdict |
 | grooming | entropy inputs, backlog, traces, diffs | kill proposals, tiny/small cells, outcome records |
+
+**Recommended-next after execution (SPEC §11.5, decision 565e68d0):** once a feature's execution work is done, the chain hands off to `bee-scribing` then `bee-compounding` directly — `bee_status`'s `recommended_next` and the session preamble report the review-candidate count instead of proposing `bee-reviewing`. The feature closes truthfully `unreviewed`; independent review remains available on request at any later point, over any scope the user names.
 
 Every skill ends with an explicit handoff: `[Outcome]. Invoke bee-<next-skill> skill.`
 
@@ -163,7 +165,7 @@ When `config.gate_bypass` is `true`, at **Gate 1, 2, or 3**:
 1. **Safety floor — check first, and it is absolute.** If the feature's lane is `high-risk`, or the work carries any hard-gate flag (auth · authorization · data loss · audit/security · external provider · validation removal · database migration/schema change), the gate is **NOT** bypassed. Present it to the human normally, exactly as if bypass were off. Bypass covers only `tiny`/`small`/`standard` non-hard-gate work.
 2. Otherwise, do not ask. Instead: select the option the RECOMMENDATION favors; set `approved_gates.<gate>` in `.bee/state.json` (same write the human's "yes" would trigger); still write the machine-layer report to `docs/history/<feature>/reports/`; log a one-line audit entry — `node .bee/bin/bee_decisions.mjs log --decision "auto-approved Gate N (bypass): <choice>" --rationale "<the recommendation's why>"` — so the approval is never silent; then post a **short chat line** (not a question) — `⚡ auto-approved Gate N (bypass): <what/why in one plain sentence>` — and continue. The human sees what happened and can still interrupt.
 
-**Gate 4 is never fully bypassed.** UAT items (the SEE/CALL/RUN decisions) are always presented to the human, and any P1 finding always stops. The merge is auto-approved only when P1 = 0 **and** every UAT item was confirmed pass by the human; otherwise Gate 4 stops as normal.
+**Gate 4 is never fully bypassed, and bypass never creates a review session (SPEC R8, decision 565e68d0).** Gate 4 only exists once the user has explicitly invoked `bee-reviewing` over a scope; bypass cannot start that session on its own. Inside a running session, UAT items (the SEE/CALL/RUN decisions) are always presented to the human, and any P1 finding always stops. The merge is auto-approved only when P1 = 0 **and** every UAT item was confirmed pass by the human; otherwise Gate 4 stops as normal.
 
 **Privacy is never bypassed.** Reading secret-shaped files always requires explicit human approval, regardless of `gate_bypass`.
 

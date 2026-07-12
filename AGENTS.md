@@ -28,14 +28,14 @@ bee-hive
   -> bee-validating    [GATE 3] "Feasibility validated. Approve execution?"
   -> bee-swarming
   -> bee-executing
-  -> bee-reviewing     [GATE 4] P1 findings block merge; else "Review complete. Approve merge?"
-  -> bee-scribing      (BA spec sync: docs/specs/<area>.md, tech-agnostic)
-  -> bee-compounding
+  -> bee-scribing      (BA spec sync: docs/specs/<area>.md, tech-agnostic; feature closes unreviewed)
+  -> bee-compounding   (reports review candidate counts: verified/unreviewed/in review/reviewed/review stale)
+  on user request: bee-reviewing [GATE 4] "Review complete. Approve merge?" (P1 findings block merge) — independent review over a user-chosen scope; never launched automatically
   (on demand) bee-scribing — capture a settled rule/behavior/value; document/harvest any area (UI, API, job, integration)
   (on demand) bee-grooming
 ```
 
-The four gates are **human** gates. Never self-approve a gate, in any mode, including headless runs — **except** when the opt-in gate-bypass switch is on (`.bee/config.json` `gate_bypass: true`, set via the `bee-bypass-gate` skill): it auto-approves Gates 1-3 for `tiny`/`small`/`standard` work only. High-risk/hard-gate work, secret reads, and Gate 4 UAT are never bypassed. `bee_status` and the session preamble print `GATE BYPASS ON` whenever it is active.
+Independent review is user-invoked, not an automatic chain stage (decision 565e68d0): execution always closes through scribing and compounding, verified but `unreviewed`, and development continues. Gate 4 exists only inside a review session the user explicitly requested — never after an unreviewed feature close, and never for a merge/ship/release request that hasn't asked for review (report the unreviewed count and ask instead). Gates 1-3 are unchanged: never self-approve any gate, in any mode, including headless runs — **except** when the opt-in gate-bypass switch is on (`.bee/config.json` `gate_bypass: true`, set via the `bee-bypass-gate` skill): it auto-approves Gates 1-3 for `tiny`/`small`/`standard` work only. High-risk/hard-gate work, secret reads, and Gate 4 UAT are never bypassed, and bypass never creates or auto-approves a review session. `bee_status` and the session preamble print `GATE BYPASS ON` whenever it is active.
 
 ## Critical rules
 

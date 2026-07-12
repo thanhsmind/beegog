@@ -13,22 +13,25 @@ bee-hive
   -> bee-validating + bee-briefing (patch validation) [GATE 3] approve execution (reviews the brief)
   -> bee-swarming (+ bee-executing × N)
   -> more approved work remains? -> back to planning for the next slice
-  -> bee-reviewing                          [GATE 4] P1s block; else approve merge
-  -> bee-briefing (walkthrough)             (standard/high-risk: walkthrough.md, implement-plan status → Shipped)
-  -> bee-scribing                           (BA spec sync — state layer)
-  -> bee-compounding
+  -> bee-scribing                           (BA spec sync — state layer; feature closes unreviewed)
+  -> bee-compounding                        (candidate report: verified/unreviewed/in review/reviewed/review stale)
   (on demand, any time) bee-scribing        capture a settled outcome; harvest a legacy area
   (on demand, any time the hive is idle) bee-grooming
+
+  on user request, any time: bee-reviewing  [GATE 4] independent review over a user-chosen scope; P1s block; else approve merge
+    -> bee-briefing (walkthrough)           (standard/high-risk: walkthrough.md, implement-plan status → Shipped)
 ```
+
+Independent review is never a default pipeline stage (decision 565e68d0): execution always closes through scribing and compounding, verified but `unreviewed`, and further development is not blocked on it. `bee-reviewing` runs only when the user explicitly asks, over a scope of their choosing — this feature, a named batch, or a commit range.
 
 Gate wording (fixed, from khuym):
 
 - **Gate 1:** "Decisions locked. Approve CONTEXT.md before planning?"
 - **Gate 2:** "Work shape is ready. Approve before current-work preparation?"
 - **Gate 3:** "Feasibility validated. Approve execution?"
-- **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
+- **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?" — asked only inside a user-invoked `bee-reviewing` session (SPEC R8, decision 565e68d0), never automatically after any lane's execution completes.
 
-Lane exceptions (lane scaling v2, decision d02a6bc6): the `docs` lane has no gates; `tiny`/`small` merge Gates 2+3 into one shape+execution question, and `tiny` closes with a done-report instead of the Gate 4 merge question. A defect found in any lane's review still stops for the human.
+Lane exceptions (lane scaling v2, decision d02a6bc6): the `docs` lane has no gates; `tiny`/`small` merge Gates 2+3 into one shape+execution question. Every lane — `tiny` through `high-risk` — closes through Gates 1-3 by default and ends `unreviewed`; Gate 4 is never part of that default chain for any lane, it exists only inside an on-demand review session. A defect found in any review session still stops for the human.
 
 **Gate Presentation Contract** (owner feedback, dogfood): a gate is presented in two layers. The chat message is the plain-language layer only, in the user's language — *what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding* — followed by the fixed question. The full mechanical material (reality-gate tables, matrices, plan-checker findings, cell lists) goes to `docs/history/<feature>/reports/` and is linked, never pasted. Litmus: the user can restate what they are approving in their own words — a gate the user cannot restate is a dead gate that manufactures false confidence. Normative text in `bee-hive/references/routing-and-contracts.md`.
 
@@ -58,7 +61,7 @@ Every planning pass starts by classifying the work. Classification is **mechanic
 | `docs` | every touched file is knowledge, not runtime: `docs/`, specs, README, sample/example configs, plans | announce one line → write → format check → capture stub/decision if an outcome settled. No cells, no gates, no reviewers (lane scaling v2, decision d02a6bc6) |
 | `tiny` | 0–1 flags, ≤2 files, no API/data change, one direct task | short plan note → inline 2-min reality check → **one merged shape+execution gate** → solo in-session execution (one cell, no worker) → self-review + done-report (diff + fresh verify output; no merge question) → scribing sync if behavior changed → compound only if a lesson emerged |
 | `spike` | one yes/no proof decides whether the plan is real | spike cell in `.spikes/` → answer → return to planning |
-| `small` | 0–1 flags, ≤3 files, no gray areas | light plan → inline reality gate (no validating subagents) → merged shape+execution gate → solo in-session execution → one correctness reviewer → Gate 4 → scribing sync if behavior changed |
+| `small` | 0–1 flags, ≤3 files, no gray areas | light plan → inline reality gate (no validating subagents) → merged shape+execution gate → solo in-session execution → self-checks (no auto reviewer — the correctness reviewer moves inside an on-demand review session) → scribing sync if behavior changed |
 | `standard` | 2–3 flags, or story-sized behavior | full chain; phase plan or epic map, whichever explains the work honestly |
 | `high-risk` | 4+ flags **or any hard-gate flag** (auth, authorization, data loss, audit/security, external provider, validation removal) | epic map → current-story pack → mandatory feasibility spikes → slower Gate 3 → detailed traces |
 
@@ -121,7 +124,7 @@ Rule of use: **the least workflow that honestly protects the work**. A tiny fix 
 - **Preconditions:** Gate 3 approved; cells open and validated; reservations swept.
 - **Does:** wave analysis over the cell dependency graph (parallel within a wave, sequential across waves); assign exactly one cell per worker; spawn with the isolation contract — cell id, CONTEXT.md path, global constraints, reservation identity, status-token protocol, **nothing else, never session history**; pick the worker model by declared tier (compound-engineering): `extraction` = cheapest capable (retrieval, mechanical edits), `generation` = mid (implementation, test writing), `ceiling` = the orchestrator's own model (integration, architecture, final review) — state the model explicitly, and where the runtime can't select per-agent models, fall back to read budgets and output caps; record workers in `state.json`; tend results; rescue or re-dispatch `[BLOCKED]` with more context or a stronger tier; write HANDOFF at ~65% context.
 - **Never:** implement cells itself; let workers self-select; resolve file conflicts by "being careful" (fix reservations or cell scope instead); send routine mid-flight pings (silence is not failure).
-- **Handoff:** phase clean → next planning slice, or final slice done → "Invoke bee-reviewing."
+- **Handoff:** phase clean → next planning slice, or final slice done → "Invoke bee-scribing." `bee-reviewing` is never part of this handoff (SPEC R1/R3, decision 565e68d0) — it is a separate flow the user invokes on demand, over whatever scope they choose, at any later point.
 
 ### bee-executing (worker bee)
 
@@ -136,6 +139,8 @@ Loop: **Initialize → Accept assigned cell → Reserve → Implement → Verify
 - **Never:** edit outside reserved scope, handle multiple cells, wait silently, cap without verification.
 
 ### bee-reviewing (inspector bees)
+
+**On-demand only (SPEC R1/R7/R8, decision 565e68d0):** `bee-reviewing` never launches automatically — not after a final swarm slice, not after a feature closes, and not for a merge/ship/release request that hasn't explicitly asked for review (that case reports the unreviewed/stale count and risk level, then asks one question before spending any reviewer token — 7.4/A9). It runs only when the user names a scope: a feature, a named batch, or a commit range. Status vocabulary distinguishes `verified`, `unreviewed`, `in review`, `reviewed`, and `review stale` (R10) — a completed, verified change may sit `unreviewed` indefinitely without blocking further development.
 
 - **Does:**
   1. Dispatch specialist reviewers with isolated context (diff + CONTEXT.md + plan.md only): `code-quality`, `architecture`, `security`, `test-coverage` in parallel; `learnings-researcher` searches `docs/history/learnings/` for precedent related to the touched modules (compound-engineering); `learnings-synthesizer` runs after all of them.

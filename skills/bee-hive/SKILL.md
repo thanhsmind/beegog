@@ -58,6 +58,8 @@ Orient on: onboarding health, phase, mode, feature, gate states, cell counts, ac
 
 **Capture queue (decision 0017):** when `bee_status` reports pending capture stubs, offer the flush before new work — "N settlement(s) from a previous session await their spec merge — flush now (a few minutes) or after the current task?" One line, user chooses; the queue is never silently ignored and never silently dropped.
 
+**Review candidates (decision 565e68d0):** `bee_status --json` carries a `review` block — candidate counts by derived status (`unreviewed`/`in_review`/`reviewed`/`stale`) and any open review sessions. Independent review is user-invoked only (SPEC R1/R7): never self-dispatch a reviewer wave because candidates exist. When `high_risk_unreviewed > 0`, surface it plainly — a hard-gate change (auth, data loss, security, external provider) is sitting unreviewed — state the merge/release consequence and offer to start a review; do not label anything reviewed or approved until the user calls it.
+
 Then read `docs/history/learnings/critical-patterns.md` and surface recent active decisions (`node .bee/bin/bee_decisions.mjs active --recent 3`).
 
 **State layer:** when `docs/specs/` exists, note it in the orientation summary. Before working in any area, the reading order is **spec → decisions → history**: read `docs/specs/<area>.md` (what the area does now) before its code, decisions for the why, `docs/history/` only for archaeology. `docs/specs/reading-map.md` answers "where does X live" before any broad grep. When `docs/specs/` lacks `system-overview.md` or `reading-map.md`, offer a `bee-scribing` bootstrap pass to skeleton the missing file(s) — user-approved, never silent, never auto-run (D2 of harness10).
@@ -72,7 +74,8 @@ Then read `docs/history/learnings/critical-patterns.md` and surface recent activ
 | Research task, clear scope | `bee-planning` |
 | Small clear fix | `bee-planning` (tiny/small mode) |
 | Docs/spec/README/sample-only change | docs lane — announce, write, format-check, capture; no pipeline |
-| Review request | `bee-reviewing` |
+| Review request (explicit — "review this", "review today's work", "review feature A and B", "review diff X..Y") | `bee-reviewing` |
+| Merge/ship/release request while unreviewed or stale candidates exist | Report the candidate count + risk level, then ask ONE question: "Create a review session for this scope?" (SPEC 7.4/A9). Only an explicit yes dispatches `bee-reviewing` — never spawn a reviewer silently |
 | Document a screen/API/job/area; "ghi lại rule này"; a just-settled rule/behavior/value to keep; spec an existing feature | `bee-scribing` |
 | (Re)generate or read a feature's implement plan | `bee-briefing` |
 | Clean up / debt / audit | `bee-grooming` |
@@ -105,13 +108,17 @@ Use the least workflow that honestly protects the work. A tiny fix wearing epic 
 
 **Ceremony scales with the lane (lanes scale ceremony, never memory):**
 
+Review is on demand (SPEC R1/R3/R8, decision 565e68d0): no lane auto-dispatches a reviewer wave or asks Gate 4 after execution. Every lane below closes through scribing/compounding as `unreviewed`; a review session — and its Gate 4 — happens only when the user asks, over whatever scope they choose.
+
 | Lane | Plan | Validate | Execute | Review | Human stops |
 |---|---|---|---|---|---|
 | `docs` | none — announce one line | format check (parse/lint if applicable) | direct, in-session | none | 0 |
-| `tiny` | short `plan.md` direct note | 2-minute reality check inline, 0 ceremony subagents (I/O-offload workers exempt — Delegation contract) | direct, in-session (solo) | self-review + done-report (diff + fresh verify output) | 1 — the merged shape+execution gate |
-| `small` | short `plan.md` | inline reality gate + matrix, 0 ceremony subagents (I/O-offload workers exempt — Delegation contract); spike only if a blocking assumption demands it | direct, in-session (solo) | 1 correctness reviewer + self-checks | 2 — merged shape+execution gate, Gate 4 |
-| `standard` | full `plan.md` | plan-checker + cell reviewer | swarm workers | 4 core reviewers | 4 gates |
-| `high-risk` | `plan.md` + brief | persona panel | swarm workers | full wave + conditionals | 4 gates |
+| `tiny` | short `plan.md` direct note | 2-minute reality check inline, 0 ceremony subagents (I/O-offload workers exempt — Delegation contract) | direct, in-session (solo) | self-review + done-report (diff + fresh verify output) — unchanged, this is verification, not independent review | 1 — the merged shape+execution gate |
+| `small` | short `plan.md` | inline reality gate + matrix, 0 ceremony subagents (I/O-offload workers exempt — Delegation contract); spike only if a blocking assumption demands it | direct, in-session (solo) | self-checks only, no auto reviewer (the correctness reviewer moves inside an on-demand review session) | 2 — merged shape+execution gate, self-checks close-out |
+| `standard` | full `plan.md` | plan-checker + cell reviewer | swarm workers | on user request only: session panel scaled to scope risk (4 core reviewers) | 3 — Gates 1-3 |
+| `high-risk` | `plan.md` + brief | persona panel | swarm workers | on user request only: session panel scaled to scope risk (full wave + conditionals) | 3 — Gates 1-3 |
+
+**Gate 4 is additive, not counted above:** it is asked once, whenever a review session actually runs for that scope — never automatically at the end of a lane's default chain.
 
 **Docs lane:** the change is knowledge upkeep, same class as capture — announce one line ("docs lane: writing X"), write it, run a format check when one exists (JSON parses, markdown lints), log a decision/capture stub when the content encodes a settled outcome. No cells, no gates, no reviewers. If the target path is outside the write-guard allowlist (`.bee/, docs/, plans/, AGENTS.md`) the hook will block the idle write — fall back to the tiny fast path instead of fighting the guard.
 
@@ -126,7 +133,9 @@ Never skipped, never batched, never self-approved — including go mode and head
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
 
-Lane exceptions (Modes and Lanes table): `docs` lane has no gates; `tiny` and `small` merge Gates 2+3 into one shape+execution question, and `tiny` closes with a done-report instead of Gate 4. Every other lane asks all four, one at a time.
+**Gate 4 lives only inside a user-invoked review session (SPEC R8, decision 565e68d0).** It is asked when the user has explicitly called for independent review over a scope, never automatically after any lane's execution completes and never after an unreviewed feature close. Gate bypass never creates or auto-approves a review session — bypass covers Gates 1-3 only, and even inside a running session Gate 4's UAT items and any P1 always stop for the human.
+
+Lane exceptions (Modes and Lanes table): `docs` lane has no gates; `tiny` and `small` merge Gates 2+3 into one shape+execution question. Gates 1-3 are otherwise unchanged and asked one at a time; Gate 4 is never part of a lane's default chain for any lane, `tiny` through `high-risk` — it exists only inside an on-demand review session.
 
 **Presentation:** every gate is presented per the Gate Presentation Contract (`references/routing-and-contracts.md`): the chat message is the plain-language layer only — what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding, in the user's language — then the fixed question. The full mechanical report goes to `docs/history/<feature>/reports/` and is linked, never pasted. Litmus: the user can restate what they are approving in their own words.
 
