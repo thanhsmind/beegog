@@ -4391,6 +4391,257 @@ check('bee_reviews.mjs status: --feature filters the candidate set, and a repo w
   }
 });
 
+// ─── bee_status.mjs review integration (review-od-3, SPEC R3/R7/R10/§9/§11.5, ─
+// decision 565e68d0) ─────────────────────────────────────────────────────────
+// The POST_REVIEW_PHASES staleness warning ("past reviewing but gate review
+// still pending") is RETIRED — reaching scribing/compounding/compounding-
+// complete without Gate 4 is the normal truthful close under review-on-demand
+// (R3), not drift. In its place: a `review` block in --json (candidate counts
+// sourced from lib/reviews.mjs's own derivation, no second implementation
+// here), an informational §9 completion line in text render, a prominent R7
+// high-risk warning line, and a candidate-aware recommended_next that never
+// names bee-reviewing as an automatic next step (§11.5).
+
+function beeStatusModulePath() {
+  return fileURLToPath(new URL('../bee_status.mjs', import.meta.url));
+}
+
+function runBeeStatus(cwd, args) {
+  return spawnSync(process.execPath, [beeStatusModulePath(), ...args], { cwd, encoding: 'utf8' });
+}
+
+if (gitAvailable) {
+  check('bee_status.mjs --json review block distinguishes all four candidate statuses (unreviewed/in_review/reviewed/stale), lists open sessions, and flags a high-risk unreviewed candidate (R7/R10)', () => {
+    const dir = makeReviewGitRepo('bee-status-review-counts-');
+    try {
+      const sha1 = gitHead(dir);
+
+      // reviewed-then-stale: session covers feature "demo-old" at sha1,
+      // approved while sha1 is still the real HEAD (reviewed); a later
+      // unrelated commit advances HEAD past sha1, flipping the SAME
+      // candidate to stale without touching the session file (A8 mechanics).
+      createReview(dir, baseScope({ id: 'rev-old', included: [{ type: 'feature', id: 'demo-old' }], baseline: sha1, head: sha1 }));
+      recordOnReview(dir, 'rev-old', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+      addCandidate(dir, { feature: 'demo-old', head: sha1, mode: 'standard' });
+
+      const sha2 = gitCommit(dir, 'unrelated.txt', 'unrelated\n', 'advance head past rev-old');
+
+      // reviewed: a fresh session approved exactly at the current HEAD.
+      createReview(dir, baseScope({ id: 'rev-new', included: [{ type: 'feature', id: 'demo-new' }], baseline: sha2, head: sha2 }));
+      recordOnReview(dir, 'rev-new', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+      addCandidate(dir, { feature: 'demo-new', head: sha2, mode: 'standard' });
+
+      // in review: a pending (never approved) covering session.
+      createReview(dir, baseScope({ id: 'rev-open', included: [{ type: 'feature', id: 'demo-pending' }], baseline: sha2, head: sha2 }));
+      addCandidate(dir, { feature: 'demo-pending', head: sha2, mode: 'standard' });
+
+      // unreviewed: no covering session at all.
+      addCandidate(dir, { feature: 'no-session', head: sha2, mode: 'standard' });
+
+      // unreviewed + high-risk: no covering session, mode high-risk (R7).
+      addCandidate(dir, { feature: 'demo-risk', head: sha2, mode: 'high-risk' });
+
+      const result = runBeeStatus(dir, ['--json']);
+      assert(result.status === 0, `bee_status --json exited ${result.status} :: ${result.stderr}`);
+      const payload = JSON.parse(result.stdout);
+      assert(payload.review, 'status JSON carries a "review" block');
+      const c = payload.review.candidates;
+      assert(c.total === 5, `total counts every candidate, got ${c.total}`);
+      assert(c.unreviewed === 2, `two unreviewed candidates (no-session + demo-risk), got ${c.unreviewed}`);
+      assert(c.in_review === 1, `one in-review candidate, got ${c.in_review}`);
+      assert(c.reviewed === 1, `one reviewed candidate, got ${c.reviewed}`);
+      assert(c.stale === 1, `one stale candidate, got ${c.stale}`);
+      assert(
+        payload.review.open_sessions.includes('rev-open'),
+        `open_sessions lists the pending session, got ${JSON.stringify(payload.review.open_sessions)}`,
+      );
+      assert(
+        !payload.review.open_sessions.includes('rev-old') && !payload.review.open_sessions.includes('rev-new'),
+        'approved sessions are never listed as open',
+      );
+      assert(payload.review.high_risk_unreviewed === 1, `one high-risk unreviewed candidate, got ${payload.review.high_risk_unreviewed}`);
+
+      const text = runBeeStatus(dir, []);
+      assert(text.status === 0, 'text-mode status also exits 0');
+      assert(
+        /High-risk unreviewed: 1 high-risk candidate/.test(text.stdout),
+        `text render carries the prominent R7 high-risk warning line, got:\n${text.stdout}`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+} else {
+  console.log('SKIP  bee_status.mjs review candidate-count test (git binary not available in this environment)');
+}
+
+check('bee_status.mjs: a compounding-complete state with gate "review" pending produces NO staleness warning (R3 — the retired Gate-4-pending warning never fires); the §9 completion line renders in text instead, naming the unreviewed count', () => {
+  const dir = makeReviewRepo('bee-status-post-review-close-');
+  try {
+    writeState(dir, {
+      ...defaultState(),
+      phase: 'compounding-complete',
+      feature: 'demo',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    addCandidate(dir, { feature: 'demo', head: 'sha-close', mode: 'standard' }); // unreviewed: no session at all
+
+    const result = runBeeStatus(dir, ['--json']);
+    assert(result.status === 0, `bee_status --json exited ${result.status} :: ${result.stderr}`);
+    const payload = JSON.parse(result.stdout);
+
+    // Dry-run the negative regex against this fixture's own JSON text first
+    // (critical pattern 20260712) — proves the assertion below is a real
+    // negative, not an accidental match on unrelated fixture content.
+    const fixtureText = JSON.stringify(payload);
+    const retiredWarningPattern = /past reviewing but gate/;
+    assert(!retiredWarningPattern.test(fixtureText), 'sanity: the fixture itself does not coincidentally contain the retired warning phrase');
+
+    assert(
+      !payload.staleness_warnings.some((w) => retiredWarningPattern.test(w)),
+      `the retired Gate-4-pending warning must never fire again, got staleness_warnings=${JSON.stringify(payload.staleness_warnings)}`,
+    );
+    assert(payload.review.candidates.unreviewed === 1, `one unreviewed candidate in this fixture, got ${payload.review.candidates.unreviewed}`);
+
+    const text = runBeeStatus(dir, []);
+    assert(text.status === 0, 'text-mode status exits 0');
+    assert(
+      /Completed and verified; independent review not requested; 1 candidate\(s\) awaiting review\./.test(text.stdout),
+      `text render carries the exact §9 completion line, got:\n${text.stdout}`,
+    );
+    assert(!/past reviewing but gate/.test(text.stdout), 'text render never carries the retired warning phrase either');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_status.mjs: the §9 completion line only renders in a post-execution phase — it stays silent mid-swarm even with unreviewed candidates present, and stays silent post-execution with zero candidates', () => {
+  const dir = makeReviewRepo('bee-status-post-review-silent-');
+  try {
+    // swarming (not post-execution) + an unreviewed candidate -> no line.
+    addCandidate(dir, { feature: 'demo', head: 'sha-mid', mode: 'standard' });
+    const midSwarm = runBeeStatus(dir, []);
+    assert(midSwarm.status === 0, 'mid-swarm status exits 0');
+    assert(!/Completed and verified; independent review not requested/.test(midSwarm.stdout), 'the §9 line never renders outside a post-execution phase');
+
+    // compounding-complete + zero candidates -> no line either.
+    const emptyDir = makeReviewRepo('bee-status-post-review-silent-empty-');
+    try {
+      writeState(emptyDir, {
+        ...defaultState(),
+        phase: 'compounding-complete',
+        feature: 'demo',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+      });
+      const noCandidates = runBeeStatus(emptyDir, []);
+      assert(noCandidates.status === 0, 'compounding-complete with zero candidates exits 0');
+      assert(!/Completed and verified; independent review not requested/.test(noCandidates.stdout), 'the §9 line never renders when there are zero unreviewed candidates');
+    } finally {
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_status.mjs: the unknown-phase warning (decision 0004) still fires unchanged after the review-block wiring', () => {
+  const dir = makeReviewRepo('bee-status-unknown-phase-');
+  try {
+    writeState(dir, {
+      ...defaultState(),
+      phase: 'totally-invented-phase',
+      feature: 'demo',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    const result = runBeeStatus(dir, ['--json']);
+    assert(result.status === 0, `bee_status --json exited ${result.status} :: ${result.stderr}`);
+    const payload = JSON.parse(result.stdout);
+    assert(
+      payload.staleness_warnings.some((w) => /Unknown phase "totally-invented-phase"/.test(w)),
+      `the decision-0004 unknown-phase warning must still fire, got ${JSON.stringify(payload.staleness_warnings)}`,
+    );
+    assert(payload.review && payload.review.candidates, 'the review block is still present alongside the unknown-phase warning (never crashes)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_status.mjs: recommended_next after compounding-complete with unreviewed candidates reports the candidate count and never names "Invoke bee-reviewing" as the automatic next step (§11.5), even overriding a stale state.next_action that did', () => {
+  const dir = makeReviewRepo('bee-status-recommended-next-');
+  try {
+    writeState(dir, {
+      ...defaultState(),
+      phase: 'compounding-complete',
+      feature: 'demo',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      next_action: 'Invoke bee-reviewing for independent review.',
+    });
+    addCandidate(dir, { feature: 'demo', head: 'sha-next', mode: 'standard' });
+
+    const result = runBeeStatus(dir, ['--json']);
+    assert(result.status === 0, `bee_status --json exited ${result.status} :: ${result.stderr}`);
+    const payload = JSON.parse(result.stdout);
+    assert(!/Invoke bee-reviewing/.test(payload.recommended_next), `recommended_next must never propose bee-reviewing automatically, got "${payload.recommended_next}"`);
+    assert(/candidate/i.test(payload.recommended_next), `recommended_next mentions review candidates, got "${payload.recommended_next}"`);
+    assert(/1/.test(payload.recommended_next), `recommended_next carries the unreviewed count, got "${payload.recommended_next}"`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_status.mjs: a high-risk unreviewed candidate renders the prominent R7 warning line, and a repo with only non-high-risk candidates renders no such line', () => {
+  const dir = makeReviewRepo('bee-status-high-risk-');
+  try {
+    addCandidate(dir, { feature: 'demo', head: 'sha-risk', mode: 'high-risk' });
+    const withRisk = runBeeStatus(dir, ['--json']);
+    assert(withRisk.status === 0, `bee_status --json exited ${withRisk.status} :: ${withRisk.stderr}`);
+    const riskPayload = JSON.parse(withRisk.stdout);
+    assert(riskPayload.review.high_risk_unreviewed === 1, `high_risk_unreviewed counts the candidate, got ${riskPayload.review.high_risk_unreviewed}`);
+
+    const riskText = runBeeStatus(dir, []);
+    assert(
+      /High-risk unreviewed: 1 high-risk candidate\(s\) have not passed independent review — bee will not auto-dispatch reviewers/.test(riskText.stdout),
+      `text render carries the exact prominent R7 warning line, got:\n${riskText.stdout}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_status.mjs: a standard-mode candidate never triggers the R7 high-risk warning line, even when unreviewed', () => {
+  const dir = makeReviewRepo('bee-status-no-high-risk-');
+  try {
+    addCandidate(dir, { feature: 'demo', head: 'sha-std', mode: 'standard' });
+    const result = runBeeStatus(dir, []);
+    assert(result.status === 0, `bee_status exited ${result.status} :: ${result.stderr}`);
+    assert(!/High-risk unreviewed/.test(result.stdout), 'no high-risk warning line for a non-high-risk unreviewed candidate');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_status.mjs: a corrupt .bee/reviews entry and an unreadable candidates ledger degrade the review block but leave bee_status exiting 0 (fail-open read path, never a hard dependency)', () => {
+  const dir = makeReviewRepo('bee-status-corrupt-reviews-');
+  try {
+    fs.mkdirSync(reviewsDir(dir), { recursive: true });
+    fs.writeFileSync(path.join(reviewsDir(dir), 'broken.json'), '{ not valid json', 'utf8');
+    // A directory in place of the append-only ledger file: readFileSync on a
+    // directory throws EISDIR — the read path must still degrade, not crash.
+    fs.mkdirSync(candidatesPath(dir), { recursive: true });
+
+    const result = runBeeStatus(dir, ['--json']);
+    assert(result.status === 0, `bee_status --json must exit 0 on a corrupt reviews store, got ${result.status} :: ${result.stderr}`);
+    const payload = JSON.parse(result.stdout);
+    assert(payload.review && payload.review.candidates, 'the review block is still present (degraded, not absent) on a corrupt store');
+    assert(payload.review.candidates.total === 0, `degraded review block reports zero candidates rather than throwing, got ${payload.review.candidates.total}`);
+
+    const text = runBeeStatus(dir, []);
+    assert(text.status === 0, `bee_status text mode must also exit 0 on a corrupt reviews store, got ${text.status} :: ${text.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ─── vendored source hygiene (P18, bee-compounding mechanization) ────────────
 // A NUL byte in lib/feedback.mjs's sortKey separator made grep/rg treat the
 // whole file as BINARY and print nothing — not even a zero count — so a
