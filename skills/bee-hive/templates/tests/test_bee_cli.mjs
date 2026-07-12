@@ -184,6 +184,82 @@ check('registry covers every subcommand of the 4 existing helpers', () => {
   }
 });
 
+// ─── DA5: registry <-> helper runtime-verb bijection (drift guard) ────────
+// Derives each helper's verb list from RUNTIME BEHAVIOR — the "Unknown
+// command ... Use: v1, v2, ..." contract line each helper already prints on
+// an unrecognized top-level command — never by reading/grepping the
+// helper's own source. Critical pattern 20260710: a drift guard that greps
+// a module's own source pins syntax, not behavior, and pinned syntax can be
+// the bug. This is the exact gap the PR shipped with: bee_cells.mjs's
+// `update` verb existed on the helper but had no matching registry entry.
+
+const GROUP_HELPERS = {
+  cells: BEE_CELLS,
+  reservations: BEE_RESERVATIONS,
+  decisions: BEE_DECISIONS,
+};
+
+// Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
+// bee_cells.mjs's own `update` verb separately emits an unrelated
+// flag-level "Use: --id ID --file ..." line; anchoring on any "Use:"
+// substring, rather than this specific contract line, would risk picking
+// that one up under a different argv). Run inside `root`, an already
+// bee-onboarded temp repo (created above) — the helpers refuse to run
+// outside a bee repo root at all, so probing needs a real one, not a
+// mutation of it (an unrecognized command never reaches any handler).
+function helperRuntimeVerbs(scriptPath) {
+  const result = spawnSync(process.execPath, [scriptPath, '__bee_bijection_probe__'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  const contractLine = (result.stderr || '').split('\n').find((line) => line.startsWith('Unknown command'));
+  assert(
+    contractLine,
+    `${scriptPath}: expected a stderr line starting with "Unknown command" for an unrecognized top-level command, got stdout=${result.stdout} stderr=${result.stderr}`,
+  );
+  const match = contractLine.match(/Use: (.+)$/);
+  assert(match, `${scriptPath}: "Unknown command" line has no "Use: ..." suffix: ${contractLine}`);
+  // trap t1: the contract line ends with a period, so the last verb parses
+  // as e.g. "judge." unless the trailing period is stripped first.
+  const verbList = match[1].replace(/\.\s*$/, '');
+  return verbList.split(',').map((v) => v.trim()).filter(Boolean);
+}
+
+check('DA5 bijection: every runtime verb of bee_cells/reservations/decisions.mjs has a matching cells.*/reservations.*/decisions.* registry entry, and vice versa', () => {
+  for (const [group, scriptPath] of Object.entries(GROUP_HELPERS)) {
+    const runtimeVerbs = new Set(helperRuntimeVerbs(scriptPath));
+    assert(runtimeVerbs.size > 0, `${scriptPath}: parsed zero runtime verbs — the parser is broken, not the helper`);
+    const registryVerbs = new Set(
+      COMMAND_REGISTRY.filter((e) => e.name.startsWith(`${group}.`)).map((e) => e.name.slice(group.length + 1)),
+    );
+
+    // (a) every runtime verb has a registry entry named `<group>.<verb>`
+    const missingInRegistry = [...runtimeVerbs].filter((v) => !registryVerbs.has(v));
+    assert(
+      missingInRegistry.length === 0,
+      `${group}: verb(s) [${missingInRegistry.join(', ')}] exist on the ${path.basename(scriptPath)} helper (runtime) but have no "${group}.<verb>" entry in COMMAND_REGISTRY — registry side owns the fix (this is the exact cells.update gap the PR shipped with)`,
+    );
+
+    // (b) every registry `<group>.*` entry corresponds to a runtime verb
+    const extraInRegistry = [...registryVerbs].filter((v) => !runtimeVerbs.has(v));
+    assert(
+      extraInRegistry.length === 0,
+      `${group}: registry entr(y/ies) [${extraInRegistry.map((v) => `${group}.${v}`).join(', ')}] have no matching runtime verb on the ${path.basename(scriptPath)} helper — registry side owns the fix (stale entry, or the helper renamed/dropped this verb)`,
+    );
+  }
+});
+
+check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions', () => {
+  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions']);
+  for (const entry of COMMAND_REGISTRY) {
+    const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions`);
+    if (!entry.name.includes('.')) {
+      assert(entry.name === 'status', `dot-free registry entry "${entry.name}" is not "status" — only "status" may be dot-free`);
+    }
+  }
+});
+
 // ─── validate-args.mjs: structured rejection, never a throw ────────────────
 
 check('validate() rejects a missing required field with the structured {field,reason,command} shape', () => {
