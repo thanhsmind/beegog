@@ -57,6 +57,19 @@ import { reserve, release, listReservations, sweepExpired, findConflicts, reserv
 import { checkWrite, checkRead, extractBashTargets } from '../lib/guards.mjs';
 import { buildPromptReminder, shouldInject, markInjected, buildSessionPreamble } from '../lib/inject.mjs';
 import { logDecision, supersedeDecision, activeDecisions, datamark } from '../lib/decisions.mjs';
+import {
+  createReview,
+  listReviews,
+  readReview,
+  readReviewStrict,
+  recordOnReview,
+  addCandidate,
+  listCandidates,
+  reviewsDir,
+  candidatesPath,
+  REVIEW_MODES,
+  SCOPE_ENTRY_TYPES,
+} from '../lib/reviews.mjs';
 import { addCaptureStub, pendingCaptureStubs, flushCaptureStub, captureQueue } from '../lib/capture.mjs';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.mjs';
 import {
@@ -3636,6 +3649,469 @@ check('bee_backlog.mjs with no command prints a Use: line listing all four verbs
     assert(
       /counts/.test(result.stderr) && /rank/.test(result.stderr) && /badges/.test(result.stderr) && /add/.test(result.stderr),
       `Use: line should list all four verbs, got ${result.stderr}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── reviews: session store + candidates ledger (review-od-1, decisions ─────
+// 565e68d0/bb4bb18e) ───────────────────────────────────────────────────────
+// Full review is user-invoked (565e68d0); this store freezes an immutable
+// review scope (SPEC §8) and fails closed on missing verification evidence
+// (A10) or in-progress work (A6) BEFORE any file is written. Mirrors the
+// scribingDebt/frozen-judge sections above: fresh mkdtemp repo per test,
+// direct lib calls (bee_reviews.mjs is a thin CLI wrapper, covered
+// separately below), gate execution approved by hand where claim is needed.
+
+function makeReviewRepo(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  writeState(dir, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'demo',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  return dir;
+}
+
+function reviewCell(id, extra = {}) {
+  return {
+    id,
+    feature: 'demo',
+    title: `Cell ${id}`,
+    lane: 'small',
+    status: 'open',
+    deps: [],
+    action: 'Do the thing.',
+    verify: 'node -e "process.exit(0)"',
+    ...extra,
+  };
+}
+
+/** A capped behavior_change cell WITH recorded verification_evidence. */
+function seedCappedCellWithEvidence(dir, id) {
+  addCell(dir, reviewCell(id, { behavior_change: true }));
+  claimCell(dir, id, 'worker-rev');
+  recordVerify(dir, id, { command: 'node -e 0', output: 'ok', passed: true });
+  capCell(dir, id, {
+    behavior_change: true,
+    verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'node -e 0' },
+    files_changed: ['a.js'],
+    outcome: 'done',
+  });
+}
+
+/**
+ * A hand-crafted "legacy" capped behavior_change cell with NO evidence —
+ * capCell itself already refuses this shape (decision 0009), so the only way
+ * to reach it is a legacy/hand-crafted trace (plan.md "A10 scope note").
+ * That is exactly the case A10's preflight exists to catch defensively.
+ */
+function seedLegacyCappedCellNoEvidence(dir, id) {
+  addCell(dir, reviewCell(id, { behavior_change: true }));
+  const file = path.join(dir, '.bee', 'cells', `${id}.json`);
+  const cell = readJson(file, null);
+  cell.status = 'capped';
+  cell.trace.behavior_change = true;
+  cell.trace.verify_passed = true;
+  cell.trace.verification_evidence = null;
+  cell.trace.capped_at = new Date().toISOString();
+  writeJsonAtomic(file, cell);
+}
+
+function baseScope(overrides = {}) {
+  return {
+    id: 'rev-1',
+    requested_by: 'user',
+    scope_description: 'review the demo feature',
+    included: [{ type: 'cell', id: 'ok-1' }],
+    baseline: 'sha-base',
+    head: 'sha-head',
+    ...overrides,
+  };
+}
+
+check('createReview: session roundtrip carries every SPEC §8 field, and show/readReview round-trips it', () => {
+  const dir = makeReviewRepo('bee-reviews-roundtrip-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    const session = createReview(dir, baseScope());
+    for (const field of [
+      'id', 'requested_by', 'requested_at', 'scope_description', 'included', 'excluded',
+      'baseline', 'head', 'reviewer_manifest', 'verification_preflight', 'findings', 'uat',
+      'decision', 'created_at', 'updated_at',
+    ]) {
+      assert(field in session, `session is missing SPEC §8 field "${field}"`);
+    }
+    assert(session.decision.status === 'pending', 'new session decision starts pending');
+    assert(session.included.length === 1 && session.included[0].id === 'ok-1', 'included cell carried through');
+    assert(fs.existsSync(path.join(reviewsDir(dir), 'rev-1.json')), 'session file written to .bee/reviews/<id>.json');
+    const reread = readReview(dir, 'rev-1');
+    assert(JSON.stringify(reread) === JSON.stringify(session), 'readReview round-trips the written session');
+    const list = listReviews(dir);
+    assert(list.length === 1 && list[0].id === 'rev-1', 'listReviews finds the new session');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('createReview: A10 fails closed — a behavior_change cell with no verification_evidence refuses create and writes NO session file', () => {
+  const dir = makeReviewRepo('bee-reviews-a10-');
+  try {
+    seedLegacyCappedCellNoEvidence(dir, 'legacy-1');
+    assertThrows(
+      () => createReview(dir, baseScope({ id: 'rev-a10', included: [{ type: 'cell', id: 'legacy-1' }] })),
+      'verification_evidence',
+      'A10 preflight must name the missing-evidence cell',
+    );
+    assert(!fs.existsSync(reviewsDir(dir)), 'a fail-closed create writes zero files — not even the .bee/reviews/ dir');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('createReview: A6 auto-excludes an open/claimed included cell with reason "in progress", never silently reviewed-in', () => {
+  const dir = makeReviewRepo('bee-reviews-a6-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    addCell(dir, reviewCell('open-1')); // stays open — never claimed
+    addCell(dir, reviewCell('claimed-1'));
+    claimCell(dir, 'claimed-1', 'worker-rev');
+
+    const session = createReview(
+      dir,
+      baseScope({
+        id: 'rev-a6',
+        included: [
+          { type: 'cell', id: 'ok-1' },
+          { type: 'cell', id: 'open-1' },
+          { type: 'cell', id: 'claimed-1' },
+        ],
+      }),
+    );
+    const includedIds = session.included.map((e) => e.id);
+    assert(includedIds.length === 1 && includedIds[0] === 'ok-1', `only the capped cell stays included, got ${JSON.stringify(includedIds)}`);
+    const excludedOpen = session.excluded.find((e) => e.id === 'open-1');
+    const excludedClaimed = session.excluded.find((e) => e.id === 'claimed-1');
+    assert(excludedOpen && excludedOpen.reason === 'in progress', 'open-1 auto-excluded with reason "in progress"');
+    assert(excludedClaimed && excludedClaimed.reason === 'in progress', 'claimed-1 auto-excluded with reason "in progress"');
+    // A6 must never leave the underlying cell's own state touched.
+    assert(readCell(dir, 'open-1').status === 'open', 'excluding from review scope does not touch the cell itself');
+    assert(readCell(dir, 'claimed-1').status === 'claimed', 'excluding from review scope does not touch the cell itself');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('createReview: a pre-declared "excluded" entry in the scope input is preserved alongside auto-exclusions', () => {
+  const dir = makeReviewRepo('bee-reviews-preexcl-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    const session = createReview(
+      dir,
+      baseScope({
+        id: 'rev-preexcl',
+        included: [{ type: 'cell', id: 'ok-1' }],
+        excluded: [{ type: 'commit', id: 'deadbeef', reason: 'unrelated hotfix' }],
+      }),
+    );
+    const pre = session.excluded.find((e) => e.id === 'deadbeef');
+    assert(pre && pre.reason === 'unrelated hotfix', 'pre-declared exclusion reason preserved verbatim');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('createReview: refuses an already-existing session id with non-zero-equivalent throw and leaves the file byte-unchanged (id non-reuse, §8)', () => {
+  const dir = makeReviewRepo('bee-reviews-idreuse-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    createReview(dir, baseScope({ id: 'rev-dup' }));
+    const before = fs.readFileSync(path.join(reviewsDir(dir), 'rev-dup.json'), 'utf8');
+    assertThrows(
+      () => createReview(dir, baseScope({ id: 'rev-dup', scope_description: 'a different description' })),
+      'already exists',
+      'duplicate id refused',
+    );
+    const after = fs.readFileSync(path.join(reviewsDir(dir), 'rev-dup.json'), 'utf8');
+    assert(before === after, 'the existing session file is byte-unchanged after a refused duplicate create');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('createReview: rejects missing required scope fields and an empty "included" array before any write', () => {
+  const dir = makeReviewRepo('bee-reviews-validate-');
+  try {
+    assertThrows(() => createReview(dir, baseScope({ requested_by: '' })), 'requested_by', 'requested_by required');
+    assertThrows(() => createReview(dir, baseScope({ baseline: undefined })), 'baseline', 'baseline required');
+    assertThrows(() => createReview(dir, baseScope({ included: [] })), 'included', 'non-empty included required');
+    assert(!fs.existsSync(reviewsDir(dir)), 'no session dir created by any rejected create');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('recordOnReview: refuses any payload touching baseline/head/included/excluded — exits via throw, file byte-unchanged (R5 immutability)', () => {
+  const dir = makeReviewRepo('bee-reviews-immutable-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    createReview(dir, baseScope({ id: 'rev-immut' }));
+    const before = fs.readFileSync(path.join(reviewsDir(dir), 'rev-immut.json'), 'utf8');
+    for (const field of ['baseline', 'head', 'included', 'excluded']) {
+      assertThrows(
+        () => recordOnReview(dir, 'rev-immut', { kind: 'manifest', payload: { [field]: 'nope' } }),
+        'immutable',
+        `record must refuse a payload touching "${field}"`,
+      );
+    }
+    const after = fs.readFileSync(path.join(reviewsDir(dir), 'rev-immut.json'), 'utf8');
+    assert(before === after, 'session file byte-unchanged after every refused immutability attempt');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('recordOnReview: manifest/preflight/decision SET the field; finding/uat APPEND one entry per call', () => {
+  const dir = makeReviewRepo('bee-reviews-record-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    createReview(dir, baseScope({ id: 'rev-record' }));
+
+    let session = recordOnReview(dir, 'rev-record', {
+      kind: 'manifest',
+      payload: { reviewers: ['a', 'b'] },
+    });
+    assert(JSON.stringify(session.reviewer_manifest) === JSON.stringify({ reviewers: ['a', 'b'] }), 'manifest set');
+
+    session = recordOnReview(dir, 'rev-record', { kind: 'finding', payload: { severity: 'P1', description: 'x' } });
+    session = recordOnReview(dir, 'rev-record', { kind: 'finding', payload: { severity: 'P2', description: 'y' } });
+    assert(session.findings.length === 2, `findings append, got ${session.findings.length}`);
+    assert(session.findings[0].severity === 'P1' && session.findings[1].severity === 'P2', 'append order preserved');
+
+    session = recordOnReview(dir, 'rev-record', { kind: 'uat', payload: { item: 'login flow', result: 'pass' } });
+    assert(session.uat.length === 1 && session.uat[0].item === 'login flow', 'uat appended');
+
+    session = recordOnReview(dir, 'rev-record', {
+      kind: 'decision',
+      payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } },
+    });
+    assert(session.decision.status === 'approved', 'decision set (replace)');
+
+    assertThrows(
+      () => recordOnReview(dir, 'rev-record', { kind: 'decision', payload: { status: 'shipped' } }),
+      'pending, blocked, approved',
+      'an invalid decision.status is rejected',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('recordOnReview: rejects an unknown kind before touching the file', () => {
+  const dir = makeReviewRepo('bee-reviews-badkind-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    createReview(dir, baseScope({ id: 'rev-badkind' }));
+    assertThrows(
+      () => recordOnReview(dir, 'rev-badkind', { kind: 'sparkles', payload: {} }),
+      'invalid kind',
+      'unknown record kind rejected',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('reviews: strict read fails loud on a corrupt session (write verbs fail closed) — readReview/list stay fail-open', () => {
+  const dir = makeReviewRepo('bee-reviews-corrupt-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    createReview(dir, baseScope({ id: 'rev-good' }));
+    fs.mkdirSync(reviewsDir(dir), { recursive: true });
+    fs.writeFileSync(path.join(reviewsDir(dir), 'rev-corrupt.json'), 'not json', 'utf8');
+
+    // write verb: readReviewStrict throws loud on the corrupt file
+    assertThrows(
+      () => recordOnReview(dir, 'rev-corrupt', { kind: 'decision', payload: { status: 'blocked' } }),
+      'not valid json',
+      'record refuses to mutate a present-but-corrupt session',
+    );
+    const stillCorrupt = fs.readFileSync(path.join(reviewsDir(dir), 'rev-corrupt.json'), 'utf8');
+    assert(stillCorrupt === 'not json', 'corrupt file left untouched by the refused write');
+    assertThrows(
+      () => readReviewStrict(dir, 'rev-corrupt'),
+      'not valid json',
+      'readReviewStrict itself throws on corrupt JSON',
+    );
+
+    // read verbs: fail open, corrupt file skipped rather than crashing the sweep
+    const list = listReviews(dir);
+    assert(list.length === 1 && list[0].id === 'rev-good', 'listReviews skips the corrupt file and returns the good session');
+    assert(readReview(dir, 'rev-corrupt') === null, 'readReview fails open to null on corrupt JSON');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('recordOnReview: refuses a session id that does not exist (nothing to mutate)', () => {
+  const dir = makeReviewRepo('bee-reviews-noexist-');
+  try {
+    assertThrows(
+      () => recordOnReview(dir, 'no-such-review', { kind: 'decision', payload: { status: 'blocked' } }),
+      'not found',
+      'record on a missing session id is refused',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('candidate ledger: addCandidate requires --mode from the closing feature\'s lane, appends exactly one JSONL line, never rewrites prior lines', () => {
+  const dir = makeReviewRepo('bee-reviews-candidates-');
+  try {
+    assertThrows(() => addCandidate(dir, { feature: 'demo', head: 'sha1', mode: '' }), 'mode', 'mode is required');
+    assertThrows(() => addCandidate(dir, { feature: 'demo', head: 'sha1', mode: 'urgent' }), 'mode', 'mode must be a known lane');
+    assert(!fs.existsSync(candidatesPath(dir)), 'no ledger file created by any rejected addCandidate call');
+
+    const first = addCandidate(dir, { feature: 'demo', head: 'sha1', mode: 'standard', cells: ['c1', 'c2'] });
+    assert(first.feature === 'demo' && first.head === 'sha1' && first.mode === 'standard', 'first entry carries feature/head/mode');
+    const beforeSecondLine = fs.readFileSync(candidatesPath(dir), 'utf8');
+
+    const second = addCandidate(dir, { feature: 'other', head: 'sha2', mode: 'tiny' });
+    const lines = fs.readFileSync(candidatesPath(dir), 'utf8').split(/\r?\n/).filter(Boolean);
+    assert(lines.length === 2, `ledger has exactly 2 lines, got ${lines.length}`);
+    assert(lines[0] === beforeSecondLine.trim(), 'the first line is byte-unchanged after the second append — never rewritten');
+    assert(JSON.parse(lines[1]).id === second.id, 'the second line is the new entry, appended after the first');
+
+    const all = listCandidates(dir);
+    assert(all.length === 2 && all[0].feature === 'demo' && all[1].feature === 'other', 'listCandidates returns both in append order');
+    for (const mode of REVIEW_MODES) {
+      assert(typeof mode === 'string' && mode.length > 0, 'REVIEW_MODES entries are non-empty strings');
+    }
+    assert(SCOPE_ENTRY_TYPES.includes('cell') && SCOPE_ENTRY_TYPES.includes('feature') && SCOPE_ENTRY_TYPES.includes('commit'), 'SCOPE_ENTRY_TYPES covers feature/cell/commit per SPEC §8');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('candidate ledger: a corrupt line is skipped on read (fail-open), good lines still returned', () => {
+  const dir = makeReviewRepo('bee-reviews-candidates-corrupt-');
+  try {
+    addCandidate(dir, { feature: 'demo', head: 'sha1', mode: 'standard' });
+    fs.appendFileSync(candidatesPath(dir), 'not json at all\n', 'utf8');
+    addCandidate(dir, { feature: 'demo', head: 'sha2', mode: 'standard' });
+    const all = listCandidates(dir);
+    assert(all.length === 2, `corrupt line skipped, 2 good entries remain, got ${all.length}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── bee_reviews.mjs CLI (thin wrapper contract) ─────────────────────────────
+
+function beeReviewsModulePath() {
+  return fileURLToPath(new URL('../bee_reviews.mjs', import.meta.url));
+}
+
+function runBeeReviews(cwd, args) {
+  return spawnSync(process.execPath, [beeReviewsModulePath(), ...args], { cwd, encoding: 'utf8' });
+}
+
+function writeTempJson(dir, name, obj) {
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, JSON.stringify(obj), 'utf8');
+  return file;
+}
+
+check('bee_reviews.mjs create/show/list/record/candidate round-trip through the CLI, --file and --stdin both work', () => {
+  const dir = makeReviewRepo('bee-reviews-cli-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+
+    const scopeFile = writeTempJson(dir, 'scope.json', baseScope({ id: 'rev-cli' }));
+    const created = runBeeReviews(dir, ['create', '--file', scopeFile, '--json']);
+    assert(created.status === 0, `create should succeed, got ${created.status}: ${created.stderr}`);
+    const session = JSON.parse(created.stdout);
+    assert(session.id === 'rev-cli', 'created session id echoed back');
+
+    const shown = runBeeReviews(dir, ['show', '--id', 'rev-cli', '--json']);
+    assert(shown.status === 0 && JSON.parse(shown.stdout).id === 'rev-cli', 'show returns the session');
+
+    const listed = runBeeReviews(dir, ['list']);
+    assert(listed.status === 0 && /rev-cli/.test(listed.stdout), 'list mentions the session id');
+
+    const recordFile = writeTempJson(dir, 'finding.json', { severity: 'P2', description: 'nit' });
+    const recorded = runBeeReviews(dir, ['record', '--id', 'rev-cli', '--kind', 'finding', '--file', recordFile]);
+    assert(recorded.status === 0, `record should succeed, got ${recorded.status}: ${recorded.stderr}`);
+
+    // --stdin path for create, on a second id
+    const scope2 = JSON.stringify(baseScope({ id: 'rev-cli-2' }));
+    const createdStdin = spawnSync(process.execPath, [beeReviewsModulePath(), 'create', '--stdin', '--json'], {
+      cwd: dir,
+      input: scope2,
+      encoding: 'utf8',
+    });
+    assert(createdStdin.status === 0, `create --stdin should succeed, got ${createdStdin.status}: ${createdStdin.stderr}`);
+
+    const candAdd = runBeeReviews(dir, ['candidate', 'add', '--feature', 'demo', '--head', 'sha9', '--mode', 'standard', '--cells', 'ok-1']);
+    assert(candAdd.status === 0, `candidate add should succeed, got ${candAdd.status}: ${candAdd.stderr}`);
+    const cands = runBeeReviews(dir, ['candidates', '--json']);
+    assert(cands.status === 0, 'candidates list should succeed');
+    const candList = JSON.parse(cands.stdout);
+    assert(candList.length === 1 && candList[0].feature === 'demo' && candList[0].mode === 'standard', 'candidate ledger entry recorded via CLI');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_reviews.mjs create exits non-zero and writes nothing when the A10 preflight fails', () => {
+  const dir = makeReviewRepo('bee-reviews-cli-a10-');
+  try {
+    seedLegacyCappedCellNoEvidence(dir, 'legacy-1');
+    const scopeFile = writeTempJson(dir, 'scope.json', baseScope({ id: 'rev-cli-a10', included: [{ type: 'cell', id: 'legacy-1' }] }));
+    const result = runBeeReviews(dir, ['create', '--file', scopeFile]);
+    assert(result.status !== 0, 'A10 preflight failure exits non-zero via the CLI');
+    assert(/verification_evidence/.test(result.stderr), `error names the missing evidence, got ${result.stderr}`);
+    assert(!fs.existsSync(path.join(dir, '.bee', 'reviews')), 'no session file written on a fail-closed CLI create');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_reviews.mjs candidate add requires --mode and rejects an unrecognized mode, leaving the ledger untouched', () => {
+  const dir = makeStateRepo('bee-reviews-cli-mode-');
+  try {
+    const missing = runBeeReviews(dir, ['candidate', 'add', '--feature', 'demo', '--head', 'sha1']);
+    assert(missing.status !== 0, 'missing --mode is rejected');
+    const bad = runBeeReviews(dir, ['candidate', 'add', '--feature', 'demo', '--head', 'sha1', '--mode', 'urgent']);
+    assert(bad.status !== 0, 'an unrecognized --mode is rejected');
+    assert(!fs.existsSync(path.join(dir, '.bee', 'review-candidates.jsonl')), 'ledger file never created by a rejected candidate add');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_reviews.mjs with no command prints a Use: line listing all verbs and exits non-zero', () => {
+  const dir = makeStateRepo('bee-reviews-cli-noverb-');
+  try {
+    const result = runBeeReviews(dir, []);
+    assert(result.status !== 0, 'no-command invocation exits non-zero');
+    assert(/Use:/.test(result.stderr), `expected a "Use:" line, got stderr="${result.stderr}"`);
+    assert(
+      /create/.test(result.stderr) &&
+        /list/.test(result.stderr) &&
+        /show/.test(result.stderr) &&
+        /record/.test(result.stderr) &&
+        /candidate add/.test(result.stderr) &&
+        /candidates/.test(result.stderr),
+      `Use: line should list all verbs, got ${result.stderr}`,
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
