@@ -1,47 +1,46 @@
 {
   "schema_version": "1.0",
-  "phase": "swarming",
-  "feature": "harness-integration",
-  "mode": "high-risk",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
-    "context": true,
-    "shape": true,
-    "execution": true,
+    "context": false,
+    "shape": false,
+    "execution": false,
     "review": false
   },
-  "workers": [
-    {
-      "nickname": "worker-w1",
-      "cell": "harness-integration-1",
-      "tier": "generation",
-      "status": "dispatched"
-    }
-  ],
-  "summary": "harness-integration: Gate 3 approved. bee-swarming wave 1 (cell-1) dispatched to worker-w1 (generation tier).",
-  "next_action": "Dispatch wave 1 (harness-integration-1), goal-check, cap. Then wave 2 (harness-integration-2 + -3 parallel). Then wave 3 (harness-integration-4). Then invoke bee-reviewing.",
+  "workers": [],
+  "summary": "harness-integration Phase 1 CLOSED: merged, walkthrough written, scribing synced (reading-map only, per bee-tooling convention), 3 critical patterns promoted, 1 durable decision logged (review-tier deviation), feedback digest refreshed. 15 P2/P3 findings remain in backlog for future work. Phases 2-6 (intervention log, tool registry, task-management index, input-type classification, worktree isolation) return to bee-planning as their own future slices.",
+  "next_action": "Idle. Next: route a new request through bee-hive (e.g. Phase 2 of harness-integration, or anything else).",
   "last_scribing_run": {
-    "feature": "model-tier-guard",
-    "date": "2026-07-11",
-    "at": "2026-07-11T06:43:10.190Z",
+    "feature": "harness-integration",
+    "date": "2026-07-12",
+    "at": "2026-07-12T03:46:23.823Z",
     "areas_synced": [
-      "no docs/specs area sync needed — skills-as-spec convention (reading-map): the explicit-tier transport contract lives in docs/decisions/0023 + skills/bee-swarming SKILL.md/reference + hooks/bee-model-guard.mjs, all updated by cells 3/5/7; reading-map gained one Elsewhere line pointing at the hooks contract"
+      "no docs/specs/<area>.md area applies - per reading-map.md convention, bee own skills/CLI/hooks are documented via docs/07-contracts.md + SKILL.md, not area specs (already updated by cells 4 and 7); reading-map.md gained one Elsewhere line pointing at .bee/bin/bee.mjs"
     ],
     "next_action": "bee-compounding"
   },
   "last_compounding_run": {
-    "feature": "model-tier-guard",
-    "at": "2026-07-11T06:46:39.638Z",
-    "learnings": "docs/history/learnings/20260711-model-tier-guard.md",
-    "critical_promotions": 1,
+    "feature": "harness-integration",
+    "at": "2026-07-12T03:49:46.923Z",
+    "learnings": "docs/history/learnings/20260712-harness-integration.md",
+    "critical_promotions": 3,
     "decisions_logged": 1,
-    "friction_filed": 2,
-    "digest_refresh": "green (48 entries; 13 unknown_type drops pre-existing)"
+    "friction_filed": 0,
+    "digest_refresh": "green (64 entries; 13 unknown_type drops pre-existing)"
   },
   "cells": {
-    "open": 4,
+    "open": 0,
     "claimed": 0,
-    "capped": 49,
+    "capped": 56,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T15:29:28.374Z"
+  "last_activity": "2026-07-12T03:47:42.799Z",
+  "uat_results": {
+    "D3 manifest valid": "pass",
+    "D4 hook denies malformed call": "pass",
+    "D5 parity with legacy entrypoint": "pass",
+    "P1 fixes (examples runnable + flag-value fix)": "pass"
+  }
 }

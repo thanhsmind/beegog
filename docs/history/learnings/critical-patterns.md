@@ -150,6 +150,51 @@ review, and never count pre-code ceremony or test volume as implementation assur
 
 **Full entry:** docs/history/learnings/20260711-skill-sync.md
 
+## [20260712] `onboard_bee.mjs --apply` does not vendor hooks — a hook fix can be dead on arrival in the live session
+**Category:** failure
+**Feature:** harness-integration
+**Tags:** [vendoring, hooks, security, onboarding]
+
+`--apply` (no flag) vendors helpers/lib generically via `readdirSync`; hooks require the separate
+`--apply --repo-hooks` flag. `.claude/settings.json` wires the session's actual PreToolUse
+enforcement to the *vendored* copy (`.bee/bin/hooks/<name>.mjs`), never the source. A hook cell's
+own test suite spawning the source file directly proves nothing about the live-enforcing copy — a
+new check can pass every test and still be completely inert in the session that built it. After any
+`hooks/*.mjs` change: re-vendor with `--repo-hooks` and diff the vendored copy against the source
+before considering the fix live, not just committed.
+
+**Full entry:** docs/history/learnings/20260712-harness-integration.md
+
+## [20260712] A vendored-file fix isn't shipped until the vendored copy is committed, not just the source
+**Category:** process
+**Feature:** harness-integration
+**Tags:** [vendoring, git-hygiene, onboarding-hash]
+
+A registry fix was correctly re-vendored to the working tree (`.bee/bin/lib/...`) but the vendored
+copy was never `git add`ed in the fix commit — HEAD was internally inconsistent: `onboarding.json`'s
+recorded hash didn't match the actually-committed vendored file, so the repo's own live state still
+served the old, broken behavior after the "fix" was merged. Caught only because a re-reviewer diffed
+committed content against the recorded hash instead of trusting the local working-tree diff. Before
+capping any cell that touches a templated+vendored file: `git show HEAD:<vendored-path> | sha256sum`
+must match `onboarding.json`'s recorded hash for that file.
+
+**Full entry:** docs/history/learnings/20260712-harness-integration.md
+
+## [20260712] Trace the target's actual export surface before designing a delegation mechanism
+**Category:** process
+**Feature:** harness-integration
+**Tags:** [planning, delegation, design]
+
+A cell's plan assumed "delegate to the existing module's handler" without checking whether a
+callable handler existed — the 4 target files exported nothing, each self-executing on import
+against real argv. Validating (not planning) caught it. The fix needed no new design: the targets
+already delegated to a shared lib layer underneath, so the new code became one more thin wrapper
+over that same layer. Before planning any delegation/integration mechanism, read the target's
+actual exports; if a thinner shared layer already exists underneath the target, delegate to that
+layer instead of assuming the target itself is callable.
+
+**Full entry:** docs/history/learnings/20260712-harness-integration.md
+
 ## [20260711] A control token in free text is injectable by construction; a fail-open contract needs malformed-input rows
 
 **Category:** security
