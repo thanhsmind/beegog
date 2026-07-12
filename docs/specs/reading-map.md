@@ -24,7 +24,9 @@ Where things live. Read the touched area's spec before its code.
 
 - The workflow's skills themselves (`skills/bee-*`, including the new `bee-evolving`) have no area
   specs by convention. Their contracts live in `docs/07-contracts.md` and in each skill's own
-  `SKILL.md` + `CREATION-LOG.md`; the self-improvement *process* behavior is specced in
+  `SKILL.md` + `CREATION-LOG.md`; `skills/bee-writing-skills/scripts/render_openai_metadata.mjs`
+  projects each canonical frontmatter identity into `agents/openai.yaml` for Codex, and its
+  `--check` mode guards drift. The self-improvement *process* behavior is specced in
   `feedback-digest.md` (B5).
 - `docs/specs/system-overview.md` does not exist. Offered, not yet written.
 
