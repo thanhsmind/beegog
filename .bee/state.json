@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "phase": "reviewing",
+  "phase": "compounding-complete",
   "feature": "fanout-delegation",
   "mode": null,
   "approved_gates": {
@@ -10,8 +10,8 @@
     "review": true
   },
   "workers": [],
-  "summary": "Wave 1 clean: fanout-1/2/3 capped, goal-checked, judge-intact; config advisor key removed, reversal decision logged",
-  "next_action": "bee-reviewing: standard wave (4 core reviewers)",
+  "summary": "fanout-delegation shipped and released as v0.1.23: advisor removed, Delegation contract live in all phases; global skills + 8 anphabe hosts onboarded",
+  "next_action": "idle — next feature starts fresh",
   "last_scribing_run": {
     "feature": "codex-runtime-parity",
     "date": "2026-07-12",
