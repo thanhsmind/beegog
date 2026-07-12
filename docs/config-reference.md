@@ -37,22 +37,9 @@ You configure only `generation` and `extraction`, under **`models`**, keyed by r
   You **cannot pin an exact sub-version** for a Claude Code subagent — the model param is family-alias only, and it tracks the latest of each family as Anthropic ships new ones. (For **Codex**, the `codex` tiers take the runtime's real model ids, e.g. `"gpt-5"`, because that runtime addresses models by id.)
 - `bee_status` prints the active map (`Models (claude): generation=… extraction=… · ceiling = the session model`), and warns if too many cells sit on the ceiling tier — the point is to keep the strong (session) model scarce.
 
-## Advisor mode (opt-in — cheap main loop, strong model on demand)
+## Removed keys
 
-Run the whole session on the cheaper `generation` model and consult a **stronger** model only at the hard calls. Here the session is cheap, so the strong model is **named explicitly** in `advisor.model` (it isn't the session model):
-
-```jsonc
-{
-  "advisor": {
-    "enabled": false,                             // set true to turn advisor mode on
-    "at": ["shape", "execution", "blocked"],      // when to consult: subset of
-                                                  //   context · shape (Gate 2) · execution (Gate 3) · review · blocked
-    "model": "fable"                              // the STRONGER model to phone (a Claude alias, or a Codex id)
-  }
-}
-```
-
-When on, `bee_status` and the session preamble print a loud `ADVISOR MODE ON`. It never self-approves a human gate — it only informs the recommendation.
+The `advisor` key was removed in v0.1.23 (decision fanout-delegation D1). If your `.bee/config.json` still has an `advisor` entry, onboarding will warn about the stale key but it will be ignored — no action needed.
 
 ## Other keys
 
@@ -97,8 +84,7 @@ Clean JSON — paste into `.bee/config.json` and edit values (keep any existing 
   "models": {
     "claude": { "extraction": "haiku", "generation": "sonnet" },
     "codex":  { "extraction": null, "generation": null }
-  },
-  "advisor": { "enabled": false, "at": ["shape", "execution", "blocked"], "model": "fable" }
+  }
 }
 ```
 

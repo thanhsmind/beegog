@@ -231,10 +231,9 @@ Not every step needs your most capable (most expensive) model. The costly loops 
 
 The **orchestrator judges each cell's tier when it dispatches** (decision 0016) — mechanical → extraction, normal → generation, integration/architecture/high-risk → ceiling — not a label fixed at planning. It records the choice (`bee_cells.mjs tier`), then `modelForTier` resolves it: `generation`/`extraction` to the configured alias, `ceiling` to "inherit the session model". `bee_status` and the preamble **warn when too many cells sit on the ceiling tier** (the cost lever erodes when the strongest model touches most dispatches).
 
-Two shapes, one lever — either way the strongest model stays scarce:
+The orchestrator pattern keeps the strongest model scarce:
 
-- **Orchestrator** (fan-out): run the session on your strong model; it plans and fans out to cheaper workers. `bee-swarming`'s default.
-- **Advisor** (opt-in, decision 0013): run the whole session on the *generation* tier and consult a stronger model only at the hard calls. Because the session is cheap here, you name the strong model: `"advisor": { "enabled": true, "at": ["shape", "execution", "blocked"], "model": "fable" }` — at each point the agent asks one tight question, spawns one advisor subagent for a verdict, records it, and continues cheap. Surfaced loudly (`ADVISOR MODE ON`); never self-approves a human gate.
+- **Fan-out delegation** (default): run the session on your strong model; it orchestrates all work and dispatches gather-altitude steps (multi-file reads, document rendering, trace mining) down-tier to cheaper workers, collecting digests instead of verbatim output. The Delegation contract (in routing-and-contracts.md) specifies which steps delegate and what a digest must carry. `bee-swarming`'s default.
 
 **To change the worker models**, edit `.bee/config.json` `models.claude.generation` / `extraction`; the ceiling changes by running the session on a different model. Every field + a full sample to copy: **[docs/config-reference.md](docs/config-reference.md)**.
 
@@ -366,7 +365,7 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 |---|---|
 | `onboarding.json` | installed bee version + managed-file hashes (drift detection) |
 | `state.json` | phase, mode, feature, the four gate approvals, workers, next action |
-| `config.json` | per-repo hook/guard toggles, lanes, capabilities, **`gate_bypass`**, **`models`** (runtime-keyed tier→model map), **`advisor`** (cheap-loop + ceiling-consult mode) |
+| `config.json` | per-repo hook/guard toggles, lanes, capabilities, **`gate_bypass`**, **`models`** (runtime-keyed tier→model map) |
 | `HANDOFF.json` | pause context at ~65% budget — surfaced next session, never auto-resumed |
 | `cells/<id>.json` | one cell each: acceptance criteria, verify command, full trace |
 | `decisions.jsonl` / `backlog.jsonl` | append-only decision events / friction & grooming items |
@@ -379,7 +378,7 @@ Codex has no hooks — by design the same rules hold there because the *helpers*
 
 | Doc | Read when |
 |---|---|
-| [config-reference.md](docs/config-reference.md) | You want to configure `.bee/config.json` — models/ceiling, advisor, commands, bypass (with a sample to copy) |
+| [config-reference.md](docs/config-reference.md) | You want to configure `.bee/config.json` — models/ceiling, commands, bypass (with a sample to copy) |
 | [00-vision.md](docs/00-vision.md) | You want the principles and non-goals |
 | [01-distillation.md](docs/01-distillation.md) | What bee took from each upstream framework, and what it rejected |
 | [02-architecture.md](docs/02-architecture.md) | Plugin layout, dual-runtime support, runtime files, cell schema, state model |
@@ -404,7 +403,6 @@ Recent additions, each gated by a decision record:
 - **`bee-bypass-gate`** (0010) — opt-in autopilot that auto-approves low-risk gates while keeping an absolute safety floor (high-risk/hard-gate, Gate 4 UAT, and secrets always stop).
 - **Capture-mode spine / scribing debt** (0011) — behavior_change cells capped since the last spec sync are counted as *scribing debt* and surfaced in `bee_status`, the preamble, and the swarming nudge, so settled behavior reaches `docs/specs/` mid-flight instead of only when a human remembers.
 - **Runtime-keyed model tiers + scarcity signal** (0012) — a per-repo `models` map (claude/codex → extraction/generation/ceiling) with a `modelForTier` resolver; cells carry a `tier`, swarming resolves tier → model, and `bee_status`/preamble warn when the ceiling share runs high — keeping the strongest model scarce.
-- **Advisor mode** (0013) — opt-in: run the session on the generation tier and consult the ceiling model only at the hard calls (Gate 2/3, `[BLOCKED]`), one scarce call per point. The inverse of the orchestrator pattern; both keep the strongest model scarce.
 - **Grooming is project-first** (0014) — the hygiene pass hunts the *current project's* debt in plain language; `.bee/`, `.claude/`, `.codex/` and bee's own plumbing are out of scope (a harness bug becomes a one-line upstream note, not a project kill), and the entropy score is demoted to a short hive-housekeeping side-note. Also fixes two real bugs it caught: `capCell` now honors a cell's declared `behavior_change` even when the CLI flag is omitted, and the write-guard no longer misreads `2>&1` as a file write. (Note: this parenthetical is superseded by skill-sync below — `onboard --apply` now mirrors `skills/*` into `~/.claude/skills/bee-*` automatically, downgrades refused by default; `~/.codex/skills` is out of scope for this mechanism and still needs a manual copy.)
 
 **Known debt before 1.0** (recorded in each skill's `CREATION-LOG.md`): the newer skills and the two most recent decisions have not yet been dogfooded/pressure-tested per bee's own Iron Law; the gate-bypass safety floor in particular wants RED-baseline testing on a real high-risk feature.

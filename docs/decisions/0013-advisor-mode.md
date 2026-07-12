@@ -1,6 +1,6 @@
 # 0013 — Advisor mode (cheap main loop, ceiling consulted on demand)
 
-- **Status:** active — owner-approved 2026-07-09; **built in 0.1.11** (2026-07-09). Config + resolver + surfacing + swarming pointer; lib suite green (63/63), onboarding suite green. Not yet dogfooded.
+- **Status:** reversed 2026-07-12 by fanout-delegation D1 (see .bee/decisions.jsonl reversal entry) — owner decision to consolidate on the single fan-out orchestrator pattern (replaces both advisor and orchestrator patterns); advisor mode removed before dogfood completed.
 - **Date:** 2026-07-09
 - **Source:** the same Anthropic write-up behind decision 0012 described **two** model-pairing strategies. 0012 built the orchestrator/fan-out one (strategy 2). This decision adds the **advisor** one (strategy 1): the cheap model is the main worker running all the loops, and the strong model is called only when a decision is hard — ~92% of the strong model's SWE-bench Pro score at ~63% of the cost. Owner approved building it after 0012/P7 landed.
 - **Confidence:** 0.65 (config + resolver + surfacing are built and tested; the consult *protocol* is prose across gate/blocked points and not yet dogfooded).

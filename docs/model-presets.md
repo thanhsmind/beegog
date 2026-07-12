@@ -85,4 +85,4 @@ Review rơi về generation (chấp nhận mất reviewer độc lập — hợp
 
 ## Đổi preset
 
-Sửa `.bee/config.json` → chạy `node .bee/bin/bee_status.mjs` xem dòng `Models (claude): ...` xác nhận. Không cần onboard lại. Advisor mode (decision 0013) độc lập với preset — bật riêng bằng khối `"advisor"`.
+Sửa `.bee/config.json` → chạy `node .bee/bin/bee_status.mjs` xem dòng `Models (claude): ...` xác nhận. Không cần onboard lại.
