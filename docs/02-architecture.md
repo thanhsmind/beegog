@@ -12,7 +12,7 @@ bee/
     hooks.json                   ← Claude Code hook wiring (6 events)
     bee-session-init.mjs         ← SessionStart: status + gates + handoff + patterns + decisions
     bee-prompt-context.mjs       ← UserPromptSubmit: phase/gate reminder (injection-deduped)
-    bee-write-guard.mjs          ← PreToolUse: gate guard + reservation guard + privacy/scout
+    bee-write-guard.mjs          ← PreToolUse: gate guard + reservation guard + privacy/scout + CLI-shape validation
     bee-state-sync.mjs           ← PostToolUse/SubagentStop/Stop: state snapshot persistence
     bee-chain-nudge.mjs          ← SubagentStop: advance the chain after workers/reviewers
     bee-session-close.mjs        ← Stop: warn on mid-phase exit without HANDOFF + decision/capture nudges
@@ -28,6 +28,9 @@ bee/
       templates/bee_cells.mjs
       templates/bee_reservations.mjs
       templates/bee_decisions.mjs
+      templates/bee.mjs         ← unified CLI dispatcher over the same 4 command groups (harness-integration-adopt, decision 30606de4)
+      templates/lib/command-registry.mjs  ← single source of truth for every subcommand's JSON-Schema parameters
+      templates/lib/validate-args.mjs     ← validates parsed CLI args against a registry entry's schema; shared by bee.mjs and bee-write-guard.mjs
     exploring/     SKILL.md + references/{gray-area-probes.md, context-template.md}
     planning/      SKILL.md + references/{planning-reference.md, edge-dimensions.md}
     validating/    SKILL.md + references/validation-reference.md
@@ -58,7 +61,7 @@ Eleven skills; additions are decision-gated (a decision record naming the uncove
     config.json                  ← per-repo config: hooks.<name> toggles + commands (setup/start/test/verify — the host project's standard paths, docs/09 item 1)
     logs/hooks.jsonl             ← fail-open hook crash/audit log
     cells/                       ← one JSON file per cell: <feature>-<n>.json
-    bin/                         ← vendored helpers (bee_status, bee_cells, bee_reservations, bee_decisions)
+    bin/                         ← vendored helpers (bee_status, bee_cells, bee_reservations, bee_decisions) plus bee.mjs, a unified dispatcher over the same 4 command groups (harness-integration-adopt Phase 1)
     bin/lib/                     ← shared modules (state, cells, reservations, guards, inject, backlog, commands_detect) used by BOTH helpers and hooks
   docs/
     backlog.md                   ← product backlog: prioritized PBI rows (proposed/in-flight/done), scribing-owned (docs/10) — distinct from .bee/backlog.jsonl
@@ -176,6 +179,18 @@ Four small Node scripts (Node 18+, zero npm deps), installed to `.bee/bin/` by o
 
 Everything a skill tells an agent to run is one of these, `git`, or the project's own build/test commands.
 
+### Unified CLI dispatcher (`bee.mjs`, harness-integration-adopt Phase 1, decision 30606de4)
+
+`bee.mjs` (vendored to `.bee/bin/bee.mjs` alongside the 4 helpers above) is a single entrypoint over the same 4 command groups: `bee.mjs status [--json]`, `bee.mjs cells <action> ...`, `bee.mjs reservations <action> ...`, `bee.mjs decisions <action> ...`. Adopted from vantt's PR #1 per decision 30606de4 (DA1-DA7, `docs/decisions/0024`):
+
+- **Additive, not a replacement (DA1).** It imports the same `lib/*.mjs` functions the 4 existing helpers already import; it never imports, spawns, or edits those 4 files. Both surfaces stay valid permanently, side by side — this is not a migration, and every skill instruction that names `bee_status.mjs`/`bee_cells.mjs`/`bee_reservations.mjs`/`bee_decisions.mjs` directly keeps working unchanged.
+- **Manifest shape.** `node .bee/bin/bee.mjs --help --json` emits `{schema_version, commands:[{name, invoke, description, parameters, examples, deprecated}]}`, sourced from `command-registry.mjs` — the single source of truth for every subcommand, one entry per command (including `cells.update`, adapted to 0.1.26 per DA3), `parameters` expressed as JSON-Schema (`{type:"object", properties, required}`) in the exact shape Claude Code's own tool/subagent definitions use. `command-registry.mjs`'s own `helper` field (which of the 4 templates actually implements a command) is dispatch metadata, stripped before the public manifest is rendered.
+- **Manifest drift tracking (DA4).** A sha256 of `{schema_version, COMMAND_REGISTRY}` is persisted to `.bee/manifest-hash.json` (`{hash, checked_at}`, gitignored — it is rewritten on every `bee.mjs` invocation, including read-only ones). When the current hash differs from the last-persisted one, a `manifest_changed: true` hint is written to **stderr only** — stdout's JSON/text shape never changes, so a machine consumer parsing a command's steady-state output never has to special-case a drift call.
+- **CLI-shape enforcement.** `hooks/bee-write-guard.mjs` gained a 4th, additive check: a Bash call shaped like a `bee.mjs`/`bee_*.mjs` invocation is parsed and validated against `command-registry.mjs`'s schema via `validate-args.mjs` before the shell executes it — malformed calls are denied with a structured correction; unrecognized shapes fail open (that classification is the dispatcher's own job, via its Levenshtein nearest-match suggestion, not the guard's). This extends the existing write-guard hook; no 7th hook was added.
+- **Drift enforcement (DA5).** A standing test derives each helper's verb list from the helper's own runtime "Unknown command … Use: …" contract line (never from grepping source — pinned syntax can be the bug) and asserts a bijection with the registry's `group.*` entries.
+- **Scope freeze (DA6).** The dispatcher covers exactly the 4 legacy helpers above; `bee_state.mjs`, `bee_backlog.mjs`, `bee_capture.mjs`, `bee_reviews.mjs`, `bee_feedback.mjs` are not in its registry — a follow-up PBI, not this feature.
+- **Deferred.** An MCP server wrapper and a mandatory every-session `--help --json` discovery call are out of scope for this feature (foundation-add without demonstrated need) — revisit only if dogfood shows real need.
+
 ## Dual-runtime support (Claude Code + Codex)
 
 The workflow contract is runtime-neutral; only two seams differ:
@@ -202,7 +217,7 @@ Skills, artifacts, cells, gates, helpers, templates: one copy. Both plugin manif
 
 ## Hooks: the automation skeleton (Claude Code) + helper enforcement (Codex)
 
-bee ships a coherent **6-hook automation skeleton** for Claude Code — session-init, prompt-context (deduped), write-guard (gate + reservation + privacy in one), state-sync, chain-nudge, session-close — learned from claudekit's tightly-wired hook system but capped and disciplined: every hook is config-gated in `.bee/config.json`, fail-open with crash logging, silent on non-onboarded repos, and a thin wrapper over the same `.bee/bin/lib/` modules the CLI helpers use.
+bee ships a coherent **6-hook automation skeleton** for Claude Code — session-init, prompt-context (deduped), write-guard (gate + reservation + privacy + CLI-shape in one), state-sync, chain-nudge, session-close — learned from claudekit's tightly-wired hook system but capped and disciplined: every hook is config-gated in `.bee/config.json`, fail-open with crash logging, silent on non-onboarded repos, and a thin wrapper over the same `.bee/bin/lib/` modules the CLI helpers use.
 
 The dual-runtime rule: **enforcement lives in the shared helpers first** (cap-requires-verify, reservation conflicts, gate-locked claiming work identically under Codex); hooks are Claude Code's second, mechanical belt. Full design, the Codex parity matrix, and the hook response protocol: [06-runtime-integration.md](06-runtime-integration.md).
 

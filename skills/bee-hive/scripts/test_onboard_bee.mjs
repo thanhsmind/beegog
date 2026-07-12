@@ -887,6 +887,7 @@ try {
     ".bee/.inject-cache.json",
     ".bee/HANDOFF.json",
     ".bee/spikes/",
+    ".bee/manifest-hash.json",
   ];
   const expectedGitignoreBlockSource =
     `# BEE:START\n${GITIGNORE_PATTERNS_FOR_HASH.join("\n")}\n# BEE:END\n`;

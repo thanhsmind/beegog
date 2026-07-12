@@ -17,6 +17,7 @@ Use `bee-hive` first in this repo unless you are resuming an already approved be
 4. If `.bee/HANDOFF.json` exists, **never auto-resume**. Surface the saved state to the user and wait for explicit confirmation.
 5. If `docs/history/learnings/critical-patterns.md` exists, read it before any planning or execution work.
 6. **Baseline gate:** if `.bee/config.json` records `commands.verify`, run it once per session before claiming any cell. A red baseline is surfaced to the user and becomes its own fix-first tiny cell — never build on red. If no commands are recorded, capture the host project's `setup/start/test/verify` into `.bee/config.json` `commands` at the first natural moment (exploring or onboarding).
+7. **Optional discovery:** `.bee/bin/bee.mjs` is a single dispatcher covering the same 4 command groups as the helpers below (`bee.mjs status`, `bee.mjs cells <action>`, `bee.mjs reservations <action>`, `bee.mjs decisions <action>`). Run `node .bee/bin/bee.mjs --help --json` any time to see the full command surface as a Claude-Code tool-schema-shaped manifest (`{name, invoke, description, parameters, examples, deprecated}`). This is a discovery aid available on request, not a mandatory every-session call — an MCP server wrapper and a mandatory per-session discovery step were both considered and explicitly deferred (no such mandatory mechanism existed before this, so nothing here replaces one). The 4 existing helpers keep working unchanged, invoked directly exactly as in steps 1-6.
 
 ## Chain and gates
 
@@ -63,8 +64,8 @@ Independent review is user-invoked, not an automatic chain stage (decision 565e6
   backlog.jsonl       <- friction + grooming items
   cells/              <- one JSON file per cell: <feature>-<n>.json
   logs/hooks.jsonl    <- fail-open hook crash/audit log
-  bin/                <- vendored helpers: bee_status, bee_cells, bee_reservations, bee_decisions
-  bin/lib/            <- shared modules used by helpers and hooks
+  bin/                <- vendored helpers: bee_status, bee_cells, bee_reservations, bee_decisions, plus bee.mjs (unified dispatcher over the same 4 command groups)
+  bin/lib/            <- shared modules used by helpers, bee.mjs, and hooks
 
 docs/history/<feature>/    <- always: CONTEXT.md, plan.md, reports/; conditional (decision 0009): discovery.md/approach.md/implement-plan.md only for L2+ discovery or high-risk, else folded into plan.md sections
 docs/history/learnings/    <- critical-patterns.md + dated learnings
