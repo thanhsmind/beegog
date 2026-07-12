@@ -196,10 +196,12 @@ function parseCliFlags(flagTokens, propertiesSchema) {
     const name = token.slice(2);
     const propSchema = propertiesSchema && propertiesSchema[name];
     const next = flagTokens[i + 1];
-    const nextIsValue = next !== undefined && !next.startsWith("--");
     if (propSchema && propSchema.type === "boolean") {
       parsed[name] = true;
-    } else if (nextIsValue) {
+    } else if (next !== undefined) {
+      // Consume the next token as the value unconditionally, even if it
+      // starts with "--" — matching bee.mjs's parseFlags exactly (a value
+      // legitimately starting with "--" must not be misread as a new flag).
       parsed[name] = next;
       i += 1;
     } else {

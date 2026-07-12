@@ -164,6 +164,22 @@ check('a well-formed bee.mjs-shaped Bash call is allowed (check (d) does not fal
   assert(result.status === 0, `expected exit 0, got ${result.status} (stderr: ${result.stderr})`);
 });
 
+check('a flag value that legitimately begins with "--" is consumed as the value, not misread as a new flag (P1 fix, review-phase-1.md)', () => {
+  const root = makeFixtureRoot();
+  const result = runHook(root, {
+    tool_name: 'Bash',
+    tool_input: {
+      command: 'node .bee/bin/bee_decisions.mjs log --decision "--foo" --rationale bar',
+    },
+  });
+  // Before the fix: parseCliFlags treated "--foo" as a new bare flag instead
+  // of --decision's value, so --decision resolved to boolean true, failed
+  // the string-type schema check, and the call was denied. bee.mjs's own
+  // parseFlags always consumes the next token unconditionally — the two
+  // parsers must agree, and both must ALLOW this well-formed call.
+  assert(result.status === 0, `expected exit 0 (dispatcher accepts this call), got ${result.status} (stderr: ${result.stderr})`);
+});
+
 check('a legacy bee_reservations.mjs boolean flag does not over-consume a trailing positional token', () => {
   const root = makeFixtureRoot();
   const result = runHook(root, {
