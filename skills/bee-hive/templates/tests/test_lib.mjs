@@ -9,6 +9,18 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+const metadataParityTest = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../bee-writing-skills/scripts/test_openai_metadata.mjs',
+);
+const metadataParityResult = spawnSync(process.execPath, [metadataParityTest], { encoding: 'utf8' });
+if (metadataParityResult.status !== 0) {
+  process.stdout.write(metadataParityResult.stdout ?? '');
+  process.stderr.write(metadataParityResult.stderr ?? '');
+  process.exit(metadataParityResult.status ?? 1);
+}
+process.stdout.write(metadataParityResult.stdout ?? '');
+
 import {
   findRepoRoot,
   defaultState,
