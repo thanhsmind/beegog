@@ -152,29 +152,57 @@ function splitCliSegments(tokens) {
 }
 
 // Resolve (scriptBasename, positional-tokens-after-script) to a registry
-// command name plus how many positional tokens it consumed. Returns null
-// when the shape is ambiguous (e.g. no subcommand token at all) — left to
-// fail open, never guessed.
-function resolveCliCommandName(scriptBasename, positionalTokens) {
+// command name plus how many positional tokens it consumed. Longest-prefix
+// match over `registry`'s own names — the SAME rule du-1 added to
+// resolveCommand() in skills/bee-hive/templates/bee.mjs (that function is the
+// source of truth; it is duplicated rather than imported here because this
+// hook only ever dynamically imports repo-root `lib/*.mjs` modules via
+// libModuleUrl, never bee.mjs itself). Without this, a 3-segment command
+// (state.worker.add, reviews.candidate.add) collapsed onto the old hardcoded
+// 2-token shape (e.g. "state.worker.add" -> guessed as "state.worker"),
+// matched no registry entry, and silently skipped schema validation — a
+// documented fail-open gap this closes (plan.md "Write-guard hook gap").
+// Returns null when the shape is ambiguous (no verb token at all) or no
+// prefix length matches any registry name — left to fail open, never guessed.
+function resolveCliCommandName(scriptBasename, positionalTokens, registry) {
   const legacyMatch = scriptBasename.match(LEGACY_HELPER_RE);
-  if (legacyMatch) {
-    const group = legacyMatch[1];
-    if (group === "status") {
-      return { commandName: "status", consumed: 0 };
-    }
-    const action = positionalTokens[0];
-    if (!action || action.startsWith("-")) return null;
-    return { commandName: `${group}.${action}`, consumed: 1 };
+  const isDispatcher = !legacyMatch && DISPATCHER_RE.test(scriptBasename);
+  if (!legacyMatch && !isDispatcher) return null;
+
+  const group = legacyMatch ? legacyMatch[1] : positionalTokens[0];
+  if (legacyMatch && group === "status") {
+    return { commandName: "status", consumed: 0 };
   }
-  if (DISPATCHER_RE.test(scriptBasename)) {
-    const group = positionalTokens[0];
+  if (isDispatcher) {
     if (!group || group.startsWith("-")) return null;
     if (group === "status") {
       return { commandName: "status", consumed: 1 };
     }
-    const action = positionalTokens[1];
-    if (!action || action.startsWith("-")) return null;
-    return { commandName: `${group}.${action}`, consumed: 2 };
+  }
+
+  // Collect the run of non-flag tokens after the group — the same "leading
+  // tokens" shape bee.mjs's own splitCommandTokens/resolveCommand match
+  // against, so a 3-segment name resolves identically here.
+  const scanFrom = isDispatcher ? positionalTokens.slice(1) : positionalTokens;
+  const verbTokens = [];
+  for (const token of scanFrom) {
+    if (token.startsWith("-")) break;
+    verbTokens.push(token);
+  }
+  if (verbTokens.length === 0) return null; // no verb token at all: ambiguous, fail open
+
+  const names = registry && Array.isArray(registry) ? new Set(registry.map((e) => e.name)) : null;
+  if (!names) return null;
+
+  const nameSegments = [group, ...verbTokens];
+  for (let n = nameSegments.length; n >= 2; n -= 1) {
+    const candidate = nameSegments.slice(0, n).join(".");
+    if (names.has(candidate)) {
+      // Legacy shape: positionalTokens holds ONLY verb tokens (the group came
+      // from the script name), so consumed = n - 1 (excludes the group).
+      // Dispatcher shape: positionalTokens[0] IS the group, so consumed = n.
+      return { commandName: candidate, consumed: isDispatcher ? n : n - 1 };
+    }
   }
   return null;
 }
@@ -224,7 +252,7 @@ function checkCliShape(command, registry, validateFn) {
       const base = segment[i].replace(/\\/g, "/").split("/").pop();
       if (!LEGACY_HELPER_RE.test(base) && !DISPATCHER_RE.test(base)) continue;
       const positional = segment.slice(i + 1);
-      const resolved = resolveCliCommandName(base, positional);
+      const resolved = resolveCliCommandName(base, positional, registry);
       if (!resolved) break; // ambiguous shape for this segment: fail open
       const entry = registry.find((candidate) => candidate.name === resolved.commandName);
       if (!entry) break; // unknown command name: dispatcher's concern, not this guard's
