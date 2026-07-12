@@ -4801,6 +4801,100 @@ check('vendored statusline: every templates/statusline/* is byte-identical to it
   }
 });
 
+// ─── review-on-demand removal census (review-od-7, SPEC 565e68d0, §13) ───────
+// Pins the retired auto-review chain wording gone from every live prose
+// surface. Banned phrases are built by string concatenation so this test
+// file's own source text can never match its own census (critical pattern
+// 20260712 — a negative grep must not be satisfiable by its own fixture).
+
+check('census: retired auto-review-trigger phrasing is absent from every live prose surface (skills SKILL.md + references, AGENTS.md + AGENTS.block.md template, living docs/*.md + docs/specs/*.md) — docs/history and docs/decisions archaeology excluded (critical patterns 20260711/20260712)', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = findRepoRoot(templatesRoot);
+  if (!repoRoot) return; // no repo context to census against (bare checkout)
+
+  const BANNED_PHRASES = [
+    // the retired bee-reviewing SKILL.md description trigger — reviewing used
+    // to fire the moment a swarm slice finished; it is now user-invoked only.
+    'final swarm slice ' + 'completes',
+    // the retired automatic next_action / completion signal that used to
+    // route execution straight into a reviewer wave.
+    'Invoke bee-' + 'reviewing',
+  ];
+
+  function listMarkdownFiles(dir) {
+    if (!fs.existsSync(dir)) return [];
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+      .map((entry) => path.join(dir, entry.name));
+  }
+
+  const censusFiles = [];
+
+  // skills/**/SKILL.md + skills/**/references/*.md
+  const skillsRoot = path.join(repoRoot, 'skills');
+  if (fs.existsSync(skillsRoot)) {
+    for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const skillMd = path.join(skillsRoot, entry.name, 'SKILL.md');
+      if (fs.existsSync(skillMd)) censusFiles.push(skillMd);
+      censusFiles.push(...listMarkdownFiles(path.join(skillsRoot, entry.name, 'references')));
+    }
+  }
+
+  // AGENTS.md (repo root) + the AGENTS.block.md template onboarding installs
+  const agentsMd = path.join(repoRoot, 'AGENTS.md');
+  if (fs.existsSync(agentsMd)) censusFiles.push(agentsMd);
+  const agentsBlockTemplate = path.join(skillsRoot, 'bee-hive', 'templates', 'AGENTS.block.md');
+  if (fs.existsSync(agentsBlockTemplate)) censusFiles.push(agentsBlockTemplate);
+
+  // living docs/*.md + docs/specs/*.md — non-recursive by construction, so
+  // docs/history/ and docs/decisions/ (subdirectories) are never descended
+  // into; this is the exclusion, not a filter that can be forgotten.
+  censusFiles.push(...listMarkdownFiles(path.join(repoRoot, 'docs')));
+  censusFiles.push(...listMarkdownFiles(path.join(repoRoot, 'docs', 'specs')));
+
+  assert(
+    censusFiles.length > 0,
+    'census found zero files to scan — a broken glob would silently pass this sweep',
+  );
+
+  const hits = [];
+  for (const file of censusFiles) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const phrase of BANNED_PHRASES) {
+      if (text.includes(phrase)) hits.push(`${path.relative(repoRoot, file)}: contains "${phrase}"`);
+    }
+  }
+
+  assert(
+    hits.length === 0,
+    `retired auto-review-trigger wording found on a live surface (review-on-demand, decision 565e68d0):\n${hits.join('\n')}`,
+  );
+});
+
+check('census: the on-demand review contract carries its required anchors — AGENTS.block.md keeps the on-request bee-reviewing side entry, bee-compounding keeps the review-candidate close step', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = findRepoRoot(templatesRoot);
+  if (!repoRoot) return; // no repo context to check against (bare checkout)
+
+  const agentsBlockPath = path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md');
+  assert(fs.existsSync(agentsBlockPath), `AGENTS.block.md template not found at ${agentsBlockPath}`);
+  const agentsBlockText = fs.readFileSync(agentsBlockPath, 'utf8');
+  assert(
+    /on user request:\s*`?bee-reviewing/.test(agentsBlockText),
+    'AGENTS.block.md must keep the "on user request: bee-reviewing" side-entry line (SPEC R1/R8, decision 565e68d0)',
+  );
+
+  const compoundingPath = path.join(repoRoot, 'skills', 'bee-compounding', 'SKILL.md');
+  assert(fs.existsSync(compoundingPath), `bee-compounding/SKILL.md not found at ${compoundingPath}`);
+  const compoundingText = fs.readFileSync(compoundingPath, 'utf8');
+  assert(
+    compoundingText.includes('candidate add'),
+    'bee-compounding/SKILL.md must keep the "candidate add" review-candidate step at feature close (SPEC 7.1 step 6)',
+  );
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 fs.rmSync(detectRoot, { recursive: true, force: true });

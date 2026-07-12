@@ -92,15 +92,32 @@ You describe what you want. bee routes it by size and risk, then walks it throug
         bee-swarming           spawns bounded workers
         bee-executing          one worker per cell: implement → verify → CAP
            │
-        bee-reviewing          multi-agent review, verifies the work is real
-           ▼
-   ▶ GATE 4  "P1 issues block merge; otherwise, merge?"   ← you approve
-           │
-        bee-briefing           writes the walkthrough (what shipped + how to test)
         bee-scribing           updates the area specs (the durable meaning)
         bee-compounding        stores learnings + decisions for next time
            ▼
-         done
+         done — verified, unreviewed; the change set joins review candidates
+```
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ Independent review is a SEPARATE, user-invoked step (decision          │
+│ 565e68d0) — never an automatic stage of the chain above. Ask for it    │
+│ any time, over any scope you name ("review this feature", "review     │
+│ today's work", "review the diff from X to Y"):                        │
+│                                                                        │
+│        bee-reviewing         multi-agent review over that immutable   │
+│                               scope: P1/P2/P3 findings, artifact      │
+│                               verification, UAT                       │
+│           ▼                                                          │
+│   ▶ GATE 4  "P1 issues block merge; otherwise, merge?"  ← you approve │
+│           │                                                          │
+│        bee-briefing          writes the walkthrough (what shipped +  │
+│                               how to test)                           │
+│                                                                        │
+│ A merge/ship/release request while work sits unreviewed reports the   │
+│ count and risk level, then asks before ever spending a reviewer token │
+│ (never a silent dispatch).                                            │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 Each gate is a single plain-language question with the machine detail linked, not dumped. You must be able to **restate what you're approving in your own words** — a gate you can't restate is worse than no gate.
@@ -161,7 +178,7 @@ Gates are **human** approvals, and three of them are enforced by code — the ag
 | **Gate 1** | exploring | Are these the decisions I meant? | Everything downstream builds on them — cheap to fix now, costly later |
 | **Gate 2** | planning shape | Is this the right thing, at the right size? | Preparation gets built against the wrong shape |
 | **Gate 3** | validating | May the agent start editing real files (this slice only)? | The most irreversible step — this is where code starts changing |
-| **Gate 4** | reviewing | Does this go into the main branch? | P1 findings ship broken code to users |
+| **Gate 4** | a user-invoked review session only — never automatic (decision 565e68d0) | Does this go into the main branch? | P1 findings ship broken code to users |
 
 Enforcement, not etiquette: until Gate 3 is approved, `bee_cells.mjs claim` throws and the write-guard hook **denies source edits** (while keeping `.bee/`, `docs/`, `.spikes/`, and `AGENTS.md` writable). Gate 4 never auto-merges past an open P1.
 
@@ -181,7 +198,7 @@ Bypass is **not** the same as headless mode (headless still stops at every gate)
 
 ## How review works
 
-Cell closure is *not* proof the feature works — so `bee-reviewing` is a separate quality gate before merge. It runs in five parts:
+Cell closure is *not* proof the feature works, and it is not the same thing as independent review. Verification (cap-requires-proof, above) is mandatory for every cell; `bee-reviewing` is a separate, **user-invoked** quality gate over an immutable scope you choose — a feature, a named batch, a commit range — never spawned automatically when a cell, slice, or feature finishes (decision 565e68d0). A completed, verified change can sit `unreviewed` indefinitely without blocking further work; ask for review ("review this feature", "review today's work", "review the diff from X to Y") whenever you want the panel to run. It runs in five parts:
 
 1. **Multi-agent specialist review.** Independent reviewers run in parallel, each with an *isolated* context (the diff + `CONTEXT.md` + `plan.md` only — never session history, so they can't be led):
    - always-on: **code-quality** (correctness, types), **architecture** (boundaries, coupling), **security** (auth, secrets, injection), **test-coverage** (missing cases, weak assertions). Precedent arrives via `plan.md` (planning's learnings search); the orchestrator dedupes and corroborates findings itself after all reviewers return.
@@ -201,10 +218,10 @@ Every planning pass counts mechanical **risk flags** (auth · authorization · d
 
 | Lane | When | What it gets |
 |---|---|---|
-| `tiny` | 0–1 flags, ≤2 files, one direct task | one cell, one-line trace, lightest review |
-| `small` | 0–1 flags, ≤3 files, no gray areas | a cell or two, optional mini-brief |
-| `standard` | 2–3 flags, or story-sized behavior | full cells + must_haves, one review pass |
-| `high-risk` | 4+ flags, or any hard-gate flag | mandatory spikes/feasibility proof, strict trace, slower Gate 3 |
+| `tiny` | 0–1 flags, ≤2 files, one direct task | one cell, one-line trace, self-review + done-report (no auto reviewer) |
+| `small` | 0–1 flags, ≤3 files, no gray areas | a cell or two, optional mini-brief, self-checks only (no auto reviewer) |
+| `standard` | 2–3 flags, or story-sized behavior | full cells + must_haves; a review session runs only if you ask for one |
+| `high-risk` | 4+ flags, or any hard-gate flag | mandatory spikes/feasibility proof, strict trace, slower Gate 3; a review session runs only if you ask for one |
 | `spike` | one yes/no question decides if the plan is real | a disposable experiment under `.spikes/`, answers then discards |
 
 The rule that never bends: **lanes scale ceremony, never memory.** Even a `tiny` cell that changed behavior obliges a spec sync, and a settled decision is logged the moment it settles — in every lane.
@@ -264,11 +281,16 @@ you approve GATE 3      →   ← before this, source writes are DENIED by the w
                             bee-executing: implement → verify  .bee/cells/<id>.json capped
                             → cap (refuses without proof +        (verify output + before-state
                                a recorded before-state)            recorded in the trace)
-                            bee-reviewing: P1/P2/P3 + UAT
+                            bee-scribing syncs area specs      docs/specs/<area>.md
+                            bee-compounding stores learnings   decisions, critical-patterns,
+                                                                review candidate recorded
+feature closes          ←   done — verified, unreviewed
+                            (independent review is separate and user-invoked, below)
+
+"review feature X"      →   bee-reviewing: P1/P2/P3 + UAT      docs/history/X/reports/
+                            over the scope you named
 you approve GATE 4      →   (P1 findings block merge)
                             bee-briefing writes walkthrough    docs/history/X/walkthrough.md
-                            bee-scribing syncs area specs      docs/specs/<area>.md
-                            bee-compounding stores learnings   decisions, critical-patterns
 ```
 
 If a session runs long, bee writes `.bee/HANDOFF.json` at ~65% context and pauses; the next session surfaces the handoff and **waits** — it never auto-resumes.

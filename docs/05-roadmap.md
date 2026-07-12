@@ -17,7 +17,7 @@ A NO on any spike changes the architecture doc before any skill is written.
 
 ## Phase 1 — The spine (hive + tiny lane end-to-end)
 
-Goal: a tiny fix can flow bootstrap → plan(tiny) → validate(light) → one worker → light review, entirely under bee.
+Goal: a tiny fix can flow bootstrap → plan(tiny) → validate(light) → one worker → self-checks, entirely under bee.
 
 1. Shared `bin/lib/` modules (state, cells, reservations, guards, inject) + vendored helpers: `bee_status.mjs`, `bee_cells.mjs`, `bee_reservations.mjs` (+ test scripts, following khuym's `test_onboard_khuym.mjs` pattern).
 2. `onboard_bee.mjs`: installs AGENTS.md block (BEE:START/END), `.bee/` runtime files, helpers + lib; `--apply` gated on approval.
@@ -43,7 +43,7 @@ Exit: Gate discipline holds under pressure tests; a feature pauses at 65% and re
 ## Phase 3 — Memory and the clean hive
 
 1. `bee_decisions.mjs` (event-sourced log, write-time redaction, datamark on read) + decision surfacing in hive bootstrap.
-2. **scribing** (decision 0002): the BA-grade state layer — area-spec template with the rebuild bar, sync mode in the chain after reviewing, capture mode for discussion-agreed rules, harvest mode for legacy areas.
+2. **scribing** (decision 0002): the BA-grade state layer — area-spec template with the rebuild bar, sync mode in the chain after execution (review-on-demand, decision 565e68d0), capture mode for discussion-agreed rules, harvest mode for legacy areas.
 3. **compounding**: analysts, learnings template, critical promotion, friction → backlog, and the state-layer **guard** (verify scribing ran; invoke it if not — decisions 0001/0002).
 4. **grooming**: entropy audit (including the `stale specs` term), hunt checklists, propose/approve/execute/close-the-loop.
 5. **bee-writing-skills** (adapted from khuym; needed before Phase 3 skills are edited further — consider pulling it into Phase 1 if skill churn is high).
