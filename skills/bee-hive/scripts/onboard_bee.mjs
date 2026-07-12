@@ -70,6 +70,7 @@ const GITIGNORE_BLOCK_PATTERNS = [
   ".bee/.inject-cache.json",
   ".bee/HANDOFF.json",
   ".bee/spikes/",
+  ".bee/manifest-hash.json",
 ];
 
 const HOOK_FILENAMES = [

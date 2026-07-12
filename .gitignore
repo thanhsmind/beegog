@@ -8,4 +8,5 @@
 .bee/.inject-cache.json
 .bee/HANDOFF.json
 .bee/spikes/
+.bee/manifest-hash.json
 # BEE:END
