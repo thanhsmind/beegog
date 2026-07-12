@@ -226,7 +226,7 @@ docs/specs/
 ```text
 node .bee/bin/bee_status.mjs --json
 node .bee/bin/bee_cells.mjs list [--feature F] [--status S] | ready [--feature F] | show --id ID
-node .bee/bin/bee_cells.mjs add --file cell.json
+node .bee/bin/bee_cells.mjs add --stdin   # one cell object or a whole-slice JSON array (all-or-nothing); --file cell.json also accepted
 node .bee/bin/bee_reservations.mjs list [--active-only] | sweep
 node .bee/bin/bee_decisions.mjs active [--recent N] | search --text T
 ```

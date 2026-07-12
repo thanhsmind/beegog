@@ -2,3 +2,4 @@
 {"id":"bb1db9e9-5e84-4b53-8d6e-f879c771282c","type":"candidate","date":"2026-07-12T11:59:58.563Z","feature":"cells-update-verb","head":"127abb0dbf897ae278b4f8e6f93de277efb15811","mode":"small","baseline":null,"cells":[]}
 {"id":"6efc94f5-14c8-424c-ab57-11bac6f6e1c5","type":"candidate","date":"2026-07-12T13:56:51.038Z","feature":"harness-integration-adopt","head":"09789ac","mode":"standard","baseline":null,"cells":["hia-1","hia-2","hia-3","hia-4","hia-5"]}
 {"id":"609419a9-03df-444f-91c2-7cb176456e06","type":"candidate","date":"2026-07-12T14:49:32.586Z","feature":"skill-metadata-parity","head":"4ead724","mode":"standard","baseline":"aed631a","cells":["smp-1","smp-2","smp-3"]}
+{"id":"280a86c2-cb68-4c2f-a531-93b026ec6dc0","type":"candidate","date":"2026-07-12T15:21:16.029Z","feature":"cells-batch-add","head":"HEAD","mode":"small","baseline":null,"cells":[]}

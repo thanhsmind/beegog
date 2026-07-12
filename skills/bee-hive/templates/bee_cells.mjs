@@ -6,6 +6,8 @@
 //   node .bee/bin/bee_cells.mjs ready [--feature F] [--json]
 //   node .bee/bin/bee_cells.mjs show --id ID [--json]
 //   node .bee/bin/bee_cells.mjs add --file cell.json | --stdin [--json]
+//     (input is one cell object OR a JSON array of cells — an array is a batch:
+//      every cell validated before any is written, all-or-nothing)
 //   node .bee/bin/bee_cells.mjs claim --id ID --worker NAME [--json]
 //   node .bee/bin/bee_cells.mjs verify --id ID --command CMD --passed true|false [--output TEXT | --output-file F] [--json]
 //     (small+ lanes refuse to cap without recorded verify output or evidence — decision 0004)
@@ -33,6 +35,7 @@ import {
   readyCells,
   readCell,
   addCell,
+  addCells,
   updateCell,
   claimCell,
   recordVerify,
@@ -129,6 +132,15 @@ function run(args) {
         cell = JSON.parse(text);
       } catch {
         throw new Error('add: input is not valid JSON.');
+      }
+      // A JSON array is a batch: every cell validated before any is written
+      // (all-or-nothing), so one heredoc creates a whole slice in one call.
+      if (Array.isArray(cell)) {
+        const added = addCells(root, cell);
+        return {
+          result: added,
+          text: added.map((c) => `Added ${summarize(c)}`).join('\n'),
+        };
       }
       const added = addCell(root, cell);
       return { result: added, text: `Added ${summarize(added)}` };

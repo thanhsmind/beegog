@@ -140,13 +140,15 @@ A cell is an executable prompt a cold worker can pick up with zero session histo
 }
 ```
 
-Create with:
+Create with one batched stdin call for the whole slice (a JSON array; a single object works for a one-cell slice — do not write per-cell scratchpad files):
 
 ```bash
-node .bee/bin/bee_cells.mjs add --file <cell.json>
+node .bee/bin/bee_cells.mjs add --stdin <<'EOF'
+[ { ...cell 1... }, { ...cell 2... } ]
+EOF
 ```
 
-The helper validates id, feature, title, lane, action, verify — and non-empty `must_haves.truths` for `standard`/`high-risk`. Fix rejects; never downgrade the lane to dodge validation.
+A batch is all-or-nothing: every cell is validated (including duplicate ids within the batch) before any is written. The helper validates id, feature, title, lane, action, verify — and non-empty `must_haves.truths` for `standard`/`high-risk`. Fix rejects; never downgrade the lane to dodge validation.
 
 ## Trace of shapes
 

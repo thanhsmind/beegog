@@ -71,7 +71,7 @@ export function writeCell(root, cell) {
   return cell;
 }
 
-export function addCell(root, cell) {
+function validateNewCell(root, cell) {
   if (!cell || typeof cell !== 'object' || Array.isArray(cell)) {
     throw new Error('addCell: cell must be a JSON object.');
   }
@@ -115,8 +115,10 @@ export function addCell(root, cell) {
   if (readCell(root, cell.id)) {
     throw new Error(`addCell: cell "${cell.id}" already exists.`);
   }
+}
 
-  const normalized = {
+function normalizeNewCell(cell) {
+  return {
     ...cell,
     status: cell.status || 'open',
     deps: Array.isArray(cell.deps) ? cell.deps : [],
@@ -125,7 +127,29 @@ export function addCell(root, cell) {
     read_first: Array.isArray(cell.read_first) ? cell.read_first : [],
     trace: { ...defaultTrace(), ...(cell.trace || {}) },
   };
-  return writeCell(root, normalized);
+}
+
+export function addCell(root, cell) {
+  validateNewCell(root, cell);
+  return writeCell(root, normalizeNewCell(cell));
+}
+
+// Batch add: validates EVERY cell (against disk and against duplicate ids
+// within the batch itself) before writing any — all-or-nothing, so a failing
+// cell in the middle of a slice never leaves partial state behind.
+export function addCells(root, cells) {
+  if (!Array.isArray(cells) || cells.length === 0) {
+    throw new Error('addCells: expected a non-empty JSON array of cells.');
+  }
+  const seen = new Set();
+  for (const cell of cells) {
+    validateNewCell(root, cell);
+    if (seen.has(cell.id)) {
+      throw new Error(`addCells: duplicate id "${cell.id}" within the batch.`);
+    }
+    seen.add(cell.id);
+  }
+  return cells.map((cell) => writeCell(root, normalizeNewCell(cell)));
 }
 
 // ─── updateCell — door-validated in-place revision (cells-update-verb) ─────

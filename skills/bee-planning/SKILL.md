@@ -87,10 +87,13 @@ Render `docs/history/<feature>/implement-plan.md` via `bee-briefing` only where 
 ## 6. Prep (after Gate 2 approval only)
 
 1. Enrich the **same** `plan.md` in place to `artifact_readiness: implementation-ready`: current slice selected, files bounded, verification commands named.
-2. Create cells for the current slice only:
+2. Create cells for the current slice only — the whole slice in **one** call, a JSON array piped straight to stdin (never one scratchpad file + one `add` per cell):
    ```bash
-   node .bee/bin/bee_cells.mjs add --file <cell.json>
+   node .bee/bin/bee_cells.mjs add --stdin <<'EOF'
+   [ { ...cell 1... }, { ...cell 2... } ]
+   EOF
    ```
+   The batch is all-or-nothing: every cell is validated before any is written. A single object (no array) still works for a one-cell slice; `--file` remains for pre-existing files.
    Every cell is an executable prompt: `files`, `read_first`, directive `action` citing D-IDs, `must_haves` (truths / artifacts / key_links / prohibitions), a runnable `verify` command, and `behavior_change: true` whenever the cell changes observable behavior. You may leave the model `tier` unset — the orchestrator judges each cell's difficulty and assigns the tier when it dispatches (decision 0016); set `tier` only as a hint when a cell is obviously mechanical (`extraction`) or obviously a hard integration/architecture call (`ceiling`), and even then swarming may override it. Cell quality rules and a schema example live in `references/planning-reference.md`.
 3. If an implement plan was rendered at §5 (high-risk, or a standard/small feature where one was produced on request), invoke `bee-briefing` in refresh mode so its Affected Files and Implementation Steps re-project from the created cells. If no brief exists, skip — there is nothing to refresh.
 4. Update state and hand off by lane: `tiny`/`small` (merged gate already approved) → `node .bee/bin/bee_state.mjs set --phase validated --next-action "Invoke bee-swarming (solo execution)."`; every other lane → `node .bee/bin/bee_state.mjs set --phase planning-complete --next-action "Invoke bee-validating."`

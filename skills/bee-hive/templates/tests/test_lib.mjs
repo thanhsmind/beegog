@@ -50,6 +50,7 @@ import {
 } from '../lib/backlog.mjs';
 import {
   addCell,
+  addCells,
   updateCell,
   readCell,
   writeCell,
@@ -268,6 +269,61 @@ check('addCell accepts a valid small cell and a standard cell with truths', () =
   );
   assert(readCell(root, 'demo-1') !== null, 'demo-1 should exist');
   assert(readCell(root, 'demo-2') !== null, 'demo-2 should exist');
+});
+
+// ─── cells: batch add (cells-batch-add) ─────────────────────────────────────
+
+check('addCells creates every cell of a valid batch in one call', () => {
+  const added = addCells(root, [makeCell('batch-1'), makeCell('batch-2'), makeCell('batch-3')]);
+  assert(added.length === 3, 'three cells returned');
+  for (const id of ['batch-1', 'batch-2', 'batch-3']) {
+    assert(readCell(root, id) !== null, `${id} should exist`);
+  }
+});
+
+check('addCells is all-or-nothing: one invalid cell in the batch writes zero files', () => {
+  assertThrows(
+    () => addCells(root, [makeCell('batch-x1'), makeCell('batch-x2', { lane: 'huge' }), makeCell('batch-x3')]),
+    'lane',
+    'invalid lane in the middle of the batch refuses',
+  );
+  for (const id of ['batch-x1', 'batch-x2', 'batch-x3']) {
+    assert(readCell(root, id) === null, `${id} must not exist after a failed batch`);
+  }
+});
+
+check('addCells refuses a duplicate id within the batch, nothing written', () => {
+  assertThrows(
+    () => addCells(root, [makeCell('batch-dup'), makeCell('batch-dup')]),
+    'duplicate',
+    'in-batch duplicate id refuses',
+  );
+  assert(readCell(root, 'batch-dup') === null, 'batch-dup must not exist');
+});
+
+check('addCells refuses a non-array and an empty array', () => {
+  assertThrows(() => addCells(root, makeCell('batch-notarray')), 'array', 'plain object refused');
+  assertThrows(() => addCells(root, []), 'array', 'empty array refused');
+});
+
+check('bee_cells.mjs add CLI: a JSON array on --stdin creates the whole slice in one call', () => {
+  const cliPath = fileURLToPath(new URL('../bee_cells.mjs', import.meta.url));
+  const batch = [makeCell('batch-cli-1'), makeCell('batch-cli-2')];
+  const ok = spawnSync(process.execPath, [cliPath, 'add', '--stdin'], {
+    cwd: root,
+    input: JSON.stringify(batch),
+    encoding: 'utf8',
+  });
+  assert(ok.status === 0, `batch add CLI exits 0, got ${ok.status}: ${ok.stderr}`);
+  assert(ok.stdout.includes('Added batch-cli-1') && ok.stdout.includes('Added batch-cli-2'), 'every added id reported');
+  assert(readCell(root, 'batch-cli-1') !== null && readCell(root, 'batch-cli-2') !== null, 'both cells exist');
+  const single = spawnSync(process.execPath, [cliPath, 'add', '--stdin'], {
+    cwd: root,
+    input: JSON.stringify(makeCell('batch-cli-single')),
+    encoding: 'utf8',
+  });
+  assert(single.status === 0, `single-object add still exits 0, got ${single.status}: ${single.stderr}`);
+  assert(readCell(root, 'batch-cli-single') !== null, 'single-object path unchanged');
 });
 
 // ─── cells: update verb (cells-update-verb) ─────────────────────────────────
