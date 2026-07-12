@@ -1,40 +1,22 @@
 {
   "schema_version": "1.0",
-  "phase": "compounding",
-  "feature": "onboard-statusline",
-  "mode": "small",
+  "phase": "idle",
+  "feature": null,
+  "mode": null,
   "approved_gates": {
-    "context": true,
-    "shape": true,
-    "execution": true,
-    "review": true
+    "context": false,
+    "shape": false,
+    "execution": false,
+    "review": false
   },
   "workers": [],
-  "summary": "bee 0.1.22 released (onboard-statusline); 8 anphabe hosts onboarded up_to_date, statusline pair live on company-tasks-management",
-  "next_action": "idle — 0.1.22 shipped, capture queue drained",
-  "last_scribing_run": {
-    "feature": "workers-prune",
-    "date": "2026-07-11",
-    "at": "2026-07-11T14:02:28.353Z",
-    "areas_synced": [
-      "reading-map (state CLI note)"
-    ],
-    "next_action": "idle — 0.1.22 shipped, capture queue drained"
-  },
-  "last_compounding_run": {
-    "feature": "dispatch-log",
-    "at": "2026-07-11T07:40:00.000Z",
-    "learnings": "docs/history/learnings/20260711-dispatch-log.md",
-    "critical_promotions": 0,
-    "decisions_logged": 1,
-    "friction_filed": 2,
-    "digest_refresh": "green (50 entries; 17 unknown_type drops pre-existing class)"
-  },
+  "summary": "harness-integration Phase 1 CLOSED and merged into main alongside main's own shipped features (onboard-statusline 0.1.22, workers-prune, cli-mutations, grill-deltas, dispatch-log). Merge conflicts in bee-runtime bookkeeping files (reservations.json, onboarding.json, decisions.jsonl, backlog.jsonl, reading-map.md, state.json) resolved by union/regeneration.",
+  "next_action": "Idle. Next: route a new request through bee-hive, or run the full test suite to confirm the merge is regression-free before completing the PR merge.",
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 67,
+    "capped": 75,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T13:38:25.991Z"
+  "last_activity": "2026-07-12T06:05:25.277Z"
 }

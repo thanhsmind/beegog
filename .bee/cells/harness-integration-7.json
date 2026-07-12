@@ -1,0 +1,55 @@
+{
+  "id": "harness-integration-7",
+  "feature": "harness-integration",
+  "title": "P1 fix: manifest_changed must never reshape a data command's JSON envelope",
+  "lane": "small",
+  "status": "capped",
+  "deps": [],
+  "decisions": [
+    "D6"
+  ],
+  "files": [
+    "skills/bee-hive/templates/bee.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+  ],
+  "read_first": [
+    "docs/history/harness-integration/reports/review-phase-1.md"
+  ],
+  "action": "P1 fix (review-phase-1.md, api-contract reviewer): emit() currently nests a data command's real result under {manifest_changed, manifest_changed_hint, result} when drift is detected, breaking any consumer parsing the steady-state JSON shape. Fix: never alter stdout's top-level shape for data commands. Move the drift signal off the data path - print the hint to stderr only when drift is detected, and leave stdout's JSON shape (the bare result) unchanged in every case. --help --json may still report a manifest_changed field in its own envelope (that command's shape already varies by design).",
+  "must_haves": {
+    "truths": [
+      "bee <cmd> --json stdout has an identical top-level JSON shape whether or not drift is detected, for every data command",
+      "A drift notice, when present, appears only on stderr or only in --help --json output, never altering a data command's stdout shape"
+    ],
+    "artifacts": [
+      {
+        "path": "skills/bee-hive/templates/bee.mjs",
+        "substantive": "emit() no longer wraps data-command stdout on drift"
+      }
+    ],
+    "key_links": [
+      "existing manifest_changed tests updated to assert stdout shape stability + stderr/help-only hint location"
+    ],
+    "prohibitions": [
+      "No change to the drift-detection logic itself (checkManifestDrift's hash comparison) - only where/how the signal is surfaced"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_bee_cli.mjs && node skills/bee-hive/templates/tests/test_lib.mjs",
+  "trace": {
+    "worker": null,
+    "outcome": "emit() no longer wraps a data command's stdout on drift; the manifest_changed hint now goes to stderr only, keeping stdout byte-stable",
+    "files_changed": [
+      "skills/bee-hive/templates/bee.mjs",
+      "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+    ],
+    "deviations": [],
+    "friction": null,
+    "capped_at": "2026-07-12T03:07:41.975Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\"skills/bee-hive/templates/tests/test_bee_cli.mjs\"],\n  \"tests_added_or_changed\": [\"skills/bee-hive/templates/tests/test_bee_cli.mjs: the manifest_changed drift test rewritten to assert stdout shape stability (same top-level keys as steady state) and stderr-only hint location, replacing the old assertion that the result gets nested under .result\"],\n  \"red_failure_evidence\": \"Ran the pre-fix bee.mjs (git show HEAD, before this cell's edit) with a corrupted .bee/manifest-hash.json: baseline 'bee status --json' returns a bare object ({onboarding, phase, mode, ...}); the drifted call returns {manifest_changed:true, manifest_changed_hint:'...', result:{onboarding,phase,mode,...}} - the real data is nested one level deeper, a shape change any array/object consumer would break on. After the fix, both calls return the identical bare shape on stdout; the drift hint now appears only on stderr.\",\n  \"verification_run\": \"node skills/bee-hive/templates/tests/test_bee_cli.mjs -> 67 passed, 0 failed. Regression: node skills/bee-hive/templates/tests/test_lib.mjs -> 124 passed, 0 failed.\",\n  \"deliberate_exceptions\": []\n}\n",
+    "verify_output": "67 passed, 0 failed; 124 passed, 0 failed",
+    "verify_passed": true,
+    "verify_command": "node skills/bee-hive/templates/tests/test_bee_cli.mjs && node skills/bee-hive/templates/tests/test_lib.mjs",
+    "verified_at": "2026-07-12T03:07:41.955Z"
+  }
+}

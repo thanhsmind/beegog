@@ -1,0 +1,74 @@
+{
+  "id": "harness-integration-1",
+  "feature": "harness-integration",
+  "title": "Build the shared command registry and args validator",
+  "lane": "high-risk",
+  "status": "capped",
+  "deps": [],
+  "decisions": [
+    "D2",
+    "D3"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "skills/bee-hive/templates/lib/validate-args.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+  ],
+  "read_first": [
+    "skills/bee-hive/templates/bee_status.mjs",
+    "skills/bee-hive/templates/bee_cells.mjs",
+    "skills/bee-hive/templates/bee_reservations.mjs",
+    "skills/bee-hive/templates/bee_decisions.mjs",
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "docs/history/harness-integration/approach.md"
+  ],
+  "action": "Build command-registry.mjs: enumerate every subcommand of the 4 existing helpers (bee_status/cells/reservations/decisions.mjs) as {name, invoke, description, parameters, examples, deprecated:null, schema_version:'1.0'} (schema_version is a top-level manifest field, not per-entry - see must_haves), where parameters is JSON-Schema (type:object, properties, required) matching the exact shape Claude Code's own tool definitions use (per D3 - no bespoke shape). Build validate-args.mjs exporting a single validate(commandEntry, parsedArgs) function returning {ok:true} or {ok:false, error:{field, reason, command}} - this is the one validator both the future dispatcher (cell harness-integration-2) and bee-write-guard.mjs (cell harness-integration-3) will import; registry+validator ship first because both later cells depend on them (dependency ordering, not a citation of D2 - D2 governs Phase-1-before-Phase-2-6 sequencing, not intra-slice build order). Write test_bee_cli.mjs asserting: the registry is valid JSON-Schema for every entry, validate() rejects a missing required field with the structured shape above, AND every entry's examples[] execute successfully against the real underlying helper - but ONLY inside an isolated temp repo (mirror test_lib.mjs's existing os.tmpdir()-based isolation pattern from read_first; NEVER run an example against this checkout's live .bee/ state, since several examples are state-mutating cell/decision operations that would corrupt this repo's own tracking data if run for real here).",
+  "must_haves": {
+    "truths": [
+      "command-registry.mjs exports an array covering every subcommand of the 4 existing helpers, plus a top-level schema_version field ('1.0')",
+      "validate-args.mjs's validate() returns {ok:false, error:{field,reason,command}} for a call missing a required parameter, never throws",
+      "every registry entry's examples[] runs successfully when executed inside an isolated temp repo (never against this checkout's real .bee/ state)"
+    ],
+    "artifacts": [
+      {
+        "path": "skills/bee-hive/templates/lib/command-registry.mjs",
+        "substantive": "exports the full registry, no TODO/stub entries"
+      },
+      {
+        "path": "skills/bee-hive/templates/lib/validate-args.mjs",
+        "substantive": "exports a working validate() function, no TODO stubs"
+      },
+      {
+        "path": "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "substantive": "runs and asserts registry + validator behavior, not a placeholder"
+      }
+    ],
+    "key_links": [
+      "test_bee_cli.mjs imports and exercises both command-registry.mjs and validate-args.mjs"
+    ],
+    "prohibitions": [
+      "No change to bee_status.mjs, bee_cells.mjs, bee_reservations.mjs, or bee_decisions.mjs in this cell - read-only reference for building the registry"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_bee_cli.mjs",
+  "trace": {
+    "worker": "worker-w1",
+    "outcome": "Built command-registry.mjs (21 subcommands across status/cells/reservations/decisions, D3 JSON-Schema parameters) + validate-args.mjs (validate()/isValidParameterSchema()) + test_bee_cli.mjs (32 checks: registry shape, validator behavior, every examples[] entry executed against the real underlying helper inside an isolated temp repo). Zero regression: test_lib.mjs 124/124 still passing.",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/command-registry.mjs",
+      "skills/bee-hive/templates/lib/validate-args.mjs",
+      "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+    ],
+    "deviations": [],
+    "friction": null,
+    "capped_at": "2026-07-11T15:41:58.798Z",
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": "PASS  SCHEMA_VERSION is the top-level manifest field, not per-entry\nPASS  every registry entry has the required manifest fields, no TODO/stub entries\nPASS  every registry entry's parameters is valid JSON-Schema (D3 shape: type/properties/required)\nPASS  registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*)\nPASS  registry covers every subcommand of the 4 existing helpers\nPASS  validate() rejects a missing required field with the structured {field,reason,command} shape\nPASS  validate() accepts a call with every required field present\nPASS  validate() flags a wrong-typed value without throwing\nPASS  validate() never throws on a malformed commandEntry\nPASS  isValidParameterSchema() rejects a bespoke (non-JSON-Schema) shape\nPASS  cells.add example creates the fixture cell used by the rest of the chain\nPASS  cells.list example runs against the real helper\nPASS  cells.ready example runs against the real helper\nPASS  cells.show example runs against the real helper\nPASS  cells.claim example runs against the real helper\nPASS  cells.verify example runs against the real helper\nPASS  cells.cap example runs against the real helper\nPASS  cells.judge example runs against the real helper\nPASS  cells.tier example runs against the real helper\nPASS  cells.block example runs against the real helper\nPASS  cells.drop example runs against the real helper\nPASS  reservations.reserve example runs against the real helper\nPASS  reservations.list example runs against the real helper\nPASS  reservations.release example runs against the real helper\nPASS  reservations.sweep example runs against the real helper\nPASS  decisions.log example runs against the real helper\nPASS  decisions.active example runs against the real helper\nPASS  decisions.search example runs against the real helper\nPASS  decisions.supersede example runs against the real helper (arbitrary id — event-sourced, no existence check)\nPASS  decisions.redact example runs against the real helper (arbitrary id — event-sourced, no existence check)\nPASS  status example runs against the real helper\nPASS  every registry entry had its example executed at least once (nothing silently skipped)\n\n32 passed, 0 failed\n",
+    "verify_passed": true,
+    "claimed_at": "2026-07-11T15:36:44.863Z",
+    "verify_command": "node skills/bee-hive/templates/tests/test_bee_cli.mjs",
+    "verified_at": "2026-07-11T15:41:49.460Z"
+  },
+  "tier": "generation"
+}

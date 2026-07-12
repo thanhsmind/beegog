@@ -44,10 +44,5 @@
     ],
     "model": "fable"
   },
-  "dogfood_repos": [
-    {
-      "path": "/home/thanhsmind/projects/anphabe/anphabe-gogl",
-      "label": "anphabe-gogl"
-    }
-  ]
+  "dogfood_repos": []
 }
