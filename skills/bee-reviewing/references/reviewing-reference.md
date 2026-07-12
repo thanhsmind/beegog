@@ -1,10 +1,10 @@
 # Reviewing Reference
 
-Load after `bee-reviewing` is selected. Companion to SKILL.md — flow lives there; prompts, schemas, and checklists live here.
+Load after `bee-reviewing` is selected. Companion to SKILL.md — flow lives there; prompts, schemas, and checklists live here. Every record on this page lands on a review session (`.bee/reviews/<id>.json`) via `node .bee/bin/bee_reviews.mjs record --id <id> --kind ...` — a session exists only after an explicit user request created it (SKILL.md Trigger + Scope Freeze and Preview).
 
 ## Specialist Dispatch
 
-Isolation contract: each reviewer receives the diff (or branch range), `docs/history/<feature>/CONTEXT.md`, and `docs/history/<feature>/plan.md` — nothing else, never session history. All reviewers run in parallel; the orchestrator synthesizes only after every one has returned (SKILL.md §2 — synthesis is orchestrator work, never a dispatched reviewer). Precedent is already in `plan.md` (planning's bootstrap owns the learnings search).
+Isolation contract: each reviewer receives the session's cumulative diff (baseline..head, or the mapped multi-feature diff), `docs/history/<feature>/CONTEXT.md`, and `docs/history/<feature>/plan.md` for every feature in scope — nothing else, never session history. All reviewers run in parallel; the orchestrator synthesizes only after every one has returned (SKILL.md §2 — synthesis is orchestrator work, never a dispatched reviewer). Precedent is already in `plan.md` (planning's bootstrap owns the learnings search).
 
 Common prompt shape:
 
@@ -95,6 +95,38 @@ Backlog entry format (one JSON object per line):
 
 P2/P3 entries carry the feature name for traceability but must NOT be wired as blockers of the current work. If any filing write fails, append the full finding to `docs/history/<feature>/reports/residual-findings.md` — nothing evaporates.
 
+## Session Record Checklist (SPEC §8)
+
+A review session (`.bee/reviews/<id>.json`) minimally carries these fields — `create` writes the first eight at freeze time (SKILL.md, Scope Freeze and Preview); the rest fill in as the session progresses via `record`:
+
+| Field | Set by | Notes |
+|---|---|---|
+| `id` | `create` | stable, never reused |
+| `requested_by` / `requested_at` | `create` | proves this is a user request, and when |
+| `scope_description` | `create` | how the user described the boundary |
+| `included` | `create` (frozen, R5) | feature/cell/commit entries actually in scope |
+| `excluded` | `create` (frozen, R5) | related work left out, with reason (e.g. "in progress", A6) |
+| `baseline` / `head` | `create` (frozen, R5) | the two immutable diff endpoints |
+| `reviewer_manifest` | `record --kind manifest` | reviewers, model/tier/executor actually dispatched |
+| `verification_preflight` | `create`, then `record --kind preflight` if re-checked | evidence check result before reviewer spend (A10) |
+| `findings` | `record --kind finding` (append) | severity, evidence, status, fix/re-review reference |
+| `uat` | `record --kind uat` (append) | item, pass/fail/skip, skip reason |
+| `decision` | `record --kind decision` | `pending`/`blocked`/`approved` + Gate 4 record |
+
+`record` refuses any payload touching `baseline`/`head`/`included`/`excluded` — those four are frozen at `create` and no sub-record kind legitimately needs to touch them (R5). Before creating a new session for a scope that might already be covered, run `node .bee/bin/bee_reviews.mjs status` — an unchanged range already reported `reviewed (covered by <id>)` is not re-reviewed (R6/A7).
+
+## Delta Re-Review Protocol (R9/A12)
+
+After a P1 fix caps:
+
+1. Re-review the fix delta itself.
+2. Sweep the whole scope diff for the finding's defect class — the same category of bug, anywhere else in scope, not just the line that changed (critical pattern 20260711: grill deltas).
+3. Record the outcome: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind finding --file <finding-update.json>` (status moves to resolved, with the fix's evidence).
+4. Decide whether the fix stayed inside its own boundary:
+   - **stayed inside** (localized fix, no public-contract change, no destabilized assumption elsewhere in scope) → only the delta + defect-class sweep is required; the full panel does not re-run (A12).
+   - **crossed a boundary** (touches another feature's contract, changes a public/API shape, or invalidates an assumption the rest of the scope relied on) → propose an expanded re-review to the user; do not silently pick either the minimal or the maximal option.
+5. A session stays `blocked` (A11) until every open P1's delta re-review passes.
+
 ## Verification-Evidence Gate (behavior_change cells)
 
 For each capped cell with `behavior_change: true`, the trace's `verification_evidence` must name: tests inspected, tests added/changed, red-failure or characterization evidence, the verification run, and any deliberate exception. Missing field, or prose like "covered by existing tests" with no test named → P1 finding; the cell's work goes back.
@@ -115,12 +147,12 @@ Can you confirm this works? [Pass / Fail / Skip]
 
 ## Finishing Checklist
 
-- [ ] all P1 fix cells capped and their findings re-verified
+- [ ] all P1 fix cells capped and their findings re-verified (delta re-review + defect-class sweep, R9/A12)
 - [ ] project build/test/lint gates run, fresh output quoted
 - [ ] P2/P3 → backlog entries (+ grooming cells where concrete), non-blocking
 - [ ] residual-findings fallback written if any filing failed
-- [ ] UAT results (and skip reasons) recorded in `.bee/state.json`
-- [ ] state closeout: phase `reviewing-complete`, summary, `next_action: "Invoke bee-compounding."`
+- [ ] UAT results (and skip reasons) recorded on the session (`record --kind uat`) and in `.bee/state.json` where a skip reason is needed
+- [ ] session closeout: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind decision --file decision.json` (`pending`/`blocked`/`approved`) — this closes the SESSION, not a workflow phase; every covered feature already reached its own close via execution → scribing → compounding independently, and that feature state is left untouched (7.5). Do not set `next_action: "Invoke bee-compounding."` here — there is no automatic chain hop out of a review session.
 
 ## Red Flags
 
@@ -128,5 +160,7 @@ Can you confirm this works? [Pass / Fail / Skip]
 - UAT failure logged as pass, or skip without reason
 - artifact verification skipped
 - synthesis started before every reviewer returned
-- P2/P3 blocking the current feature
+- P2/P3 blocking the current session
 - findings dropped because a write failed (use residual-findings.md)
+- a session closeout that sets `next_action: "Invoke bee-compounding."` as if review were a chain stage a feature must pass through
+- a new session created for a range `bee_reviews.mjs status` already reports `reviewed (covered by <id>)` and unchanged
