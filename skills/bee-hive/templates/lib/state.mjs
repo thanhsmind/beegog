@@ -84,29 +84,6 @@ const DEFAULT_MODELS = {
   codex: { extraction: null, generation: null, review: null },
 };
 
-// Decision 0013 — advisor mode. Run the session on the generation tier and
-// consult the ceiling model only at the listed hard calls (the "advisor" cost
-// pattern). Off by default. `at` is a subset of ADVISOR_POINTS.
-export const ADVISOR_POINTS = ['context', 'shape', 'execution', 'review', 'blocked'];
-// `model` is the STRONGER-than-session model the cheap session phones at a
-// consult point — it must be named because in advisor mode the session runs on
-// the cheap tier, so the expert is not the session/ceiling model (decision 0015).
-const DEFAULT_ADVISOR = { enabled: false, at: ['shape', 'execution', 'blocked'], model: 'fable' };
-
-function normalizeAdvisor(raw) {
-  const out = { enabled: false, at: [...DEFAULT_ADVISOR.at], model: DEFAULT_ADVISOR.model };
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    out.enabled = raw.enabled === true;
-    if (Array.isArray(raw.at)) {
-      const at = raw.at.filter((p) => ADVISOR_POINTS.includes(p));
-      if (at.length) out.at = at;
-    }
-    if (typeof raw.model === 'string' && raw.model.trim()) out.model = raw.model.trim();
-    else if (raw.model === null) out.model = null;
-  }
-  return out;
-}
-
 // Decisions 0019/0021 (P14/P16/P17) — a configurable slot value is one of:
 //   "model-name"                       → the runtime's per-agent model switch
 //   null                               → budget/cap fallback (no per-agent
@@ -143,8 +120,8 @@ function normalizeTierValue(value) {
 // THEN fs.realpath()ed here (critical pattern [20260708]: an MSYS /tmp string must
 // never reach a node fs API unresolved), and a path that does not exist or is
 // unreadable is WARNED and SKIPPED — one dead dogfood repo must never break the
-// bee repo's own session. Mirrors normalizeCommands / normalizeModels /
-// normalizeAdvisor: a single parse path lives in readConfig, nowhere else.
+// bee repo's own session. Mirrors normalizeCommands / normalizeModels: a
+// single parse path lives in readConfig, nowhere else.
 function normalizeDogfoodRepos(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
@@ -319,14 +296,20 @@ export function readOnboarding(root) {
 export function readConfig(root) {
   const raw = readJson(path.join(root, '.bee', 'config.json'), null);
   const config = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  // Advisor mode is removed in full (D1, reverses decisions 0013/0015). A
+  // stale `advisor` key left over in a repo's .bee/config.json must be
+  // TOLERATED, never thrown on — but it must not flow through this spread
+  // into the parsed result (a bare `...config` would let it ride through
+  // untouched). Destructure it out here; onboard_bee.mjs/bee_status.mjs warn
+  // (never error) when the raw file still carries the key.
+  const { advisor: _staleAdvisor, ...rest } = config;
   return {
-    ...config,
+    ...rest,
     hooks: { ...DEFAULT_HOOKS, ...(config.hooks || {}) },
     lanes: config.lanes || {},
     capabilities: config.capabilities || {},
     commands: normalizeCommands(config.commands),
     models: normalizeModels(config.models),
-    advisor: normalizeAdvisor(config.advisor),
     dogfood_repos: normalizeDogfoodRepos(config.dogfood_repos),
   };
 }
@@ -334,6 +317,17 @@ export function readConfig(root) {
 export function hookEnabled(root, name) {
   const config = readConfig(root);
   return config.hooks[name] !== false;
+}
+
+// D1 — one shared warning line for both surfacers (bee_status.mjs and
+// onboard_bee.mjs) so a stale `advisor` key reads identically wherever it is
+// noticed. Warn only, never error: readConfig above already tolerates the key.
+export const STALE_ADVISOR_KEY_WARNING =
+  'advisor mode was removed in 0.1.23; the advisor key in .bee/config.json is ignored — delete it.';
+
+export function hasStaleAdvisorKey(root) {
+  const raw = readJson(path.join(root, '.bee', 'config.json'), null);
+  return Boolean(raw && typeof raw === 'object' && !Array.isArray(raw) && 'advisor' in raw);
 }
 
 /**
@@ -528,19 +522,4 @@ export function startFeature(root, { feature, mode = null, phase = 'exploring' }
   state.next_action = `Invoke bee-hive for "${state.feature}" (phase: ${phaseValue}).`;
   writeState(root, state);
   return state;
-}
-
-/**
- * Advisor mode resolution (decision 0013). Returns the ceiling model to consult
- * when advisor mode is on and `point` is a configured consult point, else null.
- * The session itself runs on the generation tier; this is the phone-a-friend.
- */
-export function advisorModel(root, point) {
-  // In advisor mode the session runs on the cheap tier, so the expert it phones
-  // is a STRONGER, explicitly-named model (advisor.model) — not the session
-  // model, and not the ceiling (which would be the cheap session) (decision 0015).
-  const { advisor } = readConfig(root);
-  if (!advisor.enabled) return null;
-  if (point && !advisor.at.includes(point)) return null;
-  return advisor.model || null;
 }

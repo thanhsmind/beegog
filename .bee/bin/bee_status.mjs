@@ -16,6 +16,8 @@ import {
   readState,
   readHandoff,
   readOnboarding,
+  hasStaleAdvisorKey,
+  STALE_ADVISOR_KEY_WARNING,
 } from './lib/state.mjs';
 import { listCells, readyCells, scribingDebt, tierMix, ceilingScarcityWarning } from './lib/cells.mjs';
 import { captureQueue } from './lib/capture.mjs';
@@ -65,6 +67,9 @@ function buildStatus(root) {
       `${expiredUnreleased.length} reservation(s) expired but never released — run bee_reservations.mjs sweep.`,
     );
   }
+  if (hasStaleAdvisorKey(root)) {
+    staleness.push(STALE_ADVISOR_KEY_WARNING);
+  }
   if (!isKnownPhase(state.phase)) {
     staleness.push(
       `Unknown phase "${state.phase}" — not in the enum (${PHASES.join(', ')}; terminal alias: compounding-complete). Set state.phase to a valid value (idle at feature close); invented phases break machine-checkable handoffs (decision 0004).`,
@@ -105,7 +110,6 @@ function buildStatus(root) {
     gates: state.approved_gates,
     gate_bypass: readConfig(root).gate_bypass === true,
     models: readConfig(root).models,
-    advisor: readConfig(root).advisor,
     tier_mix: tierMix(root, { feature: state.feature || null }),
     ceiling_scarcity: ceilingScarcityWarning(root),
     handoff,
@@ -174,9 +178,6 @@ function renderText(status) {
       ? [
           `Models (claude): generation=${formatSlot(status.models.claude.generation)} extraction=${formatSlot(status.models.claude.extraction)} review=${formatSlot(status.models.claude.review)} · ceiling = the session model (keep it scarce; decisions 0012/0015/0021)`,
         ]
-      : []),
-    ...(status.advisor && status.advisor.enabled
-      ? [`🧭 ADVISOR MODE ON — session on generation; consult ${status.advisor.model ?? 'the strong model'} at: ${status.advisor.at.join(', ')} (decision 0013)`]
       : []),
     ...(status.tier_mix && status.tier_mix.tiered > 0
       ? [`Tier mix: extraction=${status.tier_mix.counts.extraction} generation=${status.tier_mix.counts.generation} ceiling=${status.tier_mix.counts.ceiling} untiered=${status.tier_mix.counts.untiered} (ceiling ${Math.round(status.tier_mix.ceilingShare * 100)}%)`]

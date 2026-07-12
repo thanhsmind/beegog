@@ -37,17 +37,6 @@
       }
     }
   },
-  "advisor": {
-    "enabled": false,
-    "at": [
-      "context",
-      "shape",
-      "execution",
-      "review",
-      "blocked"
-    ],
-    "model": "fable"
-  },
   "dogfood_repos": [
     {
       "path": "../example-bee-repo",

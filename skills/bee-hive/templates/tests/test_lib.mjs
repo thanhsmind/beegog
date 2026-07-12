@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   findRepoRoot,
@@ -23,8 +23,6 @@ import {
   MODEL_TIERS,
   CONFIGURABLE_TIERS,
   RUNTIMES,
-  advisorModel,
-  ADVISOR_POINTS,
   resolveTier,
   startFeature,
 } from '../lib/state.mjs';
@@ -1094,40 +1092,84 @@ check('cell tier: validation, tierMix, and the ceiling scarcity warning', () => 
   }
 });
 
-// ─── advisor mode: cheap main loop, ceiling on demand (decision 0013) ───────
+// ─── stale advisor key: readConfig tolerates and strips it (D1, advisor mode
+// removed in full — reverses decisions 0013/0015) ───────────────────────────
 
-check('advisorModel: off by default, resolves advisor.model only at configured points', () => {
-  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-advisor-'));
-  fs.mkdirSync(path.join(aRoot, '.bee'), { recursive: true });
-  writeJsonAtomic(path.join(aRoot, '.bee', 'onboarding.json'), {
+const stateModuleExports = await import(
+  pathToFileURL(fileURLToPath(new URL('../lib/state.mjs', import.meta.url))).href
+);
+
+// Post-removal export allowlist for lib/state.mjs (D1). Kept as an exact-match
+// allowlist rather than a denylist naming the removed bindings — see the
+// comment at its one call site for why.
+const EXPECTED_STATE_EXPORTS = [
+  'BEE_VERSION',
+  'GATE_NAMES',
+  'PHASES',
+  'KNOWN_PHASES',
+  'isKnownPhase',
+  'COMMAND_KEYS',
+  'MODEL_TIERS',
+  'CONFIGURABLE_TIERS',
+  'CONFIGURABLE_SLOTS',
+  'EFFORT_LEVELS',
+  'RUNTIMES',
+  'findRepoRoot',
+  'defaultState',
+  'statePath',
+  'readState',
+  'readStateStrict',
+  'writeState',
+  'gateApproved',
+  'readHandoff',
+  'readOnboarding',
+  'readConfig',
+  'hookEnabled',
+  'STALE_ADVISOR_KEY_WARNING',
+  'hasStaleAdvisorKey',
+  'modelForTier',
+  'resolveTier',
+  'startFeature',
+];
+
+check('readConfig strips a stale advisor key and never throws; advisor exports are gone', () => {
+  const sRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-stale-advisor-'));
+  fs.mkdirSync(path.join(sRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(sRoot, '.bee', 'onboarding.json'), {
     schema_version: '1.0',
     bee_version: '0.1.0',
   });
   try {
-    assert(ADVISOR_POINTS.includes('blocked') && ADVISOR_POINTS.includes('execution'), 'points enum');
-
-    // off by default → always null; the normalized block carries a default model
-    assert(advisorModel(aRoot, 'execution') === null, 'advisor off by default');
-    const def = readConfig(aRoot).advisor;
-    assert(def.enabled === false && Array.isArray(def.at) && def.model === 'fable', 'default advisor normalized (model=fable)');
-
-    // enabled with a point subset → resolves advisor.model (default) at those points only
-    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
-      advisor: { enabled: true, at: ['execution', 'blocked', 'bogus'] },
-    });
-    assert(advisorModel(aRoot, 'execution') === 'fable', 'resolves the advisor model at a configured point');
-    assert(advisorModel(aRoot, 'blocked') === 'fable', 'resolves at blocked');
-    assert(advisorModel(aRoot, 'shape') === null, 'null at a point not in the list');
-    assert(advisorModel(aRoot, null) === 'fable', 'no point given → advisor model when enabled');
-    assert(readConfig(aRoot).advisor.at.join(',') === 'execution,blocked', 'unknown points filtered out');
-
-    // a custom advisor.model is honored (independent of the models tier map)
-    writeJsonAtomic(path.join(aRoot, '.bee', 'config.json'), {
+    // (a) config WITH a stale advisor key → readConfig succeeds, key absent from the parsed result
+    writeJsonAtomic(path.join(sRoot, '.bee', 'config.json'), {
       advisor: { enabled: true, at: ['execution'], model: 'opus' },
+      gate_bypass: true,
     });
-    assert(advisorModel(aRoot, 'execution') === 'opus', 'advisor uses the configured advisor.model');
+    const withStale = readConfig(sRoot);
+    assert(!('advisor' in withStale), 'stale advisor key stripped from the parsed result');
+    assert(withStale.gate_bypass === true, 'sibling keys still parse normally alongside a stale advisor key');
+
+    // (b) config WITHOUT the key → unchanged behavior, no advisor key appears
+    writeJsonAtomic(path.join(sRoot, '.bee', 'config.json'), { gate_bypass: false });
+    const withoutStale = readConfig(sRoot);
+    assert(!('advisor' in withoutStale), 'no advisor key when config never had one');
+    assert(withoutStale.gate_bypass === false, 'sibling keys unaffected without a stale key');
+
+    // (c) the export surface is exactly the post-removal allowlist — no extra
+    // export (the removed advisor bindings included) rides along uncaught.
+    // Deliberately an exact-set equality against EXPECTED_STATE_EXPORTS rather
+    // than naming the removed bindings here: this cell's own verify greps
+    // templates/**/*.mjs for those literal names, and a test file that quoted
+    // them back would trip its own removal proof (critical-patterns.md
+    // [20260708] grep-for-prose gaming).
+    const actualExports = Object.keys(stateModuleExports).sort();
+    const expectedExports = [...EXPECTED_STATE_EXPORTS].sort();
+    assert(
+      actualExports.join(',') === expectedExports.join(','),
+      `lib/state.mjs export surface drifted from the allowlist — actual: [${actualExports.join(', ')}] expected: [${expectedExports.join(', ')}]`,
+    );
   } finally {
-    fs.rmSync(aRoot, { recursive: true, force: true });
+    fs.rmSync(sRoot, { recursive: true, force: true });
   }
 });
 

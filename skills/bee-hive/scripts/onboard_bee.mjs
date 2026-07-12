@@ -93,10 +93,6 @@ const DEFAULT_CONFIG = {
     claude: { extraction: "haiku", generation: "sonnet" },
     codex: { extraction: null, generation: null },
   },
-  // Advisor mode (decisions 0013/0015): run the session on the generation tier
-  // and consult a STRONGER model (advisor.model) only at the listed hard calls.
-  // Off by default.
-  advisor: { enabled: false, at: ["shape", "execution", "blocked"], model: "fable" },
 };
 
 const CRITICAL_PATTERNS_STUB = `# Critical Patterns
@@ -1086,6 +1082,26 @@ function commandsNotices(repoRoot, { firstOnboard = false } = {}) {
   return notices;
 }
 
+// ---------- stale advisor key notice (D1: advisor mode removed in full) -----
+// Warn, never error, when a repo's raw .bee/config.json still carries the
+// removed `advisor` key — templates/lib/state.mjs readConfig() tolerates and
+// strips it, but the human should still be told to delete it. Same warning
+// text as templates/lib/state.mjs STALE_ADVISOR_KEY_WARNING / bee_status.mjs
+// so it reads identically wherever it is noticed. Deliberately NOT imported
+// from templates/lib/state.mjs (this script only ever text-scans that tree
+// for BEE_VERSION — see readBeeVersion — and never import-depends on its
+// exports; the skill-sync test fixture's fake state.mjs is minimal by design).
+const STALE_ADVISOR_KEY_WARNING =
+  "advisor mode was removed in 0.1.23; the advisor key in .bee/config.json is ignored — delete it.";
+
+function staleAdvisorNotices(repoRoot) {
+  const config = readJsonIfExists(path.join(repoRoot, ".bee", "config.json"));
+  const hasStaleKey = Boolean(
+    config && typeof config === "object" && !Array.isArray(config) && "advisor" in config,
+  );
+  return hasStaleKey ? [STALE_ADVISOR_KEY_WARNING] : [];
+}
+
 // ---------- plan computation ----------
 
 function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
@@ -1588,7 +1604,7 @@ export function main(argv = process.argv.slice(2)) {
           // overwrite/delete, not just the general-item plan.
           items: skillSync.items,
         },
-        notices: commandsNotices(repoRoot, { firstOnboard }),
+        notices: [...commandsNotices(repoRoot, { firstOnboard }), ...staleAdvisorNotices(repoRoot)],
       };
       if (skillSync.blocked) {
         // Reporting is not failing: plan mode exits 0 with the blocked status.
@@ -1649,7 +1665,7 @@ export function main(argv = process.argv.slice(2)) {
         : null,
       skills: result.skills,
       onboarding: result.onboarding,
-      notices: commandsNotices(repoRoot, { firstOnboard }),
+      notices: [...commandsNotices(repoRoot, { firstOnboard }), ...staleAdvisorNotices(repoRoot)],
     };
     if (result.forcedDowngrade) {
       // F9: a forced apply reports the fact machine-readably, with versions.
