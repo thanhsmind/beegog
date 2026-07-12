@@ -1,13 +1,13 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.25",
+  "bee_version": "0.1.26",
   "managed": {
     "agents_block": "1f37a9f007405268ff79656d2d0c84cda7d17c03ea6cc698a11cacfc68595d1e",
     "gitignore_block": "4c6db28e97548f878387cf72312b94fa98071f3b94c1af62622d56f008dfb1d8",
     "helpers": {
       "bee_backlog.mjs": "1256aeb2c797ca8d118379a2f770ccf5b3b663d2f6ef2ce034ee845f8b077d31",
       "bee_capture.mjs": "11dc00e64b8926bc1f53961d128e9eee46dd397442bae360d27feaa775bef2a8",
-      "bee_cells.mjs": "1097fa1814caf6f43c0ad9826f6cede693502ec1a33fddd864bc0c88a2d7abdc",
+      "bee_cells.mjs": "6e0e6eb72b7bc0a8e0c53391972271ebe42af690ed61799ba11ffe9a9751bde4",
       "bee_decisions.mjs": "1a5e1b02d66ee55416c52e5eac29d7c0ee623cf9b8a79a8f84d0eef43d91973b",
       "bee_feedback.mjs": "0e01eb9e93f37b83aa2683f29438969076f8c05b4aeacf40fa26eae3f92e7990",
       "bee_reservations.mjs": "02b0b1fe84e994a5a33bf4aaf181317d0b4fa88b064a5b53f800af8a0ccf9fd8",
@@ -18,7 +18,7 @@
     "lib": {
       "backlog.mjs": "849881ecdf0a9431c15c81a61a08a734292c871fdb5b616e168396417e6014fd",
       "capture.mjs": "6ce4fa5947a015f156468aa5bc40e264a9d7a170744e8700de1d90b969b3908c",
-      "cells.mjs": "852836af6411e654a96f5e03bc5b007d31df95194a44fadc611d5704e3aadf6a",
+      "cells.mjs": "cd7004988303adb87b01005da3e9a931cecc47f24c8fd0010f5e689a49a8c292",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
@@ -27,7 +27,7 @@
       "inject.mjs": "a00742f94ee4eeb52aff99917aa4cbdfdb7356807f54407bc94fac6a9b651520",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
       "reviews.mjs": "8174b4ae0ea0e4b4e86a31b1e595168aea0ec0daaf9bf8fb0cac6e1cfdcb02ee",
-      "state.mjs": "7a18726d0f5e5ea61b851a98f19d8bb16d4b3fbb63a0168e5835ca9d5d5380b9"
+      "state.mjs": "5e973e44804a9202fd54c96b1b0963663c1ffa30b6c1e6e2af36c2c22d30f3d8"
     },
     "statusline": {
       "statusline-command.sh": "0965ae1c0d95a96fd7899df7549893e94fcc59693cab3b23da8dc228aa870b0e",
@@ -44,5 +44,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-12T11:46:50.886Z"
+  "updated_at": "2026-07-12T12:00:12.001Z"
 }
