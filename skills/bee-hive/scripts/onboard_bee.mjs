@@ -43,6 +43,10 @@ const MARKER_START = "<!-- BEE:START -->";
 const MARKER_END = "<!-- BEE:END -->";
 
 const HOOK_FILENAMES = [
+  // adapter.mjs is the shared runtime adapter every wrapper hook imports
+  // (cell codex-parity-3) — vendoring the wrappers without it would break
+  // their import and crash every repo-fallback hook in the host repo.
+  "adapter.mjs",
   "bee-session-init.mjs",
   "bee-prompt-context.mjs",
   "bee-write-guard.mjs",

@@ -136,9 +136,9 @@ function buildFixture(prefix) {
 
 // --- wrapper invocation ----------------------------------------------------
 
-function runWrapper(wrapperBase, input, cwd) {
+function runWrapper(wrapperBase, input, cwd, extraArgs = []) {
   const hookPath = path.join(HOOKS_DIR, wrapperBase);
-  return spawnSync(process.execPath, [hookPath], {
+  return spawnSync(process.execPath, [hookPath, ...extraArgs], {
     input,
     encoding: "utf8",
     cwd,
@@ -708,6 +708,288 @@ function runCodexAcceptanceRows() {
   }
 }
 
+// --- adapter contract rows (cell codex-parity-3) ---------------------------
+//
+// ADDED row groups only — the cell-1 seven-wrapper fixture table above is
+// untouched and these groups run in DEFAULT mode only, so --baseline keeps
+// characterizing exactly the original table (cell codex-parity-1's contract)
+// and --catalog-only keeps cell codex-parity-2's contract.
+//
+// Group "chain-nudge-nickname": a worker registered by the state CLI
+// (bee_state.mjs worker add --nickname N — discovery.md Proved Gaps: the CLI
+// stores `nickname` while chain-nudge previously read name|agent|worker) must
+// be matched by bee-chain-nudge, the generic fallback keys must keep working,
+// and an unregistered agent must stay silent.
+//
+// Group "coverage-gap": D2's "unsupported paths fail open with visible
+// limits" — each adapter coverage-gap class lands a visible line in
+// .bee/logs/hooks.jsonl (never silently), and a log-write failure NEVER flips
+// the computed allow/deny result in either direction.
+
+function adapterRow(group, id, pass, note, extra = {}) {
+  return {
+    wrapper: group,
+    id,
+    status: extra.status ?? null,
+    signal: extra.signal ?? null,
+    stdout: extra.stdout ?? "",
+    stderr: extra.stderr ?? "",
+    pass,
+    note,
+  };
+}
+
+function readHooksJsonl(fixtureRoot) {
+  const file = path.join(fixtureRoot, ".bee", "logs", "hooks.jsonl");
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, "utf8")
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function findGapLine(fixtureRoot, hook, gap) {
+  return readHooksJsonl(fixtureRoot).find(
+    (line) => line && line.hook === hook && line.event === "coverage-gap" && line.gap === gap,
+  );
+}
+
+function runNicknameRows() {
+  const rows = [];
+  // Dedicated fixture: a NON-swarming, non-reviewing phase (validating), so
+  // the nudge can only fire through registered-worker matching — never
+  // through the phase==="swarming" shortcut the shared fixture uses.
+  const root = buildFixture("hook-contracts-nickname-");
+  fs.writeFileSync(
+    path.join(root, ".bee", "state.json"),
+    `${JSON.stringify(
+      {
+        phase: "validating",
+        mode: "standard",
+        feature: "demo",
+        approved_gates: { context: true, shape: true, execution: false, review: false },
+        workers: [
+          // exactly what `bee_state.mjs worker add --nickname kevin --cell demo-1` stores
+          { nickname: "kevin", cell: "demo-1", tier: "generation", status: "working" },
+          // a foreign/legacy entry shape: the generic fallback must still match
+          { name: "legacy-worker" },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const subagentStop = (agent) =>
+    JSON.stringify({ hook_event_name: "SubagentStop", agent_name: agent, cwd: root });
+
+  const r1 = runWrapper("bee-chain-nudge.mjs", subagentStop("kevin"), root);
+  const p1 = parseAdvisoryStdout(r1.stdout);
+  const r1pass = Boolean(
+    r1.status === 0 &&
+      p1.json &&
+      typeof p1.json.systemMessage === "string" &&
+      p1.json.systemMessage.includes('Worker "kevin"') &&
+      p1.json.decision !== "block",
+  );
+  rows.push(
+    adapterRow(
+      "chain-nudge-nickname",
+      "registered-nickname-matched",
+      r1pass,
+      r1pass
+        ? 'worker registered under `nickname` ("kevin") is matched and nudged via JSON systemMessage'
+        : `expected a JSON systemMessage naming Worker "kevin"; got status=${r1.status} stdout=${truncate(r1.stdout, 300)}`,
+      r1,
+    ),
+  );
+
+  const r2 = runWrapper("bee-chain-nudge.mjs", subagentStop("legacy-worker"), root);
+  const p2 = parseAdvisoryStdout(r2.stdout);
+  const r2pass = Boolean(
+    r2.status === 0 &&
+      p2.json &&
+      typeof p2.json.systemMessage === "string" &&
+      p2.json.systemMessage.includes('Worker "legacy-worker"'),
+  );
+  rows.push(
+    adapterRow(
+      "chain-nudge-nickname",
+      "generic-fallback-still-works",
+      r2pass,
+      r2pass
+        ? "legacy entry registered under `name` still matches through the generic fallback"
+        : `expected a JSON systemMessage naming Worker "legacy-worker"; got status=${r2.status} stdout=${truncate(r2.stdout, 300)}`,
+      r2,
+    ),
+  );
+
+  const r3 = runWrapper("bee-chain-nudge.mjs", subagentStop("stranger"), root);
+  const r3pass = r3.status === 0 && !(r3.stdout || "").trim();
+  rows.push(
+    adapterRow(
+      "chain-nudge-nickname",
+      "unregistered-agent-stays-silent",
+      r3pass,
+      r3pass
+        ? "an agent not registered under any key stays silent (control: the match is real)"
+        : `expected silence for an unregistered agent; got status=${r3.status} stdout=${truncate(r3.stdout, 300)}`,
+      r3,
+    ),
+  );
+
+  return rows;
+}
+
+function runCoverageGapRows() {
+  const rows = [];
+
+  // -- gap class: malformed-payload (top-level null) + source threading -----
+  const f1 = buildFixture("hook-contracts-gap-malformed-");
+  const g1 = runWrapper("bee-session-init.mjs", "null", f1, ["--source=plugin"]);
+  const line1 = findGapLine(f1, "session-init", "malformed-payload");
+  const g1pass = Boolean(g1.status === 0 && line1 && line1.source === "plugin");
+  rows.push(
+    adapterRow(
+      "coverage-gap",
+      "malformed-payload-logged",
+      g1pass,
+      g1pass
+        ? 'top-level null fails open AND lands a visible coverage-gap line (gap "malformed-payload") carrying the explicit --source identity'
+        : `expected exit 0 plus a hooks.jsonl coverage-gap line with gap="malformed-payload" and source="plugin"; got status=${g1.status} line=${JSON.stringify(line1)}`,
+      g1,
+    ),
+  );
+
+  // -- gap class: invalid-cwd ------------------------------------------------
+  const f2 = buildFixture("hook-contracts-gap-cwd-");
+  const g2 = runWrapper("bee-session-init.mjs", JSON.stringify({ cwd: { not: "a string" } }), f2);
+  const line2 = findGapLine(f2, "session-init", "invalid-cwd");
+  const g2pass = Boolean(g2.status === 0 && line2);
+  rows.push(
+    adapterRow(
+      "coverage-gap",
+      "invalid-cwd-logged",
+      g2pass,
+      g2pass
+        ? 'non-string cwd fails open AND lands a visible coverage-gap line (gap "invalid-cwd")'
+        : `expected exit 0 plus a hooks.jsonl coverage-gap line with gap="invalid-cwd"; got status=${g2.status} line=${JSON.stringify(line2)}`,
+      g2,
+    ),
+  );
+
+  // -- gap class: invalid-source ----------------------------------------------
+  const f3 = buildFixture("hook-contracts-gap-source-");
+  const g3 = runWrapper("bee-session-init.mjs", JSON.stringify({ cwd: f3 }), f3, [
+    "--source=weird",
+  ]);
+  const line3 = findGapLine(f3, "session-init", "invalid-source");
+  const g3pass = Boolean(g3.status === 0 && line3);
+  rows.push(
+    adapterRow(
+      "coverage-gap",
+      "invalid-source-logged",
+      g3pass,
+      g3pass
+        ? 'an unknown --source identity is recorded as a visible coverage-gap line (gap "invalid-source"), never a behavior change'
+        : `expected exit 0 plus a hooks.jsonl coverage-gap line with gap="invalid-source"; got status=${g3.status} line=${JSON.stringify(line3)}`,
+      g3,
+    ),
+  );
+
+  // -- gap class: applypatch-unparsed -----------------------------------------
+  // codex-parity-3/-4 boundary: an intercepted apply_patch whose targets
+  // cannot be proved logs a VISIBLE gap and (today) fails open; cell
+  // codex-parity-4 owns flipping this class to deny-on-unprovable and may
+  // retarget this row's exit expectation to 2 (a strengthening, never a
+  // weakening).
+  const f4 = buildFixture("hook-contracts-gap-applypatch-");
+  const g4 = runWrapper(
+    "bee-write-guard.mjs",
+    JSON.stringify({
+      hook_event_name: "PreToolUse",
+      tool_name: "apply_patch",
+      tool_input: { input: "*** Begin Patch\njunk hunk with no file verbs\n*** End Patch" },
+      cwd: f4,
+    }),
+    f4,
+  );
+  const line4 = findGapLine(f4, "write-guard", "applypatch-unparsed");
+  const g4pass = Boolean(g4.status === 0 && line4);
+  rows.push(
+    adapterRow(
+      "coverage-gap",
+      "applypatch-unparsed-logged",
+      g4pass,
+      g4pass
+        ? 'an intercepted apply_patch with no provable target logs a visible coverage-gap line (gap "applypatch-unparsed") and fails open (deny-on-unprovable is cell codex-parity-4)'
+        : `expected exit 0 plus a hooks.jsonl coverage-gap line with gap="applypatch-unparsed"; got status=${g4.status} line=${JSON.stringify(line4)}`,
+      g4,
+    ),
+  );
+
+  // -- invariant: a log-write failure never flips a DENY into an allow --------
+  // .bee/logs is created as a regular FILE so every mkdir/append inside the
+  // logging path fails. The patch has one unprovable target (gap log attempt
+  // fails) AND one provable direct-edit-denied target — the deny must survive.
+  const f5 = buildFixture("hook-contracts-logfail-deny-");
+  fs.writeFileSync(path.join(f5, ".bee", "logs"), "not a directory\n");
+  const g5 = runWrapper(
+    "bee-write-guard.mjs",
+    JSON.stringify({
+      hook_event_name: "PreToolUse",
+      tool_name: "apply_patch",
+      tool_input: {
+        input:
+          "*** Begin Patch\n*** Update File: /etc/outside-the-repo\n@@\n-a\n+b\n*** Update File: .bee/state.json\n@@\n-old\n+new\n*** End Patch",
+      },
+      cwd: f5,
+    }),
+    f5,
+  );
+  const g5pass = Boolean(
+    g5.status === 2 && typeof g5.stderr === "string" && g5.stderr.includes("bee_state.mjs"),
+  );
+  rows.push(
+    adapterRow(
+      "coverage-gap",
+      "log-write-failure-never-flips-deny",
+      g5pass,
+      g5pass
+        ? "with .bee/logs unwritable, the computed deny (exit 2, direct-edit reason) still stands"
+        : `expected exit 2 naming bee_state.mjs despite the unwritable log path; got status=${g5.status} stderr=${truncate(g5.stderr, 300)}`,
+      g5,
+    ),
+  );
+
+  // -- invariant: a log-write failure never flips an ALLOW into a deny --------
+  const f6 = buildFixture("hook-contracts-logfail-allow-");
+  fs.writeFileSync(path.join(f6, ".bee", "logs"), "not a directory\n");
+  const g6 = runWrapper("bee-session-init.mjs", "null", f6);
+  const g6pass = g6.status === 0;
+  rows.push(
+    adapterRow(
+      "coverage-gap",
+      "log-write-failure-never-flips-allow",
+      g6pass,
+      g6pass
+        ? "with .bee/logs unwritable, malformed input still fails open (exit 0) — the gap-log failure is swallowed"
+        : `expected exit 0 despite the unwritable log path; got status=${g6.status} stderr=${truncate(g6.stderr, 300)}`,
+      g6,
+    ),
+  );
+
+  return rows;
+}
+
 // --- main ----------------------------------------------------------------
 
 async function main() {
@@ -792,9 +1074,12 @@ async function main() {
   // Default (non-baseline) mode is the cell's verify contract: the
   // seven-wrapper table must be GREEN, plus cell codex-parity-2's catalog
   // drift-check, allowed-differences, and isolated-CODEX_HOME
-  // codex-acceptance rows.
+  // codex-acceptance rows, plus cell codex-parity-3's adapter contract rows
+  // (registered-worker nickname matching and visible coverage-gap logging).
   results.push(...runCatalogDriftChecks());
   results.push(...runCodexAcceptanceRows());
+  results.push(...runNicknameRows());
+  results.push(...runCoverageGapRows());
 
   const failures = results.filter((r) => !r.pass);
   const skipped = results.filter((r) => r.skip);

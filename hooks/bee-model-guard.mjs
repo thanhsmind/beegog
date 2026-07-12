@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// bee-model-guard: PreToolUse (Agent|Task).
+// bee-model-guard: PreToolUse (Agent|Task) — Claude projection only
+// (hooks/catalog.mjs ALLOWED_DIFFERENCES: Codex does not expose collaboration
+// spawn through PreToolUse).
 // Enforces explicit-tier transport on subagent dispatch (decision 0023, plan
 // docs/history/model-tier-guard/plan.md D1/D2): every Agent/Task dispatch must
 // carry either tool_input.model (a non-empty string) or a case-insensitive
@@ -13,12 +15,15 @@
 // silently inherits the most expensive session model, so it is denied.
 // Deny = exit 2 with the reason (rule + FIX line) on stderr, and a
 // {hook:'model-guard',event:'deny',...} line appended to .bee/logs/hooks.jsonl.
+// Input/root/crash-logging go through the shared runtime adapter
+// (hooks/adapter.mjs, cell codex-parity-3): stdin is normalized before any
+// property access and root discovery lives inside the fail-open boundary.
 // Everything else is fail-open: exit 0 (crashes logged to .bee/logs/hooks.jsonl).
 // Deny only — this hook never auto-injects or rewrites the model param.
 
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { readHookContext, logCrash, libModuleUrl, appendHookLog } from "./adapter.mjs";
 
 const HOOK_NAME = "model-guard";
 const DISPATCH_TOOLS = new Set(["Agent", "Task"]);
@@ -27,75 +32,15 @@ const DISPATCH_TOOLS = new Set(["Agent", "Task"]);
 // somewhere inside it (P1-1 — no 500-char scan window, no mid-text match).
 const ANCHORED_TIER_MARKER_RE = /^\s*\[bee-tier:\s*(ceiling|generation|extraction|review)\]/i;
 
-async function readStdinPayload() {
-  const chunks = [];
-  try {
-    for await (const chunk of process.stdin) {
-      chunks.push(chunk);
-    }
-  } catch {
-    return {};
-  }
-  const raw = Buffer.concat(chunks).toString("utf8");
-  try {
-    return JSON.parse(raw || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function findRepoRoot(startDir) {
-  let candidate = path.resolve(startDir || process.cwd());
-  while (true) {
-    if (fs.existsSync(path.join(candidate, ".bee", "onboarding.json"))) {
-      return candidate;
-    }
-    const parent = path.dirname(candidate);
-    if (parent === candidate) {
-      return null;
-    }
-    candidate = parent;
-  }
-}
-
-function logCrash(root, error) {
-  try {
-    const logsDir = path.join(root, ".bee", "logs");
-    fs.mkdirSync(logsDir, { recursive: true });
-    fs.appendFileSync(
-      path.join(logsDir, "hooks.jsonl"),
-      `${JSON.stringify({
-        ts: new Date().toISOString(),
-        hook: HOOK_NAME,
-        error: String((error && error.stack) || error),
-      })}\n`,
-    );
-  } catch {
-    // fail-open
-  }
-}
-
 function logDeny(root, toolName, toolInput) {
-  try {
-    const logsDir = path.join(root, ".bee", "logs");
-    fs.mkdirSync(logsDir, { recursive: true });
-    fs.appendFileSync(
-      path.join(logsDir, "hooks.jsonl"),
-      `${JSON.stringify({
-        ts: new Date().toISOString(),
-        hook: HOOK_NAME,
-        event: "deny",
-        tool_name: toolName,
-        tool_input_keys: Object.keys(toolInput),
-      })}\n`,
-    );
-  } catch {
-    // never block the deny itself on a log failure
-  }
-}
-
-function libModuleUrl(root, name) {
-  return pathToFileURL(path.join(root, ".bee", "bin", "lib", name)).href;
+  // appendHookLog is itself fail-open: a log failure never blocks the deny.
+  appendHookLog(root, {
+    ts: new Date().toISOString(),
+    hook: HOOK_NAME,
+    event: "deny",
+    tool_name: toolName,
+    tool_input_keys: Object.keys(toolInput),
+  });
 }
 
 function startsWithTierMarker(text) {
@@ -140,26 +85,19 @@ function logDispatch(root, toolName, toolInput, transport, model, tier) {
 }
 
 async function main() {
-  // FAIL-OPEN PRECISION: normalize the parsed payload before ANY property
-  // access. `JSON.parse("null")` / `JSON.parse("[]")` succeed without
-  // throwing, so a null/array top-level payload must be caught here, not left
-  // to crash on the first `.` access (P1-2 — the recorded red was an
-  // uncaught TypeError on `payload.cwd` for `echo null | ...`).
-  const rawPayload = await readStdinPayload();
-  const payload =
-    rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload) ? rawPayload : {};
-  const cwd = typeof payload.cwd === "string" && payload.cwd.trim() ? payload.cwd : process.cwd();
+  // FAIL-OPEN PRECISION (P1-2, now owned by hooks/adapter.mjs): the adapter
+  // normalizes the payload before ANY property access — a top-level null or
+  // array payload, or a non-string cwd, can never reach a `.` access or
+  // path.resolve — and resolves the repo root inside its own fail-open
+  // boundary.
+  const ctx = await readHookContext(HOOK_NAME);
+  const payload = ctx.payload;
+  const root = ctx.root;
+  if (!root) {
+    return 0;
+  }
 
-  // Root resolution lives inside the try/catch below so ANY throw during
-  // discovery (not just the state.mjs import) lands in logCrash + exit 0
-  // (P1-2). `root` is captured in the outer scope so the catch can still log
-  // against it once it has been resolved.
-  let root = null;
   try {
-    root = findRepoRoot(cwd);
-    if (!root) {
-      return 0;
-    }
     if (!fs.existsSync(path.join(root, ".bee", "bin", "lib", "state.mjs"))) {
       return 0;
     }
@@ -207,9 +145,7 @@ async function main() {
     process.stderr.write(reason);
     return 2;
   } catch (error) {
-    if (root) {
-      logCrash(root, error);
-    }
+    logCrash(root, HOOK_NAME, error, ctx.source);
     return 0;
   }
 }

@@ -1,72 +1,33 @@
 #!/usr/bin/env node
-// bee-write-guard: PreToolUse (Edit|Write|MultiEdit|Bash|Read|Glob|Grep).
+// bee-write-guard: PreToolUse (Edit|Write|MultiEdit|Bash|Read|Glob|Grep) plus
+// the Codex apply_patch tool path (cell codex-parity-3, decision D2).
 // Three checks in one guard, first hit wins:
 //   (a) gate guard   - no source writes before Gate 3 (execution approval)
 //   (b) reservation  - during swarming, writes to unreserved paths are denied
 //   (c) privacy/scout- secret-file reads emit the @@BEE_PRIVACY@@ marker;
 //                      scout dirs (node_modules/, dist/, ...) are denied
+// Codex apply_patch: the canonical patch envelope's Add/Update/Delete/Move
+// target lines are parsed and every proved target runs the SAME
+// gate/direct-edit/reservation decisions as Edit/Write/Bash. Cell boundary:
+// codex-parity-3 recognizes the canonical shape and routes proved targets;
+// the full deny-on-unprovable per-target policy matrix (malformed bodies,
+// escapes, unicode edges) is cell codex-parity-4's scope — until then an
+// intercepted patch with unproved targets logs a visible
+// "applypatch-unparsed" coverage gap and fails open.
+// Input/root/logging go through the shared runtime adapter (hooks/adapter.mjs):
+// stdin is normalized before any property access and root discovery lives
+// inside the fail-open boundary.
 // Deny = exit 2 with the reason (and marker, for privacy) on stderr.
 // Everything else is fail-open: exit 0 (crashes logged to .bee/logs/hooks.jsonl).
 
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { readHookContext, logCrash, logCoverageGap, libModuleUrl } from "./adapter.mjs";
 
 const HOOK_NAME = "write-guard";
 const READ_TOOLS = new Set(["Read", "Glob", "Grep"]);
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit"]);
-
-async function readStdinPayload() {
-  const chunks = [];
-  try {
-    for await (const chunk of process.stdin) {
-      chunks.push(chunk);
-    }
-  } catch {
-    return {};
-  }
-  const raw = Buffer.concat(chunks).toString("utf8");
-  try {
-    return JSON.parse(raw || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function findRepoRoot(startDir) {
-  let candidate = path.resolve(startDir || process.cwd());
-  while (true) {
-    if (fs.existsSync(path.join(candidate, ".bee", "onboarding.json"))) {
-      return candidate;
-    }
-    const parent = path.dirname(candidate);
-    if (parent === candidate) {
-      return null;
-    }
-    candidate = parent;
-  }
-}
-
-function logCrash(root, error) {
-  try {
-    const logsDir = path.join(root, ".bee", "logs");
-    fs.mkdirSync(logsDir, { recursive: true });
-    fs.appendFileSync(
-      path.join(logsDir, "hooks.jsonl"),
-      `${JSON.stringify({
-        ts: new Date().toISOString(),
-        hook: HOOK_NAME,
-        error: String((error && error.stack) || error),
-      })}\n`,
-    );
-  } catch {
-    // fail-open
-  }
-}
-
-function libModuleUrl(root, name) {
-  return pathToFileURL(path.join(root, ".bee", "bin", "lib", name)).href;
-}
+const APPLY_PATCH_TOOLS = new Set(["apply_patch", "ApplyPatch"]);
 
 // Convert a tool-supplied path (absolute or relative) to a forward-slash
 // path relative to the repo root. Returns null when the path escapes the repo.
@@ -110,9 +71,38 @@ function inferAgentName(payload, toolInput) {
   return process.env.BEE_AGENT_NAME || null;
 }
 
+// --- Codex apply_patch target extraction (canonical envelope) ---------------
+// One target line per file operation:
+//   *** Add File: <path> | *** Update File: <path> | *** Delete File: <path>
+//   *** Move to: <path>   (destination of an Update File move)
+const PATCH_TARGET_RE = /^\*\*\*\s+(?:Add File|Update File|Delete File|Move to):\s*(.+?)\s*$/;
+
+function applyPatchText(toolInput) {
+  // Canonical Codex shape is tool_input.input; tolerate the patch envelope
+  // arriving under patch/command without forking per runtime.
+  for (const key of ["input", "patch", "command"]) {
+    const value = toolInput[key];
+    if (typeof value === "string" && value.includes("*** Begin Patch")) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function extractApplyPatchTargets(patchText) {
+  const targets = [];
+  for (const line of String(patchText).split(/\r?\n/)) {
+    const match = PATCH_TARGET_RE.exec(line);
+    if (match) {
+      targets.push(match[1]);
+    }
+  }
+  return targets;
+}
+
 async function main() {
-  const payload = await readStdinPayload();
-  const root = findRepoRoot(payload.cwd || process.cwd());
+  const ctx = await readHookContext(HOOK_NAME);
+  const root = ctx.root;
   if (!root) {
     return 0;
   }
@@ -120,6 +110,7 @@ async function main() {
     return 0;
   }
 
+  const payload = ctx.payload;
   let denial = null; // { reason }
   try {
     const stateLib = await import(libModuleUrl(root, "state.mjs"));
@@ -131,7 +122,7 @@ async function main() {
     const toolName = payload.tool_name || payload.toolName || "";
     const toolInput =
       payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
-    const cwd = payload.cwd || process.cwd();
+    const cwd = ctx.cwd;
 
     if (READ_TOOLS.has(toolName)) {
       const rel = toRelPath(root, cwd, toolInput.file_path || toolInput.path || "");
@@ -145,12 +136,36 @@ async function main() {
           denial = { reason: parts.join("\n") };
         }
       }
-    } else if (WRITE_TOOLS.has(toolName) || toolName === "Bash") {
+    } else if (
+      WRITE_TOOLS.has(toolName) ||
+      toolName === "Bash" ||
+      APPLY_PATCH_TOOLS.has(toolName)
+    ) {
       const state = stateLib.readState(root);
       const agentName = inferAgentName(payload, toolInput);
       let relPaths = [];
 
-      if (toolName === "Bash") {
+      if (APPLY_PATCH_TOOLS.has(toolName)) {
+        // D2 / approach.md §2: an intercepted apply_patch runs the existing
+        // gate/direct-edit/reservation decisions on every proved target.
+        const patchText = applyPatchText(toolInput);
+        const targets = patchText === null ? [] : extractApplyPatchTargets(patchText);
+        relPaths = targets.map((p) => toRelPath(root, cwd, p)).filter(Boolean);
+        if (patchText === null || targets.length === 0 || relPaths.length < targets.length) {
+          // codex-parity-3/-4 boundary: unproved targets are a VISIBLE
+          // coverage gap today, fail-open; cell codex-parity-4 owns flipping
+          // this class to deny-on-unprovable with the full per-target matrix.
+          logCoverageGap(
+            root,
+            HOOK_NAME,
+            "applypatch-unparsed",
+            patchText === null
+              ? "apply_patch intercepted but no canonical patch envelope found in tool_input"
+              : `apply_patch intercepted but ${targets.length - relPaths.length} of ${targets.length} target(s) could not be proved inside the repo`,
+            ctx.source,
+          );
+        }
+      } else if (toolName === "Bash") {
         const command = typeof toolInput.command === "string" ? toolInput.command : "";
         if (command) {
           const targets = guards.extractBashTargets(command);
@@ -179,13 +194,15 @@ async function main() {
       }
     }
   } catch (error) {
-    logCrash(root, error);
+    logCrash(root, HOOK_NAME, error, ctx.source);
     return 0;
   }
 
   if (denial) {
     // Deliberate deny: exit 2 with the reason on stderr (Claude Code feeds
-    // stderr back to the model on PreToolUse exit 2).
+    // stderr back to the model on PreToolUse exit 2; Codex blocks supported
+    // PreToolUse paths the same way). A log-write failure can never cancel
+    // this deny — logging is fail-open inside the adapter.
     process.stderr.write(denial.reason);
     return 2;
   }
