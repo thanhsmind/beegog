@@ -393,6 +393,7 @@ async function main() {
   check(r19.status === 2,
     "row19: apply_patch with an unrecognized verb line denies rather than silently allowing an unexamined operation",
     `status=${r19.status} stderr=${r19.stderr}`);
+  check(r19.stderr.includes("FIX"), "row19: stderr carries the corrective FIX guidance", r19.stderr);
 
   // --- 20. Empty/whitespace-only path after the verb colon -> denied (the
   // extraction bug fix: a lone leftover whitespace char must not count as a
@@ -405,6 +406,7 @@ async function main() {
   check(r20.status === 2,
     "row20: apply_patch Add File with a whitespace-only path denies (empty target is never proved)",
     `status=${r20.status} stderr=${r20.stderr}`);
+  check(r20.stderr.includes("FIX"), "row20: stderr carries the corrective FIX guidance", r20.stderr);
 
   // --- 21. Path traversal escape (relative .. outside the repo) -> denied
   // (unprovable target: toRelPath returns null for an escaping path).
@@ -416,6 +418,7 @@ async function main() {
   check(r21.status === 2,
     "row21: apply_patch Add File escaping the repo via .. traversal denies (unprovable target)",
     `status=${r21.status} stderr=${r21.stderr}`);
+  check(r21.stderr.includes("FIX"), "row21: stderr carries the corrective FIX guidance", r21.stderr);
 
   // --- 22. Absolute path outside the repo -> denied (unprovable target).
   const patchAbsoluteOutside = "*** Begin Patch\n*** Add File: /etc/passwd\n+x\n*** End Patch";
@@ -426,6 +429,7 @@ async function main() {
   check(r22.status === 2,
     "row22: apply_patch Add File to an absolute path outside the repo denies (unprovable target)",
     `status=${r22.status} stderr=${r22.stderr}`);
+  check(r22.stderr.includes("FIX"), "row22: stderr carries the corrective FIX guidance", r22.stderr);
 
   // --- 23. Malformed OUTER payload: apply_patch tool_input carries no
   // canonical "*** Begin Patch" envelope at all -> stays D2's visible
@@ -480,6 +484,69 @@ async function main() {
   check(r26.status === 0,
     "row26: apply_patch Update File to a path reserved by the SAME agent passes (no self-conflict)",
     `status=${r26.status} stderr=${r26.stderr}`);
+
+  // --- 27+. Partial-unprovable matrix (review finding F1, P1): an
+  // apply_patch envelope that mixes a PROVABLE target (a normal, otherwise-
+  // allowed path) with an UNPROVABLE target must deny the WHOLE request,
+  // never allow the safe half through. This pins bee-write-guard.mjs's
+  // `relPaths.length < targets.length` branch (line 176) specifically for
+  // the *mixed* case -- rows 18-22 above only ever exercise all-unprovable
+  // patches, so a regression that started evaluating just the resolved
+  // subset of targets (dropping the escaping one silently) would still pass
+  // every existing row while allowing an unchecked write.
+
+  // --- 27. Ordering A: provable target FIRST, unprovable target SECOND
+  // (safe Add File, then a blank/whitespace-only-path Update File).
+  const patchPartialProvableFirst =
+    "*** Begin Patch\n" +
+    "*** Add File: src/safe-first.txt\n+hello\n" +
+    "*** Update File:    \n@@\n-old\n+new\n" +
+    "*** End Patch";
+  const r27 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchPartialProvableFirst } },
+    root,
+  );
+  check(r27.status === 2,
+    "row27: apply_patch mixing a safe Add (provable, FIRST) with a blank-path Update (unprovable, SECOND) denies the WHOLE patch",
+    `status=${r27.status} stderr=${r27.stderr}`);
+  check(r27.stderr.includes("FIX"), "row27: stderr carries the corrective FIX guidance", r27.stderr);
+
+  // --- 28. Ordering B: unprovable target FIRST, provable target SECOND --
+  // proves the whole-patch deny does not depend on scan order (guards
+  // against a future short-circuit that stops once a proved target is
+  // already recorded).
+  const patchPartialUnprovableFirst =
+    "*** Begin Patch\n" +
+    "*** Update File:    \n@@\n-old\n+new\n" +
+    "*** Add File: src/safe-second.txt\n+hello\n" +
+    "*** End Patch";
+  const r28 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchPartialUnprovableFirst } },
+    root,
+  );
+  check(r28.status === 2,
+    "row28: apply_patch mixing a blank-path Update (unprovable, FIRST) with a safe Add (provable, SECOND) still denies the WHOLE patch",
+    `status=${r28.status} stderr=${r28.stderr}`);
+  check(r28.stderr.includes("FIX"), "row28: stderr carries the corrective FIX guidance", r28.stderr);
+
+  // --- 29. Second mixed combo named in the review finding: one valid Update
+  // (provable) plus a second operation whose Move destination escapes the
+  // repo outright (unprovable via path traversal, not a blank path) -- proves
+  // the whole-deny rule generalizes across unprovable *kinds*, not just the
+  // blank-path extraction bug.
+  const patchPartialMoveOutside =
+    "*** Begin Patch\n" +
+    "*** Update File: src/valid.txt\n@@\n-old\n+new\n" +
+    "*** Update File: src/other.txt\n*** Move to: ../../outside-repo.txt\n@@\n-a\n+b\n" +
+    "*** End Patch";
+  const r29 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchPartialMoveOutside } },
+    root,
+  );
+  check(r29.status === 2,
+    "row29: apply_patch mixing a valid Update (provable) with a second operation's outside-repo Move destination (unprovable) denies the WHOLE patch",
+    `status=${r29.status} stderr=${r29.stderr}`);
+  check(r29.stderr.includes("FIX"), "row29: stderr carries the corrective FIX guidance", r29.stderr);
 
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
