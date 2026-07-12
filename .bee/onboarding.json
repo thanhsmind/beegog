@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.23",
+  "bee_version": "0.1.24",
   "managed": {
     "agents_block": "46e7b1fa727b08b6fcfbbecae54427d94996d815634f5aff3814335c7475fbe7",
     "gitignore_block": "4c6db28e97548f878387cf72312b94fa98071f3b94c1af62622d56f008dfb1d8",
@@ -25,7 +25,7 @@
       "guards.mjs": "505fabee15ea40de424f013ae455a178bbb7e1ba4b7301c4f406e05112c71b6b",
       "inject.mjs": "a00742f94ee4eeb52aff99917aa4cbdfdb7356807f54407bc94fac6a9b651520",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
-      "state.mjs": "ab28667b44dd9a647559586ba3b853c9b34a7a626e0fed87188075bc445571fa"
+      "state.mjs": "9d26d5788b8f5d19ac6b2581f9a2a4600505429de47e49f1cf298637f709492b"
     },
     "statusline": {
       "statusline-command.sh": "0965ae1c0d95a96fd7899df7549893e94fcc59693cab3b23da8dc228aa870b0e",
@@ -42,5 +42,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-12T09:11:51.261Z"
+  "updated_at": "2026-07-12T09:55:51.999Z"
 }
