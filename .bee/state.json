@@ -1,17 +1,17 @@
 {
   "schema_version": "1.0",
-  "phase": "compounding-complete",
-  "feature": "codex-runtime-parity",
-  "mode": "high-risk",
+  "phase": "reviewing",
+  "feature": "fanout-delegation",
+  "mode": null,
   "approved_gates": {
     "context": true,
     "shape": true,
-    "execution": false,
+    "execution": true,
     "review": true
   },
   "workers": [],
-  "summary": "codex-runtime-parity closed: Gate 4 approved by owner 2026-07-12; 6a/6b merged, 6c/6d dropped, adversarial gaps accepted as Open Gaps per D2",
-  "next_action": "start fanout-delegation",
+  "summary": "Wave 1 clean: fanout-1/2/3 capped, goal-checked, judge-intact; config advisor key removed, reversal decision logged",
+  "next_action": "bee-reviewing: standard wave (4 core reviewers)",
   "last_scribing_run": {
     "feature": "codex-runtime-parity",
     "date": "2026-07-12",
@@ -33,8 +33,8 @@
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 77,
+    "capped": 81,
     "blocked": 0
   },
-  "last_activity": "2026-07-12T07:12:47.703Z"
+  "last_activity": "2026-07-12T08:11:46.756Z"
 }

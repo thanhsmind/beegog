@@ -123,6 +123,11 @@ status is entirely unaffected by this mechanism's existence.
   is user-level → not opted in (the review's adversarial case).
 - Exactly one pair file drifted → exactly that file is re-planned, the other
   untouched.
+- A host `.bee/config.json` still carrying the removed `advisor` key → parses
+  normally with the key stripped from the parsed result; the onboarding report
+  and the status command each surface one identical warning line telling the
+  owner to delete it — warn, never error (feature fanout-delegation D1, decision
+  de967733; the duplicated warning text is pinned by a drift test).
 - Opting out after having been opted in → the stale managed record is inert but
   currently survives; recorded as a known gap (backlog, paired with the
   equivalent behavior in the hook-vendoring mechanism).

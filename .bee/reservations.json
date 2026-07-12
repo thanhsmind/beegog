@@ -1503,6 +1503,262 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-12T04:04:02.444Z",
       "released_at": "2026-07-12T04:11:32.926Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-hive/references/routing-and-contracts.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:02.822Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-hive/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:02.873Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-exploring/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:02.907Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-planning/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:02.943Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-validating/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:02.979Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-swarming/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:03.015Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-swarming/references/swarming-reference.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:03.046Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-reviewing/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:03.074Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-scribing/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:03.104Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-compounding/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:03.134Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-grooming/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:03.163Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-briefing/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:03.193Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "fanout-2",
+      "path": "skills/bee-xia/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:03.222Z",
+      "released_at": "2026-07-12T07:43:22.887Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "fanout-3",
+      "path": "README.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:13.555Z",
+      "released_at": "2026-07-12T07:41:30.720Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "fanout-3",
+      "path": "docs/config-reference.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:14.154Z",
+      "released_at": "2026-07-12T07:41:30.720Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "fanout-3",
+      "path": "docs/model-presets.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:14.695Z",
+      "released_at": "2026-07-12T07:41:30.720Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "fanout-3",
+      "path": "docs/backlog.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:15.472Z",
+      "released_at": "2026-07-12T07:41:30.720Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "fanout-3",
+      "path": "docs/decisions/0013-advisor-mode.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:16.064Z",
+      "released_at": "2026-07-12T07:41:30.720Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "fanout-3",
+      "path": "docs/decisions/0015-ceiling-is-the-session-model.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:39:16.681Z",
+      "released_at": "2026-07-12T07:41:30.720Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": "skills/bee-hive/templates/lib/state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.351Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": ".bee/bin/lib/state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.380Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": "skills/bee-hive/templates/lib/inject.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.409Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": ".bee/bin/lib/inject.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.440Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": "skills/bee-hive/templates/bee_status.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.467Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": ".bee/bin/bee_status.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.498Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": "skills/bee-hive/scripts/onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.527Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.555Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "fanout-1",
+      "path": ".bee/config-sample.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T07:40:06.586Z",
+      "released_at": "2026-07-12T07:48:39.783Z"
+    },
+    {
+      "agent": "dave",
+      "cell": "fanout-4",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T08:02:03.115Z",
+      "released_at": "2026-07-12T08:06:28.482Z"
+    },
+    {
+      "agent": "dave",
+      "cell": "fanout-4",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T08:02:03.142Z",
+      "released_at": "2026-07-12T08:06:28.482Z"
+    },
+    {
+      "agent": "dave",
+      "cell": "fanout-4",
+      "path": "skills/bee-validating/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T08:02:03.171Z",
+      "released_at": "2026-07-12T08:06:28.482Z"
+    },
+    {
+      "agent": "dave",
+      "cell": "fanout-4",
+      "path": "skills/bee-hive/SKILL.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T08:02:03.200Z",
+      "released_at": "2026-07-12T08:06:28.482Z"
     }
   ]
 }

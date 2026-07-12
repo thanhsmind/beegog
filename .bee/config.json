@@ -13,7 +13,7 @@
     "test": "node skills/bee-hive/templates/tests/test_lib.mjs",
     "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs"
   },
-    "gate_bypass": true,
+  "gate_bypass": true,
   "models": {
     "claude": {
       "extraction": "haiku",
@@ -31,15 +31,6 @@
         "command": "codex exec -m gpt-5.5 --yolo -c model_reasoning_effort=\"high\"  workspace-write"
       }
     }
-  },
-  "advisor": {
-    "enabled": true,
-    "at": [
-      "shape",
-      "execution",
-      "blocked"
-    ],
-    "model": "fable"
   },
   "dogfood_repos": [
     {

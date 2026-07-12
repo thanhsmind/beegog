@@ -55,3 +55,17 @@
 {"ts":"2026-07-12T06:28:58.072Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"Re-validate 6c/6d split (opus)"}
 {"ts":"2026-07-12T06:29:11.000Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"Cold-pickup 6c/6d split (opus)"}
 {"ts":"2026-07-12T06:55:56.485Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"Red-team round-3 guard-deny (opus)"}
+{"ts":"2026-07-12T07:24:17.526Z","tool":"Agent","transport":"model-param","model":"haiku","tier":null,"subagent_type":"Explore","description":"Advisor inventory [haiku]"}
+{"ts":"2026-07-12T07:24:28.540Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":"Explore","description":"Gather-altitude step mining [sonnet]"}
+{"ts":"2026-07-12T07:30:56.181Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"Plan-checker: fanout-delegation [opus]"}
+{"ts":"2026-07-12T07:31:02.728Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"Cell reviewer: cold pickup fanout-1/2/3 [opus]"}
+{"ts":"2026-07-12T07:38:35.812Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"Worker kevin: fanout-1 [sonnet]"}
+{"ts":"2026-07-12T07:38:42.805Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"Worker stuart: fanout-2 [sonnet]"}
+{"ts":"2026-07-12T07:38:48.096Z","tool":"Agent","transport":"model-param","model":"haiku","tier":null,"subagent_type":null,"description":"Worker bob: fanout-3 [haiku]"}
+{"ts":"2026-07-12T07:51:39.994Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"Review: code-quality — fanout-delegation [opus]"}
+{"ts":"2026-07-12T07:51:47.359Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"Review: architecture — fanout-delegation [opus]"}
+{"ts":"2026-07-12T07:51:52.877Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"Review: security — fanout-delegation [opus]"}
+{"ts":"2026-07-12T07:52:02.187Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"Review: test-coverage — fanout-delegation [opus]"}
+{"ts":"2026-07-12T07:52:08.509Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"Review: api-contract — fanout-delegation [opus]"}
+{"ts":"2026-07-12T07:57:26.707Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"Worker dave: fanout-4 [sonnet]"}
+{"ts":"2026-07-12T08:10:21.589Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"Render walkthrough.md [sonnet]"}
