@@ -123,6 +123,25 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
   {
+    name: 'cells.update',
+    helper: 'bee_cells.mjs',
+    invoke: 'bee cells update',
+    description:
+      'Door-validated in-place revision for validation-repair loops: only open|blocked cells are updatable. Plan fields only (title/action/verify/files/read_first/deps/decisions/must_haves/behavior_change/lane/pbi); frozen keys (id/feature/status/trace/tier) and any unknown key refuse the whole patch untouched. Exactly one of --file / --stdin is required at call time (both satisfy the schema; the handler itself enforces the choice).',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Cell id to update.' },
+        file: { type: 'string', description: 'Path to a patch JSON file. Required unless --stdin is set.' },
+        stdin: { type: 'boolean', description: 'Read the patch JSON from stdin instead of --file.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['id'],
+    },
+    examples: ['bee cells update --id demo-1 --file cell-demo-1-update.json --json'],
+    deprecated: null,
+  },
+  {
     name: 'cells.claim',
     helper: 'bee_cells.mjs',
     invoke: 'bee cells claim',

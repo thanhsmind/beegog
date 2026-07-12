@@ -174,7 +174,7 @@ check('registry covers every subcommand of the 4 existing helpers', () => {
   const names = new Set(COMMAND_REGISTRY.map((e) => e.name));
   const expected = [
     'status',
-    'cells.list', 'cells.ready', 'cells.show', 'cells.add', 'cells.claim',
+    'cells.list', 'cells.ready', 'cells.show', 'cells.add', 'cells.update', 'cells.claim',
     'cells.verify', 'cells.cap', 'cells.block', 'cells.drop', 'cells.tier', 'cells.judge',
     'reservations.reserve', 'reservations.release', 'reservations.list', 'reservations.sweep',
     'decisions.log', 'decisions.supersede', 'decisions.redact', 'decisions.active', 'decisions.search',
@@ -253,6 +253,15 @@ check('cells.ready example runs through the real dispatcher', () => {
 check('cells.show example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.show');
   assert(JSON.parse(result.stdout).id === 'demo-1', 'show should return the demo-1 cell');
+});
+
+check('cells.update example runs through the real dispatcher', () => {
+  const patch = { title: 'Demo cell for registry example test (updated)' };
+  fs.writeFileSync(path.join(root, 'cell-demo-1-update.json'), JSON.stringify(patch, null, 2), 'utf8');
+  const result = assertExampleOk('cells.update');
+  const updated = JSON.parse(result.stdout);
+  assert(updated.id === 'demo-1', `expected demo-1, got ${result.stdout}`);
+  assert(updated.title === patch.title, `expected patched title, got ${result.stdout}`);
 });
 
 check('cells.claim example runs through the real dispatcher', () => {
@@ -473,6 +482,13 @@ check('bee status --json is byte-identical to bee_status.mjs --json (D5 parity)'
   assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
 });
 
+check('bee status (text form) is byte-identical to bee_status.mjs (text form) (D5 parity)', () => {
+  const beeResult = runBee(['status']);
+  const origResult = runScript(BEE_STATUS, []);
+  assert(beeResult.status === 0 && origResult.status === 0, `exit codes: bee=${beeResult.status} orig=${origResult.status}`);
+  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
+});
+
 // ─── demo-2 fixture chain, driven entirely through the bee.mjs dispatcher ──
 
 check('bee cells add creates the demo-2 fixture cell used by the rest of this dispatcher chain', () => {
@@ -514,6 +530,23 @@ check('bee cells ready (text form) is also byte-identical to bee_cells.mjs ready
 check('bee cells show --id demo-2 --json returns the cell', () => {
   const result = runBee(['cells', 'show', '--id', 'demo-2', '--json']);
   assert(JSON.parse(result.stdout).id === 'demo-2', `expected demo-2, got ${result.stdout}`);
+});
+
+check('bee cells update patches an allowed field on the open demo-2 fixture, through the dispatcher', () => {
+  const patch = { title: 'Demo cell for bee.mjs dispatcher test (updated)' };
+  fs.writeFileSync(path.join(root2, 'cell-demo-2-update.json'), JSON.stringify(patch, null, 2), 'utf8');
+  const result = runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-update.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(JSON.parse(result.stdout).title === patch.title, `expected patched title, got ${result.stdout}`);
+});
+
+check('bee cells update refuses a frozen key (status) with the same exit code and stderr as bee_cells.mjs update (D5 parity)', () => {
+  const patch = { status: 'capped' };
+  fs.writeFileSync(path.join(root2, 'cell-demo-2-frozen.json'), JSON.stringify(patch, null, 2), 'utf8');
+  const beeResult = runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-frozen.json']);
+  const origResult = runScript(BEE_CELLS, ['update', '--id', 'demo-2', '--file', 'cell-demo-2-frozen.json']);
+  assert(beeResult.status === 1 && origResult.status === 1, `expected exit 1 on both: bee=${beeResult.status} orig=${origResult.status}`);
+  assert(beeResult.stderr === origResult.stderr, `stderr differs:\n--- bee ---\n${beeResult.stderr}\n--- orig ---\n${origResult.stderr}`);
 });
 
 check('bee cells claim --id demo-2 --worker claims it', () => {

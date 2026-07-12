@@ -44,12 +44,15 @@ import {
   GATE_NAMES,
   PHASES,
   isKnownPhase,
+  hasStaleAdvisorKey,
+  STALE_ADVISOR_KEY_WARNING,
 } from './lib/state.mjs';
 import {
   listCells,
   readyCells,
   readCell,
   addCell,
+  updateCell,
   claimCell,
   recordVerify,
   capCell,
@@ -65,6 +68,7 @@ import { reserve, release, listReservations, sweepExpired } from './lib/reservat
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue } from './lib/capture.mjs';
 import { readBacklogCounts } from './lib/backlog.mjs';
+import { listCandidates, listReviews, deriveCandidateStatus } from './lib/reviews.mjs';
 import { readJson, writeJsonAtomic } from './lib/fsutil.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
@@ -113,6 +117,59 @@ function formatDecision(event) {
 
 const STALE_HANDOFF_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Phases past execution where a feature can close honestly without full
+// independent review (SPEC R3/§11.5, decision 565e68d0). Full review is
+// user-invoked only — reaching these phases with unreviewed candidates is
+// the NORMAL truthful state, not drift, so bee_status posts an informational
+// §9 completion line here instead of a staleness warning.
+const POST_EXECUTION_REVIEW_PHASES = ['scribing', 'compounding', 'compounding-complete'];
+
+/**
+ * review-on-demand summary (review-od-3, SPEC R3/R7/R10/§8/§9): candidate
+ * counts by derived status + open (non-approved) session ids + a high-risk
+ * unreviewed/stale count (R7). Sourced entirely from lib/reviews.mjs's own
+ * derivation (review-od-2) — no second derivation implementation here.
+ * Fail-open by construction (per SPEC + cell prohibition): every reviews.mjs
+ * read path already degrades rather than throwing (corrupt session file,
+ * corrupt/missing ledger, missing git binary), but the whole block is still
+ * wrapped so a future change to that contract can never crash bee_status —
+ * a corrupt .bee/reviews dir or missing git degrades this block, it never
+ * breaks the scout.
+ */
+function buildReviewBlock(root) {
+  const empty = {
+    candidates: { total: 0, unreviewed: 0, in_review: 0, reviewed: 0, stale: 0 },
+    open_sessions: [],
+    high_risk_unreviewed: 0,
+  };
+  try {
+    const candidates = listCandidates(root);
+    const sessions = listReviews(root);
+    const counts = { total: candidates.length, unreviewed: 0, in_review: 0, reviewed: 0, stale: 0 };
+    let highRiskUnreviewed = 0;
+    for (const candidate of candidates) {
+      const derived = deriveCandidateStatus(root, candidate, { sessions });
+      if (derived.status === 'unreviewed') counts.unreviewed += 1;
+      else if (derived.status === 'in review') counts.in_review += 1;
+      else if (derived.status === 'reviewed') counts.reviewed += 1;
+      else if (derived.status === 'review stale') counts.stale += 1;
+      if (
+        candidate &&
+        candidate.mode === 'high-risk' &&
+        (derived.status === 'unreviewed' || derived.status === 'review stale')
+      ) {
+        highRiskUnreviewed += 1;
+      }
+    }
+    const openSessions = sessions
+      .filter((s) => !s.decision || s.decision.status !== 'approved')
+      .map((s) => s.id);
+    return { candidates: counts, open_sessions: openSessions, high_risk_unreviewed: highRiskUnreviewed };
+  } catch {
+    return { ...empty, degraded: true };
+  }
+}
+
 function buildStatus(root) {
   const state = readState(root);
   const onboardingRaw = readOnboarding(root);
@@ -153,17 +210,15 @@ function buildStatus(root) {
       `${expiredUnreleased.length} reservation(s) expired but never released — run bee_reservations.mjs sweep.`,
     );
   }
+  if (hasStaleAdvisorKey(root)) {
+    staleness.push(STALE_ADVISOR_KEY_WARNING);
+  }
   if (!isKnownPhase(state.phase)) {
     staleness.push(
       `Unknown phase "${state.phase}" — not in the enum (${PHASES.join(', ')}; terminal alias: compounding-complete). Set state.phase to a valid value (idle at feature close); invented phases break machine-checkable handoffs (decision 0004).`,
     );
   }
-  const POST_REVIEW_PHASES = ['scribing', 'compounding', 'compounding-complete'];
-  if (POST_REVIEW_PHASES.includes(state.phase) && state.approved_gates?.review !== true) {
-    staleness.push(
-      `Phase "${state.phase}" is past reviewing but gate "review" is still pending — Gate 4 was never recorded. Ask the user for Gate 4 (or record the approval already given) before closing the feature (decision 0004).`,
-    );
-  }
+  const review = buildReviewBlock(root);
 
   const executionApproved = state.approved_gates?.execution === true;
   const ready = readyCells(root, state.feature || null);
@@ -176,6 +231,10 @@ function buildStatus(root) {
     recommended = 'NOT ready to swarm: gate "execution" is not approved.';
   } else if (executionApproved && ready.length > 0) {
     recommended = `${ready.length} ready cell(s): ${ready.map((c) => c.id).join(', ')} — orchestrator assigns them.`;
+  } else if (POST_EXECUTION_REVIEW_PHASES.includes(state.phase) && review.candidates.unreviewed > 0) {
+    // §11.5 — never propose bee-reviewing as an automatic post-execution
+    // step; report the candidate count and wait for explicit user intent.
+    recommended = `${review.candidates.unreviewed} review candidate(s) awaiting: full review is user-invoked only, never dispatched automatically.`;
   } else {
     recommended = state.next_action || 'Invoke bee-hive.';
   }
@@ -193,11 +252,11 @@ function buildStatus(root) {
     gates: state.approved_gates,
     gate_bypass: readConfig(root).gate_bypass === true,
     models: readConfig(root).models,
-    advisor: readConfig(root).advisor,
     tier_mix: tierMix(root, { feature: state.feature || null }),
     ceiling_scarcity: ceilingScarcityWarning(root),
     handoff,
     cells: counts,
+    review,
     scribing_debt: scribingDebt(root),
     capture_queue: (() => {
       const queue = captureQueue(root);
@@ -240,6 +299,13 @@ function renderStatusText(status) {
       : []),
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,
+    // §9 — reaching a post-execution phase with unreviewed candidates is the
+    // NORMAL truthful close (R3): informational, never a staleness warning.
+    ...(POST_EXECUTION_REVIEW_PHASES.includes(status.phase) && status.review?.candidates?.unreviewed > 0
+      ? [
+          `Completed and verified; independent review not requested; ${status.review.candidates.unreviewed} candidate(s) awaiting review.`,
+        ]
+      : []),
     ...(status.scribing_debt && status.scribing_debt.count > 0
       ? [`Scribing debt: ${status.scribing_debt.count} behavior_change cell(s) uncaptured (${status.scribing_debt.cells.join(', ')}) — run bee-scribing capture (decision 0011)`]
       : []),
@@ -261,14 +327,17 @@ function renderStatusText(status) {
           `Models (claude): generation=${formatSlot(status.models.claude.generation)} extraction=${formatSlot(status.models.claude.extraction)} review=${formatSlot(status.models.claude.review)} · ceiling = the session model (keep it scarce; decisions 0012/0015/0021)`,
         ]
       : []),
-    ...(status.advisor && status.advisor.enabled
-      ? [`🧭 ADVISOR MODE ON — session on generation; consult ${status.advisor.model ?? 'the strong model'} at: ${status.advisor.at.join(', ')} (decision 0013)`]
-      : []),
     ...(status.tier_mix && status.tier_mix.tiered > 0
       ? [`Tier mix: extraction=${status.tier_mix.counts.extraction} generation=${status.tier_mix.counts.generation} ceiling=${status.tier_mix.counts.ceiling} untiered=${status.tier_mix.counts.untiered} (ceiling ${Math.round(status.tier_mix.ceilingShare * 100)}%)`]
       : []),
     ...(status.ceiling_scarcity
       ? [`⚠ Ceiling scarcity: ${status.ceiling_scarcity.ceiling}/${status.ceiling_scarcity.tiered} tiered cells on ceiling (${status.ceiling_scarcity.pct}%) — re-tier routine cells (decision 0012)`]
+      : []),
+    // R7 — high-risk changes never silently trigger review; bee only warns.
+    ...(status.review?.high_risk_unreviewed > 0
+      ? [
+          `⚠ High-risk unreviewed: ${status.review.high_risk_unreviewed} high-risk candidate(s) have not passed independent review — bee will not auto-dispatch reviewers; request review before merge/release.`,
+        ]
       : []),
   ];
   if (status.recent_decisions.length > 0) {
@@ -324,6 +393,31 @@ function handleCellsAdd(root, flags) {
   }
   const added = addCell(root, cell);
   return { result: added, text: `Added ${summarizeCell(added)}` };
+}
+
+function handleCellsUpdate(root, flags) {
+  // Strict flag validation (workers-prune discipline): a typoed flag on a
+  // mutating verb must refuse, never silently no-op into a bad patch.
+  for (const name of Object.keys(flags)) {
+    if (!['id', 'file', 'stdin'].includes(name)) {
+      throw new Error(`update: unknown flag --${name}. Use: --id ID --file patch.json | --stdin [--json].`);
+    }
+  }
+  const id = requireFlag(flags, 'id');
+  let text;
+  if (flags.stdin === true) text = fs.readFileSync(0, 'utf8');
+  else text = readFileText(requireFlag(flags, 'file'), 'patch');
+  let patch;
+  try {
+    patch = JSON.parse(text);
+  } catch {
+    throw new Error('update: patch input is not valid JSON.');
+  }
+  const updated = updateCell(root, id, patch);
+  return {
+    result: updated,
+    text: `Updated ${updated.id} (${Object.keys(patch).join(', ')}).`,
+  };
 }
 
 function handleCellsClaim(root, flags) {
@@ -505,6 +599,7 @@ const HANDLERS = {
   'cells.ready': handleCellsReady,
   'cells.show': handleCellsShow,
   'cells.add': handleCellsAdd,
+  'cells.update': handleCellsUpdate,
   'cells.claim': handleCellsClaim,
   'cells.verify': handleCellsVerify,
   'cells.cap': handleCellsCap,
