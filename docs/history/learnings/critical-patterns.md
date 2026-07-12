@@ -251,3 +251,16 @@ backstop, not the mechanism.
 A `! grep <banned>` verify predicate must be run against the tests/fixtures the work itself
 will add before it is locked in: a RED-first test proving "<banned> is denied" necessarily
 contains the banned string, making the stored verify unsatisfiable on re-run.
+
+## [20260712] Empty child-process output can be a sandbox denial, not a regression
+**Category:** failure
+**Feature:** harness-integration-adopt
+**Tags:** [codex, sandbox, child-process, verification]
+
+A baseline run reported 40 CLI failures whose only visible symptoms were empty output and secondary
+JSON parse errors. The actual child-process result carried `spawnSync ... EPERM`; the unchanged
+verify passed `215/0` outside the sandbox and onboarding had zero failures. When a CLI-heavy suite
+fails this way, inspect the spawn error first and rerun unchanged with the required execution
+permission before creating a fix cell or weakening assertions.
+
+**Full entry:** docs/history/learnings/20260712-harness-integration-adopt.md

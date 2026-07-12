@@ -1,8 +1,8 @@
 ---
 area: workflow-state
 updated: 2026-07-12
-sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12)]
-decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015)]
+sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12)]
+decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3]
 coverage: partial
 ---
 
@@ -21,6 +21,12 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 - The workflow record changes only through its command-line verbs (set phase,
   record a gate, register/update/clear workers, record a scribing run, start a
   feature). Direct edits to the record are denied by the write guard.
+- The four read/act verb groups over the work record (status snapshot, work
+  cells, file reservations, decision log) are additionally reachable through
+  one **unified command entry point** that dispatches by command name and
+  publishes a machine-readable catalog of every command it accepts — name,
+  invocation, description, parameter schema, examples, deprecation — so an
+  automated assistant discovers exact call shapes without reading code.
 - **Starting a feature** is a single guarded operation, invoked when new work
   begins after the previous feature has fully closed.
 
@@ -37,6 +43,8 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | review candidate | One completed change set awaiting (or holding) review coverage: the feature, the range anchor at close, and the feature's lane. Recorded once at feature close in an append-only ledger; prior entries are never rewritten. |
 | review status | Derived at read time, never stored. `verified` — completion evidence exists (every completed change). `unreviewed` — no approved session covers it (including every legacy feature with no record). `in review` — an open, not-yet-approved session includes it. `reviewed` — an approved session covers exactly its range anchor. `review stale` — an approved session covered it, but newer changes landed after that session's head; the old coverage keeps its audit trail while the newer delta is unreviewed. |
 | baseline / head | The two immutable anchors a review session's diff is built from. Coverage attaches only to these — never to a feature name or a date. |
+| command catalog | The machine-readable inventory of commands exposed through the unified entry point. Each entry names the command, its invocation, purpose, accepted parameters, runnable examples, and whether it is deprecated. |
+| catalog fingerprint | A local fingerprint of the command catalog from the previous invocation. It detects that the discoverable surface changed without altering a command's normal result. |
 
 ## Behaviors & Operations
 
@@ -112,6 +120,21 @@ that would leave a standard/high-risk unit without acceptance truths is
 refused. Observers see either the old plan or the fully revised plan — never a
 partial merge.
 
+**B8 — Unified command discovery and dispatch.** The status snapshot, work-cell,
+file-reservation, and decision-log operations are available both through their
+specialized entry points and through one unified entry point. The unified entry
+point publishes the complete command catalog in human-readable and
+machine-readable forms. It validates required parameters and their value shapes
+before dispatch, then invokes the same underlying operation as the specialized
+entry point; it does not run one command-line program from another. For the same
+valid request, observers receive the same result and exit outcome through either
+surface. This includes revising an open or blocked work cell's allowed plan
+fields. An unknown command is refused with the nearest known command when one is
+available. A malformed request is refused with the command, field, and reason,
+without executing the operation. After a catalog change, observers receive a
+separate diagnostic signal while the requested command's normal output keeps its
+stable shape.
+
 ## Actors & Access
 
 - **The agent** runs every verb itself; the human never runs workflow
@@ -152,6 +175,13 @@ partial merge.
 - R11 — The final human approval of a review (its Gate 4) exists only inside a
   review session; gate bypass never creates or approves one (decision
   565e68d0-327f-404e-b49e-d1c61ba81bfd; SPEC R8).
+- R12 — The unified entry point extends the four established command groups; it
+  coexists with them and never changes their contracts or makes them call one
+  another (decision 30606de4-5fae-4c9d-9e3f-8f47a494f8a3).
+- R13 — The published command catalog and executable dispatch surface describe
+  the same command set. Every published example is exercised against the real
+  operation, so a documented but unusable command is a verification failure
+  (decision 30606de4-5fae-4c9d-9e3f-8f47a494f8a3).
 - R7 — The workflow runs one cost pattern: the session's own model
   orchestrates every phase and is always the ceiling tier, never a configured
   value; the cheaper configured tiers (extraction, generation, review) take
@@ -187,6 +217,11 @@ partial merge.
   retired: closing through scribing/compounding without a review session is
   the normal state, reported informationally, never as drift. The
   unknown-phase warning is unchanged.
+- A catalog fingerprint change never appears inside the requested command's
+  ordinary result. Consumers that parse normal output therefore remain stable
+  while diagnostics can still report that discovery metadata changed.
+- A missing required parameter, a value with the wrong shape, or an unknown
+  command is rejected before any workflow record changes.
 
 ## Open Gaps
 
@@ -210,6 +245,11 @@ partial merge.
   (byte-mirrored to `.bee/bin/lib/state.mjs`).
 - Tests: 15 start-feature rows in `skills/bee-hive/templates/tests/test_lib.mjs`.
 - Evidence: commit `928abf1`; trace `.bee/cells/codex-parity-5.json`.
+- Unified dispatcher and catalog: `skills/bee-hive/templates/bee.mjs`,
+  `skills/bee-hive/templates/lib/command-registry.mjs`, and
+  `skills/bee-hive/templates/lib/validate-args.mjs`, mirrored under `.bee/bin/`.
+  Evidence: `.bee/cells/hia-1.json`, `.bee/cells/hia-2.json`, and
+  `docs/history/harness-integration-adopt/reports/`.
 - Cost pattern / tier resolution: `modelForTier`, `MODEL_TIERS`,
   `CONFIGURABLE_TIERS` in `skills/bee-hive/templates/lib/state.mjs` (ceiling
   never configured; extraction/generation/review are the configurable tiers).
