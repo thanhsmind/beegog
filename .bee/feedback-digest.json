@@ -1,0 +1,741 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-11T14:00:20.599Z",
+  "repo_label": "beegog",
+  "counts": {
+    "entries": 74,
+    "dropped": 17,
+    "skipped": 0,
+    "by_kind": {
+      "blocked": 1,
+      "deviation": 3,
+      "finding": 28,
+      "friction": 17,
+      "learning": 13,
+      "outcome": 6,
+      "proposal": 6
+    },
+    "sources_scanned": [
+      ".bee/backlog.jsonl",
+      ".bee/cells",
+      ".bee/decisions.jsonl",
+      "docs/history/learnings"
+    ],
+    "sources_absent": []
+  },
+  "dropped": [
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-10T17:59:38.455Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-10T17:59:58.652Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-10T18:16:16.438Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T03:15:32.714Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T03:15:32.715Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T03:15:32.715Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T03:15:32.715Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T03:15:32.715Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T03:28:40.849Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T06:17:55.502Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T06:17:55.502Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T06:46:16.975Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T06:46:16.975Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": "spec",
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T07:23:03.000Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T07:23:03.000Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T07:40:46.000Z",
+      "reason": "unknown_type"
+    },
+    {
+      "kind": null,
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "first_seen": "2026-07-11T07:40:46.000Z",
+      "reason": "unknown_type"
+    }
+  ],
+  "entries": [
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260708-harness09.md",
+      "title": "Learnings — harness09 (learn-harness-engineering adoption, slices 1–5)",
+      "first_seen": "2026-07-08",
+      "pain": 2
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260708-harness10.md",
+      "title": "harness10 — Learnings",
+      "first_seen": "2026-07-08",
+      "pain": 2
+    },
+    {
+      "kind": "proposal",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "ERROR/WHY/FIX denial-message contract",
+      "first_seen": "2026-07-08T00:00:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "proposal",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Five-layer failure attribution on friction",
+      "first_seen": "2026-07-08T00:00:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "proposal",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Fresh Session Test in grooming hunt",
+      "first_seen": "2026-07-08T00:00:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "proposal",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Review-feedback promotion: executable check first",
+      "first_seen": "2026-07-08T00:00:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "proposal",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Standard paths + baseline gate",
+      "first_seen": "2026-07-08T00:00:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Warning silenced by any recorded command even without verify",
+      "first_seen": "2026-07-08T06:35:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "Gate approval recorded late (shape stayed false past Gate 2)",
+      "first_seen": "2026-07-08T06:50:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "outcome",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "ERROR/WHY/FIX denial-message contract",
+      "first_seen": "2026-07-08T06:50:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "outcome",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Five-layer failure attribution on friction",
+      "first_seen": "2026-07-08T06:50:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "outcome",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Fresh Session Test in grooming hunt",
+      "first_seen": "2026-07-08T06:50:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "outcome",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Review-feedback promotion: executable check first",
+      "first_seen": "2026-07-08T06:50:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "outcome",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Standard paths + baseline gate",
+      "first_seen": "2026-07-08T06:50:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "blocked",
+      "layer": null,
+      "source": "harness10-8",
+      "title": "Dogfood sync: re-onboard the bee repo so vendored helpers and AGENTS block pick up harness10",
+      "first_seen": "2026-07-08T08:57:08.475Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Verify string with invalid regex passed static review, caught only at runtime",
+      "first_seen": "2026-07-08T09:00:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "backlog.mjs latches first Status-columned table",
+      "first_seen": "2026-07-08T09:20:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "BACKLOG_STATUSES drift guard is a value-lock, not a cross-file guard",
+      "first_seen": "2026-07-08T09:20:01.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260710-evolving-loop-slice-b.md",
+      "title": "Learnings — evolving loop, slice B",
+      "first_seen": "2026-07-10",
+      "pain": 3
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260710-evolving-loop.md",
+      "title": "evolving-loop (slice A) — learnings",
+      "first_seen": "2026-07-10",
+      "pain": 3
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260710-external-result-contract.md",
+      "title": "external-result-contract — file-checkable finish + first real external dispatch",
+      "first_seen": "2026-07-10",
+      "pain": 2
+    },
+    {
+      "kind": "deviation",
+      "layer": null,
+      "source": "evolving-1",
+      "title": "Collector lib: allowlist digest, realpath-contained, no free text",
+      "first_seen": "2026-07-10T06:22:43.699Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "bee_feedback.mjs not vendored into .bee/bin (EXISTS+SUBSTANTIVE, not WIRED)",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "security",
+      "source": ".bee/backlog.jsonl",
+      "title": "datamark guillemet fence is breakable",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "entry sorting uses locale-sensitive localeCompare",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "environment",
+      "source": ".bee/backlog.jsonl",
+      "title": "foreign digest read is unbounded and foreign title is never capped",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "spec",
+      "source": ".bee/backlog.jsonl",
+      "title": "oversize is an unreachable DROP_REASONS value",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "requireFlag is dead code in bee_feedback.mjs",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "security",
+      "source": ".bee/backlog.jsonl",
+      "title": "SECRET_CONTENT_PATTERNS and INJECTION_PATTERNS are narrow heuristics now load-bearing",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "unused imports writeCell and collectFeedback in test_lib.mjs",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Iron Law ordering has no mechanical proof; RED and GREEN landed in one commit",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "Orchestrator released a live worker reservations on a false stall signal, causing duplicate dispatch",
+      "first_seen": "2026-07-10T07:34:47.662Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "feedback.mjs contains a NUL byte, so grep treats it as binary and silently matches nothing",
+      "first_seen": "2026-07-10T08:32:36.188Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "spec",
+      "source": ".bee/backlog.jsonl",
+      "title": "Same defect class survived three rounds because tests only covered remembered fields",
+      "first_seen": "2026-07-10T08:32:36.189Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Two frozen assertions encoded the defects they were meant to guard",
+      "first_seen": "2026-07-10T08:32:36.189Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Grep-based guards need mutation-style negative tests",
+      "first_seen": "2026-07-10T08:45:20.656Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Iron Law RED must land as its own commit before the skill edit",
+      "first_seen": "2026-07-10T08:45:20.656Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "The one real corpus is a manual check, not a standing fixture",
+      "first_seen": "2026-07-10T08:45:20.656Z",
+      "pain": 1
+    },
+    {
+      "kind": "deviation",
+      "layer": null,
+      "source": "evolving-10",
+      "title": "bee-evolving skill: the gated self-improvement loop, RED-first under the full Iron Law",
+      "first_seen": "2026-07-10T10:02:50.319Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "localeCompare entry ordering is locale/ICU-dependent — byte-identical only per environment",
+      "first_seen": "2026-07-10T10:45:16.616Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "Wrapper-only or guillemet-quoted titles may false-collapse to the empty cluster key",
+      "first_seen": "2026-07-10T10:45:16.616Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "normalizeTitle hand-duplicates datamark cleaning with no coupling test",
+      "first_seen": "2026-07-10T10:46:37.384Z",
+      "pain": 3
+    },
+    {
+      "kind": "finding",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "rank --json emits the datamark-stripped cluster key to the consuming agent",
+      "first_seen": "2026-07-10T10:46:37.384Z",
+      "pain": 3
+    },
+    {
+      "kind": "friction",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "C0 sweep is scoped to templates/*.mjs — widen to the defect class and fix the NUL in reports/evolving-9.md",
+      "first_seen": "2026-07-10T10:55:33.620Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": null,
+      "source": ".bee/backlog.jsonl",
+      "title": "External reviewer dispatch lacks an AGENTS.md-bootstrap scope-out — round-1 self-block is reproducible",
+      "first_seen": "2026-07-10T16:55:00.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260711-cli-mutations.md",
+      "title": "Learnings — cli-mutations (CLI-owned state files)",
+      "first_seen": "2026-07-11",
+      "pain": 1
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260711-dispatch-log.md",
+      "title": "Learning: Observability rides the guard that already sees everything — and cwd-fallback tests leak into the real repo",
+      "first_seen": "2026-07-11",
+      "pain": 1
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260711-grill-deltas.md",
+      "title": "Learning: Prose skill edits — temporal consistency, class-sweeps, and the prose proof surface",
+      "first_seen": "2026-07-11",
+      "pain": 1
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260711-learnings-pair-relocation.md",
+      "title": "Learnings — learnings-pair-relocation",
+      "first_seen": "2026-07-11",
+      "pain": 2
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260711-model-tier-guard.md",
+      "title": "Learnings — model-tier-guard",
+      "first_seen": "2026-07-11",
+      "pain": 3
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260711-onboard-statusline.md",
+      "title": "Learning: An opt-in signal detected by substring matches every superstring context — the review predicted it, red-first proved it twice",
+      "first_seen": "2026-07-11",
+      "pain": 1
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260711-skill-sync.md",
+      "title": "Learnings — skill-sync",
+      "first_seen": "2026-07-11",
+      "pain": 3
+    },
+    {
+      "kind": "learning",
+      "layer": null,
+      "source": "docs/history/learnings/20260711-subagent-poll-waste.md",
+      "title": "Learning: Polling scratchpad files for background subagents burns tokens for a signal the harness already delivers",
+      "first_seen": "2026-07-11",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": ".bee/workers transients never pruned — 66 stale files / 2.8MB of 3.9MB total",
+      "first_seen": "2026-07-11T08:24:23.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "Internal .bee mutations still done via Read+Edit/sed — CLI-ify all state mutations",
+      "first_seen": "2026-07-11T08:24:23.000Z",
+      "pain": 2
+    },
+    {
+      "kind": "friction",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "bee-compounding writes backlog entries with kind: but the digest collector reads type: — 17 entries silently dropped",
+      "first_seen": "2026-07-11T08:29:42.000Z",
+      "pain": 2
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "rank's top cluster is 14 foreign entries with empty titles — garbage cluster outranks every real signal",
+      "first_seen": "2026-07-11T08:29:42.000Z",
+      "pain": 1
+    },
+    {
+      "kind": "deviation",
+      "layer": null,
+      "source": "cli-mutations-1",
+      "title": "bee_state.mjs — CLI verbs for every state.json mutation",
+      "first_seen": "2026-07-11T09:08:45.152Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "bee_state/bee_backlog swallow unknown optional flags — typo'd flag writes wrong data with exit 0",
+      "first_seen": "2026-07-11T11:06:22.097Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Gate and phase flips via bee_state are unaudited — no log line attributes who unlocked source writes",
+      "first_seen": "2026-07-11T11:06:22.138Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "scribing-run hardcodes phase=compounding — workflow routing baked into a mechanical CLI",
+      "first_seen": "2026-07-11T11:06:22.180Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "set --mode is a free string while every sibling field is enum-validated",
+      "first_seen": "2026-07-11T11:06:22.223Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Deny-precedence in a gated phase untested — the exact branch the guards.mjs comment justifies",
+      "first_seen": "2026-07-11T11:06:22.267Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "worker add allows duplicate nicknames; update hits first match, remove drops all",
+      "first_seen": "2026-07-11T11:06:22.313Z",
+      "pain": 2
+    },
+    {
+      "kind": "finding",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "RMW re-read-before-write ordering (C1) has no regression assertion",
+      "first_seen": "2026-07-11T11:06:37.084Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Boundary values title=200 layer=40 never positively asserted",
+      "first_seen": "2026-07-11T11:06:37.123Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "environment",
+      "source": ".bee/backlog.jsonl",
+      "title": "Direct-edit deny false-positives on git add / cp involving state files",
+      "first_seen": "2026-07-11T11:06:37.158Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "spec",
+      "source": ".bee/backlog.jsonl",
+      "title": "Hive rule #11 promises all .bee/*.json(l) but the hook enforces only two files",
+      "first_seen": "2026-07-11T11:06:37.202Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "Arg-parsing primitives now duplicated across three mutation CLIs",
+      "first_seen": "2026-07-11T11:06:37.242Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "security",
+      "source": ".bee/backlog.jsonl",
+      "title": "detail/feature uncapped at rest; next_action/feature rendered into prompts without datamark",
+      "first_seen": "2026-07-11T11:06:37.284Z",
+      "pain": 1
+    },
+    {
+      "kind": "friction",
+      "layer": "verification",
+      "source": ".bee/backlog.jsonl",
+      "title": "Plan matrix rows are not mapped to named assertions before DONE — unknown-flag row shipped untested",
+      "first_seen": "2026-07-11T11:32:40.442Z",
+      "pain": 2
+    },
+    {
+      "kind": "proposal",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": "bee_decisions log: require a quote/confirmation field when a decision cites the user",
+      "first_seen": "2026-07-11T11:32:40.488Z",
+      "pain": 2
+    },
+    {
+      "kind": "outcome",
+      "layer": "state",
+      "source": ".bee/backlog.jsonl",
+      "title": ".bee/workers transients never pruned — RESOLVED by workers-prune",
+      "first_seen": "2026-07-11T12:59:12.368Z",
+      "pain": 1
+    },
+    {
+      "kind": "finding",
+      "layer": "onboarding",
+      "source": ".bee/backlog.jsonl",
+      "title": "Opt-out leaves stale managed.statusline in onboarding.json (mirrors existing repo_hooks behavior — fix both together)",
+      "first_seen": "2026-07-11T13:56:36.300Z",
+      "pain": 2
+    }
+  ]
+}

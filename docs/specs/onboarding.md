@@ -5,9 +5,17 @@ coverage: partial
 sources:
   - cell onboard-statusline-1 (verification_evidence, 2026-07-11)
   - docs/history/onboard-statusline/reports/review-correctness.md
+  - codex-runtime-parity D1 (distribution contract, 2026-07-11)
+  - codex-runtime-parity D2 (lifecycle enforcement contract, 2026-07-11)
+  - codex-runtime-parity D3 (nested-executor safety boundary, 2026-07-11)
+  - codex-runtime-parity D4 (dispatch-contract scope, 2026-07-11)
 decisions:
   - 102efe08 (opt-in statusline vendor shape)
   - c6ee6b6e (Gate 4 onboard-statusline: anchored detection, sweep opt-in)
+  - 4cc1c355 (Codex plugin-first distribution; not yet implemented)
+  - b7af1bf9 (full compatible Codex lifecycle-hook parity; not yet implemented)
+  - 73ed41d6 (workspace-scoped Codex executors; blanket bypass forbidden)
+  - d7d5f459 (current Codex dispatch contract first; custom profiles deferred)
 ---
 
 # Onboarding
@@ -85,6 +93,27 @@ status is entirely unaffected by this mechanism's existence.
   byte-identical; a one-sided edit anywhere (including deleting the vendored
   copies while still opted in) is drift and fails the standing verification suite
   (decision c6ee6b6e, review finding P2-3).
+- **R5 (not yet implemented — P24)** — Codex receives bee primarily as one
+  installable plugin containing the shared workflow skills and compatible
+  lifecycle hooks. Project-local Codex hook wiring remains a fallback and
+  dogfood route; one installation activates exactly one hook source so an event
+  never runs twice (decision 4cc1c355).
+- **R6 (not yet implemented — P24)** — On Codex, every lifecycle capability
+  exposed compatibly by the host participates in bee's mechanical belt: session
+  bootstrap, phase reminders, write/privacy/reservation checks, state refresh,
+  worker-completion nudges, and close-time hygiene. Shared helper commands remain
+  authoritative when a host path cannot be intercepted; such gaps fail open,
+  stay visible to the operator, and have runtime-specific tests (decision
+  b7af1bf9).
+- **R7 (not yet implemented — P24)** — A nested Codex worker or reviewer starts
+  with write access limited to the active workspace and keeps normal approval
+  behavior. Bee never grants a blanket approval-and-sandbox bypass; broader
+  access is a separate human decision for one named command (decision 73ed41d6).
+- **R8 (not yet implemented — P24; profiles deferred to P25)** — Codex dispatch
+  guidance matches the collaboration interface the runtime actually exposes,
+  including explicit clean-context spawning and continuation. Bee does not ship
+  named Codex agent profiles until swarming can select and verify those profiles;
+  unused configuration is not parity (decision d7d5f459).
 
 ## Edge Cases Settled
 
@@ -105,6 +134,16 @@ status is entirely unaffected by this mechanism's existence.
   its downgrade/force protections, hook vendoring, and the greenfield init lane.
   Harvest needed; until then the authoritative description is the code and its
   test suites.
+- P24 must define the transition from manually copied Codex skills and project
+  hooks to the plugin-first contract, including how an installation detects and
+  avoids duplicate hook sources.
+- P24 must map each Codex lifecycle event and tool path to its observable bee
+  outcome, and state every path that remains helper-enforced because the host
+  cannot intercept it.
+- P24 must replace executor presets that imply workspace isolation without
+  actually enforcing it, and verify the effective sandbox/approval boundary.
+- Custom Codex explorer/worker/reviewer profiles remain deferred under P25 until
+  a live dispatch can select them and prove the resulting role configuration.
 - Opt-out manifest cleanup (see Edge Cases) — backlog item filed 2026-07-11.
 
 ## Pointers (implementation)

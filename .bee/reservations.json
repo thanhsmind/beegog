@@ -1183,6 +1183,294 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-11T11:23:54.642Z",
       "released_at": "2026-07-11T11:24:30.382Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "codex-parity-1",
+      "path": "hooks/test_hook_contracts.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:43:16.829Z",
+      "released_at": "2026-07-11T23:48:47.343Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "codex-parity-1",
+      "path": "docs/history/codex-runtime-parity/reports/red-baseline.md",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:43:16.862Z",
+      "released_at": "2026-07-11T23:48:47.343Z"
+    },
+    {
+      "agent": "kevin",
+      "cell": "codex-parity-1",
+      "path": "docs/history/codex-runtime-parity/reports/codex-parity-1.md",
+      "ttl_seconds": 600,
+      "reserved_at": "2026-07-11T23:49:22.104Z",
+      "released_at": "2026-07-11T23:49:35.166Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "codex-parity-5",
+      "path": "skills/bee-hive/templates/bee_state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:54:02.527Z",
+      "released_at": "2026-07-12T00:18:21.043Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "codex-parity-5",
+      "path": "skills/bee-hive/templates/lib/state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:54:02.567Z",
+      "released_at": "2026-07-12T00:18:21.043Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "codex-parity-5",
+      "path": "skills/bee-hive/templates/tests/test_lib.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:54:02.602Z",
+      "released_at": "2026-07-12T00:18:21.043Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "codex-parity-5",
+      "path": ".bee/bin/bee_state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:54:02.641Z",
+      "released_at": "2026-07-12T00:18:21.043Z"
+    },
+    {
+      "agent": "bob",
+      "cell": "codex-parity-5",
+      "path": ".bee/bin/lib/state.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:54:02.681Z",
+      "released_at": "2026-07-12T00:18:21.043Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": "hooks/catalog.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:55:06.960Z",
+      "released_at": "2026-07-12T00:01:42.574Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": "hooks/hooks.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:55:06.996Z",
+      "released_at": "2026-07-12T00:01:42.574Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": "hooks/claude-hooks.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:55:07.034Z",
+      "released_at": "2026-07-12T00:01:42.574Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": ".claude-plugin/plugin.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:55:07.071Z",
+      "released_at": "2026-07-12T00:01:42.574Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": ".codex-plugin/plugin.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:55:07.102Z",
+      "released_at": "2026-07-12T00:01:42.574Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": "hooks/test_hook_contracts.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-11T23:55:07.139Z",
+      "released_at": "2026-07-12T00:01:42.574Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": "hooks/catalog.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:03:28.179Z",
+      "released_at": "2026-07-12T00:06:11.523Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": "hooks/hooks.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:03:28.216Z",
+      "released_at": "2026-07-12T00:06:11.523Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": "hooks/claude-hooks.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:03:28.248Z",
+      "released_at": "2026-07-12T00:06:11.523Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": ".claude-plugin/plugin.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:03:28.284Z",
+      "released_at": "2026-07-12T00:06:11.523Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": ".codex-plugin/plugin.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:03:28.317Z",
+      "released_at": "2026-07-12T00:06:11.523Z"
+    },
+    {
+      "agent": "stuart",
+      "cell": "codex-parity-2",
+      "path": "hooks/test_hook_contracts.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:03:28.350Z",
+      "released_at": "2026-07-12T00:06:11.523Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/adapter.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.162Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/bee-session-init.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.202Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/bee-prompt-context.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.241Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/bee-state-sync.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.276Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/bee-chain-nudge.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.313Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/bee-session-close.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.350Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/bee-model-guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.381Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/bee-write-guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.413Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "hooks/test_hook_contracts.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:09:32.449Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "dave",
+      "cell": "codex-parity-2b",
+      "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:14:10.704Z",
+      "released_at": "2026-07-12T00:15:26.185Z"
+    },
+    {
+      "agent": "otto",
+      "cell": "codex-parity-3",
+      "path": "skills/bee-hive/scripts/onboard_bee.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:17:02.792Z",
+      "released_at": "2026-07-12T00:25:03.455Z"
+    },
+    {
+      "agent": "mel",
+      "cell": "codex-parity-4",
+      "path": "hooks/bee-write-guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:29:02.121Z",
+      "released_at": "2026-07-12T00:35:56.868Z"
+    },
+    {
+      "agent": "mel",
+      "cell": "codex-parity-4",
+      "path": "hooks/adapter.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:29:02.161Z",
+      "released_at": "2026-07-12T00:35:56.868Z"
+    },
+    {
+      "agent": "mel",
+      "cell": "codex-parity-4",
+      "path": "hooks/test_write_guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:29:02.195Z",
+      "released_at": "2026-07-12T00:35:56.868Z"
+    },
+    {
+      "agent": "mel",
+      "cell": "codex-parity-4",
+      "path": "hooks/test_hook_contracts.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T00:29:02.235Z",
+      "released_at": "2026-07-12T00:35:56.868Z"
+    },
+    {
+      "agent": "phil",
+      "cell": "codex-parity-4b",
+      "path": "hooks/test_write_guard.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T01:30:08.682Z",
+      "released_at": "2026-07-12T01:31:31.368Z"
     }
   ]
 }

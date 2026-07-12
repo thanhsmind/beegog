@@ -1,25 +1,33 @@
 {
   "schema_version": "1.0",
-  "phase": "compounding",
-  "feature": "onboard-statusline",
-  "mode": "small",
+  "phase": "planning",
+  "feature": "codex-runtime-parity",
+  "mode": "high-risk",
   "approved_gates": {
     "context": true,
     "shape": true,
     "execution": true,
     "review": true
   },
-  "workers": [],
-  "summary": "bee 0.1.22 released (onboard-statusline); 8 anphabe hosts onboarded up_to_date, statusline pair live on company-tasks-management",
-  "next_action": "idle — 0.1.22 shipped, capture queue drained",
+  "workers": [
+    {
+      "nickname": "phil",
+      "cell": "codex-parity-4b",
+      "tier": "generation",
+      "status": "done"
+    }
+  ],
+  "summary": "Safety foundation merged (Gate 4 human-approved, UAT 3/3 pass). Slices E2 Distribution, E3 Dispatch+skills, E4 Truth+rollout remain.",
+  "next_action": "bee-planning: prepare slice E2 Distribution cells (Gate 2 shape already approved feature-wide; E2 needs current-slice cells + validating + Gate 3).",
   "last_scribing_run": {
-    "feature": "workers-prune",
-    "date": "2026-07-11",
-    "at": "2026-07-11T14:02:28.353Z",
+    "feature": "codex-runtime-parity",
+    "date": "2026-07-12",
+    "at": "2026-07-12T00:44:14.381Z",
     "areas_synced": [
-      "reading-map (state CLI note)"
+      "hook-runtime",
+      "workflow-state"
     ],
-    "next_action": "idle — 0.1.22 shipped, capture queue drained"
+    "next_action": "bee-reviewing: Safety foundation slice (6 cells), then Gate 4 high-risk (human); remaining slices E2-E4 return to planning after"
   },
   "last_compounding_run": {
     "feature": "dispatch-log",
@@ -33,8 +41,8 @@
   "cells": {
     "open": 0,
     "claimed": 0,
-    "capped": 67,
+    "capped": 75,
     "blocked": 0
   },
-  "last_activity": "2026-07-11T13:38:25.991Z"
+  "last_activity": "2026-07-12T01:32:02.273Z"
 }

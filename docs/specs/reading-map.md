@@ -11,6 +11,12 @@ Where things live. Read the touched area's spec before its code.
 - [`onboarding.md`](./onboarding.md) — what onboarding installs and keeps current in a host
   project; currently full on the opt-in status-display (statusline) vendoring, the rest of the
   surface is declared Open Gaps (`coverage: partial`).
+- [`hook-runtime.md`](./hook-runtime.md) — the lifecycle guardrails around the assistant: one
+  catalog of record rendered into per-runtime projections, hostile-input immunity, advisory
+  encoding, per-target batch-write guarding, named coverage gaps (`coverage: partial`).
+- [`workflow-state.md`](./workflow-state.md) — the durable workflow record: closed phase
+  vocabulary, four gates, and the guarded feature-start that can never inherit approvals or
+  bury unfinished work (`coverage: partial`).
 
 ## Not yet specced
 

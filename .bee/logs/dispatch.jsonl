@@ -19,3 +19,15 @@
 {"ts":"2026-07-11T11:29:48.964Z","tool":"Agent","transport":"model-param","model":"haiku","tier":null,"subagent_type":null,"description":"[haiku] Pattern extractor: cli-mutations"}
 {"ts":"2026-07-11T11:29:54.058Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Decision analyst: cli-mutations"}
 {"ts":"2026-07-11T11:30:00.252Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[sonnet] Failure analyst: cli-mutations"}
+{"ts":"2026-07-11T23:41:52.382Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[bee-tier: generation] Worker kevin: codex-parity-1 [sonnet]"}
+{"ts":"2026-07-11T23:51:02.449Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[bee-tier: generation] Worker stuart: codex-parity-2 [sonnet]"}
+{"ts":"2026-07-11T23:51:16.605Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[bee-tier: generation] Worker bob: codex-parity-5 [sonnet]"}
+{"ts":"2026-07-12T00:08:40.176Z","tool":"Agent","transport":"marker","model":null,"tier":"ceiling","subagent_type":null,"description":"[bee-tier: ceiling] Worker otto: codex-parity-3 [session model]"}
+{"ts":"2026-07-12T00:11:43.915Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[bee-tier: generation] Worker dave: codex-parity-2b [sonnet]"}
+{"ts":"2026-07-12T00:26:25.398Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[bee-tier: generation] Worker mel: codex-parity-4 [sonnet]"}
+{"ts":"2026-07-12T01:20:19.351Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[bee-tier: review] Security reviewer [opus]"}
+{"ts":"2026-07-12T01:20:28.129Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[bee-tier: review] Code-quality reviewer [opus]"}
+{"ts":"2026-07-12T01:20:53.646Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[bee-tier: review] Architecture reviewer [opus]"}
+{"ts":"2026-07-12T01:21:03.489Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[bee-tier: review] Test-coverage reviewer [opus]"}
+{"ts":"2026-07-12T01:21:15.082Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[bee-tier: review] Api-contract reviewer [opus]"}
+{"ts":"2026-07-12T01:28:42.521Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[bee-tier: generation] Worker phil: codex-parity-4b [sonnet]"}
