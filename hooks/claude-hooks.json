@@ -33,6 +33,16 @@
             "statusMessage": "bee: write guard"
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/bee-model-guard.mjs\"",
+            "statusMessage": "bee: model-tier guard"
+          }
+        ]
       }
     ],
     "PostToolUse": [
