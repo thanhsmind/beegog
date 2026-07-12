@@ -65,6 +65,8 @@ import {
   recordOnReview,
   addCandidate,
   listCandidates,
+  deriveCandidateStatus,
+  CANDIDATE_STATUSES,
   reviewsDir,
   candidatesPath,
   REVIEW_MODES,
@@ -4110,9 +4112,280 @@ check('bee_reviews.mjs with no command prints a Use: line listing all verbs and 
         /show/.test(result.stderr) &&
         /record/.test(result.stderr) &&
         /candidate add/.test(result.stderr) &&
-        /candidates/.test(result.stderr),
+        /candidates/.test(result.stderr) &&
+        /status/.test(result.stderr),
       `Use: line should list all verbs, got ${result.stderr}`,
     );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── reviews: derived coverage/staleness engine (review-od-2, SPEC §5/§8/ ───
+// R6/R10, A7/A8, decision 565e68d0) ─────────────────────────────────────────
+// Status is NEVER stored — deriveCandidateStatus always recomputes from
+// session records + git at read time. Fixtures below layer a real git
+// repo on top of makeReviewRepo's bee scaffolding since coverage/staleness
+// is defined over actual commit ancestry (git rev-list / merge-base
+// --is-ancestor), mirroring test_onboard_bee.mjs:872-875's runGit helper —
+// its env isolation there is HOME-override; the git-unavailable case below
+// is a NEW variation (PATH-strip), proven in .bee/spikes/review-on-demand/RESULT.md.
+
+function runGit(cwd, args) {
+  return spawnSync('git', args, { cwd, encoding: 'utf8' });
+}
+const gitAvailable = spawnSync('git', ['--version']).status === 0;
+
+function makeReviewGitRepo(prefix) {
+  const dir = makeReviewRepo(prefix);
+  runGit(dir, ['init', '-q']);
+  runGit(dir, ['config', 'user.email', 'bee-review-od-2@example.com']);
+  runGit(dir, ['config', 'user.name', 'bee review-od-2 tests']);
+  fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed\n', 'utf8');
+  runGit(dir, ['add', 'seed.txt']);
+  runGit(dir, ['commit', '-q', '-m', 'seed']);
+  return dir;
+}
+
+function gitHead(dir) {
+  return runGit(dir, ['rev-parse', 'HEAD']).stdout.trim();
+}
+
+function gitCommit(dir, file, content, message) {
+  fs.writeFileSync(path.join(dir, file), content, 'utf8');
+  runGit(dir, ['add', file]);
+  runGit(dir, ['commit', '-q', '-m', message]);
+  return gitHead(dir);
+}
+
+check('deriveCandidateStatus: a legacy candidate with no covering session derives "unreviewed" — no fake session records fabricated (SPEC §11.3)', () => {
+  const dir = makeReviewRepo('bee-cand-legacy-');
+  try {
+    const candidate = addCandidate(dir, { feature: 'legacy-feature', head: 'sha-legacy', mode: 'standard' });
+    const derived = deriveCandidateStatus(dir, candidate);
+    assert(derived.status === 'unreviewed', `legacy candidate with no session derives unreviewed, got ${derived.status}`);
+    assert(derived.session === undefined, 'unreviewed carries no session reference');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('deriveCandidateStatus: a non-approved (pending) session whose scope includes the candidate\'s feature derives "in review"', () => {
+  const dir = makeReviewRepo('bee-cand-inreview-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    createReview(dir, baseScope({
+      id: 'rev-open',
+      included: [{ type: 'feature', id: 'demo' }],
+      baseline: 'sha0',
+      head: 'sha1',
+    }));
+    const candidate = addCandidate(dir, { feature: 'demo', head: 'sha1', mode: 'standard' });
+    const derived = deriveCandidateStatus(dir, candidate);
+    assert(derived.status === 'in review', `open covering session derives in review, got ${derived.status}`);
+    assert(derived.session === 'rev-open', 'in review carries the covering session id');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('deriveCandidateStatus: a blocked (P1-pending) session still derives "in review", never "reviewed" (R8 — P1 blocks approval)', () => {
+  const dir = makeReviewRepo('bee-cand-blocked-');
+  try {
+    seedCappedCellWithEvidence(dir, 'ok-1');
+    createReview(dir, baseScope({
+      id: 'rev-blocked',
+      included: [{ type: 'feature', id: 'demo' }],
+      baseline: 'sha0',
+      head: 'sha1',
+    }));
+    recordOnReview(dir, 'rev-blocked', { kind: 'decision', payload: { status: 'blocked', gate4: null } });
+    const candidate = addCandidate(dir, { feature: 'demo', head: 'sha1', mode: 'standard' });
+    const derived = deriveCandidateStatus(dir, candidate);
+    assert(derived.status === 'in review', `blocked session derives in review, got ${derived.status}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+if (gitAvailable) {
+  check('deriveCandidateStatus: an approved session covers the candidate\'s exact head as "reviewed"; one extra commit after that head flips the SAME candidate to "review stale" while the session file stays byte-unchanged (A8)', () => {
+    const dir = makeReviewGitRepo('bee-cand-stale-flip-');
+    try {
+      const sha1 = gitHead(dir);
+      seedCappedCellWithEvidence(dir, 'ok-1');
+      createReview(dir, baseScope({
+        id: 'rev-reviewed',
+        included: [{ type: 'feature', id: 'demo' }],
+        baseline: sha1,
+        head: sha1,
+      }));
+      recordOnReview(dir, 'rev-reviewed', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+      const candidate = addCandidate(dir, { feature: 'demo', head: sha1, mode: 'standard' });
+
+      const reviewed = deriveCandidateStatus(dir, candidate);
+      assert(reviewed.status === 'reviewed', `exact-head coverage derives reviewed, got ${reviewed.status}`);
+      assert(reviewed.session === 'rev-reviewed', 'reviewed carries the covering session id');
+
+      const sessionFile = path.join(reviewsDir(dir), 'rev-reviewed.json');
+      const before = fs.readFileSync(sessionFile, 'utf8');
+      gitCommit(dir, 'unrelated.txt', 'unrelated change\n', 'unrelated commit after review head');
+      const after = fs.readFileSync(sessionFile, 'utf8');
+      assert(before === after, 'session file stays byte-unchanged across the new commit — audit trail preserved (A8)');
+
+      const stale = deriveCandidateStatus(dir, candidate);
+      assert(stale.status === 'review stale', `a commit after the covering session's head flips status to review stale, got ${stale.status}`);
+      assert(stale.session === 'rev-reviewed', 'review stale still names the covering session');
+      assert(!stale.note, 'a resolvable stale range carries no "range unresolvable" note');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  check('deriveCandidateStatus: an unresolvable candidate head (unknown sha, simulating rebase/amend) with a covering approved session degrades to "review stale" with a "range unresolvable" note, never throws (plan open question 1)', () => {
+    const dir = makeReviewGitRepo('bee-cand-unresolvable-');
+    try {
+      const sha1 = gitHead(dir);
+      seedCappedCellWithEvidence(dir, 'ok-1');
+      createReview(dir, baseScope({
+        id: 'rev-unresolvable',
+        included: [{ type: 'feature', id: 'demo' }],
+        baseline: sha1,
+        head: sha1,
+      }));
+      recordOnReview(dir, 'rev-unresolvable', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+      const fakeSha = 'a'.repeat(40);
+      const candidate = addCandidate(dir, { feature: 'demo', head: fakeSha, mode: 'standard' });
+
+      const derived = deriveCandidateStatus(dir, candidate);
+      assert(derived.status === 'review stale', `unresolvable candidate head degrades to review stale, got ${derived.status}`);
+      assert(derived.note === 'range unresolvable', `unresolvable range carries the "range unresolvable" note, got ${JSON.stringify(derived.note)}`);
+      assert(derived.session === 'rev-unresolvable', 'degraded status still names the covering session');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  check('deriveCandidateStatus: git binary unavailable (PATH stripped) never throws — a covering session degrades to "review stale"/"range unresolvable", read path stays usable', () => {
+    const dir = makeReviewGitRepo('bee-cand-nogit-');
+    try {
+      const sha1 = gitHead(dir);
+      seedCappedCellWithEvidence(dir, 'ok-1');
+      createReview(dir, baseScope({
+        id: 'rev-nogit',
+        included: [{ type: 'feature', id: 'demo' }],
+        baseline: sha1,
+        head: sha1,
+      }));
+      recordOnReview(dir, 'rev-nogit', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+      const candidate = addCandidate(dir, { feature: 'demo', head: sha1, mode: 'standard' });
+
+      const savedPath = process.env.PATH;
+      let derived;
+      let threw = null;
+      try {
+        process.env.PATH = '/nonexistent';
+        try {
+          derived = deriveCandidateStatus(dir, candidate);
+        } catch (err) {
+          threw = err;
+        }
+      } finally {
+        process.env.PATH = savedPath;
+      }
+      assert(!threw, `deriveCandidateStatus must never throw on a missing git binary, threw: ${threw && threw.message}`);
+      assert(derived.status === 'review stale', `git-unavailable degrades to review stale, got ${derived.status}`);
+      assert(derived.note === 'range unresolvable', 'git-unavailable carries the range-unresolvable note');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  check('deriveCandidateStatus: a candidate whose head postdates the covering approved session\'s frozen head (new work, same feature, no new session) derives "unreviewed" — not a stale re-labelling of unrelated new work', () => {
+    const dir = makeReviewGitRepo('bee-cand-newdelta-');
+    try {
+      const sha1 = gitHead(dir);
+      seedCappedCellWithEvidence(dir, 'ok-1');
+      createReview(dir, baseScope({
+        id: 'rev-old',
+        included: [{ type: 'feature', id: 'demo' }],
+        baseline: sha1,
+        head: sha1,
+      }));
+      recordOnReview(dir, 'rev-old', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+      const sha2 = gitCommit(dir, 'more.txt', 'more work\n', 'new delta commit after review head');
+      const newCandidate = addCandidate(dir, { feature: 'demo', head: sha2, mode: 'standard' });
+      const derived = deriveCandidateStatus(dir, newCandidate);
+      assert(derived.status === 'unreviewed', `new delta candidate not an ancestor of the old session's head derives unreviewed, got ${derived.status}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+} else {
+  console.log('SKIP  deriveCandidateStatus git-fixture tests (git binary not available in this environment)');
+}
+
+check('deriveCandidateStatus: CANDIDATE_STATUSES exports exactly the four R10 labels', () => {
+  assert(
+    JSON.stringify(CANDIDATE_STATUSES) === JSON.stringify(['unreviewed', 'in review', 'reviewed', 'review stale']),
+    `CANDIDATE_STATUSES must be the four SPEC §5/R10 labels in order, got ${JSON.stringify(CANDIDATE_STATUSES)}`,
+  );
+});
+
+if (gitAvailable) {
+  check('bee_reviews.mjs status: --json renders verified + four-label counts and per-candidate coverage, "reviewed (covered by <id>)" answers A7', () => {
+    const dir = makeReviewGitRepo('bee-reviews-status-cli-');
+    try {
+      const sha1 = gitHead(dir);
+      seedCappedCellWithEvidence(dir, 'ok-1');
+      createReview(dir, baseScope({
+        id: 'rev-status',
+        included: [{ type: 'feature', id: 'demo' }],
+        baseline: sha1,
+        head: sha1,
+      }));
+      recordOnReview(dir, 'rev-status', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+      addCandidate(dir, { feature: 'demo', head: sha1, mode: 'standard' }); // reviewed (exact head, zero commits since)
+      addCandidate(dir, { feature: 'other', head: 'sha9', mode: 'tiny' }); // unreviewed (no covering session)
+
+      const result = runBeeReviews(dir, ['status', '--json']);
+      assert(result.status === 0, `status --json should succeed, got ${result.status}: ${result.stderr}`);
+      const summary = JSON.parse(result.stdout);
+      assert(summary.counts.verified === 2, `verified counts every candidate, got ${summary.counts.verified}`);
+      assert(summary.counts.reviewed === 1, `one candidate reviewed, got ${summary.counts.reviewed}`);
+      assert(summary.counts.unreviewed === 1, `one candidate unreviewed, got ${summary.counts.unreviewed}`);
+      assert(summary.counts['in review'] === 0 && summary.counts['review stale'] === 0, 'no in-review or stale candidates in this fixture');
+      const demoRow = summary.candidates.find((c) => c.feature === 'demo');
+      assert(demoRow.review_status === 'reviewed' && demoRow.review_session === 'rev-status', 'demo candidate row carries the derived status + covering session');
+
+      const text = runBeeReviews(dir, ['status']);
+      assert(text.status === 0, 'status text mode succeeds');
+      assert(/reviewed \(covered by rev-status\)/.test(text.stdout), `A7 answer surface names the covering review id, got ${text.stdout}`);
+      assert(/unreviewed/.test(text.stdout), 'unreviewed candidate rendered in text output');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+} else {
+  console.log('SKIP  bee_reviews.mjs status A7 covered-by test (git binary not available in this environment)');
+}
+
+check('bee_reviews.mjs status: --feature filters the candidate set, and a repo with zero candidates still renders all-zero counts at exit 0', () => {
+  const dir = makeReviewRepo('bee-reviews-status-filter-');
+  try {
+    const empty = runBeeReviews(dir, ['status', '--json']);
+    assert(empty.status === 0, `status on an empty ledger still exits 0, got ${empty.status}: ${empty.stderr}`);
+    const emptySummary = JSON.parse(empty.stdout);
+    assert(emptySummary.counts.verified === 0 && emptySummary.candidates.length === 0, 'zero candidates renders all-zero counts, no crash');
+
+    addCandidate(dir, { feature: 'feature-a', head: 'shaA', mode: 'standard' });
+    addCandidate(dir, { feature: 'feature-b', head: 'shaB', mode: 'standard' });
+
+    const filtered = runBeeReviews(dir, ['status', '--feature', 'feature-a', '--json']);
+    assert(filtered.status === 0, 'filtered status succeeds');
+    const filteredSummary = JSON.parse(filtered.stdout);
+    assert(filteredSummary.counts.verified === 1, `--feature filter narrows to one candidate, got ${filteredSummary.counts.verified}`);
+    assert(filteredSummary.candidates.length === 1 && filteredSummary.candidates[0].feature === 'feature-a', 'only feature-a candidate present after filter');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

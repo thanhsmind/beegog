@@ -19,6 +19,12 @@
 //     (--mode is required: docs|tiny|small|spike|standard|high-risk — the
 //      closing feature's lane. Appends one line to .bee/review-candidates.jsonl.)
 //   node .bee/bin/bee_reviews.mjs candidates [--json]
+//   node .bee/bin/bee_reviews.mjs status [--feature F] [--json]
+//     (derived coverage summary, R10 — status is NEVER stored: verified count
+//      plus the four coverage labels unreviewed/in review/reviewed/review
+//      stale, one line per candidate. A candidate reviewed by an unchanged
+//      approved session reports "reviewed (covered by <review-id>)" so the
+//      orchestrator never re-dispatches a full panel for it, A7.)
 
 import fs from 'node:fs';
 import { findRepoRoot } from './lib/state.mjs';
@@ -29,6 +35,8 @@ import {
   recordOnReview,
   addCandidate,
   listCandidates,
+  deriveCandidateStatus,
+  CANDIDATE_STATUSES,
   REVIEW_MODES,
 } from './lib/reviews.mjs';
 
@@ -94,6 +102,52 @@ function splitList(raw) {
     .filter(Boolean);
 }
 
+// A7: a candidate reviewed by an unchanged approved session names the
+// covering review-id so the orchestrator never re-dispatches for it.
+function candidateStatusLine(candidate, derived) {
+  const target = `${candidate.feature}@${candidate.head} (${candidate.mode})`;
+  if (derived.status === 'reviewed') {
+    return `${target} — reviewed (covered by ${derived.session})`;
+  }
+  if (derived.status === 'review stale') {
+    const note = derived.note ? `, ${derived.note}` : '';
+    return `${target} — review stale (was covered by ${derived.session}${note})`;
+  }
+  if (derived.status === 'in review') {
+    return `${target} — in review (session ${derived.session})`;
+  }
+  return `${target} — unreviewed`;
+}
+
+function buildStatusSummary(root, { feature } = {}) {
+  const candidates = listCandidates(root).filter((c) => !feature || c.feature === feature);
+  const sessions = listReviews(root);
+  const counts = { verified: candidates.length };
+  for (const label of CANDIDATE_STATUSES) counts[label] = 0;
+
+  const rows = candidates.map((candidate) => {
+    const derived = deriveCandidateStatus(root, candidate, { sessions });
+    counts[derived.status] += 1;
+    return {
+      ...candidate,
+      review_status: derived.status,
+      review_session: derived.session || null,
+      note: derived.note || null,
+    };
+  });
+
+  return { counts, candidates: rows };
+}
+
+function renderStatusText(summary) {
+  const counts = summary.counts;
+  const headline =
+    `verified: ${counts.verified}  unreviewed: ${counts.unreviewed}  ` +
+    `in review: ${counts['in review']}  reviewed: ${counts.reviewed}  review stale: ${counts['review stale']}`;
+  if (summary.candidates.length === 0) return `${headline}\nNo review candidates.`;
+  return [headline, ...summary.candidates.map((c) => candidateStatusLine(c, { status: c.review_status, session: c.review_session, note: c.note }))].join('\n');
+}
+
 function run(args) {
   const root = findRepoRoot(process.cwd());
   if (!root) {
@@ -151,9 +205,14 @@ function run(args) {
           : 'No review candidates.',
       };
     }
+    case 'status': {
+      const feature = flags.feature ? String(flags.feature) : null;
+      const summary = buildStatusSummary(root, { feature });
+      return { result: summary, text: renderStatusText(summary) };
+    }
     default:
       throw new Error(
-        `Unknown command "${args.command || '(missing)'}". Use: create, list, show, record, candidate add, candidates. ` +
+        `Unknown command "${args.command || '(missing)'}". Use: create, list, show, record, candidate add, candidates, status. ` +
           `(review modes: ${REVIEW_MODES.join(', ')})`,
       );
   }

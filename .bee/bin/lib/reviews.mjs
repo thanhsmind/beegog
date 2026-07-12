@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { readJson, writeJsonAtomic, appendJsonl, readJsonl } from './fsutil.mjs';
 import { readCell } from './cells.mjs';
 
@@ -360,4 +361,122 @@ export function addCandidate(root, { feature, head, mode, baseline = null, cells
 /** Fail-open: readJsonl already skips corrupt lines rather than throwing. */
 export function listCandidates(root) {
   return readJsonl(candidatesPath(root));
+}
+
+// ─── derived coverage / staleness (review-od-2, SPEC §5/§8/R6/R10, A7/A8) ──
+// Candidate status is NEVER stored — always derived at read time from
+// session records + git (R6/R10: "status độc lập với implementation status").
+// Coverage attaches only to immutable baseline/head content identity (§8),
+// never to feature name or date. Git failures NEVER throw out of this read
+// path (fail toward honesty, plan.md open question 1): an unresolvable range
+// (missing git binary, unknown sha after rebase/amend, shallow clone) with a
+// covering session degrades to 'review stale' with a 'range unresolvable'
+// note; with no covering session it degrades to plain 'unreviewed'. Exported
+// for bee_status.mjs (review-od-3) to summarize candidate counts.
+
+export const CANDIDATE_STATUSES = ['unreviewed', 'in review', 'reviewed', 'review stale'];
+
+function sessionCoversCandidate(session, candidate) {
+  if (!session || !Array.isArray(session.included)) return false;
+  const featureMatch = session.included.some(
+    (e) => e && e.type === 'feature' && e.id === candidate.feature,
+  );
+  if (featureMatch) return true;
+  const cells = Array.isArray(candidate.cells) ? candidate.cells.filter(Boolean) : [];
+  if (cells.length === 0) return false;
+  const includedCellIds = new Set(
+    session.included.filter((e) => e && e.type === 'cell').map((e) => e.id),
+  );
+  return cells.every((id) => includedCellIds.has(id));
+}
+
+/** SPEC §5: "In review" also covers a `blocked` session (P1 fix pending, R8) — anything short of `approved`. */
+function isSessionOpen(session) {
+  return !session.decision || session.decision.status !== 'approved';
+}
+
+// Every git call in this module takes an explicit `root` as cwd — never
+// process.cwd() — consistent with every other lib function taking root.
+function runGit(root, args) {
+  return spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+}
+
+/**
+ * Is `head` an ancestor of (or equal to) `ref` in `root`'s git history?
+ * Returns { covered: true|false, unresolved: false } on a clean answer, or
+ * { covered: null, unresolved: true } when git cannot answer (missing
+ * binary, unknown sha after rebase/amend, shallow clone) — never throws.
+ */
+function headCoveredBy(root, head, ref) {
+  if (head === ref) return { covered: true, unresolved: false };
+  const result = runGit(root, ['merge-base', '--is-ancestor', head, ref]);
+  if (result.error || result.status === null) return { covered: null, unresolved: true };
+  if (result.status === 0) return { covered: true, unresolved: false };
+  if (result.status === 1) return { covered: false, unresolved: false };
+  return { covered: null, unresolved: true }; // e.g. exit 128 — unknown/invalid revision
+}
+
+/**
+ * Commits reachable from HEAD but not from `ref` in `root`. Returns
+ * { count, unresolved } — unresolved (never throws) covers a missing git
+ * binary, an unresolvable ref, or non-numeric output.
+ */
+function commitsSince(root, ref) {
+  const result = runGit(root, ['rev-list', `${ref}..HEAD`, '--count']);
+  if (result.error || result.status === null || result.status !== 0) {
+    return { count: null, unresolved: true };
+  }
+  const count = parseInt(String(result.stdout).trim(), 10);
+  if (!Number.isFinite(count)) return { count: null, unresolved: true };
+  return { count, unresolved: false };
+}
+
+/**
+ * Derive a candidate's review status at read time — NEVER stored (R6/R10).
+ * `candidate` carries at least { feature, head, cells }. `opts.sessions`
+ * lets a caller iterating many candidates (e.g. a status summary) pass a
+ * pre-fetched listReviews(root) once instead of re-reading per candidate.
+ *
+ * Priority: any covering session still open (pending/blocked) -> 'in review'
+ * (an active session always outranks a stale older approval). Otherwise, the
+ * first covering approved session whose head is an ancestor-or-equal of the
+ * candidate's head decides reviewed vs. stale (git rev-list count since that
+ * session's head). A covering session whose ancestry can't be resolved
+ * degrades the candidate to 'review stale' with a 'range unresolvable' note
+ * rather than throwing or silently reporting 'reviewed'. No covering session
+ * at all (legacy feature or genuinely new work) -> 'unreviewed' — no fake
+ * session records are ever fabricated (SPEC §11.3).
+ */
+export function deriveCandidateStatus(root, candidate, opts = {}) {
+  const sessions = Array.isArray(opts.sessions) ? opts.sessions : listReviews(root);
+  const covering = sessions.filter((s) => sessionCoversCandidate(s, candidate));
+
+  const open = covering.filter(isSessionOpen);
+  if (open.length > 0) {
+    const session = open[open.length - 1];
+    return { status: 'in review', session: session.id };
+  }
+
+  const approved = covering.filter((s) => !isSessionOpen(s));
+  let unresolvedSession = null;
+  for (const session of approved) {
+    const coverage = headCoveredBy(root, candidate.head, session.head);
+    if (coverage.unresolved) {
+      unresolvedSession = unresolvedSession || session;
+      continue;
+    }
+    if (!coverage.covered) continue; // candidate's work postdates this session's frozen head — not this session's coverage
+    const since = commitsSince(root, session.head);
+    if (since.unresolved) {
+      return { status: 'review stale', session: session.id, note: 'range unresolvable' };
+    }
+    if (since.count > 0) {
+      return { status: 'review stale', session: session.id };
+    }
+    return { status: 'reviewed', session: session.id };
+  }
+  if (unresolvedSession) {
+    return { status: 'review stale', session: unresolvedSession.id, note: 'range unresolvable' };
+  }
+  return { status: 'unreviewed' };
 }
