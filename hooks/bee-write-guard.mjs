@@ -8,12 +8,16 @@
 //                      scout dirs (node_modules/, dist/, ...) are denied
 // Codex apply_patch: the canonical patch envelope's Add/Update/Delete/Move
 // target lines are parsed and every proved target runs the SAME
-// gate/direct-edit/reservation decisions as Edit/Write/Bash. Cell boundary:
-// codex-parity-3 recognizes the canonical shape and routes proved targets;
-// the full deny-on-unprovable per-target policy matrix (malformed bodies,
-// escapes, unicode edges) is cell codex-parity-4's scope — until then an
-// intercepted patch with unproved targets logs a visible
-// "applypatch-unparsed" coverage gap and fails open.
+// gate/direct-edit/reservation decisions as Edit/Write/Bash (cell
+// codex-parity-3). P1 repair (cell codex-parity-4, plan-review third bullet):
+// once an apply_patch event is INTERCEPTED (a canonical "*** Begin Patch"
+// envelope was found), a target set that cannot be fully proved — zero
+// Add/Update/Delete/Move/"Move to" lines parsed, or any parsed target that
+// does not resolve to an in-repo relative path — DENIES (exit 2) with a
+// corrective message, never allows. A visible "applypatch-unparsed" coverage
+// gap is still logged either way. Malformed OUTER hook payloads (apply_patch
+// called but no canonical patch envelope is present in tool_input at all)
+// and genuinely unsupported host paths keep D2's visible fail-open.
 // Input/root/logging go through the shared runtime adapter (hooks/adapter.mjs):
 // stdin is normalized before any property access and root discovery lives
 // inside the fail-open boundary.
@@ -94,7 +98,13 @@ function extractApplyPatchTargets(patchText) {
   for (const line of String(patchText).split(/\r?\n/)) {
     const match = PATCH_TARGET_RE.exec(line);
     if (match) {
-      targets.push(match[1]);
+      // Trim: the lazy `(.+?)\s*$` can otherwise capture a lone leftover
+      // whitespace character for a verb line whose path is pure whitespace
+      // (e.g. "*** Add File:    "). Trimming turns that into "", which
+      // toRelPath's `!rawPath` check correctly treats as unprovable below —
+      // a bug found while building this cell's matrix (auto-fixed per the
+      // worker's rule-1 deviation policy: a bug in touched code).
+      targets.push(match[1].trim());
     }
   }
   return targets;
@@ -149,21 +159,43 @@ async function main() {
         // D2 / approach.md §2: an intercepted apply_patch runs the existing
         // gate/direct-edit/reservation decisions on every proved target.
         const patchText = applyPatchText(toolInput);
-        const targets = patchText === null ? [] : extractApplyPatchTargets(patchText);
-        relPaths = targets.map((p) => toRelPath(root, cwd, p)).filter(Boolean);
-        if (patchText === null || targets.length === 0 || relPaths.length < targets.length) {
-          // codex-parity-3/-4 boundary: unproved targets are a VISIBLE
-          // coverage gap today, fail-open; cell codex-parity-4 owns flipping
-          // this class to deny-on-unprovable with the full per-target matrix.
+        if (patchText === null) {
+          // Malformed OUTER payload: apply_patch fired but tool_input carries
+          // no recognizable "*** Begin Patch" envelope at all — nothing was
+          // genuinely intercepted, so this stays D2's visible fail-open.
           logCoverageGap(
             root,
             HOOK_NAME,
             "applypatch-unparsed",
-            patchText === null
-              ? "apply_patch intercepted but no canonical patch envelope found in tool_input"
-              : `apply_patch intercepted but ${targets.length - relPaths.length} of ${targets.length} target(s) could not be proved inside the repo`,
+            "apply_patch intercepted but no canonical patch envelope found in tool_input",
             ctx.source,
           );
+        } else {
+          const targets = extractApplyPatchTargets(patchText);
+          relPaths = targets.map((p) => toRelPath(root, cwd, p)).filter(Boolean);
+          if (targets.length === 0 || relPaths.length < targets.length) {
+            // P1 repair (codex-parity-4): the envelope WAS intercepted, but
+            // the target set cannot be fully proved (no Add/Update/Delete/
+            // Move line parsed at all, or a parsed target escapes the repo /
+            // fails to resolve) — deny rather than risk an unchecked write.
+            // Still logged as a visible coverage gap for audit (D2).
+            logCoverageGap(
+              root,
+              HOOK_NAME,
+              "applypatch-unparsed",
+              targets.length === 0
+                ? "apply_patch intercepted but no Add/Update/Delete/Move/\"Move to\" target line could be parsed from the patch body"
+                : `apply_patch intercepted but ${targets.length - relPaths.length} of ${targets.length} target(s) could not be proved inside the repo`,
+              ctx.source,
+            );
+            denial = {
+              reason:
+                "bee apply_patch guard: this patch's target set could not be fully proved inside the repo — " +
+                "denying rather than risking an unchecked write. " +
+                "FIX: use canonical \"*** Add File:\", \"*** Update File:\", \"*** Delete File:\", and \"*** Move to:\" " +
+                "lines naming plain in-repo relative paths (no path traversal, no unresolvable escapes), then resubmit.",
+            };
+          }
         }
       } else if (toolName === "Bash") {
         const command = typeof toolInput.command === "string" ? toolInput.command : "";

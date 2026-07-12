@@ -82,6 +82,31 @@ function buildThrowingGuardsFixture() {
   return root;
 }
 
+// A working fixture pre-seeded with one active reservation, written directly
+// to .bee/reservations.json (schema: reservations.mjs's own store shape) so
+// the apply_patch reservation rows below can prove a real conflict/no-conflict
+// decision instead of asserting on string presence alone.
+function buildReservationFixture(prefix, reservedPath, holderAgent) {
+  const root = buildFixture(prefix);
+  const store = {
+    reservations: [
+      {
+        agent: holderAgent,
+        cell: "other-cell",
+        path: reservedPath,
+        ttl_seconds: 3600,
+        reserved_at: new Date().toISOString(),
+        released_at: null,
+      },
+    ],
+  };
+  fs.writeFileSync(
+    path.join(root, ".bee", "reservations.json"),
+    `${JSON.stringify(store, null, 2)}\n`,
+  );
+  return root;
+}
+
 // --- hook invocation -----------------------------------------------------
 
 function runHookPayload(payload, cwd) {
@@ -213,6 +238,248 @@ async function main() {
     "row7: crash line carries the underlying error",
     JSON.stringify(crashEvent),
   );
+
+  // ======================================================================
+  // 8+. apply_patch matrix (cell codex-parity-4, plan-review third bullet):
+  // Add/Update/Delete/Move x multi-target/Unicode/space/escape/malformed
+  // rows, gate-policy rows, reservation rows, and the unknown-target deny
+  // row. Every row spawns the real hook process and asserts exit code +
+  // stderr shape — no string-presence-only assertions.
+  // ======================================================================
+
+  // --- 8. Add File, single safe target -> passes
+  const patchAdd = "*** Begin Patch\n*** Add File: src/new-file.txt\n+hello world\n*** End Patch";
+  const r8 = runHookPayload({ tool_name: "apply_patch", tool_input: { input: patchAdd } }, root);
+  check(r8.status === 0, "row8: apply_patch Add File to a safe path passes", `status=${r8.status} stderr=${r8.stderr}`);
+
+  // --- 9. Update File, single target denied via direct-edit (.bee/state.json)
+  const patchUpdateDenied =
+    "*** Begin Patch\n*** Update File: .bee/state.json\n@@\n-old\n+new\n*** End Patch";
+  const r9 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchUpdateDenied } },
+    root,
+  );
+  check(r9.status === 2, "row9: apply_patch Update File .bee/state.json is denied (exit 2)",
+    `status=${r9.status} stderr=${r9.stderr}`);
+  check(r9.stderr.includes("bee_state.mjs"), "row9: stderr names bee_state.mjs", r9.stderr);
+
+  // --- 10. Delete File, single target denied via direct-edit (.bee/backlog.jsonl)
+  const patchDeleteDenied = "*** Begin Patch\n*** Delete File: .bee/backlog.jsonl\n*** End Patch";
+  const r10 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchDeleteDenied } },
+    root,
+  );
+  check(r10.status === 2, "row10: apply_patch Delete File .bee/backlog.jsonl is denied (exit 2)",
+    `status=${r10.status} stderr=${r10.stderr}`);
+  check(r10.stderr.includes("bee_backlog.mjs add"), "row10: stderr names bee_backlog.mjs add", r10.stderr);
+
+  // --- 11. Move (Update File + Move to), both targets safe -> passes
+  const patchMoveSafe =
+    "*** Begin Patch\n*** Update File: src/old-name.txt\n*** Move to: src/new-name.txt\n@@\n-old\n+new\n*** End Patch";
+  const r11 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchMoveSafe } },
+    root,
+  );
+  check(r11.status === 0, "row11: apply_patch Move (Update File + Move to) with safe paths passes",
+    `status=${r11.status} stderr=${r11.stderr}`);
+
+  // --- 12. Move destination is the direct-edit-denied file -> whole patch denied
+  const patchMoveDenied =
+    "*** Begin Patch\n*** Update File: src/old-name.txt\n*** Move to: .bee/state.json\n@@\n-old\n+new\n*** End Patch";
+  const r12 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchMoveDenied } },
+    root,
+  );
+  check(r12.status === 2, "row12: apply_patch Move destination .bee/state.json is denied (exit 2)",
+    `status=${r12.status} stderr=${r12.stderr}`);
+  check(r12.stderr.includes("bee_state.mjs"), "row12: stderr names bee_state.mjs", r12.stderr);
+
+  // --- 13. Multi-target (Add + Update + Delete), one target denied -> whole patch denied
+  const patchMultiOneDenied =
+    "*** Begin Patch\n" +
+    "*** Add File: src/a.txt\n+content\n" +
+    "*** Update File: src/b.txt\n@@\n-x\n+y\n" +
+    "*** Delete File: .bee/state.json\n" +
+    "*** End Patch";
+  const r13 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchMultiOneDenied } },
+    root,
+  );
+  check(r13.status === 2,
+    "row13: multi-target apply_patch denies when any target hits a policy deny (.bee/state.json)",
+    `status=${r13.status} stderr=${r13.stderr}`);
+  check(r13.stderr.includes("bee_state.mjs"), "row13: stderr names bee_state.mjs", r13.stderr);
+
+  // --- 14. Multi-target, every target safe -> passes
+  const patchMultiSafe =
+    "*** Begin Patch\n" +
+    "*** Add File: src/a.txt\n+content\n" +
+    "*** Update File: src/b.txt\n@@\n-x\n+y\n" +
+    "*** Delete File: src/c.txt\n" +
+    "*** End Patch";
+  const r14 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchMultiSafe } },
+    root,
+  );
+  check(r14.status === 0, "row14: multi-target apply_patch with every target safe passes",
+    `status=${r14.status} stderr=${r14.stderr}`);
+
+  // --- 15. Unicode path, reserved by another agent -> denied naming the
+  // exact resolved path (proves Unicode target extraction/resolution is
+  // correct, not merely "didn't crash").
+  const unicodePath = "café/résumé.md";
+  const uniRoot = buildReservationFixture("bee-write-guard-applypatch-unicode-", unicodePath, "otto");
+  const patchUnicode = `*** Begin Patch\n*** Add File: ${unicodePath}\n+hello\n*** End Patch`;
+  const r15 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchUnicode }, agent_name: "mel" },
+    uniRoot,
+  );
+  check(r15.status === 2,
+    "row15: apply_patch Add File to a Unicode path reserved by another agent is denied (exit 2)",
+    `status=${r15.status} stderr=${r15.stderr}`);
+  check(r15.stderr.includes(unicodePath), "row15: stderr names the exact Unicode path", r15.stderr);
+  check(r15.stderr.includes("otto"), "row15: stderr names the reservation holder", r15.stderr);
+
+  // --- 16. Path with spaces, reserved by another agent -> denied naming the
+  // exact resolved path.
+  const spacedPath = "my folder/file name.txt";
+  const spaceRoot = buildReservationFixture("bee-write-guard-applypatch-space-", spacedPath, "otto");
+  const patchSpace = `*** Begin Patch\n*** Update File: ${spacedPath}\n@@\n-a\n+b\n*** End Patch`;
+  const r16 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchSpace }, agent_name: "mel" },
+    spaceRoot,
+  );
+  check(r16.status === 2,
+    "row16: apply_patch Update File to a space-containing path reserved by another agent is denied",
+    `status=${r16.status} stderr=${r16.stderr}`);
+  check(r16.stderr.includes(spacedPath), "row16: stderr names the exact space-containing path", r16.stderr);
+
+  // --- 17. Escape-sequence path (literal backslash-escaped space in the
+  // target line) reserved by another agent -> still resolved to a concrete
+  // target and denied (proves the parser doesn't silently drop/mangle an
+  // escaped-looking path into a false "unprovable" pass-through).
+  const escapedPath = "my\\ folder/escaped.txt";
+  const escRoot = buildReservationFixture("bee-write-guard-applypatch-escape-", escapedPath, "otto");
+  const patchEscaped = `*** Begin Patch\n*** Add File: ${escapedPath}\n+hi\n*** End Patch`;
+  const r17 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchEscaped }, agent_name: "mel" },
+    escRoot,
+  );
+  check(r17.status === 2,
+    "row17: apply_patch Add File with a backslash-escaped-space path resolves to a concrete target and is denied",
+    `status=${r17.status} stderr=${r17.stderr}`);
+  check(r17.stderr.includes("otto"), "row17: stderr names the reservation holder", r17.stderr);
+
+  // --- 18. Malformed patch body: a verb line with no colon/path at all ->
+  // zero targets extracted -> denied (P1 repair: unprovable target set).
+  const patchMalformedNoColon = "*** Begin Patch\n*** Add File\n+content\n*** End Patch";
+  const r18 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchMalformedNoColon } },
+    root,
+  );
+  check(r18.status === 2,
+    "row18: apply_patch with a malformed verb line (no colon/path) denies (unprovable target set)",
+    `status=${r18.status} stderr=${r18.stderr}`);
+  check(r18.stderr.trim().length > 0, "row18: stderr carries a corrective reason", r18.stderr);
+
+  // --- 19. Unknown-target deny row: an unrecognized verb (not Add/Update/
+  // Delete/Move) parses to zero targets -> denied, never silently allowed
+  // through an unexamined operation.
+  const patchUnknownVerb = "*** Begin Patch\n*** Rename File: src/a.txt -> src/b.txt\n*** End Patch";
+  const r19 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchUnknownVerb } },
+    root,
+  );
+  check(r19.status === 2,
+    "row19: apply_patch with an unrecognized verb line denies rather than silently allowing an unexamined operation",
+    `status=${r19.status} stderr=${r19.stderr}`);
+
+  // --- 20. Empty/whitespace-only path after the verb colon -> denied (the
+  // extraction bug fix: a lone leftover whitespace char must not count as a
+  // proved target).
+  const patchEmptyPath = "*** Begin Patch\n*** Add File:    \n+content\n*** End Patch";
+  const r20 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchEmptyPath } },
+    root,
+  );
+  check(r20.status === 2,
+    "row20: apply_patch Add File with a whitespace-only path denies (empty target is never proved)",
+    `status=${r20.status} stderr=${r20.stderr}`);
+
+  // --- 21. Path traversal escape (relative .. outside the repo) -> denied
+  // (unprovable target: toRelPath returns null for an escaping path).
+  const patchTraversal = "*** Begin Patch\n*** Add File: ../../outside-repo.txt\n+x\n*** End Patch";
+  const r21 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchTraversal } },
+    root,
+  );
+  check(r21.status === 2,
+    "row21: apply_patch Add File escaping the repo via .. traversal denies (unprovable target)",
+    `status=${r21.status} stderr=${r21.stderr}`);
+
+  // --- 22. Absolute path outside the repo -> denied (unprovable target).
+  const patchAbsoluteOutside = "*** Begin Patch\n*** Add File: /etc/passwd\n+x\n*** End Patch";
+  const r22 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchAbsoluteOutside } },
+    root,
+  );
+  check(r22.status === 2,
+    "row22: apply_patch Add File to an absolute path outside the repo denies (unprovable target)",
+    `status=${r22.status} stderr=${r22.stderr}`);
+
+  // --- 23. Malformed OUTER payload: apply_patch tool_input carries no
+  // canonical "*** Begin Patch" envelope at all -> stays D2's visible
+  // fail-open (this class is explicitly NOT the deny-on-unprovable P1
+  // repair -- nothing was genuinely intercepted).
+  const r23 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: "not a patch at all" } },
+    root,
+  );
+  check(r23.status === 0,
+    "row23: apply_patch with no canonical patch envelope in tool_input stays fail-open (malformed OUTER payload, D2)",
+    `status=${r23.status} stderr=${r23.stderr}`);
+
+  // --- 24. Gate-policy row: apply_patch write to a source path during a
+  // gated phase with execution unapproved is denied by the gate guard (not
+  // direct-edit, not reservation) -- proves apply_patch runs the SAME gate
+  // decision as Edit/Write/Bash.
+  const gateRoot = buildFixture("bee-write-guard-applypatch-gate-", {
+    phase: "validating",
+    executionApproved: false,
+  });
+  const patchGateSrc = "*** Begin Patch\n*** Add File: src/feature.txt\n+new code\n*** End Patch";
+  const r24 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchGateSrc } },
+    gateRoot,
+  );
+  check(r24.status === 2,
+    "row24: apply_patch Add File to a source path during a gated phase (execution unapproved) is denied by the gate guard",
+    `status=${r24.status} stderr=${r24.stderr}`);
+  check(r24.stderr.includes("bee gate"), "row24: stderr identifies the gate guard", r24.stderr);
+
+  // --- 25. Gate-allowed-prefix control: the same gated phase still allows a
+  // docs/ target, proving row24 denied on gate policy, not a broad apply_patch
+  // block.
+  const patchGateDocs = "*** Begin Patch\n*** Add File: docs/notes.md\n+notes\n*** End Patch";
+  const r25 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchGateDocs } },
+    gateRoot,
+  );
+  check(r25.status === 0,
+    "row25: apply_patch Add File under docs/ (gate-allowed prefix) passes even in the gated phase",
+    `status=${r25.status} stderr=${r25.stderr}`);
+
+  // --- 26. Reservation-row control: a target reserved by the SAME requesting
+  // agent has no self-conflict and passes.
+  const selfRoot = buildReservationFixture("bee-write-guard-applypatch-self-", "src/mine.txt", "mel");
+  const patchSelf = "*** Begin Patch\n*** Update File: src/mine.txt\n@@\n-a\n+b\n*** End Patch";
+  const r26 = runHookPayload(
+    { tool_name: "apply_patch", tool_input: { input: patchSelf }, agent_name: "mel" },
+    selfRoot,
+  );
+  check(r26.status === 0,
+    "row26: apply_patch Update File to a path reserved by the SAME agent passes (no self-conflict)",
+    `status=${r26.status} stderr=${r26.stderr}`);
 
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;

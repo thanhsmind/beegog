@@ -905,12 +905,18 @@ function runCoverageGapRows() {
     ),
   );
 
-  // -- gap class: applypatch-unparsed -----------------------------------------
-  // codex-parity-3/-4 boundary: an intercepted apply_patch whose targets
-  // cannot be proved logs a VISIBLE gap and (today) fails open; cell
-  // codex-parity-4 owns flipping this class to deny-on-unprovable and may
-  // retarget this row's exit expectation to 2 (a strengthening, never a
-  // weakening).
+  // -- gap class: applypatch-unparsed -> DENY (P1 repair, cell codex-parity-4,
+  // plan-review third bullet) --------------------------------------------------
+  // codex-parity-3/-4 boundary, RETARGETED (the ONE sanctioned expectation
+  // change in this suite, per codex-parity-4's cell): an intercepted
+  // apply_patch (a canonical "*** Begin Patch" envelope was found) whose
+  // targets cannot be proved — here, zero Add/Update/Delete/Move/"Move to"
+  // lines parsed at all — now DENIES (exit 2) instead of failing open. The
+  // visible coverage-gap line is still logged either way (D2: "visible
+  // limits"); only the allow/deny outcome strengthens. This is honestly a
+  // behavior change, not a weakening: it was fail-open under cell
+  // codex-parity-3, and codex-parity-4's plan-reviewed P1 repair explicitly
+  // retargets it to deny.
   const f4 = buildFixture("hook-contracts-gap-applypatch-");
   const g4 = runWrapper(
     "bee-write-guard.mjs",
@@ -923,15 +929,17 @@ function runCoverageGapRows() {
     f4,
   );
   const line4 = findGapLine(f4, "write-guard", "applypatch-unparsed");
-  const g4pass = Boolean(g4.status === 0 && line4);
+  const g4pass = Boolean(
+    g4.status === 2 && typeof g4.stderr === "string" && g4.stderr.trim() && line4,
+  );
   rows.push(
     adapterRow(
       "coverage-gap",
       "applypatch-unparsed-logged",
       g4pass,
       g4pass
-        ? 'an intercepted apply_patch with no provable target logs a visible coverage-gap line (gap "applypatch-unparsed") and fails open (deny-on-unprovable is cell codex-parity-4)'
-        : `expected exit 0 plus a hooks.jsonl coverage-gap line with gap="applypatch-unparsed"; got status=${g4.status} line=${JSON.stringify(line4)}`,
+        ? 'an intercepted apply_patch with no provable target is DENIED (exit 2, corrective stderr) and still logs a visible coverage-gap line (gap "applypatch-unparsed") — P1 repair, cell codex-parity-4'
+        : `expected exit 2 with a deny reason plus a hooks.jsonl coverage-gap line with gap="applypatch-unparsed"; got status=${g4.status} stderr=${truncate(g4.stderr, 300)} line=${JSON.stringify(line4)}`,
       g4,
     ),
   );
