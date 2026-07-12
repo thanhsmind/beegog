@@ -1,0 +1,5 @@
+interface:
+  display_name: "Bee Hive"
+  short_description: "Bootstrap and route the bee workflow: gates, state, and the next skill. Use when starting or resuming any bee session, choosing the next bee skill, running go mode, checking onboarding state, or enforcing workflow gates."
+policy:
+  allow_implicit_invocation: true
