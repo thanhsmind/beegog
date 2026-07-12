@@ -1,0 +1,59 @@
+{
+  "id": "harness-integration-6",
+  "feature": "harness-integration",
+  "title": "P1 fix: manifest examples must compose with invoke and run through the dispatcher",
+  "lane": "small",
+  "status": "capped",
+  "deps": [],
+  "decisions": [
+    "D3"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+  ],
+  "read_first": [
+    "docs/history/harness-integration/reports/review-phase-1.md"
+  ],
+  "action": "P1 fix (review-phase-1.md, corroborated by architecture + api-contract reviewers): rewrite every registry entry's examples[] as a full dispatcher-form command consistent with its own invoke string (e.g. cells.show: invoke='bee cells show', example='bee cells show --id demo-1 --json' - no duplicated action word). Update test_bee_cli.mjs's runExample to execute each example through bee.mjs itself (strip the leading 'bee' token, spawn bee.mjs with the rest) as the primary proof, and additionally derive legacy-helper-form args (strip 'bee <group> ' from the example, matching the entry's own group derived from its name) to keep the existing legacy-helper parity check.",
+  "must_haves": {
+    "truths": [
+      "Every registry entry's example, when its invoke prefix is prepended/considered, is a directly runnable bee.mjs command with no duplicated tokens",
+      "Every example is executed through bee.mjs itself and asserted to succeed, not only through the legacy helper"
+    ],
+    "artifacts": [
+      {
+        "path": "skills/bee-hive/templates/lib/command-registry.mjs",
+        "substantive": "examples rewritten in dispatcher-form, no duplicated action tokens"
+      },
+      {
+        "path": "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "substantive": "runExample executes via bee.mjs, not only the legacy helper"
+      }
+    ],
+    "key_links": [
+      "runExample's dispatcher execution path is exercised for every registry entry"
+    ],
+    "prohibitions": [
+      "No change to invoke strings or to any command's actual parameter schema"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_bee_cli.mjs && node skills/bee-hive/templates/tests/test_lib.mjs",
+  "trace": {
+    "worker": null,
+    "outcome": "Rewrote all 21 registry examples in dispatcher-form (no duplicated action tokens); runExample now executes them through bee.mjs directly",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/command-registry.mjs",
+      "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+    ],
+    "deviations": [],
+    "friction": null,
+    "capped_at": "2026-07-12T03:06:00.125Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\"skills/bee-hive/templates/tests/test_bee_cli.mjs\"],\n  \"tests_added_or_changed\": [\"skills/bee-hive/templates/tests/test_bee_cli.mjs: runExample now spawns bee.mjs directly instead of the legacy helper script; all 21 'example runs' checks renamed to reflect dispatcher execution\"],\n  \"red_failure_evidence\": \"Concatenated the OLD invoke+example form for cells.show ('bee cells show' + 'show --id demo-1 --json' = 'bee cells show show --id demo-1 --json') and ran it against the real bee.mjs dispatcher: {\\\"ok\\\":false,\\\"error\\\":{\\\"reason\\\":\\\"unexpected argument \\\\\\\"show\\\\\\\"\\\"}}, exit 1 - the duplicated action word made the advertised example non-runnable. After the fix, every registry entry's examples[] IS the full runnable dispatcher command (e.g. 'bee cells show --id demo-1 --json') with no duplication, and all 21 are executed through bee.mjs itself in test_bee_cli.mjs.\",\n  \"verification_run\": \"node skills/bee-hive/templates/tests/test_bee_cli.mjs -> 67 passed, 0 failed (all 21 examples now run through bee.mjs). Regression: node skills/bee-hive/templates/tests/test_lib.mjs -> 124 passed, 0 failed.\",\n  \"deliberate_exceptions\": []\n}\n",
+    "verify_output": "67 passed, 0 failed; 124 passed, 0 failed",
+    "verify_passed": true,
+    "verify_command": "node skills/bee-hive/templates/tests/test_bee_cli.mjs && node skills/bee-hive/templates/tests/test_lib.mjs",
+    "verified_at": "2026-07-12T03:06:00.099Z"
+  }
+}

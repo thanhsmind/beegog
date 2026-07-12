@@ -50,7 +50,7 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: ['--json'],
+    examples: ['bee status --json'],
     deprecated: null,
   },
 
@@ -69,7 +69,7 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: ['list --json'],
+    examples: ['bee cells list --json'],
     deprecated: null,
   },
   {
@@ -85,7 +85,7 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: ['ready --json'],
+    examples: ['bee cells ready --json'],
     deprecated: null,
   },
   {
@@ -101,7 +101,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id'],
     },
-    examples: ['show --id demo-1 --json'],
+    examples: ['bee cells show --id demo-1 --json'],
     deprecated: null,
   },
   {
@@ -119,7 +119,7 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: ['add --file cell-demo-1.json --json'],
+    examples: ['bee cells add --file cell-demo-1.json --json'],
     deprecated: null,
   },
   {
@@ -136,7 +136,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id', 'worker'],
     },
-    examples: ['claim --id demo-1 --worker worker-a --json'],
+    examples: ['bee cells claim --id demo-1 --worker worker-a --json'],
     deprecated: null,
   },
   {
@@ -156,7 +156,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id', 'command', 'passed'],
     },
-    examples: ['verify --id demo-1 --command "manual check" --output "0 failing" --passed true --json'],
+    examples: ['bee cells verify --id demo-1 --command "manual check" --output "0 failing" --passed true --json'],
     deprecated: null,
   },
   {
@@ -179,7 +179,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id'],
     },
-    examples: ['cap --id demo-1 --outcome "demo cell capped" --files cell-demo-1.json --json'],
+    examples: ['bee cells cap --id demo-1 --outcome "demo cell capped" --files cell-demo-1.json --json'],
     deprecated: null,
   },
   {
@@ -196,7 +196,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id', 'reason'],
     },
-    examples: ['block --id demo-1 --reason "test block" --json'],
+    examples: ['bee cells block --id demo-1 --reason "test block" --json'],
     deprecated: null,
   },
   {
@@ -213,7 +213,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id', 'reason'],
     },
-    examples: ['drop --id demo-1 --reason "test drop" --json'],
+    examples: ['bee cells drop --id demo-1 --reason "test drop" --json'],
     deprecated: null,
   },
   {
@@ -230,7 +230,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id', 'tier'],
     },
-    examples: ['tier --id demo-1 --tier generation --json'],
+    examples: ['bee cells tier --id demo-1 --tier generation --json'],
     deprecated: null,
   },
   {
@@ -246,7 +246,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id'],
     },
-    examples: ['judge --id demo-1 --json'],
+    examples: ['bee cells judge --id demo-1 --json'],
     deprecated: null,
   },
 
@@ -267,7 +267,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['agent', 'cell', 'path'],
     },
-    examples: ['reserve --agent worker-a --cell demo-1 --path src/example.ts --json'],
+    examples: ['bee reservations reserve --agent worker-a --cell demo-1 --path src/example.ts --json'],
     deprecated: null,
   },
   {
@@ -284,7 +284,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['agent'],
     },
-    examples: ['release --agent worker-a --cell demo-1 --json'],
+    examples: ['bee reservations release --agent worker-a --cell demo-1 --json'],
     deprecated: null,
   },
   {
@@ -300,7 +300,7 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: ['list --active-only --json'],
+    examples: ['bee reservations list --active-only --json'],
     deprecated: null,
   },
   {
@@ -315,7 +315,7 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: ['sweep --json'],
+    examples: ['bee reservations sweep --json'],
     deprecated: null,
   },
 
@@ -339,7 +339,7 @@ export const COMMAND_REGISTRY = [
       required: ['decision', 'rationale'],
     },
     examples: [
-      'log --decision "Use in-repo registry for CLI commands" --rationale "Avoid duplicated validation logic across dispatcher and hook" --json',
+      'bee decisions log --decision "Use in-repo registry for CLI commands" --rationale "Avoid duplicated validation logic across dispatcher and hook" --json',
     ],
     deprecated: null,
   },
@@ -359,7 +359,7 @@ export const COMMAND_REGISTRY = [
       required: ['id', 'decision', 'rationale'],
     },
     examples: [
-      'supersede --id 00000000-0000-0000-0000-000000000000 --decision "Superseding decision" --rationale "Updated approach" --json',
+      'bee decisions supersede --id 00000000-0000-0000-0000-000000000000 --decision "Superseding decision" --rationale "Updated approach" --json',
     ],
     deprecated: null,
   },
@@ -377,7 +377,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['id', 'reason'],
     },
-    examples: ['redact --id 00000000-0000-0000-0000-000000000000 --reason "test redaction" --json'],
+    examples: ['bee decisions redact --id 00000000-0000-0000-0000-000000000000 --reason "test redaction" --json'],
     deprecated: null,
   },
   {
@@ -393,7 +393,7 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: ['active --recent 5 --json'],
+    examples: ['bee decisions active --recent 5 --json'],
     deprecated: null,
   },
   {
@@ -409,7 +409,7 @@ export const COMMAND_REGISTRY = [
       },
       required: ['text'],
     },
-    examples: ['search --text "registry" --json'],
+    examples: ['bee decisions search --text "registry" --json'],
     deprecated: null,
   },
 ];

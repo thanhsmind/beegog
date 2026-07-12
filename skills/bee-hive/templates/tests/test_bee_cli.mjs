@@ -35,6 +35,15 @@ import {
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.dirname(TESTS_DIR);
 
+// Declared here (not near their first heavy use further down) so that
+// runExample — called from check() blocks starting near the top of the
+// file — can reference BEE_MJS without a temporal-dead-zone ReferenceError.
+const BEE_MJS = path.join(TEMPLATES_DIR, 'bee.mjs');
+const BEE_STATUS = path.join(TEMPLATES_DIR, 'bee_status.mjs');
+const BEE_CELLS = path.join(TEMPLATES_DIR, 'bee_cells.mjs');
+const BEE_RESERVATIONS = path.join(TEMPLATES_DIR, 'bee_reservations.mjs');
+const BEE_DECISIONS = path.join(TEMPLATES_DIR, 'bee_decisions.mjs');
+
 let passed = 0;
 let failed = 0;
 
@@ -93,16 +102,21 @@ writeState(root, {
 
 const executedNames = new Set();
 
-/** Run the executable-th (default 0) example of a registry entry inside `root`. */
+/** Run the executable-th (default 0) example of a registry entry inside `root`.
+ * P1 fix (review-phase-1.md): examples are now full dispatcher-form commands
+ * ("bee cells show --id demo-1 --json"), consistent with each entry's own
+ * `invoke` string. Execute them through the real dispatcher (bee.mjs) — the
+ * surface the manifest actually advertises — rather than the legacy helper,
+ * which the manifest-as-tested-contract claim did not previously cover. */
 function runExample(entryName, { exampleIndex = 0 } = {}) {
   const entry = entryByName(entryName);
   executedNames.add(entry.name);
-  const scriptPath = path.join(TEMPLATES_DIR, entry.helper);
-  assert(fs.existsSync(scriptPath), `${entry.name}: helper script missing at ${scriptPath}`);
   const exampleString = entry.examples[exampleIndex];
   assert(typeof exampleString === 'string' && exampleString.trim(), `${entry.name}: examples[${exampleIndex}] must be a non-empty string`);
-  const args = tokenize(exampleString);
-  const result = spawnSync(process.execPath, [scriptPath, ...args], {
+  const tokens = tokenize(exampleString);
+  assert(tokens[0] === 'bee', `${entry.name}: example must be full dispatcher-form starting with "bee", got "${exampleString}"`);
+  const args = tokens.slice(1);
+  const result = spawnSync(process.execPath, [BEE_MJS, ...args], {
     cwd: root,
     encoding: 'utf8',
   });
@@ -226,102 +240,102 @@ check('cells.add example creates the fixture cell used by the rest of the chain'
   assert(fs.existsSync(path.join(root, '.bee', 'cells', 'demo-1.json')), 'demo-1 cell file should now exist');
 });
 
-check('cells.list example runs against the real helper', () => {
+check('cells.list example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.list');
   assert(result.stdout.includes('demo-1'), `expected demo-1 in list output, got ${result.stdout}`);
 });
 
-check('cells.ready example runs against the real helper', () => {
+check('cells.ready example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.ready');
   assert(result.stdout.includes('demo-1'), `demo-1 should be ready (open, no deps), got ${result.stdout}`);
 });
 
-check('cells.show example runs against the real helper', () => {
+check('cells.show example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.show');
   assert(JSON.parse(result.stdout).id === 'demo-1', 'show should return the demo-1 cell');
 });
 
-check('cells.claim example runs against the real helper', () => {
+check('cells.claim example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.claim');
   assert(JSON.parse(result.stdout).status === 'claimed', 'demo-1 should now be claimed');
 });
 
-check('cells.verify example runs against the real helper', () => {
+check('cells.verify example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.verify');
   assert(JSON.parse(result.stdout).trace.verify_passed === true, 'verify_passed should be true');
 });
 
-check('cells.cap example runs against the real helper', () => {
+check('cells.cap example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.cap');
   assert(JSON.parse(result.stdout).status === 'capped', 'demo-1 should now be capped');
 });
 
-check('cells.judge example runs against the real helper', () => {
+check('cells.judge example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.judge');
   assert(JSON.parse(result.stdout).hits.length === 0, 'a cell.json fixture file is not a frozen-judge pattern hit');
 });
 
-check('cells.tier example runs against the real helper', () => {
+check('cells.tier example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.tier');
   assert(JSON.parse(result.stdout).tier === 'generation', 'demo-1 tier should now be "generation"');
 });
 
-check('cells.block example runs against the real helper', () => {
+check('cells.block example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.block');
   assert(JSON.parse(result.stdout).status === 'blocked', 'demo-1 should now be blocked');
 });
 
-check('cells.drop example runs against the real helper', () => {
+check('cells.drop example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.drop');
   assert(JSON.parse(result.stdout).status === 'dropped', 'demo-1 should now be dropped');
 });
 
-check('reservations.reserve example runs against the real helper', () => {
+check('reservations.reserve example runs through the real dispatcher', () => {
   const result = assertExampleOk('reservations.reserve');
   assert(JSON.parse(result.stdout).ok === true, 'reserve should succeed on a fresh path');
 });
 
-check('reservations.list example runs against the real helper', () => {
+check('reservations.list example runs through the real dispatcher', () => {
   const result = assertExampleOk('reservations.list');
   assert(result.stdout.includes('worker-a'), `expected the reservation just made, got ${result.stdout}`);
 });
 
-check('reservations.release example runs against the real helper', () => {
+check('reservations.release example runs through the real dispatcher', () => {
   const result = assertExampleOk('reservations.release');
   assert(JSON.parse(result.stdout).released >= 1, 'release should free at least the one reservation just made');
 });
 
-check('reservations.sweep example runs against the real helper', () => {
+check('reservations.sweep example runs through the real dispatcher', () => {
   const result = assertExampleOk('reservations.sweep');
   assert(typeof JSON.parse(result.stdout).released === 'number', 'sweep should report a released count');
 });
 
-check('decisions.log example runs against the real helper', () => {
+check('decisions.log example runs through the real dispatcher', () => {
   const result = assertExampleOk('decisions.log');
   assert(typeof JSON.parse(result.stdout).id === 'string', 'log should return the new decision id');
 });
 
-check('decisions.active example runs against the real helper', () => {
+check('decisions.active example runs through the real dispatcher', () => {
   const result = assertExampleOk('decisions.active');
   assert(JSON.parse(result.stdout).decisions.length >= 1, 'the decision just logged should be active');
 });
 
-check('decisions.search example runs against the real helper', () => {
+check('decisions.search example runs through the real dispatcher', () => {
   const result = assertExampleOk('decisions.search');
   assert(JSON.parse(result.stdout).decisions.length >= 1, 'search for "registry" should match the decision just logged');
 });
 
-check('decisions.supersede example runs against the real helper (arbitrary id — event-sourced, no existence check)', () => {
+check('decisions.supersede example runs through the real dispatcher (arbitrary id — event-sourced, no existence check)', () => {
   const result = assertExampleOk('decisions.supersede');
   assert(typeof JSON.parse(result.stdout).id === 'string', 'supersede should return the new event id');
 });
 
-check('decisions.redact example runs against the real helper (arbitrary id — event-sourced, no existence check)', () => {
+check('decisions.redact example runs through the real dispatcher (arbitrary id — event-sourced, no existence check)', () => {
   const result = assertExampleOk('decisions.redact');
   assert(typeof JSON.parse(result.stdout).id === 'string', 'redact should return the new event id');
 });
 
-check('status example runs against the real helper', () => {
+check('status example runs through the real dispatcher', () => {
   const result = assertExampleOk('status');
   assert(JSON.parse(result.stdout).phase === 'swarming', 'status should reflect the fixture repo\'s phase');
 });
@@ -349,12 +363,6 @@ writeState(root2, {
   feature: 'demo2',
   approved_gates: { context: true, shape: true, execution: true, review: false },
 });
-
-const BEE_MJS = path.join(TEMPLATES_DIR, 'bee.mjs');
-const BEE_STATUS = path.join(TEMPLATES_DIR, 'bee_status.mjs');
-const BEE_CELLS = path.join(TEMPLATES_DIR, 'bee_cells.mjs');
-const BEE_RESERVATIONS = path.join(TEMPLATES_DIR, 'bee_reservations.mjs');
-const BEE_DECISIONS = path.join(TEMPLATES_DIR, 'bee_decisions.mjs');
 
 function runBee(args, cwd = root2) {
   return spawnSync(process.execPath, [BEE_MJS, ...args], { cwd, encoding: 'utf8' });
