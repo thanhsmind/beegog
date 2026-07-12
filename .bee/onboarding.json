@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.24",
+  "bee_version": "0.1.25",
   "managed": {
-    "agents_block": "46e7b1fa727b08b6fcfbbecae54427d94996d815634f5aff3814335c7475fbe7",
+    "agents_block": "1f37a9f007405268ff79656d2d0c84cda7d17c03ea6cc698a11cacfc68595d1e",
     "gitignore_block": "4c6db28e97548f878387cf72312b94fa98071f3b94c1af62622d56f008dfb1d8",
     "helpers": {
       "bee_backlog.mjs": "1256aeb2c797ca8d118379a2f770ccf5b3b663d2f6ef2ce034ee845f8b077d31",
@@ -11,8 +11,9 @@
       "bee_decisions.mjs": "1a5e1b02d66ee55416c52e5eac29d7c0ee623cf9b8a79a8f84d0eef43d91973b",
       "bee_feedback.mjs": "0e01eb9e93f37b83aa2683f29438969076f8c05b4aeacf40fa26eae3f92e7990",
       "bee_reservations.mjs": "02b0b1fe84e994a5a33bf4aaf181317d0b4fa88b064a5b53f800af8a0ccf9fd8",
+      "bee_reviews.mjs": "a77eb4f2a2c0409255e84dd28ba4985c65ca7359b3bc453757cf8fb822046103",
       "bee_state.mjs": "13fa4dd8412ca42ccec7779f59ed05a139fb625907f05ced2883581ab4466fe5",
-      "bee_status.mjs": "bdc571ae7d314bdad5d983653a4b61b3f467710db6fa3d9a420c5d7afa2094da"
+      "bee_status.mjs": "120a2ca8037ec013c0f3a0c8153548bf1c62f21db79de51704b9f4a146e99445"
     },
     "lib": {
       "backlog.mjs": "849881ecdf0a9431c15c81a61a08a734292c871fdb5b616e168396417e6014fd",
@@ -25,7 +26,8 @@
       "guards.mjs": "505fabee15ea40de424f013ae455a178bbb7e1ba4b7301c4f406e05112c71b6b",
       "inject.mjs": "a00742f94ee4eeb52aff99917aa4cbdfdb7356807f54407bc94fac6a9b651520",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
-      "state.mjs": "9d26d5788b8f5d19ac6b2581f9a2a4600505429de47e49f1cf298637f709492b"
+      "reviews.mjs": "8174b4ae0ea0e4b4e86a31b1e595168aea0ec0daaf9bf8fb0cac6e1cfdcb02ee",
+      "state.mjs": "7a18726d0f5e5ea61b851a98f19d8bb16d4b3fbb63a0168e5835ca9d5d5380b9"
     },
     "statusline": {
       "statusline-command.sh": "0965ae1c0d95a96fd7899df7549893e94fcc59693cab3b23da8dc228aa870b0e",
@@ -42,5 +44,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-12T09:55:51.999Z"
+  "updated_at": "2026-07-12T11:46:50.886Z"
 }
