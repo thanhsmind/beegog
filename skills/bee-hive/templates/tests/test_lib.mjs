@@ -26,6 +26,7 @@ import {
   advisorModel,
   ADVISOR_POINTS,
   resolveTier,
+  startFeature,
 } from '../lib/state.mjs';
 import { detectCommands } from '../lib/commands_detect.mjs';
 import {
@@ -46,6 +47,7 @@ import {
   recordVerify,
   capCell,
   blockCell,
+  dropCell,
   scribingDebt,
   tierMix,
   ceilingScarcityWarning,
@@ -2590,7 +2592,7 @@ function readStateFile(repoRoot) {
   return readJson(path.join(repoRoot, '.bee', 'state.json'), null);
 }
 
-check('bee_state.mjs with no verb prints a Use: line listing all four verbs and exits non-zero', () => {
+check('bee_state.mjs with no verb prints a Use: line listing all five verbs and exits non-zero', () => {
   const dir = makeStateRepo('bee-state-noverb-');
   try {
     const result = runBeeState(dir, []);
@@ -2600,8 +2602,9 @@ check('bee_state.mjs with no verb prints a Use: line listing all four verbs and 
       /set/.test(result.stderr) &&
         /gate/.test(result.stderr) &&
         /worker/.test(result.stderr) &&
-        /scribing-run/.test(result.stderr),
-      `Use: line should list all four verbs, got ${result.stderr}`,
+        /scribing-run/.test(result.stderr) &&
+        /start-feature/.test(result.stderr),
+      `Use: line should list all five verbs, got ${result.stderr}`,
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -3027,6 +3030,301 @@ check('bee_state.mjs rejects an unknown verb with a Use: line, exit non-zero', (
     const result = runBeeState(dir, ['launch']);
     assert(result.status !== 0, 'unknown verb exits non-zero');
     assert(/Use:/.test(result.stderr), `error names the Use: line, got ${result.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── bee_state.mjs start-feature (codex-parity-5, decision D2, plan.md test ─
+// matrix row 5 "state transitions") — the guarded atomic feature-start verb.
+// Every refusal test asserts BOTH non-zero exit AND byte-identical state.json
+// before/after (zero mutations on refusal), matching the file's established
+// "leaves the file untouched" idiom.
+
+function makeCellFile(dir, id, extra = {}) {
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  const cell = {
+    id,
+    feature: 'old-feature',
+    title: `Cell ${id}`,
+    lane: 'tiny',
+    status: 'open',
+    deps: [],
+    action: 'do it',
+    verify: 'node -e "process.exit(0)"',
+    trace: {},
+    ...extra,
+  };
+  writeJsonAtomic(path.join(dir, '.bee', 'cells', `${id}.json`), cell);
+  return cell;
+}
+
+check('start-feature (lib): succeeds from idle with no leftover work, resets all four gates and writes feature/mode/phase in one call', () => {
+  const dir = makeStateRepo('bee-state-start-lib-ok-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'idle',
+      feature: null,
+      mode: null,
+      approved_gates: { context: false, shape: false, execution: false, review: false },
+      workers: [],
+      summary: 'prior',
+      next_action: 'prior next',
+    });
+    const state = startFeature(dir, { feature: 'new-feat', mode: 'standard', phase: 'exploring' });
+    assert(state.feature === 'new-feat', `feature written, got ${state.feature}`);
+    assert(state.mode === 'standard', `mode written, got ${state.mode}`);
+    assert(state.phase === 'exploring', `phase written, got ${state.phase}`);
+    assert(
+      state.approved_gates.context === false &&
+        state.approved_gates.shape === false &&
+        state.approved_gates.execution === false &&
+        state.approved_gates.review === false,
+      `all four gates reset false, got ${JSON.stringify(state.approved_gates)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('start-feature (lib): a prior feature carrying approved gates never lets the new feature inherit them', () => {
+  const dir = makeStateRepo('bee-state-start-lib-inherit-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'compounding-complete',
+      feature: 'old-feature',
+      mode: 'standard',
+      approved_gates: { context: true, shape: true, execution: true, review: true },
+      workers: [],
+    });
+    const state = startFeature(dir, { feature: 'next-feat' });
+    assert(
+      Object.values(state.approved_gates).every((v) => v === false),
+      `no gate carried across features, got ${JSON.stringify(state.approved_gates)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature requires --feature', () => {
+  const dir = makeStateRepo('bee-state-start-nofeat-');
+  try {
+    const result = runBeeState(dir, ['start-feature']);
+    assert(result.status !== 0, 'missing --feature exits non-zero');
+    assert(/feature/i.test(result.stderr), `error names the missing flag, got ${result.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature rejects a phase outside the closed vocabulary, zero mutations', () => {
+  const dir = makeStateRepo('bee-state-start-badphase-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, { schema_version: '1.0', phase: 'idle', workers: [] });
+    const before = fs.readFileSync(statePath, 'utf8');
+    const result = runBeeState(dir, ['start-feature', '--feature', 'f1', '--phase', 'launched']);
+    assert(result.status !== 0, 'invented phase exits non-zero');
+    assert(/phase/i.test(result.stderr), `error names the phase, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'file untouched after a rejected phase');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature refuses when the current phase is not idle/terminal, zero mutations', () => {
+  const dir = makeStateRepo('bee-state-start-midflight-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, { schema_version: '1.0', phase: 'swarming', feature: 'old-feature', workers: [] });
+    const before = fs.readFileSync(statePath, 'utf8');
+    const result = runBeeState(dir, ['start-feature', '--feature', 'new-feat']);
+    assert(result.status !== 0, 'mid-flight phase refuses');
+    assert(/phase/i.test(result.stderr), `error names the phase problem, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'file untouched after a mid-flight refusal');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature refuses while .bee/HANDOFF.json exists, zero mutations', () => {
+  const dir = makeStateRepo('bee-state-start-handoff-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, { schema_version: '1.0', phase: 'idle', workers: [] });
+    writeJsonAtomic(path.join(dir, '.bee', 'HANDOFF.json'), { cell: 'x', done: [], remaining: [] });
+    const before = fs.readFileSync(statePath, 'utf8');
+    const result = runBeeState(dir, ['start-feature', '--feature', 'new-feat']);
+    assert(result.status !== 0, 'active HANDOFF refuses');
+    assert(/HANDOFF/.test(result.stderr), `error names HANDOFF.json, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'file untouched after a HANDOFF refusal');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature refuses while a registered worker remains, zero mutations', () => {
+  const dir = makeStateRepo('bee-state-start-worker-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, {
+      schema_version: '1.0',
+      phase: 'idle',
+      workers: [{ nickname: 'bob', cell: 'x-1', tier: 'generation', status: 'in-flight' }],
+    });
+    const before = fs.readFileSync(statePath, 'utf8');
+    const result = runBeeState(dir, ['start-feature', '--feature', 'new-feat']);
+    assert(result.status !== 0, 'registered worker refuses');
+    assert(/worker/i.test(result.stderr), `error names the worker, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'file untouched after a worker refusal');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature refuses while an active reservation remains, zero mutations; an expired one does not block', () => {
+  const dir = makeStateRepo('bee-state-start-reservation-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, { schema_version: '1.0', phase: 'idle', workers: [] });
+    writeJsonAtomic(path.join(dir, '.bee', 'reservations.json'), {
+      reservations: [
+        {
+          agent: 'bob',
+          cell: 'x-1',
+          path: 'src/app.ts',
+          ttl_seconds: 3600,
+          reserved_at: new Date().toISOString(),
+          released_at: null,
+        },
+      ],
+    });
+    const before = fs.readFileSync(statePath, 'utf8');
+    const result = runBeeState(dir, ['start-feature', '--feature', 'new-feat']);
+    assert(result.status !== 0, 'active reservation refuses');
+    assert(/reservation/i.test(result.stderr), `error names the reservation, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'file untouched after a reservation refusal');
+
+    // an EXPIRED reservation (reserved long before its own ttl) is not "active"
+    writeJsonAtomic(path.join(dir, '.bee', 'reservations.json'), {
+      reservations: [
+        {
+          agent: 'bob',
+          cell: 'x-1',
+          path: 'src/app.ts',
+          ttl_seconds: 60,
+          reserved_at: new Date(Date.now() - 7200 * 1000).toISOString(),
+          released_at: null,
+        },
+      ],
+    });
+    const retry = runBeeState(dir, ['start-feature', '--feature', 'new-feat']);
+    assert(retry.status === 0, `expired reservation must not block start-feature, got ${retry.status}: ${retry.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature refuses while ANY cell anywhere is claimed, zero mutations', () => {
+  const dir = makeStateRepo('bee-state-start-claimed-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+    makeCellFile(dir, 'unrelated-1', { feature: 'some-other-feature', status: 'claimed' });
+    const before = fs.readFileSync(statePath, 'utf8');
+    const result = runBeeState(dir, ['start-feature', '--feature', 'new-feat']);
+    assert(result.status !== 0, 'a claimed cell anywhere refuses, even for an unrelated feature');
+    assert(/claimed/i.test(result.stderr), `error names the claimed cell, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'file untouched after a claimed-cell refusal');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature refuses while the PRIOR feature has a nonterminal (open/blocked) cell, and succeeds once each is dropped via the existing drop verb (P1 repair: no auto-clear cleanup)', () => {
+  const dir = makeStateRepo('bee-state-start-nonterminal-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, {
+      schema_version: '1.0',
+      phase: 'compounding-complete',
+      feature: 'old-feature',
+      workers: [],
+    });
+    makeCellFile(dir, 'old-1', { status: 'open' });
+    makeCellFile(dir, 'old-2', { status: 'blocked' });
+    const before = fs.readFileSync(statePath, 'utf8');
+
+    const result = runBeeState(dir, ['start-feature', '--feature', 'new-feat']);
+    assert(result.status !== 0, 'nonterminal prior-feature cells refuse');
+    assert(/old-feature/.test(result.stderr), `error names the prior feature, got ${result.stderr}`);
+    assert(/old-1/.test(result.stderr) && /old-2/.test(result.stderr), `error lists both nonterminal cells, got ${result.stderr}`);
+    const after = fs.readFileSync(statePath, 'utf8');
+    assert(before === after, 'file untouched while nonterminal cells remain');
+
+    // Resolve through the EXISTING drop verb (lib/cells.mjs dropCell) — never
+    // an auto-clear inside startFeature itself.
+    dropCell(dir, 'old-1', 'abandoned, superseded by new-feat');
+    dropCell(dir, 'old-2', 'abandoned, superseded by new-feat');
+    assert(readCell(dir, 'old-1').status === 'dropped', 'old-1 dropped');
+    assert(readCell(dir, 'old-2').status === 'dropped', 'old-2 dropped');
+
+    const retry = runBeeState(dir, ['start-feature', '--feature', 'new-feat', '--phase', 'exploring']);
+    assert(retry.status === 0, `start-feature succeeds once every nonterminal cell is dropped, got ${retry.status}: ${retry.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.feature === 'new-feat', 'new feature recorded');
+    assert(state.phase === 'exploring', 'phase advanced to exploring');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature: a CAPPED prior-feature cell is terminal and never blocks (only open/claimed/blocked do)', () => {
+  const dir = makeStateRepo('bee-state-start-capped-ok-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'compounding-complete',
+      feature: 'old-feature',
+      workers: [],
+    });
+    makeCellFile(dir, 'old-done', { status: 'capped' });
+    const result = runBeeState(dir, ['start-feature', '--feature', 'new-feat']);
+    assert(result.status === 0, `a fully capped prior feature never blocks a new start, got ${result.status}: ${result.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature defaults --phase to "exploring" and --mode to null when omitted', () => {
+  const dir = makeStateRepo('bee-state-start-defaults-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', workers: [] });
+    const result = runBeeState(dir, ['start-feature', '--feature', 'defaulted-feat']);
+    assert(result.status === 0, `default start succeeds, got ${result.status}: ${result.stderr}`);
+    const state = readStateFile(dir);
+    assert(state.phase === 'exploring', `phase defaults to exploring, got ${state.phase}`);
+    assert(state.mode === null, `mode defaults to null, got ${state.mode}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('bee_state.mjs start-feature rejects --dry-run (a mutating verb, same generic guard as every non-prune verb)', () => {
+  const dir = makeStateRepo('bee-state-start-dryrun-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', workers: [] });
+    const result = runBeeState(dir, ['start-feature', '--feature', 'f1', '--dry-run']);
+    assert(result.status !== 0, '--dry-run on start-feature is rejected');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

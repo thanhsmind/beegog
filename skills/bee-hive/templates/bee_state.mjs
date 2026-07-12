@@ -45,6 +45,18 @@
 //      "compounding" — the fixed next node after bee-scribing in the
 //      workflow chain (AGENTS.md) — per SKILL.md:112's "plus top-level
 //      phase/next_action".)
+//   node .bee/bin/bee_state.mjs start-feature --feature F [--mode M] [--phase P] [--json]
+//     (decision D2 / codex-runtime-parity plan.md test matrix row 5 — ONE
+//      guarded atomic operation for beginning a new feature. Fails closed with
+//      ZERO mutations unless: current phase is idle/compounding-complete; no
+//      .bee/HANDOFF.json; no registered workers; no active reservations; no
+//      claimed cell anywhere; no nonterminal (open/claimed/blocked) cell on the
+//      PRIOR feature — an abandoned cell must first go through the existing
+//      `bee_cells.mjs drop` verb, never auto-cleared here as cleanup. On
+//      success it sets feature/mode/phase and resets ALL FOUR gates to false
+//      in the same atomic write, so a new feature can never inherit approvals.
+//      --phase defaults to "exploring" (go-mode.md's documented entry phase)
+//      when omitted; the value is still validated against isKnownPhase.)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,6 +69,7 @@ import {
   KNOWN_PHASES,
   GATE_NAMES,
   MODEL_TIERS,
+  startFeature,
 } from './lib/state.mjs';
 
 // Dispatch transients written by bee-swarming (swarming-reference.md External
@@ -364,6 +377,19 @@ function runScribingRun(root, flags) {
   return { result: state, text: `Recorded scribing run for "${feature}" at ${at}.` };
 }
 
+function runStartFeature(root, flags) {
+  const feature = requireFlag(flags, 'feature');
+  const mode = flags.mode !== undefined ? String(flags.mode) : null;
+  const phase = flags.phase !== undefined ? String(flags.phase) : 'exploring';
+  // startFeature() itself re-reads state and performs every precondition check
+  // (C1) — this wrapper only translates CLI flags into the call.
+  const state = startFeature(root, { feature, mode, phase });
+  return {
+    result: state,
+    text: `Started feature "${state.feature}" at phase "${state.phase}" (mode ${state.mode ?? 'null'}); all four gates reset.`,
+  };
+}
+
 function run(args) {
   const root = findRepoRoot(process.cwd());
   if (!root) {
@@ -391,9 +417,11 @@ function run(args) {
       return runWorker(root, args.sub, flags);
     case 'scribing-run':
       return runScribingRun(root, flags);
+    case 'start-feature':
+      return runStartFeature(root, flags);
     default:
       throw new Error(
-        `Unknown command "${args.command || '(missing)'}". Use: set, gate, worker, scribing-run.`,
+        `Unknown command "${args.command || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature.`,
       );
   }
 }

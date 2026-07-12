@@ -385,6 +385,151 @@ export function resolveTier(root, slot, runtime = 'claude') {
   return { type: 'budget' };
 }
 
+// ─── startFeature: guarded atomic feature start (decision D2, plan.md test ──
+// matrix row 5 / codex-runtime-parity). ONE atomic operation for beginning a
+// new feature so a new feature can never inherit approvals or silently step
+// over abandoned work (plan-review.md P1: "feature start could clear evidence
+// of active work"). Fails closed — every precondition is read BEFORE any
+// write, so a refusal makes ZERO mutations — unless ALL of the following hold:
+//   - the CURRENT phase is 'idle' or the terminal alias 'compounding-complete'
+//     (a mid-flight prior feature must finish or be explicitly wound down —
+//     never silently stepped over by starting a new one)
+//   - no .bee/HANDOFF.json exists (a paused session must resume/close first)
+//   - state.workers is empty (registered workers must be cleared through the
+//     existing worker remove/clear verbs first)
+//   - no active (unreleased, unexpired) reservation exists
+//   - no cell anywhere has status 'claimed' (live worker state; only cap/drop
+//     end a claim)
+//   - no cell belonging to the PRIOR feature (state.feature) is in a
+//     nonterminal status (open/claimed/blocked) — capped and dropped are the
+//     only terminal statuses. An abandoned cell must first be resolved through
+//     the EXISTING drop verb (bee_cells.mjs drop --id ID --reason R) —
+//     startFeature never auto-clears workers/cells/reservations as cleanup
+//     (P1 repair, plan-review.md).
+// On success, exactly one atomic write sets feature/mode/phase, resets ALL
+// FOUR gates to false, and refreshes summary/next_action.
+//
+// Self-contained by design: cells.mjs already imports readState/gateApproved/
+// MODEL_TIERS from this module, so this function reads .bee/cells/*.json and
+// .bee/reservations.json directly (small local helpers below) rather than
+// importing lib/cells.mjs or lib/reservations.mjs, avoiding a state.mjs <->
+// cells.mjs import cycle.
+
+function listAllCellsForStart(root) {
+  const dir = path.join(root, '.bee', 'cells');
+  let entries;
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const cells = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    const cell = readJson(path.join(dir, entry), null);
+    if (!cell || typeof cell !== 'object' || Array.isArray(cell)) continue;
+    cells.push(cell);
+  }
+  return cells;
+}
+
+function listActiveReservationsForStart(root) {
+  const store = readJson(path.join(root, '.bee', 'reservations.json'), null);
+  const reservations = store && Array.isArray(store.reservations) ? store.reservations : [];
+  const nowMs = Date.now();
+  return reservations.filter((reservation) => {
+    if (!reservation || reservation.released_at != null) return false;
+    const ttl = reservation.ttl_seconds;
+    if (Number.isFinite(ttl) && ttl > 0) {
+      const reservedMs = Date.parse(reservation.reserved_at);
+      if (Number.isFinite(reservedMs) && reservedMs + ttl * 1000 <= nowMs) return false; // expired, not active
+    }
+    return true;
+  });
+}
+
+export function startFeature(root, { feature, mode = null, phase = 'exploring' } = {}) {
+  if (typeof feature !== 'string' || !feature.trim()) {
+    throw new Error('startFeature: a non-empty --feature slug is required.');
+  }
+  const phaseValue = String(phase);
+  if (!isKnownPhase(phaseValue)) {
+    throw new Error(
+      `startFeature: invalid phase "${phaseValue}" — not in the known-phase enum (isKnownPhase). FIX: use one of ${KNOWN_PHASES.join(', ')}.`,
+    );
+  }
+
+  // Re-read immediately before any check (C1) — every read below happens
+  // before the single write at the end, so a refusal leaves zero mutations.
+  const state = readStateStrict(root);
+
+  if (state.phase !== 'idle' && state.phase !== 'compounding-complete') {
+    throw new Error(
+      `startFeature: refused — current phase is "${state.phase}", not idle or the terminal alias "compounding-complete". A prior feature must finish or be explicitly wound down before a new feature starts. FIX: resume/close the current feature through its normal chain, or drop its remaining cells (bee_cells.mjs drop), then retry.`,
+    );
+  }
+
+  const handoffPath = path.join(root, '.bee', 'HANDOFF.json');
+  if (fs.existsSync(handoffPath)) {
+    throw new Error(
+      'startFeature: refused — .bee/HANDOFF.json exists. A paused session must resume and clear the handoff before a new feature starts. FIX: resume the session (or explicitly delete HANDOFF.json once its work is truly abandoned), then retry.',
+    );
+  }
+
+  const workers = Array.isArray(state.workers) ? state.workers : [];
+  if (workers.length > 0) {
+    const names = workers.map((w) => (w && w.nickname) || '?').join(', ');
+    throw new Error(
+      `startFeature: refused — ${workers.length} registered worker(s) remain (${names}). FIX: clear them first (bee_state.mjs worker remove --nickname N, or worker clear).`,
+    );
+  }
+
+  const activeReservations = listActiveReservationsForStart(root);
+  if (activeReservations.length > 0) {
+    throw new Error(
+      `startFeature: refused — ${activeReservations.length} active reservation(s) remain (${activeReservations
+        .map((r) => `${r.agent}:${r.path}`)
+        .join(', ')}). FIX: release them first (bee_reservations.mjs release).`,
+    );
+  }
+
+  const cells = listAllCellsForStart(root);
+  const claimed = cells.filter((cell) => cell.status === 'claimed');
+  if (claimed.length > 0) {
+    throw new Error(
+      `startFeature: refused — claimed cell(s) remain: ${claimed.map((c) => c.id).join(', ')}. FIX: cap or drop them first (bee_cells.mjs cap / bee_cells.mjs drop).`,
+    );
+  }
+
+  const priorFeature = state.feature;
+  if (priorFeature) {
+    const nonterminal = cells.filter(
+      (cell) =>
+        cell.feature === priorFeature &&
+        (cell.status === 'open' || cell.status === 'claimed' || cell.status === 'blocked'),
+    );
+    if (nonterminal.length > 0) {
+      throw new Error(
+        `startFeature: refused — prior feature "${priorFeature}" has nonterminal cell(s): ${nonterminal
+          .map((c) => `${c.id}(${c.status})`)
+          .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee_cells.mjs drop --id ID --reason R) — startFeature never auto-clears cells as cleanup. FIX: cap or drop each listed cell, then retry.`,
+      );
+    }
+  }
+
+  // All preconditions hold — ONE atomic write: feature/mode/phase, reset all
+  // four gates, refreshed summary/next_action. A new feature never inherits
+  // approvals from whatever came before it.
+  state.feature = feature.trim();
+  state.mode = mode == null ? null : String(mode);
+  state.phase = phaseValue;
+  state.approved_gates = { context: false, shape: false, execution: false, review: false };
+  state.summary = `Feature "${state.feature}" started at phase "${phaseValue}".`;
+  state.next_action = `Invoke bee-hive for "${state.feature}" (phase: ${phaseValue}).`;
+  writeState(root, state);
+  return state;
+}
+
 /**
  * Advisor mode resolution (decision 0013). Returns the ceiling model to consult
  * when advisor mode is on and `point` is a configured consult point, else null.
