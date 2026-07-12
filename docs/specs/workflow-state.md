@@ -1,7 +1,7 @@
 ---
 area: workflow-state
 updated: 2026-07-12
-sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, review-on-demand target contract, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12)]
+sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12)]
 decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015)]
 coverage: partial
 ---
@@ -29,10 +29,14 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | Element | Meaning |
 |---|---|
 | phase | Where the active feature stands. Closed vocabulary: idle, exploring, planning, validating, swarming, reviewing, scribing, compounding, grooming, and the terminal alias compounding-complete. Any other value is rejected. |
-| gate | One of four named human approvals (context, shape, execution, review). Granted per feature; all four reset to ungranted when a feature starts. |
+| gate | One of four named human approvals (context, shape, execution, review). Granted per feature; all four reset to ungranted when a feature starts. The review gate is granted only through a user-invoked review session that covers the feature — a feature closes normally with it ungranted. |
 | terminal state | idle or compounding-complete — the only phases from which a new feature may start. |
 | nonterminal cell | A unit of work still open, claimed, or blocked. Its existence blocks a new feature start until it is capped or explicitly dropped on the record. |
 | handoff record | A pause snapshot left by a session that stopped mid-work. Its existence blocks a new feature start until resumed or resolved. |
+| review session | The durable record of one user-requested independent review: who asked and when, the scope as the user described it, the exact included and excluded work (each exclusion carries a reason), the two immutable range anchors (baseline and head), the reviewer manifest actually dispatched, the pre-dispatch evidence check result, findings, user-acceptance items, and the decision. Identifiers are stable and never reused. |
+| review candidate | One completed change set awaiting (or holding) review coverage: the feature, the range anchor at close, and the feature's lane. Recorded once at feature close in an append-only ledger; prior entries are never rewritten. |
+| review status | Derived at read time, never stored. `verified` — completion evidence exists (every completed change). `unreviewed` — no approved session covers it (including every legacy feature with no record). `in review` — an open, not-yet-approved session includes it. `reviewed` — an approved session covers exactly its range anchor. `review stale` — an approved session covered it, but newer changes landed after that session's head; the old coverage keeps its audit trail while the newer delta is unreviewed. |
+| baseline / head | The two immutable anchors a review session's diff is built from. Coverage attaches only to these — never to a feature name or a date. |
 
 ## Behaviors & Operations
 
@@ -51,6 +55,48 @@ or the new feature fully reset — never a mixture.
 closed list; historical skill wording that used other names (e.g.
 "exploring-complete", "validated") is invalid at the record layer.
 
+**B3 — Feature close adds a review candidate.** When a feature finishes its
+closing pass, one candidate entry is appended to the append-only ledger:
+feature, range anchor at close, and the feature's lane. The lane is required —
+the status surface uses it to warn prominently about high-risk work that has
+not passed independent review. Observers see the candidate counted as
+`unreviewed` immediately.
+
+**B4 — Review session lifecycle.** A session is created only from an explicit
+user request. Creation freezes the scope: included work in progress (open or
+claimed) is automatically moved to the exclusions with the reason "in
+progress" — never silently included; a pre-dispatch evidence check inspects
+every included behavior-changing change for recorded completion evidence and,
+on any gap, the creation fails with zero records written — review never
+substitutes for missing verification. After creation, the baseline, head,
+included, and excluded sets can never change; an attempted change is refused
+and the record is left byte-identical. Reviewer manifest, findings,
+user-acceptance items, and the decision (pending → blocked | approved) are
+recorded onto the session as the review proceeds. A session id that already
+exists cannot be created again.
+
+**B5 — Coverage and staleness are derived, never stored.** Each candidate's
+review status is computed at read time from the session records plus the
+repository's actual change history. A candidate covered by an approved session
+at its exact anchor reports `reviewed`; one newer change after that session's
+head flips it to `review stale` while the session record itself stays
+unchanged (the audit trail survives). When the change history cannot be
+resolved (rewritten history, missing tooling), the answer degrades toward
+honesty: `review stale` with a "range unresolvable" note when a covering
+session exists, plain `unreviewed` when none does — the read path never fails.
+
+**B6 — Status surfaces tell the review truth.** The session status summary
+carries the candidate counts by derived status and any open sessions. A
+feature that closed without review produces an informational completion line
+("completed and verified; independent review not requested; N candidates
+awaiting review") — not a warning, because closing unreviewed is the normal
+truthful state. An unreviewed or stale high-risk candidate produces a
+prominent warning that it has not passed independent review and that review
+runs only on user request. The recommended-next-step line never proposes
+starting a review by itself. A range already covered by an approved, unchanged
+session is answered "reviewed (covered by that session)" so no second review
+is dispatched for unchanged content.
+
 ## Actors & Access
 
 - **The agent** runs every verb itself; the human never runs workflow
@@ -67,16 +113,30 @@ closed list; historical skill wording that used other names (e.g.
   is a separate, recorded act (drop verb) (codex-runtime-parity D2).
 - R3 — Phase values outside the closed vocabulary are rejected at the record
   layer, whatever a skill's prose says.
-- R4 (not yet implemented — P26) — Full independent review starts only after
-  an explicit user request; completing a cell, slice, or feature never spends
-  reviewer tokens by itself (decision 565e68d0-327f-404e-b49e-d1c61ba81bfd).
-- R5 (not yet implemented — P26) — Verification and review are separate:
-  verification evidence remains mandatory for completion, while a completed
-  feature may close truthfully as unreviewed and join a later user-selected
-  review batch (decision 565e68d0-327f-404e-b49e-d1c61ba81bfd).
-- R6 (not yet implemented — P26) — Review approval covers only the immutable
-  change set inspected by that review session; later changes never inherit the
-  earlier approval (decision 565e68d0-327f-404e-b49e-d1c61ba81bfd).
+- R4 — Full independent review starts only after an explicit user request;
+  completing a cell, slice, or feature never spends reviewer tokens by itself,
+  and a merge/ship/release request is answered with the review status plus one
+  explicit question, never a silent review dispatch (decision
+  565e68d0-327f-404e-b49e-d1c61ba81bfd).
+- R5 — Verification and review are separate: verification evidence remains
+  mandatory for completion, while a completed feature closes truthfully as
+  unreviewed and joins a later user-selected review batch (decision
+  565e68d0-327f-404e-b49e-d1c61ba81bfd).
+- R6 — Review approval covers only the immutable change set inspected by that
+  review session; later changes never inherit the earlier approval — they
+  surface as an unreviewed delta and the overall status reads `review stale`
+  (decision 565e68d0-327f-404e-b49e-d1c61ba81bfd).
+- R9 — A review session's scope is frozen at creation; the pre-dispatch
+  evidence check fails closed with zero records written, and in-progress work
+  is excluded with a recorded reason, never silently included (decision
+  565e68d0-327f-404e-b49e-d1c61ba81bfd; SPEC A6/A10).
+- R10 — Review status is always derived from records plus actual change
+  history, never stored; legacy features with no review record derive
+  `unreviewed` — no session records are ever fabricated for history (decision
+  565e68d0-327f-404e-b49e-d1c61ba81bfd; SPEC §11.3).
+- R11 — The final human approval of a review (its Gate 4) exists only inside a
+  review session; gate bypass never creates or approves one (decision
+  565e68d0-327f-404e-b49e-d1c61ba81bfd; SPEC R8).
 - R7 — The workflow runs one cost pattern: the session's own model
   orchestrates every phase and is always the ceiling tier, never a configured
   value; the cheaper configured tiers (extraction, generation, review) take
@@ -100,6 +160,18 @@ closed list; historical skill wording that used other names (e.g.
   normally with the setting stripped from the parsed view; the status
   command and the onboarding report each surface one identical warning line
   naming it safe to delete, never an error (decision de967733).
+- Review coverage edge cases: exact-anchor coverage → `reviewed`; one newer
+  change → `review stale` with the session record byte-unchanged; rewritten
+  history / unknown anchor → `review stale` + "range unresolvable" (with a
+  covering session) or `unreviewed` (without); change-history tooling absent →
+  the status surface still renders, degraded, exit-clean.
+- A corrupt review record: read paths skip it with a warning; write verbs
+  refuse loudly with the record untouched (same strict-read discipline as the
+  workflow record itself).
+- The old "past reviewing but Gate 4 still pending" staleness warning is
+  retired: closing through scribing/compounding without a review session is
+  the normal state, reported informationally, never as drift. The
+  unknown-phase warning is unchanged.
 
 ## Open Gaps
 
@@ -110,10 +182,10 @@ closed list; historical skill wording that used other names (e.g.
 - Skill prose still references invalid phase names in places; aligning the
   skills to the closed vocabulary is owned by the codex-runtime-parity
   Dispatch-and-skills slice.
-- User-invoked review, review candidates, immutable review coverage, and stale
-  coverage are specified for implementation in
-  `docs/history/review-on-demand/SPEC.md` (P26); the current automatic review
-  chain does not yet satisfy that contract.
+- The review-session flow inside a running review (delta re-review after a
+  fix, batch cumulative-diff mechanics) is contract-specced in the reviewing
+  skill's own reference, not here; this area owns only the records and their
+  derived truth.
 
 ## Pointers (implementation)
 
@@ -132,3 +204,13 @@ closed list; historical skill wording that used other names (e.g.
   and `skills/bee-hive/scripts/onboard_bee.mjs` (`staleAdvisorNotices`).
   Evidence: fanout-delegation cells fanout-1/fanout-4 (commits 0056eda,
   79d96df).
+- Review records: `.bee/reviews/<id>.json` (sessions) + `.bee/review-candidates.jsonl`
+  (ledger), CLI `bee_reviews.mjs` (create/list/show/record/candidate add/
+  candidates/status), lib `skills/bee-hive/templates/lib/reviews.mjs`
+  (`deriveCandidateStatus`, `readReviewStrict`; byte-mirrored to `.bee/bin/`).
+  Status surface: `review` block in `skills/bee-hive/templates/bee_status.mjs`.
+  Coverage derivation uses `git merge-base --is-ancestor` + `git rev-list --count`.
+  Tests: review-od checks in `skills/bee-hive/templates/tests/test_lib.mjs`
+  (208 passing). Evidence: commits cc1c34d, e4f51a2, da2e165; traces
+  `.bee/cells/review-od-{1,2,3}.json`; acceptance map
+  `docs/history/review-on-demand/reports/uat-scenarios.md`.

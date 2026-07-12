@@ -15,8 +15,10 @@ Where things live. Read the touched area's spec before its code.
   catalog of record rendered into per-runtime projections, hostile-input immunity, advisory
   encoding, per-target batch-write guarding, named coverage gaps (`coverage: partial`).
 - [`workflow-state.md`](./workflow-state.md) — the durable workflow record: closed phase
-  vocabulary, four gates, and the guarded feature-start that can never inherit approvals or
-  bury unfinished work (`coverage: partial`).
+  vocabulary, four gates, the guarded feature-start that can never inherit approvals or
+  bury unfinished work, and the review records — user-invoked review sessions with frozen
+  scope (`.bee/reviews/`), the append-only candidates ledger, and derived review statuses
+  (verified/unreviewed/in review/reviewed/review stale) (`coverage: partial`).
 
 ## Not yet specced
 
