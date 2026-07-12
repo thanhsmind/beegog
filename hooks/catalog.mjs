@@ -29,15 +29,64 @@
 
 export const RUNTIMES = Object.freeze({ CLAUDE: "claude", CODEX: "codex" });
 
+// A projection is rendered for a TARGET as well as a runtime (cell
+// codex-parity-6a):
+//
+//   "plugin" (DEFAULT) — the hook file ships inside the plugin root, so the
+//     host exports ${CLAUDE_PLUGIN_ROOT} and the command resolves against it.
+//     This is what hooks/hooks.json and hooks/claude-hooks.json are rendered
+//     as; keeping it the default is what makes those two checked-in
+//     projections, and every existing caller, byte-identical across this cell.
+//
+//   "repo" — the SOURCE-REPOSITORY fallback (.codex/hooks.json). Codex loads
+//     a project's own .codex/hooks.json with NO plugin root exported, and the
+//     old hand-authored file resolved through "$CLAUDE_PROJECT_DIR" — a
+//     Claude-only variable that Codex never sets (0 occurrences in the shipped
+//     Codex binary). With it unset the command collapsed to
+//     `node /.bee/bin/hooks/bee-state-sync.mjs` and every hook died with
+//     MODULE_NOT_FOUND (docs/history/codex-runtime-parity/reports/
+//     diagnosis-codex-stop-hooks.md). The repo target instead resolves the git
+//     root from Codex's session cwd, which the official hooks contract
+//     guarantees (decision d91a8398) and which Codex's `$SHELL -lc` command
+//     runner makes possible.
+export const TARGETS = Object.freeze({ PLUGIN: "plugin", REPO: "repo" });
+
 const BOTH = Object.freeze([RUNTIMES.CLAUDE, RUNTIMES.CODEX]);
 const CLAUDE_ONLY = Object.freeze([RUNTIMES.CLAUDE]);
 
+// The PINNED fail-open diagnostic for the repo transport. It goes to STDERR
+// and the command writes NOTHING to stdout: stdout on a Stop hook must parse
+// as a JSON systemMessage, so a diagnostic on stdout would break that same
+// command. Fail-open must be VISIBLE, never silent (spec R2) — a bare
+// `[ -n "$r" ] || exit 0` is silent and violates it. Cell codex-parity-6b
+// asserts this literal mechanically; do not paraphrase it.
+export const REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC =
+  "bee: hook transport unavailable (no git root)";
+
+// Pre-wrapper transport setup for the repo target: resolve the git root from
+// the session cwd. `git rev-parse` fails the same way whether git is absent
+// from PATH or the cwd is not a repository — both leave $r empty, both take
+// the visible fail-open arm (exit 0), and NEITHER reaches node. That arm is
+// load-bearing, not decorative: without it, the same command in a non-git cwd
+// crashes with exactly the MODULE_NOT_FOUND this cell repairs.
+function repoCommand(script) {
+  return [
+    'r="$(git rev-parse --show-toplevel 2>/dev/null)"',
+    `[ -n "$r" ] || { echo "${REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC}" >&2; exit 0; }`,
+    `exec node "$r"/hooks/${script} --source=repo`,
+  ].join("\n");
+}
+
+function commandFor(script, target) {
+  if (target === TARGETS.REPO) return repoCommand(script);
+  return `node "\${CLAUDE_PLUGIN_ROOT}/hooks/${script}"`;
+}
+
+// Catalog entries carry the logical (script, statusMessage) pair; the concrete
+// command string is a function of the TARGET and is produced only at render
+// time. Nothing in the catalog is hand-authored per runtime or per target.
 function cmd(script, statusMessage) {
-  return {
-    type: "command",
-    command: `node "\${CLAUDE_PLUGIN_ROOT}/hooks/${script}"`,
-    statusMessage,
-  };
+  return { script, statusMessage };
 }
 
 // One entry per lifecycle event bee wires today. `groups` is the ordered
@@ -132,11 +181,22 @@ function assertRuntime(runtime) {
   }
 }
 
-// Render one projection ("claude" | "codex") as the plain hooks.json object
-// — no runtime metadata leaks into the output, only the matcher/hooks shape
-// Claude Code and Codex both already load.
-export function renderProjection(runtime) {
+function assertTarget(target) {
+  if (target !== TARGETS.PLUGIN && target !== TARGETS.REPO) {
+    throw new Error(
+      `catalog.mjs renderProjection: unknown target "${target}" (expected "plugin" or "repo")`,
+    );
+  }
+}
+
+// Render one projection ("claude" | "codex") for one target ("plugin" |
+// "repo") as the plain hooks.json object — no runtime/target metadata leaks
+// into the output, only the matcher/hooks shape Claude Code and Codex both
+// already load. `plugin` is the DEFAULT target, so every pre-existing caller
+// (and both checked-in plugin projections) render exactly as before.
+export function renderProjection(runtime, { target = TARGETS.PLUGIN } = {}) {
   assertRuntime(runtime);
+  assertTarget(target);
   const hooks = {};
   for (const { event, groups } of CATALOG) {
     const rendered = groups
@@ -144,7 +204,11 @@ export function renderProjection(runtime) {
       .map((g) => {
         const out = {};
         if (g.matcher !== undefined) out.matcher = g.matcher;
-        out.hooks = g.hooks.map((h) => ({ ...h }));
+        out.hooks = g.hooks.map((h) => ({
+          type: "command",
+          command: commandFor(h.script, target),
+          statusMessage: h.statusMessage,
+        }));
         return out;
       });
     if (rendered.length > 0) hooks[event] = rendered;
@@ -156,8 +220,8 @@ export function renderProjection(runtime) {
 // exactly one trailing newline — matches the checked-in file formatting
 // exactly, so the drift-check test can compare rendered text to disk
 // byte-for-byte.
-export function renderProjectionText(runtime) {
-  return `${JSON.stringify(renderProjection(runtime), null, 2)}\n`;
+export function renderProjectionText(runtime, { target = TARGETS.PLUGIN } = {}) {
+  return `${JSON.stringify(renderProjection(runtime, { target }), null, 2)}\n`;
 }
 
 // The full set of event names the catalog defines, in declaration order.

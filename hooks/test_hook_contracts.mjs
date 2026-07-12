@@ -48,9 +48,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   RUNTIMES,
+  TARGETS,
   renderProjection,
   renderProjectionText,
   ALLOWED_DIFFERENCES,
+  REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC,
 } from "./catalog.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
@@ -73,6 +75,49 @@ const REPORT_PATH = path.join(
 const CODEX_DEFAULT_HOOKS_PATH = path.join(HOOKS_DIR, "hooks.json");
 const CLAUDE_HOOKS_PATH = path.join(HOOKS_DIR, "claude-hooks.json");
 const CODEX_PLUGIN_MANIFEST_PATH = path.join(REPO_ROOT, ".codex-plugin", "plugin.json");
+
+// cell codex-parity-6a: the ACTIVE source-repository Codex fallback. Unlike
+// the two plugin projections above it is rendered with target "repo".
+const CODEX_REPO_HOOKS_PATH = path.join(REPO_ROOT, ".codex", "hooks.json");
+
+// REQUIRED-ROW MANIFEST (cell codex-parity-6a).
+//
+// `failures = results.filter(r => !r.pass)` counts only rows that RAN and
+// failed, while a skip row is constructed with `pass: true` — so a row that is
+// ABSENT (never registered) or SKIPPED ("codex CLI unavailable") prints
+// ALL PASS and exits 0. That is a hole big enough to cap a cell through
+// having done nothing. These row ids MUST be present AND MUST NOT be skipped
+// in the group they belong to, or the run exits non-zero.
+const REQUIRED_CATALOG_ROW_IDS = Object.freeze(["codex-repo-target-drift"]);
+
+// Turn "required row is absent or skipped" into a real, visible FAILING row,
+// so it flows through the ordinary failures filter and the ordinary output.
+function enforceRequiredRows(results, requiredIds) {
+  const extra = [];
+  for (const id of requiredIds) {
+    const row = results.find((r) => r.id === id);
+    if (!row) {
+      extra.push(
+        catalogDriftRow(
+          `required-row-present:${id}`,
+          false,
+          `REQUIRED ROW ABSENT: "${id}" was never registered in this run — a required row ` +
+            "cannot be silently dropped (cell codex-parity-6a required-row manifest)",
+        ),
+      );
+    } else if (row.skip) {
+      extra.push(
+        catalogDriftRow(
+          `required-row-present:${id}`,
+          false,
+          `REQUIRED ROW SKIPPED: "${id}" reported skip — a required row may never be skipped ` +
+            "(cell codex-parity-6a required-row manifest)",
+        ),
+      );
+    }
+  }
+  return extra;
+}
 
 const WRAPPERS = [
   "bee-session-init.mjs",
@@ -577,6 +622,65 @@ function runCatalogDriftChecks() {
     ),
   );
 
+  // --- repo-target rows (cell codex-parity-6a) ----------------------------
+  //
+  // The ACTIVE source-repository fallback .codex/hooks.json must be generated
+  // ONLY by renderProjectionText("codex", { target: "repo" }) — so hand-drift
+  // in that live file turns this suite red. `codex-repo-target-drift` is a
+  // REQUIRED row (see REQUIRED_CATALOG_ROW_IDS): it may never be absent or
+  // skipped.
+  const repoText = renderProjectionText(RUNTIMES.CODEX, { target: TARGETS.REPO });
+  const onDiskRepo = fs.readFileSync(CODEX_REPO_HOOKS_PATH, "utf8");
+  const repoMatches = repoText === onDiskRepo;
+  rows.push(
+    catalogDriftRow(
+      "codex-repo-target-drift",
+      repoMatches,
+      repoMatches
+        ? "rendering the logical catalog for \"codex\" at target \"repo\" reproduces .codex/hooks.json byte-for-byte"
+        : "DRIFT: rendering the logical catalog for \"codex\" at target \"repo\" does NOT reproduce " +
+            ".codex/hooks.json byte-for-byte — the active Codex project fallback is hand-drifted " +
+            "or stale (regenerate it from the catalog; never hand-author event groups)",
+    ),
+  );
+
+  // D2 / the incident itself: the repo transport must carry NO Claude-only
+  // root variable (Codex sets neither; $CLAUDE_PROJECT_DIR unset is exactly
+  // what collapsed the old commands to `node /.bee/bin/hooks/...` and killed
+  // every hook with MODULE_NOT_FOUND), must launch the CURRENT source
+  // wrappers under hooks/, must declare source identity repo, and must carry
+  // the pinned VISIBLE fail-open diagnostic on stderr.
+  const repoProjection = renderProjection(RUNTIMES.CODEX, { target: TARGETS.REPO });
+  const repoCommands = Object.values(repoProjection.hooks)
+    .flat()
+    .flatMap((g) => g.hooks)
+    .map((h) => h.command);
+  const noClaudeVars = repoCommands.every(
+    (c) => !/CLAUDE_PROJECT_DIR|CLAUDE_PLUGIN_ROOT/.test(c),
+  );
+  const launchesSourceWrappers = repoCommands.every((c) =>
+    /exec node "\$r"\/hooks\/bee-[a-z-]+\.mjs --source=repo$/m.test(c),
+  );
+  const visibleFailOpen = repoCommands.every(
+    (c) =>
+      c.includes(`echo "${REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC}" >&2`) &&
+      c.includes("exit 0"),
+  );
+  const transportOk =
+    repoCommands.length === 9 && noClaudeVars && launchesSourceWrappers && visibleFailOpen;
+  rows.push(
+    catalogDriftRow(
+      "codex-repo-target-transport",
+      transportOk,
+      transportOk
+        ? `all ${repoCommands.length} repo commands carry no Claude root variable, launch hooks/bee-*.mjs ` +
+            "with --source=repo, and fail open VISIBLY on stderr when the git root cannot be resolved"
+        : `repo transport contract violated: commands=${repoCommands.length} (expected 9) ` +
+            `noClaudeVars=${noClaudeVars} launchesSourceWrappers=${launchesSourceWrappers} ` +
+            `visibleFailOpen=${visibleFailOpen}`,
+    ),
+  );
+
   return rows;
 }
 
@@ -1000,15 +1104,42 @@ function runCoverageGapRows() {
 
 // --- main ----------------------------------------------------------------
 
+// STRICT argv (cell codex-parity-6a). Previously ANY unrecognized flag was
+// silently ignored and the runner fell through to the default suite, printed
+// ALL PASS, and exited 0 — so a verify command naming a mode that was never
+// implemented passed GREEN against a broken tree. An unknown flag is now a
+// hard, non-zero error that names the modes it does know.
+const KNOWN_FLAGS = Object.freeze(["--baseline", "--catalog-only"]);
+
+function parseArgv(argv) {
+  const unknown = argv.filter((a) => !KNOWN_FLAGS.includes(a));
+  if (unknown.length > 0) {
+    return { ok: false, unknown };
+  }
+  return {
+    ok: true,
+    baselineMode: argv.includes("--baseline"),
+    catalogOnlyMode: argv.includes("--catalog-only"),
+  };
+}
+
 async function main() {
-  const baselineMode = process.argv.includes("--baseline");
-  // --catalog-only (cell codex-parity-2 verify mode): run ONLY the
-  // catalog-drift + codex-acceptance row groups — this cell's own contract.
-  // The bare default mode below keeps gating the FULL seven-wrapper table
-  // (that table's green state is cell codex-parity-3's exit target), and
-  // --baseline keeps cell codex-parity-1's characterization contract
-  // untouched.
-  const catalogOnlyMode = process.argv.includes("--catalog-only");
+  const parsed = parseArgv(process.argv.slice(2));
+  if (!parsed.ok) {
+    process.stderr.write(
+      `test_hook_contracts: unknown flag(s): ${parsed.unknown.join(", ")}\n` +
+        `known modes: ${KNOWN_FLAGS.join(", ")} (or no flag for the full default suite)\n`,
+    );
+    process.exitCode = 2;
+    return;
+  }
+  const { baselineMode, catalogOnlyMode } = parsed;
+  // --catalog-only (cell codex-parity-2 verify mode; extended by cell
+  // codex-parity-6a with the repo-target rows): run ONLY the catalog-drift +
+  // codex-acceptance row groups. The bare default mode below keeps gating the
+  // FULL seven-wrapper table (that table's green state is cell
+  // codex-parity-3's exit target), and --baseline keeps cell codex-parity-1's
+  // characterization contract untouched.
   if (baselineMode && catalogOnlyMode) {
     process.stderr.write(
       "test_hook_contracts: --baseline and --catalog-only are mutually exclusive\n",
@@ -1019,6 +1150,7 @@ async function main() {
 
   if (catalogOnlyMode) {
     const results = [...runCatalogDriftChecks(), ...runCodexAcceptanceRows()];
+    results.push(...enforceRequiredRows(results, REQUIRED_CATALOG_ROW_IDS));
     const failures = results.filter((r) => !r.pass);
     const skipped = results.filter((r) => r.skip);
     for (const r of results) {
@@ -1088,6 +1220,9 @@ async function main() {
   results.push(...runCodexAcceptanceRows());
   results.push(...runNicknameRows());
   results.push(...runCoverageGapRows());
+  // The required-row manifest binds in the default suite too, not only in
+  // --catalog-only: an absent or skipped required row fails BOTH paths.
+  results.push(...enforceRequiredRows(results, REQUIRED_CATALOG_ROW_IDS));
 
   const failures = results.filter((r) => !r.pass);
   const skipped = results.filter((r) => r.skip);
