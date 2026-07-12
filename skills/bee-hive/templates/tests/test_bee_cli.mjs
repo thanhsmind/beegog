@@ -628,12 +628,12 @@ check('a call shaped like a bee.mjs invocation with an unregistered command is d
 
 // ─── manifest content-hash drift ───────────────────────────────────────────
 
-check('a registry content change is reflected as manifest_changed:true on the next call', () => {
-  // Baseline call: persists the real hash to .bee/manifest-hash.json, and the
-  // steady-state response must carry no extra field (byte-parity requirement).
+check('a registry content change surfaces manifest_changed on stderr, never reshaping stdout (P1 fix, review-phase-1.md)', () => {
+  // Baseline call: persists the real hash to .bee/manifest-hash.json.
   const baseline = runBee(['status', '--json']);
   assert(baseline.status === 0, `baseline exit ${baseline.status}`);
-  assert(!('manifest_changed' in JSON.parse(baseline.stdout)), 'steady state must never carry manifest_changed (byte-parity requirement)');
+  const baselineBody = JSON.parse(baseline.stdout);
+  assert(!('manifest_changed' in baselineBody), 'steady state must never carry manifest_changed on stdout (byte-parity requirement)');
 
   // Simulate drift by corrupting the persisted hash directly — this cell
   // never edits the real command-registry.mjs (out of its file scope).
@@ -642,13 +642,19 @@ check('a registry content change is reflected as manifest_changed:true on the ne
 
   const drifted = runBee(['status', '--json']);
   const driftedBody = JSON.parse(drifted.stdout);
-  assert(driftedBody.manifest_changed === true, `expected manifest_changed:true, got ${drifted.stdout}`);
-  assert(typeof driftedBody.manifest_changed_hint === 'string' && driftedBody.manifest_changed_hint.length > 0, 'a one-line hint must accompany manifest_changed');
-  assert(driftedBody.result && driftedBody.result.phase === 'swarming', 'the underlying result must still be present alongside the drift signal');
+  // stdout's top-level shape is IDENTICAL to the baseline's — same keys, no
+  // manifest_changed / manifest_changed_hint / result nesting — a consumer
+  // parsing stdout never has to special-case a drift call.
+  assert(
+    JSON.stringify(Object.keys(driftedBody).sort()) === JSON.stringify(Object.keys(baselineBody).sort()),
+    `drifted stdout shape must match steady-state shape; baseline keys=${Object.keys(baselineBody)}, drifted keys=${Object.keys(driftedBody)}`,
+  );
+  assert(driftedBody.phase === 'swarming', 'the underlying result must be the same bare shape as steady state, not nested under .result');
+  assert(drifted.stderr.includes('manifest_changed: true'), `expected the drift hint on stderr, got: ${drifted.stderr}`);
 
-  // The drifted call re-persists the real hash, so the very next call is steady again.
+  // The drifted call re-persists the real hash, so the very next call is steady again (no stderr hint).
   const settled = runBee(['status', '--json']);
-  assert(!('manifest_changed' in JSON.parse(settled.stdout)), 'the hash should self-heal to steady state after one drift report');
+  assert(!settled.stderr.includes('manifest_changed'), 'the hash should self-heal to steady state after one drift report');
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

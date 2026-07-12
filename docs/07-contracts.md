@@ -158,9 +158,9 @@ bee.mjs <group> [<action>] [--flags]   (harness-integration Phase 1: unified dis
     deprecated}]} — the same JSON-Schema tool-definition shape Claude Code's own tool/subagent surface
     uses (D3); command-registry.mjs's internal `helper` dispatch field is stripped from this public view.
     Manifest drift: a sha256 of {schema_version, COMMAND_REGISTRY} is persisted to
-    .bee/manifest-hash.json; when it differs from the prior persisted hash, every response gets an
-    additive manifest_changed:true + hint field (steady-state output is otherwise byte-identical to
-    the 4 original CLIs).
+    .bee/manifest-hash.json; when it differs from the prior persisted hash, a manifest_changed:true
+    hint is written to stderr only — stdout's shape never changes, so a data command's steady-state
+    output stays byte-identical to the 4 original CLIs on every call, drifted or not.
     Unknown command → a Levenshtein nearest-match suggestion, never a bare not-found.
     Deferred (D6): an MCP server wrapper and a mandatory every-session --help --json discovery call —
     foundation-add without demonstrated need.
