@@ -445,6 +445,17 @@ check('checkWrite blocks unreserved conflicting writes during swarming', () => {
   assert(own.allow === true, 'holder may write its reserved path');
 });
 
+check('checkWrite: root .spikes/ is governed (not allowlisted) while .bee/spikes/ stays allowed (D2 8ed35504)', () => {
+  const state = defaultState(); // phase: idle
+  const rootSpikesDenied = checkWrite(root, state, '.spikes/demo/notes.md');
+  assert(
+    rootSpikesDenied.allow === false && rootSpikesDenied.kind === 'intake',
+    'root .spikes/ must be blocked at idle now that .spikes/ is removed from GATE_ALLOWED_PREFIXES (D2) — spikes live under .bee/spikes/ now',
+  );
+  const beeSpikesAllowed = checkWrite(root, state, '.bee/spikes/demo/notes.md');
+  assert(beeSpikesAllowed.allow === true, '.bee/spikes/ stays allowed via the existing .bee/ prefix');
+});
+
 check('checkRead denies secrets with a privacy marker, and generated dirs', () => {
   const secret = checkRead('.env.production');
   assert(secret.allow === false && secret.kind === 'privacy', 'privacy deny expected');

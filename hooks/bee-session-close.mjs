@@ -21,7 +21,7 @@ const HOOK_NAME = "session-close";
 // Repository-harness lesson: review the session for an unrecorded decision
 // before it ends. When source files changed with no bee flow active and no
 // recent decision logged, nudge once (deduped) — never block.
-const NUDGE_ALLOWED = /^(\.bee\/|docs\/|\.spikes\/|plans\/|AGENTS\.md$)/;
+const NUDGE_ALLOWED = /^(\.bee\/|docs\/|plans\/|AGENTS\.md$)/;
 const DECISION_RECENT_MS = 6 * 3600 * 1000;
 
 async function maybeDecisionNudge(root) {

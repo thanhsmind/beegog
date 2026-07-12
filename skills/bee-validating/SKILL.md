@@ -44,12 +44,12 @@ Load `references/validation-reference.md` for report formats, repair routing, an
 
 ## Accepted Evidence
 
-Existing implementation, file/API/type inspection, command output, build/typecheck/test result, official version/doc proof, runtime probe, or a `.spikes/<feature>/` result. Evidence that is only "should work", "likely", "expected", or model knowledge → **NOT READY**.
+Existing implementation, file/API/type inspection, command output, build/typecheck/test result, official version/doc proof, runtime probe, or a `.bee/spikes/<feature>/` result. Evidence that is only "should work", "likely", "expected", or model knowledge → **NOT READY**.
 
 ## Spike Rules
 
 - One spike answers exactly one yes/no question.
-- Disposable code lives under `.spikes/<feature>/`.
+- Disposable code lives under `.bee/spikes/<feature>/`.
 - **NO** → return to bee-planning with the failed assumption and the required plan change.
 - **YES** → record the discovered constraints for planning and execution.
 - Spike code never silently becomes production code.

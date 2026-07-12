@@ -38,12 +38,12 @@ FEASIBILITY MATRIX
 Assumption | Risk | Proof Required | Evidence | Result
 ```
 
-Accepted evidence: existing implementation, file/API/type inspection, command output, build/typecheck/test result, official version/doc proof, runtime/API probe, or `.spikes/<feature>/` proof. "Should work", "likely", "expected", or model knowledge → the row (and the matrix) is **NOT READY**.
+Accepted evidence: existing implementation, file/API/type inspection, command output, build/typecheck/test result, official version/doc proof, runtime/API probe, or `.bee/spikes/<feature>/` proof. "Should work", "likely", "expected", or model knowledge → the row (and the matrix) is **NOT READY**.
 
 ## Spike / Probe Rules
 
 - One spike = one yes/no question.
-- Disposable proof lives under `.spikes/<feature>/`.
+- Disposable proof lives under `.bee/spikes/<feature>/`.
 - NO → return to bee-planning with the failed assumption and the plan change it forces.
 - YES → record constraints for planning and execution.
 - Spike code must never silently become production implementation.

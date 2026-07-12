@@ -90,7 +90,7 @@ high-risk = probes written out per dimension>
 **Shape bodies by mode:**
 
 - `tiny` / `small` — a direct note: current work outcome, proof command, out of scope.
-- `spike` — the one yes/no question, what proves YES, what NO implies, `.spikes/<feature>/` location.
+- `spike` — the one yes/no question, what proves YES, what NO implies, `.bee/spikes/<feature>/` location.
 - `standard` (milestone-shaped) — **phase plan**: `Phase | What Changes | Why Now | Demo | Unlocks` table. First phase obvious; later phases build on it; no technical buckets ("backend", "frontend" are not phases).
 - `standard` / `high-risk` (capability/risk-shaped) — **epic map**: feature outcome, repo-reality basis, `Epic | Capability/Risk Area | Why It Exists | Slices | Proof Needed` table, slice queue with deps and feasibility status, current slice to prepare.
 

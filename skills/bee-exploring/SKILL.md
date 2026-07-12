@@ -18,7 +18,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 
 - Ask **one question per message**; wait for the user before asking the next.
 - Do not answer your own question — even when you are sure of the answer.
-- Do not research implementation, propose architecture, create cells, or write code — the sole exception is a throwaway SEE mock under `.spikes/<feature>/mocks/` (P11, decision 0020; step 4).
+- Do not research implementation, propose architecture, create cells, or write code — the sole exception is a throwaway SEE mock under `.bee/spikes/<feature>/mocks/` (P11, decision 0020; step 4).
 - Do not invoke planning yourself. End by handing the user to `bee-planning`.
 - Gather-altitude steps — step 1 scope reads, step 3 gray-area scout digest — delegate as I/O workers (extraction/generation tier) per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`); any other ad-hoc dispatch beyond the fresh-eyes reviewer's named review slot defaults to the generation slot, and ceiling requires the [bee-tier: ceiling] marker plus a one-line justification.
 
@@ -54,7 +54,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
    - Start broad, then narrow into constraints.
    - **Materiality test (P20):** every candidate question passes three checks before it is asked — **material** (the answer changes scope, architecture, UX, data model, or acceptance criteria), **grounded** (cites scout evidence or a concrete uncertainty, never generic preference), **answerable** (the user can pick an option, approve a default, or supply a reference). A failing question is never asked: pin it as a labeled assumption for Context Assembly to write into CONTEXT.md, or hand it to planning if only the implementer cares about the answer.
    - **Blindspot pass — teach before asking (P9, decision 0020):** when the user signals unfamiliarity with a gray area's domain — says so, answers with guesses ("chắc là…"), or asks what the options mean — invert for that area: explain the 2–3 concepts needed to answer well (one short outcome-framed message, no jargon), *then* ask. A decision locked from a guessed answer is a fake decision. The user can also request a full "blindspot pass" by name: sweep the unknown-unknowns (what good looks like, common potholes, prior art in this repo) before locking begins.
-   - **SEE mock — react instead of describe (P11, decision 0020):** for a `SEE` gray area the user knows-when-they-see-it but cannot describe, you MAY build a throwaway HTML mock (2–4 variants, fake data, zero wiring) under `.spikes/<feature>/mocks/` and lock the decision from the user's reaction, citing the chosen variant. This is the ONE exception to "exploring never writes code": mock files only, only under `.spikes/`, never imported by anything, never promoted to production (spike-code rule applies).
+   - **SEE mock — react instead of describe (P11, decision 0020):** for a `SEE` gray area the user knows-when-they-see-it but cannot describe, you MAY build a throwaway HTML mock (2–4 variants, fake data, zero wiring) under `.bee/spikes/<feature>/mocks/` and lock the decision from the user's reaction, citing the chosen variant. This is the ONE exception to "exploring never writes code": mock files only, only under `.bee/spikes/`, never imported by anything, never promoted to production (spike-code rule applies).
    - After each answer, confirm the decision back and assign a stable ID: `D1`, `D2`, `D3`…
    - When an answer settles the meaning of a fuzzy domain word, confirm the term back and pin it like a decision (P21); Context Assembly writes all pinned terms into CONTEXT.md's `Terms` section, and scribing inherits them into the spec's Data Dictionary.
    - If one answer contains several decisions: lock the one your question asked about, echo the others as candidate decisions to confirm one at a time.
@@ -84,8 +84,8 @@ With `mode:headless`: no Socratic dialogue. Lock only decisions the request stat
 - bundled questions, or a question answered by the asker
 - a question asked that fails the materiality test — immaterial, ungrounded, or unanswerable
 - deep implementation analysis or architecture proposals during exploring
-- creating cells or writing code (except a `.spikes/<feature>/mocks/` SEE mock per decision 0020)
-- a SEE mock imported by production code, or surviving outside `.spikes/`
+- creating cells or writing code (except a `.bee/spikes/<feature>/mocks/` SEE mock per decision 0020)
+- a SEE mock imported by production code, or surviving outside `.bee/spikes/`
 - teaching skipped when the user is visibly guessing — a decision locked from a guess
 - locking a "decision" that is really an implementation choice
 - scope creep absorbed instead of deferred
