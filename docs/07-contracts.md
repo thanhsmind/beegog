@@ -238,3 +238,11 @@ node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--cla
 - Every skill documents `mode:headless` behavior in one short section.
 - Commands quoted in skills MUST match the CLI surface above verbatim.
 - Each skill ships `CREATION-LOG.md`: provenance (which upstream skill it adapts), what changed, and an honest `Pressure testing: PENDING (scheduled per Iron Law before 1.0)` note with the 3 scenarios from 04-skills-spec listed as the planned RED set.
+
+### OpenAI skill metadata projection
+
+`skills/bee-*/SKILL.md` frontmatter is the canonical identity and trigger-description source for both runtimes. `skills/bee-writing-skills/scripts/render_openai_metadata.mjs` deterministically projects each live bee skill to `skills/bee-*/agents/openai.yaml`: `interface.display_name` comes from the hyphenated `name`, `interface.short_description` comes from the folded `description`, and `policy.allow_implicit_invocation` is always `true`. Independent descriptions, default prompts, and workflow prose in the projection are prohibited.
+
+Run the renderer without arguments to regenerate every projection and with `--check` to verify the tree. Check mode exits non-zero and names the first class of drift as `MISSING`, `STALE`, `ORPHAN`, or `MALFORMED`; the canonical library suite invokes this check so absent and stale projections cannot pass repository verification.
+
+No runtime-specific installer is added. The plugin already packages the shared `skills/` tree, and onboarding's existing whole-skill manifest comparison emits `sync_skill` whenever any nested byte differs; its deep-mirror apply therefore distributes `agents/openai.yaml`, removes stale nested files, and verifies byte parity through the same path as every other skill file.
