@@ -264,3 +264,12 @@ fails this way, inspect the spawn error first and rerun unchanged with the requi
 permission before creating a fix cell or weakening assertions.
 
 **Full entry:** docs/history/learnings/20260712-harness-integration-adopt.md
+
+## [20260712] Fixture vendored-module lists break on transitive imports
+**Category:** failure
+**Feature:** dispatcher-unify
+**Tags:** [tests, fixtures, imports]
+test_bee_write_guard_hook vendors an explicit lib-module list into its fixture repo.
+Adding an import to any vendored module (command-registry.mjs → reviews.mjs → cells.mjs)
+throws only inside the fixture, and the hook FAILS OPEN — denial tests invert silently.
+When a vendored module gains an import, chase the transitive closure into the fixture list.
