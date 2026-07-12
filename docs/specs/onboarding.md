@@ -1,6 +1,6 @@
 ---
 area: onboarding
-updated: 2026-07-11
+updated: 2026-07-12
 coverage: partial
 sources:
   - cell onboard-statusline-1 (verification_evidence, 2026-07-11)
@@ -9,6 +9,8 @@ sources:
   - codex-runtime-parity D2 (lifecycle enforcement contract, 2026-07-11)
   - codex-runtime-parity D3 (nested-executor safety boundary, 2026-07-11)
   - codex-runtime-parity D4 (dispatch-contract scope, 2026-07-11)
+  - bee-footprint D1 (managed ignore section, cells footprint-1/footprint-4, 2026-07-12)
+  - fanout-delegation D1 (stale advisor key tolerance, 2026-07-12)
 decisions:
   - 102efe08 (opt-in statusline vendor shape)
   - c6ee6b6e (Gate 4 onboard-statusline: anchored detection, sweep opt-in)
@@ -16,6 +18,8 @@ decisions:
   - b7af1bf9 (full compatible Codex lifecycle-hook parity; not yet implemented)
   - 73ed41d6 (workspace-scoped Codex executors; blanket bypass forbidden)
   - d7d5f459 (current Codex dispatch contract first; custom profiles deferred)
+  - 26203bd3 (managed ignore-list section; machine-local vs team-durable split)
+  - de967733 (advisor mode removed; stale config key warned-and-ignored)
 ---
 
 # Onboarding
@@ -29,9 +33,10 @@ is always safe: it reports what would change before changing anything, and an
 up-to-date project reports "nothing to do".
 
 > **Coverage note:** this spec currently describes the **status-display (statusline)
-> vendoring** behavior in full. The rest of the onboarding surface (instructions
-> block, runtime files, helper vendoring, global skill sync, downgrade protection)
-> is listed under Open Gaps awaiting harvest.
+> vendoring** and the **managed version-control ignore section** behaviors in
+> full. The rest of the onboarding surface (instructions block, runtime files,
+> helper vendoring, global skill sync, downgrade protection) is listed under
+> Open Gaps awaiting harvest.
 
 ## Entry Points & Triggers
 
@@ -46,6 +51,10 @@ up-to-date project reports "nothing to do".
 | status-display pair | Two scripts that render the assistant's per-session status line: the display command and its usage/cost aggregator. Canonical copies live with bee's source; each opted-in project holds a vendored copy. |
 | opt-in signal | The project's assistant-settings file declares a status-display command that points at the **project's own** copy of the display script — either anchored by the project-directory variable or written as a bare project-relative path. A reference to a user-level (home-directory) copy is NOT an opt-in. |
 | managed status-display record | A fingerprint per pair file, stored in the project's onboarding record **only when the project opts in**, so later runs can tell current from drifted. Projects that never opted in carry no such record. |
+| managed ignore section | A clearly-marked, start/end-delimited block that onboarding owns inside the project's version-control ignore list. Every byte outside the delimiters belongs to the project and is never touched. |
+| machine-local runtime record | Content the managed ignore section silences: workflow state, reservations, worker scratch, logs, capture queue, feedback snapshot, injection cache, the pause/handoff record, and disposable experiment files. |
+| team-durable knowledge | Content that always stays version-tracked, never silenced by the managed ignore section: vendored tooling, configuration, the decision log, the friction log, and work-cell records. |
+| ignore-section fingerprint | A hash of the managed ignore section's expected content, stored in the project's onboarding record so a later run can detect drift in that section specifically. |
 
 ## Behaviors & Operations
 
@@ -70,6 +79,47 @@ status-display behavior keeps its settings pointing at a user-level copy instead
 **Stay out (non-opted projects).** Projects without the opt-in signal never receive
 the pair files, never gain a managed status-display record, and their up-to-date
 status is entirely unaffected by this mechanism's existence.
+
+**Manage the ignore section (every apply run).** Trigger: an apply run against
+any host project, opted in or not — the managed ignore section is unconditional.
+What blocks it: nothing; the three cases below are exhaustive and one always
+applies. What changes: exactly one of —
+- no ignore list exists yet → the list is created holding only the managed
+  section;
+- an ignore list exists without the section → the section is appended,
+  inserting a guaranteed separating line break first even when the existing
+  file's last line has none, so the section never fuses onto the file's last
+  line;
+- the section is already present but its content has drifted from the
+  tracked fingerprint → only the bytes between the section's own markers are
+  rewritten; every byte of the project's own content outside those markers is
+  preserved exactly, unchanged.
+
+A line that merely resembles the section's marker text inside a longer user
+comment is never mistaken for the real marker, so it never triggers case two
+or three by accident. Comparing the section's current content against the
+fingerprint tolerates Windows-style line endings, so a line-ending-only
+difference is never reported as drift and never causes a rewrite on every run.
+Side effects: none beyond the ignore list file itself. What the agent
+observes: the check run reports which of the three cases applies (or "current"
+when the fingerprint matches) before anything is written; the apply run then
+performs exactly that action and the ignore-section fingerprint in the
+project's onboarding record is refreshed. What the human observes: an
+up-to-date project's ignore list carries the section unchanged; a project with
+drifted or missing section sees the report name the exact action before
+approving it.
+
+**Warn on already-tracked silenced paths (every run).** Trigger: any run,
+check or apply, where one or more of the paths the managed ignore section is
+meant to silence are already tracked in the host project's version-control
+index — ignore-list entries are inert for paths already tracked, so the
+managed section alone cannot silence them. What blocks it: nothing; this is
+report-only. What changes: nothing to the host's version-control index —
+onboarding never runs the untracking operation itself, in this or any other
+behavior. Side effects: none. What the agent and human observe: the report
+carries one warning naming the count of already-tracked paths and the exact
+one-time command the operator must run to untrack them; the warning
+disappears once no silenced path remains tracked.
 
 ## Actors & Access
 
@@ -114,6 +164,21 @@ status is entirely unaffected by this mechanism's existence.
   including explicit clean-context spawning and continuation. Bee does not ship
   named Codex agent profiles until swarming can select and verify those profiles;
   unused configuration is not parity (decision d7d5f459).
+- **R9** — The managed ignore section covers only machine-local runtime
+  records (workflow state, reservations, worker scratch, logs, capture queue,
+  feedback snapshot, injection cache, the pause/handoff record, disposable
+  experiment files); team-durable knowledge (vendored tooling, configuration,
+  the decision log, the friction log, work-cell records) always stays
+  version-tracked and is never added to the section (decision 26203bd3).
+- **R10** — The managed ignore section is created, appended with a guaranteed
+  separator, or content-rewritten depending on the ignore list's current
+  state; every byte outside the section's own markers is preserved exactly,
+  and a line only resembling the marker text is never treated as the marker
+  (decision 26203bd3).
+- **R11** — Onboarding never modifies the host project's version-control
+  index; when a path the managed section is meant to silence is already
+  tracked, the report warns and names the exact one-time untrack command for
+  the operator to run instead (decision 26203bd3).
 
 ## Edge Cases Settled
 
@@ -131,6 +196,21 @@ status is entirely unaffected by this mechanism's existence.
 - Opting out after having been opted in → the stale managed record is inert but
   currently survives; recorded as a known gap (backlog, paired with the
   equivalent behavior in the hook-vendoring mechanism).
+- No ignore list present at all → one is created holding only the managed
+  ignore section (feature bee-footprint, decision 26203bd3).
+- Ignore list present but missing a trailing line break → the managed
+  ignore section is still appended cleanly, on its own line, never fused onto
+  the file's last line (feature bee-footprint, decision 26203bd3).
+- A user comment line that merely resembles the managed section's marker text
+  → never mistaken for the real marker, so the section is not duplicated or
+  corrupted around it (feature bee-footprint, decision 26203bd3).
+- Managed ignore section present with Windows-style line endings → not
+  reported as drift and not rewritten; only real content differences trigger
+  a rewrite (feature bee-footprint, decision 26203bd3).
+- A path the managed section is meant to silence is already tracked in the
+  host's version-control index → the report warns and names the exact
+  one-time untrack command; onboarding never runs it itself (feature
+  bee-footprint, decision 26203bd3).
 
 ## Open Gaps
 
@@ -161,3 +241,9 @@ status is entirely unaffected by this mechanism's existence.
 - `skills/bee-hive/scripts/test_onboard_bee.mjs` — section 9c sandbox cases.
 - `skills/bee-hive/templates/tests/test_lib.mjs` — statusline byte-equality sweep.
 - Host-side settings contract: `.claude/settings.json` → `statusLine.command`.
+- `skills/bee-hive/scripts/onboard_bee.mjs` — `GITIGNORE_MARKER_START`/`_END`,
+  `GITIGNORE_START_RE`/`_END_RE` (marker-resemblance guard),
+  `gitignoreBlockPresent`, `normalizeGitignoreForCompare` (CRLF tolerance),
+  `create_gitignore_block`/`append_gitignore_block`/`update_gitignore_block`
+  plan actions, `trackedGitignorePaths`/`trackedPathsNotices` (already-tracked
+  advisory, never runs `git rm` itself), `gitignore_block` fingerprint field.

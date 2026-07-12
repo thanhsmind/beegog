@@ -18,6 +18,7 @@
 //
 // Never overwrites existing .bee/state.json, .bee/decisions.jsonl, or .bee/cells/.
 
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -46,6 +47,14 @@ const MARKER_END = "<!-- BEE:END -->";
 // ignore pattern, not a comment, and would never match anything.
 const GITIGNORE_MARKER_START = "# BEE:START";
 const GITIGNORE_MARKER_END = "# BEE:END";
+// Review P2 (test-coverage) / P3 (security anchor): whole-line anchored, not
+// bare substring - a user comment like "# BEE:START custom notes" must never
+// be adopted as the managed block. `[ \t]*\r?$` allows only trailing
+// horizontal whitespace and an optional CRLF `\r` before end-of-line; it
+// deliberately does NOT use `\s*$` (which is greedy across newlines too and
+// would swallow the user's blank lines/footer after the marker).
+const GITIGNORE_START_RE = /^# BEE:START[ \t]*\r?$/m;
+const GITIGNORE_END_RE = /^# BEE:END[ \t]*\r?$/m;
 // Machine-local .bee runtime churn only (D1) - team-durable paths (bin/,
 // config.json, config-sample.json, onboarding.json, decisions.jsonl,
 // backlog.jsonl, cells/) are NEVER listed here; the block anticipates D2's
@@ -965,32 +974,55 @@ function mergeAgentsContent(existing, renderedBlock) {
 // newline at all - so two gitignore patterns can never be silently merged
 // onto one line the way the corrupt `.bee/feedback-digest.json.spikes/` entry
 // was.
+//
+// Review P2 (test-coverage) hardening: marker detection is whole-line
+// anchored (GITIGNORE_START_RE / GITIGNORE_END_RE above), and the update path
+// only ever touches the bytes between the two marker lines - everything
+// before GITIGNORE_START_RE's match and everything after GITIGNORE_END_RE's
+// match (including its own trailing newline) is copied through byte-for-byte,
+// never re-normalized.
 
 function gitignoreBlockPresent(text) {
-  return text.includes(GITIGNORE_MARKER_START) && text.includes(GITIGNORE_MARKER_END);
+  return GITIGNORE_START_RE.test(text) && GITIGNORE_END_RE.test(text);
+}
+
+function findGitignoreMarkers(text) {
+  const startMatch = GITIGNORE_START_RE.exec(text);
+  const endMatch = GITIGNORE_END_RE.exec(text);
+  if (!startMatch || !endMatch || endMatch.index < startMatch.index) {
+    return null;
+  }
+  return { start: startMatch.index, end: endMatch.index + endMatch[0].length };
 }
 
 function extractGitignoreBlock(text) {
-  const start = text.indexOf(GITIGNORE_MARKER_START);
-  const end = text.indexOf(GITIGNORE_MARKER_END);
-  if (start === -1 || end === -1 || end < start) {
+  const markers = findGitignoreMarkers(text);
+  if (!markers) {
     return null;
   }
-  return `${text.slice(start, end + GITIGNORE_MARKER_END.length)}\n`;
+  return `${text.slice(markers.start, markers.end)}\n`;
+}
+
+// Drift comparison only (review P3 / CRLF): a CRLF-saving editor must not
+// cause a perpetual update_gitignore_block loop, so \r\n is normalized to \n
+// ONLY for this equality check. Writes below always stay LF - normalizing the
+// comparison never changes what gets written to disk.
+function normalizeGitignoreForCompare(text) {
+  return (text || "").replace(/\r\n/g, "\n");
 }
 
 function mergeGitignoreContent(existing, renderedBlock) {
   if (!existing.trim()) {
     return { text: renderedBlock, status: "created" };
   }
-  if (gitignoreBlockPresent(existing)) {
-    const start = existing.indexOf(GITIGNORE_MARKER_START);
-    let end = existing.indexOf(GITIGNORE_MARKER_END) + GITIGNORE_MARKER_END.length;
+  const markers = findGitignoreMarkers(existing);
+  if (markers) {
+    let end = markers.end;
     if (existing[end] === "\n") {
       end += 1;
     }
-    const updated = existing.slice(0, start) + renderedBlock + existing.slice(end);
-    return { text: `${updated.replace(/\s*$/, "")}\n`, status: "updated" };
+    const updated = existing.slice(0, markers.start) + renderedBlock + existing.slice(end);
+    return { text: updated, status: "updated" };
   }
   return {
     text: `${existing.replace(/\s*$/, "")}\n\n${renderedBlock}`,
@@ -1169,6 +1201,42 @@ function staleAdvisorNotices(repoRoot) {
   return hasStaleKey ? [STALE_ADVISOR_KEY_WARNING] : [];
 }
 
+// ---------- tracked-paths advisory (review P2, D1) --------------------------
+// `.gitignore` is inert for paths that are already git-tracked: if a
+// previously-onboarded host still has any GITIGNORE_BLOCK_PATTERNS path
+// staged or committed, the managed block goes silent for it and the exact
+// git-status churn this feature exists to kill keeps showing up. Advisory
+// only - this script NEVER runs `git rm` itself (that rewrites the host's
+// index); it only names the count and the exact command for a human to run.
+// `execFileSync` with an argv array (never a shell string, never string
+// interpolation) so nothing in GITIGNORE_BLOCK_PATTERNS can be read as shell
+// syntax. Degrades to silence - no notice, never a crash - when git is
+// missing, the directory is not a repo, or git exits nonzero for any other
+// reason: the advisory is a nice-to-have, never a blocker.
+function trackedGitignorePaths(repoRoot) {
+  try {
+    const output = execFileSync(
+      "git",
+      ["ls-files", "-z", "--", ...GITIGNORE_BLOCK_PATTERNS],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    return output.split("\0").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function trackedPathsNotices(repoRoot) {
+  const tracked = trackedGitignorePaths(repoRoot);
+  if (tracked.length === 0) {
+    return [];
+  }
+  return [
+    `${tracked.length} managed path(s) are still git-tracked; the ignore block cannot ` +
+      `silence them — run: git rm -r --cached ${tracked.join(" ")}`,
+  ];
+}
+
 // ---------- plan computation ----------
 
 function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
@@ -1262,7 +1330,9 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
     plan.push({ action: "create_gitignore_block", path: ".gitignore" });
   } else if (!gitignoreBlockPresent(gitignoreText)) {
     plan.push({ action: "append_gitignore_block", path: ".gitignore" });
-  } else if (extractGitignoreBlock(gitignoreText) !== renderedGitignoreBlock) {
+  } else if (
+    normalizeGitignoreForCompare(extractGitignoreBlock(gitignoreText)) !== renderedGitignoreBlock
+  ) {
     plan.push({ action: "update_gitignore_block", path: ".gitignore" });
   }
 
@@ -1702,7 +1772,11 @@ export function main(argv = process.argv.slice(2)) {
           // overwrite/delete, not just the general-item plan.
           items: skillSync.items,
         },
-        notices: [...commandsNotices(repoRoot, { firstOnboard }), ...staleAdvisorNotices(repoRoot)],
+        notices: [
+          ...commandsNotices(repoRoot, { firstOnboard }),
+          ...staleAdvisorNotices(repoRoot),
+          ...trackedPathsNotices(repoRoot),
+        ],
       };
       if (skillSync.blocked) {
         // Reporting is not failing: plan mode exits 0 with the blocked status.
@@ -1763,7 +1837,11 @@ export function main(argv = process.argv.slice(2)) {
         : null,
       skills: result.skills,
       onboarding: result.onboarding,
-      notices: [...commandsNotices(repoRoot, { firstOnboard }), ...staleAdvisorNotices(repoRoot)],
+      notices: [
+        ...commandsNotices(repoRoot, { firstOnboard }),
+        ...staleAdvisorNotices(repoRoot),
+        ...trackedPathsNotices(repoRoot),
+      ],
     };
     if (result.forcedDowngrade) {
       // F9: a forced apply reports the fact machine-readably, with versions.

@@ -1,8 +1,8 @@
 ---
 area: hook-runtime
 updated: 2026-07-12
-sources: [codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b]
-decisions: [codex-runtime-parity D1, D2; 0023; d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543]
+sources: [codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12)]
+decisions: [codex-runtime-parity D1, D2; 0023; d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks)]
 coverage: partial
 ---
 
@@ -50,6 +50,7 @@ belt for anything a checkpoint cannot see.
 | reviewed definition | The exact command definition the owner has inspected and trusted. A new or changed non-managed definition does not run until it is reviewed again. |
 | rendering target | Which delivery location a projection is being produced for: the packaged location, or the project's own source-repository fallback location. Same catalog, same handlers; only the concrete checkpoint command differs by target. |
 | source identity | An explicit marker a rendered checkpoint command passes to its shared handler, stating which rendering target launched it, so the handler can log or branch on provenance instead of guessing from environment. |
+| always-writable location | A small named set of locations a write may target without the active feature's gate routing, because the content is machine-local and disposable — today: the workflow's own state/log directory and, inside it, a dedicated subfolder for disposable experiment work. Removing a location from this set only tightens governance; adding one is a deliberate, reviewed decision. |
 
 ## Behaviors & Operations
 
@@ -138,6 +139,22 @@ verdict — consistent with B2 (advisories never steer the conversation). A
 handler with nothing to report stays completely silent rather than emit a
 placeholder (codex-runtime-parity cell 6b).
 
+**B11 — A repo-root disposable-experiment location is no longer
+always-writable.** Trigger: a write targeting the former repo-root
+disposable-experiment location. What blocks it: the same gate routing that
+governs any other source path — the active feature's phase and gate state —
+exactly as for a path outside the always-writable set; nothing exempts this
+location anymore. What changes: this location moves from always-writable to
+governed, strictly shrinking the always-writable set by one entry; disposable
+experiment work itself continues unblocked, but now inside the workflow's own
+always-writable directory, under a dedicated subfolder that location's
+existing allowance already covers. Side effects: the close-time nudge's own
+always-writable set shrinks identically, so a write left in the old location
+is flagged there too, not only by the write guard. What actors observe: the
+assistant sees the same corrective deny/allow outcome it would see writing to
+any other governed source path; the human owner sees no new prompt — the
+location simply stopped being an exception (bee-footprint D2).
+
 ## Actors & Access
 
 - **The assistant** (either runtime) — subject of every checkpoint; observes
@@ -182,6 +199,12 @@ placeholder (codex-runtime-parity cell 6b).
 - R10 — Every session-stop handler exits success; any non-empty output from
   it parses as a single JSON object carrying a summary field and never a
   block verdict (codex-runtime-parity cell 6b).
+- R11 — The write guard's always-writable set no longer includes the
+  repo-root disposable-experiment location; that work now lives inside the
+  workflow's own already-writable directory, under a dedicated subfolder. The
+  set of ungoverned writable locations only shrinks from this change, never
+  grows; the session-close nudge's allowed-path set shrinks identically
+  (bee-footprint D2).
 
 ## Edge Cases Settled
 
@@ -238,6 +261,12 @@ placeholder (codex-runtime-parity cell 6b).
   Windows-specific command field. This is undeclared today, not merely
   deferred — a Windows or non-POSIX-login-shell (e.g., fish, nu) session has
   no working fallback checkpoint.
+- Recorded tradeoff (bee-footprint P3): the workflow's disposable-experiment
+  subfolder is both always-writable and excluded from version control, so its
+  contents never appear in a change listing. This is deliberate, not a defect
+  — but a reviewer must not read a clean change listing as proof that nothing
+  was staged in that location; confirming its contents requires looking at
+  the location itself.
 
 ## Pointers (implementation)
 
@@ -249,6 +278,12 @@ placeholder (codex-runtime-parity cell 6b).
   (Claude, plugin target; `.claude-plugin/plugin.json` points here).
 - Shared adapter: `hooks/adapter.mjs`; the seven handlers `hooks/bee-*.mjs`.
 - Batch guard: `hooks/bee-write-guard.mjs` (`extractApplyPatchTargets`).
+- Always-writable set: `GATE_ALLOWED_PREFIXES` in
+  `skills/bee-hive/templates/lib/guards.mjs` (`.bee/`, `docs/`, `plans/`,
+  `AGENTS.md`; repo-root `.spikes/` removed per bee-footprint D2 — the
+  workflow's own `.bee/spikes/` subfolder is already covered by `.bee/`);
+  session-close nudge mirrors it as `NUDGE_ALLOWED` in
+  `hooks/bee-session-close.mjs`.
 - Suites: `hooks/test_hook_contracts.mjs` (modes: default, `--baseline`,
   `--catalog-only`, `--repo-route-only`), `hooks/test_write_guard.mjs`,
   `hooks/test_model_guard.mjs`; parity check in

@@ -1,2 +1,11 @@
+# BEE:START
+.bee/state.json
+.bee/reservations.json
+.bee/workers/
+.bee/logs/
+.bee/capture-queue.jsonl
+.bee/feedback-digest.json
 .bee/.inject-cache.json
-.bee/feedback-digest.json.spikes/
+.bee/HANDOFF.json
+.bee/spikes/
+# BEE:END

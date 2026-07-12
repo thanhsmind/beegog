@@ -789,9 +789,13 @@ try {
     check(giOnboarding.managed?.gitignore_block !== giOnboarding.managed?.agents_block,
       "gitignore_block hash is distinct from agents_block (computed from its own template content)");
 
-    // tamper the block body -> detected + restored, user content preserved
+    // tamper the block body -> detected + restored, user content preserved.
+    // The footer carries EXTRA trailing blank lines on purpose (review P2:
+    // the old `${updated.replace(/\s*$/, "")}\n` normalized the whole file's
+    // trailing whitespace, which would silently eat these) -- exact equality
+    // below catches that regression, not just substring presence.
     const giUserHeader = "node_modules/\ndist/\n";
-    const giUserFooter = "\n*.local\n";
+    const giUserFooter = "\n*.local\n\n\n";
     const giTampered = giText1.replace(
       /# BEE:START[\s\S]*?# BEE:END/,
       "# BEE:START\nTAMPERED\n# BEE:END",
@@ -807,9 +811,10 @@ try {
     const giApply3 = runOnboard(["--repo-root", giTmp, "--apply", "--json"], giHome);
     check(giApply3.payload?.status === "applied", "re-apply after gitignore tamper succeeds");
     const giRestored = fs.readFileSync(path.join(giTmp, ".gitignore"), "utf8");
-    check(giRestored.includes("node_modules/") && giRestored.includes("dist/"),
-      "user content before the gitignore block preserved");
-    check(giRestored.includes("*.local"), "user content after the gitignore block preserved");
+    const giExpectedRestored = giUserHeader + giText1 + giUserFooter;
+    check(giRestored === giExpectedRestored,
+      "user header AND footer bytes preserved EXACTLY (full equality, not substring) around the restored block -- includes extra trailing blank lines the old whole-file trim would have eaten",
+      JSON.stringify({ giRestored, giExpectedRestored }));
     check(!giRestored.includes("TAMPERED"), "tampered gitignore block content restored");
     check(giRestored.indexOf("# BEE:START") === giRestored.lastIndexOf("# BEE:START"),
       "exactly one gitignore BEE block after re-apply");
@@ -856,6 +861,179 @@ try {
     try {
       fs.rmSync(giAppendTmp, { recursive: true, force: true });
       fs.rmSync(giAppendHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // --- 9f. gitignore review fixes (footprint-4): hash tie, marker-lookalike,
+  // CRLF drift, and the tracked-paths advisory --------------------------------
+
+  function runGit(cwd, args) {
+    return spawnSync("git", args, { cwd, encoding: "utf8" });
+  }
+  const gitAvailable = spawnSync("git", ["--version"]).status === 0;
+
+  // (i) managed.gitignore_block ties to an INDEPENDENTLY reconstructed sha256
+  // of the rendered block source, not just "any 64-char hex string" (review
+  // P3 test-coverage).
+  const GITIGNORE_PATTERNS_FOR_HASH = [
+    ".bee/state.json",
+    ".bee/reservations.json",
+    ".bee/workers/",
+    ".bee/logs/",
+    ".bee/capture-queue.jsonl",
+    ".bee/feedback-digest.json",
+    ".bee/.inject-cache.json",
+    ".bee/HANDOFF.json",
+    ".bee/spikes/",
+  ];
+  const expectedGitignoreBlockSource =
+    `# BEE:START\n${GITIGNORE_PATTERNS_FOR_HASH.join("\n")}\n# BEE:END\n`;
+  const expectedGitignoreHash = crypto
+    .createHash("sha256")
+    .update(expectedGitignoreBlockSource)
+    .digest("hex");
+
+  const hashTieTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-gitignore-hash-"));
+  const hashTieHome = makeFakeHome();
+  try {
+    runOnboard(["--repo-root", hashTieTmp, "--apply", "--json"], hashTieHome);
+    const hashTieOnboarding = JSON.parse(
+      fs.readFileSync(path.join(hashTieTmp, ".bee", "onboarding.json"), "utf8"));
+    check(hashTieOnboarding.managed?.gitignore_block === expectedGitignoreHash,
+      "managed.gitignore_block ties to an independently-reconstructed sha256 of the true rendered block source",
+      `${hashTieOnboarding.managed?.gitignore_block} !== ${expectedGitignoreHash}`);
+  } finally {
+    try {
+      fs.rmSync(hashTieTmp, { recursive: true, force: true });
+      fs.rmSync(hashTieHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // (ii) marker-lookalike: a line containing the marker text as a substring
+  // (trailing prose after START) must never be adopted as the managed block
+  // -> treated as absent -> append (never update), and the user's original
+  // lines are never deleted (review P2/P3 security-anchor).
+  const lookalikeTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-gitignore-lookalike-"));
+  const lookalikeHome = makeFakeHome();
+  try {
+    const lookalikeContent = "# BEE:START custom notes\nkeep-me/\n# BEE:END\n";
+    fs.writeFileSync(path.join(lookalikeTmp, ".gitignore"), lookalikeContent, "utf8");
+
+    const lookalikePlan = runOnboard(["--repo-root", lookalikeTmp, "--json"], lookalikeHome);
+    const lookalikeActions = (lookalikePlan.payload?.plan || []).map((i) => i.action);
+    check(lookalikeActions.includes("append_gitignore_block"),
+      "marker-lookalike (trailing prose after START) reads as absent -> append",
+      JSON.stringify(lookalikeActions));
+    check(!lookalikeActions.includes("update_gitignore_block"),
+      "marker-lookalike is never mistaken for an already-present block to update",
+      JSON.stringify(lookalikeActions));
+
+    runOnboard(["--repo-root", lookalikeTmp, "--apply", "--json"], lookalikeHome);
+    const lookalikeApplied = fs.readFileSync(path.join(lookalikeTmp, ".gitignore"), "utf8");
+    check(lookalikeApplied.includes("# BEE:START custom notes"),
+      "the fake marker-lookalike line is never deleted", JSON.stringify(lookalikeApplied));
+    check(lookalikeApplied.includes("keep-me/"),
+      "user content under the fake marker-lookalike is never deleted", JSON.stringify(lookalikeApplied));
+    check(lookalikeApplied.includes("\n# BEE:START\n") && lookalikeApplied.includes("\n# BEE:END\n"),
+      "a real managed block is appended alongside the untouched fake one",
+      JSON.stringify(lookalikeApplied));
+  } finally {
+    try {
+      fs.rmSync(lookalikeTmp, { recursive: true, force: true });
+      fs.rmSync(lookalikeHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // (iii) CRLF-saved block reads up_to_date: a CRLF-normalized (content-
+  // identical) block must never cause a perpetual update_gitignore_block loop
+  // (review P3 CRLF). Writes still stay LF -- this only relaxes the compare.
+  const crlfTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-gitignore-crlf-"));
+  const crlfHome = makeFakeHome();
+  try {
+    runOnboard(["--repo-root", crlfTmp, "--apply", "--json"], crlfHome);
+    const crlfOriginal = fs.readFileSync(path.join(crlfTmp, ".gitignore"), "utf8");
+    fs.writeFileSync(path.join(crlfTmp, ".gitignore"), crlfOriginal.replace(/\n/g, "\r\n"), "utf8");
+
+    const crlfPlan = runOnboard(["--repo-root", crlfTmp, "--json"], crlfHome);
+    check(crlfPlan.payload?.status === "up_to_date",
+      "a CRLF-saved (content-identical) gitignore block reads up_to_date, no perpetual update loop",
+      JSON.stringify(crlfPlan.payload?.plan || []));
+  } finally {
+    try {
+      fs.rmSync(crlfTmp, { recursive: true, force: true });
+      fs.rmSync(crlfHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // (iv) tracked-paths advisory: a git repo with a tracked managed path emits
+  // the notice with the exact untrack command, in both plan mode and the
+  // post-apply recheck; the advisory never actually runs git rm itself
+  // (review P2 code-quality).
+  if (gitAvailable) {
+    const trackedTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-gitignore-tracked-"));
+    const trackedHome = makeFakeHome();
+    try {
+      runGit(trackedTmp, ["init", "-q"]);
+      fs.mkdirSync(path.join(trackedTmp, ".bee"), { recursive: true });
+      fs.writeFileSync(path.join(trackedTmp, ".bee", "state.json"), "{}\n", "utf8");
+      const addResult = runGit(trackedTmp, ["add", ".bee/state.json"]);
+      check(addResult.status === 0, "git add .bee/state.json succeeds in the fixture repo",
+        addResult.stderr);
+
+      const trackedPlan = runOnboard(["--repo-root", trackedTmp, "--json"], trackedHome);
+      const trackedNotices = trackedPlan.payload?.notices || [];
+      check(
+        trackedNotices.some(
+          (n) => n.includes("git-tracked") && n.includes(".bee/state.json") &&
+            n.includes("git rm -r --cached"),
+        ),
+        "plan mode notices carry the tracked-paths advisory with the exact untrack command",
+        JSON.stringify(trackedNotices),
+      );
+
+      const trackedApply = runOnboard(["--repo-root", trackedTmp, "--apply", "--json"], trackedHome);
+      const trackedApplyNotices = trackedApply.payload?.notices || [];
+      check(trackedApplyNotices.some((n) => n.includes("git-tracked")),
+        "post-apply recheck notices also carry the tracked-paths advisory (the ignore block alone can't silence an already-tracked file)",
+        JSON.stringify(trackedApplyNotices));
+
+      const stillTracked = runGit(trackedTmp, ["show", ":.bee/state.json"]);
+      check(stillTracked.status === 0,
+        "the advisory never actually ran git rm -- the file is still tracked in the index",
+        JSON.stringify(stillTracked));
+    } finally {
+      try {
+        fs.rmSync(trackedTmp, { recursive: true, force: true });
+        fs.rmSync(trackedHome, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  } else {
+    skip("tracked-paths advisory (git repo fixture)", "git binary not available");
+  }
+
+  // non-git dir -> no notice, no crash (graceful degradation).
+  const nonGitTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-gitignore-nongit-"));
+  const nonGitHome = makeFakeHome();
+  try {
+    const nonGitPlan = runOnboard(["--repo-root", nonGitTmp, "--json"], nonGitHome);
+    check(nonGitPlan.status === 0, "non-git repo root: onboard never crashes", nonGitPlan.stderr);
+    check(!(nonGitPlan.payload?.notices || []).some((n) => n.includes("git-tracked")),
+      "non-git repo root: no tracked-paths notice is ever emitted",
+      JSON.stringify(nonGitPlan.payload?.notices || []));
+  } finally {
+    try {
+      fs.rmSync(nonGitTmp, { recursive: true, force: true });
+      fs.rmSync(nonGitHome, { recursive: true, force: true });
     } catch {
       // best-effort cleanup
     }

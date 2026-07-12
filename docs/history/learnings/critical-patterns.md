@@ -219,3 +219,20 @@ unblocking choice is logged as inferred, and workers do not log user-sourced dec
 all — they return the proposal to the orchestrator.
 
 **Full entry:** docs/history/learnings/20260711-cli-mutations.md
+
+## [20260712] Enumerated-move trap in migration cells
+**Category:** failure
+**Feature:** bee-footprint
+**Tags:** [planning, filesystem, validation]
+Exhaustive/destructive ops over a mutable directory (move-all, delete-all, "must end empty")
+glob the children at execution time — never enumerate a fixed name list. Validation's own
+artifacts (spikes, probes) may occupy that namespace by the time the cell runs; the cell
+reviewer caught a deterministic verify failure this would have shipped.
+
+## [20260712] Dry-run negative-grep verifies against their own fixtures
+**Category:** failure
+**Feature:** bee-footprint
+**Tags:** [verify-authoring, tests]
+A `! grep <banned>` verify predicate must be run against the tests/fixtures the work itself
+will add before it is locked in: a RED-first test proving "<banned> is denied" necessarily
+contains the banned string, making the stored verify unsatisfiable on re-run.

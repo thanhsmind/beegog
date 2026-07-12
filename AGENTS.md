@@ -71,7 +71,7 @@ docs/history/learnings/    <- critical-patterns.md + dated learnings
 docs/specs/           <- state layer: BA-grade area specs + reading-map.md (read spec before code)
 docs/backlog.md       <- product backlog: PBI rows (proposed/in-flight/done), scribing-owned; NOT .bee/backlog.jsonl (that stays machine friction/grooming)
 docs/decisions/       <- long-form decision records
-.spikes/<feature>/    <- disposable feasibility proofs
+.bee/spikes/<feature>/    <- disposable feasibility proofs
 ```
 
 ## Guardrails (hook-equivalent rules)
