@@ -1,7 +1,7 @@
 ---
 name: bee-scribing
 description: >-
-  Keep technology-agnostic BA specs of every area current, so a human understands the system without the code and an agent can rebuild it on another stack. SELF-TRIGGERING: invoke this yourself, unprompted, the moment any discussion-test-adjust loop settles a rule, behavior, or value — the user should never have to ask for knowledge to be recorded. Also use when reviewing completes (chain), when the user asks to document a screen/API/job/area, or when a legacy area has code but no spec.
+  Keep technology-agnostic BA specs of every area current, so a human understands the system without the code and an agent can rebuild it on another stack. SELF-TRIGGERING: invoke this yourself, unprompted, the moment any discussion-test-adjust loop settles a rule, behavior, or value — the user should never have to ask for knowledge to be recorded. Also use when execution completes (chain), when the user asks to document a screen/API/job/area, or when a legacy area has code but no spec.
 metadata:
   version: '0.1'
   ecosystem: bee
@@ -27,7 +27,7 @@ Scribing is bee's BA. It owns the state layer: `docs/specs/<area>.md` (one BA-gr
 
 | Mode | Trigger | Does |
 |---|---|---|
-| **sync** (chain default) | reviewing completed with `behavior_change` cells capped | merge the feature's behavior deltas into the touched areas' specs |
+| **sync** (chain default) | execution completed with `behavior_change` cells capped (scribing follows execution directly — a feature may be scribed and closed while unreviewed; independent review is a separate, user-invoked session) | merge the feature's behavior deltas into the touched areas' specs |
 | **capture** | any discuss → build → test → adjust loop **settles an outcome**, any phase — a rule agreed, a behavior confirmed by test, a threshold/tuning value chosen, an error policy adjusted; an explicit user settlement signal ("chốt", "final", "ok ship it") makes capture **mandatory in the same turn** (decision 0003) | log the decision same turn, then: **high-risk lane → merge into the spec immediately**; every other lane → append a capture stub (`node .bee/bin/bee_capture.mjs add`) and keep working — the merge happens at flush (decision 0017) |
 | **flush** | capture queue non-empty at a flush point — session wrap-up, the PreCompact/close warning, or the session-start offer (decision 0017) | drain the queue oldest-first: full merge of each stub into its area's spec, mark it flushed (`bee_capture.mjs flush --id <id> --into <spec>`), record the scribing run |
 | **harvest** | user asks to document an existing area, or grooming files a missing-spec item | write the first spec for an area built before/outside bee |

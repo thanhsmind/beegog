@@ -76,6 +76,8 @@ Log choices future planning must honor. Supersede outdated decisions (`bee_decis
 
 **Backlog done-flip fallback (D11b):** confirm the feature's `docs/backlog.md` row flipped to `done` with a `docs/history/<feature>/` link. Scribing owns that flip at sync; when scribing legitimately NOOPed (no `behavior_change` cell, nothing to sync), compounding is the last close point — do the done-flip here so no shipped feature leaves a stale `in-flight` row. Prose-ruled, never hook-enforced (D7).
 
+**Review candidate at close (SPEC review-on-demand R3, flow 7.1 step 6):** the feature closes without independent review — that is the normal path, not a shortcut. Register the completed change set so it can be picked up by a later user-invoked review: `node .bee/bin/bee_reviews.mjs candidate add --feature <feature> --head "$(git rev-parse HEAD)" --mode <lane>` (`<lane>` is the feature's lane — tiny/small/spike/standard/high-risk). Then post the completion line: "Completed and verified: N cells. Independent review not requested; the change set was added to review candidates." Never describe the close as reviewed or approved — the feature is truthfully `unreviewed` until a user-invoked review session covers this head (R10).
+
 ## 7. File Unresolved Friction
 
 Unresolved friction from cell traces or the session → `node .bee/bin/bee_backlog.mjs add --type friction --severity <P1|P2|P3> --layer <layer> --title "<friction>" --detail "<predicted impact>" --feature <feature>`, so `bee-grooming` can hunt them later. Field guidance in the reference.

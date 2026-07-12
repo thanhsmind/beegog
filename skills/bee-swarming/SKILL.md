@@ -19,7 +19,7 @@ You are the orchestrator. Launch workers, tend results, handle rescues, keep the
 
 ## Solo execution (tiny/small lanes)
 
-For `tiny` and `small`, **no workers are spawned** — you implement the cell(s) directly in-session, keeping the cell discipline intact: claim the cell, read its `read_first`, implement within its `files`, run its `verify` command and quote the fresh output, record `verification_evidence` (and `red_failure_evidence` for `behavior_change` cells per the cap rules), cap it. Reservations are unnecessary with one actor; the frozen-judge check (`node .bee/bin/bee_cells.mjs judge --id <id>`) still runs before capping. Then hand off: `tiny` → present the done-report (diff + fresh verify output + capture line) and invoke bee-scribing; `small` → invoke bee-reviewing (light: one correctness reviewer). Everything below this section is the worker protocol for `standard`/`high-risk`.
+For `tiny` and `small`, **no workers are spawned** — you implement the cell(s) directly in-session, keeping the cell discipline intact: claim the cell, read its `read_first`, implement within its `files`, run its `verify` command and quote the fresh output, record `verification_evidence` (and `red_failure_evidence` for `behavior_change` cells per the cap rules), cap it. Reservations are unnecessary with one actor; the frozen-judge check (`node .bee/bin/bee_cells.mjs judge --id <id>`) still runs before capping. Then hand off: both `tiny` and `small` present the done-report (diff + fresh verify output + capture line) and invoke bee-scribing — no auto reviewer; the 1-correctness-reviewer contract lives inside a user-invoked session (implementation is verified; independent review runs only on user request, R1). Everything below this section is the worker protocol for `standard`/`high-risk`.
 
 ## Preconditions
 
@@ -42,7 +42,7 @@ For `tiny` and `small`, **no workers are spawned** — you implement the cell(s)
 6. **Tend** the swarm: collect status tokens, update cells and state, verify reservations were released. Silence is not failure — inspect cell status and `node .bee/bin/bee_reservations.mjs list --active-only` before assuming a worker is stuck. Do not send routine mid-flight pings; interrupt only for explicit user aborts or confirmed deadlocks.
 7. **Goal-check every `[DONE]` yourself (P12, decision 0018) — miss reruns, hit ships.** A worker's word is never the evidence; the orchestrator measures before the cell counts:
    - **Re-run the verify.** Run the cell's verify command yourself (fresh output, your own shell). `tiny`/`small` lanes may spot-check one representative cell per wave; `standard`/`high-risk` re-run every behavior-change cell. Failure → the cell is NOT done: re-dispatch to the same tier with the failing output (a task miss is a rerun, never a silent tier escalation — provider errors, not task errors, are what the rescue ladder's tier rung is for).
-   - **Frozen judge:** `node .bee/bin/bee_cells.mjs judge --id <id>`. Hits (undeclared test/CI/lockfile/verify-config changes) → the cell never auto-counts toward a clean wave: record the hits in the cell trace, flag it for bee-reviewing, and ask the worker's diff to justify each file or re-dispatch with corrected scope. A worker that rewrites the test is not passing the test.
+   - **Frozen judge:** `node .bee/bin/bee_cells.mjs judge --id <id>`. Hits (undeclared test/CI/lockfile/verify-config changes) → the cell never auto-counts toward a clean wave: record the hits in the cell trace and carry them into any review session that later covers this scope, and ask the worker's diff to justify each file or re-dispatch with corrected scope. A worker that rewrites the test is not passing the test.
 8. **Wave clean → next wave.** A wave is clean only when every cell is capped, goal-checked, and judge-intact (or explicitly flagged and carried to review). All waves clean → completion.
 
 Load `references/swarming-reference.md` for runtime spawn mechanics, the worker prompt template, result formats, and handoff content.
@@ -66,7 +66,7 @@ At roughly 65% context, write `.bee/HANDOFF.json` (phase, feature, mode, cells_i
 Swarming is complete when either:
 
 - the current slice is executed and more approved work remains → return to bee-planning for the next slice, or
-- the final slice is executed → tell the user: `Swarm execution complete for the final slice. Invoke bee-reviewing.`
+- the final slice is executed → tell the user: `Swarm execution complete for the final slice. Invoke bee-scribing.` Implementation is verified; independent review runs only on user request (R1).
 
 Before declaring completion: all wave cells capped or explicitly blocked/dropped, `node .bee/bin/bee_reservations.mjs list --active-only` is empty, and `.bee/state.json` `workers` is cleared.
 
@@ -97,7 +97,7 @@ With `mode:headless`: waves run without check-ins; unrescuable blockers and anyt
 
 Violating the letter of the rules is violating the spirit of the rules.
 
-Swarm execution complete for the final slice. Invoke bee-reviewing skill.
+Swarm execution complete for the final slice. Invoke bee-scribing skill.
 
 ## Reference Files
 
