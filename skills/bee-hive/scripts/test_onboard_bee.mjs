@@ -10,13 +10,14 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPTS_DIR = path.dirname(SCRIPT_PATH);
 const ONBOARD = path.join(SCRIPTS_DIR, "onboard_bee.mjs");
 const TEMPLATES_DIR = path.join(path.dirname(SCRIPTS_DIR), "templates");
 const TEMPLATES_LIB_DIR = path.join(TEMPLATES_DIR, "lib");
+const REPO_ROOT = path.join(SCRIPTS_DIR, "..", "..", "..");
 
 let failures = 0;
 let skips = 0;
@@ -449,10 +450,14 @@ try {
     "bee-model-guard.mjs appears exactly once anywhere in settings.hooks: PreToolUse / Agent|Task",
     JSON.stringify(modelGuardSightings));
 
-  // --- 9b. plugin <-> repo parity: same (event, matcher, filename) triples ---
-  // hooks/hooks.json (plugin, CLAUDE_PLUGIN_ROOT) and renderRepoHookEntries()'s
-  // applied output (repo, CLAUDE_PROJECT_DIR) must expose an identical hook
-  // contract once command roots are normalized away and statusMessage ignored.
+  // --- 9b. Claude plugin <-> repo parity: same (event, matcher, filename) ---
+  // triples. hooks/claude-hooks.json (plugin, CLAUDE_PLUGIN_ROOT, wired by
+  // .claude-plugin/plugin.json) and renderRepoHookEntries()'s applied output
+  // (repo, CLAUDE_PROJECT_DIR) must expose an identical hook contract once
+  // command roots are normalized away and statusMessage ignored. Since the
+  // codex-parity-2 catalog inversion (commit d1777ed), hooks/hooks.json is
+  // the CODEX default projection instead, so the Claude-settings parity
+  // check compares against hooks/claude-hooks.json (codex-parity-2b).
   function hookFilenameFromCommand(command) {
     const m = String(command || "").match(/([A-Za-z0-9_.-]+\.mjs)/);
     return m ? m[1] : null;
@@ -472,15 +477,53 @@ try {
     }
     return triples.sort();
   }
-  const pluginHooksJsonPath = path.join(SCRIPTS_DIR, "..", "..", "..", "hooks", "hooks.json");
-  const pluginHooksJson = JSON.parse(fs.readFileSync(pluginHooksJsonPath, "utf8"));
-  const pluginTriples = flattenHookTriples(pluginHooksJson.hooks);
+  const claudeHooksJsonPath = path.join(REPO_ROOT, "hooks", "claude-hooks.json");
+  const claudeHooksJson = JSON.parse(fs.readFileSync(claudeHooksJsonPath, "utf8"));
+  const claudeCatalogTriples = flattenHookTriples(claudeHooksJson.hooks);
   const repoTriples = flattenHookTriples(settings.hooks);
-  check(pluginTriples.length > 0, "plugin hooks/hooks.json parsed at least one hook triple",
-    JSON.stringify(pluginTriples));
-  check(JSON.stringify(pluginTriples) === JSON.stringify(repoTriples),
-    "hooks/hooks.json and the applied repo settings expose identical (event, matcher, filename) triples",
-    `plugin: ${JSON.stringify(pluginTriples)}\nrepo:   ${JSON.stringify(repoTriples)}`);
+  check(claudeCatalogTriples.length > 0, "hooks/claude-hooks.json parsed at least one hook triple",
+    JSON.stringify(claudeCatalogTriples));
+  check(JSON.stringify(claudeCatalogTriples) === JSON.stringify(repoTriples),
+    "hooks/claude-hooks.json and the applied repo settings expose identical (event, matcher, filename) triples",
+    `claude-hooks.json: ${JSON.stringify(claudeCatalogTriples)}\nrepo:   ${JSON.stringify(repoTriples)}`);
+
+  // --- 9b2. Codex <-> Claude projection parity via hooks/catalog.mjs -------
+  // hooks/hooks.json (Codex default projection) and hooks/claude-hooks.json
+  // (Claude projection) must differ ONLY by the differences hooks/catalog.mjs
+  // declares as allowed (ALLOWED_DIFFERENCES export) — the boundary is
+  // imported from the catalog, never re-hardcoded here, and this check must
+  // never be dropped (codex-parity-2b; CONTEXT.md decisions D1/D2).
+  const catalogModulePath = path.join(REPO_ROOT, "hooks", "catalog.mjs");
+  const { ALLOWED_DIFFERENCES } = await import(pathToFileURL(catalogModulePath).href);
+  const codexHooksJsonPath = path.join(REPO_ROOT, "hooks", "hooks.json");
+  const codexHooksJson = JSON.parse(fs.readFileSync(codexHooksJsonPath, "utf8"));
+  const codexProjectionTriples = flattenHookTriples(codexHooksJson.hooks);
+
+  function tripleEvent(triple) {
+    return triple.split("::")[0];
+  }
+  function tripleMatcher(triple) {
+    const m = triple.split("::")[1];
+    return m === "null" ? null : m;
+  }
+  function isAllowedDifference(triple) {
+    return ALLOWED_DIFFERENCES.some((d) =>
+      d.event === tripleEvent(triple) && (d.matcher ?? null) === tripleMatcher(triple));
+  }
+
+  const onlyInClaudeProjection = claudeCatalogTriples.filter((t) => !codexProjectionTriples.includes(t));
+  const onlyInCodexProjection = codexProjectionTriples.filter((t) => !claudeCatalogTriples.includes(t));
+  const allProjectionDiffs = [...onlyInClaudeProjection, ...onlyInCodexProjection];
+
+  check(ALLOWED_DIFFERENCES.length > 0 &&
+    allProjectionDiffs.length > 0 &&
+    allProjectionDiffs.every(isAllowedDifference),
+    "hooks/hooks.json (Codex) and hooks/claude-hooks.json (Claude) differ only by hooks/catalog.mjs ALLOWED_DIFFERENCES",
+    JSON.stringify({ onlyInClaudeProjection, onlyInCodexProjection, ALLOWED_DIFFERENCES }));
+  check(ALLOWED_DIFFERENCES.every((d) =>
+    allProjectionDiffs.some((t) => tripleEvent(t) === d.event && tripleMatcher(t) === (d.matcher ?? null))),
+    "every hooks/catalog.mjs ALLOWED_DIFFERENCES entry corresponds to an actual projection difference",
+    JSON.stringify({ ALLOWED_DIFFERENCES, allProjectionDiffs }));
 
   // --repo-hooks apply twice -> no duplicate bee entries.
   runOnboard(["--repo-root", tmp, "--apply", "--repo-hooks", "--json"], tmpHome);
