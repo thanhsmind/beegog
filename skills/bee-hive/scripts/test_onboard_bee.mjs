@@ -725,6 +725,141 @@ try {
       }
     }
   }
+
+  // --- 9d. .gitignore managed block (D1, footprint-1) -------------------------
+  // Mirrors the AGENTS.md marker-splice idiom (section 7 above) but with
+  // '#'-comment markers and a fixed D1 pattern list. Fresh repo -> create;
+  // idempotent re-apply; onboarding.json carries a gitignore_block hash;
+  // tampered block detected + restored, user content preserved byte-for-byte.
+  const giTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-gitignore-test-"));
+  const giHome = makeFakeHome();
+  try {
+    const giPlan1 = runOnboard(["--repo-root", giTmp, "--json"], giHome);
+    const giPlan1Actions = (giPlan1.payload?.plan || []).map((i) => i.action);
+    check(giPlan1Actions.includes("create_gitignore_block"),
+      "fresh repo plans create_gitignore_block", JSON.stringify(giPlan1Actions));
+    check(!fs.existsSync(path.join(giTmp, ".gitignore")), "plan mode writes no .gitignore");
+
+    const giApply1 = runOnboard(["--repo-root", giTmp, "--apply", "--json"], giHome);
+    check(giApply1.payload?.status === "applied", "apply on fresh repo succeeds");
+    check(giApply1.payload?.recheck === "up_to_date", "fresh apply recheck up_to_date",
+      JSON.stringify(giApply1.payload?.recheck_plan || []));
+
+    const giText1 = fs.readFileSync(path.join(giTmp, ".gitignore"), "utf8");
+    check(giText1.includes("# BEE:START") && giText1.includes("# BEE:END"),
+      ".gitignore contains # BEE:START / # BEE:END markers (gitignore-comment syntax)");
+    check(!giText1.includes("<!--"), ".gitignore markers are never HTML comments");
+    for (const pattern of [
+      ".bee/state.json",
+      ".bee/reservations.json",
+      ".bee/workers/",
+      ".bee/logs/",
+      ".bee/capture-queue.jsonl",
+      ".bee/feedback-digest.json",
+      ".bee/.inject-cache.json",
+      ".bee/HANDOFF.json",
+      ".bee/spikes/",
+    ]) {
+      check(giText1.includes(pattern), `.gitignore block includes ${pattern}`);
+    }
+    for (const teamDurable of [
+      ".bee/bin",
+      ".bee/config.json",
+      ".bee/config-sample.json",
+      ".bee/onboarding.json",
+      ".bee/decisions.jsonl",
+      ".bee/backlog.jsonl",
+      ".bee/cells",
+    ]) {
+      check(!giText1.includes(teamDurable),
+        `.gitignore block never ignores team-durable path ${teamDurable}`);
+    }
+
+    const giApply2 = runOnboard(["--repo-root", giTmp, "--apply", "--json"], giHome);
+    const giText2 = fs.readFileSync(path.join(giTmp, ".gitignore"), "utf8");
+    check(giText2 === giText1, "second apply on a clean .gitignore is byte-identical (idempotent)");
+    check(giApply2.payload?.recheck === "up_to_date", "second apply recheck up_to_date");
+
+    const giOnboarding = JSON.parse(
+      fs.readFileSync(path.join(giTmp, ".bee", "onboarding.json"), "utf8"));
+    check(typeof giOnboarding.managed?.gitignore_block === "string" &&
+      giOnboarding.managed.gitignore_block.length === 64,
+      "onboarding.json managed.gitignore_block records a sha256 hex hash",
+      JSON.stringify(giOnboarding.managed?.gitignore_block || null));
+    check(giOnboarding.managed?.gitignore_block !== giOnboarding.managed?.agents_block,
+      "gitignore_block hash is distinct from agents_block (computed from its own template content)");
+
+    // tamper the block body -> detected + restored, user content preserved
+    const giUserHeader = "node_modules/\ndist/\n";
+    const giUserFooter = "\n*.local\n";
+    const giTampered = giText1.replace(
+      /# BEE:START[\s\S]*?# BEE:END/,
+      "# BEE:START\nTAMPERED\n# BEE:END",
+    );
+    fs.writeFileSync(path.join(giTmp, ".gitignore"), giUserHeader + giTampered + giUserFooter, "utf8");
+
+    const giPlan3 = runOnboard(["--repo-root", giTmp, "--json"], giHome);
+    check(giPlan3.payload?.status === "changes_needed",
+      "tampered gitignore block detected as changes_needed");
+    check((giPlan3.payload?.plan || []).some((i) => i.action === "update_gitignore_block"),
+      "plan includes update_gitignore_block", JSON.stringify(giPlan3.payload?.plan || []));
+
+    const giApply3 = runOnboard(["--repo-root", giTmp, "--apply", "--json"], giHome);
+    check(giApply3.payload?.status === "applied", "re-apply after gitignore tamper succeeds");
+    const giRestored = fs.readFileSync(path.join(giTmp, ".gitignore"), "utf8");
+    check(giRestored.includes("node_modules/") && giRestored.includes("dist/"),
+      "user content before the gitignore block preserved");
+    check(giRestored.includes("*.local"), "user content after the gitignore block preserved");
+    check(!giRestored.includes("TAMPERED"), "tampered gitignore block content restored");
+    check(giRestored.indexOf("# BEE:START") === giRestored.lastIndexOf("# BEE:START"),
+      "exactly one gitignore BEE block after re-apply");
+
+    const giApply4 = runOnboard(["--repo-root", giTmp, "--apply", "--json"], giHome);
+    const giAfterFourth = fs.readFileSync(path.join(giTmp, ".gitignore"), "utf8");
+    check(giAfterFourth === giRestored, "next apply after restore is byte-identical (idempotent)");
+    check(giApply4.payload?.recheck === "up_to_date", "post-restore recheck up_to_date");
+  } finally {
+    try {
+      fs.rmSync(giTmp, { recursive: true, force: true });
+      fs.rmSync(giHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // --- 9e. .gitignore append case: pre-existing file WITHOUT markers and
+  // WITHOUT a trailing newline - the exact corrupt-merge bug class this
+  // feature fixes (D1/D3 origin: `.bee/feedback-digest.json.spikes/` merged
+  // onto one line because no separator was ever inserted). -------------------
+  const giAppendTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-gitignore-append-"));
+  const giAppendHome = makeFakeHome();
+  try {
+    fs.writeFileSync(path.join(giAppendTmp, ".gitignore"), "node_modules/\ndist/", "utf8"); // no trailing \n
+    const giAppendPlan = runOnboard(["--repo-root", giAppendTmp, "--json"], giAppendHome);
+    check((giAppendPlan.payload?.plan || []).some((i) => i.action === "append_gitignore_block"),
+      ".gitignore without markers plans append_gitignore_block",
+      JSON.stringify(giAppendPlan.payload?.plan || []));
+
+    runOnboard(["--repo-root", giAppendTmp, "--apply", "--json"], giAppendHome);
+    const giAppended = fs.readFileSync(path.join(giAppendTmp, ".gitignore"), "utf8");
+    check(giAppended.includes("node_modules/\ndist/"),
+      "pre-existing lines survive untouched", JSON.stringify(giAppended));
+    check(!giAppended.includes("dist/#") && !giAppended.includes("dist/.bee"),
+      "no trailing-newline corruption: dist/ never merges onto one line with the appended block",
+      JSON.stringify(giAppended));
+    check(giAppended.includes("# BEE:START") && giAppended.includes("# BEE:END"),
+      "appended .gitignore contains the BEE markers");
+
+    const giAppendRecheck = runOnboard(["--repo-root", giAppendTmp, "--json"], giAppendHome);
+    check(giAppendRecheck.payload?.status === "up_to_date", "appended gitignore recheck up_to_date");
+  } finally {
+    try {
+      fs.rmSync(giAppendTmp, { recursive: true, force: true });
+      fs.rmSync(giAppendHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
 } finally {
   try {
     fs.rmSync(tmp, { recursive: true, force: true });

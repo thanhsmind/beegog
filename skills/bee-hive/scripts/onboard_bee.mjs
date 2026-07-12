@@ -41,6 +41,27 @@ const FALLBACK_BEE_VERSION = "0.1.0";
 const MIN_NODE_MAJOR = 18;
 const MARKER_START = "<!-- BEE:START -->";
 const MARKER_END = "<!-- BEE:END -->";
+// D1 (decision 26203bd3): the .gitignore managed block uses '#'-comment
+// markers (gitignore syntax) - an HTML comment would be parsed as a literal
+// ignore pattern, not a comment, and would never match anything.
+const GITIGNORE_MARKER_START = "# BEE:START";
+const GITIGNORE_MARKER_END = "# BEE:END";
+// Machine-local .bee runtime churn only (D1) - team-durable paths (bin/,
+// config.json, config-sample.json, onboarding.json, decisions.jsonl,
+// backlog.jsonl, cells/) are NEVER listed here; the block anticipates D2's
+// spikes home (.bee/spikes/) as a plain gitignore pattern regardless of
+// whether that cell has landed yet.
+const GITIGNORE_BLOCK_PATTERNS = [
+  ".bee/state.json",
+  ".bee/reservations.json",
+  ".bee/workers/",
+  ".bee/logs/",
+  ".bee/capture-queue.jsonl",
+  ".bee/feedback-digest.json",
+  ".bee/.inject-cache.json",
+  ".bee/HANDOFF.json",
+  ".bee/spikes/",
+];
 
 const HOOK_FILENAMES = [
   // adapter.mjs is the shared runtime adapter every wrapper hook imports
@@ -897,6 +918,10 @@ function renderAgentsBlock() {
   return `${MARKER_START}\n${body}\n${MARKER_END}\n`;
 }
 
+function renderGitignoreBlock() {
+  return `${GITIGNORE_MARKER_START}\n${GITIGNORE_BLOCK_PATTERNS.join("\n")}\n${GITIGNORE_MARKER_END}\n`;
+}
+
 // ---------- AGENTS.md merging ----------
 
 function agentsBlockPresent(text) {
@@ -919,6 +944,48 @@ function mergeAgentsContent(existing, renderedBlock) {
   if (agentsBlockPresent(existing)) {
     const start = existing.indexOf(MARKER_START);
     let end = existing.indexOf(MARKER_END) + MARKER_END.length;
+    if (existing[end] === "\n") {
+      end += 1;
+    }
+    const updated = existing.slice(0, start) + renderedBlock + existing.slice(end);
+    return { text: `${updated.replace(/\s*$/, "")}\n`, status: "updated" };
+  }
+  return {
+    text: `${existing.replace(/\s*$/, "")}\n\n${renderedBlock}`,
+    status: "appended",
+  };
+}
+
+// ---------- .gitignore merging (decision D1) ----------
+//
+// Same marker-splice pattern as mergeAgentsContent, with '#'-comment markers
+// instead of HTML comments. The append path fixes the exact bug class this
+// feature was filed over: `${existing.replace(/\s*$/, "")}\n\n${block}` always
+// inserts a real blank-line separator, even when `existing` has no trailing
+// newline at all - so two gitignore patterns can never be silently merged
+// onto one line the way the corrupt `.bee/feedback-digest.json.spikes/` entry
+// was.
+
+function gitignoreBlockPresent(text) {
+  return text.includes(GITIGNORE_MARKER_START) && text.includes(GITIGNORE_MARKER_END);
+}
+
+function extractGitignoreBlock(text) {
+  const start = text.indexOf(GITIGNORE_MARKER_START);
+  const end = text.indexOf(GITIGNORE_MARKER_END);
+  if (start === -1 || end === -1 || end < start) {
+    return null;
+  }
+  return `${text.slice(start, end + GITIGNORE_MARKER_END.length)}\n`;
+}
+
+function mergeGitignoreContent(existing, renderedBlock) {
+  if (!existing.trim()) {
+    return { text: renderedBlock, status: "created" };
+  }
+  if (gitignoreBlockPresent(existing)) {
+    const start = existing.indexOf(GITIGNORE_MARKER_START);
+    let end = existing.indexOf(GITIGNORE_MARKER_END) + GITIGNORE_MARKER_END.length;
     if (existing[end] === "\n") {
       end += 1;
     }
@@ -1108,6 +1175,7 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
   const plan = [];
   const beeVersion = readBeeVersion();
   const renderedBlock = renderAgentsBlock();
+  const renderedGitignoreBlock = renderGitignoreBlock();
 
   // 1. AGENTS.md BEE block
   const agentsPath = path.join(repoRoot, "AGENTS.md");
@@ -1182,6 +1250,22 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
     plan.push({ action: "create_stub", path: "docs/history/learnings/critical-patterns.md" });
   }
 
+  // 4b. .gitignore managed block (D1): marker-splice pattern identical to the
+  // AGENTS.md block above, but with '#'-comment markers (gitignore syntax -
+  // never HTML comments, which gitignore would read as a literal pattern).
+  // no .gitignore -> create; .gitignore without markers -> append (preserving
+  // existing content, even without a trailing newline); markers present but
+  // body drifted -> update, splicing ONLY between the markers.
+  const gitignorePath = path.join(repoRoot, ".gitignore");
+  const gitignoreText = readTextIfExists(gitignorePath);
+  if (!gitignoreText.trim()) {
+    plan.push({ action: "create_gitignore_block", path: ".gitignore" });
+  } else if (!gitignoreBlockPresent(gitignoreText)) {
+    plan.push({ action: "append_gitignore_block", path: ".gitignore" });
+  } else if (extractGitignoreBlock(gitignoreText) !== renderedGitignoreBlock) {
+    plan.push({ action: "update_gitignore_block", path: ".gitignore" });
+  }
+
   // 5. repo hooks fallback (--repo-hooks only)
   if (repoHooks) {
     for (const name of listPluginHooks()) {
@@ -1215,7 +1299,7 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
 
   // 6. onboarding.json drift (managed versions)
   const statusline = statuslineOptIn(repoRoot);
-  const desiredManaged = buildManagedVersions(renderedBlock, repoHooks, statusline);
+  const desiredManaged = buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, statusline);
   const onboarding = readJsonIfExists(path.join(repoRoot, ".bee", "onboarding.json"));
   const onboardingCurrent =
     onboarding &&
@@ -1234,10 +1318,10 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
     plan.push(...skillSync.items);
   }
 
-  return { plan, beeVersion, renderedBlock, desiredManaged, skillSync };
+  return { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync };
 }
 
-function buildManagedVersions(renderedBlock, repoHooks, statusline = false) {
+function buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, statusline = false) {
   const helpers = {};
   for (const name of listTemplateHelpers()) {
     helpers[name] = sha256(fs.readFileSync(path.join(TEMPLATES_DIR, name), "utf8"));
@@ -1246,7 +1330,12 @@ function buildManagedVersions(renderedBlock, repoHooks, statusline = false) {
   for (const name of listTemplateLibModules()) {
     lib[name] = sha256(fs.readFileSync(path.join(TEMPLATES_LIB_DIR, name), "utf8"));
   }
-  const managed = { agents_block: sha256(renderedBlock), helpers, lib };
+  const managed = {
+    agents_block: sha256(renderedBlock),
+    gitignore_block: sha256(renderedGitignoreBlock),
+    helpers,
+    lib,
+  };
   if (repoHooks) {
     const hooks = {};
     for (const name of listPluginHooks()) {
@@ -1271,6 +1360,7 @@ function subsetManaged(managed, repoHooks, statusline = false) {
   const src = managed && typeof managed === "object" ? managed : {};
   const out = {
     agents_block: src.agents_block || null,
+    gitignore_block: src.gitignore_block || null,
     helpers: src.helpers || {},
     lib: src.lib || {},
   };
@@ -1286,10 +1376,11 @@ function subsetManaged(managed, repoHooks, statusline = false) {
 // ---------- apply ----------
 
 function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngrade = false } = {}) {
-  const { plan, beeVersion, renderedBlock, desiredManaged, skillSync } = computePlan(repoRoot, {
-    repoHooks,
-    claudeMd,
-  });
+  const { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync } =
+    computePlan(repoRoot, {
+      repoHooks,
+      claudeMd,
+    });
 
   // D3 preflight: refusal aborts the ENTIRE apply BEFORE any write - the item
   // loop below and the unconditional onboarding.json rewrite after it are
@@ -1352,6 +1443,13 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngra
         const merged = mergeAgentsContent(headerText + readTextIfExists(target), renderedBlock);
         writeFileAtomic(target, merged.text);
         headerApplied = true;
+        break;
+      }
+      case "create_gitignore_block":
+      case "append_gitignore_block":
+      case "update_gitignore_block": {
+        const merged = mergeGitignoreContent(readTextIfExists(target), renderedGitignoreBlock);
+        writeFileAtomic(target, merged.text);
         break;
       }
       case "create_runtime_file": {
