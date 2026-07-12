@@ -31,3 +31,27 @@
 {"ts":"2026-07-12T01:21:03.489Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[bee-tier: review] Test-coverage reviewer [opus]"}
 {"ts":"2026-07-12T01:21:15.082Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":null,"description":"[bee-tier: review] Api-contract reviewer [opus]"}
 {"ts":"2026-07-12T01:28:42.521Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":null,"description":"[bee-tier: generation] Worker phil: codex-parity-4b [sonnet]"}
+{"ts":"2026-07-12T02:47:45.263Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"[opus] Plan-checker panel: coherence + feasibility + scope-guardian"}
+{"ts":"2026-07-12T02:47:57.132Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"[opus] Cell reviewer: cold-pickup check on codex-parity-6"}
+{"ts":"2026-07-12T03:37:54.149Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"[opus] Plan-checker panel on split cells 6a/6b"}
+{"ts":"2026-07-12T03:38:05.874Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"[opus] Cell reviewer: cold pickup on 6a and 6b"}
+{"ts":"2026-07-12T03:49:43.321Z","tool":"Agent","transport":"marker","model":null,"tier":"ceiling","subagent_type":"general-purpose","description":"[bee-tier: ceiling] hookwright — codex-parity-6a"}
+{"ts":"2026-07-12T04:00:05.076Z","tool":"Agent","transport":"marker","model":null,"tier":"ceiling","subagent_type":"general-purpose","description":"[bee-tier: ceiling] routewright — codex-parity-6b"}
+{"ts":"2026-07-12T04:15:34.881Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"[opus] Review: code-quality — codex repo-fallback"}
+{"ts":"2026-07-12T04:15:50.343Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"[opus] Review: security — codex repo-fallback"}
+{"ts":"2026-07-12T04:16:10.862Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"[opus] Review: test-coverage — codex repo-fallback"}
+{"ts":"2026-07-12T04:16:25.179Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"[opus] Review: architecture + api-contract — codex repo-fallback"}
+{"ts":"2026-07-12T04:35:41.347Z","tool":"Agent","transport":"bare-denied","model":null,"tier":null,"subagent_type":"general-purpose","description":"Validate fail-CLOSED transport (sonnet)"}
+{"ts":"2026-07-12T04:35:56.010Z","tool":"Agent","transport":"bare-denied","model":null,"tier":null,"subagent_type":"general-purpose","description":"Resolve Codex matcher semantics (sonnet)"}
+{"ts":"2026-07-12T04:36:11.937Z","tool":"Agent","transport":"bare-denied","model":null,"tier":null,"subagent_type":"general-purpose","description":"Prove renderer byte-safety for 6c (sonnet)"}
+{"ts":"2026-07-12T04:36:27.959Z","tool":"Agent","transport":"bare-denied","model":null,"tier":null,"subagent_type":"general-purpose","description":"Scribing debt capture 6a (sonnet)"}
+{"ts":"2026-07-12T04:36:47.519Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":"general-purpose","description":"Validate fail-CLOSED transport (sonnet)"}
+{"ts":"2026-07-12T04:36:58.313Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":"general-purpose","description":"Resolve Codex matcher semantics (sonnet)"}
+{"ts":"2026-07-12T04:37:12.446Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":"general-purpose","description":"Prove renderer byte-safety for 6c (sonnet)"}
+{"ts":"2026-07-12T04:37:22.574Z","tool":"Agent","transport":"model-param","model":"sonnet","tier":null,"subagent_type":"general-purpose","description":"Scribing debt capture 6a (sonnet)"}
+{"ts":"2026-07-12T04:37:30.631Z","tool":"Agent","transport":"bare-denied","model":null,"tier":null,"subagent_type":null,"description":"Grep catalog.mjs call sites"}
+{"ts":"2026-07-12T06:03:46.872Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"Persona-panel plan-check 6c (opus)"}
+{"ts":"2026-07-12T06:03:56.991Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"Cold-pickup cell review 6c (opus)"}
+{"ts":"2026-07-12T06:28:58.072Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"Re-validate 6c/6d split (opus)"}
+{"ts":"2026-07-12T06:29:11.000Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"Cold-pickup 6c/6d split (opus)"}
+{"ts":"2026-07-12T06:55:56.485Z","tool":"Agent","transport":"model-param","model":"opus","tier":null,"subagent_type":"general-purpose","description":"Red-team round-3 guard-deny (opus)"}

@@ -7,3 +7,8 @@
 {"ts":"2026-07-12T01:32:42.544Z","hook":"write-guard","event":"coverage-gap","gap":"malformed-payload","detail":"top-level null payload — normalized to {}"}
 {"ts":"2026-07-12T01:32:42.593Z","hook":"write-guard","event":"coverage-gap","gap":"malformed-payload","detail":"stdin is not parseable JSON — normalized to {}"}
 {"ts":"2026-07-12T01:32:58.908Z","hook":"write-guard","event":"coverage-gap","gap":"malformed-payload","detail":"stdin is not parseable JSON — normalized to {}"}
+{"ts":"2026-07-12T04:35:41.348Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["description","prompt","subagent_type"]}
+{"ts":"2026-07-12T04:35:56.010Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["description","prompt","subagent_type"]}
+{"ts":"2026-07-12T04:36:11.937Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["description","prompt","subagent_type"]}
+{"ts":"2026-07-12T04:36:27.959Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["description","prompt","subagent_type"]}
+{"ts":"2026-07-12T04:37:30.632Z","hook":"model-guard","event":"deny","tool_name":"Agent","tool_input_keys":["description","prompt"]}

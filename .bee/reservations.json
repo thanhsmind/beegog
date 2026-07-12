@@ -1471,6 +1471,38 @@
       "ttl_seconds": 3600,
       "reserved_at": "2026-07-12T01:30:08.682Z",
       "released_at": "2026-07-12T01:31:31.368Z"
+    },
+    {
+      "agent": "hookwright",
+      "cell": "codex-parity-6a",
+      "path": "hooks/catalog.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T03:50:34.879Z",
+      "released_at": "2026-07-12T03:56:59.188Z"
+    },
+    {
+      "agent": "hookwright",
+      "cell": "codex-parity-6a",
+      "path": ".codex/hooks.json",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T03:50:34.915Z",
+      "released_at": "2026-07-12T03:56:59.188Z"
+    },
+    {
+      "agent": "hookwright",
+      "cell": "codex-parity-6a",
+      "path": "hooks/test_hook_contracts.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T03:50:34.950Z",
+      "released_at": "2026-07-12T03:56:59.188Z"
+    },
+    {
+      "agent": "routewright",
+      "cell": "codex-parity-6b",
+      "path": "hooks/test_hook_contracts.mjs",
+      "ttl_seconds": 3600,
+      "reserved_at": "2026-07-12T04:04:02.444Z",
+      "released_at": "2026-07-12T04:11:32.926Z"
     }
   ]
 }

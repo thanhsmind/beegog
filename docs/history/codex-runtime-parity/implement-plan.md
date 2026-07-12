@@ -2,10 +2,10 @@
 artifact_contract: bee-implement-plan/v1
 feature: codex-runtime-parity
 lane: high-risk
-status: Slice 1 (Safety foundation) merged — Gate 4 passed 2026-07-12; slices E2–E4 pending
+status: Needs Revision
 updated: 2026-07-12
-sources: [CONTEXT.md, discovery.md, approach.md, plan.md, reports/intake-audit.md, reports/plan-review.md, reports/validation-safety-foundation.md]
-decisions: [D1, D2, D3, D4]
+sources: [CONTEXT.md, discovery.md, approach.md, plan.md, reports/diagnosis-codex-stop-hooks.md, reports/validation-codex-repo-fallback.md, reports/validation-safety-foundation.md, .bee/cells/codex-parity-6a.json, .bee/cells/codex-parity-6b.json]
+decisions: [D1, D2, D3, D4, 5e6582af-57b7-442f-9ded-b3eda61f5543, d91a8398-2d63-426b-a133-341568453200]
 ---
 
 # Implementation Plan: Codex Runtime Parity
@@ -35,102 +35,103 @@ remain honestly visible and helper-enforced rather than being described as safe.
 
 ## 2. Current State
 
-Bee's shared helpers and Claude runtime are green at 0.1.22, but the Codex
-manifest and installed skills remain at 0.1.18. The committed Codex project
-hooks resolve through a Claude-only variable. Six lifecycle wrappers crash on
-malformed payloads, Codex `apply_patch` can bypass the current wrapper, and
-several Codex events reject or ignore the wrapper's plain stdout.
-
-The existing repository marketplace already installs the root as a Codex
-plugin and exposes the bundled skills. The active gaps are therefore runtime
-contracts and migration safety, not plugin discovery.
+Safety foundation is merged and reviewed. In the live Codex 0.144.1 project,
+hooks are enabled by default and the repository is trusted, but no bee plugin
+is installed. The only active Codex bee source is `.codex/hooks.json`; all nine
+trusted project commands use `$CLAUDE_PROJECT_DIR`, which Codex project hooks do
+not provide. The two Stop commands therefore resolve to `/.bee/...` and exit
+`1` before a wrapper starts. Codex's official contract states that commands use
+the session cwd, recommends git-root resolution, and skips changed definitions
+until human review. The exact causal chain is recorded in
+[diagnosis-codex-stop-hooks.md](reports/diagnosis-codex-stop-hooks.md).
 
 ## 3. Scope
 
-**In scope**
+**Current slice in scope**
 
-- Plugin-first Codex distribution with a tested, mutually exclusive repo
-  fallback and protected legacy-skill migration (D1).
-- Separate Claude/Codex hook catalogs rendered from one logical definition,
-  with shared wrappers/helpers and exact event adapters (D2).
-- Codex patch guarding, malformed-input behavior, state transitions, source
-  arbitration, rollback, and platform/runtime fixtures (D2).
-- Safe native and external dispatch, exact-session rescue, and RED-first skill
-  updates across the active clean-context call sites (D3, D4).
-- Current AGENTS, install, runtime, config, contract, and release guidance.
+- Deterministically render the source-repository `.codex/hooks.json` fallback
+  from the shared Codex catalog (D1).
+- Resolve each command from the git root to the current shared wrapper without
+  any Claude project environment variable (D1, D2).
+- Execute the actual configured commands from root and nested working
+  directories, including valid JSON output for Stop advisories (D2).
+- Keep changed-definition review visible as a Gate-4 human UAT step; never
+  rewrite or bypass persisted hook trust (decision `d91a8398`).
 
 **Out of scope**
 
 - Custom Codex agent profiles (P25), fanout-delegation (P23), a Codex status
   display, new gate semantics, or new model/provider integration.
-- Silent global install, hook trust, legacy deletion, release, push, or host
-  rollout. These retain separate human approval boundaries.
+- Plugin installation/migration, global skill synchronization, source selector,
+  legacy cleanup, E3 dispatch/skill work, and E4 documentation/release work.
+  These stay with the remaining feature slices and receive no cell here.
+- Native Windows `commandWindows` and non-POSIX login-shell transport; these
+  remain with the broader cross-platform Distribution slice.
+- Silent global install, persisted trust mutation/bypass, release, push, or
+  host rollout. These retain separate human approval boundaries.
 
 ## 4. Proposed Approach
 
-Use the existing shared marketplace/plugin and business logic. Render two
-runtime-specific hook catalogs, route each manifest atomically to the correct
-projection, and pass an explicit source/runtime identity into one shared
-adapter. The adapter normalizes hostile input, selects the correct output
-format, and delegates decisions to the existing vendored helpers.
+Keep the existing shared catalog and wrapper implementations. First add a
+target-parameterized renderer and regenerate the active `.codex/hooks.json`
+from its Codex repo target. Then add a separate process harness that parses and
+executes those active commands. Repo commands resolve the git root and execute
+`hooks/bee-*.mjs` with source identity `repo`; the existing plugin-target Codex
+projection and Claude projection remain unchanged.
 
-For Codex installation, keep project fallback configuration available during
-plugin probation, atomically select the plugin for fresh-thread UAT, restore the
-repo selector on failure, and remove fallback entries only after PASS. Update
-native collaboration and external CLI contracts only after recorded pressure
-tests expose their current failure modes.
-
-**Why this approach** — it reuses the assets already proven by the green Claude
-runtime and hardened mirror while making every host difference explicit.
+**Why this approach** — it fixes the route Codex actually executes, reuses the
+already-reviewed shared adapter, and makes hand divergence of the active config
+an executable test failure rather than another copied catalog.
 
 **Alternatives considered**
 
 - One union catalog — hides inert/wrong matchers and broadens hook firing.
 - Forked Codex wrappers/plugin — duplicates logic and recreates version drift.
-- Project hooks as primary — contradicts D1 and collides with enabled plugins.
-- Repo-wide Codex config or custom profiles — introduces unproved/inert config.
+- Editing only `$CLAUDE_PROJECT_DIR` — reveals the stale vendored wrapper's
+  invalid plain-text Stop output and leaves the active catalog hand-authored.
+- Removing `.codex/hooks.json` now — leaves this project with zero bee hooks
+  because no bee plugin is installed.
+- Forking Codex wrappers — duplicates seven implementations and violates D1.
 
 ## 5. Technical Design
 
 ```text
-marketplace -> runtime manifest -> Claude/Codex catalog
-            -> shared hook adapter -> host .bee helper -> context / deny / advisory
-
-native cell -> spawn_agent(fork_turns: none) -> status result
-            -> followup_task for continuation
-
-CLI cell -> on-request approvals + workspace-write -> capture session UUID
-         -> result-file acceptance -> resume that UUID only when rescue is needed
+Codex project event -> .codex/hooks.json (catalog-rendered repo transport)
+                    -> git-root-resolved hooks/bee-*.mjs
+                    -> hooks/adapter.mjs -> .bee/bin/lib helper
+                    -> context / deny / JSON advisory
 ```
 
-The Codex default `hooks/hooks.json` and the Claude manifest's explicit catalog
-path switch land in one atomic safety-foundation change. Each hook invocation
-carries `plugin` or `repo`; the per-repository selector makes a transient
-double-config state execute only one source, while successful migration removes
-the inactive fallback so the final configuration has one source.
+The catalog remains the single event/matcher/handler definition. Its existing
+plugin-target renderer stays the default and continues to produce
+`hooks/hooks.json`; `target: "repo"` changes command transport and source
+identity only, then reproduces `.codex/hooks.json` byte-for-byte. Each generated
+repo command resolves the git root from the session cwd, validates its launch
+prerequisites, emits a stable visible fail-open diagnostic with exit `0` when
+pre-wrapper setup is unavailable, and otherwise preserves wrapper exit `0` or
+deliberate deny exit `2`.
 
-`apply_patch` targets are normalized before the existing gate, direct-edit, and
-reservation decisions run. If an intercepted patch's targets cannot be proven,
-the call is denied with a correction; malformed outer hook payloads and truly
-unsupported host paths remain visible fail-open gaps. PreCompact,
-SubagentStop, and Stop warnings become JSON `systemMessage`, preserving
-advisory behavior without continuing a child or main turn.
-
-Feature start becomes one guarded atomic operation. It refuses unless the prior
-feature is terminal and has no HANDOFF, nonterminal cells, workers, or
-reservations; it never erases work as cleanup. Only then does it reset gates and
-enter a valid phase.
+Process tests parse the active file and run each command through
+`${SHELL:-/bin/bash} -lc`, only inside an isolated temporary git fixture with
+both Claude root variables removed. Root, nested, and spaces/Unicode path rows
+prove quoting and cwd stability; a non-git cwd proves transport fail-open. Stop
+rows force a warning so non-empty stdout must parse as a JSON `systemMessage`,
+never `decision: "block"`. A configured PreToolUse row must deny a gated patch
+with exit `2`. The same assertions run against the pinned pre-fix config to
+prove RED sensitivity. The harness pins the live repository's bee state,
+injection cache, and hook logs byte-for-byte so fixture execution cannot alter
+orchestration state.
 
 ### Security / Permissions
 
-- Plugin hooks require the human to trust the current hash; installation never
-  bypasses hook trust silently.
-- External Codex commands set top-level `on-request` approval and
-  `workspace-write`; no `--yolo`, `--full-auto`, danger-full-access, or
-  equivalent blanket bypass is accepted.
-- Ordinary onboarding does not enable/disable plugins or rewrite global Codex
-  config. Global plugin and legacy-skill mutations are previewed and separately
-  approved.
+- Editing `.codex/hooks.json` changes its trusted definition hash. Codex skips
+  the changed definitions until the human reviews them through `/hooks`; the
+  implementation never edits persisted trust state or bypasses hook trust.
+- No plugin, user-level hook, global Codex/Claude configuration, or installed
+  skill is changed in this slice.
+- Concurrent `.bee/config.json`, dispatch-log, and `q3-cmdsubst` spike changes
+  belong to another workstream and remain untouched; execution reserves only
+  the three current-cell files and aborts on overlap.
 - Hooks remain guardrails, not a security boundary. Native reads and incomplete
   unified shell paths that Codex cannot intercept remain governed by AGENTS,
   helper checks, and explicit user privacy approval.
@@ -141,110 +142,73 @@ enter a valid phase.
 
 | Action | File / component | Purpose |
 |---|---|---|
-| Modify | `hooks/*.mjs`, `hooks/hooks.json` | Shared adapter behavior and Codex default projection |
-| Create | Claude hook projection and logical catalog/renderer under `hooks/` | Exact dual-runtime catalogs without wrapper forks |
-| Modify | `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json` | Atomic hook routing plus version/publisher parity |
-| Remove as active config | `.codex/hooks.json` | Eliminate the broken committed fallback; onboarding can generate an explicit fallback |
-| Modify | `skills/bee-hive/templates/`, onboarding scripts and tests | Guarded state start, fallback assets, source arbitration, migration and parity proof |
-| Modify | `scripts/install.sh`, `scripts/install.ps1` | Plugin-first reported install and protected legacy fallback/cleanup |
-| Modify | active Codex config samples and executor/model docs | Safe approvals, sandbox and exact-session rescue |
-| Modify after RED | exploring, planning, swarming, validating, and reviewing skills/references/creation logs | Current clean-context, continuation, phase and reviewer-slot contracts |
-| Modify | AGENTS template/current block, README, INSTALL, runtime/contracts/config docs | Durable runtime truth and project description |
-| Update after behavior settles | `docs/specs/onboarding.md` and feature reports | State-layer contract and evidence |
-
-The exact file list is narrowed per current-slice cell after Gate 2. P23 and
-`docs/history/fanout-delegation/` remain untouched.
+| Modify | `hooks/catalog.mjs` | Add deterministic Codex repo-target command transport while preserving both existing projections |
+| Modify | `.codex/hooks.json` | Replace Claude-variable commands with the generated source-repo fallback |
+| Modify | `hooks/test_hook_contracts.mjs` | Cell 6a adds repo-config drift proof; dependent cell 6b adds the isolated installed-route process harness |
 
 ## 7. Implementation Steps
 
-- [ ] **Safety foundation** — checkpoint RED hook/state fixtures; land both
-  catalog routes atomically; normalize all wrappers; guard intercepted patches;
-  add guarded feature start.
-- [ ] **Distribution and migration** — align manifest/version metadata; add
-  per-repo source arbitration, plugin probation/rollback, protected legacy
-  cleanup, and plugin-first installer behavior.
-- [ ] **Dispatch and skills** — checkpoint five pressure scenarios, then update
-  native collaboration, safe executor flags, exact-session rescue, valid phases,
-  and identical GREEN evidence.
-- [ ] **Truth and rollout** — reconcile AGENTS/docs/spec, run isolated plugin and
-  fallback UAT, complete review, then prepare the standing tagged release.
-
-Only Safety foundation receives cells after this Gate 2. Later-slice cells are
-created only when their slice becomes current.
+- [x] **Safety foundation** — merged, reviewed, and accepted at Gate 4.
+- [ ] **Render the active source-repo fallback** (`codex-parity-6a`) — add the
+  target-parameterized renderer, checkpoint the drift row RED, regenerate the
+  project config, and mechanically preserve both existing projections.
+- [ ] **Prove the installed route** (`codex-parity-6b`, depends on 6a) — parse
+  and execute all nine active command handlers in an isolated fixture, with a
+  RED run against the pinned pre-fix config.
+- [ ] **Remaining E2/E3/E4 work** — intentionally unprepared; no cells exist in
+  this slice.
 
 ## 8. Validation Plan
 
-**Automated**
-
-- Full seven-wrapper malformed-input process table and event-output parsing.
-- Patch Add/Update/Delete/Move/multi-target/path/malformed/gate/reservation
-  matrix; unknown intercepted target must deny.
-- Catalog generation plus allowed-difference and both-runtime load tests.
-- Guarded feature-start and complete valid-phase transition tests.
-- Plugin/fallback/both/neither, selector transition, rollback, foreign-hook,
-  downgrade, symlink/alias/overlap, idempotency, and version-parity tests.
-- Five dispatch pressure scenarios RED then identical GREEN, plus static active
-  surface census.
-- Existing hook suites and full project verify.
+**Automated** — cell 6a runs the catalog suite, checks the two existing
+projection files with `git diff --exit-code`, and runs the repository baseline.
+Cell 6b runs `--repo-route-only`, then the full hook suite and repository
+baseline. The route rows parse all nine handlers from `.codex/hooks.json`, run
+them with Claude root variables unset under the login-shell contract, require
+valid non-blocking Stop JSON, preserve PreToolUse deny exit `2`, prove visible
+no-root exit `0`, and keep live bee state/cache/logs byte-identical.
 
 **Live / manual**
 
-- Isolated Codex home installs the shared marketplace/plugin, sees the exact
-  release and skills, and reinstalls cleanly.
-- Two parallel CLI sessions are captured and resumed by different UUIDs.
-- Workspace write succeeds; an outside write requires approval or is denied.
-- Plugin-only fresh thread and fallback-only trusted project each fire every
-  expected lifecycle outcome once.
-- Human reviews/trusts the real plugin hook hash and confirms `/hooks` shows one
-  final bee source.
+- Human reviews/trusts the changed project-hook definitions in `/hooks`, starts
+  a fresh lifecycle event, and confirms the two Stop failures no longer appear.
+- `/hooks` continues to show the project fallback as the only bee source.
 
-**Evidence** — `bee-validating` complete for the Safety foundation slice
-([validation-safety-foundation.md](reports/validation-safety-foundation.md)):
-reality gate 5/5 PASS; session-UUID capture, exact-UUID resume, machine-readable
-plugin status, and marketplace/manifest acceptance proved **live** (spikes in
-`.spikes/codex-runtime-parity/`); catalog *firing* and child-payload capture
-carry named constraints owned by E2/E3 (per-invocation trust override proven
-insufficient — real config trust required); Windows/case-insensitive and
-PowerShell rows are explicit local limitations (WSL2, case-sensitive FS, no
-pwsh). Persona panel: iteration 1 FAIL → 5 blockers repaired; iteration 2 clean
-(final DAG fix mechanically evidenced). Cold-pickup cell review: 11 CRITICALs
-repaired, verified exit-code-honest verifies. Verdict: **READY WITH
-CONSTRAINTS** (constraints listed in the report §Constraints Carried to
-Execution).
+**Evidence** — fresh validation is pending. The historical
+[validation report](reports/validation-codex-repo-fallback.md) rejects the old
+overloaded cell and now records the official-doc correction: cwd/git-root and
+default-enable are established contracts, while human re-trust is Gate 4. The
+before-state remains in
+[diagnosis-codex-stop-hooks.md](reports/diagnosis-codex-stop-hooks.md).
 
 ## 9. Risks & Mitigation
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Wrong hook schema allows a forbidden write or breaks a turn | High | Every-wrapper process fixtures and event-specific live proof |
-| Plugin and fallback execute concurrently | High | Source identity/selector arbitration, transition tests, final fallback removal |
-| Migration deletes user config or legacy skills | High | Preview, backup, hardened identity/downgrade fences, cleanup only after plugin UAT |
-| Feature start abandons prior work | High | Terminal/no-HANDOFF/no-cell/no-worker/no-reservation refusal |
-| Rescue continues the wrong worker | High | Capture and resume exact UUID; parallel-session proof |
-| Shared changes regress Claude | Medium | Atomic manifest routing plus the existing Claude catalog and full suites |
-| Windows/subdirectory paths drift | Medium | PowerShell/path and case-sensitive/insensitive checks from root and nested cwd |
+| Active command still differs from tested command | High | Parse and execute commands from `.codex/hooks.json` itself; byte-render assertion |
+| Stop hook loops or fails output parsing | High | Force non-empty Stop output; require JSON `systemMessage`; forbid `decision:block` |
+| Transport fails before wrapper fail-open | High | Missing-root process row must emit a diagnostic and exit `0`; deny exit `2` remains intact |
+| Regression tests mutate live workflow state | High | Execute only in a copied temp git fixture and assert live state/cache/log byte equality |
+| Shared catalog change regresses plugin or Claude | High | Existing plugin-Codex and Claude projections must remain byte-identical |
+| Future/concurrent plugin install creates duplicate bee sources | High | Parseable before/after source census; unknown or second bee source blocks with zero edits |
+| Nested cwd or unavailable repo root breaks resolution | Medium | Root/nested and non-git-cwd process rows exercise the fail-open branch; a physically missing `git` executable is the same branch but remains a named unexercised environment case |
+| Changed definitions stay skipped after merge | High | Gate-4 `/hooks` review plus a fresh lifecycle event; no automated trust mutation or bypass |
+| Native Windows or a non-POSIX login shell uses incompatible syntax | Medium | Explicitly deferred to the Distribution cross-platform slice; do not claim coverage in this WSL/bash incident |
 
 ## 10. Rollback Plan
 
-Every implementation cell is a separate commit and is reverted in reverse
-dependency order. The catalog-path/Claude-manifest switch is one atomic commit,
-so neither runtime is left pointing at the other's projection.
-
-For plugin probation, retain the backed-up repo fallback and selector. If trust,
-fresh-thread loading, version, or lifecycle UAT fails, switch the selector back
-to `repo` and restore the backup before disabling/removing the candidate plugin.
-Fallback entries are not removed until plugin UAT passes. Legacy skills are
-backed up and never cleaned before that checkpoint; failed release UAT restores
-them and reinstalls the preceding tagged plugin version. No data migration is
-involved.
+Revert `codex-parity-6b` first, then `codex-parity-6a`. The first revert removes
+only the added process harness; the second restores the prior catalog and
+project config together. Codex can require review of the restored definition as
+well. No plugin/global configuration or application data changes, so rollback
+has no external cleanup step. If fresh-event UAT fails, Gate 4 stays closed and
+both commits are reverted in dependency order.
 
 ## 11. Open Questions
 
-No product decision is blocking Gate 2. Before Gate 3, validating must answer:
-
-- Which current JSON event carries the stable external session UUID?
-- Can child hook payloads identify reservation ownership reliably?
-- Does the exact default-Codex/explicit-Claude catalog routing load correctly
-  through both manifests and the shared marketplace?
-- Which Windows/case-insensitive proofs run locally, and which remain explicit
-  limitations for review/UAT?
+No product decision is open. Fresh validation must still prove that each cell
+is cold-pickup executable, its verify command is exit-code honest, and the
+configured transport can meet the declared setup-fail-open/deny-preservation
+contract. Native Windows/PowerShell, non-POSIX login shells, a physically
+missing `git` executable, and live firing after the new definition is trusted
+remain explicit limitations or Gate-4 UAT, never inferred passes.
