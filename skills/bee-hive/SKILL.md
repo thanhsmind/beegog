@@ -62,7 +62,7 @@ Then read `docs/history/learnings/critical-patterns.md` and surface recent activ
 
 **State layer:** when `docs/specs/` exists, note it in the orientation summary. Before working in any area, the reading order is **spec → decisions → history**: read `docs/specs/<area>.md` (what the area does now) before its code, decisions for the why, `docs/history/` only for archaeology. `docs/specs/reading-map.md` answers "where does X live" before any broad grep. When `docs/specs/` lacks `system-overview.md` or `reading-map.md`, offer a `bee-scribing` bootstrap pass to skeleton the missing file(s) — user-approved, never silent, never auto-run (D2 of harness10).
 
-**Delegation:** onboarding/version scans and any multi-file skill-inventory diff dispatch down-tier as I/O workers per the Delegation contract (`references/routing-and-contracts.md`) when the D2 rubric fires (>3 files or digest-only content); routing, mode gate, and gate decisions always stay on the session model.
+**Delegation:** onboarding/version scans and any multi-file skill-inventory diff dispatch down-tier as I/O workers per the Delegation contract (`references/routing-and-contracts.md`) when the D2 rubric fires; routing, mode gate, and gate decisions always stay on the session model.
 
 ## Routing
 
@@ -97,7 +97,7 @@ Classification is **mechanical**. Count these risk flags:
 | `docs` | every touched file is knowledge, not runtime: `docs/`, specs, README, sample/example configs, plans — nothing executes it |
 | `tiny` | 0–1 flags, ≤2 files, no API/data change, one direct task |
 | `spike` | one yes/no proof decides whether the plan is real |
-| `small` | 0–1 flags, ≤3 files, no gray areas |
+| `small` | 0–1 flags, ≤three files, no gray areas |
 | `standard` | 2–3 flags, or story-sized behavior |
 | `high-risk` | 4+ flags **or any hard-gate flag** (auth, authorization, data loss, audit/security, external provider, validation removal) |
 

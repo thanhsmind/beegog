@@ -1173,6 +1173,56 @@ check('readConfig strips a stale advisor key and never throws; advisor exports a
   }
 });
 
+// P1 (fanout-4 review fix): the exports above were only proven present in the
+// allowlist, never actually invoked — prove the warn path fires end to end.
+check('hasStaleAdvisorKey() reports true/false correctly and bee_status.mjs --json surfaces STALE_ADVISOR_KEY_WARNING in staleness_warnings only when the key is present', () => {
+  const { hasStaleAdvisorKey, STALE_ADVISOR_KEY_WARNING: warningText } = stateModuleExports;
+  const wRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-stale-advisor-warn-'));
+  fs.mkdirSync(path.join(wRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(wRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  const beeStatusModulePath = fileURLToPath(new URL('../bee_status.mjs', import.meta.url));
+  try {
+    // (a) config WITH a stale advisor key → hasStaleAdvisorKey is true, and the
+    // CLI's staleness_warnings array carries the exact shared warning text.
+    writeJsonAtomic(path.join(wRoot, '.bee', 'config.json'), {
+      advisor: { enabled: true, at: ['execution'], model: 'opus' },
+    });
+    assert(hasStaleAdvisorKey(wRoot) === true, 'hasStaleAdvisorKey(root) is true when config.json carries an advisor key');
+    const withStaleRun = spawnSync(process.execPath, [beeStatusModulePath, '--json'], {
+      cwd: wRoot,
+      encoding: 'utf8',
+    });
+    assert(withStaleRun.status === 0, `bee_status.mjs --json exited ${withStaleRun.status} on a stale-advisor fixture :: ${withStaleRun.stderr}`);
+    const withStalePayload = JSON.parse(withStaleRun.stdout);
+    assert(
+      Array.isArray(withStalePayload.staleness_warnings) &&
+        withStalePayload.staleness_warnings.includes(warningText),
+      `bee_status --json staleness_warnings did not include STALE_ADVISOR_KEY_WARNING :: got ${JSON.stringify(withStalePayload.staleness_warnings)}`,
+    );
+
+    // (b) config WITHOUT the key → hasStaleAdvisorKey is false, and the warning
+    // text never appears in staleness_warnings.
+    writeJsonAtomic(path.join(wRoot, '.bee', 'config.json'), { gate_bypass: false });
+    assert(hasStaleAdvisorKey(wRoot) === false, 'hasStaleAdvisorKey(root) is false when config.json has no advisor key');
+    const withoutStaleRun = spawnSync(process.execPath, [beeStatusModulePath, '--json'], {
+      cwd: wRoot,
+      encoding: 'utf8',
+    });
+    assert(withoutStaleRun.status === 0, `bee_status.mjs --json exited ${withoutStaleRun.status} on a clean fixture :: ${withoutStaleRun.stderr}`);
+    const withoutStalePayload = JSON.parse(withoutStaleRun.stdout);
+    assert(
+      Array.isArray(withoutStalePayload.staleness_warnings) &&
+        !withoutStalePayload.staleness_warnings.includes(warningText),
+      `bee_status --json staleness_warnings unexpectedly included STALE_ADVISOR_KEY_WARNING on a clean config :: got ${JSON.stringify(withoutStalePayload.staleness_warnings)}`,
+    );
+  } finally {
+    fs.rmSync(wRoot, { recursive: true, force: true });
+  }
+});
+
 // ─── external executor tiers (P14, decision 0019) ───────────────────────────
 
 check('resolveTier types every tier shape: inherit, model, budget, cli', () => {

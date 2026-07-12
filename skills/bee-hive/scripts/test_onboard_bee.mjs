@@ -164,6 +164,49 @@ try {
     "onboard_bee.mjs COMMAND_KEYS matches lib/state.mjs (no drift)",
     `state: [${stateKeys}] vs onboard: [${onboardKeys}]`);
 
+  // --- 3b-drift. STALE_ADVISOR_KEY_WARNING text must not drift (P2, fanout-4
+  // review fix) --- onboard_bee.mjs deliberately does NOT import lib/state.mjs
+  // (see the comment at its own STALE_ADVISOR_KEY_WARNING definition) — pin the
+  // two literal warning strings with a text-scan instead, same pattern as the
+  // COMMAND_KEYS drift check just above.
+  const warningRe = /STALE_ADVISOR_KEY_WARNING\s*=\s*['"]([^'"]+)['"]/;
+  const stateWarning = stateSource.match(warningRe)?.[1] || "";
+  const onboardWarning = onboardSource.match(warningRe)?.[1] || "";
+  check(stateWarning.length > 0 && stateWarning === onboardWarning,
+    "onboard_bee.mjs STALE_ADVISOR_KEY_WARNING text matches lib/state.mjs (no drift)",
+    `state: "${stateWarning}" vs onboard: "${onboardWarning}"`);
+
+  // --- 3b-advisor. a host fixture with a stale advisor key surfaces the
+  // stale-key notice (P1, fanout-4 review fix); the notice disappears once the
+  // key is removed --------------------------------------------------------
+  const advisorTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-advisor-notice-test-"));
+  const advisorHome = makeFakeHome();
+  try {
+    const advisorApply = runOnboardAt(ONBOARD, ["--repo-root", advisorTmp, "--apply", "--json"], advisorHome);
+    check(advisorApply.payload?.status === "applied", "apply on fresh advisor-notice fixture succeeds");
+    const advisorCfgPath = path.join(advisorTmp, ".bee", "config.json");
+    const advisorCfgRaw = JSON.parse(fs.readFileSync(advisorCfgPath, "utf8"));
+    advisorCfgRaw.advisor = { enabled: true, at: ["execution"], model: "opus" };
+    fs.writeFileSync(advisorCfgPath, `${JSON.stringify(advisorCfgRaw, null, 2)}\n`, "utf8");
+    const advisorPlanNotice = runOnboardAt(ONBOARD, ["--repo-root", advisorTmp, "--json"], advisorHome);
+    check(Array.isArray(advisorPlanNotice.payload?.notices) &&
+      advisorPlanNotice.payload.notices.some((n) => n === stateWarning),
+      "a host fixture whose config carries a stale advisor key surfaces the stale-key notice line",
+      JSON.stringify(advisorPlanNotice.payload?.notices || null));
+    delete advisorCfgRaw.advisor;
+    fs.writeFileSync(advisorCfgPath, `${JSON.stringify(advisorCfgRaw, null, 2)}\n`, "utf8");
+    const advisorCleanNotice = runOnboardAt(ONBOARD, ["--repo-root", advisorTmp, "--json"], advisorHome);
+    check(!(advisorCleanNotice.payload?.notices || []).some((n) => n === stateWarning),
+      "stale-advisor notice disappears once the key is removed from config.json",
+      JSON.stringify(advisorCleanNotice.payload?.notices || null));
+  } finally {
+    try {
+      fs.rmSync(advisorTmp, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
   // --- 3c. detected command candidates ride the notice, propose-only (D3) ---
   const detTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-detect-test-"));
   try {
