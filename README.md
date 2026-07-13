@@ -299,17 +299,49 @@ If a session runs long, bee writes `.bee/HANDOFF.json` at ~65% context and pause
 
 ## Install
 
-Run from inside your project (the current directory is the target by default):
+Requirement: **Node.js 18+** on PATH. One command installs everything — the per-project skills (`.claude/skills/` for Claude Code, `.agents/skills/` for Codex), `CLAUDE.md`, the `AGENTS.md` BEE block, the `.bee/` runtime + vendored helpers, and the Claude Code repo hooks.
+
+### Brownfield — existing project (copy, paste, done)
+
+macOS / Linux / WSL / Git Bash — run from inside the project:
 
 ```bash
+cd /path/to/your-project
 curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -y
 ```
 
+Windows PowerShell:
+
 ```powershell
-iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1; .\install-bee.ps1 -Yes
+cd C:\path\to\your-project
+iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1
+.\install-bee.ps1 -Yes
 ```
 
-Different directory: add `-d /path/to/project` (bash) / `-Directory C:\path\to\project` (PowerShell). Full options, the Claude Code plugin route (`/plugin marketplace add thanhsmind/beegog` + `/plugin install bee@bee`), manual installs, verify/update/uninstall: [INSTALL.md](INSTALL.md).
+Safe on existing repos: content outside the managed `BEE:START/END` markers in `AGENTS.md`/`CLAUDE.md` is preserved byte-for-byte, `.bee/` state (`state.json`, `decisions.jsonl`, `cells/`) is never overwritten, the `.claude/settings.json` hook merge keeps a `.bak`, and re-running is idempotent (`up_to_date`). Want to see the plan first? Add `--dry-run` / `-DryRun` — it writes nothing.
+
+### Greenfield — brand-new project
+
+Point the installer at a directory that doesn't exist yet (it creates it and offers `git init`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -d /path/to/new-project -y
+```
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1
+.\install-bee.ps1 -Directory C:\path\to\new-project -Yes
+```
+
+### Verify / update
+
+```bash
+node .bee/bin/bee_status.mjs --json     # expect onboarding.installed: true
+```
+
+**Update to the latest bee:** re-run the same install command (or `onboard_bee.mjs --apply`) — drift detection refreshes `AGENTS.md`, `CLAUDE.md`, helpers, hooks, and both skill trees in place; your state and everything outside the managed markers stay untouched.
+
+Useful flags: `--global-skills`/`-GlobalSkills` (also install the legacy global copies under `~/.claude/skills` + `~/.codex/skills`), `--no-claude-md`/`-NoClaudeMd`, `--no-hooks`/`-NoHooks`, `--source <local-checkout>`/`-Source`. Full options, the Claude Code plugin route (`/plugin marketplace add thanhsmind/beegog` + `/plugin install bee@bee`), manual installs, uninstall: [INSTALL.md](INSTALL.md).
 
 ---
 
