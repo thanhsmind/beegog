@@ -5,7 +5,7 @@ import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 // Leaf-module imports only — no cycle: claims.mjs and reservations.mjs import
 // nothing but fsutil/node builtins (unlike cells.mjs, which imports THIS file).
-import { readSession, readClaim, isClaimActive, claimsDir } from './claims.mjs';
+import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './claims.mjs';
 import { pathsOverlap } from './reservations.mjs';
 
 export const BEE_VERSION = '0.1.32';
@@ -297,8 +297,163 @@ export function gateApproved(state, gateName) {
   return Boolean(state && state.approved_gates && state.approved_gates[gateName] === true);
 }
 
+// ─── handoff kinds (fresh-session-handoff fsh-9, D1) ────────────────────────
+// Two kinds, one file (.bee/HANDOFF.json): 'planned-next' (previous cell
+// capped with a green verify, next cell already claimed by the writer —
+// the only kind a fresh session may act on without confirmation) and 'pause'
+// (today's mid-flight-interruption meaning — surface and WAIT, never
+// auto-resume). readHandoff stays the fail-open DISPLAY read (unchanged
+// shape/behavior for every existing caller) but now normalizes `kind` for
+// display: a record with a missing or unknown kind reads as 'pause' — the
+// fail-safe that keeps every handoff written before this cell, and any
+// record some future bug corrupts, on the safe (surface-and-wait) side.
+// writeHandoff/adoptHandoff below are the CLI-owned guarded mutators (hive
+// law 12) — HANDOFF.json had no CLI writer before this cell.
+export const HANDOFF_KINDS = ['planned-next', 'pause'];
+
+function normalizeHandoffKind(kind) {
+  return kind === 'planned-next' ? 'planned-next' : 'pause';
+}
+
+export function handoffPath(root) {
+  return path.join(root, '.bee', 'HANDOFF.json');
+}
+
 export function readHandoff(root) {
-  return readJson(path.join(root, '.bee', 'HANDOFF.json'), null);
+  const handoff = readJson(handoffPath(root), null);
+  if (!handoff || typeof handoff !== 'object' || Array.isArray(handoff)) return handoff;
+  return { ...handoff, kind: normalizeHandoffKind(handoff.kind) };
+}
+
+/**
+ * writeHandoff — the strict, guarded CLI-owned writer (mirrors this file's
+ * own readStateStrict/readLaneStrict throw-on-refusal convention, hence
+ * "(strict)" rather than claims.mjs's typed-return convention). --kind is
+ * never guessed: the caller must say 'pause' or 'planned-next' explicitly.
+ *
+ * 'pause' keeps today's free-form shape (whatever fields the caller passes —
+ * cell/files/done/remaining/next_action/phase/feature/mode, unchanged) plus
+ * the kind and a written_at stamp. No new precondition: this is the same
+ * "surface and WAIT" record as always, now CLI-written instead of prose-Write.
+ *
+ * 'planned-next' is where D1's preconditions live (in the verb, not prose):
+ * refuses, with zero mutation, unless BOTH hold —
+ *   (a) the named previous_cell's OWN cell record (read directly, not through
+ *       lib/cells.mjs — that module imports THIS file, so importing it back
+ *       here would cycle; mirrors the existing listAllCellsForStart pattern
+ *       below) has status 'capped' and trace.verify_passed === true (the
+ *       real cap precondition field capCell/recordVerify enforce);
+ *   (b) the named next_cell already has a claim (claims.mjs, the
+ *       cross-session primitive) OWNED by the given writer_session — the
+ *       "carried claim" that survives the writing session's own /clear.
+ * On success the record also stores writer_session/previous_cell/next_cell
+ * alongside kind and written_at, so adoptHandoff below has everything it
+ * needs without re-deriving anything.
+ */
+export function writeHandoff(root, input = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('writeHandoff: an object record is required.');
+  }
+  if (input.kind !== 'planned-next' && input.kind !== 'pause') {
+    throw new Error(
+      `writeHandoff: --kind must be "planned-next" or "pause" (got ${JSON.stringify(input.kind)}) — D1 requires an explicit kind, never guessed. FIX: pass one of the two handoff kinds.`,
+    );
+  }
+  const now = new Date().toISOString();
+
+  if (input.kind === 'pause') {
+    const { kind: _kind, ...rest } = input;
+    const record = { ...rest, kind: 'pause', written_at: now };
+    writeJsonAtomic(handoffPath(root), record);
+    return record;
+  }
+
+  // planned-next: every precondition is READ before the single write below
+  // (fails closed, zero mutations on refusal — mirrors startFeature's C1
+  // discipline elsewhere in this file).
+  const writerSession = typeof input.writer_session === 'string' ? input.writer_session.trim() : '';
+  const previousCell = typeof input.previous_cell === 'string' ? input.previous_cell.trim() : '';
+  const nextCell = typeof input.next_cell === 'string' ? input.next_cell.trim() : '';
+  if (!writerSession || !previousCell || !nextCell) {
+    throw new Error(
+      'writeHandoff: a planned-next handoff requires non-empty writer_session, previous_cell, and next_cell (D1) — FIX: pass all three.',
+    );
+  }
+
+  const previous = readJson(path.join(root, '.bee', 'cells', `${previousCell}.json`), null);
+  if (!previous || previous.status !== 'capped' || previous.trace?.verify_passed !== true) {
+    throw new Error(
+      `writeHandoff: refused — previous cell "${previousCell}" is not capped with a passing verify (found status "${previous?.status ?? 'missing'}", verify_passed ${JSON.stringify(previous?.trace?.verify_passed ?? null)}). A planned-next handoff may only follow a green-verified cap. FIX: cap "${previousCell}" with a recorded passing verify first (bee_cells.mjs verify then cap), then retry.`,
+    );
+  }
+
+  const claim = readClaim(root, nextCell);
+  if (!claim || claim.session !== writerSession) {
+    throw new Error(
+      `writeHandoff: refused — next cell "${nextCell}" has no claim owned by writer session "${writerSession}" (found ${claim ? `owner "${claim.session}"` : 'no claim'}). The next cell must already be claimed by the writing session before a planned-next handoff carries it. FIX: claim "${nextCell}" as session "${writerSession}" first (claims.mjs claimCellFile), then retry.`,
+    );
+  }
+
+  const record = {
+    ...input,
+    kind: 'planned-next',
+    writer_session: writerSession,
+    previous_cell: previousCell,
+    next_cell: nextCell,
+    written_at: now,
+  };
+  writeJsonAtomic(handoffPath(root), record);
+  return record;
+}
+
+/**
+ * adoptHandoff — transfers the carried claim to `sessionId`, then clears the
+ * handoff. PRECISION (validation-s4 panel W5): this is CLEAR-AFTER-ADOPT with
+ * idempotent recovery, NOT a transaction spanning the claim store and
+ * HANDOFF.json — there is no cross-file atomicity here. A crash landing
+ * exactly between the two steps (claim adopted, handoff not yet cleared)
+ * self-heals on the NEXT adoptHandoff call: re-reading the still-present
+ * handoff and re-adopting its next_cell is a BENIGN SELF-ADOPT when the claim
+ * already belongs to `sessionId` (adoptClaim has no "already owned" special
+ * case — it happily rewrites session -> the same session, refreshing
+ * timestamps), and the clear then goes through. Never claim this function is
+ * atomic across the two files; it is idempotent, which is what makes the
+ * crash window harmless.
+ *
+ * Typed-failure contract (mirrors claims.mjs, the module this wraps): every
+ * refusal returns { ok:false, code, reason } and NEVER throws — a missing
+ * handoff, a pause-kind handoff (never auto-resumed — D1's hard boundary),
+ * or a failed underlying adoptClaim (propagated as-is) all leave BOTH the
+ * claim and the handoff untouched. Only a genuinely bad `sessionId` argument
+ * throws (requireId inside adoptClaim), matching claims.mjs's own bad-
+ * argument convention.
+ */
+export function adoptHandoff(root, sessionId) {
+  const handoff = readHandoff(root);
+  if (!handoff) {
+    return { ok: false, code: 'NO_HANDOFF', reason: 'no .bee/HANDOFF.json to adopt.' };
+  }
+  if (handoff.kind !== 'planned-next') {
+    return {
+      ok: false,
+      code: 'NOT_PLANNED_NEXT',
+      reason: `handoff kind "${handoff.kind}" is not "planned-next" — a pause handoff is never adopted, it must be surfaced and WAITED on (D1).`,
+    };
+  }
+  const nextCell = typeof handoff.next_cell === 'string' ? handoff.next_cell.trim() : '';
+  if (!nextCell) {
+    return { ok: false, code: 'MALFORMED', reason: 'planned-next handoff has no next_cell to adopt.' };
+  }
+
+  const adopted = adoptClaim(root, nextCell, sessionId);
+  if (!adopted.ok) {
+    // adoptClaim's own typed failure (GATE_HELD / NOT_FOUND) — propagate
+    // as-is; neither the claim nor the handoff has been touched by this call.
+    return adopted;
+  }
+
+  fs.rmSync(handoffPath(root), { force: true });
+  return { ok: true, claim: adopted.claim, previous_owner: adopted.previous_owner, next_cell: nextCell };
 }
 
 // ─── lanes: per-feature pipeline records beside the default state.json ──────
@@ -723,8 +878,8 @@ export function startFeature(
     );
   }
 
-  const handoffPath = path.join(root, '.bee', 'HANDOFF.json');
-  if (fs.existsSync(handoffPath)) {
+  const handoffFile = handoffPath(root);
+  if (fs.existsSync(handoffFile)) {
     throw new Error(
       'startFeature: refused — .bee/HANDOFF.json exists. A paused session must resume and clear the handoff before a new feature starts. FIX: resume the session (or explicitly delete HANDOFF.json once its work is truly abandoned), then retry.',
     );

@@ -1610,6 +1610,11 @@ const EXPECTED_STATE_EXPORTS = [
   'removeLane',
   'listLanes',
   'resolvePipeline',
+  // fsh-9 (fresh-session-handoff S4, D1): the two-kind handoff lifecycle.
+  'HANDOFF_KINDS',
+  'handoffPath',
+  'writeHandoff',
+  'adoptHandoff',
 ];
 
 check('readConfig strips a stale advisor key and never throws; advisor exports are gone', () => {
@@ -4764,6 +4769,294 @@ check('bee.mjs status --json carries a `lanes` block (per-lane phase/gates/bound
     const text = runBeeMjs(dir, ['status']).stdout;
     assert(/Lanes: lane-x \[swarming\]/.test(text), `text render carries a Lanes line once a lane exists, got:\n${text}`);
     assert(/sessions=sess-lx/.test(text), `text Lanes line names the bound session, got:\n${text}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── fsh-9 (fresh-session-handoff S4, D1): two-kind handoff lifecycle — the
+// guarded writer/adopter over the free-form HANDOFF.json file. readHandoff
+// stays fail-open for DISPLAY but normalizes kind (missing/unknown -> 'pause',
+// fail-safe for every legacy record); writeHandoff is the strict CLI-owned
+// writer (mirrors readStateStrict/readLaneStrict's throw-on-refusal
+// convention in this same module); adoptHandoff wraps claims.mjs's
+// adoptClaim and returns typed refusals, never throws (mirrors claims.mjs's
+// own contract for the primitive it wraps). Namespace import (laneStore, an
+// existing fsh-3 alias) keeps this RED-first: a not-yet-implemented export
+// fails its own row instead of crashing the whole module graph at import
+// time. ───────────────────────────────────────────────────────────────────
+
+function writeCappedCellFixture(root, id, { verifyPassed = true } = {}) {
+  writeJsonAtomic(path.join(root, '.bee', 'cells', `${id}.json`), {
+    id,
+    feature: 'fresh-session-handoff',
+    title: 'fixture',
+    lane: 'small',
+    status: 'capped',
+    trace: { verify_passed: verifyPassed },
+  });
+}
+
+check('readHandoff: no file -> null; missing/unknown kind normalizes to "pause" (fail-safe); an explicit planned-next kind is preserved', () => {
+  const dir = makeStateRepo('bee-handoff-read-');
+  try {
+    assert(laneStore.readHandoff(dir) === null, 'no HANDOFF.json reads as null');
+
+    writeJsonAtomic(path.join(dir, '.bee', 'HANDOFF.json'), { cell: 'x', done: [], remaining: [] });
+    assert(laneStore.readHandoff(dir).kind === 'pause', 'a legacy handoff with no kind field normalizes to pause');
+
+    writeJsonAtomic(path.join(dir, '.bee', 'HANDOFF.json'), { kind: 'something-else', cell: 'x' });
+    assert(laneStore.readHandoff(dir).kind === 'pause', 'an unknown kind value normalizes to pause (fail-safe)');
+
+    writeJsonAtomic(path.join(dir, '.bee', 'HANDOFF.json'), {
+      kind: 'planned-next',
+      next_cell: 'n',
+      writer_session: 'w',
+    });
+    assert(laneStore.readHandoff(dir).kind === 'planned-next', 'an explicit planned-next kind is preserved');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("writeHandoff: --kind pause keeps today's free-form fields, adds kind + written_at, no preconditions", () => {
+  const dir = makeStateRepo('bee-handoff-write-pause-');
+  try {
+    const record = laneStore.writeHandoff(dir, {
+      kind: 'pause',
+      cell: 'wip-1',
+      files: ['a.js', 'b.js'],
+      done: ['step1'],
+      remaining: ['step2'],
+      next_action: 'resume wip-1',
+    });
+    assert(record.kind === 'pause' && record.cell === 'wip-1', `expected a pause record, got ${JSON.stringify(record)}`);
+    assert(typeof record.written_at === 'string', 'written_at stamped');
+    const onDisk = readJson(path.join(dir, '.bee', 'HANDOFF.json'), null);
+    assert(onDisk && onDisk.kind === 'pause', 'HANDOFF.json on disk carries the pause kind');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('writeHandoff: refuses a missing/invalid --kind, zero mutation', () => {
+  const dir = makeStateRepo('bee-handoff-write-badkind-');
+  try {
+    assertThrows(() => laneStore.writeHandoff(dir, {}), 'kind', 'missing kind refuses');
+    assertThrows(() => laneStore.writeHandoff(dir, { kind: 'nope' }), 'kind', 'invalid kind refuses');
+    assert(!fs.existsSync(path.join(dir, '.bee', 'HANDOFF.json')), 'no partial file on a bad-kind refusal');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("writeHandoff: planned-next succeeds only when the previous cell is capped with verify_passed true AND the next cell's claim is owned by writer_session; stores writer_session/previous_cell/next_cell (must-have truth)", () => {
+  const dir = makeStateRepo('bee-handoff-write-planned-');
+  try {
+    writeCappedCellFixture(dir, 'prev-1');
+    claimCellFile(dir, 'sess-writer', 'next-1');
+    const record = laneStore.writeHandoff(dir, {
+      kind: 'planned-next',
+      writer_session: 'sess-writer',
+      previous_cell: 'prev-1',
+      next_cell: 'next-1',
+      next_action: 'start next-1',
+    });
+    assert(record.kind === 'planned-next', `expected planned-next, got ${JSON.stringify(record)}`);
+    assert(
+      record.writer_session === 'sess-writer' && record.previous_cell === 'prev-1' && record.next_cell === 'next-1',
+      `expected the carried identifiers, got ${JSON.stringify(record)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('writeHandoff: planned-next refuses (typed, zero mutation) when the previous cell is not capped, or capped without verify_passed true (must-have truth)', () => {
+  const dir = makeStateRepo('bee-handoff-write-planned-refuse-cap-');
+  try {
+    claimCellFile(dir, 'sess-writer', 'next-1');
+
+    assertThrows(
+      () =>
+        laneStore.writeHandoff(dir, {
+          kind: 'planned-next',
+          writer_session: 'sess-writer',
+          previous_cell: 'ghost',
+          next_cell: 'next-1',
+        }),
+      'capped',
+      'a missing previous cell refuses',
+    );
+
+    writeJsonAtomic(path.join(dir, '.bee', 'cells', 'prev-open.json'), {
+      id: 'prev-open',
+      status: 'open',
+      trace: { verify_passed: null },
+    });
+    assertThrows(
+      () =>
+        laneStore.writeHandoff(dir, {
+          kind: 'planned-next',
+          writer_session: 'sess-writer',
+          previous_cell: 'prev-open',
+          next_cell: 'next-1',
+        }),
+      'capped',
+      'an open (uncapped) previous cell refuses',
+    );
+
+    writeJsonAtomic(path.join(dir, '.bee', 'cells', 'prev-nogreen.json'), {
+      id: 'prev-nogreen',
+      status: 'capped',
+      trace: { verify_passed: false },
+    });
+    assertThrows(
+      () =>
+        laneStore.writeHandoff(dir, {
+          kind: 'planned-next',
+          writer_session: 'sess-writer',
+          previous_cell: 'prev-nogreen',
+          next_cell: 'next-1',
+        }),
+      'capped',
+      'a capped cell without verify_passed true refuses',
+    );
+
+    assert(!fs.existsSync(path.join(dir, '.bee', 'HANDOFF.json')), 'no partial handoff file after any of the refusals above');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("writeHandoff: planned-next refuses (typed, zero mutation) when the next cell has no claim, or a claim owned by a DIFFERENT session (must-have truth)", () => {
+  const dir = makeStateRepo('bee-handoff-write-planned-refuse-claim-');
+  try {
+    writeCappedCellFixture(dir, 'prev-2');
+
+    assertThrows(
+      () =>
+        laneStore.writeHandoff(dir, {
+          kind: 'planned-next',
+          writer_session: 'sess-writer',
+          previous_cell: 'prev-2',
+          next_cell: 'ghost-cell',
+        }),
+      'claim',
+      'a next cell with no claim at all refuses',
+    );
+
+    claimCellFile(dir, 'sess-someone-else', 'next-2');
+    assertThrows(
+      () =>
+        laneStore.writeHandoff(dir, {
+          kind: 'planned-next',
+          writer_session: 'sess-writer',
+          previous_cell: 'prev-2',
+          next_cell: 'next-2',
+        }),
+      'claim',
+      'a next cell claimed by a different session refuses',
+    );
+
+    assert(!fs.existsSync(path.join(dir, '.bee', 'HANDOFF.json')), 'no partial handoff file after either claim refusal');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('adoptHandoff: transfers the carried claim to the adopting session then clears the handoff (success path)', () => {
+  const dir = makeStateRepo('bee-handoff-adopt-ok-');
+  try {
+    writeCappedCellFixture(dir, 'prev-3');
+    claimCellFile(dir, 'sess-old', 'next-3');
+    laneStore.writeHandoff(dir, {
+      kind: 'planned-next',
+      writer_session: 'sess-old',
+      previous_cell: 'prev-3',
+      next_cell: 'next-3',
+    });
+
+    const result = laneStore.adoptHandoff(dir, 'sess-new');
+    assert(result.ok === true, `expected adoption to succeed, got ${JSON.stringify(result)}`);
+    const claim = readClaim(dir, 'next-3');
+    assert(claim.session === 'sess-new', `expected the claim transferred to sess-new, got ${JSON.stringify(claim)}`);
+    assert(!fs.existsSync(path.join(dir, '.bee', 'HANDOFF.json')), 'handoff cleared after a successful adopt');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('adoptHandoff: refuses (typed, never throws) with no handoff present', () => {
+  const dir = makeStateRepo('bee-handoff-adopt-none-');
+  try {
+    const result = laneStore.adoptHandoff(dir, 'sess-new');
+    assert(result.ok === false && typeof result.code === 'string', `expected a typed refusal, got ${JSON.stringify(result)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('adoptHandoff: a pause handoff is NEVER adopted — typed refusal, handoff left intact (D1 auto-resume boundary)', () => {
+  const dir = makeStateRepo('bee-handoff-adopt-pause-');
+  try {
+    laneStore.writeHandoff(dir, { kind: 'pause', cell: 'wip-2' });
+    const before = fs.readFileSync(path.join(dir, '.bee', 'HANDOFF.json'), 'utf8');
+    const result = laneStore.adoptHandoff(dir, 'sess-new');
+    assert(result.ok === false, `expected a typed refusal for a pause handoff, got ${JSON.stringify(result)}`);
+    const after = fs.readFileSync(path.join(dir, '.bee', 'HANDOFF.json'), 'utf8');
+    assert(before === after, 'the pause handoff stays byte-untouched after a refused adopt');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('adoptHandoff: a failed claim adopt (e.g. the claim vanished underneath the handoff) is a typed refusal that leaves the handoff intact, never a throw', () => {
+  const dir = makeStateRepo('bee-handoff-adopt-claimgone-');
+  try {
+    writeCappedCellFixture(dir, 'prev-4');
+    claimCellFile(dir, 'sess-old', 'next-4');
+    laneStore.writeHandoff(dir, {
+      kind: 'planned-next',
+      writer_session: 'sess-old',
+      previous_cell: 'prev-4',
+      next_cell: 'next-4',
+    });
+    fs.rmSync(path.join(dir, '.bee', 'claims', 'next-4.json'), { force: true });
+
+    const before = fs.readFileSync(path.join(dir, '.bee', 'HANDOFF.json'), 'utf8');
+    const result = laneStore.adoptHandoff(dir, 'sess-new');
+    assert(result.ok === false, `expected a typed refusal, got ${JSON.stringify(result)}`);
+    const after = fs.readFileSync(path.join(dir, '.bee', 'HANDOFF.json'), 'utf8');
+    assert(before === after, 'the handoff stays untouched after a failed underlying claim adopt');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('adoptHandoff: idempotent recovery — a crash between claim-adopt and handoff-clear self-heals on the next call (benign self-adopt then clear), never orphaning the claim', () => {
+  const dir = makeStateRepo('bee-handoff-adopt-crash-recover-');
+  try {
+    writeCappedCellFixture(dir, 'prev-5');
+    claimCellFile(dir, 'sess-old', 'next-5');
+    laneStore.writeHandoff(dir, {
+      kind: 'planned-next',
+      writer_session: 'sess-old',
+      previous_cell: 'prev-5',
+      next_cell: 'next-5',
+    });
+
+    // Simulate a crash landing exactly between the two steps: the claim was
+    // already adopted by the new session, but the handoff never got cleared.
+    const midCrash = adoptClaim(dir, 'next-5', 'sess-new');
+    assert(midCrash.ok === true, 'the simulated first-step adopt succeeds');
+    assert(fs.existsSync(path.join(dir, '.bee', 'HANDOFF.json')), 'the handoff is still present, exactly as it would be right after a mid-flight crash');
+
+    const recovered = laneStore.adoptHandoff(dir, 'sess-new');
+    assert(recovered.ok === true, `expected the recovery call to succeed, got ${JSON.stringify(recovered)}`);
+    assert(!fs.existsSync(path.join(dir, '.bee', 'HANDOFF.json')), 'the handoff is cleared once recovery completes');
+    const claim = readClaim(dir, 'next-5');
+    assert(claim.session === 'sess-new', 'the claim stays owned by sess-new through the recovery');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

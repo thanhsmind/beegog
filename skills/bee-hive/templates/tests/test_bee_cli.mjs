@@ -622,6 +622,85 @@ check('state.session.unbind example removes the binding (lane key omitted, not n
   assert(session.id === 'sess-demo' && !('lane' in session), `expected the lane key omitted after unbind, got ${result.stdout}`);
 });
 
+// ─── state.handoff.*: fresh-session-handoff fsh-9 (D1) — the guarded two-kind
+// handoff lifecycle CLI surface. Uses its own prev/next cell + claim fixtures
+// inside rootState so it never disturbs the demo-lane/session rows above.
+
+check('state.handoff.write --kind pause example (examples[0]) writes a free-form pause handoff', () => {
+  const result = assertExampleOk('state.handoff.write', { cwd: rootState });
+  const record = JSON.parse(result.stdout);
+  assert(record.kind === 'pause', `expected a pause handoff, got ${result.stdout}`);
+  assert(fs.existsSync(path.join(rootState, '.bee', 'HANDOFF.json')), 'HANDOFF.json should now exist');
+});
+
+check('state.handoff.show example shows the pause handoff just written', () => {
+  const result = assertExampleOk('state.handoff.show', { cwd: rootState });
+  const record = JSON.parse(result.stdout);
+  assert(record.kind === 'pause', `expected pause kind on show, got ${result.stdout}`);
+});
+
+check('state.handoff.write --kind planned-next example (examples[1]) succeeds once its cap/claim fixtures are seeded, carries writer_session/previous_cell/next_cell', () => {
+  writeJsonAtomic(path.join(rootState, '.bee', 'cells', 'handoff-prev.json'), {
+    id: 'handoff-prev',
+    status: 'capped',
+    trace: { verify_passed: true },
+  });
+  writeJsonAtomic(path.join(rootState, '.bee', 'claims', 'handoff-next.json'), {
+    cell: 'handoff-next',
+    session: 'sess-handoff-writer',
+    ttl_seconds: 3600,
+    claimed_at: new Date().toISOString(),
+  });
+  const result = assertExampleOk('state.handoff.write', { exampleIndex: 1, cwd: rootState });
+  const record = JSON.parse(result.stdout);
+  assert(
+    record.kind === 'planned-next' &&
+      record.writer_session === 'sess-handoff-writer' &&
+      record.previous_cell === 'handoff-prev' &&
+      record.next_cell === 'handoff-next',
+    `expected the carried planned-next identifiers, got ${result.stdout}`,
+  );
+});
+
+check('state.handoff.write --kind planned-next refuses (typed, non-zero exit) when the previous cell is not capped, no partial file (must-have truth)', () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      BEE_MJS,
+      'state',
+      'handoff',
+      'write',
+      '--kind',
+      'planned-next',
+      '--writer-session',
+      'sess-handoff-writer',
+      '--previous-cell',
+      'ghost-cell',
+      '--next-cell',
+      'handoff-next',
+    ],
+    { cwd: rootState, encoding: 'utf8' },
+  );
+  assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
+  assert(/capped/.test(result.stderr), `expected a capped-precondition refusal, got stderr=${result.stderr}`);
+});
+
+check('state.handoff.adopt example transfers the carried claim and clears the handoff', () => {
+  const result = assertExampleOk('state.handoff.adopt', { cwd: rootState });
+  const parsed = JSON.parse(result.stdout);
+  assert(parsed.ok === true, `expected adoption to succeed, got ${result.stdout}`);
+  assert(!fs.existsSync(path.join(rootState, '.bee', 'HANDOFF.json')), 'handoff should be cleared after adopt');
+  const claim = JSON.parse(fs.readFileSync(path.join(rootState, '.bee', 'claims', 'handoff-next.json'), 'utf8'));
+  assert(claim.session === 'sess-handoff-adopter', `expected the claim transferred to the adopting session, got ${JSON.stringify(claim)}`);
+});
+
+check('state.handoff.show reports no handoff (null result) once cleared; the text form (no --json) prints "No handoff."', () => {
+  const result = assertExampleOk('state.handoff.show', { cwd: rootState });
+  assert(JSON.parse(result.stdout) === null, `expected a null result once cleared, got ${result.stdout}`);
+  const textResult = spawnSync(process.execPath, [BEE_MJS, 'state', 'handoff', 'show'], { cwd: rootState, encoding: 'utf8' });
+  assert(/No handoff\./.test(textResult.stdout), `expected "No handoff." in the text render, got stdout=${textResult.stdout}`);
+});
+
 // ─── backlog.* / capture.* examples: run in a dedicated fresh repo
 // (dispatcher-unify du-2). Neither group touches .bee/state.json or the
 // demo-1/demo-2 cell fixtures, so they get their own isolated repo with a

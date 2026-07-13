@@ -25,7 +25,7 @@
 // against the unified dispatcher and, via the shims, against every
 // bee_*.mjs entrypoint too.
 
-import { MODEL_TIERS, KNOWN_PHASES, GATE_NAMES } from './state.mjs';
+import { MODEL_TIERS, KNOWN_PHASES, GATE_NAMES, HANDOFF_KINDS } from './state.mjs';
 import { REVIEW_MODES } from './reviews.mjs';
 
 export const SCHEMA_VERSION = '1.0';
@@ -688,6 +688,67 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: ['bee state session unbind --session-id sess-demo --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.handoff.write',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state handoff write',
+    description: "Write .bee/HANDOFF.json through the guarded writer (fresh-session-handoff fsh-9, D1). --kind is required and never guessed: 'pause' writes today's free-form fields (--cell/--files/--done/--remaining/--next-action/--feature/--phase/--mode, whichever apply) plus the kind — no new precondition, the same surface-and-wait record as always. 'planned-next' REFUSES (typed, zero mutation) unless --previous-cell is capped with a passing verify AND --next-cell already has a claim owned by --writer-session (the carried claim) — on success the record stores writer_session/previous_cell/next_cell alongside kind.",
+    parameters: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', description: 'Handoff kind — required, never guessed.', enum: [...HANDOFF_KINDS] },
+        'writer-session': { type: 'string', description: 'planned-next only: the writing session id, which must already own the claim on --next-cell.' },
+        'previous-cell': { type: 'string', description: 'planned-next only: the just-capped cell id (must be capped with trace.verify_passed true).' },
+        'next-cell': { type: 'string', description: "planned-next only: the next cell id, whose claim must already be owned by --writer-session." },
+        cell: { type: 'string', description: 'pause only: the cell mid-flight when the pause was written.' },
+        files: { type: 'string', description: 'pause only: comma-separated files touched so far.' },
+        done: { type: 'string', description: 'pause only: comma-separated completed steps.' },
+        remaining: { type: 'string', description: 'pause only: comma-separated remaining steps.' },
+        feature: { type: 'string', description: 'Feature slug to record on the handoff.' },
+        phase: { type: 'string', description: 'Phase to record on the handoff.' },
+        mode: { type: 'string', description: 'Mode to record on the handoff.' },
+        'next-action': { type: 'string', description: 'Saved next-action text.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['kind'],
+    },
+    examples: [
+      'bee state handoff write --kind pause --cell wip-1 --next-action "resume wip-1" --json',
+      'bee state handoff write --kind planned-next --writer-session sess-handoff-writer --previous-cell handoff-prev --next-cell handoff-next --json',
+    ],
+    deprecated: null,
+  },
+  {
+    name: 'state.handoff.adopt',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state handoff adopt',
+    description: "Adopt a planned-next handoff's carried claim into --session-id (fresh-session-handoff fsh-9, D1): transfers ownership of the handoff's next_cell claim to the adopting session, then clears .bee/HANDOFF.json — clear-after-adopt with idempotent recovery, not a single cross-file transaction (a crash between the two steps self-heals on the next call via a benign self-adopt). Refuses (typed, non-zero exit) when there is no handoff, the handoff is not kind planned-next (pause handoffs are never adopted — surface and wait instead), or the underlying claim adopt fails — every refusal leaves both the claim and the handoff untouched.",
+    parameters: {
+      type: 'object',
+      properties: {
+        'session-id': { type: 'string', description: 'Adopting session id.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['session-id'],
+    },
+    examples: ['bee state handoff adopt --session-id sess-handoff-adopter --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.handoff.show',
+    helper: 'bee_state.mjs',
+    invoke: 'bee state handoff show',
+    description: 'Show the current .bee/HANDOFF.json, if any, with kind normalized for display (a missing/unknown kind reads as "pause" — fail-safe, D1). Reports "no handoff" when none exists.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee state handoff show --json'],
     deprecated: null,
   },
 

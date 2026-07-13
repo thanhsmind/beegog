@@ -54,6 +54,8 @@ import {
   readLaneStrict,
   writeLane,
   listLanes,
+  writeHandoff,
+  adoptHandoff,
 } from './lib/state.mjs';
 // Lane + session CLI surface (fresh-session-handoff fsh-4, D2/D4): claims.mjs
 // stays out of this cell's file scope — these are already-exported read/
@@ -1071,6 +1073,55 @@ function handleStateSessionUnbind(root, flags) {
   return { result: result.session, text: `Session "${sessionId}" unbound from its lane.` };
 }
 
+// ─── state.handoff.*: the two-kind handoff lifecycle CLI surface (fresh-
+// session-handoff fsh-9, D1) over lib/state.mjs's guarded writeHandoff/
+// adoptHandoff. This cell owns the LIFECYCLE only — claim-next selection is
+// fsh-11's, SessionStart wiring (register/rehydrate/auto-resume) is fsh-10's.
+
+function handleStateHandoffWrite(root, flags) {
+  rejectDryRun(flags);
+  const kind = requireFlag(flags, 'kind');
+  const input = { kind };
+  if (flags.feature !== undefined) input.feature = String(flags.feature);
+  if (flags.phase !== undefined) input.phase = String(flags.phase);
+  if (flags.mode !== undefined) input.mode = String(flags.mode);
+  if (flags['next-action'] !== undefined) input.next_action = String(flags['next-action']);
+  if (kind === 'planned-next') {
+    input.writer_session = requireFlag(flags, 'writer-session');
+    input.previous_cell = requireFlag(flags, 'previous-cell');
+    input.next_cell = requireFlag(flags, 'next-cell');
+  } else {
+    if (flags.cell !== undefined) input.cell = String(flags.cell);
+    if (flags.files !== undefined) input.files = splitList(flags.files);
+    if (flags.done !== undefined) input.done = splitList(flags.done);
+    if (flags.remaining !== undefined) input.remaining = splitList(flags.remaining);
+  }
+  const record = writeHandoff(root, input);
+  return { result: record, text: `Wrote "${record.kind}" handoff.` };
+}
+
+function handleStateHandoffAdopt(root, flags) {
+  rejectDryRun(flags);
+  const sessionId = requireFlag(flags, 'session-id');
+  const result = adoptHandoff(root, sessionId);
+  if (!result.ok) {
+    throw new Error(`state handoff adopt: ${result.reason}`);
+  }
+  return {
+    result,
+    text: `Adopted the handoff's carried claim on "${result.next_cell}" into session "${sessionId}"; handoff cleared.`,
+  };
+}
+
+function handleStateHandoffShow(root) {
+  const handoff = readHandoff(root);
+  if (!handoff) return { result: null, text: 'No handoff.' };
+  return {
+    result: handoff,
+    text: `kind=${handoff.kind} feature=${handoff.feature ?? 'unknown'} phase=${handoff.phase ?? 'unknown'} mode=${handoff.mode ?? 'unknown'}`,
+  };
+}
+
 // ─── backlog: full port of bee_backlog.mjs's counts/rank/badges/add verbs
 // (dispatcher-unify du-2). Reuses lib/backlog.mjs's read/rank/badge exports
 // and lib/feedback.mjs's KIND_ALIASES/NORMALIZED_KINDS exactly as
@@ -1409,7 +1460,13 @@ function stateUsageFallback(leading) {
     const sub = leading[2];
     return `Unknown session action "${sub || '(missing)'}". Use: list, bind, unbind.`;
   }
-  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature, lanes, session.`;
+  // handoff (fresh-session-handoff fsh-9, D1): a new nested verb family for
+  // the two-kind handoff lifecycle, mirroring the worker/session branches.
+  if (verb === 'handoff') {
+    const sub = leading[2];
+    return `Unknown handoff action "${sub || '(missing)'}". Use: write, adopt, show.`;
+  }
+  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature, lanes, session, handoff.`;
 }
 
 function backlogUsageFallback(leading) {
@@ -1512,6 +1569,9 @@ const HANDLERS = {
   'state.session.list': handleStateSessionList,
   'state.session.bind': handleStateSessionBind,
   'state.session.unbind': handleStateSessionUnbind,
+  'state.handoff.write': handleStateHandoffWrite,
+  'state.handoff.adopt': handleStateHandoffAdopt,
+  'state.handoff.show': handleStateHandoffShow,
   'backlog.counts': handleBacklogCounts,
   'backlog.rank': handleBacklogRank,
   'backlog.badges': handleBacklogBadges,
