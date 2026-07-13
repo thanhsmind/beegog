@@ -1161,6 +1161,257 @@ function runLaneSessionRows() {
   return rows;
 }
 
+// fresh-session-handoff fsh-8 (D3/D4): bee-write-guard threads
+// payload.session_id into guards.checkWrite's optional sessionId argument
+// (fsh-5's contract, fsh-7's hold-deny + corrupt-store implementation). No
+// reservations.json fixture writer existed before this cell — authored here
+// mirroring writeSessionFile/writeLaneFile's direct-JSON style (this harness
+// spawns wrappers as real child processes and never imports the lib under
+// test).
+function writeReservationsFile(root, reservations) {
+  const dir = path.join(root, ".bee");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "reservations.json"),
+    `${JSON.stringify({ reservations }, null, 2)}\n`,
+  );
+}
+
+// A PRESENT but unparseable store (panel B1 / C7): must fail closed through
+// the real hook (exit 2), never silently read as empty.
+function writeCorruptReservationsFile(root) {
+  const dir = path.join(root, ".bee");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "reservations.json"), "{ this is not valid json");
+}
+
+function editPayload({ sessionId, cwd, filePath }) {
+  return JSON.stringify({
+    hook_event_name: "PreToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: filePath },
+    ...(sessionId ? { session_id: sessionId } : {}),
+    cwd,
+  });
+}
+
+function runHoldSessionRows() {
+  const rows = [];
+
+  // ── group 1: cross-session hold deny, phase-independence via a bound
+  // SWARMING + execution-approved lane (C8) — the default state.json is
+  // deliberately left at "idle" with no gates so a pass here can only come
+  // from the bound lane's record, never from the default falling through
+  // permissively.
+  const holdRoot = buildFixture("hook-contracts-hold-");
+  fs.writeFileSync(
+    path.join(holdRoot, ".bee", "state.json"),
+    `${JSON.stringify(
+      { phase: "idle", mode: null, feature: null, approved_gates: { context: false, shape: false, execution: false, review: false } },
+      null,
+      2,
+    )}\n`,
+  );
+  writeLaneFile(holdRoot, "lane-hold-swarm", {
+    phase: "swarming",
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  writeSessionFile(holdRoot, "sess-acting", { lane: "lane-hold-swarm" });
+
+  const nowIso = new Date().toISOString();
+  const expiredIso = new Date(Date.now() - 3600_000).toISOString();
+  writeReservationsFile(holdRoot, [
+    { agent: "otto", cell: "fsh-x", path: "src/held.js", ttl_seconds: 3600, reserved_at: nowIso, released_at: null, session: "sess-holder" },
+    { agent: "phil", cell: "fsh-8", path: "src/own.js", ttl_seconds: 3600, reserved_at: nowIso, released_at: null, session: "sess-acting" },
+    { agent: "otto", cell: "fsh-x", path: "src/expired.js", ttl_seconds: 1, reserved_at: expiredIso, released_at: null, session: "sess-holder-expired" },
+    { agent: "otto", cell: "fsh-x", path: "src/legacy.js", ttl_seconds: 3600, reserved_at: nowIso, released_at: null },
+  ]);
+
+  const rHeld = runWrapper(
+    "bee-write-guard.mjs",
+    editPayload({ sessionId: "sess-acting", cwd: holdRoot, filePath: "src/held.js" }),
+    holdRoot,
+  );
+  const rHeldPass = Boolean(
+    rHeld.status === 2 &&
+      typeof rHeld.stderr === "string" &&
+      rHeld.stderr.includes('session "sess-holder"') &&
+      rHeld.stderr.includes("agent otto") &&
+      rHeld.stderr.includes("expires"),
+  );
+  rows.push(
+    adapterRow(
+      "write-guard-hold",
+      "cross-session-hold-denied-in-swarming-lane",
+      rHeldPass,
+      rHeldPass
+        ? "a write into another session's active hold is denied (exit 2) through the real hook, in a swarming-phase execution-approved lane, naming the holder session/agent/expiry (C8)"
+        : `expected exit 2 with holder+expiry in stderr; got status=${rHeld.status} stderr=${truncate(rHeld.stderr, 400)}`,
+      rHeld,
+    ),
+  );
+
+  const rOwn = runWrapper(
+    "bee-write-guard.mjs",
+    editPayload({ sessionId: "sess-acting", cwd: holdRoot, filePath: "src/own.js" }),
+    holdRoot,
+  );
+  const rOwnPass = rOwn.status === 0;
+  rows.push(
+    adapterRow(
+      "write-guard-hold",
+      "own-session-hold-never-blocks",
+      rOwnPass,
+      rOwnPass
+        ? "the acting session's own hold on the target path never blocks its own write"
+        : `expected exit 0 (own hold never blocks); got status=${rOwn.status} stderr=${truncate(rOwn.stderr, 400)}`,
+      rOwn,
+    ),
+  );
+
+  const rExpired = runWrapper(
+    "bee-write-guard.mjs",
+    editPayload({ sessionId: "sess-acting", cwd: holdRoot, filePath: "src/expired.js" }),
+    holdRoot,
+  );
+  const rExpiredPass = rExpired.status === 0;
+  rows.push(
+    adapterRow(
+      "write-guard-hold",
+      "expired-hold-never-blocks",
+      rExpiredPass,
+      rExpiredPass
+        ? "an expired hold on the target path never blocks another session's write"
+        : `expected exit 0 (expired hold never blocks); got status=${rExpired.status} stderr=${truncate(rExpired.stderr, 400)}`,
+      rExpired,
+    ),
+  );
+
+  const rLegacy = runWrapper(
+    "bee-write-guard.mjs",
+    editPayload({ sessionId: "sess-acting", cwd: holdRoot, filePath: "src/legacy.js" }),
+    holdRoot,
+  );
+  const rLegacyPass = rLegacy.status === 0;
+  rows.push(
+    adapterRow(
+      "write-guard-hold",
+      "legacy-session-less-row-never-blocks",
+      rLegacyPass,
+      rLegacyPass
+        ? "a legacy reservation row with no session field never blocks a session-aware write"
+        : `expected exit 0 (legacy row never blocks); got status=${rLegacy.status} stderr=${truncate(rLegacy.stderr, 400)}`,
+      rLegacy,
+    ),
+  );
+
+  // ── group 2: a lane-bound session_id is gated by THAT lane's phase/gates,
+  // not the default record — the default record here is deliberately
+  // permissive (swarming, every gate approved) so a deny can only come from
+  // the bound lane's own (planning, execution unapproved) state.
+  const gateRoot = buildFixture("hook-contracts-holdgate-");
+  writeLaneFile(gateRoot, "lane-gated", {
+    phase: "planning",
+    approved_gates: { context: true, shape: true, execution: false, review: false },
+  });
+  writeSessionFile(gateRoot, "sess-gated", { lane: "lane-gated" });
+
+  const gControl = runWrapper(
+    "bee-write-guard.mjs",
+    editPayload({ cwd: gateRoot, filePath: "src/new.js" }),
+    gateRoot,
+  );
+  const gControlPass = gControl.status === 0;
+  rows.push(
+    adapterRow(
+      "write-guard-hold",
+      "no-session-id-uses-permissive-default-as-control",
+      gControlPass,
+      gControlPass
+        ? "no session_id: the permissive default record (swarming, execution approved) allows the write, as a control"
+        : `expected exit 0 from the permissive default record; got status=${gControl.status} stderr=${truncate(gControl.stderr, 400)}`,
+      gControl,
+    ),
+  );
+
+  const gBound = runWrapper(
+    "bee-write-guard.mjs",
+    editPayload({ sessionId: "sess-gated", cwd: gateRoot, filePath: "src/new.js" }),
+    gateRoot,
+  );
+  const gBoundPass = Boolean(
+    gBound.status === 2 &&
+      typeof gBound.stderr === "string" &&
+      gBound.stderr.includes('phase is "planning"') &&
+      gBound.stderr.includes('gate "execution" is not approved'),
+  );
+  rows.push(
+    adapterRow(
+      "write-guard-hold",
+      "lane-bound-session-gated-by-its-own-lane",
+      gBoundPass,
+      gBoundPass
+        ? "a payload carrying a session_id bound to a lane is gated by THAT lane's phase/gates, even though the default record is permissive"
+        : `expected exit 2 from the bound lane's own gate (planning/execution unapproved); got status=${gBound.status} stderr=${truncate(gBound.stderr, 400)}`,
+      gBound,
+    ),
+  );
+
+  // ── group 3: a present-but-corrupt reservation store fails closed (panel
+  // B1, C7) — driven through the REAL hook child, not just the lib.
+  const corruptRoot = buildFixture("hook-contracts-holdcorrupt-");
+  writeCorruptReservationsFile(corruptRoot);
+
+  const rCorrupt = runWrapper(
+    "bee-write-guard.mjs",
+    editPayload({ sessionId: "sess-corrupt", cwd: corruptRoot, filePath: "src/anything.js" }),
+    corruptRoot,
+  );
+  const rCorruptPass = Boolean(
+    rCorrupt.status === 2 &&
+      typeof rCorrupt.stderr === "string" &&
+      rCorrupt.stderr.includes("unreadable/corrupt"),
+  );
+  rows.push(
+    adapterRow(
+      "write-guard-hold",
+      "corrupt-reservation-store-fails-closed",
+      rCorruptPass,
+      rCorruptPass
+        ? "a present-but-corrupt .bee/reservations.json yields a deny (exit 2) through the real hook for a session-carrying payload — the fail-open outer catch never swallows it into an allow"
+        : `expected exit 2 naming the store unreadable/corrupt; got status=${rCorrupt.status} stderr=${truncate(rCorrupt.stderr, 400)}`,
+      rCorrupt,
+    ),
+  );
+
+  // ── group 4: zero-difference control — a payload with NO session_id at
+  // all behaves byte-identically to today even when an active session-owned
+  // hold exists on the exact target path.
+  const zeroDiffRoot = buildFixture("hook-contracts-holdzerodiff-");
+  writeReservationsFile(zeroDiffRoot, [
+    { agent: "otto", cell: "fsh-x", path: "src/heldzero.js", ttl_seconds: 3600, reserved_at: nowIso, released_at: null, session: "sess-other" },
+  ]);
+  const rZero = runWrapper(
+    "bee-write-guard.mjs",
+    editPayload({ cwd: zeroDiffRoot, filePath: "src/heldzero.js" }),
+    zeroDiffRoot,
+  );
+  const rZeroPass = rZero.status === 0;
+  rows.push(
+    adapterRow(
+      "write-guard-hold",
+      "no-session-id-is-zero-difference-even-with-a-hold",
+      rZeroPass,
+      rZeroPass
+        ? "a payload without session_id is never gated on any hold — byte-identical to today, even with an active session-owned hold on the exact path"
+        : `expected exit 0 (no session_id never consults holds); got status=${rZero.status} stderr=${truncate(rZero.stderr, 400)}`,
+      rZero,
+    ),
+  );
+
+  return rows;
+}
+
 function runCoverageGapRows() {
   const rows = [];
 
@@ -2139,6 +2390,7 @@ async function main() {
   results.push(...runCodexAcceptanceRows());
   results.push(...runNicknameRows());
   results.push(...runLaneSessionRows());
+  results.push(...runHoldSessionRows());
   results.push(...runCoverageGapRows());
   // ...plus cell codex-parity-6b's installed-route rows: the default suite
   // must also prove the ACTIVE .codex/hooks.json commands work through the

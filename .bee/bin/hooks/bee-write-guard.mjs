@@ -318,6 +318,16 @@ async function main() {
     ) {
       const state = stateLib.readState(root);
       const agentName = inferAgentName(payload, toolInput);
+      // fresh-session-handoff fsh-8 (D3/D4): thread the acting session into
+      // guards.checkWrite so a cross-session hold (fsh-7) and lane-bound
+      // gating (fsh-5) are enforced through the real production hook, not
+      // just the lib. Absent/empty session_id is null here, which is
+      // byte-identical to today's 4-arg checkWrite call (runtimes that never
+      // send session_id see zero behavior difference).
+      const sessionId =
+        typeof payload.session_id === "string" && payload.session_id.trim()
+          ? payload.session_id.trim()
+          : null;
       let relPaths = [];
 
       if (APPLY_PATCH_TOOLS.has(toolName)) {
@@ -380,7 +390,7 @@ async function main() {
       }
 
       for (const rel of relPaths) {
-        const verdict = guards.checkWrite(root, state, rel, agentName);
+        const verdict = guards.checkWrite(root, state, rel, agentName, { sessionId });
         if (verdict && verdict.allow === false) {
           denial = {
             reason:
