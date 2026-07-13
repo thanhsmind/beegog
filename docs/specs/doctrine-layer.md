@@ -84,6 +84,20 @@ procedure: the resource being protected is the orchestrator's own limited
 attention, and it is consumed in *every* turn — most damagingly in conversation
 turns, where no stage is running to remind it (B2's failure mode, observed).
 
+**B3a — A standing rule carries whatever mechanics compliance requires; only the
+elaboration may be referenced.** Trigger: a rule on the standing sheet orders an
+action that has a required form — a mandatory parameter, a marker, a naming
+convention — and a guard rejects the action when that form is missing. What is
+placed on the standing sheet: the order *and* the minimum needed to obey it
+correctly on the first attempt. What may stay in a procedure reference: the
+rationale, the tiers, the full contract. What each actor observes when the split
+is wrong: the rule fires in turns where the reference is not loaded, the action
+is attempted in its bare form, and the guard denies it — so the assistant learns
+the requirement only from the rejection, and pays one wasted attempt per session
+to do so. This is B2's failure at half-scale: the order travelled to the always-
+loaded layer and its transport did not (observed with the delegation rule and the
+subagent tier marker; decision 0023).
+
 **B4 — A doctrine rule is pinned by an anchor the suite enforces.** Trigger: the
 suite runs. What is checked: for each rule that must never disappear, a
 distinctive phrase from it is asserted present on both the master copy of the
@@ -174,10 +188,12 @@ every rule it fails to cover (decision c2c46488).
   `<!-- BEE:END -->` markers in each host's root `AGENTS.md`.
 - B1's copy-into-project step: `skills/bee-hive/scripts/onboard_bee.mjs`
   (`update_agents_block` plan item).
-- The delegation contract in full (tiers, transport, digest contract):
+- The delegation contract in full (tiers, digest contract):
   `skills/bee-hive/references/routing-and-contracts.md` § Delegation contract —
-  the *detail* legitimately lives there; the rule itself is critical rule 13 on
-  the standing sheet.
+  the *detail* legitimately lives there; the rule itself, and the transport it
+  requires (a `model` param or an anchored `[bee-tier:]` marker, B3a), are
+  critical rule 13 on the standing sheet. The guard that rejects a bare dispatch:
+  `hooks/bee-model-guard.mjs`.
 - Anchor tests (B4/R2): `skills/bee-hive/templates/tests/test_lib.mjs` — the
   `census:` checks, including the delegation-layer anchor and the on-demand
   review anchors.

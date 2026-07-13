@@ -283,6 +283,19 @@ cell is claimed-but-uncapped may be the sibling's mid-flight state, not your
 defect. Check `.bee/cells/*.json` for in-flight siblings before diagnosing;
 re-run after they cap. Never "fix" files outside your cell's scope to green it.
 
+## [20260713] Promote an order to the always-loaded layer and its transport must ride along
+**Category:** failure
+**Feature:** tier-transport-doctrine
+**Tags:** [doctrine, layering, hooks, dispatch]
+Critical rule 13 (fan out the gathering) was promoted into AGENTS.block.md so it holds in
+plain conversation turns — but HOW to dispatch (a `model` param or an anchored `[bee-tier:]`
+marker, decision 0023) stayed in `bee-hive/references/routing-and-contracts.md`, which loads
+only on skill invoke. So the rule fired exactly where its mechanics were absent: every host
+session's first dispatch was born bare and `bee-model-guard` denied it, teaching the transport
+at deny time, one wasted dispatch per session. When a standing rule commands an action that a
+guard rejects in its bare form, the standing sheet carries the order AND the minimum needed to
+obey it first try; only the rationale and elaboration may be referenced.
+
 ## [20260713] A guard that tests one state is a law with a hole
 **Category:** failure
 **Feature:** terminal-phase-gate
