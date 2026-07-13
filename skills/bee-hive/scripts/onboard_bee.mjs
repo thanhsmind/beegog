@@ -1192,7 +1192,7 @@ function commandsNotices(repoRoot, { firstOnboard = false } = {}) {
 // for BEE_VERSION — see readBeeVersion — and never import-depends on its
 // exports; the skill-sync test fixture's fake state.mjs is minimal by design).
 const STALE_ADVISOR_KEY_WARNING =
-  "advisor mode was removed in 0.1.23; the advisor key in .bee/config.json is ignored — delete it.";
+  "advisor mode was removed in 0.1.23; the top-level advisor key in .bee/config.json is ignored — delete it. (This does not affect the models.<runtime>.advisor slot, which is separate and still valid.)";
 
 function staleAdvisorNotices(repoRoot) {
   const config = readJsonIfExists(path.join(repoRoot, ".bee", "config.json"));

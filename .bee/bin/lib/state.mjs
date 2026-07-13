@@ -334,8 +334,7 @@ export function hookEnabled(root, name) {
 // it cannot be misread as covering the new models.<runtime>.advisor slot,
 // which is a different, still-valid config path resolved by resolveAdvisor.
 export const STALE_ADVISOR_KEY_WARNING =
-  'advisor mode was removed in 0.1.23; the top-level advisor key in .bee/config.json is ignored — delete it. ' +
-  '(This does not affect the models.<runtime>.advisor slot, which is separate and still valid.)';
+  'advisor mode was removed in 0.1.23; the top-level advisor key in .bee/config.json is ignored — delete it. (This does not affect the models.<runtime>.advisor slot, which is separate and still valid.)';
 
 export function hasStaleAdvisorKey(root) {
   const raw = readJson(path.join(root, '.bee', 'config.json'), null);
