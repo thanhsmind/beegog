@@ -13,8 +13,13 @@
 // overrides only a fully-resolved version refusal), and non-bee skills are
 // structurally untouchable.
 // --repo-hooks additionally vendors the plugin hooks into <repo>/.bee/bin/hooks/
-// and merges the 6 hook entries into <repo>/.claude/settings.json (with a .bak
+// and merges the hook entries into <repo>/.claude/settings.json (with a .bak
 // backup) for environments that do not load plugin hooks.
+// The opt-in is STICKY: once a repo records repo_hooks in its onboarding marker,
+// every later run vendors hooks whether or not the flag is passed. The flag opts
+// a repo in; it is not a re-consent owed on each upgrade. (Before this, a bare
+// --apply refreshed doctrine, helpers, and the version stamp while leaving
+// first-onboard guards in place — and still reported up_to_date.)
 //
 // Never overwrites existing .bee/state.json, .bee/decisions.jsonl, or .bee/cells/.
 
@@ -1424,6 +1429,19 @@ function buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, 
   return managed;
 }
 
+// Has this repo already opted into repo-local hook wiring? The opt-in is sticky:
+// the record of a prior --repo-hooks install is what keeps later upgrades honest,
+// so the owner never has to re-supply the flag to stay current.
+function hasRepoHooksRecorded(repoRoot) {
+  try {
+    const raw = fs.readFileSync(path.join(repoRoot, ".bee", "onboarding.json"), "utf8");
+    const recorded = JSON.parse(raw)?.managed?.repo_hooks;
+    return !!recorded && typeof recorded === "object" && Object.keys(recorded).length > 0;
+  } catch {
+    return false; // no marker, unreadable, or malformed — treat as never opted in
+  }
+}
+
 // Compare only the parts we manage in this run: without --repo-hooks, ignore
 // any repo_hooks entry recorded by a previous --repo-hooks run; without the
 // statusline opt-in, ignore any statusline entry the same way.
@@ -1747,7 +1765,12 @@ export function main(argv = process.argv.slice(2)) {
 
   try {
     const options = {
-      repoHooks: args.repoHooks,
+      // --repo-hooks opts a repo IN; it is not a re-consent required on every upgrade.
+      // Once a repo carries vendored hooks, an upgrade that skipped them would leave
+      // first-onboard guards running against current doctrine — silently, and while
+      // still reporting up_to_date, because subsetManaged() ignores repo_hooks when
+      // the flag is absent. Every prior upgrade did exactly that.
+      repoHooks: args.repoHooks || hasRepoHooksRecorded(repoRoot),
       claudeMd: args.claudeMd,
       forceDowngrade: args.forceDowngrade,
     };

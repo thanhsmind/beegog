@@ -14,6 +14,12 @@ Where things live. Read the touched area's spec before its code.
 - [`hook-runtime.md`](./hook-runtime.md) — the lifecycle guardrails around the assistant: one
   catalog of record rendered into per-runtime projections, hostile-input immunity, advisory
   encoding, per-target batch-write guarding, named coverage gaps (`coverage: partial`).
+- [`doctrine-layer.md`](./doctrine-layer.md) — the standing instructions an assistant always
+  carries: what belongs on the always-loaded sheet versus a stage's procedure reference (a rule
+  needed when no stage is running is silently absent from every such turn if buried in a
+  reference), how doctrine reaches every project by copy, the delegation threshold
+  (gather delegates, deciding never does), and the anchor tests that keep a rule from
+  drifting back out of the layer (`coverage: partial`).
 - [`workflow-state.md`](./workflow-state.md) — the durable workflow record: closed phase
   vocabulary, four gates, the guarded feature-start that can never inherit approvals or
   bury unfinished work, and the review records — user-invoked review sessions with frozen
@@ -38,6 +44,9 @@ Where things live. Read the touched area's spec before its code.
   bee mechanics never narrated into chat, work language only; decision 1689af1b) lives in
   `skills/bee-hive/references/routing-and-contracts.md` § Communication Contract, mirrored as
   hive law 11 (`skills/bee-hive/SKILL.md`) and host critical rule 11 (`templates/AGENTS.block.md`).
+  The *placement* rule behind every such mirror — always-applies doctrine belongs in
+  `AGENTS.block.md`, a stage's own procedure detail may stay in `references/` — is specced in
+  `doctrine-layer.md` (R1/B2); read it before authoring or relocating any rule.
 - `docs/history/learnings/critical-patterns.md` — mandatory pre-work rules for agents.
 - `docs/history/<feature>/` — how a feature was decided, planned, validated, reviewed, and shipped.
 - `docs/decisions/` — numbered design decisions. `.bee/decisions.jsonl` — the live decision log.

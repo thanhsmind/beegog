@@ -2541,6 +2541,78 @@ function hashTree(dir) {
   }
 }
 
+// --- 11. sticky repo-hooks opt-in -------------------------------------------
+// The bug this pins: --repo-hooks used to be re-consent owed on EVERY upgrade.
+// A bare --apply refreshed the doctrine block, helpers, and version stamp while
+// leaving first-onboard guards vendored in .bee/bin/hooks/ — and still reported
+// up_to_date, because subsetManaged() ignores repo_hooks when the flag is absent.
+// Eight host repos ran current doctrine against stale guards for many versions.
+// The opt-in is now sticky: the recorded repo_hooks marker keeps upgrades honest.
+{
+  const stickyTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-sticky-hooks-"));
+
+  // (a) opted in once -> a BARE --apply refreshes hooks, no flag needed
+  {
+    const repo = path.join(stickyTmp, "opted-in");
+    fs.mkdirSync(repo, { recursive: true });
+    const home = makeFakeHome();
+
+    runOnboard(["--repo-root", repo, "--apply", "--repo-hooks", "--json"], home);
+    const hooksDir = path.join(repo, ".bee", "bin", "hooks");
+    check(listMjs(hooksDir).length > 0, "sticky: first --repo-hooks install vendors hooks");
+
+    // Simulate the stale state the real hosts were in: gut a vendored guard, then
+    // upgrade WITHOUT the flag. Pre-fix, the corruption survived and status said up_to_date.
+    const guard = path.join(hooksDir, "bee-write-guard.mjs");
+    fs.writeFileSync(guard, "// stale first-onboard guard\n");
+    const bare = runOnboard(["--repo-root", repo, "--apply", "--json"], home);
+
+    const refreshed = fs.readFileSync(guard, "utf8");
+    check(!refreshed.includes("stale first-onboard guard") && refreshed.length > 200,
+      "sticky: a bare --apply refreshes vendored hooks once the repo has opted in",
+      `guard length after: ${refreshed.length}`);
+    check(bare.payload?.status === "applied", "sticky: the bare upgrade still applies cleanly",
+      JSON.stringify(bare.payload?.status));
+  }
+
+  // (b) never opted in -> a bare --apply must NOT start vendoring hooks
+  {
+    const repo = path.join(stickyTmp, "never-opted-in");
+    fs.mkdirSync(repo, { recursive: true });
+    const home = makeFakeHome();
+
+    runOnboard(["--repo-root", repo, "--apply", "--json"], home);
+    runOnboard(["--repo-root", repo, "--apply", "--json"], home);
+
+    check(listMjs(path.join(repo, ".bee", "bin", "hooks")).length === 0,
+      "sticky: a repo that never opted in is never silently given vendored hooks");
+  }
+
+  // (c) a hook file ADDED to source since the last onboard is picked up on the sticky path
+  //     (this is exactly how adapter.mjs and bee-model-guard.mjs went missing on all 8 hosts)
+  {
+    const repo = path.join(stickyTmp, "new-hook-appears");
+    fs.mkdirSync(repo, { recursive: true });
+    const home = makeFakeHome();
+
+    runOnboard(["--repo-root", repo, "--apply", "--repo-hooks", "--json"], home);
+    const hooksDir = path.join(repo, ".bee", "bin", "hooks");
+    const before = listMjs(hooksDir);
+
+    // Delete one, as if it had never existed in the older source the repo onboarded from.
+    const victim = before.includes("bee-model-guard.mjs") ? "bee-model-guard.mjs" : before[0];
+    fs.rmSync(path.join(hooksDir, victim));
+    check(!listMjs(hooksDir).includes(victim), "sticky: precondition — hook removed from the repo");
+
+    runOnboard(["--repo-root", repo, "--apply", "--json"], home);
+    check(listMjs(hooksDir).includes(victim),
+      "sticky: a hook missing from the repo is restored by a bare --apply (new source hooks land)",
+      `missing: ${victim}`);
+  }
+
+  fs.rmSync(stickyTmp, { recursive: true, force: true });
+}
+
 // --- suite-wide isolation invariant -----------------------------------------
 // Helper-level check: not a single spawn across the whole suite inherited the
 // real HOME/USERPROFILE unmodified. spawnedHomes is populated by runOnboard
