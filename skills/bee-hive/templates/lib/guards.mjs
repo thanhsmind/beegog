@@ -32,6 +32,15 @@ export const GATE_ALLOWED_PREFIXES = ['.bee/', 'docs/', 'plans/', 'AGENTS.md'];
 
 const GATED_PHASES = new Set(['exploring', 'planning', 'validating']);
 
+// Phases where no bee work is active: never started ('idle') and finished
+// ('compounding-complete', the terminal alias state.mjs already accepts as an
+// idle-equivalent in startFeature). Both must hit the intake gate. Testing
+// `phase === 'idle'` alone left every repo default-open the moment a feature
+// closed — the gates stay approved from the closed feature, so the gated-phase
+// branch never fires either, and source edits for the NEXT piece of work walked
+// straight through with nothing blocking them.
+const TERMINAL_PHASES = new Set(['idle', 'compounding-complete']);
+
 // Direct hand-edits to these two files are denied in every phase, first-hit,
 // before any other checkWrite logic (including GATE_ALLOWED_PREFIXES —
 // `.bee/` is an allowed prefix today, so this precedence is mandatory, not
@@ -69,9 +78,11 @@ function underAllowedPrefix(relPath) {
  *   bee_backlog.mjs), never a direct Edit/Write/Bash-redirect. Checked before
  *   phase logic and before GATE_ALLOWED_PREFIXES, since `.bee/` is itself an
  *   allowed prefix in gated phases.
- * - Idle (intake gate): no bee work is active, so source writes are blocked
- *   until the request is routed through bee-hive. Repository-harness lesson:
- *   a default-open first move is the hole every ad-hoc edit slips through.
+ * - Terminal phases (intake gate): 'idle' (never started) and
+ *   'compounding-complete' (feature closed) both mean no bee work is active, so
+ *   source writes are blocked until the request is routed through bee-hive.
+ *   Repository-harness lesson: a default-open first move is the hole every
+ *   ad-hoc edit slips through — and "the feature just closed" is a first move.
  *   Disable per repo with {"guards":{"idle_gate":false}} in .bee/config.json.
  * - Gated phases (exploring/planning/validating): block writes outside
  *   GATE_ALLOWED_PREFIXES while approved_gates.execution is false.
@@ -95,7 +106,7 @@ export function checkWrite(root, state, relPath, agentName = null) {
 
   const phase = state?.phase || 'idle';
 
-  if (phase === 'idle') {
+  if (TERMINAL_PHASES.has(phase)) {
     const config = readConfig(root);
     const idleGateOn = !(config.guards && config.guards.idle_gate === false);
     if (idleGateOn && !underAllowedPrefix(normalized)) {
@@ -103,7 +114,7 @@ export function checkWrite(root, state, relPath, agentName = null) {
         allow: false,
         kind: 'intake',
         reason:
-          `bee intake gate: no bee work is active (phase: idle) — writing "${normalized}" is blocked. ` +
+          `bee intake gate: no bee work is active (phase: ${phase}) — writing "${normalized}" is blocked. ` +
           'Route the request through bee-hive first: classify the mode (tiny fixes stay tiny — one cell, ' +
           'a 2-minute reality check, Gate 3, go), then execute. ' +
           `Writable without routing: ${GATE_ALLOWED_PREFIXES.join(', ')}. ` +

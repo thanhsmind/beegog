@@ -609,6 +609,37 @@ check('checkWrite blocks source writes while idle (intake gate); config can disa
   writeJsonAtomic(configPath, before || {});
 });
 
+check('checkWrite blocks source writes at compounding-complete — a closed feature is not an open door (c2c46488)', () => {
+  // The killer case: the feature closed, so phase is the terminal alias and the
+  // gates are STILL approved from that closed feature. Before the fix, the idle
+  // branch missed the phase, the gated branch saw execution:true, and the write
+  // fell through to allow — every post-feature edit skipped bee entirely.
+  const state = {
+    ...defaultState(),
+    phase: 'compounding-complete',
+    approved_gates: { context: true, shape: true, execution: true, review: true },
+  };
+  const denied = checkWrite(root, state, 'assets/css/tasks.css');
+  assert(
+    denied.allow === false && denied.kind === 'intake',
+    'intake deny expected at compounding-complete even with every gate still approved',
+  );
+  assert(
+    denied.reason.includes('compounding-complete'),
+    'the deny reason must name the actual phase, not hardcode "idle"',
+  );
+  const docsOk = checkWrite(root, state, 'docs/specs/tasks.md');
+  assert(docsOk.allow === true, 'docs/ (scribing, compounding) must stay writable at compounding-complete');
+  const beeOk = checkWrite(root, state, '.bee/cells/demo-9.json');
+  assert(beeOk.allow === true, '.bee/ bookkeeping must stay writable at compounding-complete');
+  const configPath = path.join(root, '.bee', 'config.json');
+  const before = readJson(configPath, {});
+  writeJsonAtomic(configPath, { ...before, guards: { idle_gate: false } });
+  const off = checkWrite(root, state, 'assets/css/tasks.css');
+  assert(off.allow === true, 'guards.idle_gate=false must disable the gate for both terminal phases, not just idle');
+  writeJsonAtomic(configPath, before || {});
+});
+
 check('checkWrite blocks source writes in a gated phase without execution approval', () => {
   const state = { ...defaultState(), phase: 'planning' };
   const denied = checkWrite(root, state, 'src/app.ts');
@@ -5203,6 +5234,43 @@ check('census: the on-demand review contract carries its required anchors — AG
     compoundingText.includes('candidate add'),
     'bee-compounding/SKILL.md must keep the "candidate add" review-candidate step at feature close (SPEC 7.1 step 6)',
   );
+});
+
+check('census: the Delegation contract (fan-out) lives in the always-loaded doctrine layer — AGENTS.block.md + root AGENTS.md carry the rubric, not just the bee-hive reference', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = findRepoRoot(templatesRoot);
+  if (!repoRoot) return; // no repo context to check against (bare checkout)
+
+  // The rule used to live only in skills/bee-hive/references/routing-and-contracts.md, which is
+  // read only when a skill is invoked — so a plain conversation turn had no fan-out instruction
+  // reaching it at all, and multi-file hunts ran inline on the session model.
+  const surfaces = [
+    path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+    path.join(repoRoot, 'AGENTS.md'),
+  ];
+
+  for (const surface of surfaces) {
+    if (!fs.existsSync(surface)) continue; // host repos onboarded without a root AGENTS.md yet
+    const text = fs.readFileSync(surface, 'utf8');
+    const rel = path.relative(repoRoot, surface);
+
+    assert(
+      /Fan out the gathering/.test(text),
+      `${rel} must carry the fan-out critical rule ("Fan out the gathering; keep the deciding")`,
+    );
+    assert(
+      />3 files/.test(text) && /digest, not verbatim/.test(text),
+      `${rel} must state the D2 rubric verbatim enough to act on: >3 files OR digest-not-verbatim`,
+    );
+    assert(
+      /no bee skill routed|no skill is running/.test(text),
+      `${rel} must say the fan-out rule holds in plain conversation turns where no skill routed — that is the gap this rule closes`,
+    );
+    assert(
+      /Decide-altitude never delegates/.test(text),
+      `${rel} must keep the decide-altitude carve-out (gates, synthesis, state writes, human conversation stay on the session model)`,
+    );
+  }
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

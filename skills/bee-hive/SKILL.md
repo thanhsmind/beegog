@@ -155,6 +155,7 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 10. **The agent runs the machinery, not the user.** Every bee command (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, onboarding, cell verify commands) is run by the agent itself the moment the workflow calls for it — never printed for the user to execute, never "run this and tell me the output". The only human actions in bee are gate approvals, decision answers, and privacy approvals.
 11. **Silent bookkeeping — work language only (decision 1689af1b).** Bee mechanics — cells, claims, caps, status/state writes, reservations, phase names — are never narrated into chat. The user hears the work itself in their own terms ("fixing X", "done — tests pass"). Bee vocabulary appears only when the user asks about bee directly or a gate needs their decision, and gate questions are already phrased in work language per the presentation contract. Full rule: Silent Bookkeeping in `references/routing-and-contracts.md`.
 12. **Never hand-edit `.bee/*.json(l)`.** Every state mutation goes through its CLI (`bee_state.mjs set|gate|worker|scribing-run`, `bee_backlog.mjs add`, `bee_cells.mjs`, `bee_reservations.mjs`, `bee_decisions.mjs`). A mutation with no CLI verb is filed as friction via `bee_backlog.mjs add`, then (only then) edited by hand.
+13. **The hook is a safety net, not the authority (decision c2c46488).** The law is AGENTS.md — route through bee-hive before touching source, every time. Hooks catch the times you forget; their silence is never permission. Never reason "I'll try the edit, and route through bee only if the hook blocks me": that inverts the contract, promotes the guard's coverage into the protocol, and turns every gap in the guard into a gap in the workflow. An unblocked write is not an approved write.
 
 ## Runtime Files
 
@@ -173,10 +174,12 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 
 ## Hook Response Protocol
 
-Hooks block or inject; the agent responds by contract:
+Hooks block or inject; the agent responds by contract.
+
+**Hooks are a safety net, not the authority (hive law 13).** They catch what you forget; their silence is not permission. Read the block reasons below as *reminders of the law*, never as the law itself — the law is: route through bee-hive before source is touched.
 
 - `@@BEE_PRIVACY@@ … @@END@@` marker on a read → route through AskUserQuestion with the file and question from the marker. Never work around the block.
-- Intake block (`bee intake gate`, phase idle) → do **not** retry the write; this session has no active bee work yet. Run bee-hive routing now: classify the mode, create the cell(s), pass the gates, then execute. Tiny fixes stay tiny.
+- Intake block (`bee intake gate`, a terminal phase — `idle` or `compounding-complete`) → do **not** retry the write; this session has no active bee work (nothing started, or the last feature already closed). Run bee-hive routing now: classify the mode, create the cell(s), pass the gates, then execute. Tiny fixes stay tiny.
 - Gate-guard block on a write → do **not** retry the write; surface the Gate 3 question to the user ("Feasibility validated. Approve execution?").
 - Reservation block → the worker returns `[BLOCKED]` with the conflict; the orchestrator fixes reservations or cell scope.
 - `bee decision review` nudge at session end → ask the user whether a durable decision/learning emerged; log it via `bee_decisions.mjs log` if yes.

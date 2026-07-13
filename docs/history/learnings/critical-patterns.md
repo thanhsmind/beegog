@@ -282,3 +282,17 @@ When a cell's verify runs the full shared suite, a red observed while another
 cell is claimed-but-uncapped may be the sibling's mid-flight state, not your
 defect. Check `.bee/cells/*.json` for in-flight siblings before diagnosing;
 re-run after they cap. Never "fix" files outside your cell's scope to green it.
+
+## [20260713] A guard that tests one state is a law with a hole
+**Category:** failure
+**Feature:** terminal-phase-gate
+**Tags:** [guards, gates, doctrine]
+The write guard denied source edits at `phase === 'idle'` only. `compounding-complete`
+is the OTHER terminal state (state.mjs already treats both as idle-equivalents for
+startFeature), and a closed feature leaves its gates recorded as approved — so no
+branch fired and post-feature edits walked straight through. Two lessons, one cheap and
+one expensive. Cheap: when a state model names N equivalent states, every consumer must
+test the SET, never one member. Expensive: an agent that reasons "I'll try the edit; if
+the hook blocks me I'll route through bee" has promoted the guard's coverage into the
+protocol — the law is AGENTS.md, the hook only catches what you forget, and its silence
+is never permission.

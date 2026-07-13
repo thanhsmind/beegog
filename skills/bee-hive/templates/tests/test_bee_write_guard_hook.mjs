@@ -268,6 +268,35 @@ check('gate guard (idle intake gate): a write inside an allowed prefix is still 
   assert(result.status === 0, `expected exit 0, got ${result.status} (stderr: ${result.stderr})`);
 });
 
+check('gate guard (terminal intake gate): a source write after a feature closes is denied, gates still approved (c2c46488)', () => {
+  const root = makeFixtureRoot({
+    phase: 'compounding-complete',
+    approvedGates: { context: true, shape: true, execution: true, review: true },
+  });
+  const result = runHook(root, {
+    tool_name: 'Edit',
+    tool_input: { file_path: 'assets/css/tasks.css' },
+  });
+  assert(result.status === 2, `expected exit 2, got ${result.status} (stderr: ${result.stderr})`);
+  assert(result.stderr.includes('bee intake gate'), `expected intake gate reason, got: ${result.stderr}`);
+  assert(
+    result.stderr.includes('compounding-complete'),
+    `the block must name the terminal phase it fired on, got: ${result.stderr}`,
+  );
+});
+
+check('gate guard (terminal intake gate): docs/ stays writable after a feature closes (scribing/compounding)', () => {
+  const root = makeFixtureRoot({
+    phase: 'compounding-complete',
+    approvedGates: { context: true, shape: true, execution: true, review: true },
+  });
+  const result = runHook(root, {
+    tool_name: 'Write',
+    tool_input: { file_path: 'docs/specs/tasks.md' },
+  });
+  assert(result.status === 0, `expected exit 0, got ${result.status} (stderr: ${result.stderr})`);
+});
+
 check('gate guard (gated phase): a write before execution approval is still denied', () => {
   const root = makeFixtureRoot({
     phase: 'exploring',

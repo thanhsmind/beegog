@@ -164,6 +164,24 @@ assistant sees the same corrective deny/allow outcome it would see writing to
 any other governed source path; the human owner sees no new prompt — the
 location simply stopped being an exception (bee-footprint D2).
 
+**B12 — No active work means no source writes — a finished feature is not an
+open door.** Trigger: any write to a governed path while the workflow sits in a
+terminal state — either *nothing has started yet* or *the last feature has
+closed* (workflow-state: the two terminal states, and the only two from which a
+new feature may start). What blocks it: the intake gate, which denies the write
+and names the terminal state it fired on, telling the assistant to route the
+request through the workflow first. What is still allowed: the always-writable
+set plus the knowledge locations (docs, plans, the workflow's own directory) —
+the closing steps of a feature, spec sync and learning capture, must keep
+writing after that feature closes. Why the state and not the gates decide this:
+a closed feature leaves its approvals **behind it**, still recorded as
+approved. Reading approvals alone, a finished feature is indistinguishable from
+an approved one, so the guard reads the state — the phase — and the moment work
+is no longer active the door is shut regardless of what the last feature was
+allowed to do. Escape hatch: unchanged — a repository may disable the intake
+gate entirely in its configuration, and doing so disables it for both terminal
+states alike, never one but not the other (decision c2c46488).
+
 ## Actors & Access
 
 - **The assistant** (either runtime) — subject of every checkpoint; observes
@@ -214,6 +232,20 @@ location simply stopped being an exception (bee-footprint D2).
   set of ungoverned writable locations only shrinks from this change, never
   grows; the session-close nudge's allowed-path set shrinks identically
   (bee-footprint D2).
+
+- R12 — The intake gate fires in **every** terminal state, not merely the
+  never-started one: a source write is governed whenever no feature is active,
+  including immediately after a feature closes with its approvals still on
+  record. Approvals belong to the feature that earned them and never outlive
+  it; the active state, not the recorded approvals, decides whether the door is
+  open (decision c2c46488).
+- R13 — The guardrails are a safety net, not the authority. The workflow's
+  written law is what governs the assistant; a checkpoint exists to catch what
+  the assistant forgets, and its silence is never permission. An assistant must
+  never treat "the guard did not stop me" as approval, because that promotes
+  the guard's coverage into the protocol and turns every gap in the guard into
+  a gap in the workflow — which is exactly how R12's gap was found in real use
+  (decision c2c46488).
 
 ## Edge Cases Settled
 
