@@ -5270,6 +5270,18 @@ check('census: the Delegation contract (fan-out) lives in the always-loaded doct
       /Decide-altitude never delegates/.test(text),
       `${rel} must keep the decide-altitude carve-out (gates, synthesis, state writes, human conversation stay on the session model)`,
     );
+    // An order and its transport travel together: rule 13 tells the agent to dispatch in turns
+    // where no skill loads references/routing-and-contracts.md, so the HOW (decision 0023's
+    // explicit tier) must be in the rule itself — otherwise every such dispatch is born bare and
+    // bee-model-guard denies it before the agent can learn why.
+    assert(
+      /\[bee-tier:/.test(text) && /`model`/.test(text),
+      `${rel} must state the explicit-tier transport in the rule itself: a \`model\` param or an anchored [bee-tier: <tier>] marker (decision 0023)`,
+    );
+    assert(
+      /anchored/i.test(text) && /first/i.test(text),
+      `${rel} must say the marker is anchored — first thing in the prompt/description, not buried mid-text`,
+    );
   }
 });
 

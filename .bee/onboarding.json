@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.31",
+  "bee_version": "0.1.32",
   "managed": {
-    "agents_block": "98ea08ae0e63d9533a1fc98d8835c5b78bff5f13261c51844478e932a497ea9c",
+    "agents_block": "205fa70ebad3c9b3d60c726d05fedb58b884a022a00dc2b850b2ac9e384261bf",
     "gitignore_block": "add7be1e25d3c4b7bbedff2f80c0f0e577c84610ebbac5d1eec1d70427424886",
     "helpers": {
       "bee.mjs": "d6f98987a9fffd5bc08c79b89a97493acf0f188fdfdfdecc082ba6e3c3ad4ed6",
@@ -29,7 +29,7 @@
       "inject.mjs": "a00742f94ee4eeb52aff99917aa4cbdfdb7356807f54407bc94fac6a9b651520",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
       "reviews.mjs": "8174b4ae0ea0e4b4e86a31b1e595168aea0ec0daaf9bf8fb0cac6e1cfdcb02ee",
-      "state.mjs": "768796acb97ab3d12f2bb2c9967636b3024d67b549aa6e04a1a78f6a7aae57de",
+      "state.mjs": "51f395609d132c98efbe950553f0e1c393b920fd368abc09c73b757310d32bfc",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
     },
     "repo_hooks": {
@@ -48,5 +48,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-13T08:21:58.637Z"
+  "updated_at": "2026-07-13T08:48:34.985Z"
 }
