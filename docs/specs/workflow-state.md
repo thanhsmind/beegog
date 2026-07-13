@@ -1,8 +1,8 @@
 ---
 area: workflow-state
 updated: 2026-07-13
-sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13)]
-decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b)]
+sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13)]
+decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md)]
 coverage: partial
 ---
 
@@ -39,7 +39,7 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | gate | One of four named human approvals (context, shape, execution, review). Granted per feature; all four reset to ungranted when a feature starts. The review gate is granted only through a user-invoked review session that covers the feature — a feature closes normally with it ungranted. |
 | terminal state | idle or compounding-complete — the only phases from which a new feature may start. |
 | nonterminal cell | A unit of work still open, claimed, or blocked. Its existence blocks a new feature start until it is capped or explicitly dropped on the record. |
-| handoff record | A pause snapshot left by a session that stopped mid-work. Its existence blocks a new feature start until resumed or resolved. |
+| handoff record | The baton one session leaves for the next, in exactly two kinds. **pause** — a mid-work snapshot (today's meaning): surfaced and WAITED on, never auto-resumed; blocks a default feature start until resolved. **planned-next** — a deliberate task handover written only through its guarded verb: the previous unit is finished with green verification, the next unit's claim is carried inside the record, and the writing session is named (`writer_session`). A record with a missing or unknown kind is treated as pause everywhere — the fail-safe for every legacy record. |
 | review session | The durable record of one user-requested independent review: who asked and when, the scope as the user described it, the exact included and excluded work (each exclusion carries a reason), the two immutable range anchors (baseline and head), the reviewer manifest actually dispatched, the pre-dispatch evidence check result, findings, user-acceptance items, and the decision. Identifiers are stable and never reused. |
 | review candidate | One completed change set awaiting (or holding) review coverage: the feature, the range anchor at close, and the feature's lane. Recorded once at feature close in an append-only ledger; prior entries are never rewritten. |
 | review status | Derived at read time, never stored. `verified` — completion evidence exists (every completed change). `unreviewed` — no approved session covers it (including every legacy feature with no record). `in review` — an open, not-yet-approved session includes it. `reviewed` — an approved session covers exactly its range anchor. `review stale` — an approved session covered it, but newer changes landed after that session's head; the old coverage keeps its audit trail while the newer delta is unreviewed. |
@@ -49,6 +49,13 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | consult | One evidence-backed question from a stuck worker to the adviser plus the reply. Budgeted: at most two per claim of a work unit; a re-dispatch of the same unit grants a fresh budget. |
 | degenerate consult | A consult that would ask someone no stronger than the worker itself (same assistant, or the worker already runs the session's strongest tier). Skipped by the dispatcher — the worker is never told an adviser exists. |
 | catalog fingerprint | A local fingerprint of the command catalog from the previous invocation. It detects that the discoverable surface changed without altering a command's normal result. |
+| working session | One terminal's live occupancy of the project, recorded durably with its start time and a heartbeat it renews while working. Claims and (in later slices) file holds name their owning session. |
+| claim | Exclusive ownership of one unit of work by one working session, with a lifetime (TTL) and the owner's heartbeat. Created atomically: among any number of simultaneous claimants exactly one wins; every loser receives a typed refusal, never a crash. |
+| typed refusal | The uniform "no" every coordination operation answers with on contention: a structured result carrying a refusal code and reason, never an exception. Codes and meanings: `SESSION_EXISTS` — the session record already exists; `SESSION_MISSING` — the named owner has no session record; `CLAIMED` — another live session owns the unit; `GATE_HELD` — someone is mid-mutation on this claim, try again; `NOT_OWNER` — the caller is not the claim's owner; `NOT_FOUND` — no such claim exists. |
+| adoption | Ownership transfer of a live claim to a successor session (the fresh-session handoff, D1). Performed under the claim's own exclusive gate while the claim record stays continuously present — at no instant does the unit look unclaimed, so no third session can seize it mid-transfer. |
+| reclaim (sweep) | Taking back an abandoned claim. Permitted only when BOTH the claim's lifetime has expired AND its owner's heartbeat is stale, re-verified while holding the claim's gate. A stall signal alone never justifies stealing live work. |
+| lane | One feature's own pipeline record — its feature name, mode, phase (same closed vocabulary), all four gates, summary and next action — living beside the default record so several features can be active at once. The default record is itself a lane: the one every unbound session sees. |
+| lane binding | The lane named on a working session's record. Resolution order is fixed: the session's bound lane when it names an existing lane, otherwise the default record — never a guess, never a scan. A binding to a missing or corrupt lane answers with a typed refusal (`LANE_MISSING`/`LANE_CORRUPT`/`LANE_INVALID`). While unbound, the session record simply omits the binding. |
 
 ## Behaviors & Operations
 
@@ -167,6 +174,120 @@ every unit is validated (including duplicate identifiers within the batch)
 before any is written, so one invalid unit means zero units created. A
 single-unit request still works the same way.
 
+**B11 — Concurrent sessions coordinate through atomic claims (foundation, not
+yet wired).** Trigger: a working session wants exclusive ownership of a unit of
+work while other sessions may want the same unit at the same moment. What
+happens: the claim is created by exclusive creation — a storage-level operation
+that cannot succeed twice — so exactly one claimant wins; every other claimant
+receives the typed refusal `CLAIMED` and remains free to pick other work. The
+winning claim carries its owner, lifetime, and heartbeat. Mutating a live claim
+(adoption to a successor session; reclaim of an abandoned one) happens only
+under that claim's own exclusive gate, with the claim record continuously
+present throughout — an observer polling at any instant sees the unit owned by
+exactly one session, never unowned mid-transfer. Reclaim additionally
+re-verifies, while holding the gate, that the lifetime is expired AND the
+heartbeat is stale. Single-winner behavior is proven by repeated multi-process
+races on both supported platforms (Linux/WSL2 and Windows). What each actor
+observes today: the full flow is wired — sessions and lane bindings are
+commandable (B12), the readers consult them (B13), cross-session holds are
+enforced at write time (B14), and a finished task hands itself to a fresh
+session (B15) which can then pull further approved work (B16).
+
+**B12 — A feature can start as its own lane, and every lane mutation is
+commandable.** Trigger: new work begins while other features are mid-flight.
+What happens: starting a feature *as a lane* creates that feature's own
+pipeline record and resets exactly its four gates in one atomic write, leaving
+the default record and every other lane byte-identical. Its preconditions are
+lane-scoped, with attribution **derived from existing records, never new
+fields**: an unfinished unit blocks only if it belongs to this feature; a
+pause snapshot blocks only if it names this feature; a registered worker
+blocks only if its unit belongs to this feature; and — globally — declared
+intended paths refuse when they overlap another session's live holds. The
+default (non-lane) feature start keeps its original whole-repo semantics
+unchanged. Every lane mutation has a command verb: the state mutation verbs
+accept a lane selector routing the write to that lane's record (with a safety
+refusal when a mutation would silently rename a lane's identity), lanes are
+listable with their phases/gates/bindings, and sessions are listable and
+bindable/unbindable to a lane. Every published command example is executed by
+the suite against the real operation. What each actor observes: an agent in a
+zero-lane repo sees exactly the pre-lane behavior of every verb; an agent
+using lanes sees per-feature pipelines whose gates never bleed into each
+other.
+
+**B13 — Readers resolve through the acting session's lane.** Trigger: any
+read of "where does the workflow stand" while lanes exist. What happens, per
+reader: **claim authorization** — a unit of work is claimable only under its
+own feature-lane's execution approval when such a lane exists; an unapproved
+lane refuses even though the default gate is granted, an approved lane
+authorizes even though it is not, and a corrupt lane record refuses loudly
+rather than falling back (the lane never borrows the default pipeline's
+authority — fresh-session-handoff D2). **Write gating** — the production write
+guard passes the acting session's identity (carried on every guard event) into
+the check, so a bound session is judged by its own lane's phase and gates; an
+event without the identity is judged exactly as before. **Presentation** — the status surface lists every
+lane with its phase, gates, and bound sessions; the session preamble, given a
+bound session, shows that lane's view plus a one-line count of other active
+lanes; the two lifecycle guardrails (mid-work warning, session-close warning)
+judge the acting session's own lane. What each actor observes in a zero-lane
+repo: byte-identical output everywhere — the entire migration is invisible
+until a lane exists.
+
+**B14 — A write into another live session's held path is refused at write
+time.** Trigger: any write attempt while the acting session's identity is
+known. What happens: when the path overlaps a hold owned by a *different*
+session that is still live (within its lifetime), the write is refused with a
+typed message naming the holder — its session and its worker name — and when
+the hold expires. What never blocks: the acting session's own holds, expired
+holds, and legacy holds that predate session ownership (they carry no owning
+session and keep their original worker-level meaning). The refusal is
+unconditional on workflow phase — it fires in every phase, including mid-
+execution. When the hold ledger exists but cannot be read, a session-aware
+write is refused (fail-closed, as a returned refusal that survives the
+guard's fail-open crash handling — never a thrown error, which the guard
+would swallow into an allow); a ledger that simply does not exist blocks
+nothing. What each actor observes: the blocked session gets the who-and-until
+message and stays healthy (free to pick other work); the holding session is
+undisturbed; a repo with no session-owned holds behaves exactly as before
+(fresh-session-handoff D3).
+
+**B15 — A finished task hands itself to a fresh session through the two-kind
+handoff.** Trigger: a session finishes a unit (finished = capped with green
+verification) and a next unit has been claimed for it. What happens: the
+planned-next handoff is written through its guarded verb — the verb itself
+refuses (typed, zero mutation) when the previous unit is unfinished, its
+verification did not pass, or the carried claim is absent or not owned by the
+writer; the owner then starts a fresh session (types the clear command). At
+session start, only on the **fresh-session boundaries** (a cleared or newly
+started session) does the runtime adopt the carried claim for the new session
+— ownership transfers through the claim's gate, the record staying present
+throughout, so a third session racing for the same unit loses with a typed
+failure — and the new session's opening context replaces the wait-block with
+a start-now instruction naming the adopted unit, its verification command,
+and its lane. On a **resumed or memory-compacted** session the runtime never
+adopts: the handoff stays on disk untouched and is shown as pending — those
+events are not a fresh session, and auto-resume authority exists only at the
+fresh-session boundary (D1). A pause handoff — and every legacy record
+without a kind — renders exactly today's present-and-wait block. A failed
+adoption never fabricates a start-now instruction; the reason is shown and
+the wait presentation applies. Clearing the record happens after adoption and
+recovers idempotently if interrupted (never claimed as atomic across files).
+
+**B16 — A session out of work pulls the next approved unit itself.** Trigger:
+a session asks for its next unit (typically right before writing a
+planned-next handoff). What happens, in order: expired claims are swept first
+— a unit claimed by a dead session (lifetime expired AND heartbeat stale) is
+reclaimed in the same pass, so "no work" is never reported while such a unit
+exists; then selection prefers the session's own lane's ready units (its
+execution gate approved), then ready units of OTHER lanes **whose execution
+gate a human approved** — an unapproved lane is never touched even when its
+units are the only ready ones (the puller never widens authority, D2); units
+whose files overlap another session's live holds are skipped; cross-lane
+order follows the product backlog's ranking (by the lane's feature row),
+falling back to lane age. Nothing qualifies → the typed answer "no approved
+work left", and the session stops honestly. Claiming the chosen unit is
+crash-safe: the cross-session claim file is taken first, the work record
+second, and a failure of the second releases the first (no orphaned claim).
+
 ## Actors & Access
 
 - **The agent** runs every verb itself; the human never runs workflow
@@ -241,6 +362,26 @@ single-unit request still works the same way.
   widens a worker's file scope, and never substitutes for fresh verification
   output; advice that contradicts a locked decision turns into a block citing
   both the decision and the advice (advisor D1/A1; goal-check unchanged).
+- R19 — A planned-next handoff's preconditions live in its verb, never in
+  prose: finished previous unit with passing verification and a carried,
+  writer-owned claim, or the write refuses with zero mutation
+  (fresh-session-handoff D1).
+- R20 — Auto-resume authority exists only at the fresh-session boundary
+  (cleared or newly started session); resumed and memory-compacted sessions
+  never adopt a handoff, and a kindless record is pause everywhere
+  (fresh-session-handoff D1; validation-s4 C11).
+- R21 — The work puller never widens authority: cross-lane pull selects only
+  from lanes whose execution gate a human approved, and the "no approved work
+  left" stop may only be answered after the stale-claim sweep ran
+  (fresh-session-handoff D2; validation-s4 C10).
+- R17 — Concurrent ownership is decided by atomic exclusive creation, never by
+  check-then-write; a live claim is mutated only under its own exclusive gate;
+  reclaim requires expired lifetime AND stale heartbeat, re-verified under that
+  gate (fresh-session-handoff D1/D3; critical pattern 20260710 — never release
+  another agent's holdings on a stall signal alone).
+- R18 — Contention is answered with a typed refusal carrying a code and reason,
+  never an exception; a refused claimant is healthy and free to take other work
+  (fresh-session-handoff S1, validation repair).
 - R8 — A workflow configuration file that still carries the retired advisor
   setting loads successfully: the setting is stripped from the parsed view
   and surfaced as one warning by both the status command and the onboarding
@@ -284,8 +425,17 @@ single-unit request still works the same way.
 - One invalid unit in a batch slice-creation request → zero units written; a
   duplicate identifier inside the batch is refused the same way.
 
+- Project directories on network file systems are declared unsupported for
+  session coordination: exclusive creation is not reliable there. The
+  supported topologies are a local Linux/WSL2 disk and a local Windows disk
+  (both race-proven).
+
 ## Open Gaps
 
+- Real-terminal UAT of the fresh-session flow is outstanding: the two-session
+  behavior is proven by suite fixtures and real-hook-child rows, but the
+  literal two-terminals + `/clear` walk-through on this machine has not been
+  performed by the owner yet.
 - The rest of the workflow record's semantics (worker registry lifecycle,
   scribing-run stamps and debt counting, reservation TTL policy) are not yet
   specced here — contracts live in the CLI usage comments and
@@ -342,6 +492,37 @@ single-unit request still works the same way.
   in `skills/bee-hive/templates/lib/cells.mjs`; CLI `bee_cells.mjs update --id ID
   --file patch.json | --stdin` (byte-mirrored to `.bee/bin/`). Evidence: cell
   `.bee/cells/cuv-1.json` (commit 127abb0), 7 suite checks.
+- Session coordination (B11/R17/R18): `skills/bee-hive/templates/lib/claims.mjs`
+  (byte-mirrored to `.bee/bin/lib/`) — sessions under `.bee/sessions/`, claims
+  under `.bee/claims/`, per-claim gate `<cell>.adopting`; race orchestrator
+  `skills/bee-hive/templates/tests/race_claims_child.mjs` (3 scenarios, spawnSync
+  rows in test_lib.mjs). Evidence: traces `.bee/cells/fsh-{1,2}.json` (win32 +
+  linux probe PASS lines), commits 0224f6c, edfac87; validation
+  `docs/history/fresh-session-handoff/reports/validation-s1.md`.
+- Lanes (B12): lane store + `resolvePipeline` + lane-mode `startFeature` in
+  `skills/bee-hive/templates/lib/state.mjs`; `bindSessionLane`/`unbindSessionLane`
+  in `lib/claims.mjs`; CLI: `--lane` on `state.set/gate/scribing-run`,
+  `--as-lane/--session-id/--paths` on `state.start-feature`, `state.lanes`,
+  `state.session.list/bind/unbind` (`lib/command-registry.mjs` + `bee.mjs`,
+  runExample rows in `test_bee_cli.mjs`). Evidence: traces
+  `.bee/cells/fsh-{3,4}.json`, commits 257d6b5, 6fa4f89;
+  `docs/history/fresh-session-handoff/reports/validation-s2.md`.
+- Hold enforcement (B14): `findSessionConflicts` + optional `session` field in
+  `skills/bee-hive/templates/lib/reservations.mjs`; phase-independent deny +
+  fail-closed corrupt-store branch in `lib/guards.mjs` `checkWrite`;
+  `payload.session_id` threaded at `hooks/bee-write-guard.mjs`; `--session` on
+  the reservations verb. Evidence: traces `.bee/cells/fsh-{7,8}.json`, commits
+  255757d, 4969e8c; `docs/history/fresh-session-handoff/reports/validation-s3.md`.
+- Fresh-session flow (B15/B16): two-kind handoff (`readHandoff` normalization,
+  strict `writeHandoff`, `adoptHandoff`) in `skills/bee-hive/templates/lib/state.mjs`;
+  CLI `state.handoff.write/adopt/show`; source-gated adoption + session
+  registration in `hooks/bee-session-init.mjs`; pure kind-branch rendering in
+  `lib/inject.mjs` (`handoffOutcome` param); `claimNextCell`/`claimCellCrossSession`
+  in `lib/cells.mjs` + `featureBacklogRank` in `lib/backlog.mjs`; CLI
+  `cells.claim-next` (the production `sweepExpiredClaims` trigger). Evidence:
+  traces `.bee/cells/fsh-{9,10,11}.json`, commits 79e800e, d419e0e, 9931fc6;
+  `docs/history/fresh-session-handoff/reports/validation-s4.md` (incl. the
+  orchestrator's retro-RED probe for fsh-11).
 - Review records: `.bee/reviews/<id>.json` (sessions) + `.bee/review-candidates.jsonl`
   (ledger), CLI `bee_reviews.mjs` (create/list/show/record/candidate add/
   candidates/status), lib `skills/bee-hive/templates/lib/reviews.mjs`

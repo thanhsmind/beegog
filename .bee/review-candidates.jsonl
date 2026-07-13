@@ -5,3 +5,5 @@
 {"id":"280a86c2-cb68-4c2f-a531-93b026ec6dc0","type":"candidate","date":"2026-07-12T15:21:16.029Z","feature":"cells-batch-add","head":"304dfd70ebf0425e6c39e737af31e45c869cb830","mode":"small","baseline":null,"cells":[]}
 {"id":"85363ba6-128d-49e1-86e7-124324a7f489","type":"candidate","date":"2026-07-12T16:39:31.059Z","feature":"dispatcher-unify","head":"89999c560736c49340a646dd3decfaad6b47f6e0","mode":"standard","baseline":null,"cells":[]}
 {"id":"2cbdd3e8-d229-4c00-a93b-04690e24ee5c","type":"candidate","date":"2026-07-13T00:01:53.800Z","feature":"advisor","head":"41f295ff56a16ce639defe83dc165896d5bb1e6f","mode":"standard","baseline":null,"cells":[]}
+{"id":"3712ea02-4810-4efa-ae7e-3be019f75c21","type":"candidate","date":"2026-07-13T10:43:46.783Z","feature":"tier-transport-doctrine","head":"af4840c1fa77c613e76a3c20097f0340152508bd","mode":"tiny","baseline":null,"cells":[]}
+{"id":"56c1ba08-08cb-481a-afbd-d047756bcdef","type":"candidate","date":"2026-07-13T18:45:00.645Z","feature":"fresh-session-handoff","head":"b6fd1f92bdaa5604babf9ccfbd4a99b2a4132e10","mode":"high-risk","baseline":null,"cells":[]}

@@ -309,3 +309,29 @@ test the SET, never one member. Expensive: an agent that reasons "I'll try the e
 the hook blocks me I'll route through bee" has promoted the guard's coverage into the
 protocol — the law is AGENTS.md, the hook only catches what you forget, and its silence
 is never permission.
+
+## [20260714] A fail-open host swallows fail-closed throws into an allow
+**Category:** failure
+**Feature:** fresh-session-handoff
+**Tags:** [hooks, fail-closed, guards, security]
+
+The write-guard hook exits 0 (allow) on ANY crash by contract. A guard branch that
+must fail closed therefore may NEVER throw — it must RETURN a typed deny verdict,
+or the host converts the denial into a silent grant. The strict-reader precedent
+(`readStateStrict` throws) is the wrong template inside a fail-open host. Prove
+fail-closed paths through the real host process, not only in-process.
+
+**Full entry:** docs/history/learnings/20260714-fresh-session-handoff.md
+
+## [20260714] Async assertions under a non-awaiting runner pass vacuously
+**Category:** failure
+**Feature:** fresh-session-handoff
+**Tags:** [testing, concurrency, silent-green]
+
+`check(fn)` never awaits: an async test body reports PASS immediately and its
+assertion failures become unhandled rejections. Concurrency tests belong in a
+self-contained child orchestrator (fork racers, assert internally, exit 0/1)
+invoked by ONE blocking spawnSync row — and their falsifiability is proven once by
+deliberately breaking an invariant and watching the suite go red.
+
+**Full entry:** docs/history/learnings/20260714-fresh-session-handoff.md

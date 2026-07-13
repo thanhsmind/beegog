@@ -26,7 +26,10 @@ Where things live. Read the touched area's spec before its code.
   scope (`.bee/reviews/`), the append-only candidates ledger, and derived review statuses
   (verified/unreviewed/in review/reviewed/review stale); also the unified nine-group
   command entry point and the worker adviser consult (a stuck worker asks a configured
-  stronger model, on failure only, budgeted) (`coverage: partial`).
+  stronger model, on failure only, budgeted); plus the session-coordination
+  primitives — atomic single-winner claims with TTL + heartbeat, typed refusal
+  codes, gate-protected adoption/reclaim (B11, foundation, not yet wired)
+  (`coverage: partial`).
 
 ## Not yet specced
 
