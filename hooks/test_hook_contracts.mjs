@@ -1412,6 +1412,304 @@ function runHoldSessionRows() {
   return rows;
 }
 
+// fresh-session-handoff fsh-10 (D1, D4, validation-s4 C11/C12): bee-session-init
+// is the ONLY place a planned-next handoff is ever adopted — the hook threads
+// payload.session_id + payload.source, performs the source-gated adoption via
+// fsh-9's adoptHandoff, and passes the typed outcome into the pure builder
+// (buildSessionPreamble). Direct-JSON fixture writers, mirroring this file's
+// existing writeLaneFile/writeSessionFile/writeReservationsFile style (this
+// harness spawns wrappers as real child processes and never imports the lib
+// under test).
+function writeCellFileFixture(root, id, extra = {}) {
+  const dir = path.join(root, ".bee", "cells");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, `${id}.json`),
+    `${JSON.stringify({ id, feature: "fresh-session-handoff", title: "fixture", lane: "high-risk", ...extra }, null, 2)}\n`,
+  );
+}
+
+function writeClaimFileFixture(root, cellId, session, extra = {}) {
+  const dir = path.join(root, ".bee", "claims");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, `${cellId}.json`),
+    `${JSON.stringify({ cell: cellId, session, ttl_seconds: 3600, claimed_at: new Date().toISOString(), ...extra }, null, 2)}\n`,
+  );
+}
+
+function writeHandoffFileFixture(root, record) {
+  fs.writeFileSync(path.join(root, ".bee", "HANDOFF.json"), `${JSON.stringify(record, null, 2)}\n`);
+}
+
+function readJsonFileOrNull(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function sessionStartPayload({ sessionId, source, cwd }) {
+  return JSON.stringify({
+    hook_event_name: "SessionStart",
+    ...(source ? { source } : {}),
+    ...(sessionId ? { session_id: sessionId } : {}),
+    cwd,
+  });
+}
+
+// One shared planned-next fixture: previous cell capped+green, next cell
+// claimed by the writer session, a planned-next HANDOFF.json carrying it.
+function buildPlannedNextFixture(prefix, { writerSession = "sess-writer" } = {}) {
+  const root = buildFixture(prefix);
+  writeCellFileFixture(root, "prev-fsh10", { status: "capped", trace: { verify_passed: true } });
+  writeCellFileFixture(root, "next-fsh10", {
+    status: "open",
+    lane: "high-risk",
+    verify: "node verify-fsh10.mjs",
+  });
+  writeClaimFileFixture(root, "next-fsh10", writerSession);
+  writeHandoffFileFixture(root, {
+    kind: "planned-next",
+    writer_session: writerSession,
+    previous_cell: "prev-fsh10",
+    next_cell: "next-fsh10",
+    next_action: "start next-fsh10",
+  });
+  return root;
+}
+
+function runHandoffSessionRows() {
+  const rows = [];
+
+  // ── row (a): source "clear" through the REAL hook child — start-now block
+  // naming the adopted cell, AND the claim's ownership actually transfers.
+  const clearRoot = buildPlannedNextFixture("hook-contracts-handoff-clear-");
+  const rClear = runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ sessionId: "sess-fresh", source: "clear", cwd: clearRoot }),
+    clearRoot,
+  );
+  const clearClaim = readJsonFileOrNull(path.join(clearRoot, ".bee", "claims", "next-fsh10.json"));
+  const rClearPass = Boolean(
+    rClear.status === 0 &&
+      /PLANNED-NEXT ADOPTED/.test(rClear.stdout || "") &&
+      /next-fsh10/.test(rClear.stdout || "") &&
+      clearClaim &&
+      clearClaim.session === "sess-fresh" &&
+      !fs.existsSync(path.join(clearRoot, ".bee", "HANDOFF.json")),
+  );
+  rows.push(
+    adapterRow(
+      "session-init-handoff",
+      "clear-source-adopts-and-transfers-claim",
+      rClearPass,
+      rClearPass
+        ? 'source "clear": a planned-next handoff yields a start-now preamble naming the adopted cell, the claim transfers to the new session, and the handoff is cleared'
+        : `expected a start-now preamble + transferred claim; got status=${rClear.status} claim=${JSON.stringify(clearClaim)} stdout=${truncate(rClear.stdout, 400)}`,
+      rClear,
+    ),
+  );
+
+  // ── row (a'): source "startup" (the OTHER qualifying source) behaves the
+  // same as "clear" when the acting session is genuinely a different session
+  // than the one that wrote the handoff.
+  const startupRoot = buildPlannedNextFixture("hook-contracts-handoff-startup-");
+  const rStartup = runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ sessionId: "sess-fresh-2", source: "startup", cwd: startupRoot }),
+    startupRoot,
+  );
+  const startupClaim = readJsonFileOrNull(path.join(startupRoot, ".bee", "claims", "next-fsh10.json"));
+  const rStartupPass = Boolean(
+    rStartup.status === 0 &&
+      /PLANNED-NEXT ADOPTED/.test(rStartup.stdout || "") &&
+      startupClaim &&
+      startupClaim.session === "sess-fresh-2" &&
+      !fs.existsSync(path.join(startupRoot, ".bee", "HANDOFF.json")),
+  );
+  rows.push(
+    adapterRow(
+      "session-init-handoff",
+      "startup-source-from-a-different-session-adopts",
+      rStartupPass,
+      rStartupPass
+        ? 'source "startup" from a genuinely different acting session also adopts and transfers the claim'
+        : `expected adoption on startup from a different session; got status=${rStartup.status} claim=${JSON.stringify(startupClaim)} stdout=${truncate(rStartup.stdout, 400)}`,
+      rStartup,
+    ),
+  );
+
+  // ── rows (b): source "resume"/"compact" NEVER adopt — mandatory negative
+  // rows (validation-s4 C11). The handoff stays on disk, the claim owner is
+  // unchanged, and the preamble shows a pending-wait block (never start-now).
+  for (const source of ["resume", "compact"]) {
+    const root = buildPlannedNextFixture(`hook-contracts-handoff-${source}-`);
+    const result = runWrapper(
+      "bee-session-init.mjs",
+      sessionStartPayload({ sessionId: "sess-fresh-neg", source, cwd: root }),
+      root,
+    );
+    const claim = readJsonFileOrNull(path.join(root, ".bee", "claims", "next-fsh10.json"));
+    const handoffIntact = fs.existsSync(path.join(root, ".bee", "HANDOFF.json"));
+    const pass = Boolean(
+      result.status === 0 &&
+        /HANDOFF present — present it and WAIT/.test(result.stdout || "") &&
+        !/PLANNED-NEXT ADOPTED/.test(result.stdout || "") &&
+        handoffIntact &&
+        claim &&
+        claim.session === "sess-writer",
+    );
+    rows.push(
+      adapterRow(
+        "session-init-handoff",
+        `${source}-source-never-adopts`,
+        pass,
+        pass
+          ? `source "${source}": a planned-next handoff NEVER adopts — pending-wait block, handoff intact, claim owner unchanged (C11)`
+          : `expected a pending-wait block with the handoff/claim untouched; got status=${result.status} handoffIntact=${handoffIntact} claim=${JSON.stringify(claim)} stdout=${truncate(result.stdout, 400)}`,
+        result,
+      ),
+    );
+  }
+
+  // ── row: a "startup" source whose writer_session equals the acting session
+  // is ALSO refused — not a genuine fresh-session boundary (panel W1 pin).
+  const sameSessionRoot = buildPlannedNextFixture("hook-contracts-handoff-samesession-", {
+    writerSession: "sess-same",
+  });
+  const rSameSession = runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ sessionId: "sess-same", source: "startup", cwd: sameSessionRoot }),
+    sameSessionRoot,
+  );
+  const sameSessionClaim = readJsonFileOrNull(path.join(sameSessionRoot, ".bee", "claims", "next-fsh10.json"));
+  const rSameSessionPass = Boolean(
+    rSameSession.status === 0 &&
+      /HANDOFF present — present it and WAIT/.test(rSameSession.stdout || "") &&
+      !/PLANNED-NEXT ADOPTED/.test(rSameSession.stdout || "") &&
+      fs.existsSync(path.join(sameSessionRoot, ".bee", "HANDOFF.json")) &&
+      sameSessionClaim &&
+      sameSessionClaim.session === "sess-same",
+  );
+  rows.push(
+    adapterRow(
+      "session-init-handoff",
+      "startup-same-writer-session-never-self-adopts",
+      rSameSessionPass,
+      rSameSessionPass
+        ? 'source "startup" whose writer_session equals the acting session is refused — not a fresh-session boundary'
+        : `expected a refused pending-wait block; got status=${rSameSession.status} claim=${JSON.stringify(sameSessionClaim)} stdout=${truncate(rSameSession.stdout, 400)}`,
+      rSameSession,
+    ),
+  );
+
+  // ── row (c): a pause handoff renders today's wait block byte-identically
+  // whether or not a session_id is present (only planned-next branches).
+  const pauseRootA = buildFixture("hook-contracts-handoff-pause-a-");
+  writeHandoffFileFixture(pauseRootA, { kind: "pause", cell: "wip-x", next_action: "resume wip-x" });
+  const pauseRootB = buildFixture("hook-contracts-handoff-pause-b-");
+  writeHandoffFileFixture(pauseRootB, { kind: "pause", cell: "wip-x", next_action: "resume wip-x" });
+  const rPauseNoSession = runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ cwd: pauseRootA }),
+    pauseRootA,
+  );
+  const rPauseWithSession = runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ sessionId: "sess-pause", source: "clear", cwd: pauseRootB }),
+    pauseRootB,
+  );
+  const pausePass = Boolean(
+    rPauseNoSession.status === 0 &&
+      rPauseWithSession.status === 0 &&
+      rPauseNoSession.stdout === rPauseWithSession.stdout &&
+      /HANDOFF present — present it and WAIT/.test(rPauseNoSession.stdout || ""),
+  );
+  rows.push(
+    adapterRow(
+      "session-init-handoff",
+      "pause-handoff-byte-identical-regardless-of-session",
+      pausePass,
+      pausePass
+        ? "a pause handoff renders today's wait block byte-identically whether or not session_id/source clear is present — never adopted"
+        : `expected byte-identical pause rendering; got noSession.status=${rPauseNoSession.status} withSession.status=${rPauseWithSession.status} equal=${rPauseNoSession.stdout === rPauseWithSession.stdout}`,
+      rPauseWithSession,
+    ),
+  );
+
+  // ── row (c'): a kindless (legacy, no `kind` field) handoff normalizes to
+  // pause and renders the identical wait block too.
+  const kindlessRootA = buildFixture("hook-contracts-handoff-kindless-a-");
+  writeHandoffFileFixture(kindlessRootA, { cell: "wip-legacy", done: [], remaining: [] });
+  const kindlessRootB = buildFixture("hook-contracts-handoff-kindless-b-");
+  writeHandoffFileFixture(kindlessRootB, { cell: "wip-legacy", done: [], remaining: [] });
+  const rKindlessNoSession = runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ cwd: kindlessRootA }),
+    kindlessRootA,
+  );
+  const rKindlessWithSession = runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ sessionId: "sess-kindless", source: "clear", cwd: kindlessRootB }),
+    kindlessRootB,
+  );
+  const kindlessPass = Boolean(
+    rKindlessNoSession.status === 0 &&
+      rKindlessWithSession.status === 0 &&
+      rKindlessNoSession.stdout === rKindlessWithSession.stdout &&
+      /HANDOFF present — present it and WAIT/.test(rKindlessNoSession.stdout || ""),
+  );
+  rows.push(
+    adapterRow(
+      "session-init-handoff",
+      "kindless-legacy-handoff-byte-identical-regardless-of-session",
+      kindlessPass,
+      kindlessPass
+        ? "a legacy handoff with no kind field normalizes to pause and renders the identical wait block regardless of session_id/source"
+        : `expected byte-identical kindless rendering; got noSession.status=${rKindlessNoSession.status} withSession.status=${rKindlessWithSession.status} equal=${rKindlessNoSession.stdout === rKindlessWithSession.stdout}`,
+      rKindlessWithSession,
+    ),
+  );
+
+  // ── row (d): payloads without session_id render byte-identically to today
+  // EVEN with a planned-next handoff present — no adoption is ever attempted.
+  const noIdRootA = buildPlannedNextFixture("hook-contracts-handoff-noid-a-");
+  const noIdRootB = buildPlannedNextFixture("hook-contracts-handoff-noid-b-");
+  const rNoIdBare = runWrapper("bee-session-init.mjs", sessionStartPayload({ cwd: noIdRootA }), noIdRootA);
+  const rNoIdWithSource = runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ source: "clear", cwd: noIdRootB }),
+    noIdRootB,
+  );
+  const noIdBareClaim = readJsonFileOrNull(path.join(noIdRootA, ".bee", "claims", "next-fsh10.json"));
+  const noIdPass = Boolean(
+    rNoIdBare.status === 0 &&
+      rNoIdWithSource.status === 0 &&
+      rNoIdBare.stdout === rNoIdWithSource.stdout &&
+      /HANDOFF present — present it and WAIT/.test(rNoIdBare.stdout || "") &&
+      !/PLANNED-NEXT ADOPTED/.test(rNoIdBare.stdout || "") &&
+      !/Adoption not applied/.test(rNoIdBare.stdout || "") &&
+      noIdBareClaim &&
+      noIdBareClaim.session === "sess-writer" &&
+      fs.existsSync(path.join(noIdRootA, ".bee", "HANDOFF.json")),
+  );
+  rows.push(
+    adapterRow(
+      "session-init-handoff",
+      "no-session-id-byte-identical-even-with-planned-next",
+      noIdPass,
+      noIdPass
+        ? "no session_id: byte-identical to today even with a planned-next handoff on disk and source=clear — no adoption is ever attempted, claim/handoff untouched"
+        : `expected byte-identical no-adoption rendering; got bare.status=${rNoIdBare.status} withSource.status=${rNoIdWithSource.status} equal=${rNoIdBare.stdout === rNoIdWithSource.stdout} claim=${JSON.stringify(noIdBareClaim)}`,
+      rNoIdWithSource,
+    ),
+  );
+
+  return rows;
+}
+
 function runCoverageGapRows() {
   const rows = [];
 
@@ -2391,6 +2689,7 @@ async function main() {
   results.push(...runNicknameRows());
   results.push(...runLaneSessionRows());
   results.push(...runHoldSessionRows());
+  results.push(...runHandoffSessionRows());
   results.push(...runCoverageGapRows());
   // ...plus cell codex-parity-6b's installed-route rows: the default suite
   // must also prove the ACTIVE .codex/hooks.json commands work through the

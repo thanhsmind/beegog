@@ -5062,6 +5062,297 @@ check('adoptHandoff: idempotent recovery — a crash between claim-adopt and han
   }
 });
 
+// ─── fsh-10 (fresh-session-handoff S4, D1): SessionStart wiring — the render
+// side. PURITY PIN (validation-s4 panel W2): buildSessionPreamble stays a
+// PURE builder — it never adopts anything itself. The hook
+// (hooks/bee-session-init.mjs) performs the source-gated adoption and passes
+// the typed outcome in as `handoffOutcome`; these direct-lib rows exercise
+// only the rendering contract: null (no attempt), ok:true (start-now),
+// ok:false (wait block + one reason line). The through-the-real-hook rows
+// (source gating, claim transfer, byte-parity) live in
+// hooks/test_hook_contracts.mjs. ────────────────────────────────────────────
+
+function writeNextCellFixture(root, id, { lane = 'standard', verify = 'node test.mjs', title = 'next task' } = {}) {
+  writeJsonAtomic(path.join(root, '.bee', 'cells', `${id}.json`), {
+    id,
+    feature: 'fresh-session-handoff',
+    title,
+    lane,
+    status: 'open',
+    verify,
+  });
+}
+
+check('buildSessionPreamble: handoffOutcome omitted (null) renders a pause handoff identically whether or not a sessionId is bound — no start-now, no reason line ever fabricated', () => {
+  const dir = makeStateRepo('bee-preamble-handoff-pause-');
+  try {
+    laneStore.writeHandoff(dir, { kind: 'pause', cell: 'wip-h1', next_action: 'resume wip-h1' });
+    const bare = buildSessionPreamble(dir);
+    laneBinding.createSession(dir, { id: 'sess-bound-pause' });
+    const bound = buildSessionPreamble(dir, { sessionId: 'sess-bound-pause' });
+    assert(bare === bound, 'a bound sessionId with no handoffOutcome renders the identical pause block');
+    assert(/HANDOFF present — present it and WAIT/.test(bare), 'the classic wait heading is present');
+    assert(!/Adoption not applied/.test(bare), 'a pause handoff never carries an adoption reason line');
+    assert(!/PLANNED-NEXT ADOPTED/.test(bare), 'a pause handoff never renders the start-now heading');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('buildSessionPreamble: a planned-next handoff with no handoffOutcome (e.g. no session_id at all) renders the plain wait block — no start-now, no reason line — this is the fsh-10 no-session_id byte-parity contract', () => {
+  const dir = makeStateRepo('bee-preamble-handoff-planned-no-outcome-');
+  try {
+    writeCappedCellFixture(dir, 'prev-h2');
+    claimCellFile(dir, 'sess-writer-h2', 'next-h2');
+    writeNextCellFixture(dir, 'next-h2', { lane: 'high-risk', verify: 'node verify-h2.mjs' });
+    laneStore.writeHandoff(dir, {
+      kind: 'planned-next',
+      writer_session: 'sess-writer-h2',
+      previous_cell: 'prev-h2',
+      next_cell: 'next-h2',
+      next_action: 'start next-h2',
+    });
+    const noSession = buildSessionPreamble(dir);
+    assert(
+      /HANDOFF present — present it and WAIT/.test(noSession),
+      'a planned-next handoff with no outcome renders the classic wait heading',
+    );
+    assert(!/PLANNED-NEXT ADOPTED/.test(noSession), 'no start-now block is fabricated without an outcome');
+    assert(
+      !/Adoption not applied/.test(noSession),
+      'no reason line is fabricated without an outcome — this is the exact pre-fsh-10 rendering',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("buildSessionPreamble: handoffOutcome.ok===true replaces the wait block with a start-now block naming the adopted cell, its lane, and its verify command (must-have truth)", () => {
+  const dir = makeStateRepo('bee-preamble-handoff-adopted-');
+  try {
+    writeCappedCellFixture(dir, 'prev-h3');
+    claimCellFile(dir, 'sess-writer-h3', 'next-h3');
+    writeNextCellFixture(dir, 'next-h3', {
+      lane: 'high-risk',
+      verify: 'node verify-h3.mjs && echo ok',
+      title: 'wire the thing',
+    });
+    laneStore.writeHandoff(dir, {
+      kind: 'planned-next',
+      writer_session: 'sess-writer-h3',
+      previous_cell: 'prev-h3',
+      next_cell: 'next-h3',
+      next_action: 'start next-h3',
+    });
+    const outcome = {
+      ok: true,
+      next_cell: 'next-h3',
+      claim: { session: 'sess-new-h3' },
+      previous_owner: 'sess-writer-h3',
+    };
+    const rendered = buildSessionPreamble(dir, { sessionId: 'sess-new-h3', handoffOutcome: outcome });
+    assert(
+      /PLANNED-NEXT ADOPTED — starting now, no confirmation needed \(D1\)/.test(rendered),
+      `expected the start-now heading, got:\n${rendered}`,
+    );
+    assert(/- Cell: next-h3 — wire the thing/.test(rendered), `expected the adopted cell named with its title, got:\n${rendered}`);
+    assert(/- Lane: high-risk/.test(rendered), `expected the adopted cell's lane, got:\n${rendered}`);
+    assert(
+      /- Verify: `node verify-h3\.mjs && echo ok`/.test(rendered),
+      `expected the adopted cell's verify command, got:\n${rendered}`,
+    );
+    assert(!/HANDOFF present — present it and WAIT/.test(rendered), 'the wait heading is fully replaced, never both shown');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("buildSessionPreamble: handoffOutcome.ok===false renders the wait block plus one reason line — never a fabricated start-now (must-have truth)", () => {
+  const dir = makeStateRepo('bee-preamble-handoff-refused-');
+  try {
+    writeCappedCellFixture(dir, 'prev-h4');
+    claimCellFile(dir, 'sess-writer-h4', 'next-h4');
+    writeNextCellFixture(dir, 'next-h4');
+    laneStore.writeHandoff(dir, {
+      kind: 'planned-next',
+      writer_session: 'sess-writer-h4',
+      previous_cell: 'prev-h4',
+      next_cell: 'next-h4',
+    });
+    const outcome = {
+      ok: false,
+      code: 'WRONG_SOURCE',
+      reason: 'a planned-next handoff never auto-adopts on source "resume"',
+    };
+    const rendered = buildSessionPreamble(dir, { sessionId: 'sess-resuming', handoffOutcome: outcome });
+    assert(/HANDOFF present — present it and WAIT/.test(rendered), `expected the classic wait heading, got:\n${rendered}`);
+    assert(!/PLANNED-NEXT ADOPTED/.test(rendered), 'a refused outcome never renders the start-now heading');
+    assert(
+      /- Adoption not applied: a planned-next handoff never auto-adopts on source "resume"/.test(rendered),
+      `expected the refusal reason line, got:\n${rendered}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── fsh-10: two-session end-to-end fixture (D1, D2 epic-map E4 proof) ──────
+// Direct-lib proof, not through the hook: session A caps its cell and claims
+// the next one, writes a planned-next handoff carrying that claim; session B
+// "crosses the /clear boundary" by calling adoptHandoff; a THIRD session's
+// CONCURRENT claimCellFile steal attempt on the same cell must lose with the
+// typed CLAIMED failure — riding fsh-2's fork/barrier-file race pattern
+// (race_claims_child.mjs) WITHOUT editing that file (out of this cell's file
+// scope): a small self-contained orchestrator is generated into a throwaway
+// temp path (never a tracked repo file, exactly like every fixture root in
+// this suite already lives under os.tmpdir()) and re-execs itself as its own
+// racers, the same self-fork shape as race_claims_child.mjs. check() stays
+// synchronous: ONE blocking spawnSync runs the whole race, asserting exit
+// code + one summary line, mirroring the existing race: rows above.
+
+function fsh10HandoffRaceScript() {
+  const libDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../lib');
+  const stateUrl = pathToFileURL(path.join(libDir, 'state.mjs')).href;
+  const claimsUrl = pathToFileURL(path.join(libDir, 'claims.mjs')).href;
+  const fsutilUrl = pathToFileURL(path.join(libDir, 'fsutil.mjs')).href;
+  const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-fsh10-handoff-race-'));
+  const scriptPath = path.join(scriptDir, 'orchestrator.mjs');
+  const lines = [
+    "import fs from 'node:fs';",
+    "import os from 'node:os';",
+    "import path from 'node:path';",
+    "import { fork } from 'node:child_process';",
+    "import { fileURLToPath } from 'node:url';",
+    `import { writeHandoff, adoptHandoff } from ${JSON.stringify(stateUrl)};`,
+    `import { createSession, claimCellFile, readClaim } from ${JSON.stringify(claimsUrl)};`,
+    `import { writeJsonAtomic } from ${JSON.stringify(fsutilUrl)};`,
+    '',
+    'const self = fileURLToPath(import.meta.url);',
+    '',
+    'if (process.env.FSH10_ROLE) {',
+    '  runRole(JSON.parse(process.env.FSH10_ROLE));',
+    '} else {',
+    '  main();',
+    '}',
+    '',
+    'function spinUntil(goFile) {',
+    '  while (!fs.existsSync(goFile)) { /* spin */ }',
+    '}',
+    '',
+    'function runRole(role) {',
+    '  spinUntil(role.goFile);',
+    "  if (role.kind === 'adopt-handoff') {",
+    '    const result = adoptHandoff(role.root, role.sessionId);',
+    '    process.exit(result.ok === true ? 0 : 2);',
+    '  } else {',
+    '    const result = claimCellFile(role.root, role.sessionId, role.cellId, role.ttl || 60);',
+    "    if (result.ok === false && result.code === 'CLAIMED') process.exit(1);", // expected: steal denied
+    '    process.exit(result.ok === true ? 3 : 2);', // 3 = BUG (steal succeeded)
+    '  }',
+    '}',
+    '',
+    'function forkRole(role) {',
+    '  return fork(self, [], { env: { ...process.env, FSH10_ROLE: JSON.stringify(role) }, stdio: "ignore" });',
+    '}',
+    '',
+    'function waitExit(child) {',
+    '  return new Promise((resolve) => child.on("exit", (code) => resolve(code)));',
+    '}',
+    '',
+    'function sleep(ms) {',
+    '  return new Promise((resolve) => setTimeout(resolve, ms));',
+    '}',
+    '',
+    'async function main() {',
+    '  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bee-fsh10-handoff-race-root-"));',
+    '  fs.mkdirSync(path.join(root, ".bee", "cells"), { recursive: true });',
+    '  try {',
+    '    createSession(root, { id: "sess-A" });',
+    '    createSession(root, { id: "sess-B" });',
+    '    createSession(root, { id: "sess-thief-1" });',
+    '    createSession(root, { id: "sess-thief-2" });',
+    '',
+    '    writeJsonAtomic(path.join(root, ".bee", "cells", "prev-race.json"), {',
+    '      id: "prev-race",',
+    '      status: "capped",',
+    '      trace: { verify_passed: true },',
+    '    });',
+    '    const claimed = claimCellFile(root, "sess-A", "next-race", 3600);',
+    '    if (!claimed.ok) {',
+    '      console.log("FAIL  two-session-handoff-race: setup claim failed");',
+    '      process.exitCode = 1;',
+    '      return;',
+    '    }',
+    '    writeHandoff(root, {',
+    '      kind: "planned-next",',
+    '      writer_session: "sess-A",',
+    '      previous_cell: "prev-race",',
+    '      next_cell: "next-race",',
+    '      next_action: "start next-race",',
+    '    });',
+    '',
+    '    const goFile = path.join(root, "go");',
+    '    const children = [',
+    '      forkRole({ kind: "adopt-handoff", root, sessionId: "sess-B", goFile }),',
+    '      forkRole({ kind: "steal", root, sessionId: "sess-thief-1", cellId: "next-race", goFile, ttl: 60 }),',
+    '      forkRole({ kind: "steal", root, sessionId: "sess-thief-2", cellId: "next-race", goFile, ttl: 60 }),',
+    '    ];',
+    '    const exits = Promise.all(children.map(waitExit));',
+    '    await sleep(150);',
+    '    fs.writeFileSync(goFile, "1");',
+    '    const codes = await exits;',
+    '    const adoptCode = codes[0];',
+    '    const thiefCodes = codes.slice(1);',
+    '    const bugSteals = thiefCodes.filter((c) => c === 3).length;',
+    '    const unexpectedThieves = thiefCodes.filter((c) => c !== 1 && c !== 3).length;',
+    '    const finalClaim = readClaim(root, "next-race");',
+    '    const handoffGone = !fs.existsSync(path.join(root, ".bee", "HANDOFF.json"));',
+    '',
+    '    const ok =',
+    '      adoptCode === 0 &&',
+    '      bugSteals === 0 &&',
+    '      unexpectedThieves === 0 &&',
+    '      finalClaim &&',
+    '      finalClaim.session === "sess-B" &&',
+    '      handoffGone;',
+    '',
+    '    if (!ok) {',
+    '      console.log(',
+    '        "FAIL  two-session-handoff-race: adoptCode=" + adoptCode + " bugSteals=" + bugSteals +',
+    '          " unexpected=" + unexpectedThieves + " finalOwner=" + (finalClaim ? finalClaim.session : null) +',
+    '          " handoffGone=" + handoffGone,',
+    '      );',
+    '      process.exitCode = 1;',
+    '      return;',
+    '    }',
+    '    console.log(',
+    '      "PASS  two-session-handoff-race: session A capped+claimed+handed off, session B adopted across the /clear boundary, both concurrent thieves lost with typed CLAIMED",',
+    '    );',
+    '    process.exitCode = 0;',
+    '  } finally {',
+    '    fs.rmSync(root, { recursive: true, force: true });',
+    '  }',
+    '}',
+    '',
+  ];
+  fs.writeFileSync(scriptPath, lines.join('\n'));
+  return scriptPath;
+}
+
+check(
+  "race: two-session handoff — session A caps+claims+hands off, session B adopts across the simulated /clear boundary, and a concurrent third-session steal loses with typed CLAIMED (epic-map E4, riding fsh-2's race harness pattern)",
+  () => {
+    const scriptPath = fsh10HandoffRaceScript();
+    try {
+      const result = spawnSync(process.execPath, [scriptPath], { encoding: 'utf8', timeout: 60000 });
+      assert(result.status === 0, `two-session-handoff race failed (status ${result.status}): ${result.stdout}${result.stderr}`);
+      assert(/^PASS +two-session-handoff-race/m.test(result.stdout), `expected a PASS summary line, got: ${result.stdout}`);
+    } finally {
+      fs.rmSync(path.dirname(scriptPath), { recursive: true, force: true });
+    }
+  },
+);
+
 // ─── bee_backlog.mjs add verb (cli-mutations-2, decision from cli-mutations
 // plan.md: agents never hand-edit .bee/*.json(l)) ─────────────────────────────
 // counts/rank/badges already have direct lib/backlog.mjs coverage above (the
