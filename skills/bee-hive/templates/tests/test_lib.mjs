@@ -67,7 +67,7 @@ import {
   frozenJudgeHits,
   FROZEN_JUDGE_PATTERNS,
 } from '../lib/cells.mjs';
-import { reserve, release, listReservations, sweepExpired, findConflicts, reservationsPath } from '../lib/reservations.mjs';
+import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
 import {
   createSession,
   readSession,
@@ -611,6 +611,44 @@ check('sweepExpired releases TTL-expired reservations', () => {
   const swept = sweepExpired(root);
   assert(swept >= 1, `expected at least one swept reservation, got ${swept}`);
   assert(listReservations(root, { activeOnly: true }).length === 0, 'no active reservations remain');
+});
+
+// ─── fsh-7: session-owned holds (D3) ────────────────────────────────────────
+// reservations gain an OPTIONAL `session` field; findSessionConflicts is the
+// session-keyed sibling of findConflicts, exported for the write guard.
+
+check('reserve without --session omits the field entirely (byte-identical shape to every pre-existing row); reserve WITH session stamps it', () => {
+  const plain = reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/plain.ts' });
+  assert(plain.ok === true, 'plain reserve still succeeds');
+  assert(!('session' in plain.reservation), 'no session passed -> no session key on the record at all');
+
+  const owned = reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/owned.ts', session: 'sess-A' });
+  assert(owned.ok === true, 'session-owned reserve succeeds');
+  assert(owned.reservation.session === 'sess-A', 'session id is stamped on the record');
+});
+
+check('findSessionConflicts: a different session conflicts on an overlapping path; the owning session itself never conflicts; a legacy session-less row never conflicts for anybody', () => {
+  reserve(root, { agent: 'worker-a', cell: 'sess-2', path: 'src/hold/shared.ts', session: 'sess-A' });
+  const other = findSessionConflicts(root, 'sess-B', ['src/hold/shared.ts']);
+  assert(other.length === 1 && other[0].session === 'sess-A', 'a different session sees the hold as a conflict');
+
+  const own = findSessionConflicts(root, 'sess-A', ['src/hold/shared.ts']);
+  assert(own.length === 0, "the owning session's own hold is never a conflict against itself");
+
+  // src/hold/plain.ts was reserved with no session field above.
+  const legacy = findSessionConflicts(root, 'sess-B', ['src/hold/plain.ts']);
+  assert(legacy.length === 0, 'a session-less (legacy) reservation row never conflicts for any session');
+});
+
+check('findSessionConflicts: an expired session-owned hold never conflicts', () => {
+  reserve(root, { agent: 'worker-c', cell: 'sess-3', path: 'src/hold/expiring.ts', session: 'sess-C', ttl: 60 });
+  const store = readJson(reservationsPath(root), { reservations: [] });
+  const row = store.reservations.find((r) => r.path === 'src/hold/expiring.ts' && r.session === 'sess-C');
+  assert(row, 'precondition: the just-made hold exists');
+  row.reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
+  writeJsonAtomic(reservationsPath(root), store);
+  const conflicts = findSessionConflicts(root, 'sess-D', ['src/hold/expiring.ts']);
+  assert(conflicts.length === 0, 'a TTL-expired hold is never a conflict, even for a different session');
 });
 
 // ─── claims (cross-session sessions + O_EXCL cell claims) ───────────────────
@@ -4460,6 +4498,115 @@ check("lanes: checkWrite with a bound sessionId resolves phase/gates from the se
       typeof broken.reason === 'string' && broken.reason.includes('lane-ghost'),
       'the deny reason names the unresolvable lane',
     );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── fsh-7: cross-session hold hard block in the guard lib (D3, RED-first) ──
+// PLACEMENT PIN (panel W1): D3 is unconditional on phase, so every deny test
+// here deliberately runs the bound lane in phase 'swarming' with execution
+// approved — the primary multi-terminal topology, not a tail-reaching phase
+// a tail-placed check would happen to pass. checkWrite itself is otherwise
+// untouched for the no-sessionId path (pinned above/elsewhere).
+
+check("checkWrite: a cross-session hold denies another session's write in swarming-with-execution-approved (phase-independence, C8) — names the holder session, agent, and expiry; the acting session's own hold and an expired hold never block; a legacy session-less reservation never blocks anybody", () => {
+  const dir = makeStateRepo('bee-hold-deny-');
+  try {
+    laneBinding.createSession(dir, { id: 'sess-hw' });
+    laneBinding.createSession(dir, { id: 'sess-other' });
+    writeLaneFixture(dir, 'lane-hw', {
+      phase: 'swarming',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    laneBinding.bindSessionLane(dir, 'sess-hw', 'lane-hw');
+    const state = readState(dir); // irrelevant here: the bound lane governs
+
+    reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/target.ts', session: 'sess-other' });
+    const denied = checkWrite(dir, state, 'src/hold/target.ts', null, { sessionId: 'sess-hw' });
+    assert(
+      denied.allow === false && denied.kind === 'hold',
+      `a cross-session hold must deny the write even in swarming+execution-approved, got ${JSON.stringify(denied)}`,
+    );
+    assert(
+      denied.reason.includes('sess-other') && denied.reason.includes('other-agent'),
+      `deny reason must name the holder session and agent, got: ${denied.reason}`,
+    );
+    assert(/expires|no expiry/.test(denied.reason), `deny reason must carry an expiry, got: ${denied.reason}`);
+
+    // the acting session's own hold on a different path never blocks itself
+    reserve(dir, { agent: 'me-agent', cell: 'hw-1', path: 'src/hold/mine.ts', session: 'sess-hw' });
+    const ownOk = checkWrite(dir, state, 'src/hold/mine.ts', null, { sessionId: 'sess-hw' });
+    assert(ownOk.allow === true, `the acting session's own hold must never block its own write, got ${JSON.stringify(ownOk)}`);
+
+    // an expired hold never blocks, even from a different session
+    reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/stale.ts', session: 'sess-other', ttl: 60 });
+    const store = readJson(reservationsPath(dir), { reservations: [] });
+    const row = store.reservations.find((r) => r.path === 'src/hold/stale.ts');
+    row.reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
+    writeJsonAtomic(reservationsPath(dir), store);
+    const staleOk = checkWrite(dir, state, 'src/hold/stale.ts', null, { sessionId: 'sess-hw' });
+    assert(staleOk.allow === true, `an expired hold must never block, got ${JSON.stringify(staleOk)}`);
+
+    // a legacy session-less reservation (today's exact shape) never blocks a bound session either
+    reserve(dir, { agent: 'legacy-agent', cell: 'hw-1', path: 'src/hold/legacy.ts' });
+    const legacyOk = checkWrite(dir, state, 'src/hold/legacy.ts', null, { sessionId: 'sess-hw' });
+    assert(legacyOk.allow === true, `a session-less reservation row must never block a bound session's write, got ${JSON.stringify(legacyOk)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("checkWrite: with NO sessionId, a session-owned hold on the target path is never even consulted — byte-identical to today's exact reservation-guard behavior (own agent name still governs the swarming branch as before)", () => {
+  const dir = makeStateRepo('bee-hold-no-session-');
+  try {
+    const state = { ...defaultState(), phase: 'swarming', approved_gates: { ...defaultState().approved_gates, execution: true } };
+    reserve(dir, { agent: 'other-agent', cell: 'hw-2', path: 'src/hold/no-session.ts', session: 'sess-somebody' });
+    const noSessionArg = checkWrite(dir, state, 'src/hold/no-session.ts');
+    assert(
+      noSessionArg.allow === true,
+      `no sessionId means the hold check never runs — the write-guard behaves exactly as it did before fsh-7, got ${JSON.stringify(noSessionArg)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('checkWrite: a present-but-corrupt reservation store RETURNS a typed {allow:false, kind:"holds-unreadable"} verdict for a session-aware write — never a throw (C7, panel B1); a missing store stays open exactly as today', () => {
+  const dir = makeStateRepo('bee-hold-corrupt-');
+  try {
+    laneBinding.createSession(dir, { id: 'sess-corrupt' });
+    writeLaneFixture(dir, 'lane-corrupt-hw', {
+      phase: 'swarming',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    laneBinding.bindSessionLane(dir, 'sess-corrupt', 'lane-corrupt-hw');
+    const state = readState(dir);
+
+    // missing store (nothing has reserved anything yet) stays open
+    const openOk = checkWrite(dir, state, 'src/hold/whatever.ts', null, { sessionId: 'sess-corrupt' });
+    assert(openOk.allow === true, `a missing reservation store must stay open, got ${JSON.stringify(openOk)}`);
+
+    // a present-but-corrupt store must fail closed, never throw
+    fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+    fs.writeFileSync(reservationsPath(dir), '{ not json', 'utf8');
+    let corrupt;
+    let threw = false;
+    try {
+      corrupt = checkWrite(dir, state, 'src/hold/whatever.ts', null, { sessionId: 'sess-corrupt' });
+    } catch {
+      threw = true;
+    }
+    assert(!threw, 'checkWrite must never throw on a corrupt reservation store — the hook is fail-open and would swallow a throw into an allow');
+    assert(
+      corrupt && corrupt.allow === false && corrupt.kind === 'holds-unreadable',
+      `a corrupt store must be a typed {allow:false, kind:'holds-unreadable'} deny, got ${JSON.stringify(corrupt)}`,
+    );
+
+    // restoring a valid (even empty) store re-opens the write
+    writeJsonAtomic(reservationsPath(dir), { reservations: [] });
+    const restored = checkWrite(dir, state, 'src/hold/whatever.ts', null, { sessionId: 'sess-corrupt' });
+    assert(restored.allow === true, `a valid, empty store must re-open the write, got ${JSON.stringify(restored)}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

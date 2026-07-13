@@ -86,7 +86,28 @@ export function findConflicts(root, agent, paths) {
   );
 }
 
-export function reserve(root, { agent, cell, path: reservedPath, ttl = DEFAULT_TTL_SECONDS }) {
+/**
+ * Active reservations owned by a DIFFERENT session covering any of the given
+ * paths (fresh-session-handoff D3 — cross-session hold conflict finder, the
+ * session-keyed sibling of findConflicts' agent-keyed check). A reservation
+ * with no `session` field is a legacy/intra-swarm-only row and never
+ * conflicts here — only rows explicitly bound to a session can deny another
+ * session's write; the acting session's own rows never conflict either.
+ */
+export function findSessionConflicts(root, sessionId, paths) {
+  const requested = (Array.isArray(paths) ? paths : [paths]).filter(Boolean);
+  if (requested.length === 0) return [];
+  const acting = typeof sessionId === 'string' ? sessionId.trim() : '';
+  return listReservations(root, { activeOnly: true }).filter(
+    (reservation) =>
+      typeof reservation.session === 'string' &&
+      reservation.session.trim() &&
+      reservation.session !== acting &&
+      requested.some((requestedPath) => pathsOverlap(reservation.path, requestedPath)),
+  );
+}
+
+export function reserve(root, { agent, cell, path: reservedPath, ttl = DEFAULT_TTL_SECONDS, session = null }) {
   if (typeof agent !== 'string' || !agent.trim()) {
     throw new Error('reserve: agent is required.');
   }
@@ -108,6 +129,10 @@ export function reserve(root, { agent, cell, path: reservedPath, ttl = DEFAULT_T
     ttl_seconds: Number.isFinite(ttl) && ttl > 0 ? Math.floor(ttl) : DEFAULT_TTL_SECONDS,
     reserved_at: utcNow(),
     released_at: null,
+    // session is OPTIONAL and OMITTED entirely when absent (mirrors claims.mjs's
+    // lane-omission pattern): every pre-existing row and every call that never
+    // passes `session` keeps today's exact shape, byte for byte.
+    ...(typeof session === 'string' && session.trim() ? { session: session.trim() } : {}),
   };
   store.reservations.push(reservation);
   writeStore(root, store);

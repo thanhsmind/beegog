@@ -409,6 +409,13 @@ check('reservations.reserve example runs through the real dispatcher', () => {
   assert(JSON.parse(result.stdout).ok === true, 'reserve should succeed on a fresh path');
 });
 
+check('reservations.reserve --session example (examples[1]) stamps the reservation with the owning session id (D3)', () => {
+  const result = assertExampleOk('reservations.reserve', { exampleIndex: 1 });
+  const parsed = JSON.parse(result.stdout);
+  assert(parsed.ok === true, 'session-owned reserve should succeed on a fresh path');
+  assert(parsed.reservation.session === 'sess-fsh7', `expected the reservation to carry session "sess-fsh7", got ${result.stdout}`);
+});
+
 check('reservations.list example runs through the real dispatcher', () => {
   const result = assertExampleOk('reservations.list');
   assert(result.stdout.includes('worker-a'), `expected the reservation just made, got ${result.stdout}`);

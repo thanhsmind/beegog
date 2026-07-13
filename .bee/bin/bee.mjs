@@ -568,6 +568,7 @@ function handleReservationsReserve(root, flags) {
     cell: requireFlag(flags, 'cell'),
     path: requireFlag(flags, 'path'),
     ...(ttl !== undefined ? { ttl } : {}),
+    ...(flags.session ? { session: String(flags.session) } : {}),
   });
   const text = result.ok
     ? `Reserved "${result.reservation.path}" for ${result.reservation.agent} (cell ${result.reservation.cell}, ttl ${result.reservation.ttl_seconds}s).`

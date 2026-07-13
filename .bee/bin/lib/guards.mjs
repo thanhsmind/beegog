@@ -1,7 +1,9 @@
 // guards.mjs — gate guard, reservation guard, privacy/scout read guard,
 // and bash write-target extraction. Used by the write-guard hook and helpers.
 
-import { findConflicts } from './reservations.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { findConflicts, findSessionConflicts, reservationsPath } from './reservations.mjs';
 import { readConfig, resolvePipeline } from './state.mjs';
 
 /** File-path patterns that must never be read without asking the human. */
@@ -72,6 +74,40 @@ function underAllowedPrefix(relPath) {
 }
 
 /**
+ * Corrupt-vs-missing discriminator for the reservation store (D3 fail-closed
+ * shape, panel B1). A MISSING store is today's exact open behavior — nothing
+ * has ever reserved anything, so there is nothing to fail closed over. A
+ * PRESENT but unparseable store is the one case that must deny rather than
+ * silently read as empty: reservations.mjs's own readStore/listReservations/
+ * findConflicts/findSessionConflicts stay fail-open (untouched here) because
+ * they serve reads and intra-swarm nickname conflicts that must never crash a
+ * whole session over one bad file; this session-aware WRITE guard is the one
+ * caller that cannot afford to silently treat "corrupt" as "empty" — a stray
+ * concurrent-write torn file could otherwise open every held path in the
+ * repo to any session. Never called when sessionId is absent (byte-identical
+ * to today in that case).
+ */
+function reservationStoreCorrupt(root) {
+  const file = reservationsPath(root);
+  if (!fs.existsSync(file)) return false; // missing store = today's open behavior
+  try {
+    JSON.parse(fs.readFileSync(file, 'utf8'));
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Expiry display for a hold-deny message, computed from the reservation's own
+ * public fields only (never importing reservations.mjs's private isExpired). */
+function holdExpiry(reservation) {
+  const reservedMs = Date.parse(reservation?.reserved_at);
+  const ttl = reservation?.ttl_seconds;
+  if (!Number.isFinite(reservedMs) || !Number.isFinite(ttl) || ttl <= 0) return 'no expiry';
+  return `expires ${new Date(reservedMs + ttl * 1000).toISOString()}`;
+}
+
+/**
  * Gate + reservation write check.
  * - Direct-edit deny (first hit, every phase): `.bee/state.json` and
  *   `.bee/backlog.jsonl` must go through their CLI (bee_state.mjs /
@@ -95,6 +131,16 @@ function underAllowedPrefix(relPath) {
  *   decides. A binding that cannot resolve (invalid/missing/corrupt lane) is
  *   a typed DENY — a write guard never guesses a broken binding back to the
  *   default pipeline (the wrong pipeline's gates would decide the write).
+ * - Cross-session hold deny (fsh-7, D3): also gated on sessionId being
+ *   present. Runs right after record resolution and BEFORE every phase-based
+ *   branch below (terminal/gated/swarming) — D3 is unconditional on phase, so
+ *   a write into a path another LIVE session holds is denied even in
+ *   swarming with execution approved, not just in tail-reaching phases. The
+ *   acting session's own holds, expired holds, and legacy session-less
+ *   reservation rows never block. A present-but-corrupt reservation store
+ *   fails closed with a typed {allow:false, kind:'holds-unreadable'} verdict
+ *   (never a throw — the production hook is fail-open and would swallow a
+ *   throw into an allow); a missing store stays open, same as today.
  */
 export function checkWrite(root, state, relPath, agentName = null, { sessionId = null } = {}) {
   const normalized = normalizeRel(relPath);
@@ -122,6 +168,32 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
       };
     }
     record = resolved.record;
+  }
+
+  if (typeof sessionId === 'string' && sessionId.trim()) {
+    const acting = sessionId.trim();
+    if (reservationStoreCorrupt(root)) {
+      return {
+        allow: false,
+        kind: 'holds-unreadable',
+        reason:
+          `bee hold guard: the reservation store (${path.relative(root, reservationsPath(root))}) is present but ` +
+          'unreadable/corrupt — failing closed for a session-aware write rather than silently treating it as empty. ' +
+          'FIX: inspect/restore the reservation store, then retry.',
+      };
+    }
+    const holdConflicts = findSessionConflicts(root, acting, [normalized]);
+    if (holdConflicts.length > 0) {
+      const holder = holdConflicts[0];
+      return {
+        allow: false,
+        kind: 'hold',
+        reason:
+          `bee cross-session hold: "${normalized}" is held by session "${holder.session}" ` +
+          `(agent ${holder.agent}, cell ${holder.cell}), ${holdExpiry(holder)}. ` +
+          'Wait for the hold to expire or coordinate with that session — a cross-session hold is a hard block (D3).',
+      };
+    }
   }
 
   const phase = record?.phase || 'idle';

@@ -276,7 +276,7 @@ export const COMMAND_REGISTRY = [
     name: 'reservations.reserve',
     helper: 'bee_reservations.mjs',
     invoke: 'bee reservations reserve',
-    description: 'Reserve a file or glob path for a cell. A conflicting active reservation held by another agent returns ok:false with the holder(s).',
+    description: "Reserve a file or glob path for a cell. A conflicting active reservation held by another agent returns ok:false with the holder(s). Optional --session (fresh-session-handoff D3) stamps the reservation as owned by that cross-session identity, so the write guard's hold check (checkWrite) can deny another live session's write into the same path — a reservation made without --session keeps today's exact intra-swarm-only semantics.",
     parameters: {
       type: 'object',
       properties: {
@@ -284,11 +284,15 @@ export const COMMAND_REGISTRY = [
         cell: { type: 'string', description: 'Cell id the reservation is for.' },
         path: { type: 'string', description: 'File or directory path to reserve.' },
         ttl: { type: 'number', description: 'Time-to-live in seconds (default 3600).' },
+        session: { type: 'string', description: 'Owning cross-session identity (D3 hold). Omit to keep an intra-swarm-only reservation with no cross-session hold effect.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['agent', 'cell', 'path'],
     },
-    examples: ['bee reservations reserve --agent worker-a --cell demo-1 --path src/example.ts --json'],
+    examples: [
+      'bee reservations reserve --agent worker-a --cell demo-1 --path src/example.ts --json',
+      'bee reservations reserve --agent worker-a --cell demo-1 --path src/example-session.ts --session sess-fsh7 --json',
+    ],
     deprecated: null,
   },
   {
