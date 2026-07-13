@@ -34,6 +34,10 @@ Where things live. Read the touched area's spec before its code.
 
 ## Elsewhere
 
+- Communication doctrine (plain language, Gate Presentation Contract, Silent Bookkeeping —
+  bee mechanics never narrated into chat, work language only; decision 1689af1b) lives in
+  `skills/bee-hive/references/routing-and-contracts.md` § Communication Contract, mirrored as
+  hive law 11 (`skills/bee-hive/SKILL.md`) and host critical rule 11 (`templates/AGENTS.block.md`).
 - `docs/history/learnings/critical-patterns.md` — mandatory pre-work rules for agents.
 - `docs/history/<feature>/` — how a feature was decided, planned, validated, reviewed, and shipped.
 - `docs/decisions/` — numbered design decisions. `.bee/decisions.jsonl` — the live decision log.
