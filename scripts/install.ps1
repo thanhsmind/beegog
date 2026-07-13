@@ -1,19 +1,33 @@
-# install.ps1 — install bee (https://github.com/thanhsmind/beegog) into a project.
+# install.ps1 - install bee (https://github.com/thanhsmind/beegog) into a project.
 #
 # Two layers:
-#   1. Runtime layer: copy the bee skills into your agent's skills directory
-#      (~/.claude/skills and/or ~/.codex/skills).
-#   2. Repo layer: run onboard_bee.mjs against the target project — installs the
-#      AGENTS.md BEE block, .bee/ runtime files, and vendored helpers.
+#   1. Runtime layer (opt-in, -GlobalSkills): copy the bee skills into your
+#      agent's global skills directory (~/.claude/skills and/or ~/.codex/skills).
+#      Off by default - the per-project sync in layer 2 is the default layout.
+#   2. Repo layer: run onboard_bee.mjs against the target project - installs the
+#      AGENTS.md BEE block, .bee/ runtime files, vendored helpers, and (by
+#      default) syncs the bee skills per-project into <repo>/.claude/skills and
+#      <repo>/.agents/skills.
 #
 # Greenfield (empty dir / no git) and brownfield (existing repo) are both
 # supported: onboarding merges via BEE:START/END markers, never touches content
 # outside them, never overwrites existing state, and is idempotent.
 #
+# Flags:
+#   -GlobalSkills   Also copy bee skills into the legacy global runtime
+#                   directories (~/.claude/skills, ~/.codex/skills) and pass
+#                   --global-skills through to onboarding. Off by default -
+#                   onboarding's per-project sync (layer 2) is the default.
+#   -NoClaudeMd     Skip writing/extending CLAUDE.md with the bare @AGENTS.md
+#                   import. By default onboarding writes it.
+#   -ClaudeMd       Accepted for compatibility; a no-op alias of the default
+#                   (CLAUDE.md is written unless -NoClaudeMd is passed).
+#
 # Examples:
 #   .\scripts\install.ps1                                   # this checkout -> current dir
 #   .\scripts\install.ps1 -Directory C:\proj -Yes           # non-interactive
 #   .\scripts\install.ps1 -DryRun                           # plan only
+#   .\scripts\install.ps1 -GlobalSkills -Yes                # also install skills globally
 #   iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1
 #   .\install-bee.ps1 -Directory C:\proj -Yes
 
@@ -25,6 +39,8 @@ param(
   [string]$Source = '',
   [string]$Ref = 'main',
   [switch]$NoHooks,
+  [switch]$GlobalSkills,
+  [switch]$NoClaudeMd,
   [switch]$ClaudeMd,
   [switch]$NoGitInit,
   [switch]$Yes,
@@ -39,7 +55,7 @@ function Fail([string]$Message) { Write-Error $Message; exit 1 }
 function Confirm-Step([string]$Question) {
   if ($Yes) { return $true }
   if (-not [Environment]::UserInteractive) {
-    Fail "$Question — no interactive console. Re-run with -Yes to accept."
+    Fail "$Question - no interactive console. Re-run with -Yes to accept."
   }
   $answer = Read-Host "$Question [y/N]"
   return $answer -match '^(y|yes)$'
@@ -78,7 +94,7 @@ try {
   } catch { 'unknown' }
   Write-Host "source   $beeSrc (bee $beeVersion)"
 
-  # ---------- layer 1: runtime skills ----------
+  # ---------- layer 1: runtime skills (opt-in, -GlobalSkills) ----------
 
   function Install-Skills([string]$Dest, [string]$Label) {
     $copied = 0; $updated = 0; $same = 0
@@ -111,10 +127,15 @@ try {
     Write-Host "skills   ${Label}: $copied new, $updated updated, $same unchanged"
   }
 
-  $claudeHome = if ($env:CLAUDE_HOME) { $env:CLAUDE_HOME } else { Join-Path $HOME '.claude' }
-  $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
-  if ($Runtime -in @('claude', 'both')) { Install-Skills (Join-Path $claudeHome 'skills') '~/.claude/skills' }
-  if ($Runtime -in @('codex', 'both')) { Install-Skills (Join-Path $codexHome 'skills') '~/.codex/skills' }
+  if ($GlobalSkills) {
+    $claudeHome = if ($env:CLAUDE_HOME) { $env:CLAUDE_HOME } else { Join-Path $HOME '.claude' }
+    $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+    if ($Runtime -in @('claude', 'both')) { Install-Skills (Join-Path $claudeHome 'skills') '~/.claude/skills' }
+    if ($Runtime -in @('codex', 'both')) { Install-Skills (Join-Path $codexHome 'skills') '~/.codex/skills' }
+  } else {
+    Write-Host 'skills   per-project sync (layer 2, default): <repo>/.claude/skills + <repo>/.agents/skills'
+    Write-Host '         pass -GlobalSkills to also copy into ~/.claude/skills / ~/.codex/skills'
+  }
   if ($Runtime -in @('claude', 'both')) {
     Write-Host 'note     prefer the Claude Code plugin route when available:'
     Write-Host '         /plugin marketplace add thanhsmind/beegog  ->  /plugin install bee@bee'
@@ -144,15 +165,17 @@ try {
       }
     }
   } elseif (Test-Path (Join-Path $Directory '.bee\onboarding.json')) {
-    $mode = 'brownfield (bee already onboarded — refresh)'
+    $mode = 'brownfield (bee already onboarded - refresh)'
   } elseif ((Test-Path (Join-Path $Directory 'AGENTS.md')) -or (Test-Path (Join-Path $Directory 'CLAUDE.md'))) {
-    $mode = 'brownfield (existing agent docs — BEE block will be merged, nothing outside markers touched)'
+    $mode = 'brownfield (existing agent docs - BEE block will be merged, nothing outside markers touched)'
   }
   Write-Host "target   $Directory [$mode]"
 
   $onboardFlags = @()
   if ((-not $NoHooks) -and ($Runtime -in @('claude', 'both'))) { $onboardFlags += '--repo-hooks' }
+  if ($NoClaudeMd) { $onboardFlags += '--no-claude-md' }
   if ($ClaudeMd) { $onboardFlags += '--claude-md' }
+  if ($GlobalSkills) { $onboardFlags += '--global-skills' }
 
   Write-Host "plan     onboard_bee.mjs $($onboardFlags -join ' ') (dry-run first)"
   node $onboard --repo-root $Directory @onboardFlags
@@ -163,7 +186,7 @@ try {
     exit 0
   }
 
-  if (-not (Confirm-Step "Apply this onboarding plan to $Directory?")) { Fail 'Aborted — nothing applied.' }
+  if (-not (Confirm-Step "Apply this onboarding plan to $Directory?")) { Fail 'Aborted - nothing applied.' }
   node $onboard --repo-root $Directory --apply @onboardFlags | Out-Null
   if ($LASTEXITCODE -ne 0) { Fail 'Onboarding apply failed.' }
 

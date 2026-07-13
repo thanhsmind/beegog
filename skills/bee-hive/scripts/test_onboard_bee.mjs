@@ -108,6 +108,42 @@ try {
   check(apply1.payload?.recheck === "up_to_date", "apply recheck is up_to_date",
     JSON.stringify(apply1.payload?.recheck_plan || []));
 
+  // --- 2b. per-project skill roots (installer-hardening D2/D6) --------------
+  // A fresh host onboard --apply materializes the full bee-* skill set under
+  // BOTH <repo>/.claude/skills and <repo>/.agents/skills by default, never
+  // touches ~/.claude/skills without --global-skills, and never gitignores
+  // the committed trees (D4).
+  const SOURCE_SKILLS_ROOT = path.join(REPO_ROOT, "skills");
+  const sourceBeeSkills = fs.readdirSync(SOURCE_SKILLS_ROOT, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith("bee-"))
+    .map((e) => e.name)
+    .sort();
+  check(sourceBeeSkills.length === 15,
+    "source tree carries the expected 15 bee-* skills", JSON.stringify(sourceBeeSkills));
+  for (const relRoot of [".claude/skills", ".agents/skills"]) {
+    const rootAbs = path.join(tmp, ...relRoot.split("/"));
+    const installed = fs.existsSync(rootAbs)
+      ? fs.readdirSync(rootAbs, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && e.name.startsWith("bee-"))
+          .map((e) => e.name)
+          .sort()
+      : [];
+    check(JSON.stringify(installed) === JSON.stringify(sourceBeeSkills),
+      `fresh host apply materializes all 15 bee-* dirs under ${relRoot}`,
+      JSON.stringify(installed));
+  }
+  const applyTargetKinds = (apply1.payload?.skills?.targets || []).map((t) => t.kind);
+  check(JSON.stringify(applyTargetKinds) === JSON.stringify(["repo-claude", "repo-agents"]),
+    "default apply reports exactly the two in-repo targets (no global without --global-skills)",
+    JSON.stringify(applyTargetKinds));
+  check(!fs.existsSync(path.join(tmpHome, ".claude", "skills")),
+    "without --global-skills, ~/.claude/skills is never written");
+  const gitignoreAfterApply = fs.readFileSync(path.join(tmp, ".gitignore"), "utf8");
+  check(!gitignoreAfterApply.includes(".claude/skills") &&
+    !gitignoreAfterApply.includes(".agents/skills"),
+    "per-project skill trees are never gitignored (D4: committed to the host repo)",
+    gitignoreAfterApply);
+
   // --- 3. verify AGENTS.md markers ------------------------------------------
   const agentsText = fs.existsSync(path.join(tmp, "AGENTS.md"))
     ? fs.readFileSync(path.join(tmp, "AGENTS.md"), "utf8")
@@ -605,6 +641,77 @@ try {
     try {
       fs.rmSync(cmTmp, { recursive: true, force: true });
       fs.rmSync(cmHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // --- 9b-default. CLAUDE.md is a default onboarding artifact (D1): no flag
+  // needed -> fresh repo plans/creates it; existing CLAUDE.md without the
+  // import gets the append; existing CLAUDE.md WITH the import is untouched.
+  const cmDefaultTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-claudemd-default-test-"));
+  const cmDefaultHome = makeFakeHome();
+  try {
+    const defaultPlan = runOnboard(["--repo-root", cmDefaultTmp, "--json"], cmDefaultHome);
+    const defaultPlanActions = (defaultPlan.payload?.plan || []).map((i) => i.action);
+    check(defaultPlanActions.includes("create_claude_md"),
+      "default (flag omitted): plan contains create_claude_md for a repo with no CLAUDE.md",
+      JSON.stringify(defaultPlanActions));
+
+    runOnboard(["--repo-root", cmDefaultTmp, "--apply", "--json"], cmDefaultHome);
+    const defaultCreated = fs.readFileSync(path.join(cmDefaultTmp, "CLAUDE.md"), "utf8");
+    check(defaultCreated.startsWith("# Project Rules"),
+      "default: apply creates CLAUDE.md with header");
+    check(/^@AGENTS\.md\s*$/m.test(defaultCreated),
+      "default: created CLAUDE.md carries a bare @AGENTS.md import");
+
+    // Existing CLAUDE.md WITH the import already -> no CLAUDE.md plan item.
+    const withImportPlan = runOnboard(["--repo-root", cmDefaultTmp, "--json"], cmDefaultHome);
+    const withImportActions = (withImportPlan.payload?.plan || []).map((i) => i.action);
+    check(!withImportActions.includes("create_claude_md") &&
+      !withImportActions.includes("append_claude_md_import"),
+      "default: existing CLAUDE.md with the @AGENTS.md import produces no CLAUDE.md plan item",
+      JSON.stringify(withImportActions));
+
+    // Existing CLAUDE.md WITHOUT the import -> append_claude_md_import.
+    fs.writeFileSync(path.join(cmDefaultTmp, "CLAUDE.md"), "# House rules\n\nDo Y.\n", "utf8");
+    const noImportPlan = runOnboard(["--repo-root", cmDefaultTmp, "--json"], cmDefaultHome);
+    const noImportActions = (noImportPlan.payload?.plan || []).map((i) => i.action);
+    check(noImportActions.includes("append_claude_md_import"),
+      "default: existing CLAUDE.md without the @AGENTS.md import plans append_claude_md_import",
+      JSON.stringify(noImportActions));
+    runOnboard(["--repo-root", cmDefaultTmp, "--apply", "--json"], cmDefaultHome);
+    const defaultAppended = fs.readFileSync(path.join(cmDefaultTmp, "CLAUDE.md"), "utf8");
+    check(defaultAppended.startsWith("# House rules"),
+      "default: append preserves existing CLAUDE.md content");
+    check(/^@AGENTS\.md\s*$/m.test(defaultAppended),
+      "default: append adds the @AGENTS.md import");
+  } finally {
+    try {
+      fs.rmSync(cmDefaultTmp, { recursive: true, force: true });
+      fs.rmSync(cmDefaultHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // --- 9b-no-claude-md. --no-claude-md suppresses every CLAUDE.md plan item --
+  const cmOptOutTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-claudemd-optout-test-"));
+  const cmOptOutHome = makeFakeHome();
+  try {
+    const optOutPlan = runOnboard(["--repo-root", cmOptOutTmp, "--no-claude-md", "--json"], cmOptOutHome);
+    const optOutActions = (optOutPlan.payload?.plan || []).map((i) => i.action);
+    check(!optOutActions.includes("create_claude_md") &&
+      !optOutActions.includes("append_claude_md_import"),
+      "--no-claude-md: plan carries no CLAUDE.md items for a fresh repo",
+      JSON.stringify(optOutActions));
+    runOnboard(["--repo-root", cmOptOutTmp, "--apply", "--no-claude-md", "--json"], cmOptOutHome);
+    check(!fs.existsSync(path.join(cmOptOutTmp, "CLAUDE.md")),
+      "--no-claude-md: apply never creates CLAUDE.md");
+  } finally {
+    try {
+      fs.rmSync(cmOptOutTmp, { recursive: true, force: true });
+      fs.rmSync(cmOptOutHome, { recursive: true, force: true });
     } catch {
       // best-effort cleanup
     }
@@ -1119,6 +1226,35 @@ function readInstalled(fakeHome, rel) {
   return fs.existsSync(abs) ? fs.readFileSync(abs, "utf8") : null;
 }
 
+// --- per-target helpers (installer-hardening) --------------------------------
+const REPO_TARGET_ROOTS = [".claude/skills", ".agents/skills"];
+
+function readRepoTarget(repo, relRoot, rel) {
+  const abs = path.join(repo, ...relRoot.split("/"), ...rel.split("/"));
+  return fs.existsSync(abs) ? fs.readFileSync(abs, "utf8") : null;
+}
+
+// Seed the two managed in-repo targets with a version-marked bee-hive so a
+// per-target downgrade refusal resolves all three versions numeric (forceable)
+// - without this, a fresh in-repo target reads installed_skills "absent" and a
+// host_helpers-driven downgrade refusal is never forceable for that target.
+function seedRepoSkillTargets(repo, version) {
+  for (const relRoot of REPO_TARGET_ROOTS) {
+    writeSkillFiles(path.join(repo, ...relRoot.split("/")), "bee-hive", {
+      "SKILL.md": "# installed hive\n",
+      "templates/lib/state.mjs": fakeStateSource(version),
+    });
+  }
+}
+
+function skillTarget(payload, kind) {
+  return (payload?.skills?.targets || []).find((t) => t.kind === kind) || null;
+}
+
+function flatSkillItems(payload) {
+  return (payload?.skills?.targets || []).flatMap((t) => t.items || []);
+}
+
 // Stable full-tree digest (lstat semantics: symlinks recorded by target, never
 // followed) for byte-identical / zero-mutation assertions.
 function hashTree(dir) {
@@ -1147,7 +1283,9 @@ function hashTree(dir) {
   return lines.join("\n");
 }
 
-// --- 10a. fresh install: absent target -> full sync, no refusal (D3) --------
+// --- 10a. fresh install: absent targets -> full per-target sync, no refusal --
+// Default targets are the two in-repo roots; ~/.claude/skills participates
+// only under --global-skills and is otherwise never written (D2/D3).
 {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-fresh-"));
   const home = makeFakeHome();
@@ -1164,24 +1302,144 @@ function hashTree(dir) {
     check(plan.status === 0 && plan.payload?.status === "changes_needed",
       "fresh install: plan reports changes_needed",
       `exit ${plan.status} status ${plan.payload?.status}`);
-    const syncSkills = (plan.payload?.plan || [])
-      .filter((i) => i.action === "sync_skill").map((i) => i.skill).sort();
-    check(JSON.stringify(syncSkills) === JSON.stringify(["bee-alpha", "bee-beta", "bee-hive"]),
-      "fresh install: plan lists sync_skill for every source bee-* skill",
-      JSON.stringify(syncSkills));
+    for (const kind of ["repo-claude", "repo-agents"]) {
+      const syncSkills = (plan.payload?.plan || [])
+        .filter((i) => i.action === "sync_skill" && i.target === kind)
+        .map((i) => i.skill).sort();
+      check(JSON.stringify(syncSkills) === JSON.stringify(["bee-alpha", "bee-beta", "bee-hive"]),
+        `fresh install: plan lists sync_skill for every source bee-* skill on ${kind}`,
+        JSON.stringify(syncSkills));
+    }
+    check(!(plan.payload?.plan || []).some((i) => i.target === "global"),
+      "fresh install: no global-target item without --global-skills");
     check(!fs.existsSync(path.join(home, ".claude")),
       "fresh install: plan mode writes nothing to the fake home");
     const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
-      "fresh install: absent target proceeds as fresh install, no refusal (D3)",
+      "fresh install: absent targets proceed as fresh install, no refusal (D3)",
       `exit ${apply.status} status ${apply.payload?.status}`);
     check(apply.payload?.recheck === "up_to_date",
       "fresh install: recheck lands up_to_date on content-hash parity (D5)",
       JSON.stringify(apply.payload?.recheck_plan || []));
-    check(readInstalled(home, "bee-alpha/SKILL.md") === "# alpha v1\n",
-      "fresh install: bee-alpha synced byte-exact");
-    check(readInstalled(home, "bee-beta/references/notes.md") === "beta notes\n",
-      "fresh install: nested skill files synced");
+    for (const relRoot of REPO_TARGET_ROOTS) {
+      check(readRepoTarget(repo, relRoot, "bee-alpha/SKILL.md") === "# alpha v1\n",
+        `fresh install: bee-alpha synced byte-exact into ${relRoot}`);
+      check(readRepoTarget(repo, relRoot, "bee-beta/references/notes.md") === "beta notes\n",
+        `fresh install: nested skill files synced into ${relRoot}`);
+    }
+    check(!fs.existsSync(path.join(home, ".claude")),
+      "fresh install: apply without --global-skills never writes ~/.claude/skills");
+
+    // --global-skills adds the legacy global target (D3): repo targets are
+    // already in parity, so the remaining drift is exactly the global root.
+    const gPlan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
+    const gItems = (gPlan.payload?.plan || []).filter((i) => i.action === "sync_skill");
+    check(gItems.length > 0 && gItems.every((i) => i.target === "global"),
+      "--global-skills: remaining sync_skill items all target the global root",
+      JSON.stringify(gItems));
+    const gApply = runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
+    check(gApply.status === 0 && gApply.payload?.status === "applied" &&
+      gApply.payload?.recheck === "up_to_date",
+      "--global-skills: apply syncs the fake home global root",
+      `exit ${gApply.status} status ${gApply.payload?.status}`);
+    check(readInstalled(home, "bee-alpha/SKILL.md") === "# alpha v1\n" &&
+      readInstalled(home, "bee-beta/references/notes.md") === "beta notes\n",
+      "--global-skills: global root synced byte-exact (old behavior restored)");
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10a2. drift in ONE in-repo root -> sync_skill for that root only --------
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-onedrift-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      skills: { "bee-alpha": { "SKILL.md": "# alpha v1\n" } },
+    });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    // A host repo that merely contains its own skills/ dir never trips the
+    // self-onboard skip: onboarding runs from an external source.
+    fs.mkdirSync(path.join(repo, "skills", "bee-decoy"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "skills", "bee-decoy", "SKILL.md"), "# decoy\n", "utf8");
+    runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const clean = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(clean.payload?.status === "up_to_date",
+      "one-root drift: immediate re-run reports up_to_date (repo skills/ dir never trips self-skip)",
+      JSON.stringify(clean.payload?.plan || []));
+    fs.writeFileSync(
+      path.join(repo, ".agents", "skills", "bee-alpha", "SKILL.md"), "# drifted\n", "utf8");
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const driftItems = (plan.payload?.plan || []).filter((i) => i.action === "sync_skill");
+    check(plan.payload?.status === "changes_needed" &&
+      driftItems.length === 1 && driftItems[0].skill === "bee-alpha" &&
+      driftItems[0].target === "repo-agents",
+      "drift planted in ONE root yields sync_skill for exactly that root",
+      JSON.stringify(driftItems));
+    const heal = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(heal.payload?.status === "applied" && heal.payload?.recheck === "up_to_date",
+      "one-root drift: apply heals it, recheck up_to_date");
+    check(readRepoTarget(repo, ".agents/skills", "bee-alpha/SKILL.md") === "# alpha v1\n",
+      "one-root drift: drifted file mirrored back to source bytes");
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10a3. self-onboard: repo contains the running source -> per-project skip -
+// beegog onboarding itself must never copy skills into its own .claude/skills
+// or .agents/skills; the skip is a distinct noop, never an error, and global
+// sync stays available under --global-skills.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-selfonboard-"));
+  const home = makeFakeHome();
+  try {
+    const repo = path.join(base, "repo");
+    const { launcher } = makeFakeSkillsRoot(path.join(repo, "skills"), {
+      skills: { "bee-alpha": { "SKILL.md": "# alpha self\n" } },
+    });
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(apply.status === 0 && apply.payload?.status === "applied",
+      "self-onboard: apply succeeds (skip is a noop, not an error)",
+      `exit ${apply.status} status ${apply.payload?.status}`);
+    for (const kind of ["repo-claude", "repo-agents"]) {
+      check(skillTarget(apply.payload, kind)?.mode === "self_skip",
+        `self-onboard: ${kind} target reports the distinct self_skip mode`,
+        JSON.stringify(skillTarget(apply.payload, kind)));
+    }
+    for (const relRoot of REPO_TARGET_ROOTS) {
+      check(readRepoTarget(repo, relRoot, "bee-alpha/SKILL.md") === null &&
+        readRepoTarget(repo, relRoot, "bee-hive/SKILL.md") === null,
+        `self-onboard: never copies skills into its own ${relRoot}`);
+    }
+    check(apply.payload?.recheck === "up_to_date",
+      "self-onboard: recheck up_to_date (skipped targets carry no drift)",
+      JSON.stringify(apply.payload?.recheck_plan || []));
+    // Global sync behavior is unchanged there: --global-skills still syncs.
+    const gApply = runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
+    check(gApply.status === 0 && gApply.payload?.status === "applied" &&
+      skillTarget(gApply.payload, "global")?.mode === "fresh" &&
+      readInstalled(home, "bee-alpha/SKILL.md") === "# alpha self\n",
+      "self-onboard: --global-skills still syncs the global root",
+      JSON.stringify(gApply.payload?.skills?.targets || null));
+    for (const relRoot of REPO_TARGET_ROOTS) {
+      check(readRepoTarget(repo, relRoot, "bee-alpha/SKILL.md") === null,
+        `self-onboard: --global-skills run still skips ${relRoot}`);
+    }
   } finally {
     try {
       fs.rmSync(base, { recursive: true, force: true });
@@ -1215,13 +1473,13 @@ function hashTree(dir) {
       "references/deep/data.md": "precious user data\n",
     });
     const payloadBefore = hashTree(path.join(installedRoot, "agent-browser"));
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
-    check((plan.payload?.plan || []).some((i) => i.action === "sync_skill" && i.skill === "bee-alpha"),
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
+    check((plan.payload?.plan || []).some((i) => i.action === "sync_skill" && i.skill === "bee-alpha" && i.target === "global"),
       "equal-version byte drift produces a sync_skill item (D5)",
       JSON.stringify(plan.payload?.plan || []));
     check((plan.payload?.plan || []).some((i) => i.action === "remove_skill" && i.skill === "bee-obsolete"),
       "skill absent from the anchored source planned as remove_skill (D2/D4)");
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
       "fence: deletion-bearing apply succeeds", `exit ${apply.status}`);
     check(readInstalled(home, "bee-alpha/SKILL.md") === "# alpha v2\n",
@@ -1252,11 +1510,11 @@ function hashTree(dir) {
     makeInstalledSkills(home, { version: "0.1.19" });
     const homeBefore = hashTree(home);
     const repoBefore = hashTree(repo);
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     check(plan.status === 0 && plan.payload?.status === "blocked_downgrade",
       "downgrade: plan mode reports blocked_downgrade with exit 0",
       `exit ${plan.status} status ${plan.payload?.status}`);
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 1, "downgrade: apply exits 1", `exit ${apply.status}`);
     check(apply.payload?.status === "blocked_downgrade",
       "downgrade: apply reports blocked_downgrade", JSON.stringify(apply.payload));
@@ -1293,7 +1551,7 @@ function hashTree(dir) {
     makeInstalledSkills(home, { stateText: "// corrupt: no version constant here\n" });
     const homeBefore = hashTree(home);
     const repoBefore = hashTree(repo);
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 1 && apply.payload?.status === "blocked_downgrade",
       "existing-but-unreadable installed tree refuses (unknown, D3)",
       `exit ${apply.status} status ${apply.payload?.status}`);
@@ -1301,7 +1559,7 @@ function hashTree(dir) {
       "unreadable installed version reported as unknown",
       JSON.stringify(apply.payload?.versions || {}));
     const forced = runOnboardAt(launcher,
-      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+      ["--repo-root", repo, "--apply", "--global-skills", "--force-downgrade", "--json"], home);
     check(forced.status === 1 && forced.payload?.status === "blocked_downgrade",
       "unknown is NEVER forceable: --force-downgrade still refuses",
       `exit ${forced.status} status ${forced.payload?.status}`);
@@ -1329,12 +1587,16 @@ function hashTree(dir) {
     fs.mkdirSync(path.join(repo, ".bee", "bin", "lib"), { recursive: true });
     fs.writeFileSync(path.join(repo, ".bee", "bin", "lib", "state.mjs"),
       fakeStateSource("0.1.19"), "utf8");
+    // In-repo targets must also resolve all three versions numeric, or the
+    // host_helpers-driven refusal is unforceable for them (blocked-first:
+    // EVERY blocked target must be forceable for --force-downgrade to apply).
+    seedRepoSkillTargets(repo, "0.1.19");
     makeInstalledSkills(home, { version: "0.1.19" });
-    const refused = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const refused = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(refused.status === 1 && refused.payload?.status === "blocked_downgrade",
       "all-numeric downgrade still refuses by default");
     const forced = runOnboardAt(launcher,
-      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+      ["--repo-root", repo, "--apply", "--global-skills", "--force-downgrade", "--json"], home);
     check(forced.status === 0 && forced.payload?.status === "applied",
       "--force-downgrade proceeds when all three versions resolved numeric",
       `exit ${forced.status} status ${forced.payload?.status}`);
@@ -1386,13 +1648,13 @@ function hashTree(dir) {
     const outsideABefore = hashTree(outsideA);
     const outsideBBefore = hashTree(outsideB);
     const betaBefore = hashTree(path.join(installedRoot, "bee-beta"));
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     const planBlocked = (plan.payload?.plan || [])
       .filter((i) => i.action === "blocked_symlink").map((i) => i.skill).sort();
     check(["bee-alpha", "bee-beta", "bee-gone"].every((s) => planBlocked.includes(s)),
       "plan reports blocked_symlink loudly for every affected skill",
       JSON.stringify(planBlocked));
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
       "symlink: apply still proceeds for unaffected skills", `exit ${apply.status}`);
     const skipped = (apply.payload?.skills?.skipped || []).map((s) => s.skill).sort();
@@ -1436,7 +1698,7 @@ function hashTree(dir) {
     fs.mkdirSync(repo, { recursive: true });
     const homeBefore = hashTree(home);
     const repoBefore = hashTree(repo);
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
       "ancestor overlap (source inside target) fails closed on apply",
       `exit ${apply.status} status ${apply.payload?.status}`);
@@ -1467,7 +1729,7 @@ function hashTree(dir) {
     fs.mkdirSync(repo, { recursive: true });
     const sourceBefore = hashTree(skillsRoot);
     const repoBefore = hashTree(repo);
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], innerHome);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], innerHome);
     check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
       "ancestor overlap (target inside source) fails closed on apply",
       `exit ${apply.status} status ${apply.payload?.status}`);
@@ -1498,16 +1760,16 @@ function hashTree(dir) {
     const repo = path.join(repoBase, "repo");
     fs.mkdirSync(repo, { recursive: true });
     const before = hashTree(skillsRoot);
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
       "installed-copy run applies host-repo onboarding normally",
       `exit ${apply.status} status ${apply.payload?.status}`);
-    check(apply.payload?.skills?.mode === "noop",
-      "source==target realpath resolves the skill stage to verify-only NOOP (D2)",
+    check(skillTarget(apply.payload, "global")?.mode === "noop",
+      "source==target realpath resolves the global target to verify-only NOOP (D2)",
       JSON.stringify(apply.payload?.skills || null));
     check(!(apply.payload?.applied || []).some(
-      (i) => i.action === "sync_skill" || i.action === "remove_skill"),
-      "NOOP run emits no skill mutations");
+      (i) => (i.action === "sync_skill" || i.action === "remove_skill") && i.target === "global"),
+      "NOOP run emits no global-target skill mutations");
     check(hashTree(skillsRoot) === before,
       "NOOP run leaves the installed skill tree byte-identical");
     check(fs.existsSync(path.join(repo, "AGENTS.md")),
@@ -1580,14 +1842,15 @@ function hashTree(dir) {
     fs.mkdirSync(path.join(repo, ".bee", "bin", "lib"), { recursive: true });
     fs.writeFileSync(path.join(repo, ".bee", "bin", "lib", "state.mjs"),
       fakeStateSource("0.1.19"), "utf8"); // host_helpers newer than source
+    seedRepoSkillTargets(repo, "0.1.17"); // numeric per-target installs keep the refusal forceable
     makeInstalledSkills(home, { version: "0.1.17" }); // installed OLDER: never triggers
     const homeBefore = hashTree(home);
     const repoBefore = hashTree(repo);
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     check(plan.status === 0 && plan.payload?.status === "blocked_downgrade",
       "source<helpers only: plan mode reports blocked_downgrade (F3)",
       `exit ${plan.status} status ${plan.payload?.status}`);
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 1 && apply.payload?.status === "blocked_downgrade",
       "source<helpers only: apply refuses driven solely by host_helpers (independent branch)",
       `exit ${apply.status} status ${apply.payload?.status}`);
@@ -1598,7 +1861,7 @@ function hashTree(dir) {
     check(hashTree(home) === homeBefore && hashTree(repo) === repoBefore,
       "source<helpers only: refusal mutates nothing anywhere");
     const forced = runOnboardAt(launcher,
-      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+      ["--repo-root", repo, "--apply", "--global-skills", "--force-downgrade", "--json"], home);
     check(forced.status === 0 && forced.payload?.status === "applied" &&
       forced.payload?.forced_downgrade === true,
       "source<helpers only: --force-downgrade proceeds once all three versions resolved numeric",
@@ -1711,11 +1974,11 @@ function hashTree(dir) {
       version: "0.1.19",
       skills: { "bee-alpha": { "SKILL.md": "# alpha v3\n" } },
     });
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
       "source newer than both host_helpers and installed_skills proceeds without --force-downgrade",
       `exit ${apply.status} status ${apply.payload?.status}`);
-    const v = apply.payload?.skills?.versions || {};
+    const v = skillTarget(apply.payload, "global")?.versions || {};
     check(v.source === "0.2.0" && v.host_helpers === "0.1.19" && v.installed_skills === "0.1.19",
       "source-newer apply reports the versions triple with source strictly ahead",
       JSON.stringify(v));
@@ -1749,11 +2012,11 @@ function hashTree(dir) {
       version: "0.1.18", // older than source, but present -> not "absent"
       skills: { "bee-alpha": { "SKILL.md": "# alpha v1\n" } },
     });
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
       "repo never onboarded (host_helpers absent) proceeds as first onboard, no refusal",
       `exit ${apply.status} status ${apply.payload?.status}`);
-    const v = apply.payload?.skills?.versions || {};
+    const v = skillTarget(apply.payload, "global")?.versions || {};
     check(v.host_helpers === "absent" && v.installed_skills === "0.1.18" && v.source === "0.1.19",
       "first-onboard apply reports host_helpers absent distinctly from unknown",
       JSON.stringify(v));
@@ -1796,7 +2059,7 @@ function hashTree(dir) {
         "bee-stale": { "SKILL.md": "# going away\n", "references/old.md": "old\n" },
       },
     });
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     const planActions = (plan.payload?.plan || []).map((i) => `${i.action}:${i.skill}`).sort();
     check(planActions.includes("sync_skill:bee-kept"),
       "deep mirror: plan syncs bee-kept (a nested file differs)", JSON.stringify(planActions));
@@ -1804,7 +2067,7 @@ function hashTree(dir) {
       "deep mirror: plan syncs the brand-new bee-new skill", JSON.stringify(planActions));
     check(planActions.includes("remove_skill:bee-stale"),
       "deep mirror: plan removes the stale bee-stale skill", JSON.stringify(planActions));
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
       "deep mirror apply succeeds", `exit ${apply.status}`);
     check(!fs.existsSync(path.join(installedRoot, "bee-kept", "references", "deep", "stale.md")),
@@ -1842,8 +2105,8 @@ function hashTree(dir) {
     fs.mkdirSync(repo, { recursive: true });
     const sourceRoot = path.join(base, "skills");
     const installedRoot = path.join(home, ".claude", "skills");
-    runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
-    const plan2 = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
+    const plan2 = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     check(plan2.status === 0 && plan2.payload?.status === "up_to_date",
       "idempotency: second run's plan mode reports up_to_date",
       `exit ${plan2.status} status ${plan2.payload?.status}`);
@@ -1856,8 +2119,12 @@ function hashTree(dir) {
       check(sourceHash === installedHash,
         `idempotency: ${skill} manifest hash parity between source and installed`,
         `source: ${sourceHash} installed: ${installedHash}`);
+      for (const relRoot of REPO_TARGET_ROOTS) {
+        check(hashTree(path.join(repo, ...relRoot.split("/"), skill)) === sourceHash,
+          `idempotency: ${skill} manifest hash parity between source and ${relRoot}`);
+      }
     }
-    const apply2 = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply2 = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply2.payload?.status === "applied" && apply2.payload?.recheck === "up_to_date",
       "idempotency: second apply is a no-op, recheck up_to_date");
     check(Array.isArray(apply2.payload?.applied) &&
@@ -1897,19 +2164,19 @@ function hashTree(dir) {
     });
     const homeBefore = hashTree(home);
     const repoBefore = hashTree(repo);
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     check(plan.status === 0 && plan.payload?.status === "blocked_downgrade",
       "partial install (bee-* without bee-hive) refuses as unknown, never fresh (review P1-1)",
       `exit ${plan.status} status ${plan.payload?.status}`);
     check(plan.payload?.versions?.installed_skills === "unknown",
       "partial install reports installed_skills unknown, not absent",
       JSON.stringify(plan.payload?.versions || null));
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 1 && apply.payload?.status === "blocked_downgrade",
       "partial install: apply refuses with exit 1",
       `exit ${apply.status} status ${apply.payload?.status}`);
     const forced = runOnboardAt(launcher,
-      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+      ["--repo-root", repo, "--apply", "--global-skills", "--force-downgrade", "--json"], home);
     check(forced.status === 1 && forced.payload?.status === "blocked_downgrade",
       "partial-install unknown is NEVER forceable",
       `exit ${forced.status} status ${forced.payload?.status}`);
@@ -1923,7 +2190,7 @@ function hashTree(dir) {
     fs.mkdirSync(path.join(home2, ".claude", "skills", "agent-browser"), { recursive: true });
     fs.writeFileSync(path.join(home2, ".claude", "skills", "agent-browser", "SKILL.md"),
       "# not bee's\n", "utf8");
-    const fresh = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home2);
+    const fresh = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home2);
     check(fresh.status === 0 && fresh.payload?.status === "applied",
       "a target with only non-bee entries still reads absent -> fresh install proceeds",
       `exit ${fresh.status} status ${fresh.payload?.status}`);
@@ -1969,7 +2236,7 @@ function hashTree(dir) {
             "export const BEE_VERSION = '0.1.20';\n",
         });
         const homeBefore = hashTree(home);
-        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--json"], home);
+        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--global-skills", "--json"], home);
         check(apply.status === 1 && apply.payload?.status === "blocked_downgrade",
           "decoy BEE_VERSION comment never resolves: the real 0.1.20 refuses a 0.1.19 source (review P1-2)",
           `exit ${apply.status} status ${apply.payload?.status}`);
@@ -1997,7 +2264,7 @@ function hashTree(dir) {
         });
         const homeBefore = hashTree(home);
         const forced = runOnboardAt(launcher,
-          ["--repo-root", nextRepo(), "--apply", "--force-downgrade", "--json"], home);
+          ["--repo-root", nextRepo(), "--apply", "--global-skills", "--force-downgrade", "--json"], home);
         check(forced.status === 1 && forced.payload?.status === "blocked_downgrade" &&
           forced.payload?.versions?.installed_skills === "unknown",
           "multiple BEE_VERSION declarations resolve to unknown and refuse even --force-downgrade",
@@ -2026,7 +2293,7 @@ function hashTree(dir) {
         fs.mkdirSync(path.join(root, "bee-hive", "templates", "lib"), { recursive: true });
         fs.symlinkSync(outsideMarker,
           path.join(root, "bee-hive", "templates", "lib", "state.mjs"));
-        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--json"], home);
+        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--global-skills", "--json"], home);
         check(apply.status === 1 && apply.payload?.status === "blocked_downgrade" &&
           apply.payload?.versions?.installed_skills === "unknown",
           "symlinked version marker is never followed: unknown, refused",
@@ -2055,7 +2322,7 @@ function hashTree(dir) {
         fs.writeFileSync(path.join(outsideTemplates, "lib", "state.mjs"),
           fakeStateSource("0.1.18"), "utf8");
         fs.symlinkSync(outsideTemplates, path.join(root, "bee-hive", "templates"));
-        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--json"], home);
+        const apply = runOnboardAt(launcher, ["--repo-root", nextRepo(), "--apply", "--global-skills", "--json"], home);
         check(apply.status === 1 && apply.payload?.status === "blocked_downgrade" &&
           apply.payload?.versions?.installed_skills === "unknown",
           "symlinked path component under the managed target is never trusted: unknown, refused",
@@ -2111,7 +2378,7 @@ function hashTree(dir) {
         },
       },
     });
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
       "dir->file transition: apply succeeds",
       `exit ${apply.status} stdout ${apply.stdout}`);
@@ -2164,7 +2431,7 @@ function hashTree(dir) {
         },
       },
     });
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 0 && apply.payload?.status === "applied",
       "file->dir transition: apply succeeds without throwing mid-apply (review P1-3)",
       `exit ${apply.status} stdout ${apply.stdout}`);
@@ -2209,11 +2476,11 @@ function hashTree(dir) {
     fs.writeFileSync(path.join(repo, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
     fs.writeFileSync(path.join(repo, "work.md"), "irreplaceable checkout\n", "utf8");
     const homeBefore = hashTree(home);
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     check(plan.status === 0 && plan.payload?.status === "blocked_no_source",
       "repo inside the skills root: plan reports blocked_no_source (review P1-4)",
       `exit ${plan.status} status ${plan.payload?.status}`);
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
       "repo inside the skills root: apply refuses pre-write with exit 1",
       `exit ${apply.status} status ${apply.payload?.status}`);
@@ -2223,7 +2490,7 @@ function hashTree(dir) {
       "repo-in-target overlap reports the version triple as unknown (review P1-8)",
       JSON.stringify(repoOverlapV));
     const forced = runOnboardAt(launcher,
-      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+      ["--repo-root", repo, "--apply", "--global-skills", "--force-downgrade", "--json"], home);
     check(forced.status === 1 && forced.payload?.status === "blocked_no_source",
       "repo-in-target refusal is NEVER forceable",
       `exit ${forced.status} status ${forced.payload?.status}`);
@@ -2253,7 +2520,7 @@ function hashTree(dir) {
     const innerHome = path.join(repo, "nested-home");
     fs.mkdirSync(innerHome, { recursive: true });
     const repoBefore = hashTree(repo);
-    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], innerHome);
+    const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], innerHome);
     check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
       "target skills root inside the repo refuses fail-closed (review P1-4)",
       `exit ${apply.status} status ${apply.payload?.status}`);
@@ -2318,8 +2585,10 @@ function hashTree(dir) {
         version: "0.1.19",
         skills: { "bee-Alpha": { "SKILL.md": "# alpha installed, other case\n" } },
       });
-      const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
-      const planItems = plan.payload?.plan || [];
+      const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
+      // The alias lives in the GLOBAL target; the fresh in-repo targets plan
+      // their own (clean) sync_skill items, so the guarantee is per-target.
+      const planItems = (plan.payload?.plan || []).filter((i) => i.target === "global");
       check(!planItems.some((i) =>
         (i.action === "sync_skill" || i.action === "remove_skill") &&
         ["bee-alpha", "bee-Alpha"].includes(i.skill)),
@@ -2328,7 +2597,7 @@ function hashTree(dir) {
       check(planItems.some((i) => i.action === "blocked_alias"),
         "alias collision is reported loudly as a blocked plan item",
         JSON.stringify(planItems));
-      const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+      const apply = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
       check(apply.status === 0 && apply.payload?.status === "applied",
         "alias: apply still proceeds for unaffected skills", `exit ${apply.status}`);
       check((apply.payload?.skills?.skipped || []).some((s) =>
@@ -2373,6 +2642,7 @@ function hashTree(dir) {
     fs.mkdirSync(path.join(repo, ".bee", "bin", "lib"), { recursive: true });
     fs.writeFileSync(path.join(repo, ".bee", "bin", "lib", "state.mjs"),
       fakeStateSource("0.1.19"), "utf8");
+    seedRepoSkillTargets(repo, "0.1.19"); // numeric per-target installs keep the refusal forceable
     makeInstalledSkills(home, {
       version: "0.1.19",
       skills: {
@@ -2380,27 +2650,27 @@ function hashTree(dir) {
         "bee-doomed": { "SKILL.md": "# about to be deleted\n" },
       },
     });
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     check(plan.status === 0 && plan.payload?.status === "blocked_downgrade",
       "forced-vis: plan mode reports blocked_downgrade (forceable)",
       `exit ${plan.status} status ${plan.payload?.status}`);
-    const planItems = plan.payload?.skills?.items || [];
-    check(planItems.some((i) => i.action === "sync_skill" && i.skill === "bee-alpha"),
+    const planItems = flatSkillItems(plan.payload);
+    check(planItems.some((i) => i.action === "sync_skill" && i.skill === "bee-alpha" && i.target === "global"),
       "forced-vis: blocked dry-run still enumerates the sync_skill a force would overwrite (P1-6)",
       JSON.stringify(planItems));
-    check(planItems.some((i) => i.action === "remove_skill" && i.skill === "bee-doomed"),
+    check(planItems.some((i) => i.action === "remove_skill" && i.skill === "bee-doomed" && i.target === "global"),
       "forced-vis: blocked dry-run still enumerates the remove_skill a force would DELETE (P1-6)",
       JSON.stringify(planItems));
-    const refused = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const refused = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(refused.status === 1 && refused.payload?.status === "blocked_downgrade",
       "forced-vis: refused apply (no --force-downgrade) still reports blocked_downgrade");
-    const refusedItems = refused.payload?.skills?.items || [];
-    check(refusedItems.some((i) => i.action === "sync_skill" && i.skill === "bee-alpha") &&
-      refusedItems.some((i) => i.action === "remove_skill" && i.skill === "bee-doomed"),
-      "forced-vis: the refused --apply response ALSO enumerates the items, not only the plain dry-run (P1-6)",
+    const refusedItems = flatSkillItems(refused.payload);
+    check(refusedItems.some((i) => i.action === "sync_skill" && i.skill === "bee-alpha" && i.target === "global") &&
+      refusedItems.some((i) => i.action === "remove_skill" && i.skill === "bee-doomed" && i.target === "global"),
+      "forced-vis: the refused --apply response ALSO enumerates the items per target, not only the plain dry-run (P1-6)",
       JSON.stringify(refusedItems));
     const forced = runOnboardAt(launcher,
-      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+      ["--repo-root", repo, "--apply", "--global-skills", "--force-downgrade", "--json"], home);
     check(forced.status === 0 && forced.payload?.status === "applied" &&
       forced.payload?.forced_downgrade === true,
       "forced-vis: forcing actually applies", `exit ${forced.status} status ${forced.payload?.status}`);
@@ -2447,6 +2717,7 @@ function hashTree(dir) {
     fs.mkdirSync(path.join(repo, ".bee", "bin", "lib"), { recursive: true });
     fs.writeFileSync(path.join(repo, ".bee", "bin", "lib", "state.mjs"),
       fakeStateSource("0.1.19"), "utf8");
+    seedRepoSkillTargets(repo, "0.1.19"); // numeric per-target installs keep the refusal forceable
     const installedRoot = makeInstalledSkills(home, { version: "0.1.19" });
     const outside = path.join(base, "outside-rogue");
     fs.mkdirSync(outside, { recursive: true });
@@ -2455,12 +2726,12 @@ function hashTree(dir) {
     // version resolution still succeeds, but the whole skill is blocked_symlink
     // and never gets synced, so its marker stays stuck at the OLDER install.
     fs.symlinkSync(outside, path.join(installedRoot, "bee-hive", "rogue-link"));
-    const refused = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    const refused = runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
     check(refused.status === 1 && refused.payload?.status === "blocked_downgrade",
       "recheck-honesty: unforced apply refuses as blocked_downgrade (setup sanity)",
       `exit ${refused.status} status ${refused.payload?.status}`);
     const forced = runOnboardAt(launcher,
-      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+      ["--repo-root", repo, "--apply", "--global-skills", "--force-downgrade", "--json"], home);
     check(forced.status === 0 && forced.payload?.status === "applied" &&
       forced.payload?.forced_downgrade === true,
       "recheck-honesty: forced apply proceeds", `exit ${forced.status} status ${forced.payload?.status}`);
@@ -2507,17 +2778,17 @@ function hashTree(dir) {
       version: "0.1.19",
       skills: { "bee-remove-me": { "SKILL.md": "# will be removed\n" } },
     });
-    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    const plan = runOnboardAt(launcher, ["--repo-root", repo, "--global-skills", "--json"], home);
     check(plan.status === 0, "scope: plan mode exits 0", `exit ${plan.status}`);
     const items = plan.payload?.plan || [];
     const byKey = (action, skill) => items.find((i) => i.action === action && i.skill === skill);
     const syncNormal = byKey("sync_skill", "bee-normal");
     check(syncNormal?.scope === "installed",
-      "scope: sync_skill (writes the global install) carries scope: installed",
+      "scope: sync_skill (writes a managed install root) carries scope: installed",
       JSON.stringify(syncNormal));
     const removeMe = byKey("remove_skill", "bee-remove-me");
-    check(removeMe?.scope === "installed",
-      "scope: remove_skill (deletes from the global install) carries scope: installed",
+    check(removeMe?.scope === "installed" && removeMe?.target === "global",
+      "scope: remove_skill (deletes from the global install) carries scope: installed + target: global",
       JSON.stringify(removeMe));
     const linked = byKey("blocked_symlink", "bee-linked");
     check(linked?.scope === "source",
@@ -2527,9 +2798,15 @@ function hashTree(dir) {
     check(syncHive?.scope === "installed",
       "scope: bee-hive's own sync_skill also carries scope: installed",
       JSON.stringify(syncHive));
+    const skillStageItems = items.filter((i) =>
+      ["sync_skill", "remove_skill", "blocked_symlink", "blocked_alias"].includes(i.action));
+    check(skillStageItems.length > 0 && skillStageItems.every((i) =>
+      ["repo-claude", "repo-agents", "global"].includes(i.target)),
+      "scope: every skill-stage item carries the target-kind discriminator",
+      JSON.stringify(skillStageItems));
     const legacyItem = items.find((i) => i.action === "create_agents_block");
-    check(legacyItem && !("scope" in legacyItem),
-      "scope: legacy repo-relative items carry no scope field at all (unchanged)",
+    check(legacyItem && !("scope" in legacyItem) && !("target" in legacyItem),
+      "scope: legacy repo-relative items carry no scope/target fields at all (unchanged)",
       JSON.stringify(legacyItem));
   } finally {
     try {
@@ -2611,6 +2888,63 @@ function hashTree(dir) {
   }
 
   fs.rmSync(stickyTmp, { recursive: true, force: true });
+}
+
+// --- 12. encoding regression guard: scripts/*.ps1 must be ASCII-only --------
+// Root cause (installer-hardening CONTEXT.md E2): scripts/install.ps1 was
+// UTF-8 without BOM; Windows PowerShell 5.1 decodes it as cp1252, so the
+// em-dash byte sequence's trailing 0x94 became a smart right-double-quote,
+// which PowerShell treats as a string terminator and the file failed to
+// parse. Keeping scripts/*.ps1 ASCII-only makes the file encoding-proof.
+// This check is pure node fs + a byte scan, no pwsh required, so it runs on
+// any platform.
+{
+  function findNonAsciiBytes(buf) {
+    const hits = [];
+    for (let i = 0; i < buf.length; i++) {
+      if (buf[i] > 0x7f) hits.push({ offset: i, byte: buf[i] });
+    }
+    return hits;
+  }
+
+  const scriptsDir = path.join(REPO_ROOT, "scripts");
+  const ps1Files = fs.existsSync(scriptsDir)
+    ? fs.readdirSync(scriptsDir).filter((f) => f.endsWith(".ps1")).sort()
+    : [];
+  check(ps1Files.length > 0, "encoding guard: scripts/*.ps1 files found to check",
+    `dir: ${scriptsDir}, files: ${JSON.stringify(ps1Files)}`);
+
+  const violations = [];
+  for (const name of ps1Files) {
+    const hits = findNonAsciiBytes(fs.readFileSync(path.join(scriptsDir, name)));
+    if (hits.length > 0) {
+      violations.push({ file: name, count: hits.length, first: hits[0] });
+    }
+  }
+  check(violations.length === 0,
+    "encoding guard: no non-ASCII bytes in any scripts/*.ps1",
+    JSON.stringify(violations));
+
+  // Self-test the detector on a scratch file OUTSIDE the repo's scripts/ dir,
+  // so a vacuously-true check (e.g. an empty glob) cannot pass silently.
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), "bee-encoding-guard-"));
+  try {
+    const scratchFile = path.join(scratchDir, "scratch.ps1");
+    fs.writeFileSync(scratchFile, "Write-Host 'em dash — here'\n", "utf8");
+    const scratchHits = findNonAsciiBytes(fs.readFileSync(scratchFile));
+    check(scratchHits.length > 0,
+      "encoding guard: detector flags a non-ASCII byte planted in a scratch .ps1",
+      JSON.stringify(scratchHits));
+
+    const cleanFile = path.join(scratchDir, "clean.ps1");
+    fs.writeFileSync(cleanFile, "Write-Host 'plain ascii'\n", "utf8");
+    const cleanHits = findNonAsciiBytes(fs.readFileSync(cleanFile));
+    check(cleanHits.length === 0,
+      "encoding guard: detector reports clean on an ASCII-only scratch .ps1",
+      JSON.stringify(cleanHits));
+  } finally {
+    fs.rmSync(scratchDir, { recursive: true, force: true });
+  }
 }
 
 // --- suite-wide isolation invariant -----------------------------------------

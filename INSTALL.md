@@ -29,7 +29,9 @@ Useful flags (same semantics in both scripts):
 |---|---|---|
 | `--dry-run` | `-DryRun` | Show the exact plan for YOUR repo; write nothing |
 | `--runtime claude\|codex\|both` | `-Runtime …` | Which runtime skills to install (default both) |
-| `--claude-md` | `-ClaudeMd` | Also write/extend CLAUDE.md with the `@AGENTS.md` import |
+| `--global-skills` | `-GlobalSkills` | Also copy skills into the legacy global runtime dirs (`~/.claude/skills`, `~/.codex/skills`). Off by default — see "two layers" below |
+| `--no-claude-md` | `-NoClaudeMd` | Skip writing/extending CLAUDE.md with the `@AGENTS.md` import (written by default) |
+| `--claude-md` | `-ClaudeMd` | Accepted for compatibility; a no-op alias of the default (CLAUDE.md is written unless `--no-claude-md`/`-NoClaudeMd` is passed) |
 | `--no-hooks` | `-NoHooks` | Skip repo-local hook wiring for Claude Code |
 | `--no-git-init` | `-NoGitInit` | Greenfield: don't offer `git init` |
 | `--source <path>` | `-Source …` | Use a local bee checkout instead of cloning |
@@ -43,10 +45,10 @@ The script uses the manual-copy route for skills. If you prefer the Claude Code 
 
 ## Manual installation
 
-bee installs in two layers, on both runtimes:
+bee installs in two layers:
 
-1. **Runtime layer** (once per machine): make the `bee-*` skills — and on Claude Code, the hook skeleton — available to the agent.
-2. **Repo layer** (once per project): onboard the repository — installs the `AGENTS.md` BEE block, the `.bee/` runtime directory, and the vendored helpers that mechanically enforce the workflow for *any* agent.
+1. **Repo layer** (once per project, the default): onboarding installs the `AGENTS.md` BEE block, the `.bee/` runtime directory, the vendored helpers, a `CLAUDE.md` `@AGENTS.md` import, and a per-project copy of the `bee-*` skills into the repo itself — `<repo>/.claude/skills` for Claude Code, `<repo>/.agents/skills` for Codex. These skill trees are committed to the host repo (same policy as the vendored helpers), so every teammate and CI job sees identical skills without any machine-wide install; re-onboarding refreshes them.
+2. **Runtime layer** (opt-in, once per machine): a legacy global copy of the `bee-*` skills into `~/.claude/skills` and/or `~/.codex/skills`. Nothing in this layer is touched unless you pass `--global-skills` (`-GlobalSkills`) — the per-project copy above is what agents actually discover by default. On Claude Code, the hook skeleton still needs one of the routes below (the plugin, or `--repo-hooks` during onboarding).
 
 Requirement for both: **Node.js 18+** on PATH (`node --version`).
 
@@ -72,24 +74,24 @@ Inside a Claude Code session:
 Restart the session, then verify:
 
 - `/plugin` → bee shows as installed and enabled.
-- Ask: "What bee skills do you have?" → the ten `bee-*` skills should be listed.
+- Ask: "What bee skills do you have?" → the 15 `bee-*` skills should be listed.
 - Hooks self-arm only in onboarded repos (they exit silently when `.bee/onboarding.json` is absent), so no hook activity is expected yet — that changes after step 3.
 
 ### Option B — no plugin system (fallback)
 
-If you can't (or don't want to) use the plugin manager:
+If you can't (or don't want to) use the plugin manager, onboarding (step 3 below) copies the skills into the repo for you by default — no manual step needed. To copy by hand instead (or to seed the legacy global dir):
 
 1. Copy the skills to a skills directory Claude Code reads:
-   - per user: `%USERPROFILE%\.claude\skills\` (macOS/Linux: `~/.claude/skills/`)
-   - or per repo: `<repo>\.claude\skills\`
+   - per repo (default, what onboarding does): `<repo>\.claude\skills\`
+   - or per user (opt-in, legacy): `%USERPROFILE%\.claude\skills\` (macOS/Linux: `~/.claude/skills/`) — pass `--global-skills`/`-GlobalSkills` during onboarding/install to have the script do this too
 
    ```powershell
-   Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* $env:USERPROFILE\.claude\skills\
+   Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* <repo>\.claude\skills\
    ```
 
 2. Wire the hooks per repo during onboarding with `--repo-hooks` (step 3 below) — this copies the hook scripts into `<repo>\.bee\bin\hooks\` and merges the 6 entries into `<repo>\.claude\settings.json` (a `.bak` backup is created; re-running never duplicates entries).
 
-3. Optional third belt: `--claude-md` writes a minimal `CLAUDE.md` whose `@AGENTS.md` import auto-loads the BEE block even if hooks are disabled.
+3. CLAUDE.md's `@AGENTS.md` import is written by default during onboarding (opt out with `--no-claude-md`) so the BEE block auto-loads even if hooks are disabled.
 
 ---
 
@@ -101,14 +103,18 @@ For Codex builds with plugin support, install from the plugin directory/repo; th
 
 ### Option B — manual skills copy (always works)
 
-Copy each skill folder into your Codex skills directory (`$CODEX_HOME/skills/`, default `~/.codex/skills/`):
+Onboarding (step 3 below) populates the repo-level path by default — no manual step needed. Codex's **repo-level** skill discovery path is `<repo>/.agents/skills/` (cwd up to the repo root), **not** `.codex/skills` — that repo-level location is not a Codex discovery path at all. `~/.codex/skills` (`$CODEX_HOME/skills/`, default `~/.codex/skills/`) is the legacy **global** location; it's opt-in via `--global-skills` and is only populated by the install scripts (`install.sh`/`install.ps1`), not by `onboard_bee.mjs` directly.
+
+To copy by hand instead:
 
 ```bash
-cp -r /d/projects/tools/AI/bee/skills/* ~/.codex/skills/
+cp -r /d/projects/tools/AI/bee/skills/* <repo>/.agents/skills/    # repo-level (what onboarding does)
+cp -r /d/projects/tools/AI/bee/skills/* ~/.codex/skills/          # legacy global (opt-in)
 ```
 
 ```powershell
-Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* $env:USERPROFILE\.codex\skills\
+Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* <repo>\.agents\skills\        # repo-level
+Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* $env:USERPROFILE\.codex\skills\  # legacy global
 ```
 
 Codex has no lifecycle hooks — that's by design in bee: bootstrap comes from the `AGENTS.md` BEE block (installed in step 3), and every gate- and integrity-critical rule is enforced by the vendored helpers, identically to Claude Code. See [docs/06-runtime-integration.md](docs/06-runtime-integration.md) for the parity matrix.
@@ -135,14 +141,20 @@ Flags:
 |---|---|
 | `--apply` | Actually install (without it: report-only) |
 | `--repo-hooks` | Additionally copy hooks into `.bee/bin/hooks/` and merge them into `<repo>/.claude/settings.json` (Claude Code fallback when not using the plugin manager) |
+| `--no-claude-md` | Skip writing/extending CLAUDE.md's `@AGENTS.md` import (written by default) |
+| `--claude-md` | Accepted for compatibility; a no-op alias of the default |
+| `--global-skills` | Also sync the legacy global `~/.claude/skills` root (Claude Code only — Codex's `~/.codex/skills` global copy is handled by the install scripts, not this script). Off by default |
 | `--json` | Machine-readable output |
 
 What onboarding installs:
 
 ```
 <repo>/AGENTS.md          ← BEE block between <!-- BEE:START --> / <!-- BEE:END --> (content outside markers untouched)
+<repo>/CLAUDE.md          ← @AGENTS.md import, appended once (default; opt out with --no-claude-md)
 <repo>/.bee/              ← onboarding.json, state.json, config.json (+ empty cells/, logs/)
 <repo>/.bee/bin/          ← bee_status / bee_cells / bee_reservations / bee_decisions + lib/
+<repo>/.claude/skills/    ← bee-* skills, per-project copy for Claude Code (committed to the repo)
+<repo>/.agents/skills/    ← bee-* skills, per-project copy for Codex repo-level discovery (committed to the repo)
 <repo>/docs/history/learnings/critical-patterns.md   ← stub if missing
 ```
 
@@ -161,6 +173,15 @@ node .bee/bin/bee_status.mjs --json
 ```
 
 Expect `onboarding.installed: true`, `phase: "idle"`, all gates `false`.
+
+Check the per-project skill trees landed (both are committed to the repo, both populated by default):
+
+```bash
+ls <repo>/.claude/skills | grep bee-   # Claude Code project discovery
+ls <repo>/.agents/skills | grep bee-   # Codex repo-level discovery
+```
+
+Each should list all 15 `bee-*` skill dirs. If you passed `--global-skills`, also expect `~/.claude/skills/bee-*` (and, via the install scripts, `~/.codex/skills/bee-*`).
 
 Claude Code (plugin route) — start a new session in the repo: the session should begin with the bee preamble (phase, gates, critical-patterns digest) injected by `bee-session-init`. Quick hook check by hand:
 
@@ -195,7 +216,9 @@ node .bee/bin/bee_cells.mjs claim --id anything --worker w1
 
 | Symptom | Cause / fix |
 |---|---|
-| Skills don't appear | Plugin not enabled (`/plugin`), or manual copy went to the wrong skills dir; restart the session after installing |
+| Skills don't appear | Plugin not enabled (`/plugin`), or the repo hasn't been onboarded yet (per-project `.claude/skills`/`.agents/skills` are populated by onboarding, not by a separate install step); restart the session after installing |
+| Codex doesn't see bee skills | Repo-level discovery is `.agents/skills`, not `.codex/skills` — check that path was populated by onboarding; `~/.codex/skills` is legacy/global and only exists if you passed `--global-skills` to the install script |
+| `install.ps1` fails to parse on Windows PowerShell 5.1 | Historically caused by non-ASCII bytes (em-dashes) in a UTF-8-no-BOM file decoding as cp1252 smart quotes, which terminate strings mid-line. `install.ps1` is ASCII-only now and a repo test guards `scripts/*.ps1` against non-ASCII bytes — report this as a regression if you still hit it |
 | No session preamble in Claude Code | Repo not onboarded (`.bee/onboarding.json` missing — hooks self-arm only after onboarding), or hook disabled in `.bee/config.json → hooks.session-init` |
 | `claim`/`cap` refuse unexpectedly | Working as designed: check `bee_status` for gate states — execution must be approved (Gate 3), cells must have a passing recorded verify before capping |
 | Hook crash suspected | Hooks are fail-open; check `.bee/logs/hooks.jsonl` |

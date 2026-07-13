@@ -323,6 +323,30 @@ fail-closed paths through the real host process, not only in-process.
 
 **Full entry:** docs/history/learnings/20260714-fresh-session-handoff.md
 
+## [20260714] Non-ASCII in a .ps1 without BOM is a parse-time bomb on Windows PowerShell 5.1
+**Category:** failure
+**Feature:** installer-hardening
+**Tags:** [windows, powershell, encoding, cross-platform]
+
+install.ps1 shipped unrunnable: six em-dashes in a UTF-8-no-BOM file. PS 5.1 decodes
+no-BOM files as cp1252, so `—` (E2 80 94) ends in 0x94 = `"` (smart right-double-quote),
+which PowerShell honors as a STRING TERMINATOR — one comment dash cascaded into ~10 parse
+errors and the whole script never ran (reported as "codex doesn't understand bee": skills
+were simply never installed on Windows). Keep .ps1 files pure ASCII and guard it with a
+byte-level test (any platform, no pwsh needed); a WSL host can prove real parses via
+`powershell.exe` interop + `Parser::ParseFile`.
+
+## [20260714] Agent-runtime discovery paths are version-moving targets — probe the binary, not memory
+**Category:** process
+**Feature:** installer-hardening
+**Tags:** [codex, claude-code, skills, discovery]
+
+Codex's repo-level skill path is `.agents/skills` (cwd → repo root; `~/.codex/skills` is
+legacy-global), Claude Code's is `.claude/skills` — neither reads the other's dir, so a
+per-project install must materialize BOTH trees. Verified empirically with
+`codex debug prompt-input` (renders the exact skill roots table the model sees) rather
+than from docs memory; that command is the ground truth for "does the agent see skill X".
+
 ## [20260714] Async assertions under a non-awaiting runner pass vacuously
 **Category:** failure
 **Feature:** fresh-session-handoff

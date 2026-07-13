@@ -4,10 +4,13 @@ set -euo pipefail
 # install.sh — install bee (https://github.com/thanhsmind/beegog) into a project.
 #
 # Two layers:
-#   1. Runtime layer: copy the bee skills into your agent's skills directory
-#      (~/.claude/skills and/or ~/.codex/skills).
+#   1. Runtime layer (opt-in, --global-skills): copy the bee skills into your
+#      agent's global skills directory (~/.claude/skills and/or ~/.codex/skills).
+#      Off by default — the per-project sync in layer 2 is the default layout.
 #   2. Repo layer: run onboard_bee.mjs against the target project — installs the
-#      AGENTS.md BEE block, .bee/ runtime files, and vendored helpers.
+#      AGENTS.md BEE block, .bee/ runtime files, vendored helpers, and (by
+#      default) syncs the bee skills per-project into <repo>/.claude/skills and
+#      <repo>/.agents/skills.
 #
 # Greenfield (empty dir / no git) and brownfield (existing repo) are both
 # supported: onboarding merges via BEE:START/END markers, never touches content
@@ -32,8 +35,18 @@ Options:
       --no-hooks          Skip --repo-hooks wiring for Claude Code. By default
                           this installer wires repo-local hooks, because the
                           manual skills-copy route does not load plugin hooks.
-      --claude-md         Also write/extend CLAUDE.md with a bare @AGENTS.md
-                          import (third-belt bootstrap for Claude Code).
+      --global-skills     Also copy bee skills into the legacy global runtime
+                          directories (~/.claude/skills, ~/.codex/skills) and
+                          pass --global-skills through to onboarding. Off by
+                          default — onboarding's per-project sync (layer 2)
+                          into <repo>/.claude/skills and <repo>/.agents/skills
+                          is the default layout.
+      --no-claude-md      Skip writing/extending CLAUDE.md with the bare
+                          @AGENTS.md import. By default onboarding writes it
+                          (third-belt bootstrap for Claude Code).
+      --claude-md         Accepted for compatibility; a no-op alias of the
+                          default (CLAUDE.md is written unless --no-claude-md
+                          is passed).
       --no-git-init       Greenfield: do not run `git init` in a non-git target.
   -y, --yes               Non-interactive; accept defaults, skip prompts.
       --dry-run           Show the runtime copies and the exact onboarding plan
@@ -46,8 +59,13 @@ Safety (brownfield):
   - .bee/state.json, decisions.jsonl, cells/ are never overwritten.
   - .claude/settings.json hook merge creates a .bak backup; re-runs never
     duplicate entries.
-  - CLAUDE.md (--claude-md): existing content preserved; the import block is
-    appended once, never duplicated.
+  - Skills: onboarding syncs the bee skills per-project by default into
+    <repo>/.claude/skills (Claude Code) and <repo>/.agents/skills (Codex);
+    these trees are committed, not gitignored. Pass --global-skills to also
+    copy into ~/.claude/skills / ~/.codex/skills (layer 1, legacy behavior).
+  - CLAUDE.md: written by default with the @AGENTS.md import; existing content
+    is preserved and the import block is appended once, never duplicated.
+    Pass --no-claude-md to skip it.
   - Run with --dry-run first to see the exact plan for YOUR repo.
 
 Examples:
@@ -55,7 +73,7 @@ Examples:
   scripts/install.sh -d /path/to/project -y   # non-interactive
   scripts/install.sh --dry-run                # plan only
   curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -y
-  curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -d /path/to/project --runtime claude --claude-md -y
+  curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -d /path/to/project --runtime claude --global-skills -y
 EOF
 }
 
@@ -81,7 +99,8 @@ RUNTIME="both"
 SOURCE=""
 REF="main"
 REPO_HOOKS=1
-CLAUDE_MD=0
+GLOBAL_SKILLS=0
+NO_CLAUDE_MD=0
 GIT_INIT=1
 ASSUME_YES=0
 DRY_RUN=0
@@ -93,7 +112,9 @@ while [ $# -gt 0 ]; do
     --source)       SOURCE="$2"; shift 2 ;;
     --ref)          REF="$2"; shift 2 ;;
     --no-hooks)     REPO_HOOKS=0; shift ;;
-    --claude-md)    CLAUDE_MD=1; shift ;;
+    --global-skills) GLOBAL_SKILLS=1; shift ;;
+    --no-claude-md) NO_CLAUDE_MD=1; shift ;;
+    --claude-md)    shift ;;
     --no-git-init)  GIT_INIT=0; shift ;;
     -y|--yes)       ASSUME_YES=1; shift ;;
     --dry-run)      DRY_RUN=1; shift ;;
@@ -136,7 +157,7 @@ ONBOARD="$BEE_SRC/skills/bee-hive/scripts/onboard_bee.mjs"
 BEE_VERSION="$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).version)" "$BEE_SRC/.claude-plugin/plugin.json" 2>/dev/null || echo unknown)"
 log "source   $BEE_SRC (bee $BEE_VERSION)"
 
-# ---------- layer 1: runtime skills ----------
+# ---------- layer 1: global runtime skills (opt-in via --global-skills) ----------
 
 install_skills_to() {
   local dest="$1" label="$2" copied=0 updated=0 same=0
@@ -158,11 +179,15 @@ install_skills_to() {
   log "skills   $label: $copied new, $updated updated, $same unchanged"
 }
 
-if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then
-  install_skills_to "${CLAUDE_HOME:-$HOME/.claude}/skills" "~/.claude/skills"
-fi
-if [ "$RUNTIME" = "codex" ] || [ "$RUNTIME" = "both" ]; then
-  install_skills_to "${CODEX_HOME:-$HOME/.codex}/skills" "~/.codex/skills"
+if [ "$GLOBAL_SKILLS" -eq 1 ]; then
+  if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then
+    install_skills_to "${CLAUDE_HOME:-$HOME/.claude}/skills" "~/.claude/skills"
+  fi
+  if [ "$RUNTIME" = "codex" ] || [ "$RUNTIME" = "both" ]; then
+    install_skills_to "${CODEX_HOME:-$HOME/.codex}/skills" "~/.codex/skills"
+  fi
+else
+  log "skills   global copy skipped (pass --global-skills to also populate ~/.claude/skills, ~/.codex/skills)"
 fi
 if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then
   log "note     prefer the Claude Code plugin route when available:"
@@ -205,8 +230,11 @@ if [ "$REPO_HOOKS" -eq 1 ]; then
     ONBOARD_FLAGS+=("--repo-hooks")
   fi
 fi
-if [ "$CLAUDE_MD" -eq 1 ]; then
-  ONBOARD_FLAGS+=("--claude-md")
+if [ "$NO_CLAUDE_MD" -eq 1 ]; then
+  ONBOARD_FLAGS+=("--no-claude-md")
+fi
+if [ "$GLOBAL_SKILLS" -eq 1 ]; then
+  ONBOARD_FLAGS+=("--global-skills")
 fi
 
 log "plan     onboard_bee.mjs ${ONBOARD_FLAGS[*]:-} (dry-run first)"

@@ -2,16 +2,26 @@
 // onboard_bee.mjs - install/update bee in a target repo.
 //
 //   node onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks]
-//                        [--claude-md] [--force-downgrade]
+//                        [--no-claude-md] [--claude-md] [--global-skills]
+//                        [--force-downgrade]
 //
 // Plan mode (default) reports {status: 'up_to_date'|'changes_needed'|
 // 'blocked_downgrade'|'blocked_no_source', plan:[...]}.
 // --apply applies the plan and writes .bee/onboarding.json with managed versions.
-// Every apply also mirrors the bee-* skill set into the user's global
-// ~/.claude/skills (D1-D5): drift shows up as sync_skill/remove_skill plan
-// items, an older source refuses with zero mutations (--force-downgrade
-// overrides only a fully-resolved version refusal), and non-bee skills are
-// structurally untouchable.
+// CLAUDE.md is a default onboarding artifact (D1): every apply writes/extends
+// CLAUDE.md with the @AGENTS.md import unless --no-claude-md is passed.
+// --claude-md remains accepted as a no-op alias of the default.
+// Every apply also mirrors the bee-* skill set into the HOST REPO's own skill
+// roots (installer-hardening D2/D6): <repo>/.claude/skills (Claude Code) and
+// <repo>/.agents/skills (Codex), committed to the host repo (D4 - never
+// gitignored). --global-skills additionally targets the legacy global
+// ~/.claude/skills root (D3); without the flag the global root is never read
+// as a sync target, written, or deleted. Per target (D1-D5): drift shows up as
+// sync_skill/remove_skill plan items, an older source refuses with zero
+// mutations (--force-downgrade overrides only a fully-resolved version
+// refusal), and non-bee skills are structurally untouchable. When the repo
+// being onboarded contains the running script's own skill tree (beegog
+// self-onboard), the per-project targets are skipped as a distinct noop.
 // --repo-hooks additionally vendors the plugin hooks into <repo>/.bee/bin/hooks/
 // and merges the hook entries into <repo>/.claude/settings.json (with a .bak
 // backup) for environments that do not load plugin hooks.
@@ -204,19 +214,42 @@ function readBeeVersion() {
   return match ? match[1] : FALLBACK_BEE_VERSION;
 }
 
-// ---------- global skill sync (D1-D5) ----------
+// ---------- skill sync (D1-D5, per-target since installer-hardening) ----------
 //
 // Source = the skill tree the RUNNING script belongs to (D2), proven by a
 // realpath identity with its own bee-hive dir (F2: a misplaced launcher never
-// adopts a sibling tree). Target = the user's global skills dir - there is
-// deliberately NO override of any kind, env or CLI (D1/F5: an override would
-// widen the deletion root to arbitrary paths). Tests isolate by redirecting
-// HOME/USERPROFILE for the spawned process, which os.homedir() honors.
+// adopts a sibling tree). Targets = the host repo's two managed in-repo skill
+// roots by default, plus the user's global skills dir only under
+// --global-skills - there is deliberately NO free-form override of any kind,
+// env or CLI (D1/F5: an override would widen the deletion root to arbitrary
+// paths). Tests isolate by redirecting HOME/USERPROFILE for the spawned
+// process, which os.homedir() honors.
 
 const SKILL_DIR_RE = /^bee-/;
 
+// The exactly-two managed in-repo roots (installer-hardening D2/D6): Claude
+// Code discovers <repo>/.claude/skills, Codex discovers <repo>/.agents/skills.
+// Committed to the host repo (D4) - onboarding never gitignores them.
+const REPO_SKILL_TARGETS = [
+  { kind: "repo-claude", segments: [".claude", "skills"] },
+  { kind: "repo-agents", segments: [".agents", "skills"] },
+];
+
 function skillsTargetRoot() {
   return path.join(os.homedir(), ".claude", "skills");
+}
+
+// Target order is stable (repo-claude, repo-agents, then global): blocked-first
+// aggregates below surface the FIRST blocked target's status/versions.
+function skillSyncTargets(repoRoot, { globalSkills = false } = {}) {
+  const targets = REPO_SKILL_TARGETS.map(({ kind, segments }) => ({
+    kind,
+    target_root: path.join(repoRoot, ...segments),
+  }));
+  if (globalSkills) {
+    targets.push({ kind: "global", target_root: skillsTargetRoot() });
+  }
+  return targets;
 }
 
 function lstatIfExists(p) {
@@ -561,102 +594,86 @@ function computeSkillItems(sourceRoot, targetRoot) {
   return items;
 }
 
-// D2 resolution + D3 three-version preflight. Fully read-only.
-function computeSkillSync(repoRoot) {
-  const sourceRoot = path.dirname(HIVE_DIR);
-  const targetRoot = skillsTargetRoot();
-  const result = {
-    mode: null, // "sync" | "fresh" | "noop" | null (blocked before resolution)
-    source_root: sourceRoot,
+// One sync target's resolution + D3 three-version preflight. Fully read-only.
+// Semantics are the pre-per-target ones, applied per target root: identity is
+// checked once by the caller; overlap guard, three-version preflight
+// (unknown-version refusal never forceable), and item computation all run
+// here against THIS target.
+function computeSkillSyncTarget({
+  realRepo,
+  sourceRoot,
+  realSource,
+  sourceVersion,
+  hostVersion,
+  kind,
+  targetRoot,
+}) {
+  const target = {
+    kind,
     target_root: targetRoot,
+    mode: null, // "sync" | "fresh" | "noop" | "self_skip" | null (blocked before resolution)
     versions: null,
     blocked: null, // { status, reason, forceable }
     items: [],
   };
+  const refuse = (reason) => {
+    target.versions = unknownVersionsTriple();
+    target.blocked = { status: "blocked_no_source", reason, forceable: false };
+    return target;
+  };
 
-  // Identity anchor (F2): the source is authoritative only if the running
-  // script's own skill dir IS <sourceRoot>/bee-hive by realpath.
-  let identityOk = false;
-  try {
-    identityOk =
-      fs.realpathSync(HIVE_DIR) === fs.realpathSync(path.join(sourceRoot, "bee-hive"));
-  } catch {
-    identityOk = false;
-  }
-  if (!identityOk) {
-    result.versions = unknownVersionsTriple();
-    result.blocked = {
-      status: "blocked_no_source",
-      reason:
-        "no authoritative skill source: the running script's tree failed the bee-hive realpath identity check",
-      forceable: false,
-    };
-    return result;
-  }
-
-  // Source/target relationship. Never realpath a nonexistent target (absent
-  // target = fresh install); ancestor overlap fails closed (F6).
-  const realSource = fs.realpathSync(sourceRoot);
+  // Never realpath a nonexistent target (absent target = fresh install);
+  // ancestor overlap fails closed (F6).
   const targetExists = fs.existsSync(targetRoot);
   const realTarget = targetExists ? fs.realpathSync(targetRoot) : path.resolve(targetRoot);
 
-  // Repo<->target overlap (review P1-4): a repo living under the skills root
-  // (or containing it) must never be mutable or deletable by its own onboard -
-  // the remove_skill pass could erase the live checkout, git history included.
-  // Refused at preflight, never forceable, zero mutations.
-  let realRepo;
-  try {
-    realRepo = fs.realpathSync(repoRoot);
-  } catch {
-    realRepo = path.resolve(repoRoot);
-  }
-  if (
-    realRepo === realTarget ||
-    realRepo.startsWith(realTarget + path.sep) ||
-    realTarget.startsWith(realRepo + path.sep)
-  ) {
-    result.versions = unknownVersionsTriple();
-    result.blocked = {
-      status: "blocked_no_source",
-      reason:
+  if (kind === "global") {
+    // Repo<->global-target overlap (review P1-4): a repo living under the
+    // global skills root (or containing it) must never be mutable or deletable
+    // by its own onboard - the remove_skill pass could erase the live
+    // checkout, git history included. Refused at preflight, never forceable,
+    // zero mutations. The two managed in-repo roots are exempt from the
+    // repo-contains-target direction BY DESIGN (D2) - see the else branch.
+    if (
+      realRepo === realTarget ||
+      realRepo.startsWith(realTarget + path.sep) ||
+      realTarget.startsWith(realRepo + path.sep)
+    ) {
+      return refuse(
         "repo root and the global skills root overlap (one contains the other) - a repo inside the managed skill target must never be touched by its own onboard, refusing fail-closed",
-      forceable: false,
-    };
-    return result;
+      );
+    }
+  } else if (targetExists && !realTarget.startsWith(realRepo + path.sep)) {
+    // A managed in-repo root lives inside the repo BY DESIGN (D2) - the
+    // repo-contains-target refusal is exempt for exactly these two roots. But
+    // a root that RESOLVES outside the repo (or onto the repo root itself,
+    // e.g. via a symlink) could silently write a tree - the global
+    // ~/.claude/skills included - that this run was never authorized to touch.
+    // Fail closed.
+    return refuse(
+      `managed in-repo skills root ${path.join(...REPO_SKILL_TARGETS.find((t) => t.kind === kind).segments)} resolves outside the repo root - refusing fail-closed`,
+    );
   }
 
   if (targetExists && realSource === realTarget) {
-    result.mode = "noop"; // running the installed copy itself (D2)
+    target.mode = "noop"; // running the installed copy itself (D2)
   } else if (
     realTarget.startsWith(realSource + path.sep) ||
     realSource.startsWith(realTarget + path.sep)
   ) {
-    result.versions = unknownVersionsTriple();
-    result.blocked = {
-      status: "blocked_no_source",
-      reason:
-        "source and target skill roots overlap (one contains the other) - refusing fail-closed",
-      forceable: false,
-    };
-    return result;
+    return refuse(
+      "source and target skill roots overlap (one contains the other) - refusing fail-closed",
+    );
   } else {
-    result.mode = targetExists ? "sync" : "fresh";
+    target.mode = targetExists ? "sync" : "fresh";
   }
 
-  // Three-version preflight (D3): source, host vendored helpers (the physical
-  // bytes - onboarding.json can lie), installed skills (the installed tree
-  // carries its own version; no separate marker file).
-  const sourceVersion = readVersionStrict(
-    path.join(HIVE_DIR, "templates", "lib", "state.mjs"),
-    true, // the running script's tree exists by definition
-  );
-  const hostStateFile = path.join(repoRoot, ".bee", "bin", "lib", "state.mjs");
-  const hostVersion = readVersionStrict(hostStateFile, fs.existsSync(hostStateFile));
-  // Review P1-1: "absent" is earned only by a target with NO lstat-visible
-  // bee-* entry at all (a true fresh install). ANY bee-* presence without a
-  // readable bee-hive version marker is "unknown" - refuse, never forceable:
-  // a target holding newer bee-* skills but no readable bee-hive must never
-  // read as fresh and get overwritten/deleted by an older source.
+  // Three-version preflight (D3), per target. Review P1-1: "absent" is earned
+  // only by a target with NO lstat-visible bee-* entry at all (a true fresh
+  // install). ANY bee-* presence without a readable bee-hive version marker is
+  // "unknown" - refuse, never forceable: a target holding newer bee-* skills
+  // but no readable bee-hive must never read as fresh and get
+  // overwritten/deleted by an older source.
   const installedHive = path.join(targetRoot, "bee-hive");
   let installedTreeExists = false;
   if (targetExists) {
@@ -669,14 +686,14 @@ function computeSkillSync(repoRoot) {
     }
   }
   const installedVersion =
-    result.mode === "noop"
+    target.mode === "noop"
       ? sourceVersion
       : readVersionStrict(
           path.join(installedHive, "templates", "lib", "state.mjs"),
           installedTreeExists,
           { componentRoot: targetRoot }, // lstat every component inside the managed target (review P1-2)
         );
-  result.versions = {
+  target.versions = {
     source: versionLabel(sourceVersion),
     host_helpers: versionLabel(hostVersion),
     installed_skills: versionLabel(installedVersion),
@@ -690,12 +707,12 @@ function computeSkillSync(repoRoot) {
     .filter(([, v]) => v.state === "unknown")
     .map(([name]) => name);
   if (unknowns.length > 0) {
-    result.blocked = {
+    target.blocked = {
       status: "blocked_downgrade",
       reason: `version unresolvable for ${unknowns.join(", ")}: tree exists but its version cannot be read - refusing (never forceable)`,
       forceable: false,
     };
-    return result;
+    return target;
   }
   const older = [];
   if (hostVersion.state === "resolved" && compareVersions(sourceVersion.value, hostVersion.value) < 0) {
@@ -713,7 +730,7 @@ function computeSkillSync(repoRoot) {
     const allNumeric = [sourceVersion, hostVersion, installedVersion].every(
       (v) => v.state === "resolved",
     );
-    result.blocked = {
+    target.blocked = {
       status: "blocked_downgrade",
       reason: `source ${sourceVersion.value} is older than ${older.join(" and ")}${
         allNumeric ? " - refusing (--force-downgrade overrides after review)" : " - refusing (not forceable: not all versions resolved numeric)"
@@ -722,11 +739,136 @@ function computeSkillSync(repoRoot) {
     };
   }
 
-  if (result.mode === "sync" || result.mode === "fresh") {
-    if (!result.blocked || result.blocked.forceable) {
-      result.items = computeSkillItems(sourceRoot, targetRoot);
+  if (target.mode === "sync" || target.mode === "fresh") {
+    if (!target.blocked || target.blocked.forceable) {
+      // D2 forced-apply transparency, per target: a forceable blocked target
+      // still carries its computed items BEFORE any --force-downgrade.
+      // `target` on every item names the root it belongs to; `path` stays
+      // target_root-relative (scope semantics unchanged).
+      target.items = computeSkillItems(sourceRoot, targetRoot).map((item) => ({
+        ...item,
+        target: kind,
+      }));
     }
   }
+  return target;
+}
+
+// Blocked-first aggregation across targets (D5): ANY blocked target blocks the
+// whole stage; the aggregate is forceable only when EVERY blocked target is
+// forceable (a refused apply stays all-or-nothing, zero mutations anywhere).
+// status/versions surface the first blocked target in stable target order;
+// reason names every blocked target.
+function aggregateSkillBlocked(targets) {
+  const blockedTargets = targets.filter((t) => t.blocked);
+  if (blockedTargets.length === 0) {
+    return null;
+  }
+  const reasons = blockedTargets.map((t) =>
+    blockedTargets.length > 1 || targets.length > 1
+      ? `[${t.kind}] ${t.blocked.reason}`
+      : t.blocked.reason,
+  );
+  return {
+    status: blockedTargets[0].blocked.status,
+    reason: reasons.join("; "),
+    forceable: blockedTargets.every((t) => t.blocked.forceable),
+    versions: blockedTargets[0].versions,
+  };
+}
+
+// D2 resolution over ALL sync targets. Fully read-only.
+function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
+  const sourceRoot = path.dirname(HIVE_DIR);
+  const targetSpecs = skillSyncTargets(repoRoot, { globalSkills });
+  const result = {
+    source_root: sourceRoot,
+    targets: [],
+    blocked: null, // blocked-first aggregate: { status, reason, forceable, versions }
+  };
+
+  const blockAll = (reason) => {
+    const blocked = { status: "blocked_no_source", reason, forceable: false };
+    result.targets = targetSpecs.map(({ kind, target_root }) => ({
+      kind,
+      target_root,
+      mode: null,
+      versions: unknownVersionsTriple(),
+      blocked: { ...blocked },
+      items: [],
+    }));
+    result.blocked = { ...blocked, versions: unknownVersionsTriple() };
+    return result;
+  };
+
+  // Identity anchor (F2): the source is authoritative only if the running
+  // script's own skill dir IS <sourceRoot>/bee-hive by realpath. Structural,
+  // target-independent: a failure blocks every target before resolution.
+  let identityOk = false;
+  try {
+    identityOk =
+      fs.realpathSync(HIVE_DIR) === fs.realpathSync(path.join(sourceRoot, "bee-hive"));
+  } catch {
+    identityOk = false;
+  }
+  if (!identityOk) {
+    return blockAll(
+      "no authoritative skill source: the running script's tree failed the bee-hive realpath identity check",
+    );
+  }
+
+  const realSource = fs.realpathSync(sourceRoot);
+  let realRepo;
+  try {
+    realRepo = fs.realpathSync(repoRoot);
+  } catch {
+    realRepo = path.resolve(repoRoot);
+  }
+
+  // Self-onboard noop rule (installer-hardening): the repo being onboarded
+  // contains the RUNNING script's own skill tree (beegog itself) - per-project
+  // targets are SKIPPED as a distinct noop, never an error; global sync
+  // behavior is unchanged. A host repo that merely contains a skills/ dir
+  // never trips this: onboarding runs from an external bee source, whose
+  // sourceRoot is outside the repo.
+  const selfOnboard = realSource === realRepo || realSource.startsWith(realRepo + path.sep);
+
+  // Shared version resolutions (D3): source and host helpers are per-run, the
+  // installed tree is per target (resolved inside computeSkillSyncTarget).
+  const sourceVersion = readVersionStrict(
+    path.join(HIVE_DIR, "templates", "lib", "state.mjs"),
+    true, // the running script's tree exists by definition
+  );
+  const hostStateFile = path.join(repoRoot, ".bee", "bin", "lib", "state.mjs");
+  const hostVersion = readVersionStrict(hostStateFile, fs.existsSync(hostStateFile));
+
+  for (const { kind, target_root } of targetSpecs) {
+    if (kind !== "global" && selfOnboard) {
+      result.targets.push({
+        kind,
+        target_root,
+        mode: "self_skip",
+        versions: null,
+        blocked: null,
+        items: [],
+        reason:
+          "repo contains the running script's own skill source - per-project sync skipped (self-onboard)",
+      });
+      continue;
+    }
+    result.targets.push(
+      computeSkillSyncTarget({
+        realRepo,
+        sourceRoot,
+        realSource,
+        sourceVersion,
+        hostVersion,
+        kind,
+        targetRoot: target_root,
+      }),
+    );
+  }
+  result.blocked = aggregateSkillBlocked(result.targets);
   return result;
 }
 
@@ -1245,7 +1387,7 @@ function trackedPathsNotices(repoRoot) {
 
 // ---------- plan computation ----------
 
-function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
+function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkills = false } = {}) {
   const plan = [];
   const beeVersion = readBeeVersion();
   const renderedBlock = renderAgentsBlock();
@@ -1361,9 +1503,10 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
     }
   }
 
-  // 5b. CLAUDE.md @import fallback (--claude-md only): auto-load the BEE
-  // block on Claude Code even when plugin hooks are unavailable. Never
-  // touches an existing CLAUDE.md that already imports AGENTS.md.
+  // 5b. CLAUDE.md @import fallback (D1, default; --no-claude-md opts out):
+  // auto-load the BEE block on Claude Code even when plugin hooks are
+  // unavailable. Never touches an existing CLAUDE.md that already imports
+  // AGENTS.md.
   if (claudeMd) {
     const claudeMdPath = path.join(repoRoot, "CLAUDE.md");
     if (!fs.existsSync(claudeMdPath)) {
@@ -1387,11 +1530,16 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = false } = {}) {
     plan.push({ action: "write_onboarding", path: ".bee/onboarding.json" });
   }
 
-  // 7. global skill sync (D1-D5): drift between the running tree and the
-  // installed ~/.claude/skills/bee-* set appears as plan items. Read-only.
-  const skillSync = computeSkillSync(repoRoot);
+  // 7. skill sync (D1-D5, per target): drift between the running tree and
+  // each target root's bee-* set appears as plan items, every item tagged
+  // with its target kind. Read-only. A blocked stage (any target) withholds
+  // ALL skill items from the flat plan; per-target items stay visible in
+  // skills.targets for forced-apply transparency (D2).
+  const skillSync = computeSkillSync(repoRoot, { globalSkills });
   if (!skillSync.blocked) {
-    plan.push(...skillSync.items);
+    for (const target of skillSync.targets) {
+      plan.push(...target.items);
+    }
   }
 
   return { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync };
@@ -1464,42 +1612,58 @@ function subsetManaged(managed, repoHooks, statusline = false) {
 
 // ---------- apply ----------
 
-function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngrade = false } = {}) {
+function applyPlan(
+  repoRoot,
+  { repoHooks = false, claudeMd = true, globalSkills = false, forceDowngrade = false } = {},
+) {
   const { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync } =
     computePlan(repoRoot, {
       repoHooks,
       claudeMd,
+      globalSkills,
     });
 
   // D3 preflight: refusal aborts the ENTIRE apply BEFORE any write - the item
   // loop below and the unconditional onboarding.json rewrite after it are
-  // unreachable on refusal, so a refused apply mutates nothing anywhere
-  // (repo or global). --force-downgrade overrides only a version refusal in
-  // which all three versions resolved numeric; unknown and blocked_no_source
-  // are resolution failures and are never forceable.
+  // unreachable on refusal, so a refused apply mutates nothing anywhere (repo,
+  // in-repo skill roots, or global). Blocked-first across targets: ANY blocked
+  // target refuses the whole apply. --force-downgrade overrides only when
+  // EVERY blocked target is a version refusal with all three versions resolved
+  // numeric; unknown and blocked_no_source are resolution failures and are
+  // never forceable.
   let forcedDowngrade = false;
   if (skillSync.blocked) {
     if (forceDowngrade && skillSync.blocked.forceable) {
       forcedDowngrade = true;
-      plan.push(...skillSync.items); // computePlan withholds items while blocked
+      // computePlan withholds ALL targets' items from the flat plan while the
+      // stage is blocked - restore every target's computed items for the
+      // forced apply (unblocked targets included).
+      for (const target of skillSync.targets) {
+        plan.push(...target.items);
+      }
     } else {
-      // Review P1-6: computeSkillSync() already computed skillSync.items
-      // whenever the refusal is forceable (empty [] otherwise) - a human
-      // deciding whether to pass --force-downgrade must see exactly what it
-      // will overwrite/delete BEFORE authorizing it, not only after the fact
-      // in a forced apply's own report. Surfaced here so the refused-apply
-      // response (the response most users actually see first) carries it.
+      // Review P1-6 / D2: computeSkillSyncTarget() already computed each
+      // target's items whenever its refusal is forceable (empty [] otherwise)
+      // - a human deciding whether to pass --force-downgrade must see exactly
+      // what it will overwrite/delete PER TARGET before authorizing it, not
+      // only after the fact in a forced apply's own report. Surfaced here so
+      // the refused-apply response (the response most users actually see
+      // first) carries it.
       return {
-        blocked: skillSync.blocked,
-        versions: skillSync.versions,
-        items: skillSync.items,
-        mode: skillSync.mode,
-        source_root: skillSync.source_root,
-        target_root: skillSync.target_root,
+        blocked: {
+          status: skillSync.blocked.status,
+          reason: skillSync.blocked.reason,
+          forceable: skillSync.blocked.forceable,
+        },
+        versions: skillSync.blocked.versions,
+        skills: { source_root: skillSync.source_root, targets: skillSync.targets },
         beeVersion,
       };
     }
   }
+  const skillTargetRootByKind = new Map(
+    skillSync.targets.map((t) => [t.kind, t.target_root]),
+  );
 
   const applied = [];
   const skippedSkills = [];
@@ -1607,17 +1771,21 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngra
         break;
       }
       case "sync_skill": {
-        const result = applySyncSkill(skillSync.source_root, skillSync.target_root, item.skill);
+        const result = applySyncSkill(
+          skillSync.source_root,
+          skillTargetRootByKind.get(item.target),
+          item.skill,
+        );
         if (result.blocked) {
-          skippedSkills.push({ skill: item.skill, reason: result.blocked });
+          skippedSkills.push({ skill: item.skill, target: item.target, reason: result.blocked });
           continue; // skipped loudly, not applied
         }
         break;
       }
       case "remove_skill": {
-        const result = applyRemoveSkill(skillSync.target_root, item.skill);
+        const result = applyRemoveSkill(skillTargetRootByKind.get(item.target), item.skill);
         if (result.blocked) {
-          skippedSkills.push({ skill: item.skill, reason: result.blocked });
+          skippedSkills.push({ skill: item.skill, target: item.target, reason: result.blocked });
           continue; // skipped loudly, not applied
         }
         break;
@@ -1626,7 +1794,7 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngra
       case "blocked_alias": {
         // Loud per-skill report (F6 / review P1-5): never written through,
         // unlinked, deleted, or sync-then-deleted.
-        skippedSkills.push({ skill: item.skill, reason: item.reason });
+        skippedSkills.push({ skill: item.skill, target: item.target, reason: item.reason });
         continue;
       }
       default:
@@ -1657,11 +1825,12 @@ function applyPlan(repoRoot, { repoHooks = false, claudeMd = false, forceDowngra
     onboarding: onboardingPayload,
     beeVersion,
     forcedDowngrade,
+    // F9: a forced apply must still report which versions it overrode -
+    // blocked-first, the first blocked target's triple (pre-force state).
+    forcedVersions: skillSync.blocked ? skillSync.blocked.versions : null,
     skills: {
-      mode: skillSync.mode,
       source_root: skillSync.source_root,
-      target_root: skillSync.target_root,
-      versions: skillSync.versions,
+      targets: skillSync.targets,
       skipped: skippedSkills,
     },
   };
@@ -1675,7 +1844,13 @@ function parseArgs(argv) {
     apply: false,
     json: false,
     repoHooks: false,
-    claudeMd: false,
+    // D1: CLAUDE.md is a default onboarding artifact; --no-claude-md opts out.
+    // --claude-md is still accepted, now a no-op alias of the default.
+    claudeMd: true,
+    // D3 (installer-hardening): the legacy global ~/.claude/skills target is
+    // opt-in; without the flag it is never read as a sync target, written, or
+    // deleted.
+    globalSkills: false,
     forceDowngrade: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -1693,11 +1868,15 @@ function parseArgs(argv) {
       args.repoHooks = true;
     } else if (arg === "--claude-md") {
       args.claudeMd = true;
+    } else if (arg === "--no-claude-md") {
+      args.claudeMd = false;
+    } else if (arg === "--global-skills") {
+      args.globalSkills = true;
     } else if (arg === "--force-downgrade") {
       args.forceDowngrade = true;
     } else if (arg === "--help" || arg === "-h") {
       process.stdout.write(
-        "Usage: onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--claude-md] [--force-downgrade]\n",
+        "Usage: onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--no-claude-md] [--claude-md] [--global-skills] [--force-downgrade]\n",
       );
       process.exit(0);
     } else {
@@ -1730,7 +1909,9 @@ function emit(payload, asJson) {
     );
   }
   for (const skipped of payload.skills?.skipped || []) {
-    process.stdout.write(`skipped skill: ${skipped.skill} - ${skipped.reason}\n`);
+    process.stdout.write(
+      `skipped skill: ${skipped.skill}${skipped.target ? ` [${skipped.target}]` : ""} - ${skipped.reason}\n`,
+    );
   }
   for (const notice of payload.notices || []) {
     process.stdout.write(`notice: ${notice}\n`);
@@ -1772,12 +1953,14 @@ export function main(argv = process.argv.slice(2)) {
       // the flag is absent. Every prior upgrade did exactly that.
       repoHooks: args.repoHooks || hasRepoHooksRecorded(repoRoot),
       claudeMd: args.claudeMd,
+      globalSkills: args.globalSkills,
       forceDowngrade: args.forceDowngrade,
     };
     if (!args.apply) {
       const { plan, beeVersion, skillSync } = computePlan(repoRoot, options);
       const payload = {
         repo_root: repoRoot,
+        // Blocked-first across targets (D5): any blocked target's status wins.
         status: skillSync.blocked
           ? skillSync.blocked.status
           : plan.length === 0
@@ -1786,15 +1969,14 @@ export function main(argv = process.argv.slice(2)) {
         bee_version: beeVersion,
         plan,
         skills: {
-          mode: skillSync.mode,
           source_root: skillSync.source_root,
-          target_root: skillSync.target_root,
-          versions: skillSync.versions,
-          // Review P1-6: computeSkillSync() already computes these whenever
-          // the refusal is forceable (empty [] otherwise) - a blocked dry-run
-          // must still show exactly which skills a --force-downgrade would
-          // overwrite/delete, not just the general-item plan.
-          items: skillSync.items,
+          // Per-target collection: [{kind, target_root, mode, blocked,
+          // versions, items}]. Review P1-6 / D2: each target's items are
+          // computed whenever its refusal is forceable (empty [] otherwise) -
+          // a blocked dry-run must still show exactly which skills a
+          // --force-downgrade would overwrite/delete per target, not just the
+          // general-item plan.
+          targets: skillSync.targets,
         },
         notices: [
           ...commandsNotices(repoRoot, { firstOnboard }),
@@ -1804,8 +1986,10 @@ export function main(argv = process.argv.slice(2)) {
       };
       if (skillSync.blocked) {
         // Reporting is not failing: plan mode exits 0 with the blocked status.
+        // Top-level reason/versions are blocked-first aggregates (first
+        // blocked target's versions; every blocked target named in reason).
         payload.reason = skillSync.blocked.reason;
-        payload.versions = skillSync.versions;
+        payload.versions = skillSync.blocked.versions;
       }
       emit(payload, args.json);
       return 0;
@@ -1821,16 +2005,11 @@ export function main(argv = process.argv.slice(2)) {
           bee_version: result.beeVersion,
           reason: result.blocked.reason,
           versions: result.versions,
-          // Review P1-6: same forced-apply-transparency payload as plan mode
-          // - this refused response is what most users see BEFORE deciding
-          // whether to pass --force-downgrade, so it must carry the items too.
-          skills: {
-            mode: result.mode,
-            source_root: result.source_root,
-            target_root: result.target_root,
-            versions: result.versions,
-            items: result.items,
-          },
+          // Review P1-6 / D2: same forced-apply-transparency payload as plan
+          // mode - this refused response is what most users see BEFORE
+          // deciding whether to pass --force-downgrade, so it must carry every
+          // target's computed items too.
+          skills: result.skills,
         },
         args.json,
       );
@@ -1843,7 +2022,8 @@ export function main(argv = process.argv.slice(2)) {
     // stage itself is still genuinely blocked (reachable after a forced
     // downgrade that left one skill mid-refusal, e.g. a residual per-skill
     // symlink/alias block that keeps its version marker un-synced). Blocked-
-    // first precedence: a blocked skill stage can NEVER yield "up_to_date".
+    // first precedence, aggregated across ALL targets (D5): recheck can NEVER
+    // read "up_to_date" while ANY target is still blocked.
     const recheckBlocked = recheck.skillSync.blocked;
     const payload = {
       repo_root: repoRoot,
@@ -1857,7 +2037,19 @@ export function main(argv = process.argv.slice(2)) {
           : "changes_needed",
       recheck_plan: recheck.plan,
       recheck_skills: recheckBlocked
-        ? { blocked: true, reason: recheckBlocked.reason, versions: recheck.skillSync.versions }
+        ? {
+            blocked: true,
+            reason: recheckBlocked.reason,
+            // Top-level versions obey blocked-first aggregation (the first
+            // blocked target's triple); targets carries the per-target state.
+            versions: recheckBlocked.versions,
+            targets: recheck.skillSync.targets.map((t) => ({
+              kind: t.kind,
+              target_root: t.target_root,
+              blocked: t.blocked,
+              versions: t.versions,
+            })),
+          }
         : null,
       skills: result.skills,
       onboarding: result.onboarding,
@@ -1868,9 +2060,10 @@ export function main(argv = process.argv.slice(2)) {
       ],
     };
     if (result.forcedDowngrade) {
-      // F9: a forced apply reports the fact machine-readably, with versions.
+      // F9: a forced apply reports the fact machine-readably, with the
+      // overridden versions (blocked-first: first blocked target, pre-force).
       payload.forced_downgrade = true;
-      payload.versions = result.skills.versions;
+      payload.versions = result.forcedVersions;
     }
     emit(payload, args.json);
     return 0;
