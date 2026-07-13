@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // test_write_guard.mjs - fixture test for the checkWrite direct-edit deny
 // rule (cell cli-mutations-4, plan.md §Approach step 4): .bee/state.json and
-// .bee/backlog.jsonl must never be hand-edited — bee_state.mjs / bee_backlog.mjs
-// own them. Spawns hooks/bee-write-guard.mjs as a child process (same pattern
-// as hooks/test_model_guard.mjs), feeds it a JSON payload on stdin, and
-// asserts exit code + stderr for each row. Builds isolated fixture repos so no
-// test run ever touches this project's real .bee/state.json or hooks.jsonl.
+// .bee/backlog.jsonl must never be hand-edited — bee.mjs state / bee.mjs
+// backlog own them (shim-retire decision bbc6bcea D1: bee.mjs is the sole
+// canonical and sole shipped CLI). Spawns hooks/bee-write-guard.mjs as a
+// child process (same pattern as hooks/test_model_guard.mjs), feeds it a
+// JSON payload on stdin, and asserts exit code + stderr for each row. Builds
+// isolated fixture repos so no test run ever touches this project's real
+// .bee/state.json or hooks.jsonl.
 // Exits 1 on any failure.
 
 import { spawnSync } from "node:child_process";
@@ -38,12 +40,26 @@ function mkFixture(prefix) {
 }
 
 // guards.mjs pulls in reservations.mjs (findConflicts) and state.mjs
-// (readConfig); reservations.mjs pulls in fsutil.mjs. Copy the full set so
-// the fixture's dynamic imports resolve exactly like the real repo's.
+// (readConfig, resolvePipeline); state.mjs itself pulls in claims.mjs
+// (fresh-session-handoff fsh-3, session/lane primitives); reservations.mjs
+// pulls in fsutil.mjs; and check (d)'s CLI-shape validation dynamically
+// imports validate-args.mjs + command-registry.mjs, which in turn pull in
+// reviews.mjs, cells.mjs, and backlog.mjs. Copy the WHOLE lib directory
+// (readdirSync, name-agnostic — matches hooks/test_hook_contracts.mjs's own
+// copyLib) rather than a hardcoded name list: a hardcoded list silently goes
+// stale every time a new transitive dependency ships (exactly what happened
+// here — state.mjs's claims.mjs import shipped after this list was last
+// updated, so every fixture row hit ERR_MODULE_NOT_FOUND at import and the
+// hook fail-opened universally, masking real deny-rule regressions behind a
+// false "still passing" or a false "still failing" signal depending on the
+// row's expected status). Bug found and fixed while updating this cell's
+// guard-message assertions (auto-fix per worker rule-1: a bug in touched
+// code).
 function copyLib(fixtureRoot) {
   const libDir = path.join(fixtureRoot, ".bee", "bin", "lib");
   fs.mkdirSync(libDir, { recursive: true });
-  for (const name of ["state.mjs", "fsutil.mjs", "reservations.mjs", "guards.mjs"]) {
+  for (const name of fs.readdirSync(REAL_LIB_DIR)) {
+    if (!name.endsWith(".mjs")) continue;
     fs.copyFileSync(path.join(REAL_LIB_DIR, name), path.join(libDir, name));
   }
 }
@@ -140,7 +156,7 @@ async function main() {
     root,
   );
   check(r1.status === 2, "row1: Edit .bee/state.json is denied (exit 2)", `status=${r1.status} stderr=${r1.stderr}`);
-  check(r1.stderr.includes("bee_state.mjs"), "row1: stderr names bee_state.mjs", r1.stderr);
+  check(r1.stderr.includes("bee.mjs state"), "row1: stderr names bee.mjs state", r1.stderr);
   check(r1.stderr.includes("FIX"), "row1: stderr has a FIX element", r1.stderr);
   check(r1.stderr.includes("direct-edit"), "row1: stderr identifies the direct-edit guard", r1.stderr);
 
@@ -150,7 +166,7 @@ async function main() {
     root,
   );
   check(r2.status === 2, "row2: Write .bee/backlog.jsonl is denied (exit 2)", `status=${r2.status} stderr=${r2.stderr}`);
-  check(r2.stderr.includes("bee_backlog.mjs add"), "row2: stderr names bee_backlog.mjs add", r2.stderr);
+  check(r2.stderr.includes("bee.mjs backlog add"), "row2: stderr names bee.mjs backlog add", r2.stderr);
 
   // --- 3. bash-redirect row: `cat foo.txt >> .bee/backlog.jsonl` -> denied,
   // proving the deny reaches Bash-extracted targets, not just Edit/Write.
@@ -160,7 +176,7 @@ async function main() {
   );
   check(r3.status === 2, "row3: bash redirect into .bee/backlog.jsonl is denied (exit 2)",
     `status=${r3.status} stderr=${r3.stderr}`);
-  check(r3.stderr.includes("bee_backlog.mjs add"), "row3: stderr names bee_backlog.mjs add", r3.stderr);
+  check(r3.stderr.includes("bee.mjs backlog add"), "row3: stderr names bee.mjs backlog add", r3.stderr);
 
   // --- 3b. bash-redirect row for state.json (sed -i) -> denied
   const r3b = runHookPayload(
@@ -169,7 +185,7 @@ async function main() {
   );
   check(r3b.status === 2, "row3b: sed -i on .bee/state.json is denied (exit 2)",
     `status=${r3b.status} stderr=${r3b.stderr}`);
-  check(r3b.stderr.includes("bee_state.mjs"), "row3b: stderr names bee_state.mjs", r3b.stderr);
+  check(r3b.stderr.includes("bee.mjs state"), "row3b: stderr names bee.mjs state", r3b.stderr);
 
   // --- 4. pass row: Edit .bee/cells/x.json still passes (untouched verdict)
   const r4 = runHookPayload(
@@ -198,6 +214,30 @@ async function main() {
   check(r5b.status === 0, "row5b: plain bee_backlog.mjs add CLI invocation still passes",
     `status=${r5b.status} stderr=${r5b.stderr}`);
 
+  // --- 5c/5d. check (d) CLI-shape validation (D3 transition guard): BOTH the
+  // legacy shim shape and the sole shipped bee.mjs dispatcher shape must
+  // resolve the same command name against the shared registry — a call
+  // missing the required --id proves resolution actually happened (a
+  // shape the guard doesn't recognize fails open at exit 0 instead, per
+  // checkCliShape's documented "unrecognized shapes are left alone" rule).
+  const r5c = runHookPayload(
+    { tool_name: "Bash", tool_input: { command: 'node .bee/bin/bee_cells.mjs cap --outcome "done"' } },
+    root,
+  );
+  check(r5c.status === 2, "row5c: legacy bee_cells.mjs cap (missing --id) resolves to the registry and is denied",
+    `status=${r5c.status} stderr=${r5c.stderr}`);
+  check(r5c.stderr.includes("cells.cap"), "row5c: stderr names the resolved cells.cap command", r5c.stderr);
+  check(r5c.stderr.includes("field: id"), "row5c: stderr names the missing id field", r5c.stderr);
+
+  const r5d = runHookPayload(
+    { tool_name: "Bash", tool_input: { command: 'node .bee/bin/bee.mjs cells cap --outcome "done"' } },
+    root,
+  );
+  check(r5d.status === 2, "row5d: dispatcher bee.mjs cells cap (missing --id) resolves to the registry and is denied",
+    `status=${r5d.status} stderr=${r5d.stderr}`);
+  check(r5d.stderr.includes("cells.cap"), "row5d: stderr names the resolved cells.cap command", r5d.stderr);
+  check(r5d.stderr.includes("field: id"), "row5d: stderr names the missing id field", r5d.stderr);
+
   // --- 6. deny rule fires in every phase, not only swarming: idle phase too
   // (idle is otherwise the most permissive phase for .bee/ writes — this
   // proves the deny rule really runs before GATE_ALLOWED_PREFIXES / phase logic)
@@ -208,7 +248,7 @@ async function main() {
   );
   check(r6.status === 2, "row6: Edit .bee/state.json is denied even while idle (.bee/ is normally allowed)",
     `status=${r6.status} stderr=${r6.stderr}`);
-  check(r6.stderr.includes("bee_state.mjs"), "row6: idle-phase denial still names bee_state.mjs", r6.stderr);
+  check(r6.stderr.includes("bee.mjs state"), "row6: idle-phase denial still names bee.mjs state", r6.stderr);
   // control: an unrelated .bee/ path keeps its current (allowed) idle verdict
   const r6b = runHookPayload(
     { tool_name: "Edit", tool_input: { file_path: ".bee/cells/demo-1.json" } },
@@ -261,7 +301,7 @@ async function main() {
   );
   check(r9.status === 2, "row9: apply_patch Update File .bee/state.json is denied (exit 2)",
     `status=${r9.status} stderr=${r9.stderr}`);
-  check(r9.stderr.includes("bee_state.mjs"), "row9: stderr names bee_state.mjs", r9.stderr);
+  check(r9.stderr.includes("bee.mjs state"), "row9: stderr names bee.mjs state", r9.stderr);
 
   // --- 10. Delete File, single target denied via direct-edit (.bee/backlog.jsonl)
   const patchDeleteDenied = "*** Begin Patch\n*** Delete File: .bee/backlog.jsonl\n*** End Patch";
@@ -271,7 +311,7 @@ async function main() {
   );
   check(r10.status === 2, "row10: apply_patch Delete File .bee/backlog.jsonl is denied (exit 2)",
     `status=${r10.status} stderr=${r10.stderr}`);
-  check(r10.stderr.includes("bee_backlog.mjs add"), "row10: stderr names bee_backlog.mjs add", r10.stderr);
+  check(r10.stderr.includes("bee.mjs backlog add"), "row10: stderr names bee.mjs backlog add", r10.stderr);
 
   // --- 11. Move (Update File + Move to), both targets safe -> passes
   const patchMoveSafe =
@@ -292,7 +332,7 @@ async function main() {
   );
   check(r12.status === 2, "row12: apply_patch Move destination .bee/state.json is denied (exit 2)",
     `status=${r12.status} stderr=${r12.stderr}`);
-  check(r12.stderr.includes("bee_state.mjs"), "row12: stderr names bee_state.mjs", r12.stderr);
+  check(r12.stderr.includes("bee.mjs state"), "row12: stderr names bee.mjs state", r12.stderr);
 
   // --- 13. Multi-target (Add + Update + Delete), one target denied -> whole patch denied
   const patchMultiOneDenied =
@@ -308,7 +348,7 @@ async function main() {
   check(r13.status === 2,
     "row13: multi-target apply_patch denies when any target hits a policy deny (.bee/state.json)",
     `status=${r13.status} stderr=${r13.stderr}`);
-  check(r13.stderr.includes("bee_state.mjs"), "row13: stderr names bee_state.mjs", r13.stderr);
+  check(r13.stderr.includes("bee.mjs state"), "row13: stderr names bee.mjs state", r13.stderr);
 
   // --- 14. Multi-target, every target safe -> passes
   const patchMultiSafe =

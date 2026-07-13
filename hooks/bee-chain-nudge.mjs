@@ -38,7 +38,7 @@ function workerName(entry) {
     return entry;
   }
   if (entry && typeof entry === "object") {
-    // The state CLI (bee_state.mjs worker add) registers workers under
+    // The state CLI (bee.mjs state worker add) registers workers under
     // `nickname` (discovery.md Proved Gaps) — match that first; the generic
     // name|agent|worker fallback stays for foreign/legacy entries.
     return entry.nickname || entry.name || entry.agent || entry.worker || "";
@@ -94,8 +94,8 @@ async function main() {
       msg =
         `bee chain-nudge: ${who} returned - collect its [STATUS] token ` +
         "([DONE]/[BLOCKED]/[HANDOFF]/[NOOP]), update the cell " +
-        "(node .bee/bin/bee_cells.mjs), and check/release its reservations " +
-        "(node .bee/bin/bee_reservations.mjs list --active-only). " +
+        "(node .bee/bin/bee.mjs cells), and check/release its reservations " +
+        "(node .bee/bin/bee.mjs reservations list --active-only). " +
         "When the wave is clean, move to the next wave or the next chain step.";
       // Decision 0011: capture-mode spine — if behavior_change cells capped since
       // the last scribing run, nudge capture in-flight, not only at feature close.

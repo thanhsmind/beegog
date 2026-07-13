@@ -119,13 +119,23 @@ function extractApplyPatchTargets(patchText) {
 }
 
 // ─── check (d): CLI-shape validation (harness-integration D4, additive) ────
-// Recognizes a Bash command shaped like a legacy helper invocation
-// (`node .../bee_cells.mjs show --id X`) or the future unified dispatcher
-// (`node .../bee.mjs cells show --id X`), resolves it to a command-registry
-// entry, and validates its parsed flags against that entry's JSON-Schema
-// `parameters` via validate-args.mjs. Unknown/unrecognized shapes are left
-// alone (fail open) — that classification (nearest-match suggestions for a
-// typo'd command) is the future dispatcher's own job, not this guard's.
+// Recognizes a Bash command shaped like `node .../bee.mjs cells show --id X`
+// (the sole shipped CLI, decision bbc6bcea D1) and resolves it to a
+// command-registry entry, validating its parsed flags against that entry's
+// JSON-Schema `parameters` via validate-args.mjs. Unknown/unrecognized shapes
+// are left alone (fail open) — that classification (nearest-match
+// suggestions for a typo'd command) is the dispatcher's own job, not this
+// guard's.
+//
+// LEGACY_HELPER_RE below (`bee_cells.mjs`-shaped names) is a TRANSITION
+// GUARD, not a supported surface: shim-retire (decision bbc6bcea D1) deleted
+// the 9 bee_*.mjs shims from templates and onboarding, but a host mid-upgrade
+// can still have old vendored bins under .bee/bin/, and a session's shell
+// history may still invoke shim names against them. This regex keeps those
+// legacy command SHAPES resolving to the same registry entries so the guard
+// doesn't silently stop validating them. Removal is future grooming debt
+// (decision bbc6bcea D3) — once hosts have re-onboarded past this release,
+// drop LEGACY_HELPER_RE and this comment along with it.
 
 const LEGACY_HELPER_RE = /^bee_([a-z]+)\.mjs$/i;
 const DISPATCHER_RE = /^bee\.mjs$/i;

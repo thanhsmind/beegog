@@ -67,7 +67,7 @@ async function maybeDecisionNudge(root) {
     return (
       `bee decision review: ${changed.length} source file(s) changed with no bee flow active ` +
       "and no recent decision logged. Before finishing, ask the user: is there a durable " +
-      'decision or convention here worth recording? If yes: node .bee/bin/bee_decisions.mjs log ' +
+      'decision or convention here worth recording? If yes: node .bee/bin/bee.mjs decisions log ' +
       '--decision "..." --rationale "..." (or a dated learning in docs/history/learnings/). ' +
       "If not, carry on."
     );

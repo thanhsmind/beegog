@@ -840,7 +840,7 @@ function runCodexAcceptanceRows() {
 // and --catalog-only keeps cell codex-parity-2's contract.
 //
 // Group "chain-nudge-nickname": a worker registered by the state CLI
-// (bee_state.mjs worker add --nickname N — discovery.md Proved Gaps: the CLI
+// (bee.mjs state worker add --nickname N — discovery.md Proved Gaps: the CLI
 // stores `nickname` while chain-nudge previously read name|agent|worker) must
 // be matched by bee-chain-nudge, the generic fallback keys must keep working,
 // and an unregistered agent must stay silent.
@@ -901,7 +901,7 @@ function runNicknameRows() {
         feature: "demo",
         approved_gates: { context: true, shape: true, execution: false, review: false },
         workers: [
-          // exactly what `bee_state.mjs worker add --nickname kevin --cell demo-1` stores
+          // exactly what `bee.mjs state worker add --nickname kevin --cell demo-1` stores
           { nickname: "kevin", cell: "demo-1", tier: "generation", status: "working" },
           // a foreign/legacy entry shape: the generic fallback must still match
           { name: "legacy-worker" },
@@ -1825,7 +1825,7 @@ function runCoverageGapRows() {
     f5,
   );
   const g5pass = Boolean(
-    g5.status === 2 && typeof g5.stderr === "string" && g5.stderr.includes("bee_state.mjs"),
+    g5.status === 2 && typeof g5.stderr === "string" && g5.stderr.includes("bee.mjs state"),
   );
   rows.push(
     adapterRow(
@@ -1834,7 +1834,7 @@ function runCoverageGapRows() {
       g5pass,
       g5pass
         ? "with .bee/logs unwritable, the computed deny (exit 2, direct-edit reason) still stands"
-        : `expected exit 2 naming bee_state.mjs despite the unwritable log path; got status=${g5.status} stderr=${truncate(g5.stderr, 300)}`,
+        : `expected exit 2 naming bee.mjs state despite the unwritable log path; got status=${g5.status} stderr=${truncate(g5.stderr, 300)}`,
       g5,
     ),
   );
