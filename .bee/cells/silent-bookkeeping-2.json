@@ -21,19 +21,26 @@
       "red-flag entries added in SKILL.md and AGENTS.block.md"
     ]
   },
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "read_first": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "main",
+    "outcome": "Silent Bookkeeping principle in Communication Contract + hive law 11 + AGENTS.block critical rule 11 + red flags; hosts inherit via onboarding",
+    "files_changed": [
+      "skills/bee-hive/references/routing-and-contracts.md",
+      "skills/bee-hive/SKILL.md",
+      "skills/bee-hive/templates/AGENTS.block.md"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-13T00:38:01.075Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null
+    "verify_output": "test_lib: 222 passed, 0 failed; test_onboard_bee: PASS - failures: 0, skipped: 1",
+    "verify_passed": true,
+    "claimed_at": "2026-07-13T00:36:47.466Z",
+    "verify_command": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs",
+    "verified_at": "2026-07-13T00:38:01.030Z"
   }
 }

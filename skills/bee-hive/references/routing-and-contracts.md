@@ -138,6 +138,17 @@ For plans, findings, blockers, and handoffs, answer in this order:
 
 Avoid "violates D5" or "non-monotonic" without immediate explanation.
 
+### Silent Bookkeeping — work language only (decision 1689af1b)
+
+Bee is bookkeeping, not the deliverable. Every mechanical workflow act — claiming or capping cells, status and `state.json` changes, reservations, phase transitions, decision logging, capture stubs — is done silently: run it, never narrate it. Chat speaks the user's work language only: "fixing the login redirect", "done — tests pass", never "capped cell auth-3" or "phase is now swarming".
+
+Bee vocabulary may enter chat in exactly two cases:
+
+1. the user asks about bee itself (state, cells, workflow) — answer plainly, in their language;
+2. a gate genuinely needs their decision — and the Gate Presentation Contract already requires that question in work terms, not bee terms.
+
+Litmus: strip every bee term out of a chat message; if nothing the user needs is lost, those terms should not have been there.
+
 ## Gate Presentation Contract
 
 A gate message has two layers, and **only the human layer goes into chat**:
