@@ -1,8 +1,10 @@
 ---
 area: onboarding
-updated: 2026-07-13
+updated: 2026-07-14
 coverage: partial
 sources:
+  - installer-hardening ih-1..ih-6 (cells, 2026-07-13; flushed capture stub 92c9bcf6)
+  - shim-retire D2 retirement pass (cells shim-retire-2, shim-retire-6 self-onboard proof, 2026-07-14)
   - cell onboard-statusline-1 (verification_evidence, 2026-07-11)
   - docs/history/onboard-statusline/reports/review-correctness.md
   - codex-runtime-parity D1 (distribution contract, 2026-07-11)
@@ -13,6 +15,8 @@ sources:
   - fanout-delegation D1 (stale advisor key tolerance, 2026-07-12)
   - sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)
 decisions:
+  - 3318374a (installer hardening: per-project skills default, global opt-in, default instructions import)
+  - bbc6bcea (shim-retire: unified command surface; retired helper scripts removed from hosts)
   - 102efe08 (opt-in statusline vendor shape)
   - c6ee6b6e (Gate 4 onboard-statusline: anchored detection, sweep opt-in)
   - 4cc1c355 (Codex plugin-first distribution; not yet implemented)
@@ -139,6 +143,38 @@ whatever version they were first installed at, and **reported the project up to
 date** — so a project could run current doctrine against its original guards
 indefinitely, with no signal anywhere that it was doing so.
 
+**Install skills into the project itself (every install/apply).** Trigger: an
+install or apply against a host project. What changes: the workflow's skill set
+is synced into the host project's own skill-discovery locations — one per
+supported assistant runtime — and those copies are version-tracked in the host,
+so every teammate receives working skills with a plain checkout. A machine-global
+skill install happens only on an explicit opt-in switch, never by default; and
+when the target is the workflow's own source tree, the per-project copy is
+skipped (the source is already authoritative there). What each actor observes: a
+fresh clone of an onboarded host has working skills with zero machine-level
+setup; an operator who wants one shared machine-wide set asks for it explicitly.
+
+**Provide the assistant-instructions import by default.** Trigger: onboarding a
+host whose assistant reads a project instructions file that can import the
+standing instruction sheet. What changes: the import artifact is created (or its
+managed import line added) by default; declining it is an explicit opt-out
+switch, not an omission. Existing content outside the managed line is never
+replaced without consent. What the human observes: a freshly onboarded project
+"just works" in a new session without manually wiring instructions.
+
+**Retire superseded helper scripts (every run).** Trigger: any run against a
+host that still carries one of the nine retired per-command helper scripts in
+its vendored tools directory — hosts onboarded before the command surface was
+unified into the single dispatcher. What blocks it: nothing. What changes: the
+check run plans one removal per leftover retired script; the apply run deletes
+exactly those files. Removal is scoped to the exact retired filenames inside the
+managed tools directory — no other file is ever deleted by this pass. Side
+effects: none. What each actor observes: after one apply, the host's tools
+directory carries only the unified dispatcher with its libraries and guardrails;
+a second run plans zero removals; a freshly onboarded host never receives the
+retired scripts at all. The installer's own post-install verification and its
+printed quickstart also speak only the unified dispatcher's status command.
+
 ## Actors & Access
 
 - **Agent** — runs check and apply; the only actor that executes onboarding.
@@ -197,6 +233,18 @@ indefinitely, with no signal anywhere that it was doing so.
   index; when a path the managed section is meant to silence is already
   tracked, the report warns and names the exact one-time untrack command for
   the operator to run instead (decision 26203bd3).
+
+- **R12** — Skills ship per-project by default: synced into each supported
+  runtime's project-level discovery location and version-tracked in the host
+  repo; a machine-global install is explicit opt-in only; the workflow's own
+  source tree never receives per-project copies (decision 3318374a, D2/D3/D4).
+- **R13** — The assistant-instructions import artifact is created by default on
+  onboarding; declining it is an explicit opt-out. Content outside the managed
+  import is never replaced without consent (decision 3318374a, D1).
+- **R14** — The vendored command surface is a single unified dispatcher. The
+  nine retired per-command helper scripts are deleted from a host on its next
+  apply; removal is scoped to the exact retired filenames inside the managed
+  tools directory and is idempotent (decision bbc6bcea, D1/D2).
 
 ## Edge Cases Settled
 

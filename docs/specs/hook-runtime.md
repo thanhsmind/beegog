@@ -1,8 +1,8 @@
 ---
 area: hook-runtime
-updated: 2026-07-13
-sources: [codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b)]
-decisions: [codex-runtime-parity D1, D2; 0023; d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks)]
+updated: 2026-07-14
+sources: [codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14)]
+decisions: [codex-runtime-parity D1, D2; 0023; d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional)]
 coverage: partial
 ---
 
@@ -246,6 +246,13 @@ states alike, never one but not the other (decision c2c46488).
   the guard's coverage into the protocol and turns every gap in the guard into
   a gap in the workflow — which is exactly how R12's gap was found in real use
   (decision c2c46488).
+
+- R14 — The write guard's command-shape recognition accepts both the unified
+  dispatcher form (group + verb) and the retired per-command helper form. The
+  retired form is a transition affordance for hosts whose vendored tools predate
+  the unified surface — it is slated for removal once hosts have upgraded (a
+  debt item tracks it), and its recognition never revives the deleted scripts
+  themselves (decision bbc6bcea, D3).
 
 ## Edge Cases Settled
 

@@ -3,6 +3,20 @@
 Mandatory pre-planning / pre-execution context for this repository.
 bee-compounding appends hard-won patterns here; keep it short and current.
 
+## [20260714] Hardcoded fixture file-lists rot silently — and fail-open makes rot look like PASS
+**Category:** failure
+**Feature:** shim-retire
+**Tags:** [test-fixtures, fail-open, hooks]
+
+Two independent test fixtures each hand-enumerated "which lib files to vendor into the
+sandbox"; both had rotted (missing `claims.mjs`), the hook crashed at import inside the
+fixture, and the hook's fail-open turned the crash into universal green. When a fixture
+must mirror a runtime file set, derive it with `readdirSync` of the real directory —
+never a hand-kept list. And a fail-open guard's test suite needs at least one
+sentinel-deny case, so universal fail-open can never read as all-pass.
+
+**Full entry:** docs/history/learnings/20260714-shim-retire.md
+
 ## [20260708] Windows Git Bash /tmp is invisible to node
 **Category:** failure
 **Feature:** harness09
