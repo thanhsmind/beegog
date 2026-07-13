@@ -6,25 +6,41 @@ Every onboarded repo has a `.bee/config.json`. Any key you leave out uses a buil
 
 There are three tiers, but **you only configure the two cheaper ones.** The **ceiling** (strongest) tier is **never configured — it is always the model you are running the session on** (decision 0015). So if you run the session on Fable, ceiling work runs on Fable; run it on Opus, ceiling is Opus. bee doesn't pick it; it inherits your session model.
 
-You configure only `generation` and `extraction`, under **`models`**, keyed by runtime (Claude Code vs Codex name models differently):
+You configure only `generation` and `extraction`, under **`models`**, keyed by runtime (Claude Code vs Codex name models differently). Beside the two tiers sit two configurable **roles**, `review` and `advisor`:
 
 ```jsonc
 {
   "models": {
     "claude": {
       "extraction": "haiku",    // cheapest — retrieval, mechanical edits
-      "generation": "sonnet"    // the mid worker that runs the loops (most cells)
+      "generation": "sonnet",   // the mid worker that runs the loops (most cells)
       // no "ceiling" — it's whatever model runs your session
+      "review": "opus",         // reviews what generation implemented; null → falls back to generation
+      "advisor": "opus"         // consulted by a worker whose verify keeps failing; null/unset → no advisor
     },
     "codex": {
       "extraction": null,       // Codex has no per-agent model switch today →
-      "generation": null        //   null means "enforce the tier via read budget + output cap in the prompt"
+      "generation": null,       //   null means "enforce the tier via read budget + output cap in the prompt"
+      "review": null,
+      "advisor": null
     }
   }
 }
 ```
 
 - **To change the worker models**, edit `models.claude.generation` / `extraction` (e.g. `"opus"` for a stronger worker tier). To change the **ceiling**, just run the session on a different model — there is no config for it.
+- **`review`** (decision 0021) is the model that reviews what `generation` implemented — an independent reviewer beats self-review, so a review slot stronger than generation is the point. `null` → the generation tier reviews.
+- **`advisor`** (advisor v1) is a *worker-level, on-failure consult*: a worker that has failed its verify calls the advisor once or twice before blocking, and takes advice only — it never gets authority. Unlike `review` it has **no fallback**: `null`, unset, or an advisor no stronger than the worker's own model simply means "no consult happens".
+- **The four value shapes** each slot accepts (decisions 0019/0021):
+
+  | shape | means |
+  |---|---|
+  | `"sonnet"` | the runtime's per-agent model switch |
+  | `{ "model": "sonnet", "effort": "medium" }` | model + reasoning effort (`low` · `medium` · `high` · `xhigh` · `max`); the effort is applied where the runtime has a per-agent effort switch, recorded and ignored where it does not |
+  | `{ "kind": "cli", "command": "codex exec -m … --yolo" }` | an **external executor** — a separate CLI process dispatched under the same worker contract (effort rides inside the command) |
+  | `null` | no per-agent switch: the tier is enforced via read budget + output cap in the prompt (for `review`: fall back to generation; for `advisor`: no advisor) |
+
+  Invalid shapes are ignored — the slot's default stands, nothing throws.
 - **What the short names mean (important).** For Claude Code these are **family aliases**, not exact version strings. The value must be one of exactly `haiku` · `sonnet` · `opus` · `fable` — the Claude Code Agent tool accepts only these four. Each alias is resolved **by Claude Code (not by bee)** to the current model of that family on your account. So `"sonnet"` isn't "some random Sonnet" — it means "the Sonnet tier", and the harness uses the latest. Today they resolve to:
 
   | alias | resolves to (current) | model id |
@@ -39,7 +55,7 @@ You configure only `generation` and `extraction`, under **`models`**, keyed by r
 
 ## Removed keys
 
-The `advisor` key was removed in v0.1.23 (decision fanout-delegation D1). If your `.bee/config.json` still has an `advisor` entry, onboarding will warn about the stale key but it will be ignored — no action needed.
+The **top-level** `advisor` key (old "advisor mode") was removed in v0.1.23 (decision fanout-delegation D1). If your `.bee/config.json` still has one, onboarding warns about the stale key and ignores it — delete it. This is **not** the same thing as the `models.<runtime>.advisor` slot above, which is current and valid.
 
 ## Other keys
 
@@ -81,11 +97,19 @@ Clean JSON — paste into `.bee/config.json` and edit values (keep any existing 
 {
   "commands": { "setup": "npm install", "start": "npm run dev", "test": "npm test", "verify": "npm run build" },
   "gate_bypass": false,
+  "guards": { "idle_gate": true },
   "models": {
-    "claude": { "extraction": "haiku", "generation": "sonnet" },
-    "codex":  { "extraction": null, "generation": null }
+    "claude": {
+      "extraction": "haiku",
+      "generation": { "model": "sonnet", "effort": "medium" },
+      "review": "opus",
+      "advisor": "opus"
+    },
+    "codex": { "extraction": null, "generation": null, "review": null, "advisor": null }
   }
 }
 ```
+
+The full, copyable version of this file lives at [`.bee/config-sample.json`](../.bee/config-sample.json) — it carries every key, including `hooks`, `lanes`/`capabilities`, and a `dogfood_repos` example.
 
 > **ceiling** has no entry — it is always whatever model you run the session on.

@@ -26,7 +26,8 @@
         "model": "sonnet",
         "effort": "medium"
       },
-      "review": "opus"
+      "review": "opus",
+      "advisor": "fable"
     },
     "codex": {
       "extraction": null,
@@ -34,7 +35,8 @@
       "review": {
         "kind": "cli",
         "command": "codex exec -m gpt-5.6-sol --yolo -c model_reasoning_effort=\"high\"  workspace-write"
-      }
+      },
+      "advisor": null
     }
   },
   "dogfood_repos": [
