@@ -759,6 +759,42 @@ check('claimCellFile default TTL matches the exported constant; released cell is
 
 fs.rmSync(claimsRoot, { recursive: true, force: true });
 
+// ─── claims: multi-process races (fsh-2) ───────────────────────────────────
+// The entire race lives inside race_claims_child.mjs as a self-contained
+// orchestrator (forks its own barrier-synchronized racers, asserts
+// internally, exits 0/1 with a one-line summary) — check() here stays
+// ordinary and synchronous, running each scenario via ONE blocking
+// spawnSync and asserting exit code + summary line. See that file's header
+// for why: this runner never awaits, so an async check() fn would report
+// PASS before its assertions ran.
+
+const raceChildScript = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'race_claims_child.mjs',
+);
+
+function runRaceScenario(scenario) {
+  return spawnSync(process.execPath, [raceChildScript, scenario], { encoding: 'utf8', timeout: 60000 });
+}
+
+check('race: claim-contention — concurrent processes racing one cell, exactly one O_EXCL winner every round', () => {
+  const result = runRaceScenario('claim-contention');
+  assert(result.status === 0, `claim-contention race failed (status ${result.status}): ${result.stdout}${result.stderr}`);
+  assert(/^PASS +claim-contention/m.test(result.stdout), `expected a PASS summary line, got: ${result.stdout}`);
+});
+
+check('race: adoption-steal — a third session cannot steal a cell mid-adoption; every attempt loses with typed CLAIMED', () => {
+  const result = runRaceScenario('adoption-steal');
+  assert(result.status === 0, `adoption-steal race failed (status ${result.status}): ${result.stdout}${result.stderr}`);
+  assert(/^PASS +adoption-steal/m.test(result.stdout), `expected a PASS summary line, got: ${result.stdout}`);
+});
+
+check('race: sweep-heartbeat — concurrent sweepExpiredClaims + heartbeat renewal never reclaims a live claim (20260710)', () => {
+  const result = runRaceScenario('sweep-heartbeat');
+  assert(result.status === 0, `sweep-heartbeat race failed (status ${result.status}): ${result.stdout}${result.stderr}`);
+  assert(/^PASS +sweep-heartbeat/m.test(result.stdout), `expected a PASS summary line, got: ${result.stdout}`);
+});
+
 // ─── guards ─────────────────────────────────────────────────────────────────
 
 check('checkWrite blocks source writes while idle (intake gate); config can disable it', () => {
