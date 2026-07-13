@@ -68,6 +68,22 @@ import {
   FROZEN_JUDGE_PATTERNS,
 } from '../lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, reservationsPath } from '../lib/reservations.mjs';
+import {
+  createSession,
+  readSession,
+  heartbeatSession,
+  claimCellFile,
+  readClaim,
+  releaseClaim,
+  adoptClaim,
+  sweepExpiredClaims,
+  isClaimActive,
+  sessionPath,
+  claimPath,
+  claimGatePath,
+  DEFAULT_CLAIM_TTL_SECONDS,
+  DEFAULT_HEARTBEAT_STALE_SECONDS,
+} from '../lib/claims.mjs';
 import { checkWrite, checkRead, extractBashTargets } from '../lib/guards.mjs';
 import { buildPromptReminder, shouldInject, markInjected, buildSessionPreamble } from '../lib/inject.mjs';
 import { logDecision, supersedeDecision, activeDecisions, datamark } from '../lib/decisions.mjs';
@@ -591,6 +607,157 @@ check('sweepExpired releases TTL-expired reservations', () => {
   assert(swept >= 1, `expected at least one swept reservation, got ${swept}`);
   assert(listReservations(root, { activeOnly: true }).length === 0, 'no active reservations remain');
 });
+
+// ─── claims (cross-session sessions + O_EXCL cell claims) ───────────────────
+// fsh-1 (fresh-session-handoff): single-process rows prove post-states and the
+// typed {ok:false, code, reason} contract. The concurrency windows themselves
+// are proven by the multi-process race fixtures (fsh-2); S1 caps as a unit.
+
+const claimsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-claims-'));
+
+check('createSession writes .bee/sessions/<id>.json (id, started_at, last_heartbeat); duplicate id is a typed failure', () => {
+  const made = createSession(claimsRoot, { id: 'sess-a' });
+  assert(made.ok === true, 'first createSession ok');
+  assert(fs.existsSync(sessionPath(claimsRoot, 'sess-a')), 'session record exists on disk');
+  const record = readSession(claimsRoot, 'sess-a');
+  assert(record && record.id === 'sess-a', 'session record carries its id');
+  assert(typeof record.started_at === 'string' && !Number.isNaN(Date.parse(record.started_at)), 'started_at is a timestamp');
+  assert(typeof record.last_heartbeat === 'string' && !Number.isNaN(Date.parse(record.last_heartbeat)), 'last_heartbeat is a timestamp');
+  const dup = createSession(claimsRoot, { id: 'sess-a' });
+  assert(dup.ok === false && dup.code === 'SESSION_EXISTS' && typeof dup.reason === 'string', 'duplicate session id returns typed {ok:false, code, reason} — no throw');
+  const generated = createSession(claimsRoot);
+  assert(generated.ok === true && typeof generated.session.id === 'string' && generated.session.id.length > 0, 'id generated when omitted');
+});
+
+check('heartbeatSession advances last_heartbeat; missing session is a typed SESSION_MISSING failure', () => {
+  const stale = new Date(Date.now() - 7200 * 1000).toISOString();
+  const record = readSession(claimsRoot, 'sess-a');
+  writeJsonAtomic(sessionPath(claimsRoot, 'sess-a'), { ...record, last_heartbeat: stale });
+  const beat = heartbeatSession(claimsRoot, 'sess-a');
+  assert(beat.ok === true, 'heartbeat ok');
+  const after = readSession(claimsRoot, 'sess-a');
+  assert(Date.parse(after.last_heartbeat) > Date.parse(stale), 'last_heartbeat advanced');
+  const missing = heartbeatSession(claimsRoot, 'sess-ghost');
+  assert(missing.ok === false && missing.code === 'SESSION_MISSING' && typeof missing.reason === 'string', 'missing session returns typed failure — no throw');
+});
+
+check('claimCellFile: first claimant wins, second gets typed CLAIMED naming holder and expiry — no throw', () => {
+  createSession(claimsRoot, { id: 'sess-b' });
+  const first = claimCellFile(claimsRoot, 'sess-a', 'cell-1', 60);
+  assert(first.ok === true, 'first claim wins');
+  assert(first.claim.cell === 'cell-1' && first.claim.session === 'sess-a', 'claim record carries cell + owner');
+  assert(first.claim.ttl_seconds === 60, 'claim record carries ttl');
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-1')), 'claim file exists under .bee/claims/');
+  const second = claimCellFile(claimsRoot, 'sess-b', 'cell-1', 60);
+  assert(second.ok === false, 'second claim loses');
+  assert(second.code === 'CLAIMED', `contention code is CLAIMED, got ${second.code}`);
+  assert(typeof second.reason === 'string' && second.reason.includes('sess-a'), 'reason names the holder');
+  assert(/expir/i.test(second.reason), 'reason names the expiry');
+  assert(second.holder && second.holder.session === 'sess-a', 'holder record returned');
+});
+
+check('claim and session records are repo-relative — no absolute or system-temp path inside', () => {
+  const claimText = fs.readFileSync(claimPath(claimsRoot, 'cell-1'), 'utf8');
+  const sessionText = fs.readFileSync(sessionPath(claimsRoot, 'sess-a'), 'utf8');
+  assert(!claimText.includes(claimsRoot), 'claim record must not embed the repo root path');
+  assert(!sessionText.includes(claimsRoot), 'session record must not embed the repo root path');
+  assert(!claimText.includes(os.tmpdir()), 'claim record must not embed a system temp path');
+});
+
+check('isClaimActive reuses reservations TTL semantics: fresh claim active, TTL-expired claim inactive', () => {
+  const claim = readClaim(claimsRoot, 'cell-1');
+  assert(isClaimActive(claim) === true, 'fresh claim is active');
+  const expired = { ...claim, claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(), ttl_seconds: 60 };
+  assert(isClaimActive(expired) === false, 'TTL-expired claim is inactive');
+  assert(isClaimActive(null) === false, 'missing claim is not active');
+});
+
+check('sweep: TTL expired but heartbeat FRESH is never reclaimed (20260710 — no steal on a stall signal)', () => {
+  // Backdate the claim past its TTL; owner sess-a heartbeat was just renewed above.
+  heartbeatSession(claimsRoot, 'sess-a');
+  const claim = readClaim(claimsRoot, 'cell-1');
+  writeJsonAtomic(claimPath(claimsRoot, 'cell-1'), {
+    ...claim,
+    claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
+    ttl_seconds: 60,
+  });
+  const result = sweepExpiredClaims(claimsRoot);
+  assert(result.ok === true, 'sweep returns ok');
+  assert(!result.swept.includes('cell-1'), 'fresh-heartbeat claim not swept');
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-1')), 'claim file untouched');
+});
+
+check('sweep: TTL expired AND heartbeat stale IS reclaimed; no gate file leaks', () => {
+  const session = readSession(claimsRoot, 'sess-a');
+  writeJsonAtomic(sessionPath(claimsRoot, 'sess-a'), {
+    ...session,
+    last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
+  });
+  const result = sweepExpiredClaims(claimsRoot);
+  assert(result.swept.includes('cell-1'), `expired+stale claim swept, got ${JSON.stringify(result)}`);
+  assert(!fs.existsSync(claimPath(claimsRoot, 'cell-1')), 'claim file reclaimed');
+  assert(!fs.existsSync(claimGatePath(claimsRoot, 'cell-1')), 'gate file removed after sweep');
+  heartbeatSession(claimsRoot, 'sess-a'); // restore a fresh heartbeat for later rows
+});
+
+check('sweep and adopt skip/refuse while the per-claim gate is held — typed GATE_HELD, never wait', () => {
+  const claimed = claimCellFile(claimsRoot, 'sess-a', 'cell-2', 60);
+  assert(claimed.ok === true, 'precondition: cell-2 claimed');
+  writeJsonAtomic(claimPath(claimsRoot, 'cell-2'), {
+    ...readClaim(claimsRoot, 'cell-2'),
+    claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
+  });
+  writeJsonAtomic(sessionPath(claimsRoot, 'sess-a'), {
+    ...readSession(claimsRoot, 'sess-a'),
+    last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
+  });
+  fs.writeFileSync(claimGatePath(claimsRoot, 'cell-2'), '{}', 'utf8'); // another process mid-adopt
+  const swept = sweepExpiredClaims(claimsRoot);
+  assert(!swept.swept.includes('cell-2'), 'gated claim skipped by sweep');
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-2')), 'gated claim untouched');
+  const adopt = adoptClaim(claimsRoot, 'cell-2', 'sess-b');
+  assert(adopt.ok === false && adopt.code === 'GATE_HELD' && typeof adopt.reason === 'string', 'adopt under a held gate is a typed GATE_HELD failure — no throw');
+  fs.rmSync(claimGatePath(claimsRoot, 'cell-2'));
+  heartbeatSession(claimsRoot, 'sess-a');
+});
+
+check('adoptClaim rewrites the owner in place: old owner loses, new owner holds, claim file present throughout post-state', () => {
+  const before = readClaim(claimsRoot, 'cell-2');
+  assert(before.session === 'sess-a', 'precondition: sess-a owns cell-2');
+  const adopted = adoptClaim(claimsRoot, 'cell-2', 'sess-b');
+  assert(adopted.ok === true, `adopt ok, got ${JSON.stringify(adopted)}`);
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-2')), 'claim file exists after adopt (never deleted)');
+  const after = readClaim(claimsRoot, 'cell-2');
+  assert(after.session === 'sess-b', 'new session owns the claim');
+  assert(after.adopted_from === 'sess-a', 'adoption records the previous owner');
+  assert(typeof after.adopted_at === 'string' && !Number.isNaN(Date.parse(after.adopted_at)), 'adoption timestamped');
+  assert(after.cell === 'cell-2', 'cell id preserved in place');
+  assert(!fs.existsSync(claimGatePath(claimsRoot, 'cell-2')), 'gate file removed after adopt');
+  const missing = adoptClaim(claimsRoot, 'cell-ghost', 'sess-b');
+  assert(missing.ok === false && missing.code === 'NOT_FOUND' && typeof missing.reason === 'string', 'adopting a missing claim is a typed NOT_FOUND failure');
+});
+
+check('releaseClaim: NOT_OWNER for the old session after adoption, owner release removes the file, NOT_FOUND after', () => {
+  const denied = releaseClaim(claimsRoot, 'sess-a', 'cell-2');
+  assert(denied.ok === false && denied.code === 'NOT_OWNER' && typeof denied.reason === 'string', 'old owner can no longer release — typed NOT_OWNER');
+  assert(denied.reason.includes('sess-b'), 'NOT_OWNER reason names the actual owner');
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-2')), 'claim untouched by a denied release');
+  const released = releaseClaim(claimsRoot, 'sess-b', 'cell-2');
+  assert(released.ok === true, 'owner release ok');
+  assert(!fs.existsSync(claimPath(claimsRoot, 'cell-2')), 'claim file removed on release');
+  assert(!fs.existsSync(claimGatePath(claimsRoot, 'cell-2')), 'no gate file leaked by release');
+  const gone = releaseClaim(claimsRoot, 'sess-b', 'cell-2');
+  assert(gone.ok === false && gone.code === 'NOT_FOUND', 'releasing a missing claim is a typed NOT_FOUND failure');
+});
+
+check('claimCellFile default TTL matches the exported constant; released cell is claimable again', () => {
+  const again = claimCellFile(claimsRoot, 'sess-b', 'cell-2');
+  assert(again.ok === true, 'released cell claimable again');
+  assert(again.claim.ttl_seconds === DEFAULT_CLAIM_TTL_SECONDS, 'default ttl applied');
+  releaseClaim(claimsRoot, 'sess-b', 'cell-2');
+});
+
+fs.rmSync(claimsRoot, { recursive: true, force: true });
 
 // ─── guards ─────────────────────────────────────────────────────────────────
 
