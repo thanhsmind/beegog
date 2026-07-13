@@ -1,6 +1,6 @@
 ---
 area: onboarding
-updated: 2026-07-12
+updated: 2026-07-13
 coverage: partial
 sources:
   - cell onboard-statusline-1 (verification_evidence, 2026-07-11)
@@ -11,6 +11,7 @@ sources:
   - codex-runtime-parity D4 (dispatch-contract scope, 2026-07-11)
   - bee-footprint D1 (managed ignore section, cells footprint-1/footprint-4, 2026-07-12)
   - fanout-delegation D1 (stale advisor key tolerance, 2026-07-12)
+  - sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)
 decisions:
   - 102efe08 (opt-in statusline vendor shape)
   - c6ee6b6e (Gate 4 onboard-statusline: anchored detection, sweep opt-in)
@@ -20,6 +21,7 @@ decisions:
   - d7d5f459 (current Codex dispatch contract first; custom profiles deferred)
   - 26203bd3 (managed ignore-list section; machine-local vs team-durable split)
   - de967733 (advisor mode removed; stale config key warned-and-ignored)
+  - 9927fafb (a switch that narrows what an upgrade compares must equally narrow what it claims; repo-hook opt-in is sticky)
 ---
 
 # Onboarding
@@ -121,6 +123,22 @@ carries one warning naming the count of already-tracked paths and the exact
 one-time command the operator must run to untrack them; the warning
 disappears once no silenced path remains tracked.
 
+**An opt-in is remembered, and what it opted into stays current (every run).**
+Trigger: any run against a project that has previously opted into carrying its
+own local copies of the lifecycle guardrails. What changes: those local copies
+are refreshed to the current ones on **every** run thereafter — whether or not
+the request repeats the opt-in switch. Why: the switch names a *choice the
+project made*, not a consent owed again at each upgrade. What each actor
+observes: an owner who opted in once sees their guardrails track the workflow's
+own version, silently and permanently; a project that never opted in is still
+never handed local guardrails by a plain run — the remembered choice is the only
+thing that carries, never a default. What used to happen instead, and is the
+reason this behavior is stated explicitly: a plain upgrade refreshed the standing
+instruction sheet, the helpers, and the recorded version, left the guardrails at
+whatever version they were first installed at, and **reported the project up to
+date** — so a project could run current doctrine against its original guards
+indefinitely, with no signal anywhere that it was doing so.
+
 ## Actors & Access
 
 - **Agent** — runs check and apply; the only actor that executes onboarding.
@@ -195,7 +213,18 @@ disappears once no silenced path remains tracked.
   de967733; the duplicated warning text is pinned by a drift test).
 - Opting out after having been opted in → the stale managed record is inert but
   currently survives; recorded as a known gap (backlog, paired with the
-  equivalent behavior in the hook-vendoring mechanism).
+  equivalent behavior in the hook-vendoring mechanism). Now sharper than when it
+  was filed: the remembered opt-in is what keeps guardrails current, so it is
+  also what a genuine opt-out would have to clear.
+- **A partial upgrade that reports success is worse than one that fails.** The
+  upgrade path refreshed every part of a project it compared, and compared every
+  part except the one the request had not explicitly named — so the unrefreshed
+  part was not merely skipped, it was *excluded from the up-to-date judgment* and
+  the project was pronounced current. Eight projects ran that way across several
+  versions. Whenever a switch narrows what a run compares, the switch's absence
+  must narrow what the run *claims*, never only what it does.
+- A local guardrail file deleted or corrupted in a project that opted in → the
+  next plain run restores it from source. Nothing else in the project is touched.
 - No ignore list present at all → one is created holding only the managed
   ignore section (feature bee-footprint, decision 26203bd3).
 - Ignore list present but missing a trailing line break → the managed
