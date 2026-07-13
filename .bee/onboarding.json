@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.28",
+  "bee_version": "0.1.29",
   "managed": {
-    "agents_block": "8226a21c29033518845d7e99c9364144ec633067fd50f1b97e857de9a91d05ca",
+    "agents_block": "32bcdd03115a3ab7fe3c22f7a74286d1b457ecf37cf0aea01c7ee637d715e423",
     "gitignore_block": "add7be1e25d3c4b7bbedff2f80c0f0e577c84610ebbac5d1eec1d70427424886",
     "helpers": {
       "bee.mjs": "d6f98987a9fffd5bc08c79b89a97493acf0f188fdfdfdecc082ba6e3c3ad4ed6",
@@ -29,8 +29,12 @@
       "inject.mjs": "a00742f94ee4eeb52aff99917aa4cbdfdb7356807f54407bc94fac6a9b651520",
       "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
       "reviews.mjs": "8174b4ae0ea0e4b4e86a31b1e595168aea0ec0daaf9bf8fb0cac6e1cfdcb02ee",
-      "state.mjs": "257178e79f1a33ec7b1df2167342b9ace74fb57cdac3e2e2ce50af060f82ca7c",
+      "state.mjs": "07ee10ca744bd85ccac8d90deba622450107b194c3ff5a34af748184c136f1aa",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
+    },
+    "statusline": {
+      "statusline-command.sh": "0965ae1c0d95a96fd7899df7549893e94fcc59693cab3b23da8dc228aa870b0e",
+      "statusline-usage.mjs": "1914f6e7d421b240be3987f50d40a5151723b5302866b8838f6fb5a8de438f01"
     },
     "repo_hooks": {
       "adapter.mjs": "b769b2372123b31e3bdca11f463574046a36669e8eaf2c39e2df83435d755a4b",
@@ -41,12 +45,8 @@
       "bee-chain-nudge.mjs": "935c66e0916a3439579cfc387a81adb15cf66b83a7043688be56924425a70c41",
       "bee-session-close.mjs": "98049c8bcd5aaf01d312c3633efbce70a7b3f4fcc89d0c6c849c63464339de4a",
       "bee-model-guard.mjs": "229d7abe02ddb71a26a45df2b3f1173797d4348e264d903e52b8e3c95eab075d"
-    },
-    "statusline": {
-      "statusline-command.sh": "0965ae1c0d95a96fd7899df7549893e94fcc59693cab3b23da8dc228aa870b0e",
-      "statusline-usage.mjs": "1914f6e7d421b240be3987f50d40a5151723b5302866b8838f6fb5a8de438f01"
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-13T00:11:54.089Z"
+  "updated_at": "2026-07-13T00:38:41.593Z"
 }
