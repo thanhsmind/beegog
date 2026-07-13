@@ -8,16 +8,11 @@
 // makes the `bee --help --json` manifest zero-translation for any
 // Claude-based agent.
 //
-// `helper` is informational dispatch metadata, not part of the public
-// manifest shape: it names the bee_*.mjs shim that historically implemented
-// the command and still accepts the same invocation today (each shim is now
-// a thin wrapper that prepends its group name and calls bee.mjs's exported
-// `main()` in-process — dispatcher-unify DB2 — there is no spawnSync or
-// subprocess delegation). bee.mjs's own handlers import the shared
-// lib/*.mjs functions directly, the same functions the shims used to import
-// before they were collapsed. The dispatcher strips `helper` when rendering
-// the public `--help --json` manifest; only {name, invoke, description,
-// parameters, examples, deprecated} are shown to agents there.
+// The 9 bee_*.mjs shims that used to sit in front of this registry are
+// retired (shim-retire D1/D5) — `bee.mjs <group> <verb>` is now the sole
+// canonical and sole shipped CLI, so entries no longer carry an informational
+// `helper` field naming a shim; only {name, invoke, description, parameters,
+// examples, deprecated} make up an entry.
 //
 // `examples[]` are literal, runnable `bee <group> <verb> ...` argument
 // strings — the manifest-as-tested-contract discipline (every example is
@@ -41,7 +36,6 @@ export const COMMAND_REGISTRY = [
   // ─── status (bee_status.mjs — no subcommand, flags only) ─────────────────
   {
     name: 'status',
-    helper: 'bee_status.mjs',
     invoke: 'bee status',
     description:
       'Read-only snapshot: onboarding health, phase, gates, handoff, cell counts, reservations, decisions, staleness warnings, recommended next step.',
@@ -59,7 +53,6 @@ export const COMMAND_REGISTRY = [
   // ─── cells (bee_cells.mjs) ────────────────────────────────────────────────
   {
     name: 'cells.list',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells list',
     description: 'List cells, optionally filtered by feature and/or status.',
     parameters: {
@@ -76,7 +69,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.ready',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells ready',
     description: 'List open cells whose deps are all capped — claimable right now.',
     parameters: {
@@ -92,7 +84,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.show',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells show',
     description: 'Show one cell by id, including its full trace.',
     parameters: {
@@ -108,7 +99,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.add',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells add',
     description:
       'Add a new cell from a JSON file or stdin. Exactly one of --file / --stdin is required at call time (both satisfy the schema; the handler itself enforces the choice).',
@@ -126,7 +116,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.update',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells update',
     description:
       'Door-validated in-place revision for validation-repair loops: only open|blocked cells are updatable. Plan fields only (title/action/verify/files/read_first/deps/decisions/must_haves/behavior_change/lane/pbi); frozen keys (id/feature/status/trace/tier) and any unknown key refuse the whole patch untouched. Exactly one of --file / --stdin is required at call time (both satisfy the schema; the handler itself enforces the choice).',
@@ -145,7 +134,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.claim',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells claim',
     description: 'Claim an open, dep-free cell for a worker. Refuses while Gate 3 (execution) is unapproved or deps are uncapped.',
     parameters: {
@@ -162,7 +150,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.verify',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells verify',
     description: "Record a verify run's command, output, and pass/fail for a cell — the proof `cap` later requires.",
     parameters: {
@@ -182,7 +169,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.cap',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells cap',
     description: 'Cap a cell — refuses without a recorded passing verify (and, for small+ lanes, recorded output/evidence plus non-empty files_changed).',
     parameters: {
@@ -205,7 +191,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.block',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells block',
     description: 'Mark a cell blocked with a reason.',
     parameters: {
@@ -222,7 +207,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.drop',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells drop',
     description: 'Mark a cell dropped with a reason.',
     parameters: {
@@ -239,7 +223,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.tier',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells tier',
     description: "Record the orchestrator's dispatch-time model-tier judgment for a cell.",
     parameters: {
@@ -256,7 +239,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.judge',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells judge',
     description: "Frozen-judge check: flags test/CI/lockfile files changed outside the cell's declared file scope.",
     parameters: {
@@ -272,7 +254,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'cells.claim-next',
-    helper: 'bee_cells.mjs',
     invoke: 'bee cells claim-next',
     description:
       "Cross-session selection + claim (fresh-session-handoff fsh-11, D2/D4): sweeps stale claims (TTL expired AND heartbeat stale) in-pass first — this IS sweepExpiredClaims's production trigger — then picks the next open cell to claim: the acting session's own bound lane (or the default pipeline when unbound) first, ONLY when its execution gate is approved; empty or unapproved falls back to every OTHER pipeline whose OWN execution gate is approved (an unapproved lane is never touched), ordered by backlog rank then lane created_at. Cells whose files intersect another session's active reservation hold are skipped (the acting session's own holds never exclude a cell). Claims via the two-store sequence (claims.mjs claimCellFile then cells.mjs claimCell, unwound with a claim-file release on any claimCell throw). Refuses (non-zero exit) when nothing is claimable (NO_APPROVED_WORK), the claims-store race is lost (CLAIMED), or the session's lane binding is broken (LANE_INVALID/LANE_MISSING/LANE_CORRUPT).",
@@ -293,7 +274,6 @@ export const COMMAND_REGISTRY = [
   // ─── reservations (bee_reservations.mjs) ─────────────────────────────────
   {
     name: 'reservations.reserve',
-    helper: 'bee_reservations.mjs',
     invoke: 'bee reservations reserve',
     description: "Reserve a file or glob path for a cell. A conflicting active reservation held by another agent returns ok:false with the holder(s). Optional --session (fresh-session-handoff D3) stamps the reservation as owned by that cross-session identity, so the write guard's hold check (checkWrite) can deny another live session's write into the same path — a reservation made without --session keeps today's exact intra-swarm-only semantics.",
     parameters: {
@@ -316,7 +296,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reservations.release',
-    helper: 'bee_reservations.mjs',
     invoke: 'bee reservations release',
     description: "Release an agent's reservations, optionally scoped to one cell.",
     parameters: {
@@ -333,7 +312,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reservations.list',
-    helper: 'bee_reservations.mjs',
     invoke: 'bee reservations list',
     description: 'List reservations, optionally active-only.',
     parameters: {
@@ -349,7 +327,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reservations.sweep',
-    helper: 'bee_reservations.mjs',
     invoke: 'bee reservations sweep',
     description: 'Release every TTL-expired reservation that was never explicitly released.',
     parameters: {
@@ -366,7 +343,6 @@ export const COMMAND_REGISTRY = [
   // ─── decisions (bee_decisions.mjs) ───────────────────────────────────────
   {
     name: 'decisions.log',
-    helper: 'bee_decisions.mjs',
     invoke: 'bee decisions log',
     description: 'Append a decision event to the append-only decision log. Rejects secret-shaped or instruction-like content.',
     parameters: {
@@ -389,7 +365,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'decisions.supersede',
-    helper: 'bee_decisions.mjs',
     invoke: 'bee decisions supersede',
     description: 'Replace an earlier decision with a new one; the earlier decision drops out of the active set.',
     parameters: {
@@ -409,7 +384,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'decisions.redact',
-    helper: 'bee_decisions.mjs',
     invoke: 'bee decisions redact',
     description: 'Redact a decision from the active set with a reason (the event stays in the log; only its active status changes).',
     parameters: {
@@ -426,7 +400,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'decisions.active',
-    helper: 'bee_decisions.mjs',
     invoke: 'bee decisions active',
     description: 'List active (non-superseded, non-redacted) decisions, newest first.',
     parameters: {
@@ -442,7 +415,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'decisions.search',
-    helper: 'bee_decisions.mjs',
     invoke: 'bee decisions search',
     description: 'Search active decisions by substring match across decision/rationale/alternatives.',
     parameters: {
@@ -471,7 +443,6 @@ export const COMMAND_REGISTRY = [
   // for the same reason (a bad --approved must reach the handler, not validate).
   {
     name: 'state.set',
-    helper: 'bee_state.mjs',
     invoke: 'bee state set',
     description:
       'Set one or more top-level state fields; only the flags given are written and every other field is preserved. --phase is validated against the known-phase enum (including the terminal alias compounding-complete). Optional --lane <feature> (fresh-session-handoff D2/D4) routes the mutation to that per-feature lane record (.bee/lanes/<feature>.json, via readLaneStrict) instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes. --feature is rejected when --lane is given (a lane\'s feature is its identity/filename, not a mutable field).',
@@ -496,7 +467,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.gate',
-    helper: 'bee_state.mjs',
     invoke: 'bee state gate',
     description: 'Approve or unapprove a named gate. Idempotent: the same call run twice yields an identical file. Optional --lane <feature> (D2/D4) routes the gate mutation to that lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes.',
     parameters: {
@@ -517,7 +487,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.worker.add',
-    helper: 'bee_state.mjs',
     invoke: 'bee state worker add',
     description: 'Append a worker entry (nickname + cell, optional tier/status) to state.workers.',
     parameters: {
@@ -536,7 +505,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.worker.update',
-    helper: 'bee_state.mjs',
     invoke: 'bee state worker update',
     description: 'Merge the given fields onto an existing worker entry found by nickname.',
     parameters: {
@@ -555,7 +523,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.worker.remove',
-    helper: 'bee_state.mjs',
     invoke: 'bee state worker remove',
     description: 'Drop the worker entry matching the given nickname.',
     parameters: {
@@ -571,7 +538,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.worker.clear',
-    helper: 'bee_state.mjs',
     invoke: 'bee state worker clear',
     description: 'Empty the whole state.workers array.',
     parameters: {
@@ -586,7 +552,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.worker.prune',
-    helper: 'bee_state.mjs',
     invoke: 'bee state worker prune',
     description: 'Delete stale dispatch transients from .bee/workers/ (keeps active-worker and non-capped-cell files). Reads state via readStateStrict and never writes state.json.',
     parameters: {
@@ -602,7 +567,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.scribing-run',
-    helper: 'bee_state.mjs',
     invoke: 'bee state scribing-run',
     description: 'Stamp last_scribing_run (date + ISO-precise at), mirror --next-action to the top-level next_action, and advance phase to compounding. Optional --lane <feature> (D2/D4) routes the stamp to that lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes.',
     parameters: {
@@ -624,7 +588,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.start-feature',
-    helper: 'bee_state.mjs',
     invoke: 'bee state start-feature',
     description: 'Guarded atomic feature start: fails closed with zero mutations unless the workspace is clean (idle/terminal phase, no handoff/workers/reservations/claimed or nonterminal prior cells); on success sets feature/mode/phase and resets all four gates. Optional --as-lane (D2/D4) starts the feature as a per-feature lane record (.bee/lanes/<feature>.json) beside the default pipeline instead of mutating state.json; --session-id names the calling session so its own active holds never count against the declared-paths check; --paths is a comma-separated list of intended file paths checked against other sessions\' active claims/reservations before the lane starts.',
     parameters: {
@@ -648,7 +611,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.lanes',
-    helper: 'bee_state.mjs',
     invoke: 'bee state lanes',
     description: 'List every per-feature lane record (D2/D4) with its phase, gates, and which sessions are currently bound to it.',
     parameters: {
@@ -663,7 +625,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.session.list',
-    helper: 'bee_state.mjs',
     invoke: 'bee state session list',
     description: 'List every session record (id, started_at, last_heartbeat, bound lane if any) — the cross-session identities lane claims key off (fresh-session-handoff fsh-1/fsh-3).',
     parameters: {
@@ -678,7 +639,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.session.bind',
-    helper: 'bee_state.mjs',
     invoke: 'bee state session bind',
     description: "Bind a session to a lane (session→lane binding, D2/D4) so pipeline reads/writes for that session resolve to the named lane instead of the default state.json (resolvePipeline). Does not verify the lane record exists — a binding to a missing/invalid lane is a typed refusal at resolution time, not at bind time.",
     parameters: {
@@ -695,7 +655,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.session.unbind',
-    helper: 'bee_state.mjs',
     invoke: 'bee state session unbind',
     description: "Remove a session's lane binding (omits the key entirely, restoring the unbound shape) so the session resolves back to the default pipeline.",
     parameters: {
@@ -711,7 +670,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.handoff.write',
-    helper: 'bee_state.mjs',
     invoke: 'bee state handoff write',
     description: "Write .bee/HANDOFF.json through the guarded writer (fresh-session-handoff fsh-9, D1). --kind is required and never guessed: 'pause' writes today's free-form fields (--cell/--files/--done/--remaining/--next-action/--feature/--phase/--mode, whichever apply) plus the kind — no new precondition, the same surface-and-wait record as always. 'planned-next' REFUSES (typed, zero mutation) unless --previous-cell is capped with a passing verify AND --next-cell already has a claim owned by --writer-session (the carried claim) — on success the record stores writer_session/previous_cell/next_cell alongside kind.",
     parameters: {
@@ -741,7 +699,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.handoff.adopt',
-    helper: 'bee_state.mjs',
     invoke: 'bee state handoff adopt',
     description: "Adopt a planned-next handoff's carried claim into --session-id (fresh-session-handoff fsh-9, D1): transfers ownership of the handoff's next_cell claim to the adopting session, then clears .bee/HANDOFF.json — clear-after-adopt with idempotent recovery, not a single cross-file transaction (a crash between the two steps self-heals on the next call via a benign self-adopt). Refuses (typed, non-zero exit) when there is no handoff, the handoff is not kind planned-next (pause handoffs are never adopted — surface and wait instead), or the underlying claim adopt fails — every refusal leaves both the claim and the handoff untouched.",
     parameters: {
@@ -757,7 +714,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'state.handoff.show',
-    helper: 'bee_state.mjs',
     invoke: 'bee state handoff show',
     description: 'Show the current .bee/HANDOFF.json, if any, with kind normalized for display (a missing/unknown kind reads as "pause" — fail-safe, D1). Reports "no handoff" when none exists.',
     parameters: {
@@ -781,7 +737,6 @@ export const COMMAND_REGISTRY = [
   // which the dispatcher routes to STDERR. ─────────────────────────────────
   {
     name: 'backlog.counts',
-    helper: 'bee_backlog.mjs',
     invoke: 'bee backlog counts',
     description: 'Render PBI backlog counts (done/in-flight/proposed/total) parsed from docs/backlog.md.',
     parameters: {
@@ -796,7 +751,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'backlog.rank',
-    helper: 'bee_backlog.mjs',
     invoke: 'bee backlog rank',
     description: 'P2 mechanical pass: reorder docs/backlog.md rows by status group (in-flight, proposed, done). Reports the resulting order; --write persists it, otherwise nothing is changed.',
     parameters: {
@@ -812,7 +766,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'backlog.badges',
-    helper: 'bee_backlog.mjs',
     invoke: 'bee backlog badges',
     description: "P3 mechanical pass: refresh README.md's backlog badges from docs/backlog.md counts. --write persists, otherwise nothing is changed.",
     parameters: {
@@ -828,7 +781,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'backlog.add',
-    helper: 'bee_backlog.mjs',
     invoke: 'bee backlog add',
     description:
       'Validate then append one row to .bee/backlog.jsonl (the feedback-digest source lib/feedback.mjs\'s collectFeedback reads) — agents never hand-edit .bee state. --type must be a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value (lib/feedback.mjs), --severity is P1|P2|P3, --layer is a free non-empty string <=40 chars (no allowlist), --title is required and <=200 chars. Any rejection leaves the file untouched.',
@@ -852,7 +804,6 @@ export const COMMAND_REGISTRY = [
   // ─── capture (bee_capture.mjs — the capture-queue CLI, decision 0017) ─────
   {
     name: 'capture.add',
-    helper: 'bee_capture.mjs',
     invoke: 'bee capture add',
     description: 'Append a capture-queue stub for a same-turn settlement (decision 0017); the full BA-grade spec merge happens later at flush. High-risk lane never queues.',
     parameters: {
@@ -872,7 +823,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'capture.list',
-    helper: 'bee_capture.mjs',
     invoke: 'bee capture list',
     description: 'List pending (not yet flushed) capture stubs, oldest first.',
     parameters: {
@@ -887,7 +837,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'capture.flush',
-    helper: 'bee_capture.mjs',
     invoke: 'bee capture flush',
     description: 'Mark a pending capture stub flushed (its content merged into a spec by bee-scribing). Refuses when the id names no pending stub.',
     parameters: {
@@ -904,7 +853,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'capture.count',
-    helper: 'bee_capture.mjs',
     invoke: 'bee capture count',
     description: 'Report the pending capture-stub count.',
     parameters: {
@@ -931,7 +879,6 @@ export const COMMAND_REGISTRY = [
   // text — which the dispatcher routes to STDERR. ─────────────────────────
   {
     name: 'reviews.create',
-    helper: 'bee_reviews.mjs',
     invoke: 'bee reviews create',
     description:
       'Freeze a review scope (R5) into .bee/reviews/<id>.json. Runs the A10 verification-evidence preflight and A6 in-progress auto-exclusion BEFORE any write; fails closed with zero files written on missing evidence or an id that already exists (ids are never reused). Exactly one of --file / --stdin is required at call time (both satisfy the schema; the handler itself enforces the choice, same discipline as cells.add).',
@@ -949,7 +896,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reviews.list',
-    helper: 'bee_reviews.mjs',
     invoke: 'bee reviews list',
     description: 'List every review session, one line per session (id, decision status, scope description).',
     parameters: {
@@ -964,7 +910,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reviews.show',
-    helper: 'bee_reviews.mjs',
     invoke: 'bee reviews show',
     description: 'Show one review session by id, full contents.',
     parameters: {
@@ -980,7 +925,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reviews.record',
-    helper: 'bee_reviews.mjs',
     invoke: 'bee reviews record',
     description:
       'Set or append a sub-record on an existing session: manifest/preflight/decision SET the field, finding/uat APPEND one entry per call. Refuses any payload touching baseline/head/included/excluded — those are frozen at create (R5). Exactly one of --file / --stdin is required at call time (both satisfy the schema; the handler itself enforces the choice).',
@@ -1000,7 +944,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reviews.candidate.add',
-    helper: 'bee_reviews.mjs',
     invoke: 'bee reviews candidate add',
     description:
       "Append one entry to .bee/review-candidates.jsonl for a closing feature. --mode is required and must be the closing feature's lane.",
@@ -1021,7 +964,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reviews.candidates',
-    helper: 'bee_reviews.mjs',
     invoke: 'bee reviews candidates',
     description: 'List every review-candidate ledger entry (append-only, one per feature close), oldest first.',
     parameters: {
@@ -1036,7 +978,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'reviews.status',
-    helper: 'bee_reviews.mjs',
     invoke: 'bee reviews status',
     description:
       'Derived coverage summary (R10 — status is never stored): verified count plus the four coverage labels unreviewed/in review/reviewed/review stale, one line per candidate. A candidate reviewed by an unchanged approved session reports "reviewed (covered by <review-id>)" (A7).',
@@ -1057,7 +998,6 @@ export const COMMAND_REGISTRY = [
   // the dispatcher — that all lives in lib/feedback.mjs. ───────────────────
   {
     name: 'feedback.digest',
-    helper: 'bee_feedback.mjs',
     invoke: 'bee feedback digest',
     description: 'Build the allowlist feedback digest (P18) and write it to disk (default .bee/feedback-digest.json).',
     parameters: {
@@ -1073,7 +1013,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'feedback.count',
-    helper: 'bee_feedback.mjs',
     invoke: 'bee feedback count',
     description: 'Report the local feedback digest counts without writing anything to disk.',
     parameters: {
@@ -1088,7 +1027,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'feedback.collect',
-    helper: 'bee_feedback.mjs',
     invoke: 'bee feedback collect',
     description:
       "Merge the local digest with every configured dogfood repo's already-written digest (D2b — the consumer revalidates every foreign entry). With no dogfood_repos configured, returns the local digest only.",
@@ -1104,7 +1042,6 @@ export const COMMAND_REGISTRY = [
   },
   {
     name: 'feedback.rank',
-    helper: 'bee_feedback.mjs',
     invoke: 'bee feedback rank',
     description: 'Cluster the merged digest view by normalized title and rank clusters by pain x frequency x corroboration, descending.',
     parameters: {

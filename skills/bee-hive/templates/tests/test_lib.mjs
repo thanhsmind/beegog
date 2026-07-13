@@ -330,10 +330,10 @@ check('addCells refuses a non-array and an empty array', () => {
   assertThrows(() => addCells(root, []), 'array', 'empty array refused');
 });
 
-check('bee_cells.mjs add CLI: a JSON array on --stdin creates the whole slice in one call', () => {
-  const cliPath = fileURLToPath(new URL('../bee_cells.mjs', import.meta.url));
+check('bee.mjs cells add CLI: a JSON array on --stdin creates the whole slice in one call', () => {
+  const cliPath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
   const batch = [makeCell('batch-cli-1'), makeCell('batch-cli-2')];
-  const ok = spawnSync(process.execPath, [cliPath, 'add', '--stdin'], {
+  const ok = spawnSync(process.execPath, [cliPath, 'cells', 'add', '--stdin'], {
     cwd: root,
     input: JSON.stringify(batch),
     encoding: 'utf8',
@@ -341,7 +341,7 @@ check('bee_cells.mjs add CLI: a JSON array on --stdin creates the whole slice in
   assert(ok.status === 0, `batch add CLI exits 0, got ${ok.status}: ${ok.stderr}`);
   assert(ok.stdout.includes('Added batch-cli-1') && ok.stdout.includes('Added batch-cli-2'), 'every added id reported');
   assert(readCell(root, 'batch-cli-1') !== null && readCell(root, 'batch-cli-2') !== null, 'both cells exist');
-  const single = spawnSync(process.execPath, [cliPath, 'add', '--stdin'], {
+  const single = spawnSync(process.execPath, [cliPath, 'cells', 'add', '--stdin'], {
     cwd: root,
     input: JSON.stringify(makeCell('batch-cli-single')),
     encoding: 'utf8',
@@ -422,12 +422,12 @@ check('updateCell re-checks the standard/high-risk truths invariant on the merge
   );
 });
 
-check('bee_cells.mjs update CLI: --file works one-line; unknown flag and missing --id refuse', () => {
-  const cliPath = fileURLToPath(new URL('../bee_cells.mjs', import.meta.url));
+check('bee.mjs cells update CLI: --file works one-line; unknown flag and missing --id refuse', () => {
+  const cliPath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
   addCell(root, makeCell('upd-cli-1'));
   const patchFile = path.join(root, 'upd-cli-patch.json');
   fs.writeFileSync(patchFile, JSON.stringify({ title: 'CLI updated title' }));
-  const ok = spawnSync(process.execPath, [cliPath, 'update', '--id', 'upd-cli-1', '--file', patchFile], {
+  const ok = spawnSync(process.execPath, [cliPath, 'cells', 'update', '--id', 'upd-cli-1', '--file', patchFile], {
     cwd: root,
     encoding: 'utf8',
   });
@@ -436,11 +436,11 @@ check('bee_cells.mjs update CLI: --file works one-line; unknown flag and missing
   assert(readCell(root, 'upd-cli-1').title === 'CLI updated title', 'patch landed via CLI');
   const badFlag = spawnSync(
     process.execPath,
-    [cliPath, 'update', '--id', 'upd-cli-1', '--file', patchFile, '--dry-run', 'x'],
+    [cliPath, 'cells', 'update', '--id', 'upd-cli-1', '--file', patchFile, '--dry-run', 'x'],
     { cwd: root, encoding: 'utf8' },
   );
   assert(badFlag.status !== 0, 'unknown flag refuses');
-  const noId = spawnSync(process.execPath, [cliPath, 'update', '--file', patchFile], {
+  const noId = spawnSync(process.execPath, [cliPath, 'cells', 'update', '--file', patchFile], {
     cwd: root,
     encoding: 'utf8',
   });
@@ -995,7 +995,7 @@ check('buildPromptReminder returns text + stable hash; dedup honors the hash', (
 check('buildSessionPreamble mentions phase and gates', () => {
   const preamble = buildSessionPreamble(root);
   assert(/gate/i.test(preamble), 'preamble mentions gates');
-  assert(/bee_status/.test(preamble), 'preamble points at bee_status');
+  assert(/bee\.mjs status/.test(preamble), 'preamble points at bee.mjs status');
 });
 
 // ─── standard commands (docs/09 item 1) ─────────────────────────────────────
@@ -1042,7 +1042,7 @@ check('cap-refusal message carries a FIX (the verify command to run)', () => {
     throw new Error('expected cap to refuse');
   } catch (error) {
     const text = String(error.message || error);
-    assert(/bee_cells\.mjs verify/.test(text), `cap refusal names the fix command, got: ${text}`);
+    assert(/bee\.mjs cells verify/.test(text), `cap refusal names the fix command, got: ${text}`);
   }
 });
 
@@ -1663,7 +1663,7 @@ check('readConfig strips a stale advisor key and never throws; advisor exports a
 
 // P1 (fanout-4 review fix): the exports above were only proven present in the
 // allowlist, never actually invoked — prove the warn path fires end to end.
-check('hasStaleAdvisorKey() reports true/false correctly and bee_status.mjs --json surfaces STALE_ADVISOR_KEY_WARNING in staleness_warnings only when the key is present', () => {
+check('hasStaleAdvisorKey() reports true/false correctly and bee.mjs status --json surfaces STALE_ADVISOR_KEY_WARNING in staleness_warnings only when the key is present', () => {
   const { hasStaleAdvisorKey, STALE_ADVISOR_KEY_WARNING: warningText } = stateModuleExports;
   const wRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-stale-advisor-warn-'));
   fs.mkdirSync(path.join(wRoot, '.bee'), { recursive: true });
@@ -1671,7 +1671,7 @@ check('hasStaleAdvisorKey() reports true/false correctly and bee_status.mjs --js
     schema_version: '1.0',
     bee_version: '0.1.0',
   });
-  const beeStatusModulePath = fileURLToPath(new URL('../bee_status.mjs', import.meta.url));
+  const beeMjsModulePath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
   try {
     // (a) config WITH a stale advisor key → hasStaleAdvisorKey is true, and the
     // CLI's staleness_warnings array carries the exact shared warning text.
@@ -1679,32 +1679,32 @@ check('hasStaleAdvisorKey() reports true/false correctly and bee_status.mjs --js
       advisor: { enabled: true, at: ['execution'], model: 'opus' },
     });
     assert(hasStaleAdvisorKey(wRoot) === true, 'hasStaleAdvisorKey(root) is true when config.json carries an advisor key');
-    const withStaleRun = spawnSync(process.execPath, [beeStatusModulePath, '--json'], {
+    const withStaleRun = spawnSync(process.execPath, [beeMjsModulePath, 'status', '--json'], {
       cwd: wRoot,
       encoding: 'utf8',
     });
-    assert(withStaleRun.status === 0, `bee_status.mjs --json exited ${withStaleRun.status} on a stale-advisor fixture :: ${withStaleRun.stderr}`);
+    assert(withStaleRun.status === 0, `bee.mjs status --json exited ${withStaleRun.status} on a stale-advisor fixture :: ${withStaleRun.stderr}`);
     const withStalePayload = JSON.parse(withStaleRun.stdout);
     assert(
       Array.isArray(withStalePayload.staleness_warnings) &&
         withStalePayload.staleness_warnings.includes(warningText),
-      `bee_status --json staleness_warnings did not include STALE_ADVISOR_KEY_WARNING :: got ${JSON.stringify(withStalePayload.staleness_warnings)}`,
+      `bee.mjs status --json staleness_warnings did not include STALE_ADVISOR_KEY_WARNING :: got ${JSON.stringify(withStalePayload.staleness_warnings)}`,
     );
 
     // (b) config WITHOUT the key → hasStaleAdvisorKey is false, and the warning
     // text never appears in staleness_warnings.
     writeJsonAtomic(path.join(wRoot, '.bee', 'config.json'), { gate_bypass: false });
     assert(hasStaleAdvisorKey(wRoot) === false, 'hasStaleAdvisorKey(root) is false when config.json has no advisor key');
-    const withoutStaleRun = spawnSync(process.execPath, [beeStatusModulePath, '--json'], {
+    const withoutStaleRun = spawnSync(process.execPath, [beeMjsModulePath, 'status', '--json'], {
       cwd: wRoot,
       encoding: 'utf8',
     });
-    assert(withoutStaleRun.status === 0, `bee_status.mjs --json exited ${withoutStaleRun.status} on a clean fixture :: ${withoutStaleRun.stderr}`);
+    assert(withoutStaleRun.status === 0, `bee.mjs status --json exited ${withoutStaleRun.status} on a clean fixture :: ${withoutStaleRun.stderr}`);
     const withoutStalePayload = JSON.parse(withoutStaleRun.stdout);
     assert(
       Array.isArray(withoutStalePayload.staleness_warnings) &&
         !withoutStalePayload.staleness_warnings.includes(warningText),
-      `bee_status --json staleness_warnings unexpectedly included STALE_ADVISOR_KEY_WARNING on a clean config :: got ${JSON.stringify(withoutStalePayload.staleness_warnings)}`,
+      `bee.mjs status --json staleness_warnings unexpectedly included STALE_ADVISOR_KEY_WARNING on a clean config :: got ${JSON.stringify(withoutStalePayload.staleness_warnings)}`,
     );
   } finally {
     fs.rmSync(wRoot, { recursive: true, force: true });
@@ -3300,7 +3300,7 @@ check('the normalized cluster key is an internal handle — clusterEntries never
   assert(clusters[0].key !== clusters[0].entries[0].title, 'the internal key is normalized (casefolded/collapsed) and differs from the stored title — a renderer must use entries[].title, never .key');
 });
 
-check('bee_feedback.mjs rank run directly prints valid JSON (CLI entry, like the commands_detect CLI-entry test)', () => {
+check('bee.mjs feedback rank run directly prints valid JSON (CLI entry, like the commands_detect CLI-entry test)', () => {
   const cliRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-feedback-cli-'));
   try {
     fs.mkdirSync(path.join(cliRepo, '.bee'), { recursive: true });
@@ -3309,8 +3309,8 @@ check('bee_feedback.mjs rank run directly prints valid JSON (CLI entry, like the
       { type: 'friction', title: 'CLI-entry ranking friction', ts: '2020-01-01T00:00:00.000Z' },
       { type: 'friction', title: 'CLI-entry ranking friction', ts: '2020-01-02T00:00:00.000Z' },
     ]);
-    const modulePath = fileURLToPath(new URL('../bee_feedback.mjs', import.meta.url));
-    const result = spawnSync(process.execPath, [modulePath, 'rank', '--json'], { cwd: cliRepo, encoding: 'utf8' });
+    const modulePath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
+    const result = spawnSync(process.execPath, [modulePath, 'feedback', 'rank', '--json'], { cwd: cliRepo, encoding: 'utf8' });
     assert(result.status === 0, `CLI exits 0, got ${result.status}: ${result.stderr}`);
     const parsed = JSON.parse(result.stdout);
     assert(Array.isArray(parsed), 'CLI prints a JSON array of ranked clusters');
@@ -3322,14 +3322,16 @@ check('bee_feedback.mjs rank run directly prints valid JSON (CLI entry, like the
   }
 });
 
-// ─── bee_state.mjs CLI (cli-mutations-1, decision 0011 primitive) ───────────
+// ─── bee.mjs state CLI (cli-mutations-1, decision 0011 primitive) ──────────
 // No dedicated lib/state-mutations module backs this CLI (file-bounds forbid
 // touching lib/state.mjs semantics), so its verb logic is only exercised at
-// the process level — mirroring the existing bee_feedback.mjs / commands_detect.mjs
-// "CLI entry" tests above.
+// the process level — mirroring the existing bee.mjs feedback / commands_detect.mjs
+// "CLI entry" tests above. The 9 bee_*.mjs shims are retired (shim-retire
+// D1/D5); every call here prepends the "state" group token itself, exactly
+// what the retired bee_state.mjs shim used to do internally.
 
 function beeStateModulePath() {
-  return fileURLToPath(new URL('../bee_state.mjs', import.meta.url));
+  return fileURLToPath(new URL('../bee.mjs', import.meta.url));
 }
 
 function makeStateRepo(prefix) {
@@ -3343,14 +3345,14 @@ function makeStateRepo(prefix) {
 }
 
 function runBeeState(cwd, args) {
-  return spawnSync(process.execPath, [beeStateModulePath(), ...args], { cwd, encoding: 'utf8' });
+  return spawnSync(process.execPath, [beeStateModulePath(), 'state', ...args], { cwd, encoding: 'utf8' });
 }
 
 function readStateFile(repoRoot) {
   return readJson(path.join(repoRoot, '.bee', 'state.json'), null);
 }
 
-check('bee_state.mjs with no verb prints a Use: line listing all five verbs and exits non-zero', () => {
+check('bee.mjs state with no verb prints a Use: line listing all five verbs and exits non-zero', () => {
   const dir = makeStateRepo('bee-state-noverb-');
   try {
     const result = runBeeState(dir, []);
@@ -3369,7 +3371,7 @@ check('bee_state.mjs with no verb prints a Use: line listing all five verbs and 
   }
 });
 
-check('bee_state.mjs set writes only the provided fields and creates state.json on a fresh repo', () => {
+check('bee.mjs state set writes only the provided fields and creates state.json on a fresh repo', () => {
   const dir = makeStateRepo('bee-state-set-');
   try {
     const result = runBeeState(dir, ['set', '--phase', 'planning', '--summary', 'kickoff']);
@@ -3383,7 +3385,7 @@ check('bee_state.mjs set writes only the provided fields and creates state.json 
   }
 });
 
-check('bee_state.mjs set rejects an unknown phase (isKnownPhase, not the bare PHASES array) and leaves the file untouched', () => {
+check('bee.mjs state set rejects an unknown phase (isKnownPhase, not the bare PHASES array) and leaves the file untouched', () => {
   const dir = makeStateRepo('bee-state-set-badphase-');
   try {
     runBeeState(dir, ['set', '--phase', 'swarming', '--summary', 'before']);
@@ -3398,7 +3400,7 @@ check('bee_state.mjs set rejects an unknown phase (isKnownPhase, not the bare PH
   }
 });
 
-check('bee_state.mjs set refuses to mutate a present-but-corrupt state.json (review P1-1: never clobber to defaults)', () => {
+check('bee.mjs state set refuses to mutate a present-but-corrupt state.json (review P1-1: never clobber to defaults)', () => {
   const dir = makeStateRepo('bee-state-set-corrupt-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -3415,7 +3417,7 @@ check('bee_state.mjs set refuses to mutate a present-but-corrupt state.json (rev
   }
 });
 
-check('bee_state.mjs set accepts the compounding-complete terminal alias (isKnownPhase, not PHASES)', () => {
+check('bee.mjs state set accepts the compounding-complete terminal alias (isKnownPhase, not PHASES)', () => {
   const dir = makeStateRepo('bee-state-set-terminal-');
   try {
     const result = runBeeState(dir, ['set', '--phase', 'compounding-complete']);
@@ -3427,7 +3429,7 @@ check('bee_state.mjs set accepts the compounding-complete terminal alias (isKnow
   }
 });
 
-check('bee_state.mjs set preserves unrelated fields (workers, cells, last_scribing_run) byte-for-byte', () => {
+check('bee.mjs state set preserves unrelated fields (workers, cells, last_scribing_run) byte-for-byte', () => {
   const dir = makeStateRepo('bee-state-set-preserve-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -3464,7 +3466,7 @@ check('bee_state.mjs set preserves unrelated fields (workers, cells, last_scribi
   }
 });
 
-check('bee_state.mjs gate approves a named gate and is idempotent (same call twice = identical file)', () => {
+check('bee.mjs state gate approves a named gate and is idempotent (same call twice = identical file)', () => {
   const dir = makeStateRepo('bee-state-gate-');
   try {
     const first = runBeeState(dir, ['gate', '--name', 'execution', '--approved', 'true']);
@@ -3482,7 +3484,7 @@ check('bee_state.mjs gate approves a named gate and is idempotent (same call twi
   }
 });
 
-check('bee_state.mjs gate rejects an unknown gate name and a non-boolean --approved', () => {
+check('bee.mjs state gate rejects an unknown gate name and a non-boolean --approved', () => {
   const dir = makeStateRepo('bee-state-gate-bad-');
   try {
     const badName = runBeeState(dir, ['gate', '--name', 'launch', '--approved', 'true']);
@@ -3495,7 +3497,7 @@ check('bee_state.mjs gate rejects an unknown gate name and a non-boolean --appro
   }
 });
 
-check('bee_state.mjs worker add -> update -> remove -> clear round-trips and preserves unrelated fields', () => {
+check('bee.mjs state worker add -> update -> remove -> clear round-trips and preserves unrelated fields', () => {
   const dir = makeStateRepo('bee-state-worker-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -3558,7 +3560,7 @@ check('bee_state.mjs worker add -> update -> remove -> clear round-trips and pre
   }
 });
 
-check('bee_state.mjs worker add rejects an unknown tier', () => {
+check('bee.mjs state worker add rejects an unknown tier', () => {
   const dir = makeStateRepo('bee-state-worker-badtier-');
   try {
     const result = runBeeState(dir, ['worker', 'add', '--nickname', 'x', '--cell', 'c1', '--tier', 'super-strong']);
@@ -3569,7 +3571,7 @@ check('bee_state.mjs worker add rejects an unknown tier', () => {
   }
 });
 
-// ─── bee_state.mjs worker prune (workers-prune-1) ────────────────────────────
+// ─── bee.mjs state worker prune (workers-prune-1) ────────────────────────────
 
 function makePruneRepo(prefix) {
   const dir = makeStateRepo(prefix);
@@ -3609,7 +3611,7 @@ function workerFiles(dir) {
   return fs.readdirSync(path.join(dir, '.bee', 'workers')).sort();
 }
 
-check('bee_state.mjs worker prune deletes only capped/orphan transients and keeps open-cell, active-worker (dotted ids included), subdir, and non-transient files', () => {
+check('bee.mjs state worker prune deletes only capped/orphan transients and keeps open-cell, active-worker (dotted ids included), subdir, and non-transient files', () => {
   const dir = makePruneRepo('bee-state-prune-');
   try {
     const stateBefore = fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8');
@@ -3635,7 +3637,7 @@ check('bee_state.mjs worker prune deletes only capped/orphan transients and keep
   }
 });
 
-check('bee_state.mjs worker prune --dry-run reports the exact same candidate set and deletes nothing', () => {
+check('bee.mjs state worker prune --dry-run reports the exact same candidate set and deletes nothing', () => {
   const dir = makePruneRepo('bee-state-prune-dry-');
   try {
     const before = workerFiles(dir);
@@ -3653,7 +3655,7 @@ check('bee_state.mjs worker prune --dry-run reports the exact same candidate set
   }
 });
 
-check('bee_state.mjs worker prune rejects unknown flags (a --dryrun typo must never delete) and non-prune verbs reject --dry-run', () => {
+check('bee.mjs state worker prune rejects unknown flags (a --dryrun typo must never delete) and non-prune verbs reject --dry-run', () => {
   const dir = makePruneRepo('bee-state-prune-strictflags-');
   try {
     const before = workerFiles(dir);
@@ -3672,7 +3674,7 @@ check('bee_state.mjs worker prune rejects unknown flags (a --dryrun typo must ne
   }
 });
 
-check('bee_state.mjs worker prune fails closed when state.workers is not an array (semantic corruption, valid JSON)', () => {
+check('bee.mjs state worker prune fails closed when state.workers is not an array (semantic corruption, valid JSON)', () => {
   const dir = makePruneRepo('bee-state-prune-badworkers-');
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
@@ -3690,7 +3692,7 @@ check('bee_state.mjs worker prune fails closed when state.workers is not an arra
   }
 });
 
-check('bee_state.mjs worker prune over a corrupt state.json exits non-zero and deletes nothing (readStateStrict before any rm)', () => {
+check('bee.mjs state worker prune over a corrupt state.json exits non-zero and deletes nothing (readStateStrict before any rm)', () => {
   const dir = makePruneRepo('bee-state-prune-corrupt-');
   try {
     fs.writeFileSync(path.join(dir, '.bee', 'state.json'), '{ not json', 'utf8');
@@ -3703,7 +3705,7 @@ check('bee_state.mjs worker prune over a corrupt state.json exits non-zero and d
   }
 });
 
-check('bee_state.mjs worker prune with no .bee/workers dir succeeds with 0 pruned, and the unknown-action Use: line lists prune', () => {
+check('bee.mjs state worker prune with no .bee/workers dir succeeds with 0 pruned, and the unknown-action Use: line lists prune', () => {
   const dir = makeStateRepo('bee-state-prune-nodir-');
   try {
     const result = runBeeState(dir, ['worker', 'prune', '--json']);
@@ -3718,7 +3720,7 @@ check('bee_state.mjs worker prune with no .bee/workers dir succeeds with 0 prune
   }
 });
 
-check('bee_state.mjs scribing-run stamps the exact key set from bee-scribing SKILL.md:112 including an ISO-precise at', () => {
+check('bee.mjs state scribing-run stamps the exact key set from bee-scribing SKILL.md:112 including an ISO-precise at', () => {
   const dir = makeStateRepo('bee-state-scribing-');
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
@@ -3762,7 +3764,7 @@ check('bee_state.mjs scribing-run stamps the exact key set from bee-scribing SKI
   }
 });
 
-check('bee_state.mjs scribing-run accepts a single descriptive area with no comma (real-world shape)', () => {
+check('bee.mjs state scribing-run accepts a single descriptive area with no comma (real-world shape)', () => {
   const dir = makeStateRepo('bee-state-scribing-single-');
   try {
     const result = runBeeState(dir, [
@@ -3782,7 +3784,7 @@ check('bee_state.mjs scribing-run accepts a single descriptive area with no comm
   }
 });
 
-check('bee_state.mjs rejects an unknown verb with a Use: line, exit non-zero', () => {
+check('bee.mjs state rejects an unknown verb with a Use: line, exit non-zero', () => {
   const dir = makeStateRepo('bee-state-unknown-');
   try {
     const result = runBeeState(dir, ['launch']);
@@ -3793,7 +3795,7 @@ check('bee_state.mjs rejects an unknown verb with a Use: line, exit non-zero', (
   }
 });
 
-// ─── bee_state.mjs start-feature (codex-parity-5, decision D2, plan.md test ─
+// ─── bee.mjs state start-feature (codex-parity-5, decision D2, plan.md test ─
 // matrix row 5 "state transitions") — the guarded atomic feature-start verb.
 // Every refusal test asserts BOTH non-zero exit AND byte-identical state.json
 // before/after (zero mutations on refusal), matching the file's established
@@ -3867,7 +3869,7 @@ check('start-feature (lib): a prior feature carrying approved gates never lets t
   }
 });
 
-check('bee_state.mjs start-feature requires --feature', () => {
+check('bee.mjs state start-feature requires --feature', () => {
   const dir = makeStateRepo('bee-state-start-nofeat-');
   try {
     const result = runBeeState(dir, ['start-feature']);
@@ -3878,7 +3880,7 @@ check('bee_state.mjs start-feature requires --feature', () => {
   }
 });
 
-check('bee_state.mjs start-feature rejects a phase outside the closed vocabulary, zero mutations', () => {
+check('bee.mjs state start-feature rejects a phase outside the closed vocabulary, zero mutations', () => {
   const dir = makeStateRepo('bee-state-start-badphase-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -3894,7 +3896,7 @@ check('bee_state.mjs start-feature rejects a phase outside the closed vocabulary
   }
 });
 
-check('bee_state.mjs start-feature refuses when the current phase is not idle/terminal, zero mutations', () => {
+check('bee.mjs state start-feature refuses when the current phase is not idle/terminal, zero mutations', () => {
   const dir = makeStateRepo('bee-state-start-midflight-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -3910,7 +3912,7 @@ check('bee_state.mjs start-feature refuses when the current phase is not idle/te
   }
 });
 
-check('bee_state.mjs start-feature refuses while .bee/HANDOFF.json exists, zero mutations', () => {
+check('bee.mjs state start-feature refuses while .bee/HANDOFF.json exists, zero mutations', () => {
   const dir = makeStateRepo('bee-state-start-handoff-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -3927,7 +3929,7 @@ check('bee_state.mjs start-feature refuses while .bee/HANDOFF.json exists, zero 
   }
 });
 
-check('bee_state.mjs start-feature refuses while a registered worker remains, zero mutations', () => {
+check('bee.mjs state start-feature refuses while a registered worker remains, zero mutations', () => {
   const dir = makeStateRepo('bee-state-start-worker-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -3947,7 +3949,7 @@ check('bee_state.mjs start-feature refuses while a registered worker remains, ze
   }
 });
 
-check('bee_state.mjs start-feature refuses while an active reservation remains, zero mutations; an expired one does not block', () => {
+check('bee.mjs state start-feature refuses while an active reservation remains, zero mutations; an expired one does not block', () => {
   const dir = makeStateRepo('bee-state-start-reservation-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -3991,7 +3993,7 @@ check('bee_state.mjs start-feature refuses while an active reservation remains, 
   }
 });
 
-check('bee_state.mjs start-feature refuses while ANY cell anywhere is claimed, zero mutations', () => {
+check('bee.mjs state start-feature refuses while ANY cell anywhere is claimed, zero mutations', () => {
   const dir = makeStateRepo('bee-state-start-claimed-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -4008,7 +4010,7 @@ check('bee_state.mjs start-feature refuses while ANY cell anywhere is claimed, z
   }
 });
 
-check('bee_state.mjs start-feature refuses while the PRIOR feature has a nonterminal (open/blocked) cell, and succeeds once each is dropped via the existing drop verb (P1 repair: no auto-clear cleanup)', () => {
+check('bee.mjs state start-feature refuses while the PRIOR feature has a nonterminal (open/blocked) cell, and succeeds once each is dropped via the existing drop verb (P1 repair: no auto-clear cleanup)', () => {
   const dir = makeStateRepo('bee-state-start-nonterminal-');
   try {
     const statePath = path.join(dir, '.bee', 'state.json');
@@ -4046,7 +4048,7 @@ check('bee_state.mjs start-feature refuses while the PRIOR feature has a nonterm
   }
 });
 
-check('bee_state.mjs start-feature: a CAPPED prior-feature cell is terminal and never blocks (only open/claimed/blocked do)', () => {
+check('bee.mjs state start-feature: a CAPPED prior-feature cell is terminal and never blocks (only open/claimed/blocked do)', () => {
   const dir = makeStateRepo('bee-state-start-capped-ok-');
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
@@ -4063,7 +4065,7 @@ check('bee_state.mjs start-feature: a CAPPED prior-feature cell is terminal and 
   }
 });
 
-check('bee_state.mjs start-feature defaults --phase to "exploring" and --mode to null when omitted', () => {
+check('bee.mjs state start-feature defaults --phase to "exploring" and --mode to null when omitted', () => {
   const dir = makeStateRepo('bee-state-start-defaults-');
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', workers: [] });
@@ -4077,7 +4079,7 @@ check('bee_state.mjs start-feature defaults --phase to "exploring" and --mode to
   }
 });
 
-check('bee_state.mjs start-feature rejects --dry-run (a mutating verb, same generic guard as every non-prune verb)', () => {
+check('bee.mjs state start-feature rejects --dry-run (a mutating verb, same generic guard as every non-prune verb)', () => {
   const dir = makeStateRepo('bee-state-start-dryrun-');
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', workers: [] });
@@ -5655,7 +5657,7 @@ check('claimNextCell: NO_APPROVED_WORK when there is genuinely nothing claimable
   }
 });
 
-// ─── bee_backlog.mjs add verb (cli-mutations-2, decision from cli-mutations
+// ─── bee.mjs backlog add verb (cli-mutations-2, decision from cli-mutations
 // plan.md: agents never hand-edit .bee/*.json(l)) ─────────────────────────────
 // counts/rank/badges already have direct lib/backlog.mjs coverage above (the
 // harness10-6 suite); this block covers the new `add` mutation surface only,
@@ -5664,11 +5666,11 @@ check('claimNextCell: NO_APPROVED_WORK when there is genuinely nothing claimable
 // duplicated literal list, so these tests reuse that same import.
 
 function beeBacklogModulePath() {
-  return fileURLToPath(new URL('../bee_backlog.mjs', import.meta.url));
+  return fileURLToPath(new URL('../bee.mjs', import.meta.url));
 }
 
 function runBeeBacklog(cwd, args) {
-  return spawnSync(process.execPath, [beeBacklogModulePath(), ...args], { cwd, encoding: 'utf8' });
+  return spawnSync(process.execPath, [beeBacklogModulePath(), 'backlog', ...args], { cwd, encoding: 'utf8' });
 }
 
 function readBacklogJsonlLines(repoRoot) {
@@ -5682,7 +5684,7 @@ function readBacklogJsonlLines(repoRoot) {
     .map((l) => JSON.parse(l));
 }
 
-check('bee_backlog.mjs add appends a validated row and buildDigest picks it up (never dropped as unknown_type)', () => {
+check('bee.mjs backlog add appends a validated row and buildDigest picks it up (never dropped as unknown_type)', () => {
   const dir = makeStateRepo('bee-backlog-add-');
   try {
     const result = runBeeBacklog(dir, [
@@ -5728,7 +5730,7 @@ check('bee_backlog.mjs add appends a validated row and buildDigest picks it up (
   }
 });
 
-check('bee_backlog.mjs add accepts an already-normalized NORMALIZED_KINDS value for --type, not only a KIND_ALIASES key', () => {
+check('bee.mjs backlog add accepts an already-normalized NORMALIZED_KINDS value for --type, not only a KIND_ALIASES key', () => {
   const dir = makeStateRepo('bee-backlog-add-normalized-');
   try {
     assert(
@@ -5757,7 +5759,7 @@ check('bee_backlog.mjs add accepts an already-normalized NORMALIZED_KINDS value 
   }
 });
 
-check('bee_backlog.mjs add rejects --type "kind" (the literal word) and any other unrecognized type before any write', () => {
+check('bee.mjs backlog add rejects --type "kind" (the literal word) and any other unrecognized type before any write', () => {
   const dir = makeStateRepo('bee-backlog-add-badtype-');
   try {
     const result = runBeeBacklog(dir, ['add', '--type', 'kind', '--title', 'x', '--severity', 'P1', '--layer', 'state']);
@@ -5782,7 +5784,7 @@ check('bee_backlog.mjs add rejects --type "kind" (the literal word) and any othe
   }
 });
 
-check('bee_backlog.mjs add rejects an oversize title, a bad severity, and an oversize/empty layer, leaving the file untouched', () => {
+check('bee.mjs backlog add rejects an oversize title, a bad severity, and an oversize/empty layer, leaving the file untouched', () => {
   const dir = makeStateRepo('bee-backlog-add-badfields-');
   try {
     const good = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'baseline row', '--severity', 'P2', '--layer', 'state']);
@@ -5816,7 +5818,7 @@ check('bee_backlog.mjs add rejects an oversize title, a bad severity, and an ove
   }
 });
 
-check('bee_backlog.mjs add accepts an arbitrary free-string --layer with no allowlist (e.g. "security", already live in backlog data)', () => {
+check('bee.mjs backlog add accepts an arbitrary free-string --layer with no allowlist (e.g. "security", already live in backlog data)', () => {
   const dir = makeStateRepo('bee-backlog-add-freelayer-');
   try {
     const result = runBeeBacklog(dir, ['add', '--type', 'friction', '--title', 'x', '--severity', 'P2', '--layer', 'security']);
@@ -5828,7 +5830,7 @@ check('bee_backlog.mjs add accepts an arbitrary free-string --layer with no allo
   }
 });
 
-check('bee_backlog.mjs counts/rank/badges verbs are unchanged by the add verb addition', () => {
+check('bee.mjs backlog counts/rank/badges verbs are unchanged by the add verb addition', () => {
   const dir = makeStateRepo('bee-backlog-counts-');
   try {
     fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
@@ -5849,7 +5851,7 @@ check('bee_backlog.mjs counts/rank/badges verbs are unchanged by the add verb ad
   }
 });
 
-check('bee_backlog.mjs with no command prints a Use: line listing all four verbs and exits non-zero', () => {
+check('bee.mjs backlog with no command prints a Use: line listing all four verbs and exits non-zero', () => {
   const dir = makeStateRepo('bee-backlog-noverb-');
   try {
     const result = runBeeBacklog(dir, []);
@@ -5870,7 +5872,7 @@ check('bee_backlog.mjs with no command prints a Use: line listing all four verbs
 // review scope (SPEC §8) and fails closed on missing verification evidence
 // (A10) or in-progress work (A6) BEFORE any file is written. Mirrors the
 // scribingDebt/frozen-judge sections above: fresh mkdtemp repo per test,
-// direct lib calls (bee_reviews.mjs is a thin CLI wrapper, covered
+// direct lib calls (bee.mjs reviews is a thin CLI wrapper, covered
 // separately below), gate execution approved by hand where claim is needed.
 
 function makeReviewRepo(prefix) {
@@ -6223,14 +6225,14 @@ check('candidate ledger: a corrupt line is skipped on read (fail-open), good lin
   }
 });
 
-// ─── bee_reviews.mjs CLI (thin wrapper contract) ─────────────────────────────
+// ─── bee.mjs reviews CLI (thin wrapper contract) ─────────────────────────────
 
 function beeReviewsModulePath() {
-  return fileURLToPath(new URL('../bee_reviews.mjs', import.meta.url));
+  return fileURLToPath(new URL('../bee.mjs', import.meta.url));
 }
 
 function runBeeReviews(cwd, args) {
-  return spawnSync(process.execPath, [beeReviewsModulePath(), ...args], { cwd, encoding: 'utf8' });
+  return spawnSync(process.execPath, [beeReviewsModulePath(), 'reviews', ...args], { cwd, encoding: 'utf8' });
 }
 
 function writeTempJson(dir, name, obj) {
@@ -6239,7 +6241,7 @@ function writeTempJson(dir, name, obj) {
   return file;
 }
 
-check('bee_reviews.mjs create/show/list/record/candidate round-trip through the CLI, --file and --stdin both work', () => {
+check('bee.mjs reviews create/show/list/record/candidate round-trip through the CLI, --file and --stdin both work', () => {
   const dir = makeReviewRepo('bee-reviews-cli-');
   try {
     seedCappedCellWithEvidence(dir, 'ok-1');
@@ -6262,7 +6264,7 @@ check('bee_reviews.mjs create/show/list/record/candidate round-trip through the 
 
     // --stdin path for create, on a second id
     const scope2 = JSON.stringify(baseScope({ id: 'rev-cli-2' }));
-    const createdStdin = spawnSync(process.execPath, [beeReviewsModulePath(), 'create', '--stdin', '--json'], {
+    const createdStdin = spawnSync(process.execPath, [beeReviewsModulePath(), 'reviews', 'create', '--stdin', '--json'], {
       cwd: dir,
       input: scope2,
       encoding: 'utf8',
@@ -6280,7 +6282,7 @@ check('bee_reviews.mjs create/show/list/record/candidate round-trip through the 
   }
 });
 
-check('bee_reviews.mjs create exits non-zero and writes nothing when the A10 preflight fails', () => {
+check('bee.mjs reviews create exits non-zero and writes nothing when the A10 preflight fails', () => {
   const dir = makeReviewRepo('bee-reviews-cli-a10-');
   try {
     seedLegacyCappedCellNoEvidence(dir, 'legacy-1');
@@ -6294,7 +6296,7 @@ check('bee_reviews.mjs create exits non-zero and writes nothing when the A10 pre
   }
 });
 
-check('bee_reviews.mjs candidate add requires --mode and rejects an unrecognized mode, leaving the ledger untouched', () => {
+check('bee.mjs reviews candidate add requires --mode and rejects an unrecognized mode, leaving the ledger untouched', () => {
   const dir = makeStateRepo('bee-reviews-cli-mode-');
   try {
     const missing = runBeeReviews(dir, ['candidate', 'add', '--feature', 'demo', '--head', 'sha1']);
@@ -6307,7 +6309,7 @@ check('bee_reviews.mjs candidate add requires --mode and rejects an unrecognized
   }
 });
 
-check('bee_reviews.mjs with no command prints a Use: line listing all verbs and exits non-zero', () => {
+check('bee.mjs reviews with no command prints a Use: line listing all verbs and exits non-zero', () => {
   const dir = makeStateRepo('bee-reviews-cli-noverb-');
   try {
     const result = runBeeReviews(dir, []);
@@ -6540,7 +6542,7 @@ check('deriveCandidateStatus: CANDIDATE_STATUSES exports exactly the four R10 la
 });
 
 if (gitAvailable) {
-  check('bee_reviews.mjs status: --json renders verified + four-label counts and per-candidate coverage, "reviewed (covered by <id>)" answers A7', () => {
+  check('bee.mjs reviews status: --json renders verified + four-label counts and per-candidate coverage, "reviewed (covered by <id>)" answers A7', () => {
     const dir = makeReviewGitRepo('bee-reviews-status-cli-');
     try {
       const sha1 = gitHead(dir);
@@ -6574,10 +6576,10 @@ if (gitAvailable) {
     }
   });
 } else {
-  console.log('SKIP  bee_reviews.mjs status A7 covered-by test (git binary not available in this environment)');
+  console.log('SKIP  bee.mjs reviews status A7 covered-by test (git binary not available in this environment)');
 }
 
-check('bee_reviews.mjs status: --feature filters the candidate set, and a repo with zero candidates still renders all-zero counts at exit 0', () => {
+check('bee.mjs reviews status: --feature filters the candidate set, and a repo with zero candidates still renders all-zero counts at exit 0', () => {
   const dir = makeReviewRepo('bee-reviews-status-filter-');
   try {
     const empty = runBeeReviews(dir, ['status', '--json']);
@@ -6598,7 +6600,7 @@ check('bee_reviews.mjs status: --feature filters the candidate set, and a repo w
   }
 });
 
-// ─── bee_status.mjs review integration (review-od-3, SPEC R3/R7/R10/§9/§11.5, ─
+// ─── bee.mjs status review integration (review-od-3, SPEC R3/R7/R10/§9/§11.5,
 // decision 565e68d0) ─────────────────────────────────────────────────────────
 // The POST_REVIEW_PHASES staleness warning ("past reviewing but gate review
 // still pending") is RETIRED — reaching scribing/compounding/compounding-
@@ -6610,15 +6612,15 @@ check('bee_reviews.mjs status: --feature filters the candidate set, and a repo w
 // names bee-reviewing as an automatic next step (§11.5).
 
 function beeStatusModulePath() {
-  return fileURLToPath(new URL('../bee_status.mjs', import.meta.url));
+  return fileURLToPath(new URL('../bee.mjs', import.meta.url));
 }
 
 function runBeeStatus(cwd, args) {
-  return spawnSync(process.execPath, [beeStatusModulePath(), ...args], { cwd, encoding: 'utf8' });
+  return spawnSync(process.execPath, [beeStatusModulePath(), 'status', ...args], { cwd, encoding: 'utf8' });
 }
 
 if (gitAvailable) {
-  check('bee_status.mjs --json review block distinguishes all four candidate statuses (unreviewed/in_review/reviewed/stale), lists open sessions, and flags a high-risk unreviewed candidate (R7/R10)', () => {
+  check('bee.mjs status --json review block distinguishes all four candidate statuses (unreviewed/in_review/reviewed/stale), lists open sessions, and flags a high-risk unreviewed candidate (R7/R10)', () => {
     const dir = makeReviewGitRepo('bee-status-review-counts-');
     try {
       const sha1 = gitHead(dir);
@@ -6679,10 +6681,10 @@ if (gitAvailable) {
     }
   });
 } else {
-  console.log('SKIP  bee_status.mjs review candidate-count test (git binary not available in this environment)');
+  console.log('SKIP  bee.mjs status review candidate-count test (git binary not available in this environment)');
 }
 
-check('bee_status.mjs: a compounding-complete state with gate "review" pending produces NO staleness warning (R3 — the retired Gate-4-pending warning never fires); the §9 completion line renders in text instead, naming the unreviewed count', () => {
+check('bee.mjs status: a compounding-complete state with gate "review" pending produces NO staleness warning (R3 — the retired Gate-4-pending warning never fires); the §9 completion line renders in text instead, naming the unreviewed count', () => {
   const dir = makeReviewRepo('bee-status-post-review-close-');
   try {
     writeState(dir, {
@@ -6722,7 +6724,7 @@ check('bee_status.mjs: a compounding-complete state with gate "review" pending p
   }
 });
 
-check('bee_status.mjs: the §9 completion line only renders in a post-execution phase — it stays silent mid-swarm even with unreviewed candidates present, and stays silent post-execution with zero candidates', () => {
+check('bee.mjs status: the §9 completion line only renders in a post-execution phase — it stays silent mid-swarm even with unreviewed candidates present, and stays silent post-execution with zero candidates', () => {
   const dir = makeReviewRepo('bee-status-post-review-silent-');
   try {
     // swarming (not post-execution) + an unreviewed candidate -> no line.
@@ -6751,7 +6753,7 @@ check('bee_status.mjs: the §9 completion line only renders in a post-execution 
   }
 });
 
-check('bee_status.mjs: the unknown-phase warning (decision 0004) still fires unchanged after the review-block wiring', () => {
+check('bee.mjs status: the unknown-phase warning (decision 0004) still fires unchanged after the review-block wiring', () => {
   const dir = makeReviewRepo('bee-status-unknown-phase-');
   try {
     writeState(dir, {
@@ -6773,7 +6775,7 @@ check('bee_status.mjs: the unknown-phase warning (decision 0004) still fires unc
   }
 });
 
-check('bee_status.mjs: recommended_next after compounding-complete with unreviewed candidates reports the candidate count and never names "Invoke bee-reviewing" as the automatic next step (§11.5), even overriding a stale state.next_action that did', () => {
+check('bee.mjs status: recommended_next after compounding-complete with unreviewed candidates reports the candidate count and never names "Invoke bee-reviewing" as the automatic next step (§11.5), even overriding a stale state.next_action that did', () => {
   const dir = makeReviewRepo('bee-status-recommended-next-');
   try {
     writeState(dir, {
@@ -6796,7 +6798,7 @@ check('bee_status.mjs: recommended_next after compounding-complete with unreview
   }
 });
 
-check('bee_status.mjs: a high-risk unreviewed candidate renders the prominent R7 warning line, and a repo with only non-high-risk candidates renders no such line', () => {
+check('bee.mjs status: a high-risk unreviewed candidate renders the prominent R7 warning line, and a repo with only non-high-risk candidates renders no such line', () => {
   const dir = makeReviewRepo('bee-status-high-risk-');
   try {
     addCandidate(dir, { feature: 'demo', head: 'sha-risk', mode: 'high-risk' });
@@ -6815,7 +6817,7 @@ check('bee_status.mjs: a high-risk unreviewed candidate renders the prominent R7
   }
 });
 
-check('bee_status.mjs: a standard-mode candidate never triggers the R7 high-risk warning line, even when unreviewed', () => {
+check('bee.mjs status: a standard-mode candidate never triggers the R7 high-risk warning line, even when unreviewed', () => {
   const dir = makeReviewRepo('bee-status-no-high-risk-');
   try {
     addCandidate(dir, { feature: 'demo', head: 'sha-std', mode: 'standard' });
@@ -6827,7 +6829,7 @@ check('bee_status.mjs: a standard-mode candidate never triggers the R7 high-risk
   }
 });
 
-check('bee_status.mjs: a corrupt .bee/reviews entry and an unreadable candidates ledger degrade the review block but leave bee_status exiting 0 (fail-open read path, never a hard dependency)', () => {
+check('bee.mjs status: a corrupt .bee/reviews entry and an unreadable candidates ledger degrade the review block but leave bee_status exiting 0 (fail-open read path, never a hard dependency)', () => {
   const dir = makeReviewRepo('bee-status-corrupt-reviews-');
   try {
     fs.mkdirSync(reviewsDir(dir), { recursive: true });

@@ -237,17 +237,17 @@ export function readState(root) {
 
 // readStateStrict — the CLI-only sibling of readState (review P1-1). readState
 // stays fail-open on purpose: hooks (bee-state-sync, bee-write-guard) and
-// bee_status read it constantly and must never throw on a corrupt file mid-
-// session, so its "present-but-unparseable -> defaultState()" shape is untouched
-// here and must stay untouched. readStateStrict is for bee_state.mjs's mutation
-// verbs only, which is the one place a fail-open read is actively harmful: every
-// verb re-reads-then-writes, so a corrupt file silently read as defaults gets
-// written straight back as a fresh skeleton — gates reset, workers emptied,
-// feature nulled, exit 0, no trace anything was lost. readStateStrict instead
-// distinguishes:
+// `bee.mjs status` read it constantly and must never throw on a corrupt file
+// mid-session, so its "present-but-unparseable -> defaultState()" shape is
+// untouched here and must stay untouched. readStateStrict is for `bee.mjs
+// state`'s mutation verbs only, which is the one place a fail-open read is
+// actively harmful: every verb re-reads-then-writes, so a corrupt file
+// silently read as defaults gets written straight back as a fresh skeleton —
+// gates reset, workers emptied, feature nulled, exit 0, no trace anything was
+// lost. readStateStrict instead distinguishes:
 //   - absent state.json           -> defaultState() (same as readState; a
 //     first mutation on a fresh repo must still be able to create the file)
-//   - present but unparseable, or -> throws, so the caller (bee_state.mjs's
+//   - present but unparseable, or -> throws, so the caller (bee.mjs state's
 //     present but not a JSON object    main()) prints the message to stderr and
 //                                       exits non-zero with the file untouched
 export function readStateStrict(root) {
@@ -383,7 +383,7 @@ export function writeHandoff(root, input = {}) {
   const previous = readJson(path.join(root, '.bee', 'cells', `${previousCell}.json`), null);
   if (!previous || previous.status !== 'capped' || previous.trace?.verify_passed !== true) {
     throw new Error(
-      `writeHandoff: refused — previous cell "${previousCell}" is not capped with a passing verify (found status "${previous?.status ?? 'missing'}", verify_passed ${JSON.stringify(previous?.trace?.verify_passed ?? null)}). A planned-next handoff may only follow a green-verified cap. FIX: cap "${previousCell}" with a recorded passing verify first (bee_cells.mjs verify then cap), then retry.`,
+      `writeHandoff: refused — previous cell "${previousCell}" is not capped with a passing verify (found status "${previous?.status ?? 'missing'}", verify_passed ${JSON.stringify(previous?.trace?.verify_passed ?? null)}). A planned-next handoff may only follow a green-verified cap. FIX: cap "${previousCell}" with a recorded passing verify first (bee.mjs cells verify then cap), then retry.`,
     );
   }
 
@@ -656,7 +656,7 @@ export function readConfig(root) {
   // stale `advisor` key left over in a repo's .bee/config.json must be
   // TOLERATED, never thrown on — but it must not flow through this spread
   // into the parsed result (a bare `...config` would let it ride through
-  // untouched). Destructure it out here; onboard_bee.mjs/bee_status.mjs warn
+  // untouched). Destructure it out here; onboard_bee.mjs/`bee.mjs status` warn
   // (never error) when the raw file still carries the key.
   const { advisor: _staleAdvisor, ...rest } = config;
   return {
@@ -675,7 +675,7 @@ export function hookEnabled(root, name) {
   return config.hooks[name] !== false;
 }
 
-// D1 — one shared warning line for both surfacers (bee_status.mjs and
+// D1 — one shared warning line for both surfacers (`bee.mjs status` and
 // onboard_bee.mjs) so a stale `advisor` key reads identically wherever it is
 // noticed. Warn only, never error: readConfig above already tolerates the key.
 // Names the TOP-LEVEL key explicitly (advisor feature, D2 open question) so
@@ -783,7 +783,7 @@ export function resolveAdvisor(root, runtime = 'claude') {
 //   - no cell belonging to the PRIOR feature (state.feature) is in a
 //     nonterminal status (open/claimed/blocked) — capped and dropped are the
 //     only terminal statuses. An abandoned cell must first be resolved through
-//     the EXISTING drop verb (bee_cells.mjs drop --id ID --reason R) —
+//     the EXISTING drop verb (bee.mjs cells drop --id ID --reason R) —
 //     startFeature never auto-clears workers/cells/reservations as cleanup
 //     (P1 repair, plan-review.md).
 // On success, exactly one atomic write sets feature/mode/phase, resets ALL
@@ -874,7 +874,7 @@ export function startFeature(
 
   if (state.phase !== 'idle' && state.phase !== 'compounding-complete') {
     throw new Error(
-      `startFeature: refused — current phase is "${state.phase}", not idle or the terminal alias "compounding-complete". A prior feature must finish or be explicitly wound down before a new feature starts. FIX: resume/close the current feature through its normal chain, or drop its remaining cells (bee_cells.mjs drop), then retry.`,
+      `startFeature: refused — current phase is "${state.phase}", not idle or the terminal alias "compounding-complete". A prior feature must finish or be explicitly wound down before a new feature starts. FIX: resume/close the current feature through its normal chain, or drop its remaining cells (bee.mjs cells drop), then retry.`,
     );
   }
 
@@ -889,7 +889,7 @@ export function startFeature(
   if (workers.length > 0) {
     const names = workers.map((w) => (w && w.nickname) || '?').join(', ');
     throw new Error(
-      `startFeature: refused — ${workers.length} registered worker(s) remain (${names}). FIX: clear them first (bee_state.mjs worker remove --nickname N, or worker clear).`,
+      `startFeature: refused — ${workers.length} registered worker(s) remain (${names}). FIX: clear them first (bee.mjs state worker remove --nickname N, or worker clear).`,
     );
   }
 
@@ -898,7 +898,7 @@ export function startFeature(
     throw new Error(
       `startFeature: refused — ${activeReservations.length} active reservation(s) remain (${activeReservations
         .map((r) => `${r.agent}:${r.path}`)
-        .join(', ')}). FIX: release them first (bee_reservations.mjs release).`,
+        .join(', ')}). FIX: release them first (bee.mjs reservations release).`,
     );
   }
 
@@ -906,7 +906,7 @@ export function startFeature(
   const claimed = cells.filter((cell) => cell.status === 'claimed');
   if (claimed.length > 0) {
     throw new Error(
-      `startFeature: refused — claimed cell(s) remain: ${claimed.map((c) => c.id).join(', ')}. FIX: cap or drop them first (bee_cells.mjs cap / bee_cells.mjs drop).`,
+      `startFeature: refused — claimed cell(s) remain: ${claimed.map((c) => c.id).join(', ')}. FIX: cap or drop them first (bee.mjs cells cap / bee.mjs cells drop).`,
     );
   }
 
@@ -921,7 +921,7 @@ export function startFeature(
       throw new Error(
         `startFeature: refused — prior feature "${priorFeature}" has nonterminal cell(s): ${nonterminal
           .map((c) => `${c.id}(${c.status})`)
-          .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee_cells.mjs drop --id ID --reason R) — startFeature never auto-clears cells as cleanup. FIX: cap or drop each listed cell, then retry.`,
+          .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee.mjs cells drop --id ID --reason R) — startFeature never auto-clears cells as cleanup. FIX: cap or drop each listed cell, then retry.`,
       );
     }
   }
@@ -1000,7 +1000,7 @@ function startLane(root, { feature, mode, phase, sessionId, paths }) {
     throw new Error(
       `startFeature: refused — feature "${feature}" already has nonterminal cell(s): ${nonterminal
         .map((c) => `${c.id}(${c.status})`)
-        .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee_cells.mjs drop --id ID --reason R). FIX: cap or drop each listed cell, then retry.`,
+        .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee.mjs cells drop --id ID --reason R). FIX: cap or drop each listed cell, then retry.`,
     );
   }
 
@@ -1026,7 +1026,7 @@ function startLane(root, { feature, mode, phase, sessionId, paths }) {
     throw new Error(
       `startFeature: refused — registered worker(s) on feature "${feature}": ${laneWorkers
         .map((w) => `${(w && w.nickname) || '?'}(${w.cell})`)
-        .join(', ')}. FIX: clear them first (bee_state.mjs worker remove --nickname N, or worker clear).`,
+        .join(', ')}. FIX: clear them first (bee.mjs state worker remove --nickname N, or worker clear).`,
     );
   }
 
@@ -1042,7 +1042,7 @@ function startLane(root, { feature, mode, phase, sessionId, paths }) {
       throw new Error(
         `startFeature: refused — declared path(s) overlap active reservation hold(s): ${reservationHolds
           .map((r) => `${r.agent}:${r.path}`)
-          .join(', ')}. FIX: wait for release/expiry (bee_reservations.mjs release), or start the lane over non-overlapping paths.`,
+          .join(', ')}. FIX: wait for release/expiry (bee.mjs reservations release), or start the lane over non-overlapping paths.`,
       );
     }
     const claimHolds = listClaimHoldsForStart(root, sessionId, cellById, declared);

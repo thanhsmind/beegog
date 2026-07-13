@@ -40,15 +40,6 @@ const TEMPLATES_DIR = path.dirname(TESTS_DIR);
 // runExample — called from check() blocks starting near the top of the
 // file — can reference BEE_MJS without a temporal-dead-zone ReferenceError.
 const BEE_MJS = path.join(TEMPLATES_DIR, 'bee.mjs');
-const BEE_STATUS = path.join(TEMPLATES_DIR, 'bee_status.mjs');
-const BEE_CELLS = path.join(TEMPLATES_DIR, 'bee_cells.mjs');
-const BEE_RESERVATIONS = path.join(TEMPLATES_DIR, 'bee_reservations.mjs');
-const BEE_DECISIONS = path.join(TEMPLATES_DIR, 'bee_decisions.mjs');
-const BEE_STATE = path.join(TEMPLATES_DIR, 'bee_state.mjs');
-const BEE_BACKLOG = path.join(TEMPLATES_DIR, 'bee_backlog.mjs');
-const BEE_CAPTURE = path.join(TEMPLATES_DIR, 'bee_capture.mjs');
-const BEE_REVIEWS = path.join(TEMPLATES_DIR, 'bee_reviews.mjs');
-const BEE_FEEDBACK = path.join(TEMPLATES_DIR, 'bee_feedback.mjs');
 
 let passed = 0;
 let failed = 0;
@@ -152,7 +143,6 @@ check('every registry entry has the required manifest fields, no TODO/stub entri
   assert(Array.isArray(COMMAND_REGISTRY) && COMMAND_REGISTRY.length > 0, 'registry must be a non-empty array');
   for (const entry of COMMAND_REGISTRY) {
     assert(typeof entry.name === 'string' && entry.name.trim(), `entry missing a name: ${JSON.stringify(entry)}`);
-    assert(typeof entry.helper === 'string' && entry.helper.trim(), `${entry.name}: missing helper`);
     assert(typeof entry.invoke === 'string' && entry.invoke.trim(), `${entry.name}: missing invoke`);
     assert(typeof entry.description === 'string' && entry.description.trim(), `${entry.name}: missing description`);
     assert(Array.isArray(entry.examples) && entry.examples.length > 0, `${entry.name}: examples must be non-empty`);
@@ -190,46 +180,41 @@ check('registry covers every subcommand of the 4 existing helpers', () => {
   }
 });
 
-// ─── DA5: registry <-> helper runtime-verb bijection (drift guard) ────────
-// Derives each helper's verb list from RUNTIME BEHAVIOR — the "Unknown
-// command ... Use: v1, v2, ..." contract line each helper already prints on
-// an unrecognized top-level command — never by reading/grepping the
-// helper's own source. Critical pattern 20260710: a drift guard that greps
-// a module's own source pins syntax, not behavior, and pinned syntax can be
-// the bug. This is the exact gap the PR shipped with: bee_cells.mjs's
-// `update` verb existed on the helper but had no matching registry entry.
+// ─── DA5: registry <-> runtime-verb bijection (drift guard) ────────────────
+// Derives each group's verb list from RUNTIME BEHAVIOR — the "Unknown
+// command ... Use: v1, v2, ..." contract line bee.mjs's own dispatcher
+// already prints for an unrecognized top-level command in that group — never
+// by reading/grepping bee.mjs's own source. Critical pattern 20260710: a
+// drift guard that greps a module's own source pins syntax, not behavior,
+// and pinned syntax can be the bug. This is the exact gap the PR shipped
+// with: bee_cells.mjs's `update` verb existed on the helper but had no
+// matching registry entry. The 9 bee_*.mjs shims are retired (shim-retire
+// D1/D5) — the probe now spawns bee.mjs directly with the group token
+// prepended, exactly what each shim used to do internally, so the observed
+// "Unknown command" contract line is unchanged.
 
-const GROUP_HELPERS = {
-  cells: BEE_CELLS,
-  reservations: BEE_RESERVATIONS,
-  decisions: BEE_DECISIONS,
-  state: BEE_STATE,
-  backlog: BEE_BACKLOG,
-  capture: BEE_CAPTURE,
-  reviews: BEE_REVIEWS,
-  feedback: BEE_FEEDBACK,
-};
+const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback'];
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
-// bee_cells.mjs's own `update` verb separately emits an unrelated
+// bee.mjs's own `cells update` verb separately emits an unrelated
 // flag-level "Use: --id ID --file ..." line; anchoring on any "Use:"
 // substring, rather than this specific contract line, would risk picking
 // that one up under a different argv). Run inside `root`, an already
-// bee-onboarded temp repo (created above) — the helpers refuse to run
-// outside a bee repo root at all, so probing needs a real one, not a
-// mutation of it (an unrecognized command never reaches any handler).
-function helperRuntimeVerbs(scriptPath) {
-  const result = spawnSync(process.execPath, [scriptPath, '__bee_bijection_probe__'], {
+// bee-onboarded temp repo (created above) — bee.mjs refuses to run outside a
+// bee repo root at all, so probing needs a real one, not a mutation of it
+// (an unrecognized command never reaches any handler).
+function groupRuntimeVerbs(group) {
+  const result = spawnSync(process.execPath, [BEE_MJS, group, '__bee_bijection_probe__'], {
     cwd: root,
     encoding: 'utf8',
   });
   const contractLine = (result.stderr || '').split('\n').find((line) => line.startsWith('Unknown command'));
   assert(
     contractLine,
-    `${scriptPath}: expected a stderr line starting with "Unknown command" for an unrecognized top-level command, got stdout=${result.stdout} stderr=${result.stderr}`,
+    `bee.mjs ${group}: expected a stderr line starting with "Unknown command" for an unrecognized top-level command, got stdout=${result.stdout} stderr=${result.stderr}`,
   );
   // Stop at the FIRST verb-list-terminating period, not necessarily end of
-  // line: bee_reviews.mjs's default message appends a trailing "(review
+  // line: the reviews group's default message appends a trailing "(review
   // modes: ...)" annotation AFTER the verb list's own period (dispatcher-
   // unify du-3) — a greedy-to-end-of-line capture would swallow that
   // annotation as bogus extra "verbs". Every other group's Use: line puts
@@ -237,9 +222,9 @@ function helperRuntimeVerbs(scriptPath) {
   // no-op there (trap t1 still applies: without stopping at the period, the
   // last verb would parse as e.g. "judge.").
   const match = contractLine.match(/Use: (.+?)\.(?:\s|$)/);
-  assert(match, `${scriptPath}: "Unknown command" line has no "Use: ..." verb-list clause: ${contractLine}`);
+  assert(match, `bee.mjs ${group}: "Unknown command" line has no "Use: ..." verb-list clause: ${contractLine}`);
   // Each comma-separated segment's FIRST word is the runtime verb: every
-  // group spells a single-word verb per segment except bee_reviews.mjs's
+  // group spells a single-word verb per segment except the reviews group's
   // nested "candidate add" (two words) — collapsing to its first word
   // matches the registry-side collapse (name.split('.')[0] on the nested
   // "candidate.add" segment -> "candidate", dispatcher-unify du-3).
@@ -249,14 +234,14 @@ function helperRuntimeVerbs(scriptPath) {
     .filter(Boolean);
 }
 
-check('DA5 bijection: every runtime verb of bee_cells/reservations/decisions.mjs has a matching cells.*/reservations.*/decisions.* registry entry, and vice versa', () => {
-  for (const [group, scriptPath] of Object.entries(GROUP_HELPERS)) {
-    const runtimeVerbs = new Set(helperRuntimeVerbs(scriptPath));
-    assert(runtimeVerbs.size > 0, `${scriptPath}: parsed zero runtime verbs — the parser is broken, not the helper`);
+check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/decisions/state/backlog/capture/reviews/feedback has a matching registry entry, and vice versa', () => {
+  for (const group of GROUP_NAMES) {
+    const runtimeVerbs = new Set(groupRuntimeVerbs(group));
+    assert(runtimeVerbs.size > 0, `bee.mjs ${group}: parsed zero runtime verbs — the parser is broken, not the dispatcher`);
     // Collapse nested verbs to their top-level segment (state.worker.add ->
-    // worker) so the bijection matches the helper's runtime "Use:" line, which
-    // lists only top-level verbs. For flat groups (cells/reservations/decisions)
-    // this is a no-op — every verb is already single-segment.
+    // worker) so the bijection matches the dispatcher's runtime "Use:" line,
+    // which lists only top-level verbs. For flat groups (cells/reservations/
+    // decisions) this is a no-op — every verb is already single-segment.
     const registryVerbs = new Set(
       COMMAND_REGISTRY.filter((e) => e.name.startsWith(`${group}.`)).map(
         (e) => e.name.slice(group.length + 1).split('.')[0],
@@ -267,14 +252,14 @@ check('DA5 bijection: every runtime verb of bee_cells/reservations/decisions.mjs
     const missingInRegistry = [...runtimeVerbs].filter((v) => !registryVerbs.has(v));
     assert(
       missingInRegistry.length === 0,
-      `${group}: verb(s) [${missingInRegistry.join(', ')}] exist on the ${path.basename(scriptPath)} helper (runtime) but have no "${group}.<verb>" entry in COMMAND_REGISTRY — registry side owns the fix (this is the exact cells.update gap the PR shipped with)`,
+      `${group}: verb(s) [${missingInRegistry.join(', ')}] exist on the bee.mjs ${group} dispatcher (runtime) but have no "${group}.<verb>" entry in COMMAND_REGISTRY — registry side owns the fix (this is the exact cells.update gap the PR shipped with)`,
     );
 
     // (b) every registry `<group>.*` entry corresponds to a runtime verb
     const extraInRegistry = [...registryVerbs].filter((v) => !runtimeVerbs.has(v));
     assert(
       extraInRegistry.length === 0,
-      `${group}: registry entr(y/ies) [${extraInRegistry.map((v) => `${group}.${v}`).join(', ')}] have no matching runtime verb on the ${path.basename(scriptPath)} helper — registry side owns the fix (stale entry, or the helper renamed/dropped this verb)`,
+      `${group}: registry entr(y/ies) [${extraInRegistry.map((v) => `${group}.${v}`).join(', ')}] have no matching runtime verb on the bee.mjs ${group} dispatcher — registry side owns the fix (stale entry, or the dispatcher renamed/dropped this verb)`,
     );
   }
 });
@@ -950,9 +935,6 @@ writeState(root2, {
 function runBee(args, cwd = root2) {
   return spawnSync(process.execPath, [BEE_MJS, ...args], { cwd, encoding: 'utf8' });
 }
-function runScript(scriptPath, args, cwd = root2) {
-  return spawnSync(process.execPath, [scriptPath, ...args], { cwd, encoding: 'utf8' });
-}
 
 // ─── pure-logic unit tests (direct import, no spawn — no side effects since
 // bee.mjs guards main() behind a direct-run check) ──────────────────────────
@@ -1047,22 +1029,6 @@ check('bee --help renders non-empty prose naming known commands', () => {
   assert(result.stdout.includes('bee cells ready'), `expected "bee cells ready" invoke text, got: ${result.stdout}`);
 });
 
-// ─── end-to-end parity: bee.mjs vs. the 4 existing entrypoints (D5) ────────
-
-check('bee status --json is byte-identical to bee_status.mjs --json (D5 parity)', () => {
-  const beeResult = runBee(['status', '--json']);
-  const origResult = runScript(BEE_STATUS, ['--json']);
-  assert(beeResult.status === 0 && origResult.status === 0, `exit codes: bee=${beeResult.status} orig=${origResult.status}`);
-  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
-});
-
-check('bee status (text form) is byte-identical to bee_status.mjs (text form) (D5 parity)', () => {
-  const beeResult = runBee(['status']);
-  const origResult = runScript(BEE_STATUS, []);
-  assert(beeResult.status === 0 && origResult.status === 0, `exit codes: bee=${beeResult.status} orig=${origResult.status}`);
-  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
-});
-
 // ─── demo-2 fixture chain, driven entirely through the bee.mjs dispatcher ──
 
 check('bee cells add creates the demo-2 fixture cell used by the rest of this dispatcher chain', () => {
@@ -1087,18 +1053,10 @@ check('bee cells list --json includes demo-2', () => {
   assert(cells.some((c) => c.id === 'demo-2'), `expected demo-2 in list, got ${result.stdout}`);
 });
 
-check('bee cells ready output is byte-identical to bee_cells.mjs ready output (parity, per D5) — verified by running both and diffing stdout', () => {
-  const beeResult = runBee(['cells', 'ready', '--json']);
-  const origResult = runScript(BEE_CELLS, ['ready', '--json']);
-  assert(beeResult.status === 0 && origResult.status === 0, `exit codes: bee=${beeResult.status} orig=${origResult.status}`);
-  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
-  assert(JSON.parse(beeResult.stdout).some((c) => c.id === 'demo-2'), 'demo-2 should be ready (open, no deps)');
-});
-
-check('bee cells ready (text form) is also byte-identical to bee_cells.mjs ready (text form)', () => {
-  const beeResult = runBee(['cells', 'ready']);
-  const origResult = runScript(BEE_CELLS, ['ready']);
-  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
+check('bee cells ready --json lists demo-2 (open, no deps)', () => {
+  const result = runBee(['cells', 'ready', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(JSON.parse(result.stdout).some((c) => c.id === 'demo-2'), 'demo-2 should be ready (open, no deps)');
 });
 
 check('bee cells show --id demo-2 --json returns the cell', () => {
@@ -1114,13 +1072,12 @@ check('bee cells update patches an allowed field on the open demo-2 fixture, thr
   assert(JSON.parse(result.stdout).title === patch.title, `expected patched title, got ${result.stdout}`);
 });
 
-check('bee cells update refuses a frozen key (status) with the same exit code and stderr as bee_cells.mjs update (D5 parity)', () => {
+check('bee cells update refuses a frozen key (status)', () => {
   const patch = { status: 'capped' };
   fs.writeFileSync(path.join(root2, 'cell-demo-2-frozen.json'), JSON.stringify(patch, null, 2), 'utf8');
-  const beeResult = runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-frozen.json']);
-  const origResult = runScript(BEE_CELLS, ['update', '--id', 'demo-2', '--file', 'cell-demo-2-frozen.json']);
-  assert(beeResult.status === 1 && origResult.status === 1, `expected exit 1 on both: bee=${beeResult.status} orig=${origResult.status}`);
-  assert(beeResult.stderr === origResult.stderr, `stderr differs:\n--- bee ---\n${beeResult.stderr}\n--- orig ---\n${origResult.stderr}`);
+  const result = runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-frozen.json']);
+  assert(result.status === 1, `expected exit 1, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(/status/.test(result.stderr), `expected the frozen field named in stderr, got: ${result.stderr}`);
 });
 
 check('bee cells claim --id demo-2 --worker claims it', () => {
@@ -1177,12 +1134,6 @@ check('bee reservations reserve/list/release/sweep round-trip through the dispat
   assert(typeof JSON.parse(sweepResult.stdout).released === 'number', `expected a released count, got ${sweepResult.stdout}`);
 });
 
-check('bee reservations list --active-only is byte-identical to bee_reservations.mjs list --active-only (parity, per D5)', () => {
-  const beeResult = runBee(['reservations', 'list', '--active-only', '--json']);
-  const origResult = runScript(BEE_RESERVATIONS, ['list', '--active-only', '--json']);
-  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
-});
-
 check('bee reservations reserve returns a CONFLICT (exit 1) when another agent already holds an overlapping path', () => {
   const first = runBee(['reservations', 'reserve', '--agent', 'agent-a', '--cell', 'demo-2', '--path', 'src/conflict-test.js', '--json']);
   assert(JSON.parse(first.stdout).ok === true, `first reserve should succeed: ${first.stdout}`);
@@ -1204,12 +1155,6 @@ check('bee decisions log/active/search round-trip through the dispatcher', () =>
   assert(JSON.parse(searchResult.stdout).decisions.length >= 1, `expected the logged decision to match, got ${searchResult.stdout}`);
 });
 
-check('bee decisions active is byte-identical to bee_decisions.mjs active (parity, per D5)', () => {
-  const beeResult = runBee(['decisions', 'active', '--recent', '5', '--json']);
-  const origResult = runScript(BEE_DECISIONS, ['active', '--recent', '5', '--json']);
-  assert(beeResult.stdout === origResult.stdout, `stdout differs:\n--- bee ---\n${beeResult.stdout}\n--- orig ---\n${origResult.stdout}`);
-});
-
 // ─── malformed input / unknown command (never a bare not-found or a stack trace) ─
 
 check('a call missing a required parameter returns a structured {ok:false,error} shape, never a stack trace', () => {
@@ -1222,9 +1167,9 @@ check('a call missing a required parameter returns a structured {ok:false,error}
 
 check('an unrecognized command returns a nearest-match suggestion, not a bare not-found', () => {
   // Retargeted off "cells lst" (dispatcher-unify du-4): now that "cells" is
-  // one of the 9 GROUP_USAGE_FALLBACKS groups (DB3 — cells is shimmed and
-  // must reproduce bee_cells.mjs's own legacy "Use: ..." text for ANY
-  // unrecognized cells.* command, not just a bare group), that probe now
+  // one of the 8 GROUP_USAGE_FALLBACKS groups (DB3 — the dispatcher must
+  // reproduce the group's legacy "Use: ..." text for ANY unrecognized
+  // cells.* command, not just a bare group), that probe now
   // legitimately hits the group fallback instead of the generic nearest-
   // match path — a deliberate, cell-mandated behavior change, not a
   // weakening. A single unregistered top-level token ("staus", a typo of

@@ -8,7 +8,7 @@
 //   - .bee/review-candidates.jsonl    append-only, one entry per feature close
 //
 // CLI-owned mutation contract (bb4bb18e): every mutation is a CLI verb (see
-// bee_reviews.mjs); write paths here use STRICT reads (readReviewStrict — a
+// bee.mjs reviews); write paths here use STRICT reads (readReviewStrict — a
 // corrupt session file fails loud rather than being silently rebuilt), while
 // list/show stay fail-open (skip + warn on a corrupt file) so one bad session
 // never breaks the whole ledger view. Session scope (baseline, head,
@@ -204,7 +204,7 @@ function runPreflight(root, included) {
     // A10 — fail closed BEFORE any session file is written.
     throw new Error(
       `create: preflight failed — behavior_change cell(s) in scope have no recorded verification_evidence: ${missingEvidence.join(', ')}. ` +
-        'Review cannot substitute for missing verification; fix evidence at the cell (bee_cells.mjs cap --evidence-stdin) or drop the entry from scope, then retry.',
+        'Review cannot substitute for missing verification; fix evidence at the cell (bee.mjs cells cap --evidence-stdin) or drop the entry from scope, then retry.',
     );
   }
 
@@ -372,7 +372,7 @@ export function listCandidates(root) {
 // (missing git binary, unknown sha after rebase/amend, shallow clone) with a
 // covering session degrades to 'review stale' with a 'range unresolvable'
 // note; with no covering session it degrades to plain 'unreviewed'. Exported
-// for bee_status.mjs (review-od-3) to summarize candidate counts.
+// for `bee.mjs status` (review-od-3) to summarize candidate counts.
 
 export const CANDIDATE_STATUSES = ['unreviewed', 'in review', 'reviewed', 'review stale'];
 

@@ -47,14 +47,14 @@ const TERMINAL_PHASES = new Set(['idle', 'compounding-complete']);
 // before any other checkWrite logic (including GATE_ALLOWED_PREFIXES —
 // `.bee/` is an allowed prefix today, so this precedence is mandatory, not
 // incidental). Both files now have a validating, atomic-write CLI
-// (cli-mutations plan.md: bee_state.mjs, bee_backlog.mjs) — a direct
+// (cli-mutations plan.md: bee.mjs state, bee.mjs backlog) — a direct
 // Edit/Write/Bash-redirect bypasses that validation and reintroduces the
 // schema-drift class the CLIs exist to close. This does not touch the CLIs'
 // own writes: hooks see tool calls (Edit/Write/MultiEdit/Bash), never the
-// bee_state.mjs / bee_backlog.mjs child process's internal file I/O.
+// bee.mjs state / bee.mjs backlog child process's internal file I/O.
 const DIRECT_EDIT_DENY = {
-  '.bee/state.json': 'bee_state.mjs set/gate/worker/scribing-run',
-  '.bee/backlog.jsonl': 'bee_backlog.mjs add',
+  '.bee/state.json': 'bee.mjs state set/gate/worker/scribing-run',
+  '.bee/backlog.jsonl': 'bee.mjs backlog add',
 };
 
 function normalizeRel(relPath) {
@@ -110,8 +110,8 @@ function holdExpiry(reservation) {
 /**
  * Gate + reservation write check.
  * - Direct-edit deny (first hit, every phase): `.bee/state.json` and
- *   `.bee/backlog.jsonl` must go through their CLI (bee_state.mjs /
- *   bee_backlog.mjs), never a direct Edit/Write/Bash-redirect. Checked before
+ *   `.bee/backlog.jsonl` must go through their CLI (bee.mjs state /
+ *   bee.mjs backlog), never a direct Edit/Write/Bash-redirect. Checked before
  *   phase logic and before GATE_ALLOWED_PREFIXES, since `.bee/` is itself an
  *   allowed prefix in gated phases.
  * - Terminal phases (intake gate): 'idle' (never started) and

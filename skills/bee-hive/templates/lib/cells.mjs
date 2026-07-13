@@ -206,7 +206,7 @@ const UPDATE_FROZEN_HINTS = {
   feature: 'a cell never moves between features — drop and re-add instead',
   status: 'status moves only through claim/verify/cap/block/drop',
   trace: 'the trace is the frozen audit record — claim/verify/cap own it',
-  tier: 'use the tier verb (bee_cells.mjs tier --id ID --tier T)',
+  tier: 'use the tier verb (bee.mjs cells tier --id ID --tier T)',
 };
 
 // Strict read for the update path only (readReviewStrict/readStateStrict
@@ -346,7 +346,7 @@ export function claimCell(root, id, worker) {
   if (!cell) throw new Error(`claimCell: cell "${id}" not found.`);
   if (cell.status !== 'open') {
     throw new Error(
-      `claimCell: cell "${id}" is "${cell.status}", not "open" — only open cells can be claimed. Run bee_cells.mjs ready to list claimable cells.`,
+      `claimCell: cell "${id}" is "${cell.status}", not "open" — only open cells can be claimed. Run bee.mjs cells ready to list claimable cells.`,
     );
   }
   const uncapped = depsAllCapped(root, cell);
@@ -403,7 +403,7 @@ export function capCell(
   const trace = { ...defaultTrace(), ...(cell.trace || {}) };
   if (trace.verify_passed !== true) {
     throw new Error(
-      `capCell: cell "${id}" has no passing verify result — run the cell's verify command and record it (bee_cells.mjs verify --id ${id} --command CMD --passed true) before capping.`,
+      `capCell: cell "${id}" has no passing verify result — run the cell's verify command and record it (bee.mjs cells verify --id ${id} --command CMD --passed true) before capping.`,
     );
   }
   if (bc && !verification_evidence) {
@@ -448,7 +448,7 @@ export function capCell(
       (typeof verification_evidence !== 'string' || verification_evidence.trim().length > 0);
     if (!hasOutput && !hasEvidence) {
       throw new Error(
-        `capCell: lane "${cell.lane}" cell "${id}" has a passing verify flag but no recorded proof — re-record the verify with its output (bee_cells.mjs verify --id ${id} --command CMD --output "..." --passed true) or attach verification_evidence (--evidence-file). An assertion is not evidence.`,
+        `capCell: lane "${cell.lane}" cell "${id}" has a passing verify flag but no recorded proof — re-record the verify with its output (bee.mjs cells verify --id ${id} --command CMD --output "..." --passed true) or attach verification_evidence (--evidence-file). An assertion is not evidence.`,
       );
     }
     if (!Array.isArray(files_changed) || files_changed.length === 0) {

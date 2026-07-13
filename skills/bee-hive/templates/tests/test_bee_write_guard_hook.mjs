@@ -56,9 +56,14 @@ function assert(condition, message) {
 // exact prerequisite this cell's own action names (validating iteration 1,
 // Blocker 4).
 // Must track command-registry.mjs's transitive lib imports: it imports
-// reviews.mjs (REVIEW_MODES), which in turn imports cells.mjs (readCell).
-// Missing either here throws at import time in the fixture root, which
-// makes the hook's own resolver fail open (2 denial tests regress to exit 0).
+// reviews.mjs (REVIEW_MODES), which in turn imports cells.mjs (readCell),
+// which in turn imports backlog.mjs (featureBacklogRank). state.mjs also
+// imports claims.mjs (fresh-session-handoff fsh-3, session/lane primitives).
+// Missing any of these here throws at import time in the fixture root, which
+// makes the hook's own resolver fail open (denial tests regress to exit 0) —
+// a pre-existing baseline gap (state.mjs's claims.mjs import and cells.mjs's
+// backlog.mjs import both shipped after this list was last updated) fixed in
+// passing here since this file is in scope for this cell.
 const VENDORED_LIB_MODULES = [
   'fsutil.mjs',
   'state.mjs',
@@ -68,6 +73,8 @@ const VENDORED_LIB_MODULES = [
   'command-registry.mjs',
   'reviews.mjs',
   'cells.mjs',
+  'claims.mjs',
+  'backlog.mjs',
 ];
 
 // A valid-shaped registry whose one entry throws when its `parameters`

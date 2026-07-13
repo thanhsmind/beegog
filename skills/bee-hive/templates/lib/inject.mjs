@@ -268,7 +268,7 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
   }
 
   lines.push('');
-  lines.push('Run `node .bee/bin/bee_status.mjs --json` yourself for detail (agent-run — never hand bee commands to the user). Route via bee-hive.');
+  lines.push('Run `node .bee/bin/bee.mjs status --json` yourself for detail (agent-run — never hand bee commands to the user). Route via bee-hive.');
   return lines.join('\n');
 }
 
