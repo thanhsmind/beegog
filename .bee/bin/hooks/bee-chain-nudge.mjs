@@ -46,6 +46,19 @@ function workerName(entry) {
   return "";
 }
 
+// fresh-session-handoff fsh-6 (D4): a bound session's PHASE comes from its
+// lane via resolvePipeline; workers stay a global registry regardless (lane
+// records carry no `workers` field — cell registration is not lane-scoped).
+// No session_id, an unbound session, or an unresolvable binding all fall
+// back to the default record — this hook is advisory only and must never
+// let a lane-resolution gap block the nudge (fail-open, matching the file's
+// own documented discipline).
+function getSessionId(payload) {
+  return typeof payload.session_id === "string" && payload.session_id.trim()
+    ? payload.session_id.trim()
+    : null;
+}
+
 async function main() {
   const ctx = await readHookContext(HOOK_NAME);
   const root = ctx.root;
@@ -62,7 +75,8 @@ async function main() {
       return 0;
     }
     const state = stateLib.readState(root);
-    const phase = state.phase || "idle";
+    const pipeline = stateLib.resolvePipeline(root, { sessionId: getSessionId(ctx.payload) });
+    const phase = (pipeline.ok ? pipeline.record.phase : state.phase) || "idle";
     const agentName = getAgentName(ctx.payload);
     const workers = Array.isArray(state.workers) ? state.workers : [];
     const isRegisteredWorker =

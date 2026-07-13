@@ -13,6 +13,8 @@ import {
   readState,
   readHandoff,
   readOnboarding,
+  resolvePipeline,
+  listLanes,
 } from './state.mjs';
 import { activeDecisions, datamark } from './decisions.mjs';
 import { readBacklogCounts } from './backlog.mjs';
@@ -97,10 +99,20 @@ function gatesLine(state) {
   ).join(' | ');
 }
 
-export function buildSessionPreamble(root) {
+// fresh-session-handoff fsh-6 (D4): OPTIONAL sessionId — omitted (today's
+// exact call shape) resolves to the default pipeline, byte-identical to
+// before this cell. A bound session's phase/mode/feature/gates come from its
+// lane record instead (resolvePipeline), plus a one-line summary naming any
+// OTHER active lanes (never the bound session's own). An unresolvable
+// binding (invalid/missing/corrupt lane) falls back to the default record —
+// this preamble is informational only, never a place to block a session on
+// a lane-resolution gap.
+export function buildSessionPreamble(root, { sessionId = null } = {}) {
   const state = readState(root);
   const onboarding = readOnboarding(root);
   const handoff = readHandoff(root);
+  const pipeline = resolvePipeline(root, { sessionId });
+  const pipelineRecord = pipeline.ok ? pipeline.record : state;
   const lines = [];
 
   lines.push(`## bee v${BEE_VERSION}`);
@@ -114,9 +126,20 @@ export function buildSessionPreamble(root) {
     lines.push(`- Onboarding: ok (bee ${onboarding.bee_version || BEE_VERSION})`);
   }
   lines.push(
-    `- Phase: ${state.phase} | Mode: ${state.mode ?? 'none'} | Feature: ${state.feature ?? 'none'}`,
+    `- Phase: ${pipelineRecord.phase} | Mode: ${pipelineRecord.mode ?? 'none'} | Feature: ${pipelineRecord.feature ?? 'none'}`,
   );
-  lines.push(`- Gates: ${gatesLine(state)}`);
+  lines.push(`- Gates: ${gatesLine(pipelineRecord)}`);
+  if (pipeline.ok && pipeline.source === 'lane') {
+    const others = listLanes(root).filter(
+      (lane) =>
+        lane.feature !== pipeline.feature && lane.phase !== 'idle' && lane.phase !== 'compounding-complete',
+    );
+    if (others.length > 0) {
+      lines.push(
+        `- ${others.length} other active lane(s): ${others.map((lane) => lane.feature).join(', ')}`,
+      );
+    }
+  }
   if (readConfig(root).gate_bypass === true) {
     lines.push(
       '- ⚡ GATE BYPASS ON — the agent auto-approves Gates 1-3 for tiny/small/standard work (records the recommended choice, logs it, continues). High-risk/hard-gate work, secret reads, and Gate 4 UAT still stop for the human. Turn off with the bee-bypass-gate skill.',
@@ -206,14 +229,19 @@ export function buildSessionPreamble(root) {
   return lines.join('\n');
 }
 
-export function buildPromptReminder(root) {
-  const state = readState(root);
+// fresh-session-handoff fsh-6 (D4): same optional-sessionId shape as
+// buildSessionPreamble above — omitted stays byte-identical to today; a bound
+// session's phase/mode/next_action/gate come from its lane, with the same
+// fail-open fallback to the default record on an unresolvable binding.
+export function buildPromptReminder(root, { sessionId = null } = {}) {
+  const pipeline = resolvePipeline(root, { sessionId });
+  const record = pipeline.ok ? pipeline.record : readState(root);
   const firstOpenGate =
-    GATE_NAMES.find((gate) => state.approved_gates?.[gate] !== true) ?? null;
+    GATE_NAMES.find((gate) => record.approved_gates?.[gate] !== true) ?? null;
   const fields = {
-    phase: state.phase,
-    mode: state.mode ?? null,
-    next_action: state.next_action ?? null,
+    phase: record.phase,
+    mode: record.mode ?? null,
+    next_action: record.next_action ?? null,
     first_open_gate: firstOpenGate,
   };
 

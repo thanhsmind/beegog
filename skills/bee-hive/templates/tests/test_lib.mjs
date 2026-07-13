@@ -4465,6 +4465,163 @@ check("lanes: checkWrite with a bound sessionId resolves phase/gates from the se
   }
 });
 
+// ─── fsh-6: presentation readers show the session's lane (D4) ───────────────
+// buildSessionPreamble/buildPromptReminder gain an OPTIONAL sessionId param.
+// Omitted (today's exact call shape) resolves to the default pipeline —
+// byte-identical to every pinned no-sessionId row above. A bound sessionId
+// shows THAT lane's phase/mode/feature/gates plus a one-line summary of any
+// OTHER active (non-terminal) lanes. bee.mjs's buildStatus carries a new
+// `lanes` block (per-lane phase/gates/bound sessions) alongside every
+// pre-existing zero-lane field, unchanged. bee-chain-nudge/bee-session-close
+// consult the acting session's pipeline for phase when payload.session_id
+// names a bound session, default otherwise — covered in
+// hooks/test_hook_contracts.mjs.
+
+check('buildSessionPreamble: omitting sessionId (or passing {}) renders byte-identical to today; an unbound session also resolves to the exact default preamble', () => {
+  const dir = makeStateRepo('bee-preamble-lane-bare-');
+  try {
+    writeState(dir, { ...defaultState(), phase: 'idle', mode: null, feature: null });
+    const noArg = buildSessionPreamble(dir);
+    const emptyOpts = buildSessionPreamble(dir, {});
+    const nullSession = buildSessionPreamble(dir, { sessionId: null });
+    assert(noArg === emptyOpts && emptyOpts === nullSession, 'omitted/{}/null sessionId all render the identical preamble');
+
+    laneBinding.createSession(dir, { id: 'sess-bare' });
+    const unbound = buildSessionPreamble(dir, { sessionId: 'sess-bare' });
+    assert(unbound === noArg, 'an unbound session renders exactly the default preamble (D4 zero-lane parity)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("buildSessionPreamble: a bound sessionId shows that lane's own phase/mode/feature/gates and names other ACTIVE lanes in one line — never the bound lane itself, never a terminal one", () => {
+  const dir = makeStateRepo('bee-preamble-lane-bound-');
+  try {
+    laneBinding.createSession(dir, { id: 'sess-p' });
+    writeLaneFixture(dir, 'lane-p', {
+      phase: 'planning',
+      mode: 'standard',
+      approved_gates: { context: true, shape: false, execution: false, review: false },
+    });
+    laneBinding.bindSessionLane(dir, 'sess-p', 'lane-p');
+
+    const soloBound = buildSessionPreamble(dir, { sessionId: 'sess-p' });
+    assert(
+      /Phase: planning \| Mode: standard \| Feature: lane-p/.test(soloBound),
+      `preamble shows the bound lane's own phase/mode/feature, got:\n${soloBound}`,
+    );
+    assert(/context: approved/.test(soloBound) && /shape: pending/.test(soloBound), 'gates line reflects the bound lane, not the default record');
+    assert(!/other active lane/.test(soloBound), 'no lanes-summary line when no OTHER lane exists');
+
+    writeLaneFixture(dir, 'lane-other', { phase: 'swarming', mode: 'standard' });
+    writeLaneFixture(dir, 'lane-closed', { phase: 'compounding-complete', mode: 'standard' });
+    const withOthers = buildSessionPreamble(dir, { sessionId: 'sess-p' });
+    assert(
+      /1 other active lane\(s\): lane-other/.test(withOthers),
+      `preamble names exactly the one OTHER active lane, got:\n${withOthers}`,
+    );
+    assert(!/lane-closed/.test(withOthers), 'a terminal (compounding-complete) lane is never counted as active');
+    assert(!/lane-p,|, lane-p/.test(withOthers.match(/other active lane\(s\): (.*)$/m)?.[1] ?? ''), 'the bound lane never lists itself in the summary');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("buildSessionPreamble: an unresolvable binding (missing lane) falls back to the default record instead of blocking the informational preamble", () => {
+  const dir = makeStateRepo('bee-preamble-lane-broken-');
+  try {
+    writeState(dir, { ...defaultState(), phase: 'idle' });
+    laneBinding.createSession(dir, { id: 'sess-ghost' });
+    laneBinding.bindSessionLane(dir, 'sess-ghost', 'lane-ghost');
+    const bare = buildSessionPreamble(dir);
+    const broken = buildSessionPreamble(dir, { sessionId: 'sess-ghost' });
+    assert(broken === bare, 'a broken binding renders the same preamble as the default (never throws, never blocks)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('buildPromptReminder: omitting sessionId is unchanged; a bound sessionId reflects that lane\'s phase/next_action/gate, an unresolvable binding falls back to the default', () => {
+  const dir = makeStateRepo('bee-reminder-lane-');
+  try {
+    writeState(dir, { ...defaultState(), phase: 'idle', next_action: 'Invoke bee-hive.' });
+    const bare = buildPromptReminder(dir);
+    assert(bare.text.includes('phase=idle'), 'omitted sessionId keeps the default pipeline');
+
+    laneBinding.createSession(dir, { id: 'sess-r' });
+    writeLaneFixture(dir, 'lane-r', {
+      phase: 'planning',
+      mode: 'standard',
+      next_action: 'Prepare the current slice.',
+      approved_gates: { context: true, shape: false, execution: false, review: false },
+    });
+    laneBinding.bindSessionLane(dir, 'sess-r', 'lane-r');
+    const bound = buildPromptReminder(dir, { sessionId: 'sess-r' });
+    assert(bound.text.includes('phase=planning'), `bound reminder reflects the lane's phase, got: ${bound.text}`);
+    assert(bound.text.includes('mode=standard'), `bound reminder reflects the lane's mode, got: ${bound.text}`);
+    assert(/next: Prepare the current slice\./.test(bound.text), `bound reminder reflects the lane's next_action, got: ${bound.text}`);
+    assert(/gate pending: shape/.test(bound.text), `bound reminder's first open gate comes from the lane, got: ${bound.text}`);
+    assert(bound.hash !== bare.hash, 'a different resolved pipeline hashes differently');
+
+    laneBinding.createSession(dir, { id: 'sess-r2' });
+    laneBinding.bindSessionLane(dir, 'sess-r2', 'lane-missing');
+    const broken = buildPromptReminder(dir, { sessionId: 'sess-r2' });
+    assert(broken.text === bare.text, 'an unresolvable binding falls back to the default pipeline, never throws');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── bee.mjs buildStatus/renderStatusText: lanes block (fsh-6, D4) ──────────
+
+function beeMjsModulePath() {
+  return fileURLToPath(new URL('../bee.mjs', import.meta.url));
+}
+
+function runBeeMjs(cwd, args) {
+  return spawnSync(process.execPath, [beeMjsModulePath(), ...args], { cwd, encoding: 'utf8' });
+}
+
+check('bee.mjs status --json carries a `lanes` block (per-lane phase/gates/bound sessions) while zero lanes on disk renders an empty array and every pre-existing status field keeps its exact shape', () => {
+  const dir = makeStateRepo('bee-status-lanes-');
+  try {
+    const zero = runBeeMjs(dir, ['status', '--json']);
+    assert(zero.status === 0, `bee.mjs status --json exited ${zero.status} :: ${zero.stderr}`);
+    const zeroPayload = JSON.parse(zero.stdout);
+    assert(Array.isArray(zeroPayload.lanes) && zeroPayload.lanes.length === 0, `zero lanes on disk renders an empty lanes array, got ${JSON.stringify(zeroPayload.lanes)}`);
+    assert(zeroPayload.phase === 'idle', 'pre-existing top-level phase field keeps its exact zero-lane shape');
+    assert(!/Lanes:/.test(runBeeMjs(dir, ['status']).stdout), 'text render carries no Lanes line when no lanes exist (zero-lane byte parity)');
+
+    laneStore.writeLane(dir, {
+      schema_version: '1.0',
+      feature: 'lane-x',
+      mode: 'standard',
+      phase: 'swarming',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      summary: '',
+      next_action: '',
+      created_at: new Date().toISOString(),
+    });
+    laneBinding.createSession(dir, { id: 'sess-lx' });
+    laneBinding.bindSessionLane(dir, 'sess-lx', 'lane-x');
+
+    const withLane = runBeeMjs(dir, ['status', '--json']);
+    const payload = JSON.parse(withLane.stdout);
+    assert(Array.isArray(payload.lanes) && payload.lanes.length === 1, `lanes block lists the one lane record, got ${JSON.stringify(payload.lanes)}`);
+    const row = payload.lanes[0];
+    assert(row.feature === 'lane-x' && row.phase === 'swarming', `lane row carries feature/phase, got ${JSON.stringify(row)}`);
+    assert(row.approved_gates && row.approved_gates.execution === true, 'lane row carries its own approved_gates');
+    assert(Array.isArray(row.bound_sessions) && row.bound_sessions.includes('sess-lx'), `lane row names the bound session, got ${JSON.stringify(row.bound_sessions)}`);
+    assert(payload.phase === 'idle', 'the pre-existing top-level phase field is untouched by the lanes block (it stays the default pipeline)');
+
+    const text = runBeeMjs(dir, ['status']).stdout;
+    assert(/Lanes: lane-x \[swarming\]/.test(text), `text render carries a Lanes line once a lane exists, got:\n${text}`);
+    assert(/sessions=sess-lx/.test(text), `text Lanes line names the bound session, got:\n${text}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ─── bee_backlog.mjs add verb (cli-mutations-2, decision from cli-mutations
 // plan.md: agents never hand-edit .bee/*.json(l)) ─────────────────────────────
 // counts/rank/badges already have direct lib/backlog.mjs coverage above (the

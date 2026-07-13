@@ -195,6 +195,24 @@ function buildReviewBlock(root) {
   }
 }
 
+// Per-lane phase/gates/binding rows for the status payload (fresh-session-
+// handoff fsh-6, D4). Reused by handleStateLanes below (this cell composes
+// no second implementation): every lane record plus the session ids currently
+// bound to it (listSessionRecords/listLanes are already-exported fsh-3
+// primitives). Zero lanes on disk -> []: the field is additive, never
+// altering any pre-existing status field's shape (D4 zero-lane parity).
+function buildLaneRows(root) {
+  const lanes = listLanes(root);
+  const sessions = listSessionRecords(root);
+  const boundBy = {};
+  for (const session of sessions) {
+    if (typeof session.lane === 'string' && session.lane) {
+      (boundBy[session.lane] ||= []).push(session.id);
+    }
+  }
+  return lanes.map((lane) => ({ ...lane, bound_sessions: boundBy[lane.feature] || [] }));
+}
+
 function buildStatus(root) {
   const state = readState(root);
   const onboardingRaw = readOnboarding(root);
@@ -281,6 +299,7 @@ function buildStatus(root) {
     ceiling_scarcity: ceilingScarcityWarning(root),
     handoff,
     cells: counts,
+    lanes: buildLaneRows(root),
     review,
     scribing_debt: scribingDebt(root),
     capture_queue: (() => {
@@ -324,6 +343,19 @@ function renderStatusText(status) {
       : []),
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,
+    // Lanes (fsh-6, D4): additive — zero lanes on disk renders no line at
+    // all, keeping every zero-lane text render byte-identical to today.
+    ...(status.lanes && status.lanes.length > 0
+      ? [
+          `Lanes: ${status.lanes
+            .map((l) => {
+              const gates = GATE_NAMES.map((g) => `${g}=${l.approved_gates[g] ? 'approved' : 'pending'}`).join(' ');
+              const bound = l.bound_sessions.length ? ` sessions=${l.bound_sessions.join(',')}` : '';
+              return `${l.feature} [${l.phase}] ${gates}${bound}`;
+            })
+            .join(' | ')}`,
+        ]
+      : []),
     // §9 — reaching a post-execution phase with unreviewed candidates is the
     // NORMAL truthful close (R3): informational, never a staleness warning.
     ...(POST_EXECUTION_REVIEW_PHASES.includes(status.phase) && status.review?.candidates?.unreviewed > 0
@@ -998,15 +1030,7 @@ function summarizeSession(session) {
 }
 
 function handleStateLanes(root) {
-  const lanes = listLanes(root);
-  const sessions = listSessionRecords(root);
-  const boundBy = {};
-  for (const session of sessions) {
-    if (typeof session.lane === 'string' && session.lane) {
-      (boundBy[session.lane] ||= []).push(session.id);
-    }
-  }
-  const rows = lanes.map((lane) => ({ ...lane, bound_sessions: boundBy[lane.feature] || [] }));
+  const rows = buildLaneRows(root);
   const text = rows.length
     ? rows
         .map((l) => {

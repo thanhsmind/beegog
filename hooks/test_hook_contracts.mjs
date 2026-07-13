@@ -973,6 +973,194 @@ function runNicknameRows() {
   return rows;
 }
 
+// fresh-session-handoff fsh-6 (D4): bee-chain-nudge and bee-session-close
+// thread payload.session_id into resolvePipeline (via the vendored .bee/bin
+// lib copied by copyLib above) so the phase they consult comes from the
+// ACTING SESSION'S lane when bound, the default record otherwise — never
+// touching bee-session-init.mjs (S4's SessionStart threading stays out of
+// scope here). Writes lane/session records directly as JSON, mirroring this
+// file's existing buildFixture style rather than importing lib/state.mjs or
+// lib/claims.mjs (this harness spawns wrappers as real child processes and
+// never imports the lib it is testing).
+function writeLaneFile(root, feature, extra = {}) {
+  const lanesDir = path.join(root, ".bee", "lanes");
+  fs.mkdirSync(lanesDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(lanesDir, `${feature}.json`),
+    `${JSON.stringify(
+      {
+        schema_version: "1.0",
+        feature,
+        mode: null,
+        phase: "idle",
+        approved_gates: { context: false, shape: false, execution: false, review: false },
+        summary: "",
+        next_action: "",
+        created_at: new Date().toISOString(),
+        ...extra,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
+function writeSessionFile(root, sessionId, { lane } = {}) {
+  const sessionsDir = path.join(root, ".bee", "sessions");
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  const record = {
+    id: sessionId,
+    started_at: new Date().toISOString(),
+    last_heartbeat: new Date().toISOString(),
+    ...(lane ? { lane } : {}),
+  };
+  fs.writeFileSync(path.join(sessionsDir, `${sessionId}.json`), `${JSON.stringify(record, null, 2)}\n`);
+}
+
+function runLaneSessionRows() {
+  const rows = [];
+
+  // ── bee-chain-nudge: a bound session's SWARMING lane fires the nudge even
+  // though the DEFAULT state.json sits at "idle" (no registered worker,
+  // phase !== swarming/reviewing at default) — proving phase resolution
+  // came from the session's lane, not the default record.
+  const chainRoot = buildFixture("hook-contracts-lane-chain-");
+  fs.writeFileSync(
+    path.join(chainRoot, ".bee", "state.json"),
+    `${JSON.stringify(
+      { phase: "idle", mode: null, feature: null, approved_gates: { context: false, shape: false, execution: false, review: false }, workers: [] },
+      null,
+      2,
+    )}\n`,
+  );
+  writeLaneFile(chainRoot, "lane-swarm", {
+    phase: "swarming",
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  writeSessionFile(chainRoot, "sess-bound", { lane: "lane-swarm" });
+  writeSessionFile(chainRoot, "sess-unbound");
+
+  const subagentStopWithSession = (sessionId) =>
+    JSON.stringify({ hook_event_name: "SubagentStop", session_id: sessionId, cwd: chainRoot });
+
+  const cControl = runWrapper("bee-chain-nudge.mjs", JSON.stringify({ hook_event_name: "SubagentStop", cwd: chainRoot }), chainRoot);
+  const cControlPass = cControl.status === 0 && !(cControl.stdout || "").trim();
+  rows.push(
+    adapterRow(
+      "chain-nudge-lane",
+      "no-session-id-stays-on-default-idle",
+      cControlPass,
+      cControlPass
+        ? "no session_id: default record (idle, no registered worker) stays silent, as a control"
+        : `expected silence with the default idle record; got status=${cControl.status} stdout=${truncate(cControl.stdout, 300)}`,
+      cControl,
+    ),
+  );
+
+  const cUnbound = runWrapper("bee-chain-nudge.mjs", subagentStopWithSession("sess-unbound"), chainRoot);
+  const cUnboundPass = cUnbound.status === 0 && !(cUnbound.stdout || "").trim();
+  rows.push(
+    adapterRow(
+      "chain-nudge-lane",
+      "unbound-session-keeps-default",
+      cUnboundPass,
+      cUnboundPass
+        ? "a session with no lane binding resolves to the default record (idle) — stays silent"
+        : `expected silence for an unbound session; got status=${cUnbound.status} stdout=${truncate(cUnbound.stdout, 300)}`,
+      cUnbound,
+    ),
+  );
+
+  const cBound = runWrapper("bee-chain-nudge.mjs", subagentStopWithSession("sess-bound"), chainRoot);
+  const cBoundParsed = parseAdvisoryStdout(cBound.stdout);
+  const cBoundPass = Boolean(
+    cBound.status === 0 &&
+      cBoundParsed.json &&
+      typeof cBoundParsed.json.systemMessage === "string" &&
+      cBoundParsed.json.systemMessage.includes("[STATUS]") &&
+      cBoundParsed.json.decision !== "block",
+  );
+  rows.push(
+    adapterRow(
+      "chain-nudge-lane",
+      "bound-session-lane-swarming-fires-nudge",
+      cBoundPass,
+      cBoundPass
+        ? "a session bound to a SWARMING lane fires the chain-nudge even though the default record sits at idle"
+        : `expected a JSON systemMessage nudge from the bound lane's swarming phase; got status=${cBound.status} stdout=${truncate(cBound.stdout, 300)}`,
+      cBound,
+    ),
+  );
+
+  // ── bee-session-close: a bound session's IDLE lane suppresses the "hive
+  // door open" warning even though the DEFAULT state.json sits at
+  // "swarming" with no HANDOFF (which fires the warning today) — proving
+  // phase resolution came from the session's lane, not the default record.
+  const closeRoot = buildFixture("hook-contracts-lane-close-"); // default: swarming, no HANDOFF
+  writeLaneFile(closeRoot, "lane-idle", { phase: "idle" });
+  writeSessionFile(closeRoot, "sess-close-bound", { lane: "lane-idle" });
+  writeSessionFile(closeRoot, "sess-close-unbound");
+
+  const stopWithSession = (sessionId) =>
+    JSON.stringify({ hook_event_name: "Stop", session_id: sessionId, cwd: closeRoot });
+
+  const sControl = runWrapper("bee-session-close.mjs", JSON.stringify({ hook_event_name: "Stop", cwd: closeRoot }), closeRoot);
+  const sControlParsed = parseAdvisoryStdout(sControl.stdout);
+  const sControlPass = Boolean(
+    sControl.status === 0 &&
+      sControlParsed.json &&
+      typeof sControlParsed.json.systemMessage === "string" &&
+      sControlParsed.json.systemMessage.includes("hive door open"),
+  );
+  rows.push(
+    adapterRow(
+      "session-close-lane",
+      "no-session-id-keeps-default-swarming-warning",
+      sControlPass,
+      sControlPass
+        ? "no session_id: the default record (swarming, no HANDOFF) fires the hive-door-open warning, as a control"
+        : `expected the hive-door-open warning from the default swarming record; got status=${sControl.status} stdout=${truncate(sControl.stdout, 300)}`,
+      sControl,
+    ),
+  );
+
+  const sUnbound = runWrapper("bee-session-close.mjs", stopWithSession("sess-close-unbound"), closeRoot);
+  const sUnboundParsed = parseAdvisoryStdout(sUnbound.stdout);
+  const sUnboundPass = Boolean(
+    sUnbound.status === 0 &&
+      sUnboundParsed.json &&
+      typeof sUnboundParsed.json.systemMessage === "string" &&
+      sUnboundParsed.json.systemMessage.includes("hive door open"),
+  );
+  rows.push(
+    adapterRow(
+      "session-close-lane",
+      "unbound-session-keeps-default",
+      sUnboundPass,
+      sUnboundPass
+        ? "a session with no lane binding resolves to the default record (swarming) — warning still fires"
+        : `expected the hive-door-open warning for an unbound session; got status=${sUnbound.status} stdout=${truncate(sUnbound.stdout, 300)}`,
+      sUnbound,
+    ),
+  );
+
+  const sBound = runWrapper("bee-session-close.mjs", stopWithSession("sess-close-bound"), closeRoot);
+  const sBoundPass = sBound.status === 0 && !(sBound.stdout || "").trim();
+  rows.push(
+    adapterRow(
+      "session-close-lane",
+      "bound-session-lane-idle-suppresses-default-warning",
+      sBoundPass,
+      sBoundPass
+        ? "a session bound to an IDLE lane suppresses the hive-door-open warning even though the default record sits at swarming"
+        : `expected silence from the bound lane's idle phase; got status=${sBound.status} stdout=${truncate(sBound.stdout, 300)}`,
+      sBound,
+    ),
+  );
+
+  return rows;
+}
+
 function runCoverageGapRows() {
   const rows = [];
 
@@ -1950,6 +2138,7 @@ async function main() {
   results.push(...runCatalogDriftChecks());
   results.push(...runCodexAcceptanceRows());
   results.push(...runNicknameRows());
+  results.push(...runLaneSessionRows());
   results.push(...runCoverageGapRows());
   // ...plus cell codex-parity-6b's installed-route rows: the default suite
   // must also prove the ACTIVE .codex/hooks.json commands work through the
