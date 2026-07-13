@@ -158,14 +158,14 @@ Think of it as a self-contained work ticket that is *executable* and *machine-ch
 
 The rules that make a cell trustworthy:
 
-- **Capping requires proof, not an assertion.** `bee_cells.mjs cap` **refuses** to close a cell unless a passing `verify` result is recorded. For `small`/`standard`/`high-risk` it also requires the verify's recorded output (or evidence) and a non-empty list of changed files — "verify_passed: true" with no output and no files is rejected.
+- **Capping requires proof, not an assertion.** `bee.mjs cells cap` **refuses** to close a cell unless a passing `verify` result is recorded. For `small`/`standard`/`high-risk` it also requires the verify's recorded output (or evidence) and a non-empty list of changed files — "verify_passed: true" with no output and no files is rejected.
 - **Behavior changes need a "before".** If a cell changes observable behavior (`behavior_change: true`), capping also refuses without a *characterization of the prior behavior* — `red_failure_evidence` such as a `git show` of the old state, or a pre-change check that failed. This blocks "it works now" being accepted as proof that behavior actually changed, and it's captured at cap time (one command away) rather than backfilled later (decision 0009).
-- **Ready = all deps capped.** `bee_cells.mjs ready` lists claimable cells. Only the orchestrator assigns them; workers never self-select.
+- **Ready = all deps capped.** `bee.mjs cells ready` lists claimable cells. Only the orchestrator assigns them; workers never self-select.
 - **Evidence lives in one place.** The cell's `trace` is the single source of verification evidence. Reports link to it; they never duplicate it.
 - **Lane scales strictness.** A `tiny` cell may skip `must_haves` and record a one-line trace; a `high-risk` cell needs full `must_haves`, spike evidence, and a detailed trace.
 - **One commit per cell**, with the cell id in the message.
 
-`bee_status.mjs` and every downstream skill read the cell trace, so "what happened" is always machine-readable, never buried in chat.
+`bee.mjs status` and every downstream skill read the cell trace, so "what happened" is always machine-readable, never buried in chat.
 
 ---
 
@@ -180,7 +180,7 @@ Gates are **human** approvals, and three of them are enforced by code — the ag
 | **Gate 3** | validating | May the agent start editing real files (this slice only)? | The most irreversible step — this is where code starts changing |
 | **Gate 4** | a user-invoked review session only — never automatic (decision 565e68d0) | Does this go into the main branch? | P1 findings ship broken code to users |
 
-Enforcement, not etiquette: until Gate 3 is approved, `bee_cells.mjs claim` throws and the write-guard hook **denies source edits** (while keeping `.bee/`, `docs/`, `.spikes/`, and `AGENTS.md` writable). Gate 4 never auto-merges past an open P1.
+Enforcement, not etiquette: until Gate 3 is approved, `bee.mjs cells claim` throws and the write-guard hook **denies source edits** (while keeping `.bee/`, `docs/`, `.spikes/`, and `AGENTS.md` writable). Gate 4 never auto-merges past an open P1.
 
 ### Gate bypass (opt-in autopilot)
 
@@ -246,7 +246,7 @@ Not every step needs your most capable (most expensive) model. The costly loops 
 - **extraction** — cheapest capable (retrieval, mechanical edits).
 - `null` = the runtime can't select a per-agent model (Codex today) → the tier is enforced as a read budget + output cap in the worker prompt. Set real ids (e.g. `"generation": "gpt-5"`) if your runtime supports switching.
 
-The **orchestrator judges each cell's tier when it dispatches** (decision 0016) — mechanical → extraction, normal → generation, integration/architecture/high-risk → ceiling — not a label fixed at planning. It records the choice (`bee_cells.mjs tier`), then `modelForTier` resolves it: `generation`/`extraction` to the configured alias, `ceiling` to "inherit the session model". `bee_status` and the preamble **warn when too many cells sit on the ceiling tier** (the cost lever erodes when the strongest model touches most dispatches).
+The **orchestrator judges each cell's tier when it dispatches** (decision 0016) — mechanical → extraction, normal → generation, integration/architecture/high-risk → ceiling — not a label fixed at planning. It records the choice (`bee.mjs cells tier`), then `modelForTier` resolves it: `generation`/`extraction` to the configured alias, `ceiling` to "inherit the session model". `bee.mjs status` and the preamble **warn when too many cells sit on the ceiling tier** (the cost lever erodes when the strongest model touches most dispatches).
 
 The orchestrator pattern keeps the strongest model scarce:
 
@@ -261,7 +261,7 @@ The orchestrator pattern keeps the strongest model scarce:
 bee has two layers that always work together:
 
 1. **Runtime layer** (per machine) — the 14 `bee-*` skills the agent loads, plus (Claude Code) 6 lifecycle hooks.
-2. **Repo layer** (per project) — the `AGENTS.md` BEE block, `.bee/` state, and 4 vendored helper CLIs that *mechanically* enforce the workflow for any agent, on any runtime.
+2. **Repo layer** (per project) — the `AGENTS.md` BEE block, `.bee/` state, and the vendored `bee.mjs` CLI that *mechanically* enforces the workflow for any agent, on any runtime.
 
 ```
 you                         agent                              on disk
@@ -336,7 +336,7 @@ iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/insta
 ### Verify / update
 
 ```bash
-node .bee/bin/bee_status.mjs --json     # expect onboarding.installed: true
+node .bee/bin/bee.mjs status --json     # expect onboarding.installed: true
 ```
 
 **Update to the latest bee:** re-run the same install command (or `onboard_bee.mjs --apply`) — drift detection refreshes `AGENTS.md`, `CLAUDE.md`, helpers, hooks, and both skill trees in place; your state and everything outside the managed markers stay untouched.
@@ -359,17 +359,17 @@ bee is driven conversationally — you talk, the skills and helpers do the bookk
 | "Review this branch" | `bee-reviewing`: multi-agent review, P1/P2/P3 findings, UAT |
 | "Turn on gate bypass" | `bee-bypass-gate on` → autopilot for low-risk gates (safety floor stays) |
 | "Clean up tech debt" / "audit the hive" | `bee-grooming` hunts drift, dead work, stale reservations |
-| "What did we decide about auth?" | reads the decision log (`bee_decisions.mjs search --text auth`) |
+| "What did we decide about auth?" | reads the decision log (`bee.mjs decisions search --text auth`) |
 
 Poke the state directly from any terminal — the same commands the agents use:
 
 ```bash
-node .bee/bin/bee_status.mjs --json            # where am I? phase, gates, cells, bypass, next action
-node .bee/bin/bee_cells.mjs list               # all cells; `ready` = open cells with deps capped
-node .bee/bin/bee_decisions.mjs active         # decisions currently in force
+node .bee/bin/bee.mjs status --json            # where am I? phase, gates, cells, bypass, next action
+node .bee/bin/bee.mjs cells list               # all cells; `ready` = open cells with deps capped
+node .bee/bin/bee.mjs decisions active         # decisions currently in force
 
 # verify the enforcement is armed (expected to refuse before Gate 3):
-node .bee/bin/bee_cells.mjs claim --id anything --worker w1
+node .bee/bin/bee.mjs cells claim --id anything --worker w1
 # → error: gate "execution" is not approved   ✔
 ```
 
@@ -379,14 +379,15 @@ node .bee/bin/bee_cells.mjs claim --id anything --worker w1
 
 Everything is Node 18+ ESM, **zero npm dependencies**, atomic writes, Windows-safe paths. Helpers exit non-zero with a one-line `{error}` JSON on `--json`; hooks never break a session (fail-open, crash-logged to `.bee/logs/hooks.jsonl`).
 
-### Vendored helpers — `<repo>/.bee/bin/` (source: `skills/bee-hive/templates/`)
+### Vendored CLI — `<repo>/.bee/bin/bee.mjs` (source: `skills/bee-hive/templates/`)
 
-Copied into every onboarded repo, so enforcement works even for agents that ignore instructions.
+Copied into every onboarded repo, so enforcement works even for agents that ignore instructions. `bee.mjs <group> <verb>` is the sole shipped CLI, covering all 9 command groups:
 
-- **`bee_status.mjs`** — one-shot situational scout: onboarding health, phase/mode/feature, gate states, **gate-bypass state**, cell counts, **scribing debt** (uncaptured behavior changes), **model-tier map**, reservations, recent decisions, staleness warnings, recommended next action. First command of every session.
-- **`bee_cells.mjs`** — the cell lifecycle: `list` / `ready` / `show` / `add` / `claim` (throws unless Gate 3 approved + deps capped) / `verify` / `cap` (refuses without recorded proof; `behavior_change` cells also require a before-state) / `block` / `drop`.
-- **`bee_reservations.mjs`** — file-level conflict prevention between parallel workers: `reserve` / `release` / `list` / `sweep` (release expired TTLs). On overlap → `{ok:false, conflicts}`; the caller must return `[BLOCKED]`.
-- **`bee_decisions.mjs`** — append-only decision log (rejects secrets and injection patterns): `log` / `supersede` / `redact` / `active` / `search`.
+- **`status`** — one-shot situational scout: onboarding health, phase/mode/feature, gate states, **gate-bypass state**, cell counts, **scribing debt** (uncaptured behavior changes), **model-tier map**, reservations, recent decisions, staleness warnings, recommended next action. First command of every session.
+- **`cells`** — the cell lifecycle: `list` / `ready` / `show` / `add` / `claim` (throws unless Gate 3 approved + deps capped) / `verify` / `cap` (refuses without recorded proof; `behavior_change` cells also require a before-state) / `block` / `drop`.
+- **`reservations`** — file-level conflict prevention between parallel workers: `reserve` / `release` / `list` / `sweep` (release expired TTLs). On overlap → `{ok:false, conflicts}`; the caller must return `[BLOCKED]`.
+- **`decisions`** — append-only decision log (rejects secrets and injection patterns): `log` / `supersede` / `redact` / `active` / `search`.
+- plus **`state`**, **`backlog`**, **`capture`**, **`reviews`**, **`feedback`** — see `node .bee/bin/bee.mjs --help --json` for the full manifest.
 
 ### Onboarding — `skills/bee-hive/scripts/onboard_bee.mjs`
 

@@ -47,7 +47,7 @@ The script uses the manual-copy route for skills. If you prefer the Claude Code 
 
 bee installs in two layers:
 
-1. **Repo layer** (once per project, the default): onboarding installs the `AGENTS.md` BEE block, the `.bee/` runtime directory, the vendored helpers, a `CLAUDE.md` `@AGENTS.md` import, and a per-project copy of the `bee-*` skills into the repo itself — `<repo>/.claude/skills` for Claude Code, `<repo>/.agents/skills` for Codex. These skill trees are committed to the host repo (same policy as the vendored helpers), so every teammate and CI job sees identical skills without any machine-wide install; re-onboarding refreshes them.
+1. **Repo layer** (once per project, the default): onboarding installs the `AGENTS.md` BEE block, the `.bee/` runtime directory, the vendored `bee.mjs` CLI, a `CLAUDE.md` `@AGENTS.md` import, and a per-project copy of the `bee-*` skills into the repo itself — `<repo>/.claude/skills` for Claude Code, `<repo>/.agents/skills` for Codex. These skill trees are committed to the host repo (same policy as the vendored CLI), so every teammate and CI job sees identical skills without any machine-wide install; re-onboarding refreshes them.
 2. **Runtime layer** (opt-in, once per machine): a legacy global copy of the `bee-*` skills into `~/.claude/skills` and/or `~/.codex/skills`. Nothing in this layer is touched unless you pass `--global-skills` (`-GlobalSkills`) — the per-project copy above is what agents actually discover by default. On Claude Code, the hook skeleton still needs one of the routes below (the plugin, or `--repo-hooks` during onboarding).
 
 Requirement for both: **Node.js 18+** on PATH (`node --version`).
@@ -117,7 +117,7 @@ Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* <repo>\.agents\skills\     
 Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* $env:USERPROFILE\.codex\skills\  # legacy global
 ```
 
-Codex has no lifecycle hooks — that's by design in bee: bootstrap comes from the `AGENTS.md` BEE block (installed in step 3), and every gate- and integrity-critical rule is enforced by the vendored helpers, identically to Claude Code. See [docs/06-runtime-integration.md](docs/06-runtime-integration.md) for the parity matrix.
+Codex has no lifecycle hooks — that's by design in bee: bootstrap comes from the `AGENTS.md` BEE block (installed in step 3), and every gate- and integrity-critical rule is enforced by the vendored `bee.mjs` CLI, identically to Claude Code. See [docs/06-runtime-integration.md](docs/06-runtime-integration.md) for the parity matrix.
 
 ---
 
@@ -169,7 +169,7 @@ Alternatively, do it conversationally: open a session in the repo and say **"Onb
 In the onboarded repo:
 
 ```bash
-node .bee/bin/bee_status.mjs --json
+node .bee/bin/bee.mjs status --json
 ```
 
 Expect `onboarding.installed: true`, `phase: "idle"`, all gates `false`.
@@ -191,20 +191,20 @@ echo '{"tool_name":"Write","tool_input":{"file_path":"src/x.ts"}}' | node .bee/b
 
 (with `--repo-hooks` install; for the plugin route the hooks run from the plugin directory — just watch the session preamble instead).
 
-Codex — start a session in the repo: the agent should follow the AGENTS.md BEE block and run `bee_status` as its first scout step. Then try: "Route this through bee: fix the typo in README" → expect tiny-lane routing, not ceremony.
+Codex — start a session in the repo: the agent should follow the AGENTS.md BEE block and run `bee.mjs status` as its first scout step. Then try: "Route this through bee: fix the typo in README" → expect tiny-lane routing, not ceremony.
 
 Smoke the enforcement (any runtime, any agent):
 
 ```bash
-node .bee/bin/bee_cells.mjs claim --id anything --worker w1
-# → refuses: gate "execution" is not approved  ✔ the helpers are armed
+node .bee/bin/bee.mjs cells claim --id anything --worker w1
+# → refuses: gate "execution" is not approved  ✔ the CLI is armed
 ```
 
 ---
 
 ## 5. Update / uninstall
 
-**Update:** pull/copy the new plugin version, then re-run onboarding per repo (`--apply`) — it detects drift via managed versions in `.bee/onboarding.json` and refreshes the AGENTS block + helpers. Plugin route: `/plugin update bee` (or re-add the marketplace) as well.
+**Update:** pull/copy the new plugin version, then re-run onboarding per repo (`--apply`) — it detects drift via managed versions in `.bee/onboarding.json` and refreshes the AGENTS block + CLI. Plugin route: `/plugin update bee` (or re-add the marketplace) as well.
 
 **Uninstall (per repo):** delete the BEE block (everything between and including the `BEE:START`/`BEE:END` markers) from `AGENTS.md`, remove `.bee/`, and — if `--repo-hooks` was used — remove the six `bee-*` entries from `.claude/settings.json`. `docs/history/` is yours; keep it.
 
@@ -220,6 +220,6 @@ node .bee/bin/bee_cells.mjs claim --id anything --worker w1
 | Codex doesn't see bee skills | Repo-level discovery is `.agents/skills`, not `.codex/skills` — check that path was populated by onboarding; `~/.codex/skills` is legacy/global and only exists if you passed `--global-skills` to the install script |
 | `install.ps1` fails to parse on Windows PowerShell 5.1 | Historically caused by non-ASCII bytes (em-dashes) in a UTF-8-no-BOM file decoding as cp1252 smart quotes, which terminate strings mid-line. `install.ps1` is ASCII-only now and a repo test guards `scripts/*.ps1` against non-ASCII bytes — report this as a regression if you still hit it |
 | No session preamble in Claude Code | Repo not onboarded (`.bee/onboarding.json` missing — hooks self-arm only after onboarding), or hook disabled in `.bee/config.json → hooks.session-init` |
-| `claim`/`cap` refuse unexpectedly | Working as designed: check `bee_status` for gate states — execution must be approved (Gate 3), cells must have a passing recorded verify before capping |
+| `claim`/`cap` refuse unexpectedly | Working as designed: check `bee.mjs status` for gate states — execution must be approved (Gate 3), cells must have a passing recorded verify before capping |
 | Hook crash suspected | Hooks are fail-open; check `.bee/logs/hooks.jsonl` |
 | `node` not found | Install Node 18+ and reopen the terminal/session |

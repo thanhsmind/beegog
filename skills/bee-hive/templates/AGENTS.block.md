@@ -6,11 +6,11 @@ Use `bee-hive` first in this repo unless you are resuming an already approved be
 
 1. Read this file at session start and again after any context compaction.
 2. If `.bee/onboarding.json` is missing or outdated, stop and run `bee-hive` onboarding before continuing.
-3. Run `node .bee/bin/bee_status.mjs --json` as the first step of every session and after every compaction.
-4. If `.bee/HANDOFF.json` exists, check its kind (`node .bee/bin/bee_state.mjs handoff show --json` — a missing/unknown kind reads as `pause`, fail-safe): a **pause** handoff — surface the saved state to the user and wait for explicit confirmation, **never auto-resume**, exactly as before. A **planned-next** handoff (previous cell capped with green verify, next cell already claimed via `bee cells claim-next`) is written only through `bee state handoff write --kind planned-next` and is adopted automatically ONLY at this fresh-session boundary (a `/clear` or a freshly started session) via `bee state handoff adopt` — the adopted unit, its verify command, and its lane replace the wait block with a start-now instruction. A resumed or memory-compacted session never adopts: same wait-and-surface rule as pause.
+3. Run `node .bee/bin/bee.mjs status --json` as the first step of every session and after every compaction.
+4. If `.bee/HANDOFF.json` exists, check its kind (`node .bee/bin/bee.mjs state handoff show --json` — a missing/unknown kind reads as `pause`, fail-safe): a **pause** handoff — surface the saved state to the user and wait for explicit confirmation, **never auto-resume**, exactly as before. A **planned-next** handoff (previous cell capped with green verify, next cell already claimed via `bee cells claim-next`) is written only through `bee state handoff write --kind planned-next` and is adopted automatically ONLY at this fresh-session boundary (a `/clear` or a freshly started session) via `bee state handoff adopt` — the adopted unit, its verify command, and its lane replace the wait block with a start-now instruction. A resumed or memory-compacted session never adopts: same wait-and-surface rule as pause.
 5. If `docs/history/learnings/critical-patterns.md` exists, read it before any planning or execution work.
 6. **Baseline gate:** if `.bee/config.json` records `commands.verify`, run it once per session before claiming any cell. A red baseline is surfaced to the user and becomes its own fix-first tiny cell — never build on red. If no commands are recorded, capture the host project's `setup/start/test/verify` into `.bee/config.json` `commands` at the first natural moment (exploring or onboarding).
-7. **Optional discovery:** `.bee/bin/bee.mjs` is the single dispatcher covering all 9 command groups (`status`, `cells`, `reservations`, `decisions`, `state`, `backlog`, `capture`, `reviews`, `feedback`) — every `bee_*.mjs` helper is a thin shim over it, so `bee_cells.mjs <verb>` and `bee.mjs cells <verb>` are the same implementation with byte-identical output. Run `node .bee/bin/bee.mjs --help --json` any time to see the full command surface as a Claude-Code tool-schema-shaped manifest (`{name, invoke, description, parameters, examples, deprecated}`). This is a discovery aid available on request, not a mandatory every-session call — an MCP server wrapper and a mandatory per-session discovery step were both considered and explicitly deferred (no such mandatory mechanism existed before this, so nothing here replaces one). The helper invocations keep working unchanged, exactly as in steps 1-6.
+7. **Optional discovery:** `.bee/bin/bee.mjs` is the single CLI covering all 9 command groups (`status`, `cells`, `reservations`, `decisions`, `state`, `backlog`, `capture`, `reviews`, `feedback`) — e.g. `bee.mjs status`, `bee.mjs cells <verb>`, `bee.mjs reservations <verb>`. Run `node .bee/bin/bee.mjs --help --json` any time to see the full command surface as a Claude-Code tool-schema-shaped manifest (`{name, invoke, description, parameters, examples, deprecated}`). This is a discovery aid available on request, not a mandatory every-session call — an MCP server wrapper and a mandatory per-session discovery step were both considered and explicitly deferred (no such mandatory mechanism existed before this, so nothing here replaces one). The command forms used in steps 1-6 above are the canonical invocations.
 
 ## Chain and gates
 
@@ -34,12 +34,12 @@ Independent review is user-invoked, not an automatic chain stage (decision 565e6
 ## Critical rules
 
 1. Never execute before validating: no source edits until Gate 3 (`approved_gates.execution: true` in `.bee/state.json`).
-2. **Capping requires verification — with proof.** `node .bee/bin/bee_cells.mjs cap` refuses unless a passing verify result is recorded for the cell; small+ lanes additionally require the verify's recorded output (`verify --output "..."` or `--output-file`) or attached evidence, plus a non-empty `--files` list. The cell's `verify` field must be a runnable command, not a description; run it and record what it printed. An assertion is not evidence.
+2. **Capping requires verification — with proof.** `node .bee/bin/bee.mjs cells cap` refuses unless a passing verify result is recorded for the cell; small+ lanes additionally require the verify's recorded output (`verify --output "..."` or `--output-file`) or attached evidence, plus a non-empty `--files` list. The cell's `verify` field must be a runnable command, not a description; run it and record what it printed. An assertion is not evidence.
 3. Cells are assigned by the orchestrator; workers never self-select. `claim` refuses while Gate 3 is unapproved or deps are uncapped.
-4. Reserve files before write-heavy work in a swarm: `node .bee/bin/bee_reservations.mjs reserve --agent <name> --cell <id> --path <path>`. On conflict, return `[BLOCKED]` with the conflict — do not write anyway.
+4. Reserve files before write-heavy work in a swarm: `node .bee/bin/bee.mjs reservations reserve --agent <name> --cell <id> --path <path>`. On conflict, return `[BLOCKED]` with the conflict — do not write anyway.
 5. Prefix write-heavy shell commands with `BEE_AGENT_NAME=<name>` during swarms so reservation ownership is checkable.
 6. At roughly 65% context usage, write `.bee/HANDOFF.json` and pause cleanly.
-7. `docs/history/<feature>/CONTEXT.md` is the source of truth for locked decisions. Log decisions through `node .bee/bin/bee_decisions.mjs`, never by hand-editing `.bee/decisions.jsonl`.
+7. `docs/history/<feature>/CONTEXT.md` is the source of truth for locked decisions. Log decisions through `node .bee/bin/bee.mjs decisions`, never by hand-editing `.bee/decisions.jsonl`.
 8. One commit per cell, cell id in the commit message.
 9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` spec sync in every lane — tiny included — and any settled discussion outcome (rule agreed, behavior confirmed by test, value tuned; backend or frontend alike) is logged as a decision and merged into `docs/specs/` the moment it settles, never left in the chat. **Detecting settlement is the agent's job, every turn, unprompted** — the user never has to say "ghi lại"/"document this". Notice the settlement, announce it in one line ("chốt X — ghi vào spec"), and run the bee-scribing capture in the same turn. Spec and decision writes are docs-layer: allowed in every phase, no gate, no permission needed.
 10. **The agent runs the machinery, not the user.** Every bee command — `bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, onboarding, verify commands — is run by the agent itself, immediately, the moment the workflow calls for it. Never print a bee command for the user to execute, never end a turn on "run this and tell me the output". The only human actions in bee are gate approvals, decision answers, and privacy approvals; everything mechanical is the agent's job. (Users *may* run helpers manually to inspect state — that is their option, never a step the agent delegates.)
@@ -57,11 +57,11 @@ Independent review is user-invoked, not an automatic chain stage (decision 565e6
   config.json         <- per-repo config: hooks.<name> toggles + commands (setup/start/test/verify)
   HANDOFF.json        <- pause/resume artifact (exists only while paused)
   reservations.json   <- file reservations for same-session swarms
-  decisions.jsonl     <- append-only decision events (use bee_decisions.mjs)
+  decisions.jsonl     <- append-only decision events (use bee.mjs decisions)
   backlog.jsonl       <- friction + grooming items
   cells/              <- one JSON file per cell: <feature>-<n>.json
   logs/hooks.jsonl    <- fail-open hook crash/audit log
-  bin/                <- bee.mjs (unified dispatcher, all 9 command groups) + the 9 bee_*.mjs shims over it
+  bin/                <- bee.mjs (single dispatcher, all 9 command groups; sole shipped CLI)
   bin/lib/            <- shared modules used by helpers, bee.mjs, and hooks
 
 docs/history/<feature>/    <- always: CONTEXT.md, plan.md, reports/; conditional (decision 0009): discovery.md/approach.md/implement-plan.md only for L2+ discovery or high-risk, else folded into plan.md sections
@@ -91,7 +91,7 @@ Jumping from exploring to swarming · code before CONTEXT.md exists · skipping 
 
 Before ending a substantial bee work chunk:
 
-1. Cap or release every claimed cell; release reservations (`bee_reservations.mjs release`).
+1. Cap or release every claimed cell; release reservations (`bee.mjs reservations release`).
 2. Leave `.bee/state.json` (phase, summary, next_action) and `.bee/HANDOFF.json` consistent with the true pause/resume state.
 3. If `commands.verify` is recorded, run it: end green, or end red only with a fix-first cell filed and the red result reported — never left silent.
 4. Mention remaining blockers, open questions, and the next action in the final response.
