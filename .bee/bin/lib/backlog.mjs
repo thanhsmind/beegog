@@ -152,6 +152,78 @@ export function rankBacklog(root, { write = false } = {}) {
   return { changed, order };
 }
 
+// ─── featureBacklogRank: Feature-column rank (fresh-session-handoff fsh-11,
+// D2 cross-lane ordering) ────────────────────────────────────────────────────
+// rankBacklog above reorders rows by Status and returns the ID-column order —
+// it never reads the Feature column at all. claim-next's cross-lane pull
+// needs the OPPOSITE lookup: "where does lane/feature X rank in the backlog",
+// keyed by feature, not by row id. This walks the same table shape (status-
+// grouped weight, stable within a group — the exact RANK_WEIGHT ordering
+// rankBacklog itself uses) but captures the Feature column per row instead.
+//
+// A row whose Feature cell is missing, blank, or the placeholder "—"/"-"
+// contributes no mapping — it never claims a feature slug. When two rows
+// name the SAME feature, the row closest to rank 0 (its best-ranked
+// occurrence) wins, so a feature with both an in-flight and a done row ranks
+// at the in-flight row's position.
+//
+// @returns {Map<string, number>} feature slug -> rank position (0 = highest
+//   priority). Empty when the file is absent or has no parseable table with a
+//   Feature column — callers treat a missing entry as "unranked" (sorts last
+//   alongside every other unranked feature, callers' tie-break decides ties).
+export function featureBacklogRank(root) {
+  const file = backlogPath(root);
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return new Map();
+  }
+
+  const lines = text.split(/\r?\n/);
+  let statusIndex = -1;
+  let featureIndex = -1;
+  let separatorLine = -1;
+  const rows = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!lines[i].includes('|')) {
+      if (separatorLine !== -1 && rows.length > 0) break;
+      continue;
+    }
+    const cells = splitRow(lines[i]);
+    if (statusIndex === -1) {
+      const idx = cells.findIndex((cell) => normalizeStatus(cell) === 'status');
+      if (idx !== -1) {
+        statusIndex = idx;
+        featureIndex = cells.findIndex((cell) => normalizeStatus(cell) === 'feature');
+      }
+      continue;
+    }
+    if (separatorLine === -1) {
+      separatorLine = i; // the |---| row right after the header
+      continue;
+    }
+    const token = cells.length > statusIndex ? normalizeStatus(cells[statusIndex]) : '';
+    const rawFeature = featureIndex !== -1 && cells.length > featureIndex ? cells[featureIndex] : '';
+    const feature = rawFeature.replace(/[*`_]/g, '').trim();
+    rows.push({
+      feature: feature && feature !== '—' && feature !== '-' ? feature : null,
+      weight: RANK_WEIGHT[token] !== undefined ? RANK_WEIGHT[token] : RANK_UNKNOWN_WEIGHT,
+      position: rows.length,
+    });
+  }
+  if (statusIndex === -1 || featureIndex === -1 || separatorLine === -1 || rows.length === 0) {
+    return new Map();
+  }
+
+  const ranked = [...rows].sort((a, b) => a.weight - b.weight || a.position - b.position);
+  const map = new Map();
+  ranked.forEach((row, rank) => {
+    if (row.feature && !map.has(row.feature)) map.set(row.feature, rank);
+  });
+  return map;
+}
+
 // ─── P3: README badges ──────────────────────────────────────────────────────
 // Renders the counts as shields.io static badges between BEE markers in
 // README.md. Idempotent; creates the marker block after the first heading when

@@ -270,6 +270,25 @@ export const COMMAND_REGISTRY = [
     examples: ['bee cells judge --id demo-1 --json'],
     deprecated: null,
   },
+  {
+    name: 'cells.claim-next',
+    helper: 'bee_cells.mjs',
+    invoke: 'bee cells claim-next',
+    description:
+      "Cross-session selection + claim (fresh-session-handoff fsh-11, D2/D4): sweeps stale claims (TTL expired AND heartbeat stale) in-pass first — this IS sweepExpiredClaims's production trigger — then picks the next open cell to claim: the acting session's own bound lane (or the default pipeline when unbound) first, ONLY when its execution gate is approved; empty or unapproved falls back to every OTHER pipeline whose OWN execution gate is approved (an unapproved lane is never touched), ordered by backlog rank then lane created_at. Cells whose files intersect another session's active reservation hold are skipped (the acting session's own holds never exclude a cell). Claims via the two-store sequence (claims.mjs claimCellFile then cells.mjs claimCell, unwound with a claim-file release on any claimCell throw). Refuses (non-zero exit) when nothing is claimable (NO_APPROVED_WORK), the claims-store race is lost (CLAIMED), or the session's lane binding is broken (LANE_INVALID/LANE_MISSING/LANE_CORRUPT).",
+    parameters: {
+      type: 'object',
+      properties: {
+        worker: { type: 'string', description: 'Reservation identity of the claiming worker.' },
+        'session-id': { type: 'string', description: "Acting session's cross-session identity (claims.mjs) — resolves its bound lane, if any." },
+        ttl: { type: 'number', description: 'Claim TTL in seconds (default 3600).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['worker', 'session-id'],
+    },
+    examples: ['bee cells claim-next --worker worker-a --session-id sess-claim-next --json'],
+    deprecated: null,
+  },
 
   // ─── reservations (bee_reservations.mjs) ─────────────────────────────────
   {

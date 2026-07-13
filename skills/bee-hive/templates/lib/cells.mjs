@@ -4,7 +4,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
-import { readState, gateApproved, MODEL_TIERS, lanePath, readLaneStrict } from './state.mjs';
+import {
+  readState,
+  gateApproved,
+  MODEL_TIERS,
+  lanePath,
+  readLaneStrict,
+  resolvePipeline,
+  listLanes,
+} from './state.mjs';
+// fsh-11 (D2/D4): claim-next's cross-session selection + throw-safe two-store
+// claim needs claims.mjs's atomic primitive, reservations.mjs's cross-session
+// hold check, and backlog.mjs's Feature-column rank — none of these create an
+// import cycle (claims.mjs/reservations.mjs import only fsutil/node builtins;
+// backlog.mjs imports only fs/path — same discipline state.mjs already relies
+// on for pathsOverlap/readSession above it in the module graph).
+import { sweepExpiredClaims, claimCellFile, releaseClaim } from './claims.mjs';
+import { findSessionConflicts } from './reservations.mjs';
+import { featureBacklogRank } from './backlog.mjs';
 
 export const LANES = ['tiny', 'small', 'standard', 'high-risk', 'spike'];
 
@@ -641,4 +658,165 @@ export function ceilingScarcityWarning(root) {
   if (mix.tiered < SCARCITY_MIN_TIERED) return null;
   if (mix.ceilingShare <= CEILING_MAX_SHARE) return null;
   return { pct: Math.round(mix.ceilingShare * 100), ceiling: mix.counts.ceiling, tiered: mix.tiered };
+}
+
+// ─── claim-next: cross-session selection + throw-safe two-store claim ──────
+// (fresh-session-handoff fsh-11, D2/D4).
+
+// claimCellCrossSession — the CLAIMING primitive alone, exported separately
+// from claimNextCell below so the throw-unwind guarantee is directly
+// testable without re-deriving a whole selection scenario.
+//
+// UNWIND PIN (validation-s4 panel W4): claims.mjs's claimCellFile is a typed
+// return ({ok:false,...} on contention, never throws for that), but this
+// module's OWN claimCell signals every failure by THROW (gate refused, cell
+// not found, wrong status, uncapped deps — there is no {ok:false} shape to
+// check). Skipping the try/catch here would let a real claimCell failure
+// leave the just-created claims-store file behind FOREVER — an orphaned
+// cross-session lock with no cells.mjs-side owner, since nothing else ever
+// looks at it again. Every throw here releases the claim via claims.mjs's own
+// releaseClaim before surfacing a typed failure; this function itself never
+// throws for a claimCell failure, only for bad arguments (mirrors claims.mjs
+// requireId's bad-argument convention).
+export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } = {}) {
+  if (typeof sessionId !== 'string' || !sessionId.trim()) {
+    throw new Error('claimCellCrossSession: sessionId is required.');
+  }
+  if (typeof worker !== 'string' || !worker.trim()) {
+    throw new Error('claimCellCrossSession: worker is required.');
+  }
+  if (typeof cellId !== 'string' || !cellId.trim()) {
+    throw new Error('claimCellCrossSession: cellId is required.');
+  }
+  const session = sessionId.trim();
+  const id = cellId.trim();
+
+  const fileClaim = claimCellFile(root, session, id, ttl);
+  if (!fileClaim.ok) return fileClaim; // typed CLAIMED failure, propagated as-is
+
+  try {
+    const cell = claimCell(root, id, worker);
+    return { ok: true, cell, claim: fileClaim.claim };
+  } catch (err) {
+    releaseClaim(root, session, id); // never orphan the claim file we just created
+    return {
+      ok: false,
+      code: 'CLAIM_CELL_FAILED',
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// claimNextCell — the SELECTION half. Given the acting session, picks the
+// next open cell to claim and runs it through claimCellCrossSession above.
+// Selection order:
+//   (1) the acting session's OWN pipeline (its bound lane, or the default
+//       state.json pipeline when unbound/no binding — resolvePipeline's own
+//       session -> lane -> default resolution seam) — ONLY when that
+//       pipeline's execution gate is approved. An own pipeline whose gate is
+//       unapproved contributes nothing here, on purpose: D2's authority
+//       boundary ("only a human's, or a recorded bypass's, gate decision
+//       authorizes a lane's cells, never the puller") holds for the acting
+//       session's own lane too — never select from an unapproved lane even
+//       when its cells are the only ready ones.
+//   (2) empty (no ready cells, or the gate is unapproved) -> every OTHER
+//       pipeline (the default state.json pipeline plus every
+//       .bee/lanes/*.json record) whose OWN execution gate is approved,
+//       pooled and ordered by backlog rank (docs/backlog.md's Feature
+//       column, via backlog.mjs's featureBacklogRank) then lane created_at,
+//       oldest first; a pipeline with no backlog row, or no created_at,
+//       sorts after one that has it.
+//   (3) any candidate whose declared files intersect ANOTHER session's
+//       active reservation hold (findSessionConflicts, D3) is skipped
+//       outright — the acting session's own holds never exclude a cell.
+//   (4) nothing claimable anywhere -> typed { ok:false, code:'NO_APPROVED_WORK' }.
+//
+// SWEEP PIN (validation-s4 panel B1): sweepExpiredClaims runs FIRST, every
+// call, unconditionally — this is sweepExpiredClaims's production trigger (it
+// had zero production callers before this, tests only). A dead session's
+// stale claim (TTL expired AND heartbeat stale, re-verified under its own
+// gate by sweepExpiredClaims itself) is reclaimed in THIS SAME pass, before
+// selection reads anything else, so a just-swept cell is immediately
+// claimable and the typed NO_APPROVED_WORK stop is never returned while one
+// still exists.
+export function claimNextCell(root, { sessionId, worker, ttl } = {}) {
+  if (typeof sessionId !== 'string' || !sessionId.trim()) {
+    throw new Error('claimNextCell: sessionId is required.');
+  }
+  if (typeof worker !== 'string' || !worker.trim()) {
+    throw new Error('claimNextCell: worker is required.');
+  }
+  const session = sessionId.trim();
+
+  // Unconditional, first thing — the production sweep trigger (C10). A swept
+  // cell's stale claims-store file is gone by the time selection below reads
+  // anything, so it is claimable in this exact pass.
+  sweepExpiredClaims(root);
+
+  const resolved = resolvePipeline(root, { sessionId: session });
+  if (!resolved.ok) {
+    // A bound-but-broken lane (missing/corrupt) refuses loudly rather than
+    // silently falling back to the default pipeline — same discipline
+    // resolvePipeline itself documents; claim-next never masks it.
+    return { ok: false, code: resolved.code, reason: resolved.reason };
+  }
+  const ownFeature = resolved.record.feature || null;
+
+  const holdFree = (cell) => {
+    const files = Array.isArray(cell.files) ? cell.files : [];
+    return files.length === 0 || findSessionConflicts(root, session, files).length === 0;
+  };
+
+  let candidate = null;
+  if (ownFeature && gateApproved(resolved.record, 'execution')) {
+    candidate = readyCells(root, ownFeature).find(holdFree) || null;
+  }
+
+  if (!candidate) {
+    const state = readState(root);
+    const pipelines = new Map(); // feature -> { approved, created_at }
+    if (state.feature && state.feature !== ownFeature) {
+      pipelines.set(state.feature, { approved: gateApproved(state, 'execution'), created_at: null });
+    }
+    for (const lane of listLanes(root)) {
+      if (!lane.feature || lane.feature === ownFeature || pipelines.has(lane.feature)) continue;
+      pipelines.set(lane.feature, {
+        approved: gateApproved(lane, 'execution'),
+        created_at: lane.created_at || null,
+      });
+    }
+
+    const rank = featureBacklogRank(root);
+    const pool = [];
+    for (const [feature, meta] of pipelines) {
+      if (!meta.approved) continue; // D2: an unapproved lane is never touched
+      for (const cell of readyCells(root, feature)) {
+        if (holdFree(cell)) pool.push({ cell, feature, meta });
+      }
+    }
+    pool.sort((a, b) => {
+      const rankA = rank.has(a.feature) ? rank.get(a.feature) : Infinity;
+      const rankB = rank.has(b.feature) ? rank.get(b.feature) : Infinity;
+      if (rankA !== rankB) return rankA - rankB;
+      const createdA = a.meta.created_at ? Date.parse(a.meta.created_at) : NaN;
+      const createdB = b.meta.created_at ? Date.parse(b.meta.created_at) : NaN;
+      const aKnown = Number.isFinite(createdA);
+      const bKnown = Number.isFinite(createdB);
+      if (aKnown && bKnown && createdA !== createdB) return createdA - createdB;
+      if (aKnown !== bKnown) return aKnown ? -1 : 1; // a known created_at outranks an unknown one
+      return 0;
+    });
+    candidate = pool.length > 0 ? pool[0].cell : null;
+  }
+
+  if (!candidate) {
+    return {
+      ok: false,
+      code: 'NO_APPROVED_WORK',
+      reason:
+        "no claimable cell: the acting session's own pipeline has none ready, and no other execution-approved pipeline has a ready cell free of another session's hold.",
+    };
+  }
+
+  return claimCellCrossSession(root, { sessionId: session, worker, cellId: candidate.id, ttl });
 }

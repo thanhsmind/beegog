@@ -47,6 +47,7 @@ import {
   updateReadmeBadges,
   BADGE_MARKER_START,
   BADGE_MARKER_END,
+  featureBacklogRank,
 } from '../lib/backlog.mjs';
 import {
   addCell,
@@ -66,6 +67,8 @@ import {
   setTier,
   frozenJudgeHits,
   FROZEN_JUDGE_PATTERNS,
+  claimNextCell,
+  claimCellCrossSession,
 } from '../lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
 import {
@@ -2078,6 +2081,41 @@ check('rankBacklog groups rows in-flight → proposed → done, stable within gr
     // counts unchanged by the reorder (no status was flipped)
     const counts = readBacklogCounts(bRoot);
     assert(counts.done === 2 && counts.proposed === 2 && counts.inFlight === 1, 'rank flips no status');
+  } finally {
+    fs.rmSync(bRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── featureBacklogRank: Feature-column rank (fresh-session-handoff fsh-11, ─
+// D2 cross-lane ordering). rankBacklog above returns the ID-column order and
+// never reads the Feature column at all — this is the opposite lookup
+// claim-next needs: feature slug -> rank position.
+
+check('featureBacklogRank maps feature slug -> rank position from the Feature column; "—" rows never claim a slug; a missing docs/backlog.md returns an empty map', () => {
+  const bRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-feature-rank-'));
+  fs.mkdirSync(path.join(bRoot, '.bee'), { recursive: true });
+  fs.mkdirSync(path.join(bRoot, 'docs'), { recursive: true });
+  writeJsonAtomic(path.join(bRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  const table = [
+    '# Product Backlog',
+    '',
+    '| ID | Story | CoS | Status | Feature |',
+    '|----|-------|-----|--------|---------|',
+    '| A1 | first done | x | done | f1 |',
+    '| A2 | first proposed | x | proposed | — |',
+    '| A3 | the active one | x | in-flight | f2 |',
+    '| A4 | second proposed | x | proposed | — |',
+    '| A5 | second done | x | done | f3 |',
+  ].join('\n');
+  fs.writeFileSync(path.join(bRoot, 'docs', 'backlog.md'), table, 'utf8');
+  try {
+    const rank = featureBacklogRank(bRoot);
+    assert(rank.get('f2') === 0, `f2 (the only in-flight row) ranks 0, got ${JSON.stringify([...rank])}`);
+    assert(rank.get('f1') === 3, `f1 (first done row) ranks after both proposed rows, got ${rank.get('f1')}`);
+    assert(rank.get('f3') === 4, `f3 (second done row) ranks last, got ${rank.get('f3')}`);
+    assert(!rank.has('—') && !rank.has('-'), 'the placeholder Feature cell never claims a slug');
+    assert(rank.size === 3, `only the 3 real features are named, got ${JSON.stringify([...rank])}`);
+    assert(featureBacklogRank(path.join(bRoot, 'no-such-nested-dir')).size === 0, 'a missing docs/backlog.md returns an empty map, never throws');
   } finally {
     fs.rmSync(bRoot, { recursive: true, force: true });
   }
@@ -5352,6 +5390,270 @@ check(
     }
   },
 );
+
+// ─── fsh-11: claim-next selection + throw-safe two-store claim (D2/D4) ──────
+// Own bound lane (or the default pipeline when unbound) first, only when its
+// OWN execution gate is approved; falls through to every OTHER pipeline whose
+// gate is approved (never an unapproved one, even as the only ready cell);
+// cells held by another session's active reservation are skipped (own holds
+// never exclude); a dead session's stale claim is swept in the SAME pass
+// (sweepExpiredClaims's production trigger, panel B1); the two-store claim
+// releases its claims-store file on any claimCell throw (panel W4).
+
+check(
+  "claimNextCell: a dead session's stale claim (TTL expired + heartbeat stale) is swept in-pass and the cell is selected in the SAME call — NO_APPROVED_WORK is never returned while it exists (C10, sweepExpiredClaims's production trigger)",
+  () => {
+    const dir = makeStateRepo('bee-claimnext-sweep-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        mode: 'standard',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      makeCellFile(dir, 'stale-1', { feature: 'demo-feat', status: 'open', deps: [] });
+
+      // Simulate the two-store crash window: claims.mjs's claim file exists
+      // (a dead session claimed it) but cells.mjs's OWN status is still
+      // 'open' — exactly the gap a crash between claimCellFile and cells.mjs
+      // claimCell leaves behind. No session record for 'sess-dead' at all:
+      // heartbeatStale treats a missing session as stale (claims.mjs's own
+      // documented rule), so TTL-expired + no-session together qualify.
+      const dead = claimCellFile(dir, 'sess-dead', 'stale-1', 60);
+      assert(dead.ok === true, 'precondition: the dead session claimed the file first');
+      const stale = readClaim(dir, 'stale-1');
+      writeJsonAtomic(claimPath(dir, 'stale-1'), {
+        ...stale,
+        claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
+      });
+      assert(readCell(dir, 'stale-1').status === 'open', 'precondition: cells.mjs status was never flipped (the crash-window gap)');
+
+      const result = claimNextCell(dir, { sessionId: 'sess-fresh', worker: 'worker-fresh' });
+      assert(result.ok === true, `expected the swept cell to be reclaimed and selected, got ${JSON.stringify(result)}`);
+      assert(result.cell.id === 'stale-1' && result.cell.status === 'claimed', 'the previously-stale cell is now claimed');
+      assert(readClaim(dir, 'stale-1').session === 'sess-fresh', 'the claims-store claim now belongs to the fresh session');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+check(
+  "claimNextCell: the acting session's own bound lane's ready cell wins even when a backlog-favored OTHER approved lane also has one ready (own lane first, D2)",
+  () => {
+    const dir = makeStateRepo('bee-claimnext-own-first-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+      const approved = { context: true, shape: true, execution: true, review: false };
+      writeLaneFixture(dir, 'lane-own', { approved_gates: approved });
+      writeLaneFixture(dir, 'lane-other', { approved_gates: approved });
+      makeCellFile(dir, 'own-1', { feature: 'lane-own', status: 'open', deps: [] });
+      makeCellFile(dir, 'other-1', { feature: 'lane-other', status: 'open', deps: [] });
+      fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'docs', 'backlog.md'),
+        [
+          '| ID | Story | CoS | Status | Feature |',
+          '|----|-------|-----|--------|---------|',
+          '| B1 | other ranks first | x | in-flight | lane-other |',
+          '| B2 | own ranks last | x | done | lane-own |',
+        ].join('\n'),
+        'utf8',
+      );
+      laneBinding.createSession(dir, { id: 'sess-own' });
+      laneBinding.bindSessionLane(dir, 'sess-own', 'lane-own');
+
+      const result = claimNextCell(dir, { sessionId: 'sess-own', worker: 'w' });
+      assert(result.ok === true && result.cell.id === 'own-1', `own lane must win regardless of backlog rank, got ${JSON.stringify(result)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+check(
+  "claimNextCell: an unapproved own lane is NEVER selected, even when its cell is the only ready one anywhere — typed NO_APPROVED_WORK (D2 authority boundary)",
+  () => {
+    const dir = makeStateRepo('bee-claimnext-unapproved-own-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+      writeLaneFixture(dir, 'lane-locked'); // default fixture gates: every gate false
+      makeCellFile(dir, 'locked-1', { feature: 'lane-locked', status: 'open', deps: [] });
+      laneBinding.createSession(dir, { id: 'sess-locked' });
+      laneBinding.bindSessionLane(dir, 'sess-locked', 'lane-locked');
+
+      const result = claimNextCell(dir, { sessionId: 'sess-locked', worker: 'w' });
+      assert(result.ok === false && result.code === 'NO_APPROVED_WORK', `an unapproved lane must never be auto-selected, got ${JSON.stringify(result)}`);
+      assert(readCell(dir, 'locked-1').status === 'open', 'the locked cell is untouched');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+check("claimNextCell: own lane with no ready cells falls through to another execution-approved lane", () => {
+  const dir = makeStateRepo('bee-claimnext-fallthrough-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+    const approved = { context: true, shape: true, execution: true, review: false };
+    writeLaneFixture(dir, 'lane-empty', { approved_gates: approved });
+    writeLaneFixture(dir, 'lane-full', { approved_gates: approved });
+    makeCellFile(dir, 'full-1', { feature: 'lane-full', status: 'open', deps: [] });
+    laneBinding.createSession(dir, { id: 'sess-empty' });
+    laneBinding.bindSessionLane(dir, 'sess-empty', 'lane-empty');
+
+    const result = claimNextCell(dir, { sessionId: 'sess-empty', worker: 'w' });
+    assert(result.ok === true && result.cell.id === 'full-1', `own lane empty must fall through to the other approved lane, got ${JSON.stringify(result)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check(
+  "claimNextCell: cross-lane ordering — when own pipeline is empty/unbound, the pool of other approved lanes is ordered by backlog rank first, then lane created_at (D2)",
+  () => {
+    const dir = makeStateRepo('bee-claimnext-crosslane-order-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+      const approved = { context: true, shape: true, execution: true, review: false };
+      writeLaneFixture(dir, 'lane-old', { approved_gates: approved, created_at: '2020-01-01T00:00:00.000Z' });
+      writeLaneFixture(dir, 'lane-new', { approved_gates: approved, created_at: '2024-01-01T00:00:00.000Z' });
+      writeLaneFixture(dir, 'lane-ranked', { approved_gates: approved, created_at: '2026-01-01T00:00:00.000Z' });
+      makeCellFile(dir, 'old-1', { feature: 'lane-old', status: 'open', deps: [] });
+      makeCellFile(dir, 'new-1', { feature: 'lane-new', status: 'open', deps: [] });
+      makeCellFile(dir, 'ranked-1', { feature: 'lane-ranked', status: 'open', deps: [] });
+      fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'docs', 'backlog.md'),
+        [
+          '| ID | Story | CoS | Status | Feature |',
+          '|----|-------|-----|--------|---------|',
+          '| C1 | ranked lane wins by rank | x | in-flight | lane-ranked |',
+        ].join('\n'),
+        'utf8',
+      );
+
+      // lane-ranked has an explicit (best) backlog rank, so it wins even
+      // though it is the YOUNGEST lane by created_at.
+      const first = claimNextCell(dir, { sessionId: 'sess-unbound-1', worker: 'w' });
+      assert(first.ok === true && first.cell.id === 'ranked-1', `backlog rank must win the tie-break first, got ${JSON.stringify(first)}`);
+
+      // With lane-ranked's cell now claimed (no longer ready), the two
+      // remaining UNRANKED lanes tie-break by created_at, oldest first.
+      const second = claimNextCell(dir, { sessionId: 'sess-unbound-2', worker: 'w' });
+      assert(second.ok === true && second.cell.id === 'old-1', `unranked lanes must tie-break by created_at, oldest first, got ${JSON.stringify(second)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+check(
+  "claimNextCell: a cell whose files intersect ANOTHER session's active hold is skipped; the acting session's own hold on the same files never excludes it (D3)",
+  () => {
+    const dir = makeStateRepo('bee-claimnext-holds-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      makeCellFile(dir, 'held-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/held.ts'] });
+      makeCellFile(dir, 'free-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/free.ts'] });
+      reserve(dir, { agent: 'other-worker', cell: 'other-cell', path: 'src/held.ts', session: 'sess-other' });
+
+      const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+      assert(result.ok === true && result.cell.id === 'free-1', `held-1 must be skipped for another session's hold, got ${JSON.stringify(result)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+check("claimNextCell: the acting session's OWN active hold on a cell's files never excludes it", () => {
+  const dir = makeStateRepo('bee-claimnext-own-hold-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'swarming',
+      feature: 'demo-feat',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      workers: [],
+    });
+    makeCellFile(dir, 'own-hold-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/mine.ts'] });
+    reserve(dir, { agent: 'me-worker', cell: 'own-hold-1', path: 'src/mine.ts', session: 'sess-me' });
+
+    const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+    assert(result.ok === true && result.cell.id === 'own-hold-1', `own hold must never exclude the cell, got ${JSON.stringify(result)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check(
+  "claimCellCrossSession: a claimCell THROW after the claim file was created releases the claim file — no orphan (W4 unwind pin)",
+  () => {
+    const dir = makeStateRepo('bee-claimnext-unwind-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      // deps: ['missing-dep'] guarantees a REAL claimCell throw (uncapped
+      // deps) — no simulated race required, and claimCellFile itself never
+      // checks deps/status, so step 1 succeeds before step 2 throws.
+      makeCellFile(dir, 'blocked-1', { feature: 'demo-feat', status: 'open', deps: ['missing-dep'] });
+
+      const result = claimCellCrossSession(dir, { sessionId: 'sess-x', worker: 'w', cellId: 'blocked-1' });
+      assert(result.ok === false && result.code === 'CLAIM_CELL_FAILED', `claimCell's throw must surface as a typed failure, got ${JSON.stringify(result)}`);
+      assert(readClaim(dir, 'blocked-1') === null, 'the claims-store file must be released, not orphaned, after the throw');
+      assert(readCell(dir, 'blocked-1').status === 'open', 'the cell itself is untouched by the failed claim');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+check(
+  "claimNextCell: a repo with no lanes and no session record at all (pure default pipeline) still claims cleanly — D4 zero-lane shape",
+  () => {
+    const dir = makeStateRepo('bee-claimnext-zero-lane-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'plain-feat',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      makeCellFile(dir, 'plain-1', { feature: 'plain-feat', status: 'open', deps: [] });
+
+      const result = claimNextCell(dir, { sessionId: 'sess-brand-new', worker: 'w' });
+      assert(result.ok === true && result.cell.id === 'plain-1', `a fresh session id with no lane binding must resolve to the default pipeline, got ${JSON.stringify(result)}`);
+      assert(!fs.existsSync(path.join(dir, '.bee', 'lanes')), 'no lanes directory was ever created by claim-next itself');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+check('claimNextCell: NO_APPROVED_WORK when there is genuinely nothing claimable anywhere', () => {
+  const dir = makeStateRepo('bee-claimnext-none-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+    const result = claimNextCell(dir, { sessionId: 'sess-lonely', worker: 'w' });
+    assert(result.ok === false && result.code === 'NO_APPROVED_WORK', `expected NO_APPROVED_WORK, got ${JSON.stringify(result)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 // ─── bee_backlog.mjs add verb (cli-mutations-2, decision from cli-mutations
 // plan.md: agents never hand-edit .bee/*.json(l)) ─────────────────────────────

@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bee status [--json]
-//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge> ... [--json]
+//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
@@ -79,6 +79,7 @@ import {
   scribingDebt,
   tierMix,
   ceilingScarcityWarning,
+  claimNextCell,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
@@ -558,6 +559,25 @@ function handleCellsJudge(root, flags) {
         .join('; ')} — do not count this cell toward a clean wave; flag it for review (decision 0018).`
     : `Judge intact for ${verdict.id}: no undeclared test/CI/lockfile changes.`;
   return { result: verdict, text };
+}
+
+// fresh-session-handoff fsh-11 (D2/D4): typed refusals (NO_APPROVED_WORK,
+// CLAIMED, CLAIM_CELL_FAILED, LANE_INVALID/LANE_MISSING/LANE_CORRUPT) surface
+// as a thrown Error at the CLI boundary — same convention handleStateHandoffAdopt
+// already uses for adoptHandoff's own typed refusals — so the process exits
+// non-zero with the reason on stderr rather than a misleadingly "successful" exit.
+function handleCellsClaimNext(root, flags) {
+  const worker = requireFlag(flags, 'worker');
+  const sessionId = requireFlag(flags, 'session-id');
+  const ttl = flags.ttl !== undefined ? Number.parseInt(String(flags.ttl), 10) : undefined;
+  if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
+    throw new Error('--ttl must be a positive integer (seconds).');
+  }
+  const result = claimNextCell(root, { sessionId, worker, ttl });
+  if (!result.ok) {
+    throw new Error(`claim-next: ${result.code} — ${result.reason}`);
+  }
+  return { result, text: `Claimed ${result.cell.id} for ${worker} (session ${sessionId}).` };
 }
 
 function handleReservationsReserve(root, flags) {
@@ -1509,7 +1529,7 @@ function feedbackUsageFallback(leading) {
 // directly and parses this exact stderr line.
 function cellsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge.`;
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge, claim-next.`;
 }
 
 function reservationsUsageFallback(leading) {
@@ -1547,6 +1567,7 @@ const HANDLERS = {
   'cells.drop': handleCellsDrop,
   'cells.tier': handleCellsTier,
   'cells.judge': handleCellsJudge,
+  'cells.claim-next': handleCellsClaimNext,
   'reservations.reserve': handleReservationsReserve,
   'reservations.release': handleReservationsRelease,
   'reservations.list': handleReservationsList,

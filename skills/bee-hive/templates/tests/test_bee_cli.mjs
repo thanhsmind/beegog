@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
+import { addCell } from '../lib/cells.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
 import { defaultState, writeState } from '../lib/state.mjs';
 import {
@@ -402,6 +403,28 @@ check('cells.block example runs through the real dispatcher', () => {
 check('cells.drop example runs through the real dispatcher', () => {
   const result = assertExampleOk('cells.drop');
   assert(JSON.parse(result.stdout).status === 'dropped', 'demo-1 should now be dropped');
+});
+
+// cells.claim-next (fresh-session-handoff fsh-11, D2/D4) needs its OWN ready
+// cell — demo-1 is dropped by this point in the chain — added directly via
+// addCell (not through the dispatcher, so it never consumes a registry
+// example slot of its own). The fixture repo's default pipeline (feature
+// "demo") already has execution approved from the root setup above, and
+// "sess-claim-next" has no prior session record, so resolvePipeline resolves
+// it straight to that default pipeline (D4 zero-lane parity).
+check('cells.claim-next example runs through the real dispatcher (own-lane default-pipeline pick, no prior session/lane state)', () => {
+  addCell(root, {
+    id: 'demo-2',
+    feature: 'demo',
+    title: 'Demo cell for claim-next registry example test',
+    lane: 'small',
+    action: 'Exercise the cells.claim-next example against a real fixture cell.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const result = assertExampleOk('cells.claim-next');
+  const parsed = JSON.parse(result.stdout);
+  assert(parsed.ok === true && parsed.cell.id === 'demo-2', `expected demo-2 claimed, got ${result.stdout}`);
+  assert(parsed.cell.status === 'claimed', 'demo-2 should now be claimed');
 });
 
 check('reservations.reserve example runs through the real dispatcher', () => {
