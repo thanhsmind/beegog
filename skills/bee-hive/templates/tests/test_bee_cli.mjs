@@ -511,6 +511,110 @@ check('state.scribing-run example runs through the real dispatcher', () => {
   assert(JSON.parse(result.stdout).phase === 'compounding', `expected phase compounding, got ${result.stdout}`);
 });
 
+// ─── state.lanes / state.set|gate|scribing-run --lane / state.session.* :
+// fresh-session-handoff fsh-4 (D2/D4) CLI surface over fsh-3's lane store +
+// session→lane binding. Lane records live at .bee/lanes/<feature>.json,
+// entirely separate from rootState's default state.json above, so these
+// checks can run in any order relative to the default-pipeline checks
+// above/below without disturbing either.
+
+check('state.start-feature --as-lane example (examples[1]) starts a lane record beside the untouched default state.json', () => {
+  const beforeDefault = fs.readFileSync(path.join(rootState, '.bee', 'state.json'), 'utf8');
+  const result = assertExampleOk('state.start-feature', { exampleIndex: 1, cwd: rootState });
+  const lane = JSON.parse(result.stdout);
+  assert(lane.feature === 'demo-lane', `expected lane feature demo-lane, got ${result.stdout}`);
+  assert(lane.approved_gates.execution === false, `expected a fresh lane's gates all reset, got ${result.stdout}`);
+  assert(fs.existsSync(path.join(rootState, '.bee', 'lanes', 'demo-lane.json')), 'lane file should now exist');
+  const afterDefault = fs.readFileSync(path.join(rootState, '.bee', 'state.json'), 'utf8');
+  assert(beforeDefault === afterDefault, 'default state.json must stay byte-untouched by a lane-mode start (D4)');
+});
+
+check('state.lanes example lists the demo-lane record just started', () => {
+  const result = assertExampleOk('state.lanes', { cwd: rootState });
+  const lanes = JSON.parse(result.stdout);
+  assert(Array.isArray(lanes) && lanes.some((l) => l.feature === 'demo-lane'), `expected demo-lane in lanes list, got ${result.stdout}`);
+});
+
+check('state.set --lane example (examples[1]) routes the mutation to the lane record, not state.json', () => {
+  const beforeDefault = fs.readFileSync(path.join(rootState, '.bee', 'state.json'), 'utf8');
+  const result = assertExampleOk('state.set', { exampleIndex: 1, cwd: rootState });
+  const lane = JSON.parse(result.stdout);
+  assert(lane.feature === 'demo-lane' && lane.phase === 'planning', `expected lane phase planning, got ${result.stdout}`);
+  const afterDefault = fs.readFileSync(path.join(rootState, '.bee', 'state.json'), 'utf8');
+  assert(beforeDefault === afterDefault, 'default state.json must stay byte-untouched by a --lane routed set');
+});
+
+check('state.gate --lane example (examples[1]) approves a gate on the lane record only', () => {
+  const result = assertExampleOk('state.gate', { exampleIndex: 1, cwd: rootState });
+  const lane = JSON.parse(result.stdout);
+  assert(lane.feature === 'demo-lane' && lane.approved_gates.execution === true, `expected lane execution gate approved, got ${result.stdout}`);
+});
+
+check('state.scribing-run --lane example (examples[1]) stamps the lane record only', () => {
+  const result = assertExampleOk('state.scribing-run', { exampleIndex: 1, cwd: rootState });
+  const lane = JSON.parse(result.stdout);
+  assert(
+    lane.feature === 'demo-lane' && lane.phase === 'compounding' && lane.last_scribing_run.feature === 'demo-lane',
+    `expected lane scribing stamp, got ${result.stdout}`,
+  );
+});
+
+check('state.set --lane refuses loudly when the named lane does not exist, no partial write (must-have truth)', () => {
+  const result = spawnSync(process.execPath, [BEE_MJS, 'state', 'set', '--lane', 'ghost-lane', '--phase', 'planning'], {
+    cwd: rootState,
+    encoding: 'utf8',
+  });
+  assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
+  assert(/ghost-lane/.test(result.stderr) && /does not exist/.test(result.stderr), `expected a named-lane refusal, got stderr=${result.stderr}`);
+  assert(!fs.existsSync(path.join(rootState, '.bee', 'lanes', 'ghost-lane.json')), 'no partial lane file should be created on refusal');
+});
+
+check('state.gate --lane refuses loudly over a corrupt lane record, file left byte-untouched (must-have truth)', () => {
+  const corruptPath = path.join(rootState, '.bee', 'lanes', 'corrupt-lane.json');
+  fs.writeFileSync(corruptPath, '{ this is not a valid lane record', 'utf8');
+  const before = fs.readFileSync(corruptPath, 'utf8');
+  const result = spawnSync(
+    process.execPath,
+    [BEE_MJS, 'state', 'gate', '--lane', 'corrupt-lane', '--name', 'execution', '--approved', 'true'],
+    { cwd: rootState, encoding: 'utf8' },
+  );
+  assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
+  const after = fs.readFileSync(corruptPath, 'utf8');
+  assert(before === after, 'corrupt lane file must be byte-identical after the refused mutation');
+});
+
+check('state.set --lane refuses when combined with --feature (a lane\'s identity is not a mutable field)', () => {
+  const result = spawnSync(
+    process.execPath,
+    [BEE_MJS, 'state', 'set', '--lane', 'demo-lane', '--feature', 'renamed-lane', '--phase', 'planning'],
+    { cwd: rootState, encoding: 'utf8' },
+  );
+  assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
+  assert(/--feature/.test(result.stderr) && /--lane/.test(result.stderr), `expected a --feature/--lane conflict refusal, got stderr=${result.stderr}`);
+});
+
+check('state.session.list example lists a manually-seeded session record', () => {
+  writeJsonAtomic(path.join(rootState, '.bee', 'sessions', 'sess-demo.json'), {
+    id: 'sess-demo',
+    started_at: new Date().toISOString(),
+    last_heartbeat: new Date().toISOString(),
+  });
+  const result = assertExampleOk('state.session.list', { cwd: rootState });
+  assert(result.stdout.includes('sess-demo'), `expected sess-demo in session list, got ${result.stdout}`);
+});
+
+check('state.session.bind example binds the seeded session to demo-lane', () => {
+  const result = assertExampleOk('state.session.bind', { cwd: rootState });
+  const session = JSON.parse(result.stdout);
+  assert(session.id === 'sess-demo' && session.lane === 'demo-lane', `expected sess-demo bound to demo-lane, got ${result.stdout}`);
+});
+
+check('state.session.unbind example removes the binding (lane key omitted, not null)', () => {
+  const result = assertExampleOk('state.session.unbind', { cwd: rootState });
+  const session = JSON.parse(result.stdout);
+  assert(session.id === 'sess-demo' && !('lane' in session), `expected the lane key omitted after unbind, got ${result.stdout}`);
+});
+
 // ─── backlog.* / capture.* examples: run in a dedicated fresh repo
 // (dispatcher-unify du-2). Neither group touches .bee/state.json or the
 // demo-1/demo-2 cell fixtures, so they get their own isolated repo with a

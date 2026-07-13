@@ -17,7 +17,7 @@
 //   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
-//   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature> ... [--json]
+//   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
 //   bee backlog <add|counts|rank|badges> ... [--json]
 //   bee capture <add|list|flush|count> ... [--json]
 //   bee reviews <create|list|show|record|candidate add|candidates|status> ... [--json]
@@ -51,7 +51,15 @@ import {
   startFeature,
   hasStaleAdvisorKey,
   STALE_ADVISOR_KEY_WARNING,
+  readLaneStrict,
+  writeLane,
+  listLanes,
 } from './lib/state.mjs';
+// Lane + session CLI surface (fresh-session-handoff fsh-4, D2/D4): claims.mjs
+// stays out of this cell's file scope — these are already-exported read/
+// mutate primitives from fsh-3, composed here for presentation (session list)
+// and forwarded as-is (bind/unbind), never a second implementation.
+import { sessionsDir, readSession, bindSessionLane, unbindSessionLane } from './lib/claims.mjs';
 import {
   listCells,
   readyCells,
@@ -657,6 +665,33 @@ function rejectDryRun(flags) {
   }
 }
 
+// Optional --lane target resolution (fresh-session-handoff fsh-4, D2/D4),
+// shared by state.set/gate/scribing-run. `--lane` bare (no value) is a
+// malformed call, not "no lane requested" — refuse rather than silently
+// falling back to the default record. A named lane that is missing or
+// corrupt refuses loudly here, before any read/write of the target record —
+// readLaneStrict already throws loud on corrupt; missing reads as null
+// (creation is start-feature's job, never an implicit side effect of set/
+// gate/scribing-run), so that case is refused explicitly below.
+function optionalLaneFlag(flags, verb) {
+  if (flags.lane === undefined) return null;
+  if (flags.lane === true || flags.lane === '') {
+    throw new Error(`${verb}: --lane requires a value (the lane's feature name).`);
+  }
+  return String(flags.lane);
+}
+
+function resolveMutationTarget(root, laneFeature, verb) {
+  if (!laneFeature) return { record: readStateStrict(root), write: (record) => writeState(root, record) };
+  const record = readLaneStrict(root, laneFeature);
+  if (!record) {
+    throw new Error(
+      `${verb}: refused — lane "${laneFeature}" does not exist (no .bee/lanes/${laneFeature}.json). FIX: start it first ("state start-feature --feature ${laneFeature} --as-lane"), then retry.`,
+    );
+  }
+  return { record, write: (updated) => writeLane(root, updated) };
+}
+
 function handleStateSet(root, flags) {
   rejectDryRun(flags);
   if (flags.phase !== undefined) {
@@ -678,7 +713,13 @@ function handleStateSet(root, flags) {
       'set: at least one of --phase, --mode, --feature, --next-action, --summary is required.',
     );
   }
-  const state = readStateStrict(root);
+  const laneFeature = optionalLaneFlag(flags, 'set');
+  if (laneFeature && flags.feature !== undefined) {
+    throw new Error(
+      "set: --feature cannot be combined with --lane — a lane's feature is its identity (the lane record's filename), not a mutable field. FIX: omit --feature, or start a new lane instead.",
+    );
+  }
+  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'set');
   const changed = [];
   if (flags.phase !== undefined) {
     state.phase = String(flags.phase);
@@ -700,8 +741,11 @@ function handleStateSet(root, flags) {
     state.summary = String(flags.summary);
     changed.push('summary');
   }
-  writeState(root, state);
-  return { result: state, text: `Updated state: ${changed.join(' ')}.` };
+  write(state);
+  return {
+    result: state,
+    text: `Updated state: ${changed.join(' ')}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
+  };
 }
 
 function handleStateGate(root, flags) {
@@ -713,10 +757,14 @@ function handleStateGate(root, flags) {
     );
   }
   const approved = requireBoolFlag(flags, 'approved');
-  const state = readStateStrict(root);
+  const laneFeature = optionalLaneFlag(flags, 'gate');
+  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'gate');
   state.approved_gates = { ...state.approved_gates, [name]: approved };
-  writeState(root, state);
-  return { result: state, text: `Gate "${name}" set to ${approved}.` };
+  write(state);
+  return {
+    result: state,
+    text: `Gate "${name}" set to ${approved}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
+  };
 }
 
 function stateWorkerMutate(root, flags, mutate, text) {
@@ -886,13 +934,17 @@ function handleStateScribingRun(root, flags) {
   const now = new Date();
   const at = now.toISOString();
   const date = at.slice(0, 10);
-  const state = readStateStrict(root);
+  const laneFeature = optionalLaneFlag(flags, 'scribing-run');
+  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
   state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
   // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
   state.phase = 'compounding';
   state.next_action = nextAction;
-  writeState(root, state);
-  return { result: state, text: `Recorded scribing run for "${feature}" at ${at}.` };
+  write(state);
+  return {
+    result: state,
+    text: `Recorded scribing run for "${feature}" at ${at}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
+  };
 }
 
 function handleStateStartFeature(root, flags) {
@@ -900,12 +952,98 @@ function handleStateStartFeature(root, flags) {
   const feature = requireFlag(flags, 'feature');
   const mode = flags.mode !== undefined ? String(flags.mode) : null;
   const phase = flags.phase !== undefined ? String(flags.phase) : 'exploring';
+  // Lane mode (fresh-session-handoff fsh-4, D2/D4): --as-lane starts the
+  // feature as a per-feature lane record instead of mutating state.json;
+  // --session-id/--paths feed the declared-paths holds-overlap check that
+  // startFeature's lane path already implements (fsh-3) — this cell only
+  // wires the CLI surface through, no new precondition logic here.
+  const lane = flags['as-lane'] === true;
+  const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : null;
+  const paths = flags.paths !== undefined ? splitList(flags.paths) : [];
   // startFeature() re-reads state and performs every precondition check (C1).
-  const state = startFeature(root, { feature, mode, phase });
+  const state = startFeature(root, { feature, mode, phase, lane, sessionId, paths });
   return {
     result: state,
-    text: `Started feature "${state.feature}" at phase "${state.phase}" (mode ${state.mode ?? 'null'}); all four gates reset.`,
+    text: `Started feature "${state.feature}"${lane ? ' as a lane' : ''} at phase "${state.phase}" (mode ${state.mode ?? 'null'}); all four gates reset.`,
   };
+}
+
+// ─── state.lanes / state.session.*: read-only lane listing + session→lane
+// binding (fresh-session-handoff fsh-4, D2/D4). claims.mjs stays out of this
+// cell's file scope (fsh-3 owns it) — listSessionRecords composes already-
+// exported primitives (sessionsDir, readSession) for presentation, exactly
+// the same discipline buildReviewBlock above uses for reviews.mjs; it is not
+// a second implementation of a mutation, only a read-side enumeration no
+// lib module currently offers.
+
+function listSessionRecords(root) {
+  let entries;
+  try {
+    entries = fs.readdirSync(sessionsDir(root));
+  } catch {
+    return [];
+  }
+  const sessions = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    const record = readSession(root, entry.slice(0, -'.json'.length));
+    if (record) sessions.push(record);
+  }
+  return sessions;
+}
+
+function summarizeSession(session) {
+  const laneNote = typeof session.lane === 'string' && session.lane ? `-> lane "${session.lane}"` : '(unbound)';
+  return `${session.id} ${laneNote} | started ${session.started_at} | heartbeat ${session.last_heartbeat}`;
+}
+
+function handleStateLanes(root) {
+  const lanes = listLanes(root);
+  const sessions = listSessionRecords(root);
+  const boundBy = {};
+  for (const session of sessions) {
+    if (typeof session.lane === 'string' && session.lane) {
+      (boundBy[session.lane] ||= []).push(session.id);
+    }
+  }
+  const rows = lanes.map((lane) => ({ ...lane, bound_sessions: boundBy[lane.feature] || [] }));
+  const text = rows.length
+    ? rows
+        .map((l) => {
+          const gates = GATE_NAMES.map((g) => `${g}=${l.approved_gates[g] ? 'approved' : 'pending'}`).join(' ');
+          const bindingsNote = l.bound_sessions.length ? ` sessions=${l.bound_sessions.join(',')}` : '';
+          return `${l.feature} [${l.phase}] ${gates}${bindingsNote}`;
+        })
+        .join('\n')
+    : 'No lane records.';
+  return { result: rows, text };
+}
+
+function handleStateSessionList(root) {
+  const sessions = listSessionRecords(root);
+  return {
+    result: sessions,
+    text: sessions.length ? sessions.map(summarizeSession).join('\n') : 'No session records.',
+  };
+}
+
+function handleStateSessionBind(root, flags) {
+  const sessionId = requireFlag(flags, 'session-id');
+  const laneFeature = requireFlag(flags, 'lane');
+  const result = bindSessionLane(root, sessionId, laneFeature);
+  if (!result.ok) {
+    throw new Error(`session bind: ${result.reason}`);
+  }
+  return { result: result.session, text: `Session "${sessionId}" bound to lane "${laneFeature}".` };
+}
+
+function handleStateSessionUnbind(root, flags) {
+  const sessionId = requireFlag(flags, 'session-id');
+  const result = unbindSessionLane(root, sessionId);
+  if (!result.ok) {
+    throw new Error(`session unbind: ${result.reason}`);
+  }
+  return { result: result.session, text: `Session "${sessionId}" unbound from its lane.` };
 }
 
 // ─── backlog: full port of bee_backlog.mjs's counts/rank/badges/add verbs
@@ -1240,7 +1378,13 @@ function stateUsageFallback(leading) {
     const sub = leading[2];
     return `Unknown worker action "${sub || '(missing)'}". Use: add, update, remove, clear, prune.`;
   }
-  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature.`;
+  // session (fresh-session-handoff fsh-4, D2/D4): a new nested verb family,
+  // mirroring the worker branch above exactly.
+  if (verb === 'session') {
+    const sub = leading[2];
+    return `Unknown session action "${sub || '(missing)'}". Use: list, bind, unbind.`;
+  }
+  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature, lanes, session.`;
 }
 
 function backlogUsageFallback(leading) {
@@ -1339,6 +1483,10 @@ const HANDLERS = {
   'state.worker.prune': handleStateWorkerPrune,
   'state.scribing-run': handleStateScribingRun,
   'state.start-feature': handleStateStartFeature,
+  'state.lanes': handleStateLanes,
+  'state.session.list': handleStateSessionList,
+  'state.session.bind': handleStateSessionBind,
+  'state.session.unbind': handleStateSessionUnbind,
   'backlog.counts': handleBacklogCounts,
   'backlog.rank': handleBacklogRank,
   'backlog.badges': handleBacklogBadges,
@@ -1372,8 +1520,11 @@ const HANDLERS = {
 // --dry-run --json` would consume `--json` as the value of `--dry-run`
 // (bee_state.mjs parsed it boolean-alone too); `write` MUST be here for the
 // same reason on `backlog rank --write --json` / `backlog badges --write --json`
-// (bee_backlog.mjs parsed it boolean-alone too).
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write']);
+// (bee_backlog.mjs parsed it boolean-alone too). `as-lane` (fresh-session-
+// handoff fsh-4, D2/D4) is state.start-feature's lane-mode opt-in — a
+// DISTINCT flag name from the `--lane <feature>` string flag used by
+// state.set/gate/scribing-run/session.bind, so the two never collide here.
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane']);
 
 export function splitCommandTokens(argv) {
   const leading = [];
