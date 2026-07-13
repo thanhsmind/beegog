@@ -3,6 +3,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
+// Leaf-module imports only — no cycle: claims.mjs and reservations.mjs import
+// nothing but fsutil/node builtins (unlike cells.mjs, which imports THIS file).
+import { readSession, readClaim, isClaimActive, claimsDir } from './claims.mjs';
+import { pathsOverlap } from './reservations.mjs';
 
 export const BEE_VERSION = '0.1.32';
 
@@ -297,6 +301,195 @@ export function readHandoff(root) {
   return readJson(path.join(root, '.bee', 'HANDOFF.json'), null);
 }
 
+// ─── lanes: per-feature pipeline records beside the default state.json ──────
+// (fresh-session-handoff fsh-3, decisions D2/D4). A lane record carries the
+// same core as the default record — feature, mode, phase (closed vocabulary),
+// approved_gates (all four), summary, next_action — plus created_at, and lives
+// at .bee/lanes/<feature>.json. Lanes are ADDITIVE: a repo with no .bee/lanes/
+// and no bound session behaves byte-identically to the single-pipeline model
+// (D4 zero-lane parity). state.json remains the DEFAULT lane, authoritative
+// whenever no session→lane binding says otherwise.
+
+export function lanesDir(root) {
+  return path.join(root, '.bee', 'lanes');
+}
+
+// Mirrors claims.mjs requireId: the feature becomes a filename under
+// .bee/lanes/, so path separators and '..' are bad arguments (throw), while
+// spaces and unicode are ordinary feature names.
+function requireLaneFeature(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('lane feature is required.');
+  }
+  const feature = value.trim();
+  if (/[\\/]/.test(feature) || feature.includes('..')) {
+    throw new Error('lane feature must be a plain id (no path separators).');
+  }
+  return feature;
+}
+
+export function lanePath(root, feature) {
+  return path.join(lanesDir(root), `${requireLaneFeature(feature)}.json`);
+}
+
+function defaultLaneRecord(feature) {
+  return {
+    schema_version: '1.0',
+    feature,
+    mode: null,
+    phase: 'idle',
+    approved_gates: { context: false, shape: false, execution: false, review: false },
+    summary: '',
+    next_action: '',
+    created_at: null,
+  };
+}
+
+// null when the parsed content is not a lane record for THIS feature: not a
+// JSON object, or a record whose feature field names another feature (a
+// mismatched record is corrupt, never trusted — mirrors readSession's id check).
+function laneRecordFrom(feature, parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  if (parsed.feature !== feature) return null;
+  const merged = { ...defaultLaneRecord(feature), ...parsed };
+  merged.approved_gates = { ...defaultLaneRecord(feature).approved_gates, ...(parsed.approved_gates || {}) };
+  return merged;
+}
+
+// readLane — fail-open DISPLAY read, the lane sibling of readState's fail-open
+// discipline with one deliberate difference: there is no per-feature default
+// to fall back to, so "missing" is null, and "present but corrupt" is WARNED
+// and skipped (null) — a display surface keeps rendering the healthy lanes,
+// and a corrupt record is never guessed at (mutations go through
+// readLaneStrict, which refuses loudly instead).
+export function readLane(root, feature) {
+  let file;
+  try {
+    file = lanePath(root, feature); // fail-open: a malformed name reads as "no lane"
+  } catch {
+    return null;
+  }
+  if (!fs.existsSync(file)) return null;
+  const record = laneRecordFrom(String(feature).trim(), readJson(file, null));
+  if (!record) {
+    console.warn(
+      `readLane: skipping corrupt lane record "${path.relative(root, file)}" for display — mutations through readLaneStrict will refuse loudly. FIX: inspect/restore the file (e.g. "git checkout -- ${path.relative(root, file)}").`,
+    );
+    return null;
+  }
+  return record;
+}
+
+// readLaneStrict — the mutation sibling (mirrors the readStateStrict
+// discipline): a missing lane reads as null (creation is the caller's explicit
+// move — a lane is never implicitly defaulted into existence), while a
+// present-but-unreadable/corrupt record THROWS with the file untouched, so no
+// lane mutation can silently clobber real lane state (gates, phase).
+export function readLaneStrict(root, feature) {
+  const id = requireLaneFeature(feature); // bad names throw, matching claims.mjs requireId
+  const file = lanePath(root, id);
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
+    throw new Error(
+      `readLaneStrict: could not read lane record "${file}" (${err && err.code ? err.code : err}). The bee CLI refuses to mutate a lane it cannot read — that could silently clobber real lane state (gates, phase). FIX: inspect/restore the file (e.g. "git checkout -- ${path.relative(root, file)}"), then retry.`,
+    );
+  }
+  let parsed;
+  let parseFailed = false;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parseFailed = true;
+  }
+  const record = parseFailed ? null : laneRecordFrom(id, parsed);
+  if (!record) {
+    throw new Error(
+      `readLaneStrict: lane record "${file}" exists but is corrupt (not a JSON object naming feature "${id}"). The bee CLI refuses to rebuild a lane from defaults over a present-but-corrupt file — that would silently clobber real lane state (gates, phase) while reporting success. FIX: inspect/restore the file (e.g. "git checkout -- ${path.relative(root, file)}"), then retry.`,
+    );
+  }
+  return record;
+}
+
+export function writeLane(root, lane) {
+  if (!lane || typeof lane !== 'object' || Array.isArray(lane)) {
+    throw new Error('writeLane: a lane record object is required.');
+  }
+  writeJsonAtomic(lanePath(root, lane.feature), lane);
+  return lane;
+}
+
+export function removeLane(root, feature) {
+  fs.rmSync(lanePath(root, feature), { force: true });
+}
+
+/** Fail-open enumeration for display: corrupt records are warned and skipped by readLane. */
+export function listLanes(root) {
+  let entries;
+  try {
+    entries = fs.readdirSync(lanesDir(root));
+  } catch {
+    return [];
+  }
+  const lanes = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    const record = readLane(root, entry.slice(0, -'.json'.length));
+    if (record) lanes.push(record);
+  }
+  return lanes;
+}
+
+/**
+ * resolvePipeline — the ONE reader seam between a session and its pipeline
+ * record (D2/D4): session record → bound lane → default state.json. Resolution
+ * NEVER guesses and never scans: no sessionId, no session record, or no lane
+ * binding all mean the default pipeline view. A binding that names a lane
+ * which is invalid, missing, or corrupt is a TYPED refusal
+ * ({ ok:false, code, reason, feature }) — silently falling back to the default
+ * there would point a bound session at the wrong pipeline's gates.
+ * Returns { ok:true, source:'default'|'lane', feature?, record } on success.
+ */
+export function resolvePipeline(root, { sessionId = null } = {}) {
+  const defaults = () => ({ ok: true, source: 'default', record: readState(root) });
+  if (typeof sessionId !== 'string' || !sessionId.trim()) return defaults();
+  const session = readSession(root, sessionId);
+  if (!session) return defaults();
+  const bound = typeof session.lane === 'string' ? session.lane.trim() : '';
+  if (!bound) return defaults();
+  let file;
+  try {
+    file = lanePath(root, bound);
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'LANE_INVALID',
+      feature: bound,
+      reason: `session "${session.id}" is bound to lane "${bound}", which is not a valid lane name (${err instanceof Error ? err.message : err}) — never guessed back to the default pipeline. FIX: rebind or unbind the session (claims.mjs bindSessionLane/unbindSessionLane).`,
+    };
+  }
+  if (!fs.existsSync(file)) {
+    return {
+      ok: false,
+      code: 'LANE_MISSING',
+      feature: bound,
+      reason: `session "${session.id}" is bound to lane "${bound}" but ${path.relative(root, file)} does not exist — resolution never guesses back to the default pipeline. FIX: start the lane (startFeature with lane mode) or unbind the session.`,
+    };
+  }
+  const record = readLane(root, bound);
+  if (!record) {
+    return {
+      ok: false,
+      code: 'LANE_CORRUPT',
+      feature: bound,
+      reason: `session "${session.id}" is bound to lane "${bound}" but its record is corrupt — display never guesses and mutations must refuse. FIX: inspect/restore ${path.relative(root, file)}, then retry.`,
+    };
+  }
+  return { ok: true, source: 'lane', feature: bound, record };
+}
+
 export function readOnboarding(root) {
   return readJson(path.join(root, '.bee', 'onboarding.json'), null);
 }
@@ -444,8 +637,24 @@ export function resolveAdvisor(root, runtime = 'claude') {
 // Self-contained by design: cells.mjs already imports readState/gateApproved/
 // MODEL_TIERS from this module, so this function reads .bee/cells/*.json and
 // .bee/reservations.json directly (small local helpers below) rather than
-// importing lib/cells.mjs or lib/reservations.mjs, avoiding a state.mjs <->
-// cells.mjs import cycle.
+// importing lib/cells.mjs or the stateful reservations.mjs verbs, avoiding a
+// state.mjs <-> cells.mjs import cycle. (The pure pathsOverlap predicate IS
+// imported from reservations.mjs — that module imports only fsutil, no cycle.)
+//
+// LANE MODE (fresh-session-handoff fsh-3, validated Q4): startFeature with
+// { lane: true } starts the feature AS a lane record under .bee/lanes/ while
+// the default pipeline and every other lane stay byte-untouched. The default
+// (non-lane) path below keeps today's byte-identical semantics. Lane-scoped
+// preconditions — attribution DERIVED from existing fields, never new ones:
+//   (a) nonterminal cells whose cell.feature equals THIS lane's feature block;
+//   (b) the global HANDOFF blocks a lane start only when its feature field
+//       names this lane's feature (the default start keeps any-handoff-blocks);
+//   (c) a registered worker blocks only when its cell derives to this lane's
+//       feature (worker → cell → cell.feature);
+//   (d) global holds check: when the caller declares intended paths, any
+//       overlap with ANOTHER session's active holds — claimed cells' files or
+//       active reservations — refuses (own-session claims and expired holds
+//       never block; no declared paths, no check).
 
 function listAllCellsForStart(root) {
   const dir = path.join(root, '.bee', 'cells');
@@ -480,7 +689,10 @@ function listActiveReservationsForStart(root) {
   });
 }
 
-export function startFeature(root, { feature, mode = null, phase = 'exploring' } = {}) {
+export function startFeature(
+  root,
+  { feature, mode = null, phase = 'exploring', lane = false, sessionId = null, paths = [] } = {},
+) {
   if (typeof feature !== 'string' || !feature.trim()) {
     throw new Error('startFeature: a non-empty --feature slug is required.');
   }
@@ -489,6 +701,16 @@ export function startFeature(root, { feature, mode = null, phase = 'exploring' }
     throw new Error(
       `startFeature: invalid phase "${phaseValue}" — not in the known-phase enum (isKnownPhase). FIX: use one of ${KNOWN_PHASES.join(', ')}.`,
     );
+  }
+
+  if (lane) {
+    return startLane(root, {
+      feature: requireLaneFeature(feature),
+      mode,
+      phase: phaseValue,
+      sessionId: typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null,
+      paths,
+    });
   }
 
   // Re-read immediately before any check (C1) — every read below happens
@@ -560,4 +782,141 @@ export function startFeature(root, { feature, mode = null, phase = 'exploring' }
   state.next_action = `Invoke bee-hive for "${state.feature}" (phase: ${phaseValue}).`;
   writeState(root, state);
   return state;
+}
+
+// Active claim holds by ANOTHER session whose claimed cell's files overlap the
+// declared paths (startFeature lane precondition (d)). Claims name a cell, not
+// paths, so the held paths are DERIVED from the claimed cell's files list —
+// same derivation discipline as the handoff/worker attribution above.
+function listClaimHoldsForStart(root, sessionId, cellById, declared) {
+  let entries;
+  try {
+    entries = fs.readdirSync(claimsDir(root));
+  } catch {
+    return [];
+  }
+  const nowMs = Date.now();
+  const holds = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    let claim;
+    try {
+      claim = readClaim(root, entry.slice(0, -'.json'.length));
+    } catch {
+      continue; // a filename that is not a plain cell id is no claim of ours
+    }
+    if (!claim || !isClaimActive(claim, nowMs)) continue;
+    if (sessionId && claim.session === sessionId) continue; // own holds never block
+    const cell = cellById.get(claim.cell);
+    const files = cell && Array.isArray(cell.files) ? cell.files : [];
+    for (const file of files) {
+      if (declared.some((declaredPath) => pathsOverlap(file, declaredPath))) {
+        holds.push({ session: claim.session, cell: claim.cell, path: file });
+        break;
+      }
+    }
+  }
+  return holds;
+}
+
+// startLane — the lane-mode body of startFeature (never called directly; the
+// exported startFeature validates feature/phase first). Fails closed exactly
+// like the default path: every precondition is read BEFORE the single write,
+// so a refusal makes ZERO mutations — to this lane, to the default record, and
+// to every other lane.
+function startLane(root, { feature, mode, phase, sessionId, paths }) {
+  // A corrupt existing lane record refuses loudly with the file untouched.
+  const existing = readLaneStrict(root, feature);
+  if (existing && existing.phase !== 'idle' && existing.phase !== 'compounding-complete') {
+    throw new Error(
+      `startFeature: refused — lane "${feature}" is mid-flight at phase "${existing.phase}", not idle or the terminal alias "compounding-complete". FIX: finish or explicitly wind down that lane first, then retry.`,
+    );
+  }
+
+  const cells = listAllCellsForStart(root);
+
+  // (a) nonterminal cells of THIS lane's feature block; other features' never do.
+  const nonterminal = cells.filter(
+    (cell) =>
+      cell.feature === feature &&
+      (cell.status === 'open' || cell.status === 'claimed' || cell.status === 'blocked'),
+  );
+  if (nonterminal.length > 0) {
+    throw new Error(
+      `startFeature: refused — feature "${feature}" already has nonterminal cell(s): ${nonterminal
+        .map((c) => `${c.id}(${c.status})`)
+        .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee_cells.mjs drop --id ID --reason R). FIX: cap or drop each listed cell, then retry.`,
+    );
+  }
+
+  // (b) the global handoff blocks a LANE start only when it names this feature.
+  const handoff = readHandoff(root);
+  if (handoff && handoff.feature === feature) {
+    throw new Error(
+      `startFeature: refused — .bee/HANDOFF.json names feature "${feature}"; its paused work must resume or close before this lane restarts. FIX: resume the handoff (or explicitly delete HANDOFF.json once its work is truly abandoned), then retry.`,
+    );
+  }
+
+  // (c) a registered worker blocks only when its cell derives to this feature.
+  // readStateStrict: a corrupt default record would HIDE registered workers —
+  // refuse loudly rather than start a lane over invisible work.
+  const state = readStateStrict(root);
+  const workers = Array.isArray(state.workers) ? state.workers : [];
+  const cellById = new Map(cells.map((cell) => [cell.id, cell]));
+  const laneWorkers = workers.filter((worker) => {
+    const cell = worker && typeof worker.cell === 'string' ? cellById.get(worker.cell) : null;
+    return Boolean(cell && cell.feature === feature);
+  });
+  if (laneWorkers.length > 0) {
+    throw new Error(
+      `startFeature: refused — registered worker(s) on feature "${feature}": ${laneWorkers
+        .map((w) => `${(w && w.nickname) || '?'}(${w.cell})`)
+        .join(', ')}. FIX: clear them first (bee_state.mjs worker remove --nickname N, or worker clear).`,
+    );
+  }
+
+  // (d) declared intended paths vs ANOTHER session's active holds.
+  const declared = (Array.isArray(paths) ? paths : [paths])
+    .filter((p) => typeof p === 'string' && p.trim())
+    .map((p) => p.trim());
+  if (declared.length > 0) {
+    const reservationHolds = listActiveReservationsForStart(root).filter((reservation) =>
+      declared.some((declaredPath) => pathsOverlap(reservation.path, declaredPath)),
+    );
+    if (reservationHolds.length > 0) {
+      throw new Error(
+        `startFeature: refused — declared path(s) overlap active reservation hold(s): ${reservationHolds
+          .map((r) => `${r.agent}:${r.path}`)
+          .join(', ')}. FIX: wait for release/expiry (bee_reservations.mjs release), or start the lane over non-overlapping paths.`,
+      );
+    }
+    const claimHolds = listClaimHoldsForStart(root, sessionId, cellById, declared);
+    if (claimHolds.length > 0) {
+      throw new Error(
+        `startFeature: refused — declared path(s) overlap file(s) of cell(s) claimed by another session: ${claimHolds
+          .map((h) => `${h.session}:${h.cell}(${h.path})`)
+          .join(', ')}. FIX: wait for the claim to release or expire, or start the lane over non-overlapping paths.`,
+      );
+    }
+  }
+
+  // All preconditions hold — ONE atomic write to this lane's record: feature/
+  // mode/phase, ALL FOUR gates reset (spec R1 applied per lane), refreshed
+  // summary/next_action. created_at survives a restart; the default record and
+  // every other lane stay byte-identical.
+  const record = {
+    schema_version: '1.0',
+    feature,
+    mode: mode == null ? null : String(mode),
+    phase,
+    approved_gates: { context: false, shape: false, execution: false, review: false },
+    summary: `Feature "${feature}" started at phase "${phase}" (lane).`,
+    next_action: `Invoke bee-hive for "${feature}" (phase: ${phase}).`,
+    created_at:
+      existing && typeof existing.created_at === 'string' && existing.created_at
+        ? existing.created_at
+        : new Date().toISOString(),
+  };
+  writeLane(root, record);
+  return record;
 }

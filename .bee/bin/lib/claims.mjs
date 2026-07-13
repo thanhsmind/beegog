@@ -1,6 +1,8 @@
 // claims.mjs — cross-session session identity + atomic per-cell claims.
 // Stores (all repo-relative under .bee/ — never system temp, pattern 20260708):
-//   .bee/sessions/<session-id>.json  { id, started_at, last_heartbeat }
+//   .bee/sessions/<session-id>.json  { id, started_at, last_heartbeat, lane? }
+//                                    (lane is OPTIONAL and OMITTED while
+//                                     unbound — see bindSessionLane below)
 //   .bee/claims/<cell-id>.json       { cell, session, ttl_seconds, claimed_at,
 //                                      adopted_from?, adopted_at? }
 //   .bee/claims/<cell-id>.adopting   exclusive per-claim gate (adopt/sweep/release)
@@ -123,6 +125,37 @@ export function heartbeatStale(session, nowMs = Date.now(), staleSeconds = DEFAU
   const beatMs = Date.parse(session.last_heartbeat);
   if (!Number.isFinite(beatMs)) return true;
   return beatMs + staleSeconds * 1000 <= nowMs;
+}
+
+// ─── session→lane binding (fresh-session-handoff fsh-3) ─────────────────────
+// The lane field is OPTIONAL and OMITTED while unbound: createSession never
+// writes it, so pre-existing session-record consumers see exactly the shape
+// they always did. Binding does NOT verify the lane record exists — claims.mjs
+// stays lane-agnostic (the same decoupling as sessionId-as-parameter), and
+// state.mjs resolvePipeline owns the typed LANE_MISSING/LANE_CORRUPT refusal.
+
+export function bindSessionLane(root, sessionId, feature) {
+  const session = requireId(sessionId, 'session id');
+  const lane = requireId(feature, 'lane feature');
+  const record = readSession(root, session);
+  if (!record) {
+    return fail('SESSION_MISSING', `session "${session}" has no record to bind to lane "${lane}".`);
+  }
+  const bound = { ...record, lane };
+  writeJsonAtomic(sessionPath(root, session), bound);
+  return { ok: true, session: bound };
+}
+
+/** Remove the binding by OMITTING the key (never lane:null), restoring the unbound shape. */
+export function unbindSessionLane(root, sessionId) {
+  const session = requireId(sessionId, 'session id');
+  const record = readSession(root, session);
+  if (!record) {
+    return fail('SESSION_MISSING', `session "${session}" has no record to unbind.`);
+  }
+  const { lane: _lane, ...unbound } = record;
+  writeJsonAtomic(sessionPath(root, session), unbound);
+  return { ok: true, session: unbound };
 }
 
 // ─── claims ──────────────────────────────────────────────────────────────────

@@ -84,6 +84,11 @@ import {
   DEFAULT_CLAIM_TTL_SECONDS,
   DEFAULT_HEARTBEAT_STALE_SECONDS,
 } from '../lib/claims.mjs';
+// fsh-3 (lane store): namespace imports so a not-yet-implemented export fails
+// its own row ("… is not a function") instead of crashing the whole module
+// graph at import time — the RED-first evidence stays per-row.
+import * as laneStore from '../lib/state.mjs';
+import * as laneBinding from '../lib/claims.mjs';
 import { checkWrite, checkRead, extractBashTargets } from '../lib/guards.mjs';
 import { buildPromptReminder, shouldInject, markInjected, buildSessionPreamble } from '../lib/inject.mjs';
 import { logDecision, supersedeDecision, activeDecisions, datamark } from '../lib/decisions.mjs';
@@ -1557,6 +1562,16 @@ const EXPECTED_STATE_EXPORTS = [
   'resolveTier',
   'resolveAdvisor',
   'startFeature',
+  // fsh-3 (fresh-session-handoff): the lane store — deliberate additions,
+  // covered by the lane rows further down.
+  'lanesDir',
+  'lanePath',
+  'readLane',
+  'readLaneStrict',
+  'writeLane',
+  'removeLane',
+  'listLanes',
+  'resolvePipeline',
 ];
 
 check('readConfig strips a stale advisor key and never throws; advisor exports are gone', () => {
@@ -3987,6 +4002,320 @@ check('bee_state.mjs start-feature rejects --dry-run (a mutating verb, same gene
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', workers: [] });
     const result = runBeeState(dir, ['start-feature', '--feature', 'f1', '--dry-run']);
     assert(result.status !== 0, '--dry-run on start-feature is rejected');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── lanes (fsh-3, fresh-session-handoff S2): per-feature lane records beside ─
+// the default pipeline. Additive by design (D4): a repo with no .bee/lanes/
+// and no bound session behaves byte-identically to today — the pre-existing
+// state/start-feature rows above are the parity proof and are never modified,
+// only extended by the rows below. A LANE start's preconditions are the
+// validated Q4 set: same-feature nonterminal cells, feature-attributed
+// handoff/workers (attribution DERIVED from existing fields — handoff.feature,
+// worker→cell→feature — no new fields invented), and a global declared-paths
+// vs other-session-holds overlap check.
+
+function laneFile(dir, feature) {
+  return path.join(dir, '.bee', 'lanes', `${feature}.json`);
+}
+
+function writeLaneFixture(dir, feature, extra = {}) {
+  laneStore.writeLane(dir, {
+    schema_version: '1.0',
+    feature,
+    mode: null,
+    phase: 'idle',
+    approved_gates: { context: false, shape: false, execution: false, review: false },
+    summary: '',
+    next_action: '',
+    created_at: new Date().toISOString(),
+    ...extra,
+  });
+}
+
+check('lanes: writeLane/readLane round-trip at .bee/lanes/<feature>.json (unicode/space names included); missing lane reads null; listLanes enumerates; removeLane deletes', () => {
+  const dir = makeStateRepo('bee-lane-crud-');
+  try {
+    writeLaneFixture(dir, 'lane-a', { mode: 'standard', phase: 'exploring', summary: 'sum', next_action: 'next' });
+    assert(fs.existsSync(laneFile(dir, 'lane-a')), 'lane record lives at .bee/lanes/<feature>.json');
+    assert(laneStore.lanePath(dir, 'lane-a') === laneFile(dir, 'lane-a'), 'lanePath resolves under .bee/lanes');
+    const lane = laneStore.readLane(dir, 'lane-a');
+    assert(lane && lane.feature === 'lane-a', 'feature round-trips');
+    assert(lane.mode === 'standard' && lane.phase === 'exploring', 'mode/phase round-trip');
+    assert(lane.approved_gates && lane.approved_gates.execution === false, 'gates round-trip');
+    assert(typeof lane.created_at === 'string' && !Number.isNaN(Date.parse(lane.created_at)), 'created_at is a timestamp');
+    assert(laneStore.readLane(dir, 'lane-ghost') === null, 'missing lane reads null, never a guessed default');
+    writeLaneFixture(dir, 'tính năng á'); // input-extremes probe: spaces + unicode
+    assert(laneStore.readLane(dir, 'tính năng á').feature === 'tính năng á', 'unicode/space feature names round-trip');
+    const listed = laneStore.listLanes(dir).map((l) => l.feature).sort();
+    assert(JSON.stringify(listed) === JSON.stringify(['lane-a', 'tính năng á'].sort()), `listLanes enumerates lane records, got ${JSON.stringify(listed)}`);
+    laneStore.removeLane(dir, 'tính năng á');
+    assert(!fs.existsSync(laneFile(dir, 'tính năng á')), 'removeLane deletes the record');
+    assertThrows(() => laneStore.lanePath(dir, '../evil'), 'plain id', 'path-shaped lane names are rejected as bad arguments');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: readLane/listLanes are fail-open for display — a corrupt lane file warns, is skipped, and stays untouched on disk', () => {
+  const dir = makeStateRepo('bee-lane-corrupt-read-');
+  try {
+    writeLaneFixture(dir, 'lane-ok');
+    fs.writeFileSync(laneFile(dir, 'lane-bad'), '{ not json', 'utf8');
+    const before = fs.readFileSync(laneFile(dir, 'lane-bad'), 'utf8');
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...a) => warnings.push(a.join(' '));
+    let read;
+    let listed;
+    try {
+      read = laneStore.readLane(dir, 'lane-bad');
+      listed = laneStore.listLanes(dir);
+    } finally {
+      console.warn = origWarn;
+    }
+    assert(read === null, 'corrupt lane reads null for display');
+    assert(warnings.some((w) => w.includes('lane-bad')), `a warning names the corrupt lane, got ${JSON.stringify(warnings)}`);
+    assert(listed.length === 1 && listed[0].feature === 'lane-ok', 'listLanes skips the corrupt record and keeps the healthy one');
+    assert(fs.readFileSync(laneFile(dir, 'lane-bad'), 'utf8') === before, 'corrupt file untouched by fail-open reads');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: readLaneStrict refuses loudly on a present-but-corrupt lane file (untouched); a missing lane reads null (creation is the caller\'s explicit move)', () => {
+  const dir = makeStateRepo('bee-lane-strict-');
+  try {
+    fs.mkdirSync(path.join(dir, '.bee', 'lanes'), { recursive: true });
+    fs.writeFileSync(laneFile(dir, 'lane-bad'), '{ not json', 'utf8');
+    const before = fs.readFileSync(laneFile(dir, 'lane-bad'), 'utf8');
+    assertThrows(() => laneStore.readLaneStrict(dir, 'lane-bad'), 'lane', 'corrupt lane refuses loudly for mutation');
+    assert(fs.readFileSync(laneFile(dir, 'lane-bad'), 'utf8') === before, 'refusal leaves the corrupt file untouched');
+    // a record whose feature field names ANOTHER feature is corrupt, never trusted
+    writeLaneFixture(dir, 'lane-lies');
+    const lying = readJson(laneFile(dir, 'lane-lies'), null);
+    writeJsonAtomic(laneFile(dir, 'lane-lies'), { ...lying, feature: 'someone-else' });
+    assertThrows(() => laneStore.readLaneStrict(dir, 'lane-lies'), 'lane', 'a feature-mismatched record refuses under strict');
+    assert(laneStore.readLaneStrict(dir, 'lane-ghost') === null, 'missing lane is null under strict too');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: createSession OMITS the lane key when unbound; bindSessionLane writes it, unbindSessionLane removes the key entirely; ghost session is typed SESSION_MISSING', () => {
+  const dir = makeStateRepo('bee-lane-bind-');
+  try {
+    const made = laneBinding.createSession(dir, { id: 'sess-bind' });
+    assert(made.ok === true, 'session created');
+    const rawUnbound = readJson(sessionPath(dir, 'sess-bind'), null);
+    assert(rawUnbound && !('lane' in rawUnbound), 'unbound session record has NO lane key (pre-existing session-shape rows stay green)');
+    const bound = laneBinding.bindSessionLane(dir, 'sess-bind', 'lane-a');
+    assert(bound.ok === true && bound.session.lane === 'lane-a', 'bind returns the bound record');
+    const rawBound = readJson(sessionPath(dir, 'sess-bind'), null);
+    assert(rawBound.lane === 'lane-a' && rawBound.id === 'sess-bind', 'lane binding persisted beside the session identity');
+    laneBinding.heartbeatSession(dir, 'sess-bind');
+    assert(readJson(sessionPath(dir, 'sess-bind'), null).lane === 'lane-a', 'the binding survives a heartbeat rewrite');
+    const unbound = laneBinding.unbindSessionLane(dir, 'sess-bind');
+    assert(unbound.ok === true, 'unbind ok');
+    const rawAfter = readJson(sessionPath(dir, 'sess-bind'), null);
+    assert(rawAfter && !('lane' in rawAfter), 'unbind removes the key entirely, not lane:null');
+    const ghost = laneBinding.bindSessionLane(dir, 'sess-ghost', 'lane-a');
+    assert(ghost.ok === false && ghost.code === 'SESSION_MISSING' && typeof ghost.reason === 'string', 'binding a missing session is a typed failure — no throw');
+    assertThrows(() => laneBinding.bindSessionLane(dir, 'sess-bind', '../evil'), 'plain id', 'path-shaped lane names are rejected as bad arguments');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: resolvePipeline — no sessionId, unknown session, or unbound session resolves to the DEFAULT record; a bound session resolves to its lane record', () => {
+  const dir = makeStateRepo('bee-lane-resolve-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'swarming', feature: 'default-feat', workers: [] });
+    const bare = laneStore.resolvePipeline(dir);
+    assert(bare.ok === true && bare.source === 'default' && bare.record.feature === 'default-feat', 'no sessionId → the default record');
+    const unknown = laneStore.resolvePipeline(dir, { sessionId: 'sess-nobody' });
+    assert(unknown.ok === true && unknown.source === 'default', 'unknown session → default, resolution never guesses a lane');
+    laneBinding.createSession(dir, { id: 'sess-r' });
+    const unbound = laneStore.resolvePipeline(dir, { sessionId: 'sess-r' });
+    assert(unbound.ok === true && unbound.source === 'default', 'unbound session → default');
+    writeLaneFixture(dir, 'lane-r', { phase: 'planning', mode: 'standard' });
+    laneBinding.bindSessionLane(dir, 'sess-r', 'lane-r');
+    const bound = laneStore.resolvePipeline(dir, { sessionId: 'sess-r' });
+    assert(bound.ok === true && bound.source === 'lane', `bound session → lane source, got ${JSON.stringify(bound)}`);
+    assert(bound.feature === 'lane-r' && bound.record.feature === 'lane-r' && bound.record.phase === 'planning', 'the bound lane record is returned');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: resolvePipeline — a binding to a missing or corrupt lane is a TYPED refusal naming the lane, never a silent fall-back to the default', () => {
+  const dir = makeStateRepo('bee-lane-resolve-refuse-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+    laneBinding.createSession(dir, { id: 'sess-m' });
+    laneBinding.bindSessionLane(dir, 'sess-m', 'lane-ghost');
+    const missing = laneStore.resolvePipeline(dir, { sessionId: 'sess-m' });
+    assert(missing.ok === false && missing.code === 'LANE_MISSING', `missing lane is a typed refusal, got ${JSON.stringify(missing)}`);
+    assert(typeof missing.reason === 'string' && missing.reason.includes('lane-ghost'), 'reason names the missing lane');
+    fs.mkdirSync(path.join(dir, '.bee', 'lanes'), { recursive: true });
+    fs.writeFileSync(laneFile(dir, 'lane-ghost'), '{ not json', 'utf8');
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...a) => warnings.push(a.join(' '));
+    let corrupt;
+    try {
+      corrupt = laneStore.resolvePipeline(dir, { sessionId: 'sess-m' });
+    } finally {
+      console.warn = origWarn;
+    }
+    assert(corrupt.ok === false && corrupt.code === 'LANE_CORRUPT', `corrupt lane is a typed refusal, got ${JSON.stringify(corrupt)}`);
+    assert(typeof corrupt.reason === 'string' && corrupt.reason.includes('lane-ghost'), 'reason names the corrupt lane');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: startFeature lane mode creates the lane with all four gates false while state.json and every other lane stay byte-identical (D4 zero-touch)', () => {
+  const dir = makeStateRepo('bee-lane-start-ok-');
+  try {
+    const statePath = path.join(dir, '.bee', 'state.json');
+    writeJsonAtomic(statePath, {
+      schema_version: '1.0',
+      phase: 'swarming', // the DEFAULT pipeline is mid-flight — a lane start must not care and must not touch it
+      feature: 'default-feat',
+      mode: 'standard',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      workers: [],
+    });
+    writeLaneFixture(dir, 'lane-other', { phase: 'planning' });
+    const stateBefore = fs.readFileSync(statePath, 'utf8');
+    const otherBefore = fs.readFileSync(laneFile(dir, 'lane-other'), 'utf8');
+    const record = startFeature(dir, { feature: 'lane-new', mode: 'high-risk', phase: 'exploring', lane: true });
+    assert(record.feature === 'lane-new' && record.mode === 'high-risk' && record.phase === 'exploring', 'lane record carries feature/mode/phase');
+    assert(Object.values(record.approved_gates).every((v) => v === false), `all four gates start false — a lane never inherits approvals, got ${JSON.stringify(record.approved_gates)}`);
+    assert(typeof record.created_at === 'string' && !Number.isNaN(Date.parse(record.created_at)), 'created_at stamped');
+    assert(fs.existsSync(laneFile(dir, 'lane-new')), 'lane record written to .bee/lanes/');
+    assert(fs.readFileSync(statePath, 'utf8') === stateBefore, 'the DEFAULT record is byte-identical — a lane start never touches state.json');
+    assert(fs.readFileSync(laneFile(dir, 'lane-other'), 'utf8') === otherBefore, 'every other lane byte-identical');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: a lane start refuses while THIS feature has nonterminal cells, and is never blocked by another feature\'s nonterminal cells', () => {
+  const dir = makeStateRepo('bee-lane-start-cells-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'swarming', feature: 'default-feat', workers: [] });
+    makeCellFile(dir, 'mine-1', { feature: 'lane-c', status: 'open' });
+    makeCellFile(dir, 'other-1', { feature: 'elsewhere', status: 'claimed' });
+    assertThrows(
+      () => startFeature(dir, { feature: 'lane-c', lane: true }),
+      'mine-1',
+      'a same-feature nonterminal cell refuses the lane start',
+    );
+    assert(!fs.existsSync(laneFile(dir, 'lane-c')), 'refusal writes nothing');
+    const record = startFeature(dir, { feature: 'lane-d', lane: true });
+    assert(record.feature === 'lane-d', 'another feature\'s nonterminal (even claimed) cell never blocks an unrelated lane start');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: a global HANDOFF blocks a lane start only when its feature names this lane; the DEFAULT start keeps any-handoff-blocks', () => {
+  const dir = makeStateRepo('bee-lane-start-handoff-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+    writeJsonAtomic(path.join(dir, '.bee', 'HANDOFF.json'), { feature: 'lane-e', cell: 'x', done: [], remaining: [] });
+    assertThrows(() => startFeature(dir, { feature: 'lane-e', lane: true }), 'HANDOFF', 'a handoff naming THIS feature blocks its lane start');
+    assert(!fs.existsSync(laneFile(dir, 'lane-e')), 'refusal writes nothing');
+    const unrelated = startFeature(dir, { feature: 'lane-f', lane: true });
+    assert(unrelated.feature === 'lane-f', 'a handoff for another feature does not block this lane');
+    assertThrows(() => startFeature(dir, { feature: 'lane-g' }), 'HANDOFF', 'the default (non-lane) start keeps today\'s any-handoff-blocks semantics');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: a registered worker blocks a lane start only when its cell derives to this lane\'s feature (worker→cell→feature, no new fields)', () => {
+  const dir = makeStateRepo('bee-lane-start-worker-');
+  try {
+    makeCellFile(dir, 'wcell-1', { feature: 'lane-h', status: 'capped' }); // terminal, so precondition (a) passes — isolates the worker check
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'swarming',
+      feature: 'default-feat',
+      workers: [{ nickname: 'busy', cell: 'wcell-1', tier: 'generation', status: 'in-flight' }],
+    });
+    assertThrows(() => startFeature(dir, { feature: 'lane-h', lane: true }), 'worker', 'a worker on this feature\'s cell blocks the lane start');
+    assert(!fs.existsSync(laneFile(dir, 'lane-h')), 'refusal writes nothing');
+    const unrelated = startFeature(dir, { feature: 'lane-i', lane: true });
+    assert(unrelated.feature === 'lane-i', 'a worker on another feature\'s cell never blocks this lane');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: a lane start declaring intended paths refuses on overlap with ANOTHER session\'s active holds (claimed-cell files or reservations); own and expired holds never block', () => {
+  const dir = makeStateRepo('bee-lane-start-holds-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+    laneBinding.createSession(dir, { id: 'sess-me' });
+    laneBinding.createSession(dir, { id: 'sess-them' });
+    makeCellFile(dir, 'held-cell', { feature: 'elsewhere', status: 'capped', files: ['src/app.ts'] });
+    const held = claimCellFile(dir, 'sess-them', 'held-cell');
+    assert(held.ok === true, 'precondition: another session holds a claim whose cell files include src/app.ts');
+    assertThrows(
+      () => startFeature(dir, { feature: 'lane-j', lane: true, sessionId: 'sess-me', paths: ['src/app.ts'] }),
+      'sess-them',
+      'overlap with another session\'s claim-held files refuses, naming the holder',
+    );
+    assert(!fs.existsSync(laneFile(dir, 'lane-j')), 'refusal writes nothing');
+    const own = startFeature(dir, { feature: 'lane-k', lane: true, sessionId: 'sess-them', paths: ['src/app.ts'] });
+    assert(own.feature === 'lane-k', 'the holder\'s own session is never blocked by its own claim');
+    reserve(dir, { agent: 'worker-z', cell: 'z-1', path: 'src/lib/*' });
+    assertThrows(
+      () => startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] }),
+      'worker-z',
+      'overlap with an active reservation refuses, naming the holder',
+    );
+    const store = readJson(reservationsPath(dir), null);
+    store.reservations[store.reservations.length - 1].reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
+    store.reservations[store.reservations.length - 1].ttl_seconds = 60;
+    writeJsonAtomic(reservationsPath(dir), store);
+    const expired = startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] });
+    assert(expired.feature === 'lane-l', 'an expired hold never blocks');
+    const undeclared = startFeature(dir, { feature: 'lane-m', lane: true, sessionId: 'sess-me' });
+    assert(undeclared.feature === 'lane-m', 'no declared paths → the holds check is skipped by contract');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('lanes: restarting a terminal lane resets exactly its four gates (created_at preserved); a mid-flight lane refuses; a corrupt lane file refuses loudly untouched', () => {
+  const dir = makeStateRepo('bee-lane-restart-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+    const born = '2026-01-01T00:00:00.000Z';
+    writeLaneFixture(dir, 'lane-n', {
+      phase: 'compounding-complete',
+      mode: 'standard',
+      approved_gates: { context: true, shape: true, execution: true, review: true },
+      created_at: born,
+    });
+    const restarted = startFeature(dir, { feature: 'lane-n', mode: 'tiny', phase: 'exploring', lane: true });
+    assert(Object.values(restarted.approved_gates).every((v) => v === false), 'restart resets all four gates — spec R1 applied per lane');
+    assert(restarted.created_at === born, `created_at survives a restart, got ${restarted.created_at}`);
+    assert(restarted.mode === 'tiny' && restarted.phase === 'exploring', 'mode/phase refreshed');
+    writeLaneFixture(dir, 'lane-o', { phase: 'swarming' });
+    const midBefore = fs.readFileSync(laneFile(dir, 'lane-o'), 'utf8');
+    assertThrows(() => startFeature(dir, { feature: 'lane-o', lane: true }), 'phase', 'a mid-flight lane refuses its own restart');
+    assert(fs.readFileSync(laneFile(dir, 'lane-o'), 'utf8') === midBefore, 'refusal leaves the lane untouched');
+    fs.writeFileSync(laneFile(dir, 'lane-p'), '{ not json', 'utf8');
+    const corruptBefore = fs.readFileSync(laneFile(dir, 'lane-p'), 'utf8');
+    assertThrows(() => startFeature(dir, { feature: 'lane-p', lane: true }), 'lane', 'a corrupt lane file refuses the mutation loudly');
+    assert(fs.readFileSync(laneFile(dir, 'lane-p'), 'utf8') === corruptBefore, 'corrupt file untouched');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
