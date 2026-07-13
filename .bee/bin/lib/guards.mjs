@@ -2,7 +2,7 @@
 // and bash write-target extraction. Used by the write-guard hook and helpers.
 
 import { findConflicts } from './reservations.mjs';
-import { readConfig } from './state.mjs';
+import { readConfig, resolvePipeline } from './state.mjs';
 
 /** File-path patterns that must never be read without asking the human. */
 export const SECRET_PATTERNS = [
@@ -88,8 +88,15 @@ function underAllowedPrefix(relPath) {
  *   GATE_ALLOWED_PREFIXES while approved_gates.execution is false.
  * - Swarming: deny writes that conflict with another agent's reservation
  *   (agent identity from agentName arg or BEE_AGENT_NAME env).
+ * - Optional sessionId (fsh-5, D2/D4): when provided, phase and gates come
+ *   from resolvePipeline(root, { sessionId }) — a bound session is governed
+ *   by its lane record, an unbound/unknown session by the default record.
+ *   Absent sessionId is byte-identical to today: the caller's state argument
+ *   decides. A binding that cannot resolve (invalid/missing/corrupt lane) is
+ *   a typed DENY — a write guard never guesses a broken binding back to the
+ *   default pipeline (the wrong pipeline's gates would decide the write).
  */
-export function checkWrite(root, state, relPath, agentName = null) {
+export function checkWrite(root, state, relPath, agentName = null, { sessionId = null } = {}) {
   const normalized = normalizeRel(relPath);
 
   const directEditVerb = DIRECT_EDIT_DENY[normalized];
@@ -104,7 +111,20 @@ export function checkWrite(root, state, relPath, agentName = null) {
     };
   }
 
-  const phase = state?.phase || 'idle';
+  let record = state;
+  if (typeof sessionId === 'string' && sessionId.trim()) {
+    const resolved = resolvePipeline(root, { sessionId });
+    if (!resolved.ok) {
+      return {
+        allow: false,
+        kind: 'lane',
+        reason: `bee lane guard: ${resolved.reason}`,
+      };
+    }
+    record = resolved.record;
+  }
+
+  const phase = record?.phase || 'idle';
 
   if (TERMINAL_PHASES.has(phase)) {
     const config = readConfig(root);
@@ -125,7 +145,7 @@ export function checkWrite(root, state, relPath, agentName = null) {
   }
 
   if (GATED_PHASES.has(phase)) {
-    const executionApproved = state?.approved_gates?.execution === true;
+    const executionApproved = record?.approved_gates?.execution === true;
     if (!executionApproved && !underAllowedPrefix(normalized)) {
       return {
         allow: false,

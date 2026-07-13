@@ -4321,6 +4321,150 @@ check('lanes: restarting a terminal lane resets exactly its four gates (created_
   }
 });
 
+// ─── fsh-5: enforcement readers resolve through the session's lane (D2/D4) ──
+// LIB CAPABILITY ONLY — hooks thread these in S3/S4. claimCell's execution
+// gate comes from the CELL's own feature lane when one exists (the per-feature
+// lane is keyed by cell.feature — the cell field named `lane` is the risk
+// tier, a different thing); checkWrite optionally resolves phase/gates from a
+// bound session via resolvePipeline. Zero lanes on disk = byte-identical to
+// today, pinned by every pre-existing claimCell/checkWrite row above passing
+// unmodified.
+
+check("lanes: claimCell resolves the execution gate from the cell's feature lane — an unapproved lane refuses even when the default gate is true, and an approved lane authorizes even when the default gate is false (D2 authority boundary)", () => {
+  const dir = makeStateRepo('bee-lane-claim-gate-');
+  try {
+    // default pipeline fully approved — it must NOT authorize a lane cell
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'swarming',
+      feature: 'default-feat',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      workers: [],
+    });
+    makeCellFile(dir, 'lg-1', { feature: 'lane-feat', status: 'open' });
+    writeLaneFixture(dir, 'lane-feat', { phase: 'validating' }); // all four gates false
+    assertThrows(
+      () => claimCell(dir, 'lg-1', 'worker-l'),
+      'execution',
+      "the lane's unapproved execution gate refuses the claim even though the DEFAULT execution gate is true",
+    );
+    assert(readCell(dir, 'lg-1').status === 'open', 'refusal leaves the cell open');
+    // the lane's own approval authorizes — the default gate is irrelevant to a lane cell
+    writeLaneFixture(dir, 'lane-feat', {
+      phase: 'swarming',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'idle',
+      feature: null,
+      approved_gates: { context: false, shape: false, execution: false, review: false },
+      workers: [],
+    });
+    const claimed = claimCell(dir, 'lg-1', 'worker-l');
+    assert(
+      claimed.status === 'claimed' && claimed.trace.worker === 'worker-l',
+      "the lane's execution approval authorizes the claim even while the default gate is false",
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("lanes: claimCell for a cell whose feature has NO lane record keeps today's default-gate behavior (D4 zero-lane parity); a corrupt lane record refuses loudly, never falls back to the default gate", () => {
+  const dir = makeStateRepo('bee-lane-claim-default-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'idle',
+      feature: null,
+      approved_gates: { context: false, shape: false, execution: false, review: false },
+      workers: [],
+    });
+    makeCellFile(dir, 'dg-1', { feature: 'plain-feat', status: 'open' });
+    assertThrows(
+      () => claimCell(dir, 'dg-1', 'worker-d'),
+      'execution',
+      'no lane record → the default gate governs, refusing while unapproved',
+    );
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'swarming',
+      feature: 'plain-feat',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      workers: [],
+    });
+    const claimed = claimCell(dir, 'dg-1', 'worker-d');
+    assert(claimed.status === 'claimed', 'default-gate claim proceeds once approved — no lane on disk, no lane logic');
+    // a present-but-corrupt lane record must refuse the claim loudly: guessing
+    // back to the default gate would let it authorize a lane cell (D2 boundary)
+    makeCellFile(dir, 'cg-1', { feature: 'lane-corrupt', status: 'open' });
+    fs.mkdirSync(path.join(dir, '.bee', 'lanes'), { recursive: true });
+    fs.writeFileSync(laneFile(dir, 'lane-corrupt'), '{ not json', 'utf8');
+    assertThrows(
+      () => claimCell(dir, 'cg-1', 'worker-d'),
+      'lane',
+      'a corrupt lane record refuses the claim loudly instead of falling back to the default gate',
+    );
+    assert(readCell(dir, 'cg-1').status === 'open', 'refusal leaves the cell untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check("lanes: checkWrite with a bound sessionId resolves phase/gates from the session's lane; absent or unbound sessionId keeps today's record; a broken binding is a typed deny, never a silent default", () => {
+  const dir = makeStateRepo('bee-lane-checkwrite-');
+  try {
+    // default record at idle: a plain source write hits the intake gate today
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'idle',
+      feature: null,
+      approved_gates: { context: false, shape: false, execution: false, review: false },
+      workers: [],
+    });
+    const state = readState(dir);
+    const bare = checkWrite(dir, state, 'src/app.ts');
+    assert(bare.allow === false && bare.kind === 'intake', "absent sessionId keeps today's exact behavior (intake deny at idle)");
+    // bound session whose lane is mid-swarm with execution approved → allowed
+    laneBinding.createSession(dir, { id: 'sess-w' });
+    writeLaneFixture(dir, 'lane-w', {
+      phase: 'swarming',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    laneBinding.bindSessionLane(dir, 'sess-w', 'lane-w');
+    const boundOk = checkWrite(dir, state, 'src/app.ts', null, { sessionId: 'sess-w' });
+    assert(
+      boundOk.allow === true,
+      `a bound session is governed by its lane (swarming, execution approved) — the idle default record no longer decides, got ${JSON.stringify(boundOk)}`,
+    );
+    // the lane in a gated phase without approval → gate deny through the lane
+    writeLaneFixture(dir, 'lane-w', { phase: 'planning' });
+    const boundDenied = checkWrite(dir, state, 'src/app.ts', null, { sessionId: 'sess-w' });
+    assert(
+      boundDenied.allow === false && boundDenied.kind === 'gate',
+      `the bound lane's unapproved gate denies the write, got ${JSON.stringify(boundDenied)}`,
+    );
+    // an unbound session resolves to the default record — same deny as bare
+    laneBinding.createSession(dir, { id: 'sess-u' });
+    const unbound = checkWrite(dir, state, 'src/app.ts', null, { sessionId: 'sess-u' });
+    assert(unbound.allow === false && unbound.kind === 'intake', 'an unbound session resolves to the default record');
+    // a binding to a missing lane: typed deny naming the lane, never a silent default
+    laneBinding.bindSessionLane(dir, 'sess-u', 'lane-ghost');
+    const broken = checkWrite(dir, state, 'src/app.ts', null, { sessionId: 'sess-u' });
+    assert(
+      broken.allow === false && broken.kind === 'lane',
+      `a broken binding is a typed lane deny, got ${JSON.stringify(broken)}`,
+    );
+    assert(
+      typeof broken.reason === 'string' && broken.reason.includes('lane-ghost'),
+      'the deny reason names the unresolvable lane',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ─── bee_backlog.mjs add verb (cli-mutations-2, decision from cli-mutations
 // plan.md: agents never hand-edit .bee/*.json(l)) ─────────────────────────────
 // counts/rank/badges already have direct lib/backlog.mjs coverage above (the

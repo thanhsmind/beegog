@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
-import { readState, gateApproved, MODEL_TIERS } from './state.mjs';
+import { readState, gateApproved, MODEL_TIERS, lanePath, readLaneStrict } from './state.mjs';
 
 export const LANES = ['tiny', 'small', 'standard', 'high-risk', 'spike'];
 
@@ -287,17 +287,45 @@ export function readyCells(root, feature = null) {
   );
 }
 
+// fsh-5 (D2/D4) — the cell-feature → lane-record read for ENFORCEMENT. The
+// per-feature lane is keyed by cell.feature (NAMING TRAP: the cell field named
+// `lane` is the risk tier — tiny/small/standard/high-risk — a different thing
+// entirely). A path-shaped feature can never name a lane record (null — the
+// default gate governs, exactly today's behavior); a missing record is null;
+// a present-but-corrupt record THROWS via readLaneStrict — the default gate
+// must never silently authorize a lane cell over a corrupt lane record.
+function laneRecordForFeature(root, feature) {
+  if (typeof feature !== 'string' || !feature.trim()) return null;
+  let file;
+  try {
+    file = lanePath(root, feature);
+  } catch {
+    return null;
+  }
+  if (!fs.existsSync(file)) return null;
+  return readLaneStrict(root, feature);
+}
+
 export function claimCell(root, id, worker) {
   if (typeof worker !== 'string' || !worker.trim()) {
     throw new Error('claimCell: worker name is required.');
   }
-  const state = readState(root);
-  if (!gateApproved(state, 'execution')) {
+  // fsh-5 (D2): the execution gate resolves from the CELL's own feature — a
+  // lane record for cell.feature authorizes (or refuses) the claim with ITS
+  // gate; no lane record means the default pipeline's gate, byte-identical to
+  // the single-pipeline model (D4 zero-lane parity). A missing cell resolves
+  // through the default gate so the error precedence (gate first, then
+  // not-found) matches today exactly.
+  const cell = readCell(root, id);
+  const laneRecord = cell ? laneRecordForFeature(root, cell.feature) : null;
+  const gateSource = laneRecord || readState(root);
+  if (!gateApproved(gateSource, 'execution')) {
     throw new Error(
-      'claimCell: gate "execution" is not approved — cells cannot be claimed before execution is approved. Surface Gate 3 to the user ("Feasibility validated. Approve execution?") and set approved_gates.execution once approved. Only the opt-in gate_bypass switch may self-approve, and only for tiny/small/standard non-hard-gate work (decision 0010) — never self-approve high-risk/hard-gate execution.',
+      laneRecord
+        ? `claimCell: lane "${cell.feature}" gate "execution" is not approved — cells of this feature cannot be claimed before ITS lane passes Gate 3 (D2: only the lane's own approvals authorize its cells — the default pipeline's gate never does). Surface Gate 3 to the user for lane "${cell.feature}" and set its approved_gates.execution once approved.`
+        : 'claimCell: gate "execution" is not approved — cells cannot be claimed before execution is approved. Surface Gate 3 to the user ("Feasibility validated. Approve execution?") and set approved_gates.execution once approved. Only the opt-in gate_bypass switch may self-approve, and only for tiny/small/standard non-hard-gate work (decision 0010) — never self-approve high-risk/hard-gate execution.',
     );
   }
-  const cell = readCell(root, id);
   if (!cell) throw new Error(`claimCell: cell "${id}" not found.`);
   if (cell.status !== 'open') {
     throw new Error(
