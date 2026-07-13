@@ -43,7 +43,7 @@ Adopt: name these three sources explicitly as grooming's proposal inputs, adopt 
 
 Harness stories carry `verify_command` + `last_verified_at/result`, with `story verify-all` re-running every configured proof. bee verifies once at cap time — after that, regressions against capped cells are invisible.
 
-Adopt: `bee_cells.mjs verify-all [--feature F]` re-runs the recorded `verify` command of capped cells and stores `last_verified_at/last_verified_result`; entropy adds `capped_but_failing × 10`. Optional mirror for decisions: a `verify_command` field + `bee_decisions.mjs verify --id`, counted in entropy as unverified/failing decisions. This turns grooming's "unverified verify-commands" hunt from a static check into a live regression sweep.
+Adopt: `bee.mjs cells verify-all [--feature F]` re-runs the recorded `verify` command of capped cells and stores `last_verified_at/last_verified_result`; entropy adds `capped_but_failing × 10`. Optional mirror for decisions: a `verify_command` field + `bee.mjs decisions verify --id`, counted in entropy as unverified/failing decisions. This turns grooming's "unverified verify-commands" hunt from a static check into a live regression sweep.
 
 ### 5. CLAUDE.md `@import` fallback
 

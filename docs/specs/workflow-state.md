@@ -450,7 +450,7 @@ second, and a failure of the second releases the first (no orphaned claim).
 
 ## Pointers (implementation)
 
-- Record: `.bee/state.json` (CLI-owned). Verbs: `bee_state.mjs`
+- Record: `.bee/state.json` (CLI-owned). Verbs: `bee.mjs state`
   (`start-feature` — new; set/gate/worker/scribing-run — existing);
   `startFeature()` + `isKnownPhase` in `skills/bee-hive/templates/lib/state.mjs`
   (byte-mirrored to `.bee/bin/lib/state.mjs`).
@@ -474,22 +474,24 @@ second, and a failure of the second releases the first (no orphaned claim).
   Evidence: commits 14e0e1b, 68d3a0d, 33aaad7; traces `.bee/cells/adv-{1,2,3}.json`;
   transport proofs `docs/history/advisor/reports/validation-advisor-consult.md`.
 - Batch slice creation: `addCells` in `skills/bee-hive/templates/lib/cells.mjs`,
-  CLI `bee_cells.mjs add --stdin` (JSON array). Evidence: dispatcher-unify
+  CLI `bee.mjs cells add --stdin` (JSON array). Evidence: dispatcher-unify
   cells-batch-add suite rows (v0.1.27).
 - Unified dispatcher (all nine groups): `skills/bee-hive/templates/bee.mjs` owns
-  registry + handlers; every `bee_*.mjs` is a 2-line forwarder with
-  byte-identical output. Evidence: `.bee/cells/du-{1..6}.json`,
-  `docs/history/dispatcher-unify/`.
+  registry + handlers; dispatcher-unify (`.bee/cells/du-{1..6}.json`,
+  `docs/history/dispatcher-unify/`) first made every legacy per-group script a
+  2-line forwarder with byte-identical output, then shim-retire (D1, decision
+  bbc6bcea; `.bee/cells/shim-retire-{1..6}.json`) deleted those forwarders
+  outright — `bee.mjs` is now the sole shipped CLI, no forwarders remain.
 - Advisor config tolerance: `STALE_ADVISOR_KEY_WARNING` (copy names the
   top-level key; the nested `models.<runtime>.advisor` slot is separate and
   valid), `hasStaleAdvisorKey`
   in `skills/bee-hive/templates/lib/state.mjs` (byte-mirrored to
-  `.bee/bin/lib/state.mjs`); surfaced by `skills/bee-hive/templates/bee_status.mjs`
-  and `skills/bee-hive/scripts/onboard_bee.mjs` (`staleAdvisorNotices`).
+  `.bee/bin/lib/state.mjs`); surfaced by `skills/bee-hive/templates/bee.mjs`
+  (`status` group) and `skills/bee-hive/scripts/onboard_bee.mjs` (`staleAdvisorNotices`).
   Evidence: fanout-delegation cells fanout-1/fanout-4 (commits 0056eda,
   79d96df).
 - Cell revision: `updateCell` + `UPDATE_FIELD_VALIDATORS`/`UPDATE_FROZEN_HINTS`
-  in `skills/bee-hive/templates/lib/cells.mjs`; CLI `bee_cells.mjs update --id ID
+  in `skills/bee-hive/templates/lib/cells.mjs`; CLI `bee.mjs cells update --id ID
   --file patch.json | --stdin` (byte-mirrored to `.bee/bin/`). Evidence: cell
   `.bee/cells/cuv-1.json` (commit 127abb0), 7 suite checks.
 - Session coordination (B11/R17/R18): `skills/bee-hive/templates/lib/claims.mjs`
@@ -524,10 +526,10 @@ second, and a failure of the second releases the first (no orphaned claim).
   `docs/history/fresh-session-handoff/reports/validation-s4.md` (incl. the
   orchestrator's retro-RED probe for fsh-11).
 - Review records: `.bee/reviews/<id>.json` (sessions) + `.bee/review-candidates.jsonl`
-  (ledger), CLI `bee_reviews.mjs` (create/list/show/record/candidate add/
+  (ledger), CLI `bee.mjs reviews` (create/list/show/record/candidate add/
   candidates/status), lib `skills/bee-hive/templates/lib/reviews.mjs`
   (`deriveCandidateStatus`, `readReviewStrict`; byte-mirrored to `.bee/bin/`).
-  Status surface: `review` block in `skills/bee-hive/templates/bee_status.mjs`.
+  Status surface: `review` block in `skills/bee-hive/templates/bee.mjs` (`status` group).
   Coverage derivation uses `git merge-base --is-ancestor` + `git rev-list --count`.
   Tests: review-od checks in `skills/bee-hive/templates/tests/test_lib.mjs`
   (208 passing). Evidence: commits cc1c34d, e4f51a2, da2e165; traces

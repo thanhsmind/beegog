@@ -18,7 +18,7 @@ carries three elements:
 
 1. **ERROR** — the rule that fired, named (`capCell: cell "x-1" has no passing verify result`).
 2. **WHY** — the reason in the same sentence (`— an assertion is not evidence`).
-3. **FIX** — the next command or action, concrete (`run … and record it: bee_cells.mjs verify --id x-1 --command CMD --passed true`).
+3. **FIX** — the next command or action, concrete (`run … and record it: bee.mjs cells verify --id x-1 --command CMD --passed true`).
 
 A refusal that ends at "not allowed" with no stated next step violates this contract.
 Guard denials follow the same shape (`reason` names the gate/conflict, why, and the route:
@@ -101,7 +101,7 @@ All functions are sync unless noted. `root` = absolute repo root path.
 - `extractBashTargets(command)` → `{paths:[], broadWrite:boolean}` (khuym patterns: `sed -i`, `tee`, `rm`, `mv`, `cp`, `mkdir`, `touch`, `git add|mv|rm`, redirection `>`).
 
 ### `inject.mjs`
-- `buildSessionPreamble(root)` → markdown string: bee version + onboarding health; phase/mode/feature; gate states; HANDOFF block ("present it and WAIT — never auto-resume") when present; up to 10-line digest of `docs/history/learnings/critical-patterns.md`; last 3 active decisions (datamarked); when `docs/specs/` exists, one state-layer line ("Area specs + reading map at `docs/specs/` — read the touched area's spec before its code"); "Run `node .bee/bin/bee_status.mjs --json` for detail. Route via bee-hive."
+- `buildSessionPreamble(root)` → markdown string: bee version + onboarding health; phase/mode/feature; gate states; HANDOFF block ("present it and WAIT — never auto-resume") when present; up to 10-line digest of `docs/history/learnings/critical-patterns.md`; last 3 active decisions (datamarked); when `docs/specs/` exists, one state-layer line ("Area specs + reading map at `docs/specs/` — read the touched area's spec before its code"); "Run `node .bee/bin/bee.mjs status --json` for detail. Route via bee-hive."
 - `buildPromptReminder(root)` → `{text, hash}` — 1–3 lines: phase / mode / next_action / first open gate. `hash` = stable hash of those fields.
 - `shouldInject(root, key, hash)` / `markInjected(root, key, hash)` — via `.bee/.inject-cache.json`; inject when hash differs from last or >30 min elapsed.
 
@@ -111,24 +111,24 @@ All functions are sync unless noted. `root` = absolute repo root path.
 - `activeDecisions(root, {recent=null})` — decide events not superseded/redacted, newest first.
 - `datamark(text)` — strip/neutralize backticks fences, role tags, control chars; wrap in `«…»`.
 
-### `command-registry.mjs` (harness-integration-adopt, decision 30606de4)
+### `command-registry.mjs` (harness-integration-adopt, decision 30606de4; sole registry since D1/D5, shim-retire)
 - `SCHEMA_VERSION` — manifest schema version string (currently `'1.0'`).
-- `COMMAND_REGISTRY` — array of entries, one per subcommand across the 4 helpers (including `cells.update`): `{name, helper, invoke, description, parameters, examples, deprecated}`. `parameters` is JSON-Schema in the exact shape Claude Code's own tool definitions use (`{type:"object", properties, required}`). `helper` names which of the 4 template scripts implements the command — internal dispatch metadata, stripped before `bee.mjs --help --json` renders the public manifest. `examples[]` are literal, tested argument strings (`tests/test_bee_cli.mjs` runs every one against the real underlying helper).
+- `COMMAND_REGISTRY` — array of entries, one per subcommand across all 9 command groups (status, cells — including `cells.update` —, reservations, decisions, state, backlog, capture, reviews, feedback): `{name, invoke, description, parameters, examples, deprecated}`. `parameters` is JSON-Schema in the exact shape Claude Code's own tool definitions use (`{type:"object", properties, required}`). The registry's old `helper` field (which of the legacy per-group scripts implemented a command) was removed together with its strip code and test assertion (D5) — every entry now dispatches straight to `bee.mjs`. `examples[]` are literal, tested argument strings (`tests/test_bee_cli.mjs` runs every one against the real dispatcher).
 
 ### `validate-args.mjs` (harness-integration-adopt, decision 30606de4)
 - `isValidParameterSchema(schema)` → boolean — structural check that a `parameters` value is well-formed JSON-Schema in the registry's shape (object type, every `required` name present in `properties`, every property carrying a `type`).
 - `validate(commandEntry, parsedArgs={})` → `{ok:true}` or `{ok:false, error:{field, reason, command}}` — never throws. Checks every schema-required field is present, then that every present field's CLI-string value type-matches its schema `type` (CLI flags arrive as strings; a schema `type:"boolean"` accepts `"true"`/`"false"` as well as a native boolean). Shared by `bee.mjs` (dispatch-time validation) and `hooks/bee-write-guard.mjs`'s CLI-shape check (pre-execution validation of Bash calls) — one validator, two call sites, never duplicated.
 
-## Helper CLI surface (`skills/bee-hive/templates/*.mjs`)
+## CLI surface (`skills/bee-hive/templates/bee.mjs`)
 
-Thin argv wrappers over lib. All support `--json`. Non-zero exit + `{error}` JSON on failure.
+`bee.mjs <group> <verb> [--flags]` is the sole shipped CLI (D1, shim-retire, decision bbc6bcea): one argv wrapper over `lib/`, every group supports `--json`, non-zero exit + `{error}` JSON on failure. It began (harness-integration-adopt Phase 1, decision 30606de4) as an *additive* dispatcher living alongside one legacy script per group; those per-group scripts are now deleted from `skills/bee-hive/templates/` and, on `--apply`, from every host's `.bee/bin/` too (D2's `RETIRED_HELPERS` removal pass) — `bee.mjs` imports the same `lib/*.mjs` functions they used to.
 
 ```
-bee_status.mjs [--json]
+bee.mjs status [--json]
   → { onboarding, phase, mode, feature, gates, handoff, cells:{open,claimed,capped,blocked}, pbi:{proposed,in_flight,done}|null, active_reservations, critical_patterns_present, recent_decisions, staleness_warnings, recommended_next }
     (pbi added additively, harness10 D10: counts of docs/backlog.md Status column, null when the file is absent)
 
-bee_cells.mjs list [--feature F] [--status S] | ready [--feature F] | show --id ID
+bee.mjs cells list [--feature F] [--status S] | ready [--feature F] | show --id ID
              | add --file cell.json            (or --stdin)
              | claim --id ID --worker NAME
              | verify --id ID --command CMD --passed true|false [--output TEXT | --output-file F]
@@ -136,40 +136,24 @@ bee_cells.mjs list [--feature F] [--status S] | ready [--feature F] | show --id 
                (cap refuses for small/standard/high-risk lanes when the recorded verify has no output and no evidence, or when --files is empty — decision 0004)
              | block --id ID --reason R | drop --id ID --reason R
 
-bee_reservations.mjs reserve --agent A --cell C --path P [--ttl N]
+bee.mjs reservations reserve --agent A --cell C --path P [--ttl N]
                     | release --agent A [--cell C]
                     | list [--active-only] | sweep
 
-bee_decisions.mjs log --decision D --rationale R [--alternatives A] [--scope S] [--confidence N]
+bee.mjs decisions log --decision D --rationale R [--alternatives A] [--scope S] [--confidence N]
                  | supersede --id UUID --decision D --rationale R
                  | redact --id UUID --reason R
                  | active [--recent N] | search --text T
 
-bee.mjs <group> [<action>] [--flags]   (harness-integration-adopt Phase 1: unified dispatcher over the 4 legacy helpers, decision 30606de4)
-  status [--json]
-  cells <list|ready|show|add|update|claim|verify|cap|block|drop|tier|judge> ... [--json]
-  reservations <reserve|release|list|sweep> ... [--json]
-  decisions <log|supersede|redact|active|search> ... [--json]
-  --help [--json]
-    Same subcommands as the 4 helpers above, one entrypoint; imports the SAME lib/*.mjs functions
-    those helpers already import — never imports, spawns, or edits the 4 files themselves, so
-    both surfaces stay valid permanently, side by side (not a migration).
-    node .bee/bin/bee.mjs --help --json emits {schema_version, commands:[{name, invoke, description,
-    parameters, examples, deprecated}]} — the same JSON-Schema tool-definition shape Claude Code's
-    own tool/subagent surface uses; command-registry.mjs's internal `helper` dispatch field is
-    stripped from this public view.
-    Manifest drift: a sha256 of {schema_version, COMMAND_REGISTRY} is persisted to
-    .bee/manifest-hash.json (gitignored — rewritten on every invocation); when it differs from the
-    prior persisted hash, a manifest_changed:true hint is written to stderr only — stdout's shape
-    never changes, so a data command's steady-state output stays byte-identical to the 4 original
-    CLIs on every call, drifted or not.
-    Unknown command → a Levenshtein nearest-match suggestion, never a bare not-found.
-    Deferred: an MCP server wrapper and a mandatory every-session --help --json discovery call —
-    foundation-add without demonstrated need.
-    Scope frozen to the 4 legacy helpers above; bee_state/backlog/capture/reviews/feedback.mjs are
-    not in the registry — a follow-up PBI.
+bee.mjs state set | gate | worker add|update|remove|clear|prune | scribing-run | start-feature | handoff show|write|adopt
 
-bee_feedback.mjs digest [--out PATH] [--json]     (P18, evolving loop; decision 8cd4c84e / D2)
+bee.mjs backlog add | counts | rank | badges
+
+bee.mjs capture add | list | flush | count
+
+bee.mjs reviews create | list | show | record | candidate add | candidates | status
+
+bee.mjs feedback digest [--out PATH] [--json]     (P18, evolving loop; decision 8cd4c84e / D2)
                  | count [--json]
                  | collect [--json]
                  | rank [--json]
@@ -182,6 +166,19 @@ bee_feedback.mjs digest [--out PATH] [--json]     (P18, evolving loop; decision 
              dogfood repos are skipped with a warning, never thrown
   rank     → clusterEntries + rankClusters over the SAME merged view collect returns; no business
              logic in the CLI — see lib API below
+
+--help [--json]
+    node .bee/bin/bee.mjs --help --json emits {schema_version, commands:[{name, invoke, description,
+    parameters, examples, deprecated}]} — the same JSON-Schema tool-definition shape Claude Code's
+    own tool/subagent surface uses; the registry carries no per-group dispatch field any more (D5
+    removed it together with the legacy scripts).
+    Manifest drift: a sha256 of {schema_version, COMMAND_REGISTRY} is persisted to
+    .bee/manifest-hash.json (gitignored — rewritten on every invocation); when it differs from the
+    prior persisted hash, a manifest_changed:true hint is written to stderr only — stdout's shape
+    never changes.
+    Unknown command → a Levenshtein nearest-match suggestion, never a bare not-found.
+    Deferred: an MCP server wrapper and a mandatory every-session --help --json discovery call —
+    foundation-add without demonstrated need.
 ```
 
 ## `bee-evolving` contract (P18, self-improvement loop; decisions D1–D5, `8cd4c84e`, `ff26725d`)
@@ -195,7 +192,7 @@ Enforced invariants only — this section states no promise the code above does 
 - **The consumer revalidates every foreign field (D2b).** `mergeDigests` re-runs the secret and
   injection pattern scans against each configured `dogfood_repos` digest and wraps every surviving
   foreign `title` in `datamark()` before it is returned — a hand-edited or hostile foreign digest is
-  never trusted as-is. `bee_feedback.mjs rank`/`collect` only ever consume `mergeDigests`'s output,
+  never trusted as-is. `bee.mjs feedback rank`/`collect` only ever consume `mergeDigests`'s output,
   never a foreign digest file directly.
 - **Bee-repo-only (D3).** `skills/bee-evolving/SKILL.md` step 0 is a hard guard
   (`test -f skills/bee-hive/templates/lib/feedback.mjs && test -f skills/bee-writing-skills/SKILL.md`)

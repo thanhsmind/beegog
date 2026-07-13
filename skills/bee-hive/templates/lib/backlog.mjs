@@ -101,7 +101,6 @@ export function rankBacklog(root, { write = false } = {}) {
 
   const lines = text.split(/\r?\n/);
   let statusIndex = -1;
-  let headerLine = -1;
   let separatorLine = -1;
   const rows = [];
   for (let i = 0; i < lines.length; i += 1) {
@@ -115,7 +114,6 @@ export function rankBacklog(root, { write = false } = {}) {
       const idx = cells.findIndex((cell) => normalizeStatus(cell) === 'status');
       if (idx !== -1) {
         statusIndex = idx;
-        headerLine = i;
       }
       continue;
     }

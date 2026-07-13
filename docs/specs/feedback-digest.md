@@ -343,7 +343,7 @@ location with a friendly label; a location with no label is labelled by its own 
 - Collector, boundary, merge, and ranking: `skills/bee-hive/templates/lib/feedback.mjs`
   (`ENTRY_FIELD_SPEC`, `resolveInScope`, `listInScope`, `buildDigest`, `mergeDigests`,
   `normalizeTitle`, `clusterEntries`, `rankClusters`)
-- Command surface: `skills/bee-hive/templates/bee_feedback.mjs` (`digest`, `count`, `collect`, `rank`)
+- Command surface: `skills/bee-hive/templates/bee.mjs` (`feedback` group: `digest`, `count`, `collect`, `rank`)
 - The self-improvement process: `skills/bee-evolving/SKILL.md`; contract in `docs/07-contracts.md`;
   decision record `docs/decisions/0022-evolving-loop.md`
 - Source-repository list: `.bee/config.json` → `dogfood_repos`, normalized in

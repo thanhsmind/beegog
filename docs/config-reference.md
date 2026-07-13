@@ -66,13 +66,13 @@ The **top-level** `advisor` key (old "advisor mode") was removed in v0.1.23 (dec
 | `hooks` | per-hook kill switch (`session-init`, `prompt-context`, `write-guard`, `state-sync`, `chain-nudge`, `session-close`) | all `true` |
 | `guards` | e.g. `{"idle_gate": false}` to disable the idle intake gate | idle gate on |
 | `lanes`, `capabilities` | advanced per-repo overrides | `{}` |
-| `dogfood_repos` | foreign repos whose feedback digest `bee_feedback.mjs collect`/`rank` (and `bee-evolving`) fold in — see below | `null` (local digest only) |
+| `dogfood_repos` | foreign repos whose feedback digest `bee.mjs feedback collect`/`rank` (and `bee-evolving`) fold in — see below | `null` (local digest only) |
 
 ### `dogfood_repos` (P18, evolving loop)
 
 Other repos running bee whose collected friction should feed into ranking here. Accepts a bare path
 array or `{path,label}` objects (both normalize to objects); each entry is `realpath`-contained and
-must have its own `.bee/feedback-digest.json` already written (`node .bee/bin/bee_feedback.mjs
+must have its own `.bee/feedback-digest.json` already written (`node .bee/bin/bee.mjs feedback
 digest` in that repo). A configured repo that is missing, unreadable, or dead is **skipped with a
 warning**, never thrown:
 
