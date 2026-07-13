@@ -4,3 +4,4 @@
 {"id":"609419a9-03df-444f-91c2-7cb176456e06","type":"candidate","date":"2026-07-12T14:49:32.586Z","feature":"skill-metadata-parity","head":"4ead724","mode":"standard","baseline":"aed631a","cells":["smp-1","smp-2","smp-3"]}
 {"id":"280a86c2-cb68-4c2f-a531-93b026ec6dc0","type":"candidate","date":"2026-07-12T15:21:16.029Z","feature":"cells-batch-add","head":"304dfd70ebf0425e6c39e737af31e45c869cb830","mode":"small","baseline":null,"cells":[]}
 {"id":"85363ba6-128d-49e1-86e7-124324a7f489","type":"candidate","date":"2026-07-12T16:39:31.059Z","feature":"dispatcher-unify","head":"89999c560736c49340a646dd3decfaad6b47f6e0","mode":"standard","baseline":null,"cells":[]}
+{"id":"2cbdd3e8-d229-4c00-a93b-04690e24ee5c","type":"candidate","date":"2026-07-13T00:01:53.800Z","feature":"advisor","head":"41f295ff56a16ce639defe83dc165896d5bb1e6f","mode":"standard","baseline":null,"cells":[]}
