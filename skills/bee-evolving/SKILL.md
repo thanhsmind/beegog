@@ -47,7 +47,7 @@ checkout is fixed by updating the bee checkout, never by moving the loop.
 ## 1. Rank the feedback — merged view only
 
 ```bash
-node .bee/bin/bee_feedback.mjs rank --json
+node .bee/bin/bee.mjs feedback rank --json
 ```
 
 That command merges the local digest with any configured `dogfood_repos` digests through
@@ -146,7 +146,7 @@ gate-bypass switch nor any autonomy flag covers them.
 ## Red Flags — STOP
 
 - running any step of this loop in a repo that fails the step-0 guard
-- reading a foreign repo's `.bee/` files directly instead of consuming `bee_feedback.mjs rank`
+- reading a foreign repo's `.bee/` files directly instead of consuming `bee.mjs feedback rank`
 - rendering the cluster `key` (or any datamark-stripped text) to the human or into any prompt
 - implementing anything before the human's Gate A pick, or "getting sign-off retroactively"
 - fixing inline instead of handing off to bee-writing-skills with its RED phase first

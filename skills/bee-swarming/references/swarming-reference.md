@@ -4,9 +4,9 @@ Load after Gate 3 approval, before spawning the first wave.
 
 ## Protocol
 
-1. Confirm gates and state: `node .bee/bin/bee_status.mjs --json`
-2. Sweep reservations: `node .bee/bin/bee_reservations.mjs sweep`
-3. Compute waves: `node .bee/bin/bee_cells.mjs ready` + each cell's `deps` and `files` (overlapping files → separate waves or re-scoped cells).
+1. Confirm gates and state: `node .bee/bin/bee.mjs status --json`
+2. Sweep reservations: `node .bee/bin/bee.mjs reservations sweep`
+3. Compute waves: `node .bee/bin/bee.mjs cells ready` + each cell's `deps` and `files` (overlapping files → separate waves or re-scoped cells).
 4. Assign one cell per worker, build each prompt from the template below, pick and state the model tier.
 5. Record workers in `.bee/state.json`, spawn the wave, tend, repeat.
 
@@ -21,7 +21,7 @@ Load after Gate 3 approval, before spawning the first wave.
 | Harness assist | `bee-chain-nudge` hook fires on SubagentStop: collect the status, update the cell, check reservations | None — the tend loop in this skill is the nudge |
 | Isolation guarantee | Fresh context per Agent call; include only the contract fields | `fork_context=false`; never fork the parent context for routine cells |
 
-On both runtimes the integrity rails are identical because they live in the helpers: `bee_cells.mjs cap` refuses without a verify pass, and `bee_reservations.mjs reserve` reports conflicts the worker must turn into `[BLOCKED]`.
+On both runtimes the integrity rails are identical because they live in the helpers: `bee.mjs cells cap` refuses without a verify pass, and `bee.mjs reservations reserve` reports conflicts the worker must turn into `[BLOCKED]`.
 
 ## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
 
@@ -44,7 +44,7 @@ A slot value may also be `{ "model": "opus", "effort": "xhigh" }` (P17 — per-a
 Resolve a tier for the active runtime before spawning:
 
 ```
-node .bee/bin/bee_status.mjs --json    # .models shows both runtime maps
+node .bee/bin/bee.mjs status --json    # .models shows both runtime maps
 ```
 
 Or in code: `resolveTier(root, tier, runtime)` from `lib/state.mjs` returns a typed dispatch — `{type:'inherit'}` (ceiling → omit the model param and carry the anchored `[bee-tier: ceiling]` marker), `{type:'model', model}`, `{type:'budget'}` (prompt-enforced tier, anchored `[bee-tier: <tier>]` marker), or `{type:'cli', command}` (external executor, below). The legacy `modelForTier` still returns a model name or `null`. Two shapes, one map: keep the strongest model as `ceiling` and it stays scarce as the orchestrator (fan-out).
@@ -83,14 +83,14 @@ A configurable tier may name an **external CLI executor** instead of a model —
 
    The outcome vocabulary is exactly the four status tokens — `result.json` is the cli **transport** of the same worker contract as the native markdown results, never a second contract. Exiting is not signaling; a worker that only exits has not finished.
 3. **Spawn detached, output to files:** before launching — first dispatch or any resume round — delete any existing `.bee/workers/<cell-id>.result.json`; a stale result must never satisfy a later attempt. Run the configured command as a background process, prompt via stdin, final message to a dedicated file where the CLI supports it (codex: `-o .bee/workers/<cell-id>.result.md`), raw stream to a job log with stderr suppressed — thinking noise bloats the orchestrator's context; re-enable stderr only to debug a failing run. E.g. `<command> -o .bee/workers/<id>.result.md - < .bee/workers/<id>.prompt.md > .bee/workers/<id>.out.log 2>/dev/null`. Keep the launcher's job handle — its exit event is the "process ended" signal step 5 waits on. Record the worker (nickname, cell, `executor: cli`) in `.bee/state.json` as usual.
-4. **Tend by artifact, not by chat:** the external worker runs the same `.bee/bin` helpers (reserve → verify → cap → release) because they are plain node scripts — the cell status and reservations ARE the progress signal. Poll `node .bee/bin/bee_cells.mjs show --id <id>` and read `.bee/workers/<cell-id>.result.json` for the final outcome; never parse the raw JSONL stream. A quiet run is not a dead run — do not kill on silence alone.
+4. **Tend by artifact, not by chat:** the external worker runs the same `.bee/bin` helpers (reserve → verify → cap → release) because they are plain node scripts — the cell status and reservations ARE the progress signal. Poll `node .bee/bin/bee.mjs cells show --id <id>` and read `.bee/workers/<cell-id>.result.json` for the final outcome; never parse the raw JSONL stream. A quiet run is not a dead run — do not kill on silence alone.
 5. **Accept by file, never by exit:** once the process ends, a cli run counts only if `result.json` exists, parses, and carries a valid outcome. Missing, unparseable, or invalid-outcome result = a failed run, routed to rescue (step 7) — never accepted, never silently waited on.
-6. **Trust boundary is decision 0018, doubly:** an external worker's `done` is never accepted on its word — the orchestrator ALWAYS re-runs the cell's verify itself and runs `bee_cells.mjs judge --id <id>`. External executors never get the tiny/small spot-check relaxation; every external cell is goal-checked. The result file is a signal, never the evidence.
+6. **Trust boundary is decision 0018, doubly:** an external worker's `done` is never accepted on its word — the orchestrator ALWAYS re-runs the cell's verify itself and runs `bee.mjs cells judge --id <id>`. External executors never get the tiny/small spot-check relaxation; every external cell is goal-checked. The result file is a signal, never the evidence.
 7. **Rescue — resume before re-dispatch:** on a goal-check miss or a failed acceptance (step 5), prefer the CLI's session-resume (codex: `codex exec resume --last`, run from the repo dir; resume inherits the original session's sandbox/config — do not re-pass sandbox flags) with a short prompt carrying the diagnostic that applies — the failing verify output for a goal-check miss, or the acceptance failure (missing/unparseable/invalid `result.json`) for a step-5 reject — plus the contract path. It keeps the worker's context and costs far less than a fresh run. **After 2 failed resume rounds, stop ping-ponging:** mark `[BLOCKED]` and climb the normal rescue ladder (a stuck/garbled run is killed and re-dispatched; the tier rung may swap `cli` for a native model tier when the provider itself is failing).
 
 Constraints: the external CLI must be able to edit the repo working tree and run node (the `.bee/bin` contract); grant write access scoped to the repo only (codex: `-s workspace-write`) — never a machine-wide bypass (`--yolo`-style flags) as the house default; the 0018 goal-check exists so bee does not have to *trust* the worker, not so it can hand over the machine. Secrets: the external process gets only its own provider's credentials from the user's environment — bee passes none.
 
-**Transient hygiene (workers-prune):** dispatch transients (`<cell-id>.prompt.md`, `.out*.log`, `.result.md|json`, reviewer/plan-check logs) accumulate in `.bee/workers/` and are never needed after the feature closes. At feature close — after review acceptance, before the closing commit — the orchestrator runs `node .bee/bin/bee_state.mjs worker prune` (`--dry-run` to preview). Keep-rules protect transients of active workers and non-capped cells (re-read immediately before the destructive loop, C1), and files outside the transient suffix set (evidence snapshots, cell payloads, subdirectories) are never touched — but prune is still the orchestrator's feature-close verb, not something to race against an in-flight dispatch round.
+**Transient hygiene (workers-prune):** dispatch transients (`<cell-id>.prompt.md`, `.out*.log`, `.result.md|json`, reviewer/plan-check logs) accumulate in `.bee/workers/` and are never needed after the feature closes. At feature close — after review acceptance, before the closing commit — the orchestrator runs `node .bee/bin/bee.mjs state worker prune` (`--dry-run` to preview). Keep-rules protect transients of active workers and non-capped cells (re-read immediately before the destructive loop, C1), and files outside the transient suffix set (evidence snapshots, cell payloads, subdirectories) are never touched — but prune is still the orchestrator's feature-close verb, not something to race against an in-flight dispatch round.
 
 ## Worker Prompt Template
 
@@ -122,8 +122,8 @@ Contract:
 
 Startup:
 1. Read AGENTS.md.
-2. Run node .bee/bin/bee_status.mjs --json
-3. Read docs/history/<FEATURE>/CONTEXT.md, then run node .bee/bin/bee_cells.mjs show --id <CELL_ID>
+2. Run node .bee/bin/bee.mjs status --json
+3. Read docs/history/<FEATURE>/CONTEXT.md, then run node .bee/bin/bee.mjs cells show --id <CELL_ID>
 4. Reserve, implement, verify, cap, release, report.
 ```
 
@@ -158,7 +158,7 @@ What I need next: <specific parent action>
 Reason: <context high / safe pause>
 Progress: <done so far>
 Reservations: <active paths or none>
-Resume: read .bee/HANDOFF.json, node .bee/bin/bee_cells.mjs show --id <cell-id>, reservation list
+Resume: read .bee/HANDOFF.json, node .bee/bin/bee.mjs cells show --id <cell-id>, reservation list
 ```
 
 ```text
@@ -167,16 +167,16 @@ Reason: <missing, already capped, or unavailable>
 Suggested next action: <re-check ready set, fix assignment, respawn later>
 ```
 
-On each result: update the cell if the worker could not (`block` with reason), clear the worker from `.bee/state.json`, and confirm with `node .bee/bin/bee_reservations.mjs list --active-only` that nothing leaked.
+On each result: update the cell if the worker could not (`block` with reason), clear the worker from `.bee/state.json`, and confirm with `node .bee/bin/bee.mjs reservations list --active-only` that nothing leaked.
 
 ## Handoff JSON
 
 Near 65% context, write `.bee/HANDOFF.json`: `{ phase, feature, mode, cells_in_flight, done, remaining, next_action, written_at }`. Include the resume commands:
 
 ```text
-node .bee/bin/bee_status.mjs --json
-node .bee/bin/bee_cells.mjs ready
-node .bee/bin/bee_reservations.mjs list --active-only
+node .bee/bin/bee.mjs status --json
+node .bee/bin/bee.mjs cells ready
+node .bee/bin/bee.mjs reservations list --active-only
 ```
 
 ## Red Flags

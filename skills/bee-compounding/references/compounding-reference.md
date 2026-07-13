@@ -90,12 +90,12 @@ critical-patterns.md is injected into every session preamble — every low-signa
 ## Decision Logging
 
 ```
-node .bee/bin/bee_decisions.mjs log --decision "..." --rationale "..." [--alternatives "..."] [--confidence N]
+node .bee/bin/bee.mjs decisions log --decision "..." --rationale "..." [--alternatives "..."] [--confidence N]
 ```
 
 - Log only decisions with forward force (conventions adopted, approaches rejected with reasons, constraints discovered).
 - Include `--alternatives` whenever real alternatives were weighed; add `--confidence N` when the evidence was partial.
-- To change a past decision: `node .bee/bin/bee_decisions.mjs supersede --id UUID --decision D --rationale R`. Never rewrite the log.
+- To change a past decision: `node .bee/bin/bee.mjs decisions supersede --id UUID --decision D --rationale R`. Never rewrite the log.
 - The logger rejects secret-like content and injection patterns; do not try to work around a rejection — redact instead.
 
 ## State-Layer Guard (decisions 0001, 0002)

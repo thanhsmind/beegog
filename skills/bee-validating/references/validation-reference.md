@@ -4,7 +4,7 @@ Load after bee-validating is selected and the required inputs exist. Formats her
 
 ## Protocol
 
-1. Orient: `node .bee/bin/bee_status.mjs --json`, mode/lane, approved `plan.md`, current cells.
+1. Orient: `node .bee/bin/bee.mjs status --json`, mode/lane, approved `plan.md`, current cells.
 2. Reality gate report (below), evidence attached.
 3. Feasibility matrix for every blocking assumption.
 4. Spike/probe any unproven assumption that can invalidate the current work.
@@ -54,7 +54,7 @@ Accepted evidence: existing implementation, file/API/type inspection, command ou
 |---|---|
 | False assumption / wrong mode or lane | back to bee-planning |
 | Locked decision uncovered by any cell | `plan.md` + new/edited cells (cite the D-ID) |
-| Cell dependency, file-scope, or test gap | edit the cell (`node .bee/bin/bee_cells.mjs show --id <id>` first) |
+| Cell dependency, file-scope, or test gap | edit the cell (`node .bee/bin/bee.mjs cells show --id <id>` first) |
 | Broken or unrunnable verify command | fix the cell's `verify`; re-run PROOF SURFACE |
 | Unreachable exit / integration hole | `plan.md` (key links) then cells |
 | Scope reduction of a locked decision | prohibited — SPLIT the work instead, via planning |
@@ -66,7 +66,7 @@ Dispatch at the **generation** tier; name the model explicitly (fallback: read b
 ```text
 You are an adversarial plan checker. Assume the plan is flawed until proven otherwise.
 Inputs: docs/history/<feature>/CONTEXT.md, approach.md, plan.md, and the current-work cells
-(node .bee/bin/bee_cells.mjs list --feature <feature>).
+(node .bee/bin/bee.mjs cells list --feature <feature>).
 Verify exactly 5 dimensions:
 1. Requirement/decision coverage — every locked D-ID lands in at least one cell.
 2. Cell completeness — each cell has files, read_first, directive action, must_haves
@@ -90,7 +90,7 @@ Dispatch at the **generation** tier. Stress-test whether each cell can be picked
 
 ```text
 You are a fresh-eyes cell reviewer with NO session history. For each current-work cell
-(node .bee/bin/bee_cells.mjs show --id <id>), answer: could a worker who has read only
+(node .bee/bin/bee.mjs cells show --id <id>), answer: could a worker who has read only
 CONTEXT.md, plan.md, and this cell implement and verify it without guessing?
 Flag CRITICAL: assumed context, vague acceptance, scope overload, unproven feasibility,
 broken verify command.

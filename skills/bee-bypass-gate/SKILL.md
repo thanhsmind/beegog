@@ -21,7 +21,7 @@ If `.bee/onboarding.json` is missing or stale, stop and invoke `bee-hive`.
 
 ## What bypass does (say this when turning it on)
 
-When `gate_bypass: true`, the agent stops asking the human at **Gates 1, 2, and 3** and instead takes the RECOMMENDATION option, records the approval with `node .bee/bin/bee_state.mjs gate --name context|shape|execution --approved true`, logs a one-line audit decision, and continues — posting a short `⚡ auto-approved Gate N` line, not a question.
+When `gate_bypass: true`, the agent stops asking the human at **Gates 1, 2, and 3** and instead takes the RECOMMENDATION option, records the approval with `node .bee/bin/bee.mjs state gate --name context|shape|execution --approved true`, logs a one-line audit decision, and continues — posting a short `⚡ auto-approved Gate N` line, not a question.
 
 What bypass **never** touches (the safety floor, all absolute):
 
@@ -35,11 +35,11 @@ Bypass is **not** headless: headless defers within-stage questions but still sto
 
 Parse the argument: `on` | `off` | `status` (no argument → `status`, then ask which the user wants).
 
-1. Read current state: `node .bee/bin/bee_status.mjs --json` (the `gate_bypass` field) and `.bee/config.json`.
+1. Read current state: `node .bee/bin/bee.mjs status --json` (the `gate_bypass` field) and `.bee/config.json`.
 2. Apply:
    - **status** — report whether bypass is on or off, in plain language, plus the safety floor. No write.
-   - **on** — set `gate_bypass: true` in `.bee/config.json` (preserve every other field; create the field if absent). Then state, in the user's language, the full "what it does / what it never touches" summary above and confirm it is on. Log it: `node .bee/bin/bee_decisions.mjs log --decision "gate-bypass turned ON" --rationale "<user's stated reason, or 'user request'>"`.
-   - **off** — set `gate_bypass: false`. Confirm the human gates are back. Log it: `node .bee/bin/bee_decisions.mjs log --decision "gate-bypass turned OFF" --rationale "..."`.
+   - **on** — set `gate_bypass: true` in `.bee/config.json` (preserve every other field; create the field if absent). Then state, in the user's language, the full "what it does / what it never touches" summary above and confirm it is on. Log it: `node .bee/bin/bee.mjs decisions log --decision "gate-bypass turned ON" --rationale "<user's stated reason, or 'user request'>"`.
+   - **off** — set `gate_bypass: false`. Confirm the human gates are back. Log it: `node .bee/bin/bee.mjs decisions log --decision "gate-bypass turned OFF" --rationale "..."`.
 3. Config writes are `.bee/`-layer — allowed in any phase, no gate, no permission needed. Never touch `state.json` gates from this skill; it only flips the config switch.
 
 The change takes effect immediately for the current session and persists across sessions until turned off. The session preamble and `bee_status` both print a loud `GATE BYPASS ON` line while it is active, so it is never silently in effect.

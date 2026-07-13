@@ -47,11 +47,11 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 On every session start:
 
 1. Confirm onboarding is current via `.bee/onboarding.json` (see SKILL.md onboarding protocol).
-2. Run `node .bee/bin/bee_status.mjs --json`.
+2. Run `node .bee/bin/bee.mjs status --json`.
 3. If `.bee/HANDOFF.json` exists, check its kind: a pause handoff (or any kindless record) is presented and waited on — do not auto-resume. A planned-next handoff is adopted only at this fresh-session boundary (see Resume Logic below).
 4. Read `docs/history/learnings/critical-patterns.md` when present.
-5. Surface recent active decisions: `node .bee/bin/bee_decisions.mjs active --recent 3`.
-6. Check active reservations when workers may be in flight: `node .bee/bin/bee_reservations.mjs list --active-only`.
+5. Surface recent active decisions: `node .bee/bin/bee.mjs decisions active --recent 3`.
+6. Check active reservations when workers may be in flight: `node .bee/bin/bee.mjs reservations list --active-only`.
 
 Default `.bee/state.json` shape:
 
@@ -107,7 +107,7 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 |-------|-------|--------|
 | hive | onboarding, state, HANDOFF, critical-patterns, decisions | state routing updates only |
 | exploring | user conversation, critical-patterns, quick scout | `docs/history/<feature>/CONTEXT.md`, state update |
-| planning | CONTEXT.md, critical-patterns, active decisions, bee_status | `approach.md`, `plan.md` (requirements-only → implementation-ready), current-slice cells via `bee_cells.mjs add` |
+| planning | CONTEXT.md, critical-patterns, active decisions, bee_status | `approach.md`, `plan.md` (requirements-only → implementation-ready), current-slice cells via `bee.mjs cells add` |
 | briefing | CONTEXT.md, approach.md, plan.md, cells, validating reports, state gates (render/refresh); capped cell traces, review findings, UAT (walkthrough) | `docs/history/<feature>/implement-plan.md` (projection; `small`+); `docs/history/<feature>/walkthrough.md` (post-Gate-4; `standard`/`high-risk`) |
 | validating | CONTEXT.md, discovery, approach, approved shape, cells | reality-gate report, feasibility matrix, spike results in `.bee/spikes/`, repaired cells |
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
@@ -182,7 +182,7 @@ Off by default. Turned on with the `bee-bypass-gate` skill, which sets `.bee/con
 When `config.gate_bypass` is `true`, at **Gate 1, 2, or 3**:
 
 1. **Safety floor — check first, and it is absolute.** If the feature's lane is `high-risk`, or the work carries any hard-gate flag (auth · authorization · data loss · audit/security · external provider · validation removal · database migration/schema change), the gate is **NOT** bypassed. Present it to the human normally, exactly as if bypass were off. Bypass covers only `tiny`/`small`/`standard` non-hard-gate work.
-2. Otherwise, do not ask. Instead: select the option the RECOMMENDATION favors; set `approved_gates.<gate>` in `.bee/state.json` (same write the human's "yes" would trigger); still write the machine-layer report to `docs/history/<feature>/reports/`; log a one-line audit entry — `node .bee/bin/bee_decisions.mjs log --decision "auto-approved Gate N (bypass): <choice>" --rationale "<the recommendation's why>"` — so the approval is never silent; then post a **short chat line** (not a question) — `⚡ auto-approved Gate N (bypass): <what/why in one plain sentence>` — and continue. The human sees what happened and can still interrupt.
+2. Otherwise, do not ask. Instead: select the option the RECOMMENDATION favors; set `approved_gates.<gate>` in `.bee/state.json` (same write the human's "yes" would trigger); still write the machine-layer report to `docs/history/<feature>/reports/`; log a one-line audit entry — `node .bee/bin/bee.mjs decisions log --decision "auto-approved Gate N (bypass): <choice>" --rationale "<the recommendation's why>"` — so the approval is never silent; then post a **short chat line** (not a question) — `⚡ auto-approved Gate N (bypass): <what/why in one plain sentence>` — and continue. The human sees what happened and can still interrupt.
 
 **Gate 4 is never fully bypassed, and bypass never creates a review session (SPEC R8, decision 565e68d0).** Gate 4 only exists once the user has explicitly invoked `bee-reviewing` over a scope; bypass cannot start that session on its own. Inside a running session, UAT items (the SEE/CALL/RUN decisions) are always presented to the human, and any P1 finding always stops. The merge is auto-approved only when P1 = 0 **and** every UAT item was confirmed pass by the human; otherwise Gate 4 stops as normal.
 
@@ -198,7 +198,7 @@ The one orchestration pattern bee runs: the session model (the owner's best mode
 - **D2 rubric** — a mechanical step delegates down-tier when it needs reading >3 files OR content the main model only needs as a digest, not verbatim; the orchestrator may override either way at dispatch, same spirit as tier-judging (decision 0016). Prose-ruled — no new hook enforces the threshold.
 - **D3 lane rule** — the rubric applies in every lane and every phase, tiny/small included. Lane scaling v2's (d02a6bc6) "0 subagents" for tiny/small means zero *ceremony* subagents (reviewers/checkers/panels); I/O workers are exempt. A 1-file tiny fix never crosses the rubric, so it stays inline naturally.
 - **Digest contract** — an I/O worker returns paths read, the facts extracted (with file:line anchors), and verbatim quotes only where asked; the orchestrator never re-reads what a digest already answers.
-- **Transport unchanged** — anchored `[bee-tier: <tier>]` marker or `model` param (decision 0023), model name in the Agent description, background dispatch where the runtime supports it (decision 0017), P22 dispatch log as the audit trail. I/O workers do **not** register in `bee_state.mjs worker add` — the registry stays swarm-cell-scoped (reservations/status are execution concerns); the dispatch log is the audit surface for gathers.
+- **Transport unchanged** — anchored `[bee-tier: <tier>]` marker or `model` param (decision 0023), model name in the Agent description, background dispatch where the runtime supports it (decision 0017), P22 dispatch log as the audit trail. I/O workers do **not** register in `bee.mjs state worker add` — the registry stays swarm-cell-scoped (reservations/status are execution concerns); the dispatch log is the audit surface for gathers.
 
 ## Question Format
 
@@ -242,14 +242,14 @@ docs/specs/
 
 ## Helper CLI Quick Reference
 
-`node .bee/bin/bee.mjs <group> <verb>` is the canonical form for all 9 groups
-(`status`, `cells`, `reservations`, `decisions`, `state`, `backlog`, `capture`,
-`reviews`, `feedback`) — one dispatcher, one registry. The original
-`bee_*.mjs` scripts (`bee_status.mjs`, `bee_cells.mjs`, `bee_reservations.mjs`,
-`bee_decisions.mjs`, `bee_state.mjs`, `bee_backlog.mjs`, `bee_capture.mjs`,
-`bee_reviews.mjs`, `bee_feedback.mjs`) remain valid — each is a thin shim that
-calls `bee.mjs`'s exported `main()` with its group prepended, so both forms
-produce byte-identical output.
+`node .bee/bin/bee.mjs <group> <verb>` is the sole canonical and sole shipped
+form for all 9 groups (`status`, `cells`, `reservations`, `decisions`, `state`,
+`backlog`, `capture`, `reviews`, `feedback`) — one dispatcher, one registry.
+The original `bee_*.mjs` shims (one per group — `status`, `cells`,
+`reservations`, `decisions`, `state`, `backlog`, `capture`, `reviews`,
+`feedback`) are retired (decision bbc6bcea, D1) and no longer ship in
+templates or host `.bee/bin` — `LEGACY_HELPER_RE` in the write-guard stays
+only as a transition guard for hosts mid-upgrade (D3).
 
 ```text
 node .bee/bin/bee.mjs status [--json]

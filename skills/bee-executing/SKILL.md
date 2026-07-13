@@ -26,9 +26,9 @@ Open `references/worker-details.md` only for expanded commands, trace tiers, fri
 ## 1. Initialize
 
 - Read `AGENTS.md`.
-- Run `node .bee/bin/bee_status.mjs --json`
+- Run `node .bee/bin/bee.mjs status --json`
 - Read `docs/history/<feature>/CONTEXT.md`.
-- Read the cell: `node .bee/bin/bee_cells.mjs show --id <id>`
+- Read the cell: `node .bee/bin/bee.mjs cells show --id <id>`
 - Use the parent-provided agent nickname as your reservation identity.
 
 ## 2. Accept Assigned Cell
@@ -36,12 +36,12 @@ Open `references/worker-details.md` only for expanded commands, trace tiers, fri
 - Require exactly **one** assigned cell id from the parent. Never choose work yourself — do not browse `ready` or `list` for candidates.
 - No assigned cell id, or the cell is missing/already capped → return `[NOOP]`.
 - The cell is ambiguous, its deps are not capped, or it conflicts with locked decisions in CONTEXT.md → return `[BLOCKED]`. Never reinterpret a locked decision to make the cell fit.
-- Claim it: `node .bee/bin/bee_cells.mjs claim --id <id> --worker "<name>"`
+- Claim it: `node .bee/bin/bee.mjs cells claim --id <id> --worker "<name>"`
 
 ## 3. Reserve
 
 - Reserve **every** file or glob before writing:
-  `node .bee/bin/bee_reservations.mjs reserve --agent "<name>" --cell "<id>" --path "<path>" --ttl 3600`
+  `node .bee/bin/bee.mjs reservations reserve --agent "<name>" --cell "<id>" --path "<path>" --ttl 3600`
 - Any conflict → stop and return `[BLOCKED]` with the paths and holder. Never edit through a conflict.
 - Prefix write-heavy shell commands with `BEE_AGENT_NAME="<name>"`.
 
@@ -63,7 +63,7 @@ Package installs **always** checkpoint: stop and return `[BLOCKED]` with the pac
 ## 5. Verify
 
 - Run the cell's verify command exactly, then record it **with its output** (decision 0004 — proof, not assertion):
-  `node .bee/bin/bee_cells.mjs verify --id <id> --command "<cmd>" --output "<what it printed>" --passed true|false` (or `--output-file <f>` for long output)
+  `node .bee/bin/bee.mjs cells verify --id <id> --command "<cmd>" --output "<what it printed>" --passed true|false` (or `--output-file <f>` for long output)
 - The `verify` field must be a runnable command. If the cell shipped with a prose description instead, that is a planning defect — return `[BLOCKED]` naming it; never invent a substitute check.
 - On failure: fix the root cause and rerun the exact command.
   - **No `Advisor` line in the dispatch:** unchanged — after **two serious failed attempts**, return `[BLOCKED]` with the command, failure summary, and diagnosis. A broken verify command in the repo is itself a blocker — never substitute a weaker check and cap anyway.
@@ -103,7 +103,7 @@ Record every consult in the cap trace and the per-cell report (see Cap and Retur
 ## 7. Cap
 
 - Cap only after the verify pass is recorded (the helper refuses otherwise):
-  `node .bee/bin/bee_cells.mjs cap --id <id> --outcome "<summary>" --files <a,b> [--deviations-file <f>] [--friction "<text>"]`
+  `node .bee/bin/bee.mjs cells cap --id <id> --outcome "<summary>" --files <a,b> [--deviations-file <f>] [--friction "<text>"]`
 - If the cell is `behavior_change: true`, add `--behavior-change --evidence-stdin` and **pipe** the structured `verification_evidence` (tests inspected, tests added/changed, red-failure/before-state evidence, verification run — see `references/worker-details.md`). It lands in the cell trace; **do not write an evidence file** in `reports/` or anywhere else (decision 0009 — the trace is the single source).
 - If any Advisor Consults happened on this claim, fold their count and advisor identity into the trace alongside the rest of the evidence — no separate file, same decision 0009 rule.
 - Trace depth follows the cell's lane (tiny = one line; high-risk = full trace). Record friction only when a trigger fired.
@@ -111,7 +111,7 @@ Record every consult in the cap trace and the per-cell report (see Cap and Retur
 
 ## 8. Release
 
-`node .bee/bin/bee_reservations.mjs release --agent "<name>" --cell "<id>"`
+`node .bee/bin/bee.mjs reservations release --agent "<name>" --cell "<id>"`
 
 ## 9. Return
 

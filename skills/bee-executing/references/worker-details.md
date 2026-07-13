@@ -9,14 +9,14 @@ The orchestrator supplies: agent nickname (reservation identity), assigned cell 
 ## Expanded Commands
 
 ```text
-node .bee/bin/bee_status.mjs --json
-node .bee/bin/bee_cells.mjs show --id <id>
-node .bee/bin/bee_cells.mjs claim --id <id> --worker "<name>"
-node .bee/bin/bee_reservations.mjs reserve --agent "<name>" --cell "<id>" --path "<path>" --ttl 3600
-node .bee/bin/bee_cells.mjs verify --id <id> --command "<cmd>" --passed true|false [--output-file <f>]
-node .bee/bin/bee_cells.mjs cap --id <id> [--outcome TEXT] [--files a,b] [--behavior-change] [--evidence-stdin] [--deviations-file F] [--friction TEXT]
-node .bee/bin/bee_reservations.mjs release --agent "<name>" --cell "<id>"
-node .bee/bin/bee_decisions.mjs active --recent 3
+node .bee/bin/bee.mjs status --json
+node .bee/bin/bee.mjs cells show --id <id>
+node .bee/bin/bee.mjs cells claim --id <id> --worker "<name>"
+node .bee/bin/bee.mjs reservations reserve --agent "<name>" --cell "<id>" --path "<path>" --ttl 3600
+node .bee/bin/bee.mjs cells verify --id <id> --command "<cmd>" --passed true|false [--output-file <f>]
+node .bee/bin/bee.mjs cells cap --id <id> [--outcome TEXT] [--files a,b] [--behavior-change] [--evidence-stdin] [--deviations-file F] [--friction TEXT]
+node .bee/bin/bee.mjs reservations release --agent "<name>" --cell "<id>"
+node .bee/bin/bee.mjs decisions active --recent 3
 ```
 
 Shell guard for write-heavy commands (`git add/mv/rm`, `mv`, `cp`, `rm`, `mkdir`, `touch`, `sed -i`, `tee`, redirection writes):
@@ -62,7 +62,7 @@ One line per trigger, factual, in `--friction` (or the deviations file for multi
 Piped via `--evidence-stdin` on cap for any `behavior_change: true` cell (the evidence goes straight into `trace.verification_evidence` — **no file is written**):
 
 ```bash
-node .bee/bin/bee_cells.mjs cap --id <id> --files a,b --behavior-change --evidence-stdin <<'JSON'
+node .bee/bin/bee.mjs cells cap --id <id> --files a,b --behavior-change --evidence-stdin <<'JSON'
 { ...the evidence object below... }
 JSON
 ```
@@ -117,5 +117,5 @@ Reread, in order:
 
 1. `AGENTS.md`
 2. `docs/history/<feature>/CONTEXT.md`
-3. `node .bee/bin/bee_cells.mjs show --id <id>`
-4. `node .bee/bin/bee_reservations.mjs list --active-only`
+3. `node .bee/bin/bee.mjs cells show --id <id>`
+4. `node .bee/bin/bee.mjs reservations list --active-only`

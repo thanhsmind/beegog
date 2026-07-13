@@ -61,7 +61,7 @@ DONE — verified, unreviewed, development continues
 
 Before invoking `bee-exploring`:
 
-1. Run the State Bootstrap from `routing-and-contracts.md` (onboarding, `node .bee/bin/bee_status.mjs --json`, critical-patterns, `node .bee/bin/bee_decisions.mjs active --recent 3`).
+1. Run the State Bootstrap from `routing-and-contracts.md` (onboarding, `node .bee/bin/bee.mjs status --json`, critical-patterns, `node .bee/bin/bee.mjs decisions active --recent 3`).
 2. Apply the surface-scope-earlier check — clear acceptance criteria plus pattern references may skip Step 1 with user approval.
 3. Determine the feature slug (lowercase-hyphenated) and create `docs/history/<feature>/` if missing.
 4. Update `.bee/state.json`: `feature: <slug>`, `phase: exploring`, `mode: null` (set at the mode gate).

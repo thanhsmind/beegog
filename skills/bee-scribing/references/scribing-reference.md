@@ -149,7 +149,7 @@ Deleting this section must not remove any business meaning.>
 - **Locate before create:** resolve every delta to an existing spec via `docs/specs/reading-map.md` (and a scan of `docs/specs/*.md` frontmatter/Pointers) before considering a new file. A renamed screen, moved route, or refactored module is still the SAME area — update its spec and its reading-map line; do not fork a new one. Creating is the exception, reserved for genuinely new surfaces.
 - Deltas come from `behavior_change` cells + `verification_evidence`, UAT records, and worker reports — never from plan.md, never from memory.
 - A delta that contradicts an existing line **replaces** it; do not keep both.
-- Update `updated`, append the feature to `sources`, reconcile `decisions` against the active set (`node .bee/bin/bee_decisions.mjs active`).
+- Update `updated`, append the feature to `sources`, reconcile `decisions` against the active set (`node .bee/bin/bee.mjs decisions active`).
 - Present tense only. "Was", "previously", "changed from" are banned words.
 - If the feature added/removed an area, or changed shared entities, the role model, or a cross-area flow: sync `system-overview.md` in the same pass (decision 0003).
 - UI areas: when a delta made a screen visibly different, refresh its snapshot under `visuals/<area>/`; cannot produce one → Open Gap with the reason.
@@ -171,7 +171,7 @@ RECOMMENDATION: (b) — matches the exclusion already enforced in search.
   (c) Something else (describe)
 ```
 
-Budget the interview: batch the inventory first, then ask only the questions whose answers change the spec. Unanswered → Open Gaps + `coverage: partial`. Confirmed answers in harvest/capture mode are decisions — log them (`bee_decisions.mjs log`) and cite the new D-ID in the spec.
+Budget the interview: batch the inventory first, then ask only the questions whose answers change the spec. Unanswered → Open Gaps + `coverage: partial`. Confirmed answers in harvest/capture mode are decisions — log them (`bee.mjs decisions log`) and cite the new D-ID in the spec.
 
 ## Bootstrap Mode (D2 of harness10)
 
@@ -307,7 +307,7 @@ At sync time: add lines for locations the feature created or repurposed, fix lin
   - **(b) feature close** (scribing sync, or compounding when no `behavior_change` cell ran) → the matching row flips to `done` and gains a link to `docs/history/<feature>/` (D11b — owned by scribing at sync).
 - **No validation coupling.** A cell may carry an optional `pbi` field naming a row ID; a missing or stale reference is a grooming find, not a cap blocker (D9).
 
-**Runnable surfaces already exist (shipped by harness10-6) — reference them, never re-describe machinery here:** `node .bee/bin/bee_status.mjs --json` reports `pbi: { proposed, in_flight, done } | null`, and the session preamble carries one line `PBI: N done / N in-flight / N proposed` whenever `docs/backlog.md` exists. Drift (an `in-flight` row with no active feature, a `done` feature with no row, duplicate rows for one story) is caught by grooming's audit, not by any hook.
+**Runnable surfaces already exist (shipped by harness10-6) — reference them, never re-describe machinery here:** `node .bee/bin/bee.mjs status --json` reports `pbi: { proposed, in_flight, done } | null`, and the session preamble carries one line `PBI: N done / N in-flight / N proposed` whenever `docs/backlog.md` exists. Drift (an `in-flight` row with no active feature, a `done` feature with no row, duplicate rows for one story) is caught by grooming's audit, not by any hook.
 
 ## State Record
 

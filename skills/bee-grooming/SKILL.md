@@ -32,7 +32,7 @@ If the hunt turns up a genuine **bee/harness bug** (a vendored helper misbehavin
 
 This score measures **bee's bookkeeping** (loose cells, stale reservations, un-synced specs), not your project's code health — report it in two or three lines and spend the real effort on the hunt below. `broken_tools` and any bee-lib bug are **harness**, so they route upstream, not into project proposals.
 
-Compute the score from `.bee/` records (`node .bee/bin/bee_status.mjs --json` plus `node .bee/bin/bee_cells.mjs list` and the jsonl logs; counting rules in `references/grooming-reference.md`):
+Compute the score from `.bee/` records (`node .bee/bin/bee.mjs status --json` plus `node .bee/bin/bee.mjs cells list` and the jsonl logs; counting rules in `references/grooming-reference.md`):
 
 ```
 ENTROPY SCORE = orphaned cells ×10 + unverified cells ×5 + stale decisions ×5
@@ -73,7 +73,7 @@ One approved kill per cell. Approval of one kill is not approval of its "related
 
 ## 5. Close the Loop
 
-After execution, record the actual outcome against the prediction: `node .bee/bin/bee_backlog.mjs add --type kill-outcome --severity <P1|P2|P3> --layer <layer> --title "<outcome>" --detail "<predicted vs actual>" --feature <feature>` (field guidance in the reference). Prediction wrong? That is signal, not embarrassment. Feed durable lessons to `bee-compounding` — grooming that never learns just mows the same grass.
+After execution, record the actual outcome against the prediction: `node .bee/bin/bee.mjs backlog add --type kill-outcome --severity <P1|P2|P3> --layer <layer> --title "<outcome>" --detail "<predicted vs actual>" --feature <feature>` (field guidance in the reference). Prediction wrong? That is signal, not embarrassment. Feed durable lessons to `bee-compounding` — grooming that never learns just mows the same grass.
 
 ## Headless
 

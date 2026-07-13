@@ -32,7 +32,7 @@ Dispatch this skill only when the user names one of these intents (R1):
 None of the following are triggers, no matter how tempting the alignment feels:
 
 - a cell, slice, feature, or working day finishing — verification completing is not a review request
-- the words "merge", "ship", or "release" on their own (7.4/A9): when the user asks to merge/ship/release while unreviewed or stale work exists, report the count and risk level (`node .bee/bin/bee_reviews.mjs status`), then ask exactly ONE question — does the user want a review session for that scope? Only an explicit yes starts a session; silence or a non-answer means no dispatch, and the work stays labeled `unreviewed` — never described as review-approved.
+- the words "merge", "ship", or "release" on their own (7.4/A9): when the user asks to merge/ship/release while unreviewed or stale work exists, report the count and risk level (`node .bee/bin/bee.mjs reviews status`), then ask exactly ONE question — does the user want a review session for that scope? Only an explicit yes starts a session; silence or a non-answer means no dispatch, and the work stays labeled `unreviewed` — never described as review-approved.
 - gate bypass being on — bypass never creates or auto-approves a review session (R8)
 
 ## Scope Resolution
@@ -47,7 +47,7 @@ The user owns the review boundary (R4). A request resolves to exactly one of fiv
 
 If the request does not pin one of these, ask exactly ONE boundary question, then proceed — never ask a second question just to re-confirm permission once the scope is already clear.
 
-**Resolving candidates:** `node .bee/bin/bee_reviews.mjs candidates` lists completed-but-unreviewed work; `node .bee/bin/bee_reviews.mjs status [--feature F]` reports each candidate's derived coverage label (`unreviewed` / `in review` / `reviewed` / `review stale`). For a batch scope (type 3 or 5), resolve the matching candidates through these verbs, then build ONE cumulative diff spanning all of them, with a mapping from each diff region back to its source feature/cell (7.3) — reviewers read the cumulative diff once so they can see interaction bugs between changes made together, which is the whole point of batching.
+**Resolving candidates:** `node .bee/bin/bee.mjs reviews candidates` lists completed-but-unreviewed work; `node .bee/bin/bee.mjs reviews status [--feature F]` reports each candidate's derived coverage label (`unreviewed` / `in review` / `reviewed` / `review stale`). For a batch scope (type 3 or 5), resolve the matching candidates through these verbs, then build ONE cumulative diff spanning all of them, with a mapping from each diff region back to its source feature/cell (7.3) — reviewers read the cumulative diff once so they can see interaction bugs between changes made together, which is the whole point of batching.
 
 **In-progress work is excluded, never swept in:** any cell that is still `open`/`claimed` is excluded from scope with reason "in progress" and stated to the user (A6). Do not wait for it, do not cap it, do not assume it is done. If the runtime cannot hold a review session and an active feature simultaneously, preserve the active state before entering review and restore it exactly afterward (7.5) — reviewing must never overwrite active work or drop a handoff.
 
@@ -56,9 +56,9 @@ If the request does not pin one of these, ask exactly ONE boundary question, the
 Before any reviewer is dispatched, the scope is frozen (R5):
 
 1. Build the scope JSON: `{ id, requested_by, scope_description, included, excluded, baseline, head }`. Each entry in `included`/`excluded` is `{ type: cell|feature|commit, id, reason? }` — the exact shape `normalizeScopeEntry` in `skills/bee-hive/templates/lib/reviews.mjs` accepts.
-2. Create the session: `node .bee/bin/bee_reviews.mjs create --file <scope.json>`. This runs the verification preflight over every included behavior-change cell and **fails closed** — non-zero exit, zero files written — when evidence is missing (A10). A failed preflight is a stop: surface the error to the user; never dispatch reviewers to compensate for missing verification. Commit-only scope entries (type 4/5 ranges with no mappable cell) carry nothing to preflight — state that explicitly in the preview below rather than implying the same evidence guarantee A10 gives cell entries.
+2. Create the session: `node .bee/bin/bee.mjs reviews create --file <scope.json>`. This runs the verification preflight over every included behavior-change cell and **fails closed** — non-zero exit, zero files written — when evidence is missing (A10). A failed preflight is a stop: surface the error to the user; never dispatch reviewers to compensate for missing verification. Commit-only scope entries (type 4/5 ranges with no mappable cell) carry nothing to preflight — state that explicitly in the preview below rather than implying the same evidence guarantee A10 gives cell entries.
 3. Only after `create` succeeds, show the user the preview: covered features/cells, baseline/head, what was excluded and why, the expected reviewer count (core + conditional), the review model/tier or external executor that will run, and a warning if the scope is unusually large or has commit-only entries with no preflighted evidence.
-4. Record the reviewer manifest once dispatch is decided: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind manifest --file <manifest.json>` (every `record` call requires `--id`).
+4. Record the reviewer manifest once dispatch is decided: `node .bee/bin/bee.mjs reviews record --id <session-id> --kind manifest --file <manifest.json>` (every `record` call requires `--id`).
 
 Reviewer dispatch is impossible before step 2 succeeds and the preview in step 3 has been shown — nothing in this flow spawns a reviewer against an unfrozen or unpreviewed scope.
 
@@ -78,11 +78,11 @@ Everything below runs the pre-existing full-review contract **unreduced** — sa
 
 ## Required Inputs
 
-- the review session: `node .bee/bin/bee_reviews.mjs show --id <session-id>` (scope, baseline/head, included/excluded)
+- the review session: `node .bee/bin/bee.mjs reviews show --id <session-id>` (scope, baseline/head, included/excluded)
 - `docs/history/<feature>/CONTEXT.md` and `docs/history/<feature>/plan.md` for every feature in scope
 - the session's cumulative diff (baseline..head, or the mapped multi-feature diff from Scope Resolution)
-- capped cells and traces: `node .bee/bin/bee_cells.mjs list --feature <feature>`
-- current state: `node .bee/bin/bee_status.mjs --json`
+- capped cells and traces: `node .bee/bin/bee.mjs cells list --feature <feature>`
+- current state: `node .bee/bin/bee.mjs status --json`
 
 Missing CONTEXT.md or plan.md for any feature in scope → stop and return to the stage that owns it.
 
@@ -119,15 +119,15 @@ The orchestrator performs synthesis itself, only after every reviewer has return
 
 Rules: uncertain → P2. Reviewers score independently; corroboration across independent reviewers promotes a finding one level. On disagreement, take the more conservative route. Every finding carries an `autofix_class` — `gated_auto` (concrete fix, apply after judgment), `manual` (needs design input), `advisory` (report-only) — as a routing SIGNAL, never an apply gate.
 
-Finding format, in this order: plain-language summary → what the code does today → why it matters → concrete failure scenario → file/line evidence → smallest credible fix. Schema in the reference. Record every finding to the session: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind finding --file <finding.json>`.
+Finding format, in this order: plain-language summary → what the code does today → why it matters → concrete failure scenario → file/line evidence → smallest credible fix. Schema in the reference. Record every finding to the session: `node .bee/bin/bee.mjs reviews record --id <session-id> --kind finding --file <finding.json>`.
 
 ## 3. Verification-Evidence Gate
 
 For every capped cell in scope with `behavior_change: true`, inspect the recorded `verification_evidence` in the cell trace. Missing or vague evidence ("tests pass", "should be covered") is itself a P1 finding — the work goes back; it does not pass forward.
 
-This is now a **backstop, not the primary catch** (decision 0009): the cap helper already refuses a `behavior_change` cell without a "before" characterization (`red_failure_evidence`, or a `deliberate_exceptions` note for a genuinely new surface), and `bee_reviews.mjs create`'s own preflight (Scope Freeze and Preview, step 2) already fails closed on missing evidence before this session could even exist — so an assertion-capped cell should not reach review at all. If one does, treat it as a double bypass and a P1. Do **not** raise a P1 whose only remedy is "record the missing before-state in a new evidence cell" — that backfill loop is exactly what cap-time and create-time enforcement exist to prevent; a real evidence gap means the behavior was never actually proven, which the worker fixes by re-verifying, not by writing a document. Read evidence from the cell trace — the single source — never from a parallel `reports/*-evidence.*` file.
+This is now a **backstop, not the primary catch** (decision 0009): the cap helper already refuses a `behavior_change` cell without a "before" characterization (`red_failure_evidence`, or a `deliberate_exceptions` note for a genuinely new surface), and `bee.mjs reviews create`'s own preflight (Scope Freeze and Preview, step 2) already fails closed on missing evidence before this session could even exist — so an assertion-capped cell should not reach review at all. If one does, treat it as a double bypass and a P1. Do **not** raise a P1 whose only remedy is "record the missing before-state in a new evidence cell" — that backfill loop is exactly what cap-time and create-time enforcement exist to prevent; a real evidence gap means the behavior was never actually proven, which the worker fixes by re-verifying, not by writing a document. Read evidence from the cell trace — the single source — never from a parallel `reports/*-evidence.*` file.
 
-**Frozen-judge flags (P12, decision 0018):** any cell the orchestrator flagged with judge hits — undeclared test/CI/lockfile/verify-config changes (`node .bee/bin/bee_cells.mjs judge --id <id>`) — is reviewed assuming the judge was *moved*, not passed: diff each flagged file; verify no assertion weakened, no test skipped or deleted, no verify command softened, no dependency silently repinned. A weakened judge is a P1 (it invalidates the wave's evidence), never a cleanup note.
+**Frozen-judge flags (P12, decision 0018):** any cell the orchestrator flagged with judge hits — undeclared test/CI/lockfile/verify-config changes (`node .bee/bin/bee.mjs cells judge --id <id>`) — is reviewed assuming the judge was *moved*, not passed: diff each flagged file; verify no assertion weakened, no test skipped or deleted, no verify command softened, no dependency silently repinned. A weakened judge is a P1 (it invalidates the wave's evidence), never a cleanup note.
 
 ## 4. Artifact Verification
 
@@ -141,23 +141,23 @@ All three = OK. EXISTS + SUBSTANTIVE only = P2. Missing or EXISTS-only = P1.
 
 ## 5. Human UAT
 
-Walk the user through every SEE/CALL/RUN decision in CONTEXT.md, for every feature in scope (wording in the reference). Failure → P1 fix cell + rerun the item. Skip requires a recorded reason: `node .bee/bin/bee_state.mjs set --summary "<skip reason>"`. UAT failures are never logged as passes. Record each item's outcome to the session: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind uat --file <uat-item.json>`.
+Walk the user through every SEE/CALL/RUN decision in CONTEXT.md, for every feature in scope (wording in the reference). Failure → P1 fix cell + rerun the item. Skip requires a recorded reason: `node .bee/bin/bee.mjs state set --summary "<skip reason>"`. UAT failures are never logged as passes. Record each item's outcome to the session: `node .bee/bin/bee.mjs reviews record --id <session-id> --kind uat --file <uat-item.json>`.
 
 ## 6. Delta Re-Review (fix protocol, R9/A12)
 
 After a P1 fix is capped:
 
 1. Re-review the fix delta AND sweep the whole scope diff for the finding's defect class — not just the line that changed (critical pattern 20260711: grill deltas).
-2. Record the resolution to the session: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind finding --file <finding-update.json>`.
+2. Record the resolution to the session: `node .bee/bin/bee.mjs reviews record --id <session-id> --kind finding --file <finding-update.json>`.
 3. Do not re-run the full panel for the whole batch unless the fix crosses a scope boundary, changes a public contract, or destabilizes an assumption the rest of the scope relied on. When it does, propose the expanded re-review to the user rather than silently choosing either the minimal or the maximal option.
 4. A concrete, localized P1 fix that stays inside its own boundary only needs its own delta re-reviewed and its defect class swept (A12) — it does not force a full-panel re-run for content that never changed.
 
 ## 7. Finishing
 
 1. Run the project build/test/lint gates; quote fresh command output — never claim "passing" without it.
-2. P2/P3 findings → `node .bee/bin/bee_backlog.mjs add --type review-finding --severity P2|P3 --layer <layer> --title "<finding>" --feature <feature>` (plus grooming cells where warranted) with non-blocking traceability to the feature(s) in scope. They never block the current session.
+2. P2/P3 findings → `node .bee/bin/bee.mjs backlog add --type review-finding --severity P2|P3 --layer <layer> --title "<finding>" --feature <feature>` (plus grooming cells where warranted) with non-blocking traceability to the feature(s) in scope. They never block the current session.
 3. If filing a residual finding anywhere fails, write it to `docs/history/<feature>/reports/residual-findings.md` so nothing evaporates.
-4. Close the session: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind decision --file decision.json` (status `pending`, `blocked`, or `approved`). This closes the REVIEW, not any feature — every feature in scope already reached its own close through execution → scribing → compounding independently (§11.1), and session closeout leaves that feature state untouched (7.5). Do not run `bee_state.mjs set --phase ...` as if a review were a workflow phase transition for the covered features.
+4. Close the session: `node .bee/bin/bee.mjs reviews record --id <session-id> --kind decision --file decision.json` (status `pending`, `blocked`, or `approved`). This closes the REVIEW, not any feature — every feature in scope already reached its own close through execution → scribing → compounding independently (§11.1), and session closeout leaves that feature state untouched (7.5). Do not run `bee.mjs state set --phase ...` as if a review were a workflow phase transition for the covered features.
 
 ## Gate 4 (wording is fixed) — lives only inside a session
 
@@ -172,7 +172,7 @@ Never continue past open P1s without explicit user acknowledgment. Silence is no
 
 **Gate bypass never covers session creation or approval (R8, decision 0010 boundary).** `.bee/config.json` `gate_bypass: true` NEVER creates or auto-approves a review session — a session only ever exists because a user explicitly requested one (Trigger, above). Once a session already exists and reaches its human UAT/merge question, the pre-existing bypass carve-out still applies unchanged: the §5 UAT items are always presented to the human, any P1 finding always stops, and bypass may auto-approve the **merge** question only when P1 = 0 **and** every UAT item was confirmed pass by the human — then record the review gate, log a one-line audit decision, and post a short `⚡ auto-approved merge (bypass)` line instead of asking. Any P1, or any UAT fail/skip, stops Gate 4 for the human as normal. Secret reads during review always require human approval regardless of bypass.
 
-**No re-dispatch for an unchanged, already-approved range (R6/A7):** before creating a new session, check `node .bee/bin/bee_reviews.mjs status` — a candidate already reporting `reviewed (covered by <review-id>)` for an unchanged range is not re-reviewed; only genuinely new or `review stale` delta gets a new session, unless the user explicitly asks for a re-review.
+**No re-dispatch for an unchanged, already-approved range (R6/A7):** before creating a new session, check `node .bee/bin/bee.mjs reviews status` — a candidate already reporting `reviewed (covered by <review-id>)` for an unchanged range is not re-reviewed; only genuinely new or `review stale` delta gets a new session, unless the user explicitly asks for a re-review.
 
 ## Headless
 
@@ -181,7 +181,7 @@ Never continue past open P1s without explicit user acknowledgment. Silence is no
 ## Red Flags
 
 - a full reviewer wave spawned for a small/single-change scope (Lane Scaling: small scope = one correctness reviewer)
-- a reviewer dispatched before `bee_reviews.mjs create` succeeded and the scope preview was shown
+- a reviewer dispatched before `bee.mjs reviews create` succeeded and the scope preview was shown
 - a session created, or Gate 4 auto-approved, by gate bypass (bypass never creates or approves sessions)
 - a finished cell/slice/feature, or the words "merge"/"ship"/"release" alone, treated as a review trigger
 - a tiny defect waved through because "it's just the fast path" — the fast path never ships a known defect

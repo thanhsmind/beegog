@@ -14,9 +14,9 @@ Counting rules per term (all from `.bee/` records — never guess):
 
 | Term | Count | Source |
 |---|---|---|
-| orphaned cells | open/claimed cells whose feature is no longer the active feature and has no HANDOFF pointing at them | `node .bee/bin/bee_cells.mjs list` vs `.bee/state.json` + `.bee/HANDOFF.json` |
+| orphaned cells | open/claimed cells whose feature is no longer the active feature and has no HANDOFF pointing at them | `node .bee/bin/bee.mjs cells list` vs `.bee/state.json` + `.bee/HANDOFF.json` |
 | unverified cells | claimed cells with no recorded verify result (`trace.verify_passed` absent) | cell files |
-| stale decisions | active decisions citing files/paths that no longer exist, or contradicted by current code | `node .bee/bin/bee_decisions.mjs active` + spot-check citations |
+| stale decisions | active decisions citing files/paths that no longer exist, or contradicted by current code | `node .bee/bin/bee.mjs decisions active` + spot-check citations |
 | stale specs | areas with a `behavior_change: true` cell capped after the area spec's `updated` frontmatter date, or with such a cell and no spec at all (map cells to areas by files touched); ALSO areas whose Pointers / reading-map locations have git commits or uncommitted changes after `updated` even with no cell — vibe edits outside the chain count too (decision 0003); count each area once | capped cell files + `git log --since=<updated> -- <paths>` + `git status --porcelain` vs `docs/specs/<area>.md` frontmatter |
 | backlog-without-outcome | **machine-backlog** (`.bee/backlog.jsonl`) entries older than 30 days with no matching outcome entry — NOT `docs/backlog.md` PBI rows, which are product intent and never score entropy | `.bee/backlog.jsonl` |
 | stale work | reservations past TTL and never released; HANDOFF.json older than 7 days | `.bee/reservations.json`, `.bee/HANDOFF.json` |
@@ -54,7 +54,7 @@ Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run
 | How is it organized? | `docs/specs/reading-map.md` | run `bee-scribing` **bootstrap** (writes the missing reading-map skeleton, D2) |
 | How do I run it? | `.bee/config.json` `commands` (setup/start) | run `node .bee/bin/lib/commands_detect.mjs`, confirm the candidates into `.bee/config.json` (D3) |
 | How do I verify it? | `.bee/config.json` `commands` (test/verify) — run it, don't just read it | run `node .bee/bin/lib/commands_detect.mjs`, confirm test/verify into `.bee/config.json` (D3) |
-| Where are we now? | `node .bee/bin/bee_status.mjs --json` | (self-answering — the command is the artifact) |
+| Where are we now? | `node .bee/bin/bee.mjs status --json` | (self-answering — the command is the artifact) |
 
 Five minutes per audit; this catches system-of-record decay the entropy formula cannot see (a spec can be fresh and the repo still unanswerable to a cold start). A probe finding is filed with its fix named, never as "document the project" — the fix is one bounded command (bootstrap for Q1/Q2, detect-and-confirm for Q3/Q4).
 
@@ -66,7 +66,7 @@ Five minutes per audit; this catches system-of-record decay the entropy formula 
 | `done` feature, no row | a shipped feature under `docs/history/` has no backlog row (bypassed the backlog) | tiny: append the `done` row retroactively, linked |
 | duplicate rows for one story | two rows describe the same PBI (parser counts both honestly — dedup is this prose audit, not the counter's job) | tiny: merge into the higher-priority row, delete the fork |
 
-Status counts come from `node .bee/bin/bee_status.mjs --json` (`pbi`) — the audit reconciles those counts against active features and `docs/history/`, it does not recount by hand.
+Status counts come from `node .bee/bin/bee.mjs status --json` (`pbi`) — the audit reconciles those counts against active features and `docs/history/`, it does not recount by hand.
 
 **TODO/stub debris** — grep `TODO|FIXME|HACK|XXX|not implemented|placeholder`; each hit is either a real backlog item (file it with predicted impact) or debris (kill candidate). Never leave it as a comment-shaped promise.
 

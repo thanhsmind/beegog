@@ -1,6 +1,6 @@
 # Reviewing Reference
 
-Load after `bee-reviewing` is selected. Companion to SKILL.md — flow lives there; prompts, schemas, and checklists live here. Every record on this page lands on a review session (`.bee/reviews/<id>.json`) via `node .bee/bin/bee_reviews.mjs record --id <id> --kind ...` — a session exists only after an explicit user request created it (SKILL.md Trigger + Scope Freeze and Preview).
+Load after `bee-reviewing` is selected. Companion to SKILL.md — flow lives there; prompts, schemas, and checklists live here. Every record on this page lands on a review session (`.bee/reviews/<id>.json`) via `node .bee/bin/bee.mjs reviews record --id <id> --kind ...` — a session exists only after an explicit user request created it (SKILL.md Trigger + Scope Freeze and Preview).
 
 ## Specialist Dispatch
 
@@ -113,7 +113,7 @@ A review session (`.bee/reviews/<id>.json`) minimally carries these fields — `
 | `uat` | `record --kind uat` (append) | item, pass/fail/skip, skip reason |
 | `decision` | `record --kind decision` | `pending`/`blocked`/`approved` + Gate 4 record |
 
-`record` refuses any payload touching `baseline`/`head`/`included`/`excluded` — those four are frozen at `create` and no sub-record kind legitimately needs to touch them (R5). Before creating a new session for a scope that might already be covered, run `node .bee/bin/bee_reviews.mjs status` — an unchanged range already reported `reviewed (covered by <id>)` is not re-reviewed (R6/A7).
+`record` refuses any payload touching `baseline`/`head`/`included`/`excluded` — those four are frozen at `create` and no sub-record kind legitimately needs to touch them (R5). Before creating a new session for a scope that might already be covered, run `node .bee/bin/bee.mjs reviews status` — an unchanged range already reported `reviewed (covered by <id>)` is not re-reviewed (R6/A7).
 
 ## Delta Re-Review Protocol (R9/A12)
 
@@ -121,7 +121,7 @@ After a P1 fix caps:
 
 1. Re-review the fix delta itself.
 2. Sweep the whole scope diff for the finding's defect class — the same category of bug, anywhere else in scope, not just the line that changed (critical pattern 20260711: grill deltas).
-3. Record the outcome: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind finding --file <finding-update.json>` (status moves to resolved, with the fix's evidence).
+3. Record the outcome: `node .bee/bin/bee.mjs reviews record --id <session-id> --kind finding --file <finding-update.json>` (status moves to resolved, with the fix's evidence).
 4. Decide whether the fix stayed inside its own boundary:
    - **stayed inside** (localized fix, no public-contract change, no destabilized assumption elsewhere in scope) → only the delta + defect-class sweep is required; the full panel does not re-run (A12).
    - **crossed a boundary** (touches another feature's contract, changes a public/API shape, or invalidates an assumption the rest of the scope relied on) → propose an expanded re-review to the user; do not silently pick either the minimal or the maximal option.
@@ -152,7 +152,7 @@ Can you confirm this works? [Pass / Fail / Skip]
 - [ ] P2/P3 → backlog entries (+ grooming cells where concrete), non-blocking
 - [ ] residual-findings fallback written if any filing failed
 - [ ] UAT results (and skip reasons) recorded on the session (`record --kind uat`) and in `.bee/state.json` where a skip reason is needed
-- [ ] session closeout: `node .bee/bin/bee_reviews.mjs record --id <session-id> --kind decision --file decision.json` (`pending`/`blocked`/`approved`) — this closes the SESSION, not a workflow phase; every covered feature already reached its own close via execution → scribing → compounding independently, and that feature state is left untouched (7.5). Do not set `next_action: "Invoke bee-compounding."` here — there is no automatic chain hop out of a review session.
+- [ ] session closeout: `node .bee/bin/bee.mjs reviews record --id <session-id> --kind decision --file decision.json` (`pending`/`blocked`/`approved`) — this closes the SESSION, not a workflow phase; every covered feature already reached its own close via execution → scribing → compounding independently, and that feature state is left untouched (7.5). Do not set `next_action: "Invoke bee-compounding."` here — there is no automatic chain hop out of a review session.
 
 ## Red Flags
 
@@ -163,4 +163,4 @@ Can you confirm this works? [Pass / Fail / Skip]
 - P2/P3 blocking the current session
 - findings dropped because a write failed (use residual-findings.md)
 - a session closeout that sets `next_action: "Invoke bee-compounding."` as if review were a chain stage a feature must pass through
-- a new session created for a range `bee_reviews.mjs status` already reports `reviewed (covered by <id>)` and unchanged
+- a new session created for a range `bee.mjs reviews status` already reports `reviewed (covered by <id>)` and unchanged

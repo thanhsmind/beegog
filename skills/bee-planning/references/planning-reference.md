@@ -84,7 +84,7 @@ high-risk = probes written out per dimension>
 ## Current slice
 <slice name, entry state, exit state, files bounded, verify commands>
 ## Cells
-<ids created via bee_cells.mjs add — the cells are the JSON files, this is just the index>
+<ids created via bee.mjs cells add — the cells are the JSON files, this is just the index>
 ```
 
 **Shape bodies by mode:**
@@ -143,7 +143,7 @@ A cell is an executable prompt a cold worker can pick up with zero session histo
 Create with one batched stdin call for the whole slice (a JSON array; a single object works for a one-cell slice — do not write per-cell scratchpad files):
 
 ```bash
-node .bee/bin/bee_cells.mjs add --stdin <<'EOF'
+node .bee/bin/bee.mjs cells add --stdin <<'EOF'
 [ { ...cell 1... }, { ...cell 2... } ]
 EOF
 ```

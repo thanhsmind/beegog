@@ -20,7 +20,7 @@ Compounding captures reusable lessons from completed work and feeds them back in
 ## 1. Gather Evidence
 
 - `docs/history/<feature>/CONTEXT.md`, `plan.md`, worker reports under `docs/history/<feature>/reports/`
-- cells and traces: `node .bee/bin/bee_cells.mjs list --feature <feature>`
+- cells and traces: `node .bee/bin/bee.mjs cells list --feature <feature>`
 - review findings (including residual-findings.md, if present)
 - feature commit history
 
@@ -61,10 +61,10 @@ Ten findings rarely yield ten criticals. Keep critical-patterns.md high signal; 
 ## 5. Log Durable Decisions
 
 ```
-node .bee/bin/bee_decisions.mjs log --decision "..." --rationale "..." [--alternatives "..."] [--confidence N]
+node .bee/bin/bee.mjs decisions log --decision "..." --rationale "..." [--alternatives "..."] [--confidence N]
 ```
 
-Log choices future planning must honor. Supersede outdated decisions (`bee_decisions.mjs supersede`) — never edit history.
+Log choices future planning must honor. Supersede outdated decisions (`bee.mjs decisions supersede`) — never edit history.
 
 ## 6. Guard the State Layer (decisions 0001, 0002)
 
@@ -76,31 +76,31 @@ Log choices future planning must honor. Supersede outdated decisions (`bee_decis
 
 **Backlog done-flip fallback (D11b):** confirm the feature's `docs/backlog.md` row flipped to `done` with a `docs/history/<feature>/` link. Scribing owns that flip at sync; when scribing legitimately NOOPed (no `behavior_change` cell, nothing to sync), compounding is the last close point — do the done-flip here so no shipped feature leaves a stale `in-flight` row. Prose-ruled, never hook-enforced (D7).
 
-**Review candidate at close (SPEC review-on-demand R3, flow 7.1 step 6):** the feature closes without independent review — that is the normal path, not a shortcut. Register the completed change set so it can be picked up by a later user-invoked review: `node .bee/bin/bee_reviews.mjs candidate add --feature <feature> --head "$(git rev-parse HEAD)" --mode <lane>` (`<lane>` is the feature's lane — tiny/small/spike/standard/high-risk). Then post the completion line: "Completed and verified: N cells. Independent review not requested; the change set was added to review candidates." Never describe the close as reviewed or approved — the feature is truthfully `unreviewed` until a user-invoked review session covers this head (R10).
+**Review candidate at close (SPEC review-on-demand R3, flow 7.1 step 6):** the feature closes without independent review — that is the normal path, not a shortcut. Register the completed change set so it can be picked up by a later user-invoked review: `node .bee/bin/bee.mjs reviews candidate add --feature <feature> --head "$(git rev-parse HEAD)" --mode <lane>` (`<lane>` is the feature's lane — tiny/small/spike/standard/high-risk). Then post the completion line: "Completed and verified: N cells. Independent review not requested; the change set was added to review candidates." Never describe the close as reviewed or approved — the feature is truthfully `unreviewed` until a user-invoked review session covers this head (R10).
 
 ## 7. File Unresolved Friction
 
-Unresolved friction from cell traces or the session → `node .bee/bin/bee_backlog.mjs add --type friction --severity <P1|P2|P3> --layer <layer> --title "<friction>" --detail "<predicted impact>" --feature <feature>`, so `bee-grooming` can hunt them later. Field guidance in the reference.
+Unresolved friction from cell traces or the session → `node .bee/bin/bee.mjs backlog add --type friction --severity <P1|P2|P3> --layer <layer> --title "<friction>" --detail "<predicted impact>" --feature <feature>`, so `bee-grooming` can hunt them later. Field guidance in the reference.
 
 ## 8. Refresh the Feedback Digest (D1 — warn, never block)
 
 After the learnings file is written, refresh the local feedback digest so the evolving-loop telemetry stays current:
 
 ```
-node .bee/bin/bee_feedback.mjs digest
+node .bee/bin/bee.mjs feedback digest
 ```
 
 Run this unprompted at every close — it is part of compounding, not an optional extra, and no user, teammate, or missing skill mention excuses skipping it. Per D1 the dogfood side stays zero-effort: this is a compounding side effect, never a task the host project has to think about.
 
-**Warn, never block.** A failing or absent refresh — the command throws, `bee_feedback.mjs` is missing, or the helper is not installed — is a one-line warning in the run summary and **nothing more**. It NEVER blocks, fails, delays, or reverses a host project's feature close. A host project's close must never fail because bee wanted telemetry; a thrown digest is bee's problem to file as friction (step 7), not the feature's problem. "Something threw during close, stop the line" does not apply here — the digest is side-channel telemetry, explicitly non-load-bearing for the feature's correctness.
+**Warn, never block.** A failing or absent refresh — the command throws, `bee.mjs` is missing, or the helper is not installed — is a one-line warning in the run summary and **nothing more**. It NEVER blocks, fails, delays, or reverses a host project's feature close. A host project's close must never fail because bee wanted telemetry; a thrown digest is bee's problem to file as friction (step 7), not the feature's problem. "Something threw during close, stop the line" does not apply here — the digest is side-channel telemetry, explicitly non-load-bearing for the feature's correctness.
 
-This holds **regardless of whether you recognize the error**. An unfamiliar, never-seen-before, or scary-looking stack trace (`TypeError`, `undefined`, "corrupted", anything) from `bee_feedback.mjs` is STILL just a telemetry failure — it cannot corrupt the feature, its data, or its correctness, because the digest is a read-only side effect that runs after all feature work is already done and committed. "But I don't understand this specific error yet, so I should block until I do" is the loophole, not the exception: warn, file the exact error as friction (step 7) for bee to investigate later, and let the close proceed **now**. You never need to understand a digest error before closing; understanding it is post-close cleanup, never a gate.
+This holds **regardless of whether you recognize the error**. An unfamiliar, never-seen-before, or scary-looking stack trace (`TypeError`, `undefined`, "corrupted", anything) from `bee.mjs feedback` is STILL just a telemetry failure — it cannot corrupt the feature, its data, or its correctness, because the digest is a read-only side effect that runs after all feature work is already done and committed. "But I don't understand this specific error yet, so I should block until I do" is the loophole, not the exception: warn, file the exact error as friction (step 7) for bee to investigate later, and let the close proceed **now**. You never need to understand a digest error before closing; understanding it is post-close cleanup, never a gate.
 
 **Never skip silently.** If the refresh is not run — for any reason, including context pressure, exhaustion, or an unfamiliar error — say so explicitly in the run summary and Handoff line (e.g. "digest refresh skipped: <reason>"). A silent omission is a violation even when the surrounding handoff template has no field for it; extend the handoff rather than emit a clean-looking close that hides the skip.
 
 ## 9. Update State
 
-Record the completed compounding run: `node .bee/bin/bee_state.mjs set --phase compounding-complete --next-action "<next action>" --summary "learnings: <file path>; promoted: <count>"`.
+Record the completed compounding run: `node .bee/bin/bee.mjs state set --phase compounding-complete --next-action "<next action>" --summary "learnings: <file path>; promoted: <count>"`.
 
 ## Hard Gates
 
@@ -125,7 +125,7 @@ Record the completed compounding run: `node .bee/bin/bee_state.mjs set --phase c
 - an API key, token, or credential in an evidence snippet
 - `behavior_change` cells capped but no scribing record — and compounding "fixing" it by editing `docs/specs/` itself
 - closing without running the digest refresh because "the skill/teammate didn't ask for it" — it is a step, not an optional extra (Scenario 1)
-- blocking or failing a host project's feature close because `bee_feedback.mjs digest` threw — telemetry never stops the line; warn and file friction (Scenario 2)
+- blocking or failing a host project's feature close because `bee.mjs feedback digest` threw — telemetry never stops the line; warn and file friction (Scenario 2)
 - treating an *unfamiliar* digest error as exempt from warn-never-block — "I must understand this throw before I can close" is the loophole; a digest error never gates a close, understanding it is post-close cleanup (Scenario 2 REFACTOR)
 - skipping the digest refresh under context/exhaustion pressure and saying nothing — a silent skip is a violation; disclose it in the summary and Handoff (Scenario 3)
 
