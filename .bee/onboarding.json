@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.32",
+  "bee_version": "0.1.33",
   "managed": {
-    "agents_block": "205fa70ebad3c9b3d60c726d05fedb58b884a022a00dc2b850b2ac9e384261bf",
+    "agents_block": "4454590c347bfbe2bbe65ed06d73e450a00dcbf7e48f96def637569298af242c",
     "gitignore_block": "add7be1e25d3c4b7bbedff2f80c0f0e577c84610ebbac5d1eec1d70427424886",
     "helpers": {
-      "bee.mjs": "d6f98987a9fffd5bc08c79b89a97493acf0f188fdfdfdecc082ba6e3c3ad4ed6",
+      "bee.mjs": "2f32b88de07e314324a8f5f973925d27a6cb8f0fc5eddb0becc33a62ce5817c2",
       "bee_backlog.mjs": "6dee9de4e2545943b51a2c07657216a92327d7a7bc7a7f8337a91450a038f05b",
       "bee_capture.mjs": "a5aec12a7974689123090f02a9a2486ed3875aa0f9b5841e50ea8ed584e81a10",
       "bee_cells.mjs": "08f10b2260dd6120c42ac524a83ce58586332872bbf19d0a74762784b267a371",
@@ -17,29 +17,30 @@
       "bee_status.mjs": "d754fd10d2b669883b6ecf6bdea42dd7c44f9504c8391660b4befc8677a2e3bd"
     },
     "lib": {
-      "backlog.mjs": "849881ecdf0a9431c15c81a61a08a734292c871fdb5b616e168396417e6014fd",
+      "backlog.mjs": "66c97271239f00c069531485ee6582c5a1c970266900ebbc97e9e53daa0fb1af",
       "capture.mjs": "6ce4fa5947a015f156468aa5bc40e264a9d7a170744e8700de1d90b969b3908c",
-      "cells.mjs": "1b9f9f4bd23be22b1f81c3d9192ea9148566e60c62c2575b01ec0e90f18dcf30",
-      "command-registry.mjs": "89402506642274435250fd94c17d20310e92d184eb0de4c4a3ff1e00e3a8625f",
+      "cells.mjs": "d1d69b6961195275c9602d1794b5a18b58ee0b835da076e8d7310cf4cf598cc1",
+      "claims.mjs": "53db159edf5e84ee78774c6f5141b7a2a355c31451920da60d6fb9fb02a13d52",
+      "command-registry.mjs": "07711e95eb60d002434f4bfbe1a8f29802105effad1ee5bc93e9254ff98e1794",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
       "fsutil.mjs": "7bbfb70e5f6bcf3b18d4c4be9342d55bb748683d419a219b3406dae0a04b3691",
-      "guards.mjs": "b65610eede0b67f5abe9ab38da9b73523492cfa9663d51baaf09c358029dd529",
-      "inject.mjs": "a00742f94ee4eeb52aff99917aa4cbdfdb7356807f54407bc94fac6a9b651520",
-      "reservations.mjs": "3797b8e14d2a96238c767e408bcb21dba0e6c111f39928091bbb3d7dac44c36b",
+      "guards.mjs": "e1fad60b4ac078f0d809d2829358c32a5680f062c984035a36a138b221568117",
+      "inject.mjs": "f92cee5d5fa9fd4a0f27ffd8ef80151f24881aaabf086aa2db32981565427a7b",
+      "reservations.mjs": "4643ef572599f1439504741499f3ec982c4344e1e3551052c2d27e66617fec86",
       "reviews.mjs": "8174b4ae0ea0e4b4e86a31b1e595168aea0ec0daaf9bf8fb0cac6e1cfdcb02ee",
-      "state.mjs": "51f395609d132c98efbe950553f0e1c393b920fd368abc09c73b757310d32bfc",
+      "state.mjs": "b55a339fc416170299ab3bb3240f884efc633943b8ace046ff036c93b49792aa",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
     },
     "repo_hooks": {
       "adapter.mjs": "b769b2372123b31e3bdca11f463574046a36669e8eaf2c39e2df83435d755a4b",
-      "bee-session-init.mjs": "0af43e130c8612cb906016de1b26ef87868d21c0ecb391a3038fa6e7400423e7",
+      "bee-session-init.mjs": "3bc1706a7d716017fac407898f06405239d2fefbd98639c581460a4d3a0be4e6",
       "bee-prompt-context.mjs": "4a50dfeae57f70b95d9e7020df2deac5d980b09e059d0aae5a64dc2c1c338ca6",
-      "bee-write-guard.mjs": "515c9100225ae931d39dbad3f6376b0a965315859ddb67daa3e5939570c7c609",
+      "bee-write-guard.mjs": "c801396b3714cd33e6d1f8ff4508b148b9f7b90a59763db453ac28ea980db12a",
       "bee-state-sync.mjs": "2a0748bbd02884dbca87a494b825b350e0fcf149bb12a83c638a248d8619cbc4",
-      "bee-chain-nudge.mjs": "935c66e0916a3439579cfc387a81adb15cf66b83a7043688be56924425a70c41",
-      "bee-session-close.mjs": "98049c8bcd5aaf01d312c3633efbce70a7b3f4fcc89d0c6c849c63464339de4a",
+      "bee-chain-nudge.mjs": "fd11fcdd9a861d17aab5811b158404e25ed5ad8cc4cbb811a7c927080d0bdaef",
+      "bee-session-close.mjs": "ef29ec245267aa7f7c377ca3e29f9e30fa275f2d151b23da524e31076fc5c093",
       "bee-model-guard.mjs": "229d7abe02ddb71a26a45df2b3f1173797d4348e264d903e52b8e3c95eab075d"
     },
     "statusline": {
@@ -48,5 +49,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-13T08:48:34.985Z"
+  "updated_at": "2026-07-13T18:39:20.691Z"
 }
