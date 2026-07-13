@@ -273,3 +273,12 @@ test_bee_write_guard_hook vendors an explicit lib-module list into its fixture r
 Adding an import to any vendored module (command-registry.mjs → reviews.mjs → cells.mjs)
 throws only inside the fixture, and the hook FAILS OPEN — denial tests invert silently.
 When a vendored module gains an import, chase the transitive closure into the fixture list.
+
+## [20260713] A shared-suite red is not yours while a sibling cell is in flight
+**Category:** failure
+**Feature:** advisor
+**Tags:** [swarming, verify, parallel-waves]
+When a cell's verify runs the full shared suite, a red observed while another
+cell is claimed-but-uncapped may be the sibling's mid-flight state, not your
+defect. Check `.bee/cells/*.json` for in-flight siblings before diagnosing;
+re-run after they cap. Never "fix" files outside your cell's scope to green it.

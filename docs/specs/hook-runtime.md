@@ -1,7 +1,7 @@
 ---
 area: hook-runtime
-updated: 2026-07-12
-sources: [codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12)]
+updated: 2026-07-13
+sources: [codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b)]
 decisions: [codex-runtime-parity D1, D2; 0023; d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks)]
 coverage: partial
 ---
@@ -81,6 +81,15 @@ gate, direct-edit, and reservation decisions that govern single writes.
   through.
 - The outer event itself malformed (no batch envelope present at all) →
   fail-open, logged: the guard cannot know a write was intended.
+
+**B3a — Workflow-command requests are shape-checked against the published
+catalog.** When a shell request invokes a workflow verb, the guard resolves the
+command against the catalog of record — including verbs whose full name is
+three words deep (group, sub-group, action) — and validates the required
+parameters and value shapes before the command runs. A malformed invocation is
+denied with the command, the missing or wrong field, and the corrective shape;
+a well-formed one proceeds untouched. Deep verbs previously escaped this check
+unvalidated (a silent fail-open); they no longer do.
 
 **B4 — Worker nudges reach the right worker.** The child-stop nudge matches a
 returning worker by its registered identity (the same identity workers use to
@@ -278,6 +287,9 @@ location simply stopped being an exception (bee-footprint D2).
   (Claude, plugin target; `.claude-plugin/plugin.json` points here).
 - Shared adapter: `hooks/adapter.mjs`; the seven handlers `hooks/bee-*.mjs`.
 - Batch guard: `hooks/bee-write-guard.mjs` (`extractApplyPatchTargets`).
+- CLI-shape guard incl. 3-token verb resolution: `hooks/bee-write-guard.mjs`
+  against the `command-registry.mjs` catalog. Evidence: `.bee/cells/du-2.json`,
+  `docs/history/dispatcher-unify/`.
 - Always-writable set: `GATE_ALLOWED_PREFIXES` in
   `skills/bee-hive/templates/lib/guards.mjs` (`.bee/`, `docs/`, `plans/`,
   `AGENTS.md`; repo-root `.spikes/` removed per bee-footprint D2 — the

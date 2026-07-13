@@ -18,7 +18,9 @@ Where things live. Read the touched area's spec before its code.
   vocabulary, four gates, the guarded feature-start that can never inherit approvals or
   bury unfinished work, and the review records — user-invoked review sessions with frozen
   scope (`.bee/reviews/`), the append-only candidates ledger, and derived review statuses
-  (verified/unreviewed/in review/reviewed/review stale) (`coverage: partial`).
+  (verified/unreviewed/in review/reviewed/review stale); also the unified nine-group
+  command entry point and the worker adviser consult (a stuck worker asks a configured
+  stronger model, on failure only, budgeted) (`coverage: partial`).
 
 ## Not yet specced
 

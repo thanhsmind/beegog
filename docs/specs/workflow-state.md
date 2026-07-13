@@ -1,8 +1,8 @@
 ---
 area: workflow-state
-updated: 2026-07-12
-sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12)]
-decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3]
+updated: 2026-07-13
+sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13)]
+decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b)]
 coverage: partial
 ---
 
@@ -21,8 +21,9 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 - The workflow record changes only through its command-line verbs (set phase,
   record a gate, register/update/clear workers, record a scribing run, start a
   feature). Direct edits to the record are denied by the write guard.
-- The four read/act verb groups over the work record (status snapshot, work
-  cells, file reservations, decision log) are additionally reachable through
+- Every verb group over the work record (status snapshot, work cells, file
+  reservations, decision log, state, backlog, capture queue, reviews,
+  feedback — nine groups) is additionally reachable through
   one **unified command entry point** that dispatches by command name and
   publishes a machine-readable catalog of every command it accepts — name,
   invocation, description, parameter schema, examples, deprecation — so an
@@ -44,6 +45,9 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | review status | Derived at read time, never stored. `verified` — completion evidence exists (every completed change). `unreviewed` — no approved session covers it (including every legacy feature with no record). `in review` — an open, not-yet-approved session includes it. `reviewed` — an approved session covers exactly its range anchor. `review stale` — an approved session covered it, but newer changes landed after that session's head; the old coverage keeps its audit trail while the newer delta is unreviewed. |
 | baseline / head | The two immutable anchors a review session's diff is built from. Coverage attaches only to these — never to a feature name or a date. |
 | command catalog | The machine-readable inventory of commands exposed through the unified entry point. Each entry names the command, its invocation, purpose, accepted parameters, runnable examples, and whether it is deprecated. |
+| adviser | An optionally configured, stronger assistant a dispatched worker may ask for guidance after a failed verification attempt. Configured per runtime beside the reviewer role; may point at a different provider entirely. Unset means no adviser exists — nothing substitutes for it. |
+| consult | One evidence-backed question from a stuck worker to the adviser plus the reply. Budgeted: at most two per claim of a work unit; a re-dispatch of the same unit grants a fresh budget. |
+| degenerate consult | A consult that would ask someone no stronger than the worker itself (same assistant, or the worker already runs the session's strongest tier). Skipped by the dispatcher — the worker is never told an adviser exists. |
 | catalog fingerprint | A local fingerprint of the command catalog from the previous invocation. It detects that the discoverable surface changed without altering a command's normal result. |
 
 ## Behaviors & Operations
@@ -120,9 +124,13 @@ that would leave a standard/high-risk unit without acceptance truths is
 refused. Observers see either the old plan or the fully revised plan — never a
 partial merge.
 
-**B8 — Unified command discovery and dispatch.** The status snapshot, work-cell,
-file-reservation, and decision-log operations are available both through their
-specialized entry points and through one unified entry point. The unified entry
+**B8 — Unified command discovery and dispatch.** Every workflow operation — all
+nine verb groups — is available both through its specialized entry point and
+through one unified entry point, and the unified side owns the single
+implementation: each specialized entry point is a thin forwarder whose output
+is byte-identical to the unified path, and a new verb is added exactly once
+(one catalog entry plus one handler), never re-implemented in a forwarder.
+The unified entry
 point publishes the complete command catalog in human-readable and
 machine-readable forms. It validates required parameters and their value shapes
 before dispatch, then invokes the same underlying operation as the specialized
@@ -134,6 +142,30 @@ available. A malformed request is refused with the command, field, and reason,
 without executing the operation. After a catalog change, observers receive a
 separate diagnostic signal while the requested command's normal output keeps its
 stable shape.
+
+**B9 — A stuck worker may consult a configured adviser, inside its own turn.**
+When the dispatcher assigns a work unit to a worker, it first checks whether an
+adviser is configured and stronger than that worker (degenerate consults are
+skipped; a worker on the session's strongest tier never gets one). If so, the
+dispatch names the adviser and exactly how to reach it. The worker may consult
+only after its first serious failed verification attempt, sending an evidence
+bundle: the exact check it ran, the failing output, its diagnosis, the relevant
+excerpts, and where the locked feature decisions live — never secrets or
+credential values. The canonical loop: first failure → consult → advised retry
+→ (second failure) → one follow-up consult → final retry → blocked, with every
+consult summarized in the worker's report (count, adviser identity, one-line
+question/answer digest). Each consult also lands one recognizable, attributable
+entry in the dispatch audit log naming the work unit and the adviser. What
+observers see: a worker with no adviser named in its dispatch behaves exactly
+as before (two failures → blocked); the orchestrator's rescue ladder is
+unchanged except that it knows an arriving blocked unit already spent its
+consult budget.
+
+**B10 — A whole slice of work units is created in one all-or-nothing call.**
+Creating the current slice's units accepts the full batch in a single request;
+every unit is validated (including duplicate identifiers within the batch)
+before any is written, so one invalid unit means zero units created. A
+single-unit request still works the same way.
 
 ## Actors & Access
 
@@ -175,9 +207,11 @@ stable shape.
 - R11 — The final human approval of a review (its Gate 4) exists only inside a
   review session; gate bypass never creates or approves one (decision
   565e68d0-327f-404e-b49e-d1c61ba81bfd; SPEC R8).
-- R12 — The unified entry point extends the four established command groups; it
-  coexists with them and never changes their contracts or makes them call one
-  another (decision 30606de4-5fae-4c9d-9e3f-8f47a494f8a3).
+- R12 — The unified entry point serves all nine command groups from one
+  implementation; the specialized entry points are thin forwarders with
+  byte-identical output, and a new verb is added once — one catalog entry plus
+  one handler, never a second implementation in a forwarder (decision
+  30606de4-5fae-4c9d-9e3f-8f47a494f8a3; dispatcher-unify decision 2026-07-12).
 - R13 — The published command catalog and executable dispatch surface describe
   the same command set. Every published example is exercised against the real
   operation, so a documented but unusable command is a verification failure
@@ -188,7 +222,25 @@ stable shape.
   retrieval, implementation, and review work; steps that are mostly gathering
   content dispatch down-tier and return digests rather than raw content
   (decision de967733; the ceiling-is-the-session-model principle it refines
-  stands unchanged, decision 0015).
+  stands unchanged, decision 0015). Amended, not reversed, by advisor D1
+  (2026-07-13): a dispatched worker that fails its first serious verification
+  attempt may consult a configured stronger adviser from inside its own turn —
+  advice only, on failure only; the orchestration pattern and the retired
+  gate-time advisory mode stay exactly as this rule states them.
+- R14 — The adviser is a per-runtime configured role beside the reviewer role;
+  it may name a different provider. Unset, invalid, or not stronger than the
+  worker means no adviser: nothing is silently substituted, and no fallback to
+  another configured role ever happens (advisor D2).
+- R15 — Consult triggers are objective, never self-assessed: only after the
+  first serious failed verification attempt, at most two consults per claim,
+  and blocks the adviser has no standing to resolve — an ambiguous work unit,
+  unmet dependencies, an architectural change, a software installation, a
+  conflict with a locked decision — block immediately without consulting
+  (advisor D3).
+- R16 — Advice is advice: it never approves gates or installations, never
+  widens a worker's file scope, and never substitutes for fresh verification
+  output; advice that contradicts a locked decision turns into a block citing
+  both the decision and the advice (advisor D1/A1; goal-check unchanged).
 - R8 — A workflow configuration file that still carries the retired advisor
   setting loads successfully: the setting is stripped from the parsed view
   and surfaced as one warning by both the status command and the onboarding
@@ -222,6 +274,15 @@ stable shape.
   while diagnostics can still report that discovery metadata changed.
 - A missing required parameter, a value with the wrong shape, or an unknown
   command is rejected before any workflow record changes.
+- A consult attempt that fails at the transport level (the adviser is
+  unreachable, errors, or hangs past the external-work timeout discipline) is
+  not advice: it spends at most one budget slot in total and is never retried
+  in a storm; the worker proceeds toward blocked exactly as it would without an
+  adviser.
+- A workflow whose configuration names no adviser dispatches byte-identical
+  worker instructions to before the adviser existed.
+- One invalid unit in a batch slice-creation request → zero units written; a
+  duplicate identifier inside the batch is refused the same way.
 
 ## Open Gaps
 
@@ -253,7 +314,25 @@ stable shape.
 - Cost pattern / tier resolution: `modelForTier`, `MODEL_TIERS`,
   `CONFIGURABLE_TIERS` in `skills/bee-hive/templates/lib/state.mjs` (ceiling
   never configured; extraction/generation/review are the configurable tiers).
-- Advisor config tolerance: `STALE_ADVISOR_KEY_WARNING`, `hasStaleAdvisorKey`
+- Adviser (worker consult): `resolveAdvisor` + `MODEL_NORMALIZE_SLOTS` in
+  `skills/bee-hive/templates/lib/state.mjs` (byte-mirrored to `.bee/bin/lib/`);
+  slot `models.<runtime>.advisor` in `.bee/config.json`; worker protocol in
+  `skills/bee-executing/SKILL.md` (Advisor Consult section); dispatch-time
+  degenerate check + Advisor line + ladder note in `skills/bee-swarming/SKILL.md`
+  and `references/swarming-reference.md`; consult record = `advisor-consult
+  <cell-id>: <advisor>` description prefix in `.bee/logs/dispatch.jsonl`.
+  Evidence: commits 14e0e1b, 68d3a0d, 33aaad7; traces `.bee/cells/adv-{1,2,3}.json`;
+  transport proofs `docs/history/advisor/reports/validation-advisor-consult.md`.
+- Batch slice creation: `addCells` in `skills/bee-hive/templates/lib/cells.mjs`,
+  CLI `bee_cells.mjs add --stdin` (JSON array). Evidence: dispatcher-unify
+  cells-batch-add suite rows (v0.1.27).
+- Unified dispatcher (all nine groups): `skills/bee-hive/templates/bee.mjs` owns
+  registry + handlers; every `bee_*.mjs` is a 2-line forwarder with
+  byte-identical output. Evidence: `.bee/cells/du-{1..6}.json`,
+  `docs/history/dispatcher-unify/`.
+- Advisor config tolerance: `STALE_ADVISOR_KEY_WARNING` (copy names the
+  top-level key; the nested `models.<runtime>.advisor` slot is separate and
+  valid), `hasStaleAdvisorKey`
   in `skills/bee-hive/templates/lib/state.mjs` (byte-mirrored to
   `.bee/bin/lib/state.mjs`); surfaced by `skills/bee-hive/templates/bee_status.mjs`
   and `skills/bee-hive/scripts/onboard_bee.mjs` (`staleAdvisorNotices`).
