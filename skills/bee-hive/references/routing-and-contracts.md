@@ -38,7 +38,7 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 | Evolve bee from its own dogfood feedback (rank friction, ship a self-improvement) | `bee-evolving` | Load directly; bee repo only (D3), never auto-runs, never pushes without Gate B (D5) |
 | `/go` / full pipeline | Go mode | See `go-mode.md` |
 | Turn gate-bypass on/off, or check it | `bee-bypass-gate` | Load directly, any phase; toggles `.bee/config.json` `gate_bypass` |
-| Resume session | Resume logic | Check `HANDOFF.json` first |
+| Resume session | Resume logic | Check `HANDOFF.json` first — kind-aware: pause waits, planned-next adopts only at a fresh-session boundary |
 
 **Surface-scope-earlier check** (runs before routing to exploring): the request contains concrete acceptance criteria AND references to existing patterns → offer "Found clear requirements. Jump straight to planning, or explore alternatives first?" On approval, planning receives a one-paragraph scoping synthesis whose decisions still carry D-IDs.
 
@@ -48,7 +48,7 @@ On every session start:
 
 1. Confirm onboarding is current via `.bee/onboarding.json` (see SKILL.md onboarding protocol).
 2. Run `node .bee/bin/bee_status.mjs --json`.
-3. If `.bee/HANDOFF.json` exists, present it and wait. Do not auto-resume.
+3. If `.bee/HANDOFF.json` exists, check its kind: a pause handoff (or any kindless record) is presented and waited on — do not auto-resume. A planned-next handoff is adopted only at this fresh-session boundary (see Resume Logic below).
 4. Read `docs/history/learnings/critical-patterns.md` when present.
 5. Surface recent active decisions: `node .bee/bin/bee_decisions.mjs active --recent 3`.
 6. Check active reservations when workers may be in flight: `node .bee/bin/bee_reservations.mjs list --active-only`.
@@ -70,7 +70,9 @@ Default `.bee/state.json` shape:
 
 ## Resume Logic
 
-If `.bee/HANDOFF.json` exists:
+If `.bee/HANDOFF.json` exists, read its `kind` (`bee state handoff show --json`; a missing/unknown kind normalizes to `pause`, fail-safe) and branch:
+
+**Pause** (or any kindless record) — unchanged, the original rule:
 
 1. Read `HANDOFF.json` and `.bee/state.json`.
 2. Extract phase, feature, mode, cells in flight, done/remaining, and next action.
@@ -78,6 +80,12 @@ If `.bee/HANDOFF.json` exists:
 4. Continue only after explicit confirmation. If the user's first message is an unrelated request, still surface the handoff first, then ask which to pursue.
 
 Do not auto-resume. Ever.
+
+**Planned-next** — the previous cell was capped with a green verify and the next cell was already claimed for this handoff. Adoption fires ONLY at a fresh-session boundary (a cleared or newly started session — never a resumed or memory-compacted one, which follows the pause path above):
+
+1. `bee state handoff adopt` transfers the carried claim to this session and clears the handoff record.
+2. On success, present the adopted cell, its verify command, and its lane as a start-now instruction — no wait, no confirmation prompt (fresh-session-handoff D1).
+3. On a failed adoption (claim lost the race, handoff already cleared), fall back to the pause presentation above — never fabricate a start-now instruction.
 
 ## Scout Contract (just-enough reading)
 

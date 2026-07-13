@@ -7151,6 +7151,71 @@ check('census: the Delegation contract (fan-out) lives in the always-loaded doct
   }
 });
 
+check('census: the two-kind handoff rule (with its transport) and the multi-session etiquette rule live in the always-loaded doctrine layer — AGENTS.block.md + root AGENTS.md carry both, not just the runtime lib (fresh-session-handoff S5, D1/D3)', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = findRepoRoot(templatesRoot);
+  if (!repoRoot) return; // no repo context to check against (bare checkout)
+
+  // Before this cell the doctrine layer stated a blanket "never auto-resume"
+  // HANDOFF rule and said nothing about lanes/claims/holds — an agent
+  // following prose alone never used the shipped fresh-session flow (B15/B16).
+  const surfaces = [
+    path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+    path.join(repoRoot, 'AGENTS.md'),
+  ];
+
+  for (const surface of surfaces) {
+    if (!fs.existsSync(surface)) continue; // host repos onboarded without a root AGENTS.md yet
+    const text = fs.readFileSync(surface, 'utf8');
+    const rel = path.relative(repoRoot, surface);
+
+    // The two kinds are named, and the pause kind keeps its verbatim wait
+    // strength (D1) — a kindless record must read as pause too.
+    assert(
+      /\bplanned-next\b/.test(text) && /\bpause\b/.test(text),
+      `${rel} must name both handoff kinds (planned-next, pause)`,
+    );
+    assert(
+      /never auto-resume/i.test(text),
+      `${rel} must keep the pause-kind "never auto-resume" wait rule verbatim`,
+    );
+
+    // The rule carries its transport (doctrine-layer B3a / critical rule 13
+    // precedent): the exact verbs, not just the concept.
+    assert(
+      /bee state handoff write/.test(text) && /--kind planned-next/.test(text),
+      `${rel} must state the planned-next writer verb (bee state handoff write --kind planned-next)`,
+    );
+    assert(
+      /bee cells claim-next/.test(text),
+      `${rel} must state the claim-next verb`,
+    );
+    assert(
+      /bee state handoff adopt/.test(text),
+      `${rel} must state the adopt verb`,
+    );
+    assert(
+      /fresh-session boundary/.test(text),
+      `${rel} must say adoption fires only at the fresh-session boundary (D1) — resumed/compacted sessions never adopt`,
+    );
+
+    // Multi-session etiquette: sessions coordinate through lanes/claims/holds,
+    // never around a hold deny.
+    assert(
+      /Multi-session etiquette/i.test(text),
+      `${rel} must carry a multi-session etiquette rule`,
+    );
+    assert(
+      /names the holder/.test(text) && /expiry/.test(text),
+      `${rel} must say a hold deny names the holder and its expiry (D3)`,
+    );
+    assert(
+      /pick other/i.test(text),
+      `${rel} must instruct picking other work on a hold deny, never working around the guard`,
+    );
+  }
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 fs.rmSync(detectRoot, { recursive: true, force: true });

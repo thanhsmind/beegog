@@ -123,6 +123,10 @@ Record every consult in the cap trace and the per-cell report (see Cap and Retur
 
 At roughly 65% context before a safe finish: write `.bee/HANDOFF.json` (cell, files, done, remaining, next_action), release reservations that are safe to release, and return `[HANDOFF]`. After compaction, reread `AGENTS.md`, `CONTEXT.md`, the cell, and your active reservations before continuing.
 
+## Fresh-Session Handoff (downstream, not a worker action)
+
+This `[HANDOFF]` is the pause kind — unrelated to the planned-next handoff (fresh-session-handoff D1). When this cell caps with a green verify and further execution-approved work remains, the finish → claim-next → planned-next handoff → ask-the-user-to-`/clear` flow becomes available — but that is the orchestrator's call after collecting your `[DONE]`, never something a worker claims or writes mid-swarm on its own initiative. A worker's job stays exactly Cap → Release → Return.
+
 ## Headless
 
 Workers always run effectively headless: never ask the parent or user a blocking question. Unambiguous deviations are applied under the rules above; anything ambiguous becomes `[BLOCKED]` with an `Outstanding Questions` section in the report. Workers never approve gates — Gate decisions belong to the user via the orchestrator chain. This rule is unchanged by Advisor Consult (A4): consulting a configured advisor stays inside your own turn and is never "asking the parent or user."

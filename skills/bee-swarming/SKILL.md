@@ -79,6 +79,10 @@ Swarming is complete when either:
 
 Before declaring completion: all wave cells capped or explicitly blocked/dropped, `node .bee/bin/bee_reservations.mjs list --active-only` is empty, and `.bee/state.json` `workers` is cleared.
 
+## Fresh-Session Handoff (offer, never auto)
+
+When a cell or wave finishes (capped, verify green) and further execution-approved work remains — this lane or another Gate-3-approved one — the finish → claim-next → planned-next handoff flow is available (fresh-session-handoff D1/D2): claim the next unit (`bee cells claim-next`), write the handoff (`bee state handoff write --kind planned-next --writer-session <id> --previous-cell <capped-id> --next-cell <claimed-id>`), and offer the user a `/clear` — the fresh session that follows adopts the carried claim automatically and opens straight into the next cell, no confirmation asked. The orchestrator **offers** this; it never issues `/clear` itself and never treats the offer as accepted by default — the user decides. Declining leaves the claimed cell exactly where it is; nothing is lost.
+
 ## Hard Rules
 
 - In `standard`/`high-risk` lanes, never implement cells yourself — not even a one-line fix; make it a cell and dispatch it. (`tiny`/`small` run solo by design — see Solo execution.)
