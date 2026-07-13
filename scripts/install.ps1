@@ -194,11 +194,11 @@ try {
 
   Push-Location $Directory
   try {
-    $statusJson = node .bee\bin\bee_status.mjs --json
-    if ($LASTEXITCODE -ne 0) { Fail 'Verification failed: bee_status did not run.' }
+    $statusJson = node .bee\bin\bee.mjs status --json
+    if ($LASTEXITCODE -ne 0) { Fail 'Verification failed: bee.mjs status did not run.' }
     $status = $statusJson | ConvertFrom-Json
     if (-not $status.onboarding -or $status.onboarding.installed -ne $true) {
-      Fail 'Verification failed: bee_status reports not installed.'
+      Fail 'Verification failed: bee.mjs status reports not installed.'
     }
     Write-Host "verify   onboarding ok (bee $($status.onboarding.bee_version)), phase: $($status.phase)"
   } finally {
@@ -209,8 +209,8 @@ try {
   Write-Host 'bee installed.'
   Write-Host "  next: open an agent session in $Directory"
   Write-Host '  - Claude Code: the session preamble appears via hooks; or say "Route this through bee: <task>"'
-  Write-Host '  - Codex: the AGENTS.md BEE block bootstraps; first step is bee_status'
-  Write-Host '  - scout any time: node .bee/bin/bee_status.mjs --json'
+  Write-Host '  - Codex: the AGENTS.md BEE block bootstraps; first step is bee.mjs status'
+  Write-Host '  - scout any time: node .bee/bin/bee.mjs status --json'
 } finally {
   if ($cleanupDir -and (Test-Path $cleanupDir)) {
     Remove-Item -Recurse -Force $cleanupDir -ErrorAction SilentlyContinue

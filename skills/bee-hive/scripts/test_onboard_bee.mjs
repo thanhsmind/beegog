@@ -2947,6 +2947,97 @@ function hashTree(dir) {
   }
 }
 
+// --- 13. retired helper shims (D2, shim-retire): removal pass ---------------
+// bbc6bcea D2: a host with leftover bee_*.mjs shims in its own .bee/bin/ gets
+// them removed on the next --apply; a second run plans nothing further; a
+// brand-new host never sees them appear in the first place (listTemplateHelpers()
+// already stopped copying them once shim-retire-1 deleted the source templates
+// - this section only proves the explicit *removal* pass, which is the part
+// that would otherwise never happen for an already-onboarded host).
+const RETIRED_HELPER_NAMES = [
+  "bee_status.mjs",
+  "bee_cells.mjs",
+  "bee_reservations.mjs",
+  "bee_decisions.mjs",
+  "bee_state.mjs",
+  "bee_backlog.mjs",
+  "bee_capture.mjs",
+  "bee_reviews.mjs",
+  "bee_feedback.mjs",
+];
+
+{
+  const staleTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-onboard-stale-shims-"));
+  const staleHome = makeFakeHome();
+  try {
+    fs.mkdirSync(path.join(staleTmp, ".bee", "bin"), { recursive: true });
+    for (const name of RETIRED_HELPER_NAMES) {
+      fs.writeFileSync(path.join(staleTmp, ".bee", "bin", name), "// legacy shim\n", "utf8");
+    }
+    // A live, non-retired file in the same directory must never be touched -
+    // the removal pass targets exact retired basenames only (must_haves
+    // prohibition: never a generic rm of unmanaged files).
+    fs.writeFileSync(path.join(staleTmp, ".bee", "bin", "bee.mjs"), "// dispatcher\n", "utf8");
+
+    const stalePlan = runOnboard(["--repo-root", staleTmp, "--json"], staleHome);
+    const stalePlanActions = (stalePlan.payload?.plan || [])
+      .filter((i) => i.action === "remove_helper")
+      .map((i) => i.path)
+      .sort();
+    check(
+      JSON.stringify(stalePlanActions) ===
+        JSON.stringify(RETIRED_HELPER_NAMES.map((n) => `.bee/bin/${n}`).sort()),
+      "stale host: plan lists a remove_helper item for every leftover retired shim",
+      JSON.stringify(stalePlanActions),
+    );
+    check(fs.existsSync(path.join(staleTmp, ".bee", "bin", "bee_status.mjs")),
+      "stale host: plan mode writes nothing (shim still on disk before apply)");
+
+    const staleApply = runOnboard(["--repo-root", staleTmp, "--apply", "--json"], staleHome);
+    check(staleApply.payload?.status === "applied", "stale host: apply succeeds", staleApply.stderr);
+    for (const name of RETIRED_HELPER_NAMES) {
+      check(!fs.existsSync(path.join(staleTmp, ".bee", "bin", name)),
+        `stale host: ${name} deleted from .bee/bin on --apply`);
+    }
+    check(fs.existsSync(path.join(staleTmp, ".bee", "bin", "bee.mjs")),
+      "stale host: an unrelated .bee/bin/bee.mjs survives the removal pass untouched");
+
+    // --- idempotence: a second run plans zero remove_helper items -----------
+    const staleReplan = runOnboard(["--repo-root", staleTmp, "--json"], staleHome);
+    const replanActions = (staleReplan.payload?.plan || [])
+      .filter((i) => i.action === "remove_helper");
+    check(replanActions.length === 0,
+      "idempotence: re-running onboarding after removal plans zero remove_helper items",
+      JSON.stringify(replanActions));
+    check(staleReplan.payload?.status === "up_to_date",
+      "idempotence: repo with shims already removed reports up_to_date (no residual drift)",
+      JSON.stringify(staleReplan.payload));
+  } finally {
+    fs.rmSync(staleTmp, { recursive: true, force: true });
+    fs.rmSync(staleHome, { recursive: true, force: true });
+  }
+}
+
+// --- fresh onboard: a brand-new host never gets the retired shims ----------
+{
+  const freshTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-onboard-fresh-noshims-"));
+  const freshHome = makeFakeHome();
+  try {
+    const freshApply = runOnboard(["--repo-root", freshTmp, "--apply", "--json"], freshHome);
+    check(freshApply.payload?.status === "applied", "fresh onboard: apply succeeds", freshApply.stderr);
+    const binNames = listMjs(path.join(freshTmp, ".bee", "bin"));
+    const leftoverShims = binNames.filter((n) => RETIRED_HELPER_NAMES.includes(n));
+    check(leftoverShims.length === 0,
+      "fresh onboard: a brand-new host's .bee/bin ends with no retired bee_*.mjs shims",
+      JSON.stringify(binNames));
+    check(binNames.includes("bee.mjs"),
+      "fresh onboard: .bee/bin/bee.mjs (the sole dispatcher) is vendored");
+  } finally {
+    fs.rmSync(freshTmp, { recursive: true, force: true });
+    fs.rmSync(freshHome, { recursive: true, force: true });
+  }
+}
+
 // --- suite-wide isolation invariant -----------------------------------------
 // Helper-level check: not a single spawn across the whole suite inherited the
 // real HOME/USERPROFILE unmodified. spawnedHomes is populated by runOnboard

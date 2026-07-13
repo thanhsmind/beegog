@@ -1015,6 +1015,27 @@ function listTemplateHelpers() {
     .sort();
 }
 
+// ---------- retired helper shims (D2, shim-retire) --------------------------
+// bee.mjs <group> <verb> is the sole shipped CLI (decision bbc6bcea, D1); the
+// 9 per-group shims below were deleted from skills/bee-hive/templates/ in
+// shim-retire-1. listTemplateHelpers() is name-agnostic (readdir), so it
+// naturally stops copying them - but nothing ever deletes a copy a host
+// already has vendored into its own .bee/bin/, so a host upgrading through
+// this version would keep the dead shims forever without an explicit removal
+// pass. RETIRED_HELPERS is that removal list; only removal (never copy) uses
+// it going forward.
+const RETIRED_HELPERS = [
+  "bee_status.mjs",
+  "bee_cells.mjs",
+  "bee_reservations.mjs",
+  "bee_decisions.mjs",
+  "bee_state.mjs",
+  "bee_backlog.mjs",
+  "bee_capture.mjs",
+  "bee_reviews.mjs",
+  "bee_feedback.mjs",
+];
+
 function listTemplateLibModules() {
   if (!fs.existsSync(TEMPLATES_LIB_DIR)) {
     return [];
@@ -1440,6 +1461,14 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
       plan.push({ action: "copy_helper", path: `.bee/bin/${name}` });
     }
   }
+  // 3a. retired helper shims (D2): a host with a leftover bee_*.mjs shim in
+  // its own .bee/bin/ gets a removal item on the next apply. Idempotent - once
+  // the file is gone (this run, or already), no item is produced.
+  for (const name of RETIRED_HELPERS) {
+    if (fs.existsSync(path.join(repoRoot, ".bee", "bin", name))) {
+      plan.push({ action: "remove_helper", path: `.bee/bin/${name}` });
+    }
+  }
   for (const name of listTemplateLibModules()) {
     const source = fs.readFileSync(path.join(TEMPLATES_LIB_DIR, name), "utf8");
     const target = path.join(repoRoot, ".bee", "bin", "lib", name);
@@ -1727,6 +1756,16 @@ function applyPlan(
       case "copy_helper": {
         const name = path.basename(item.path);
         writeFileAtomic(target, fs.readFileSync(path.join(TEMPLATES_DIR, name), "utf8"));
+        break;
+      }
+      case "remove_helper": {
+        // Never a generic rm: only ever the exact retired-shim basename, and
+        // only ever under .bee/bin/ (item.path is always .bee/bin/<name>,
+        // constructed by this script - never host/user-supplied).
+        const name = path.basename(item.path);
+        if (RETIRED_HELPERS.includes(name) && path.dirname(item.path) === ".bee/bin") {
+          fs.rmSync(target, { force: true });
+        }
         break;
       }
       case "copy_lib": {

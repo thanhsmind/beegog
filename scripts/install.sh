@@ -251,17 +251,17 @@ node "$ONBOARD" --repo-root "$TARGET_DIR" --apply ${ONBOARD_FLAGS[@]+"${ONBOARD_
 
 # ---------- verify ----------
 
-STATUS="$(cd "$TARGET_DIR" && node .bee/bin/bee_status.mjs --json 2>/dev/null)" \
-  || fail "Verification failed: bee_status did not run."
+STATUS="$(cd "$TARGET_DIR" && node .bee/bin/bee.mjs status --json 2>/dev/null)" \
+  || fail "Verification failed: bee.mjs status did not run."
 printf '%s' "$STATUS" | node -e '
   const s = JSON.parse(require("fs").readFileSync(0, "utf8"));
-  if (!s.onboarding || s.onboarding.installed !== true) { console.error("bee_status reports not installed"); process.exit(1); }
+  if (!s.onboarding || s.onboarding.installed !== true) { console.error("bee.mjs status reports not installed"); process.exit(1); }
   console.log(`verify   onboarding ok (bee ${s.onboarding.bee_version}), phase: ${s.phase}`);
-' || fail "Verification failed: unexpected bee_status output."
+' || fail "Verification failed: unexpected bee.mjs status output."
 
 log ""
 log "bee installed."
 log "  next: open an agent session in $TARGET_DIR"
 log "  - Claude Code: the session preamble appears via hooks; or say \"Route this through bee: <task>\""
-log "  - Codex: the AGENTS.md BEE block bootstraps; first step is bee_status"
-log "  - scout any time: node .bee/bin/bee_status.mjs --json"
+log "  - Codex: the AGENTS.md BEE block bootstraps; first step is bee.mjs status"
+log "  - scout any time: node .bee/bin/bee.mjs status --json"
