@@ -84,7 +84,43 @@ status-display behavior keeps its settings pointing at a user-level copy instead
 
 **Stay out (non-opted projects).** Projects without the opt-in signal never receive
 the pair files, never gain a managed status-display record, and their up-to-date
-status is entirely unaffected by this mechanism's existence.
+status is entirely unaffected by this mechanism's existence. Such a project still
+shows a status line if the human's user-level settings name a user-level copy — but
+that copy is outside onboarding's reach and may be arbitrarily stale. Keeping it
+current is a manual copy from the canonical pair, and nothing in bee detects or
+reports its drift.
+
+### What the status display renders
+
+One line of session facts, then an optional second line of per-model token and cost
+totals. Every segment is omitted when its fact is unavailable, and an unavailable
+fact never fails the line (a missing subscription-usage report, a project outside
+version control, a model without an effort setting — each simply drops its segment).
+
+| Segment | Fact |
+|---|---|
+| location | The session's working directory, and its version-control branch when there is one |
+| model | The model's display name, plus its reasoning-effort level when that level is not the default |
+| context | Percentage of the context window **remaining** — never the percentage used |
+| session usage | Percentage of the rolling short-window subscription limit consumed, when the runtime reports one |
+| weekly usage | Percentage of the rolling weekly subscription limit consumed, when the runtime reports one |
+| cost | Per-model new/cached token totals and their billed cost, aggregated over the session and every subagent transcript |
+
+**Context colour is a workflow signal, not a gauge.** The colour of the context
+segment answers one question — "does the human need to think about a handoff?" —
+so its thresholds track bee's handoff mark (pause at roughly 65% of the window
+consumed, i.e. ~35% remaining), not an even split of the scale:
+
+| Context remaining | Colour | Meaning |
+|---|---|---|
+| above ~35% | calm (green) | routine work; nothing to do |
+| ~20-35% | caution (yellow) | the handoff mark is here; start wrapping up |
+| below ~20% | alarm (red) | write the handoff and pause |
+
+The rule this encodes: an alarm colour that is on for most of a working session is
+not an alarm. Any future retune keeps the caution band anchored on the handoff mark
+for exactly that reason. The subscription-usage segments follow the same principle —
+quiet by default, emphasized only once consumption is high enough to matter.
 
 **Manage the ignore section (every apply run).** Trigger: an apply run against
 any host project, opted in or not — the managed ignore section is unconditional.
