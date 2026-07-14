@@ -24,7 +24,7 @@
       "extraction": "haiku",
       "generation": {
         "kind": "cli",
-        "command": "bash -lc 'agy -p \"$(cat)\" --model \"Gemini 3.5 Flash (High)\" --dangerously-skip-permissions --print-timeout 30m'"
+        "command": "bash -lc 'agy -p \"$(cat)\" --model \"Gemini 3.5 Flash (High)\" --sandbox --mode plan --print-timeout 30m'"
       },
       "review": {
         "kind": "cli",

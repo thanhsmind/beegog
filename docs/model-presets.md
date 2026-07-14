@@ -71,6 +71,8 @@ Worker generation là Codex, cần quyền ghi workspace để reserve/implement
 
 An toàn đi kèm (tự động, decision 0018/0019): mọi `[DONE]` từ executor ngoài đều bị orchestrator chạy lại verify + check frozen-judge, không có ngoại lệ spot-check. Giữ `-s workspace-write` — không dùng `--yolo`/bypass toàn máy làm mặc định.
 
+> **Dấu `-` ở cuối lệnh là bắt buộc, không phải trang trí (AO19).** `codex exec --help`: *"[PROMPT] — nếu không truyền làm tham số (hoặc dùng `-`), prompt được đọc từ stdin"*. Bỏ dấu `-` đi thì codex **không bao giờ đọc prompt**, và tham số trần cuối cùng bị nuốt thành câu hỏi. Đúng lỗi này đã sống trong `.bee/config.json` của repo: `... --yolo ... workspace-write` — `workspace-write` đứng vào chỗ PROMPT, `-s` bị mất, nên advisor nhận đúng chuỗi `workspace-write` làm câu hỏi và sandbox chưa từng bật (`--yolo` = `--dangerously-bypass-approvals-and-sandbox`). Sửa 2026-07-14.
+
 **Mẹo vận hành** (từ pattern codex-first): kết quả cuối lấy qua `-o <file>` thay vì parse stream; nén stderr (`2>/dev/null`) để thinking noise không phình context; sửa lỗi tiếp theo dùng `codex exec resume --last` (giữ context, rẻ hơn chạy mới) — quá 2 vòng resume fail thì `[BLOCKED]` leo thang; cell cần MCP/secrets/tool của phiên thì không bao giờ route ra ngoài.
 
 ## 5. `antigravity-review` — Claude làm, Gemini/Antigravity (`agy`) phản biện
@@ -90,12 +92,12 @@ An toàn đi kèm (tự động, decision 0018/0019): mọi `[DONE]` từ execut
 }
 ```
 
-Muốn `agy` **implement** (worker generation) thay vì chỉ review — cần quyền sửa file và chạy node cho `.bee/bin`:
+Dùng `agy` làm worker **gather** (slot `generation`) — đọc repo, trả digest, **không cần quyền ghi**:
 
 ```json
 "generation": {
   "kind": "cli",
-  "command": "bash -lc 'agy -p \"$(cat)\" --model \"Claude Sonnet 4.6 (Thinking)\" --dangerously-skip-permissions --print-timeout 30m'"
+  "command": "bash -lc 'agy -p \"$(cat)\" --model \"Gemini 3.5 Flash (High)\" --sandbox --mode plan --print-timeout 30m'"
 }
 ```
 
@@ -103,10 +105,13 @@ Cờ cần biết (`agy --help`, smoke-test 2026-07-14):
 
 - `-p/--print` = chạy một prompt non-interactive; **prompt là tham số, không phải stdin** → bắt buộc `"$(cat)"`.
 - `--model` nhận đúng tên hiển thị trong `agy models` (`Gemini 3.1 Pro (High)`, `Claude Opus 4.6 (Thinking)`, `Gemini 3.5 Flash (Low)`…) — chạy `agy models` để lấy danh sách hiện có.
-- `--mode plan` = không sửa file → đây là dạng read-only cho slot `review`. Đây là chế độ agent, **không phải sandbox cứng** như `codex -s read-only`; cần siết thêm thì kèm `--sandbox`.
-- `--dangerously-skip-permissions` = auto-approve tool — chỉ dùng cho worker `generation`, đừng bật cho reviewer.
+- `--mode plan` = không sửa file; `--sandbox` = hạn chế terminal. Dùng **cả hai** cho mọi slot advice-class (gather, review) — AO8: slot chỉ đưa lời khuyên thì không cần quyền ghi.
 - `--print-timeout` mặc định **5 phút**, quá ngắn cho một cell thật → luôn nâng lên (30m).
 - `--add-dir` nếu cell cần đọc ngoài repo.
+
+> **`--dangerously-skip-permissions` đã bị gỡ khỏi mọi preset (2026-07-14).** Đo được: `agy --sandbox --mode plan` đọc repo và trả lời đúng câu hỏi thật mà **không** cần cờ đó — quyền ghi là thừa, không phải điều kiện. Và một worker CLI **nằm ngoài tầm write-guard của bee**: bee chỉ thấy dòng `bash -lc`, trích ra zero đường dẫn, rồi cho qua; mọi byte CLI ghi sau đó bee không thấy. Worker của bee có write-guard làm lưới chắn prompt-injection — worker CLI thì không có gì. Đừng bật lại cờ này làm mặc định (`swarming-reference.md:91`).
+
+> **Chưa dùng cli cho slot `generation` để CHẠY CELL.** Đo được 2026-07-14: cwd của một CLI ngoài **không phải** repo root (agy tự dời sang sandbox riêng của nó), nên các lệnh `.bee/bin/bee.mjs` bằng đường dẫn tương đối sẽ chạy vào một thư mục `.bee/` **ma** — reservation, cap, kết quả verify đều ghi vào nơi bee không đọc, trong khi worker vẫn báo done. Đường gather (chỉ đọc) thì an toàn; đường thực thi cell đang chờ lập kế hoạch lại.
 
 ## 6. `opencode-review` — reviewer qua opencode CLI
 

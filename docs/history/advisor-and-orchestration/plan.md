@@ -43,6 +43,27 @@ Measured at HEAD, this session:
 
 No L2/L3 discovery is warranted: `references/planning-reference.md`'s fan-out table gives high-risk a standalone `approach.md`; see it for the risk map and rejected alternatives.
 
+## Discovery-2 — L1 (Slice 2A): four probes against the real external CLI
+
+The user's configured executor is `agy` (`/home/thanhsmind/.local/bin/agy`), driven as
+`bash -lc 'agy -p "$(cat)" --model "Gemini 3.5 Flash (High)" --dangerously-skip-permissions --print-timeout 30m'`.
+Everything below was **measured this session**, not reasoned about. Each row is a run.
+
+| # | Probe | Result | Consequence |
+|---|---|---|---|
+| 1 | Read a repo file by relative path (`.bee/workers/canary.txt`, unique marker) | **PASS** — returned the marker byte-exact | A cli tier **can** serve as a read-only gather worker. This is the whole basis of Slice 2A. |
+| 2 | Write a repo file by **relative** path, via the CLI's file tool | **SILENT FAILURE** — replied `WROTE`, exit 0, and **no file was created anywhere on disk** (`find` over `$HOME`, 10-minute window: zero hits) | A cli worker can **report success while having done nothing**. Decision 0019's "accept by file, never by exit" is not paranoia — it is load-bearing, and this is the run that proves it. |
+| 3 | Write a repo file by **relative** path, via the CLI's shell tool | **WRONG TARGET** — the file was really created, inside `/home/thanhsmind/.gemini/antigravity-cli/scratch/.bee/workers/`. The CLI even narrated it: *"Created the directory `.bee/workers/` inside `/home/thanhsmind/.gemini/antigravity-cli/scratch`"* | **The external CLI's cwd is NOT the repo root**, and bee cannot make it so — the CLI relocates itself after launch. Every relative path in the shipped protocol (`.bee/workers/<id>.prompt.md`, `node .bee/bin/bee.mjs …`) misfires under such a CLI. |
+| 4 | Write a repo file by **absolute** path | **PASS** — real file, real content, in the repo | The protocol is salvageable, and the fix is exact: **absolute paths everywhere in a cli worker's contract.** |
+
+**What these four runs settle (and what they cost the plan):**
+
+- **A cli-shaped `generation` tier is viable for gathers — read-only, digest-on-stdout.** That is precisely what the Delegation contract's I/O workers are, so the user's ask is achievable (W8).
+- **A cli-shaped tier is NOT yet safe for *cell execution* under this CLI.** The execution contract requires the worker to run `.bee/bin` helpers (reserve → verify → cap → release) **against the repo** (`swarming-reference.md:91`: *"the external CLI must be able to edit the repo working tree and run node"*). Probe 3 shows those relative invocations would run in the CLI's private scratch — the helpers would touch a **phantom `.bee/`**, and reservations, caps, and verify results would all be written somewhere bee never reads, while the worker cheerfully reports done. **Slice 2A therefore ships the gather path only**; cli cell-execution stays gated behind W9's absolute-path rewrite plus its own dogfood.
+- **Probe 2 is a new instance of a standing pattern**, not a new pattern: *fail-open turns a broken worker into green* (`critical-patterns.md:6`). Here the fail-open is the model's own claim of success. The countermeasure is already law (accept by artifact); Slice 2A's job is to make the *gather* path obey it too — for a gather, the artifact is the digest on stdout, and an empty/garbled digest is a failed run, never a silent one.
+
+**Security note the user must see (it is their machine, but the house rule is explicit):** the configured command carries `--dangerously-skip-permissions`, while `swarming-reference.md:91` says *"never a machine-wide bypass (`--yolo`-style flags) as the house default"*, and AO8 puts advice-class slots read-only. A **gather** needs no write access at all. Probe 4 proves the flag is not decorative — with an absolute path this worker **can write anywhere the user can**.
+
 ## Slices
 
 Cells are created for the **current slice only** (Slice 0 + Slice 1). Later slices are described here as shape, never as cells.
@@ -61,13 +82,25 @@ Nothing in this feature is verifiable until this lands. A guard change proven by
 
 **S2 (gates the logger's `agent` column, not the logger).** Can a `PreToolUse` payload distinguish an orchestrator tool call from a subagent one? Probe hook dumps its stdin payload, bound on `Read`; run once at top level and once inside a dispatched subagent; diff. Answer is recorded either way — a NO is a finding, not a failure.
 
-### Slice 2 — Guard + "config is the authority" (AO5, AO1-guard, AO8)
+### Slice 2 — SPLIT (see Discovery-2). 2A = the CLI-tier path; 2B = the rest of AO5/AO8.
 
-- **W1** — `hooks/bee-model-guard.mjs:123-146` **and its byte-identical mirror** `.bee/bin/hooks/bee-model-guard.mjs` (they move together). Two holes: (i) `model` accepted as any non-empty string → per AO5 it must **equal the model configured for the declared tier** (`resolveTier`); (ii) an anchored `[bee-tier:]` marker asserts intent and **selects nothing** → per AO5 the marker satisfies **`ceiling` only**, where "inherit" *is* the correct semantics (decision 0015).
-- **W2** — Remove the degenerate check (`bee-swarming/SKILL.md:43-45`): the hardcoded `haiku < sonnet < opus` ladder that **silently skips the configured advisor**. Per AO5 this is the model overruling its owner; **deleting it is the point, not a side effect.** Narrow at most to the one honest no-op (advisor resolves to literally the same model as the worker). Generalise: a dispatch declaring `generation`/`extraction` must run the configured model for that tier; same-family fallback only when the tier is unconfigured.
-- **W6 (AO8)** — the advisor runs **read-only**. Today `.bee/config.json`'s advisor is `codex exec … --yolo … workspace-write`.
+Slice 2 as originally shaped (W1 + W2 + W6) is **split**, per the Scope-Reduction Prohibition — nothing is dropped, the boundary is drawn and the user chooses. The trigger: the user's own config exercises a path this plan never modelled — a **cli-shaped `generation` tier**, i.e. an out-of-family model doing the *gather* work, not just the *cell* work. Discovery-2 proves that path is broken in ways W1/W2/W6 never touch.
 
-**Open, must be answered by validating, not assumed:** AO5 says "enforced at config-validate time" — **there is no config-validate stage.** `normalizeModels`/`normalizeTierValue` (`state.mjs:108-124`) **silently ignore invalid shapes and drop unknown keys**; `bee.mjs` has no `config validate` verb; the only precedent is the passive `STALE_ADVISOR_NOTICE` (`state.mjs:679-689`), a warning not a refusal. The host for this validation must be **named** (onboarding? `bee status`? `resolveTier` itself?), and it is net-new plumbing.
+#### Slice 2A — Make a cli-shaped tier actually work (the user's ask)
+
+- **W7 (new)** — **The External Executor invocation contract is wrong.** `bee-swarming/references/swarming-reference.md:85` tells the dispatcher to run `<command> -o <file> - < prompt.md`, **appending flags to the user's configured command**. Any command that is not codex-shaped breaks: with `bash -lc '…'` the `-o <file> -` lands on **bash**, not on the worker CLI. Fix: the configured command is invoked **verbatim**; the prompt goes in on **stdin**; stdout goes to the job log; **nothing is appended, ever.** Config is the authority — down to the argv.
+- **W8 (new)** — **The Delegation contract has no cli branch at all.** `bee-hive/references/routing-and-contracts.md:201` names exactly two transports (`model` param, anchored marker) and presumes an Agent/Task dispatch unconditionally. Every skill's gather step cites it (`bee-exploring:23`, `bee-planning:45`, `bee-validating:35`, `bee-reviewing:89`, `bee-scribing:20`, `bee-compounding:29`, `bee-grooming:70`, `bee-briefing:69`, `bee-xia:30`, `bee-hive:67`) — **and so does every plain-conversation fan-out, where no skill routes at all.** `AGENTS.block.md:48` says "gathers default to the generation tier". So the moment `generation` is cli-shaped, the single most-travelled path in bee is undefined. Fix: the contract gains the `resolveTier(...).type === 'cli'` branch — a **read-only gather** runs the configured command via Bash, prompt on stdin, **stdout IS the digest**. No `result.json`, no cell, no reservation: a gather writes nothing, so the whole artifact-acceptance apparatus is not needed for it.
+- **W9 (new)** — **Absolute paths are not a style preference; they are the contract.** Discovery-2 proves an external CLI's cwd is **not** the repo root and cannot be assumed to be. Every path handed to a cli worker — the contract file, `.bee/bin/bee.mjs`, the files it must touch — is **absolute**. The current protocol is relative throughout (`.bee/workers/<id>.prompt.md`, `node .bee/bin/bee.mjs …`), which under a sandboxing CLI misfires **silently and reports success**.
+- **W10 (part of W1)** — `bee-model-guard.mjs:133`: `modelForTier(root,"generation","claude") || "generation"`. When the tier is cli-shaped `modelForTier` correctly returns `null` (by design, `state.mjs:703`), so the deny message's FIX line tells the agent to `pass model: "generation"` — **a model name that does not exist.** The guard's own remediation advice sends the agent into a second failure. Fix, per AO5: resolve the declared tier; if it is cli-shaped, **deny the Agent/Task dispatch** and point at the external-executor path instead of naming a model.
+- **W11** — the dogfood. Decision 0019 self-reports **confidence 0.6** — "the dispatch protocol is prose and has NOT run a real external worker yet — first dogfood pending" (`0019:6`), and lists it under Deferred (`0019:41`). Slice 2A closes it with a real run, or reports honestly that it cannot.
+
+#### Slice 2B — AO5's model-equality rule + the degenerate check + the read-only advisor (deferred, NOT dropped)
+
+- **W1 (remainder)** — `model` is accepted as any non-empty string (`bee-model-guard.mjs:123`); AO5 requires it **equal the model configured for the declared tier**. **Open design question, and the reason this is not in 2A:** the guard's two transports are *alternatives* — a dispatch may carry a `model` param with **no marker at all**, in which case **there is no declared tier to compare against**. Enforcing AO5 literally therefore forces a second, larger decision: *does every dispatch now require a marker?* That is a change to the transport contract itself, not a hole-plug, and it deserves its own gate.
+- **W2** — remove the degenerate check (`bee-swarming/SKILL.md:43-45`), the hardcoded `haiku < sonnet < opus` ladder that silently skips the configured advisor. Per AO5, deleting it **is the point, not a side effect**.
+- **W6 (AO8)** — the advisor runs **read-only**; today it is `codex exec … --yolo … workspace-write`.
+
+**Still open, still owed to validating (unchanged):** AO5 says "enforced at config-validate time" — **there is no config-validate stage.** `normalizeModels`/`normalizeTierValue` (`state.mjs:108-124`) silently ignore invalid shapes; `bee.mjs` has no `config validate` verb; the only precedent is the passive `STALE_ADVISOR_NOTICE` (`state.mjs:679-689`), a warning not a refusal. The host must be **named**, and it is net-new plumbing.
 
 ### Slice 3 — Visibility + measurement (AO1-logger, AO3-agents)
 
@@ -105,19 +138,29 @@ The only part with leverage on the bill. Orchestrator's window becomes a control
 | **Removal census** | The degenerate check's removal is verified by **invariants, not by grepping the names deleted** (learning 20260711); re-derive any constant computed from it. |
 | **Migration** | An advisor previously *skipped* by the degenerate check will now be **consulted**. Blast radius small (shipped presets ship `advisor: null`) but the behavior change is real and belongs in the release note. |
 
-## Current Slice — bounded, implementation-ready
+## Current Slice — Slice 2A (Slice 0 + Slice 1 are CLOSED, all 5 cells capped)
 
-**Slice 0 + Slice 1.** Three cells, no dependencies between them (all three may run in parallel):
+Slice 0 (hook suites repaired and wired into `commands.verify`) and Slice 1 (both spikes; S2's verdict superseded by AO15) are complete. Baseline verify is green this session: **1011 checks, 0 failures.**
 
-| Cell | Lane | Files bounded to | Verify command (dry-run this session) |
+**Slice 2A — make a cli-shaped tier work for gathers, and prove it with a real run.**
+
+| Cell | Lane | Files bounded to | Verify command |
 |---|---|---|---|
-| `ao-0` | standard | `hooks/test_model_guard.mjs`, `.bee/config.json` | `node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_lib.mjs` — **correctly RED pre-fix (18 failures), goes green on completion** |
-| `ao-s1` | spike | `.bee/spikes/advisor-and-orchestration/s1-tiny-worker.md` | `test -s <spike> && grep -qE '^## (Verdict\|Answer)' <spike>` — regex validated |
-| `ao-s2` | spike | `.bee/spikes/advisor-and-orchestration/s2-payload-probe.md`, `probe-hook.mjs` | same shape, regex validated |
+| `ao-2a` | standard | `skills/bee-swarming/references/swarming-reference.md` | contract text: command invoked verbatim (nothing appended), prompt on stdin, **all worker-facing paths absolute**; asserted by a doc-contract test row |
+| `ao-2b` | standard | `skills/bee-hive/references/routing-and-contracts.md`, `skills/bee-hive/templates/AGENTS.block.md` | the Delegation contract gains the `type === 'cli'` gather branch (stdout **is** the digest; empty digest = failed run) |
+| `ao-2c` | standard | `hooks/bee-model-guard.mjs`, `.bee/bin/hooks/bee-model-guard.mjs` (byte-identical mirror), `hooks/test_model_guard.mjs` | `node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs` — new rows: a cli-shaped tier **denies** the Agent/Task dispatch, and the FIX line **never names a non-existent model** |
+| `ao-2d` | spike | `.bee/spikes/advisor-and-orchestration/s3-cli-gather-dogfood.md` | a real `agy` gather run, end to end, digest captured — closes decision 0019's "first dogfood pending" (0.6) or reports honestly that it cannot |
 
-`ao-0` explicitly does **not** touch `hooks/bee-model-guard.mjs`: this cell restores the *ability to test* the guard; changing the guard is Slice 2. Neither spike writes source.
+**Ordering:** `ao-2a` and `ao-2b` are the contract; `ao-2c` is the guard that enforces it; `ao-2d` is the proof. `ao-2c` depends on nothing, but the config flip to `generation: {kind:"cli"}` happens **only after `ao-2d` returns green** — flipping first would route every gather in every session through an unproven path.
 
-Slices 2–6 are shape only. No cell for them exists, and Gate 3 approval does not cover them.
+**Not in this slice, and not dropped:** Slice 2B (AO5 model-equality, W2 degenerate-check removal, W6 read-only advisor) and Slices 3–6. No cell for them exists, and Gate 3 approval does not cover them.
+
+## Migration / release note (owed, carried forward)
+
+Two behavior changes now owe the release note, not one:
+
+1. **(from Slice 2B, still owed)** An advisor previously *skipped* by the degenerate check will now be **consulted**.
+2. **(new, Slice 2A)** A cli-shaped tier changes how workers are invoked: the configured command is run **verbatim** — bee no longer appends `-o <file> -`. Any host that relied on bee adding those codex flags must put them in its own `command` string.
 
 ## Rejected Shapes
 
