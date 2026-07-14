@@ -211,6 +211,25 @@ a second run plans zero removals; a freshly onboarded host never receives the
 retired scripts at all. The installer's own post-install verification and its
 printed quickstart also speak only the unified dispatcher's status command.
 
+**Fetch the workflow source without a full working tree (bootstrap installs).**
+Trigger: an install invoked with no local source, so the installer must fetch the
+workflow from its published repository at some reference. What changes: the fetch
+checks out only the trees the installer actually reads — the skill set and the
+plugin manifest — never the whole tree. Why it matters: the workspace filesystem
+of one supported platform rejects several characters that the source platform
+allows in filenames (colon, asterisk, question mark, quote, angle brackets,
+pipe), plus reserved device names and trailing dots or spaces; a single such path
+anywhere in the reference aborts the *entire* working-tree materialisation, and
+the install would otherwise proceed against an empty source and blame the
+network. Narrowing the checkout makes the install independent of every path the
+installer never reads, on any reference including historical released ones. After
+the fetch the installer probes for the workflow's own bootstrap script and stops
+with an explicit source error if it is absent — an empty source is never mistaken
+for a network fault again. Companion rule (the other half of the same guarantee):
+**every tracked path in this repository must be checkout-able on the restrictive
+platform**, and the repository's verification command fails when any tracked path
+carries a forbidden character, a reserved device name, or a trailing dot/space.
+
 **Wire the second-runtime guards (repo-hook installs).** Trigger: any run for a
 project that vendors repo-local hooks (the explicit opt-in flag or its sticky
 record). What blocks it: nothing — the projection is derived from the same hook

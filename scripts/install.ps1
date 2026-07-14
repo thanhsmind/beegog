@@ -89,9 +89,29 @@ try {
     }
     $cleanupDir = Join-Path ([IO.Path]::GetTempPath()) ("bee-install-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
     Write-Host "fetch    $RepoUrl (ref: $Ref)"
-    git clone --quiet --depth 1 --branch $Ref $RepoUrl (Join-Path $cleanupDir 'bee')
+    $clonePath = Join-Path $cleanupDir 'bee'
+
+    # Check out only the trees the installer reads. Windows rejects : * ? " < > | in
+    # filenames, so a full checkout of any ref carrying such a path aborts the working
+    # tree ("invalid path") and leaves an empty clone that fails much later. A sparse
+    # checkout keeps the install working on every ref, historical tags included.
+    # (Keep this file pure ASCII: the onboard test enforces it.)
+    # No 2> redirection anywhere below: under Windows PowerShell 5.1 with
+    # $ErrorActionPreference = 'Stop', redirecting a native command's stderr turns its
+    # warnings into terminating NativeCommandErrors. Exit codes and the probe decide.
+    git clone --quiet --depth 1 --branch $Ref --no-checkout $RepoUrl $clonePath
     if ($LASTEXITCODE -ne 0) { Fail 'Clone failed. Check network access to github.com/thanhsmind/beegog.' }
-    $beeSrc = Join-Path $cleanupDir 'bee'
+
+    # sparse-checkout needs git 2.25+; on older git it exits non-zero and the checkout
+    # below is simply a full one (which may still trip over an invalid path; the probe
+    # is what turns that into an honest error instead of a silent empty source).
+    git -C $clonePath sparse-checkout set skills .claude-plugin
+    git -C $clonePath checkout --quiet HEAD
+
+    $beeSrc = $clonePath
+    if (-not (Test-Path (Join-Path $beeSrc 'skills\bee-hive\scripts\onboard_bee.mjs'))) {
+      Fail "Checkout of $RepoUrl (ref: $Ref) produced no skills/ tree. Update git to 2.25+ (sparse checkout), or pass -Source <local-checkout>."
+    }
   }
 
   $onboard = Join-Path $beeSrc 'skills\bee-hive\scripts\onboard_bee.mjs'
