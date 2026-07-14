@@ -73,7 +73,83 @@ An toàn đi kèm (tự động, decision 0018/0019): mọi `[DONE]` từ execut
 
 **Mẹo vận hành** (từ pattern codex-first): kết quả cuối lấy qua `-o <file>` thay vì parse stream; nén stderr (`2>/dev/null`) để thinking noise không phình context; sửa lỗi tiếp theo dùng `codex exec resume --last` (giữ context, rẻ hơn chạy mới) — quá 2 vòng resume fail thì `[BLOCKED]` leo thang; cell cần MCP/secrets/tool của phiên thì không bao giờ route ra ngoài.
 
-## 5. `budget` — tiết kiệm tối đa
+## 5. `antigravity-review` — Claude làm, Gemini/Antigravity (`agy`) phản biện
+
+`agy` không đọc prompt từ stdin (khác `codex exec -`) và không có `-o`. Giữ nguyên transport stdin của bee bằng wrapper `"$(cat)"`:
+
+```json
+"models": {
+  "claude": {
+    "extraction": "haiku",
+    "generation": "sonnet",
+    "review": {
+      "kind": "cli",
+      "command": "bash -lc 'agy -p \"$(cat)\" --model \"Gemini 3.1 Pro (High)\" --mode plan --print-timeout 30m'"
+    }
+  }
+}
+```
+
+Muốn `agy` **implement** (worker generation) thay vì chỉ review — cần quyền sửa file và chạy node cho `.bee/bin`:
+
+```json
+"generation": {
+  "kind": "cli",
+  "command": "bash -lc 'agy -p \"$(cat)\" --model \"Claude Sonnet 4.6 (Thinking)\" --dangerously-skip-permissions --print-timeout 30m'"
+}
+```
+
+Cờ cần biết (`agy --help`, smoke-test 2026-07-14):
+
+- `-p/--print` = chạy một prompt non-interactive; **prompt là tham số, không phải stdin** → bắt buộc `"$(cat)"`.
+- `--model` nhận đúng tên hiển thị trong `agy models` (`Gemini 3.1 Pro (High)`, `Claude Opus 4.6 (Thinking)`, `Gemini 3.5 Flash (Low)`…) — chạy `agy models` để lấy danh sách hiện có.
+- `--mode plan` = không sửa file → đây là dạng read-only cho slot `review`. Đây là chế độ agent, **không phải sandbox cứng** như `codex -s read-only`; cần siết thêm thì kèm `--sandbox`.
+- `--dangerously-skip-permissions` = auto-approve tool — chỉ dùng cho worker `generation`, đừng bật cho reviewer.
+- `--print-timeout` mặc định **5 phút**, quá ngắn cho một cell thật → luôn nâng lên (30m).
+- `--add-dir` nếu cell cần đọc ngoài repo.
+
+## 6. `opencode-review` — reviewer qua opencode CLI
+
+Chưa smoke-test trên máy này (opencode chưa cài) — cờ lấy từ docs opencode.ai, kiểm lại bằng `opencode run --help` trước khi tin.
+
+```json
+"models": {
+  "claude": {
+    "extraction": "haiku",
+    "generation": "sonnet",
+    "review": {
+      "kind": "cli",
+      "command": "bash -lc 'opencode run --agent plan -m anthropic/claude-opus-4-6 \"$(cat)\"'"
+    }
+  }
+}
+```
+
+Worker implement (ghi được file):
+
+```json
+"generation": {
+  "kind": "cli",
+  "command": "bash -lc 'opencode run --agent build --auto -m anthropic/claude-sonnet-4-6 \"$(cat)\"'"
+}
+```
+
+Cờ cần biết:
+
+- `opencode run "<message>"` — prompt cũng là tham số, **không có stdin** ([issue #25508](https://github.com/anomalyco/opencode/issues/25508) còn mở) → lại dùng `"$(cat)"`.
+- `-m/--model` theo dạng `provider/model` (`anthropic/claude-opus-4-6`, `openai/gpt-5.5`…).
+- `--agent plan` = không sửa file (read-only cho reviewer); `--agent build` + `--auto` = auto-approve, dùng cho worker.
+- Siết cứng hơn thì khai báo agent riêng trong `opencode.json`: `"permission": { "edit": "deny", "bash": "deny" }`.
+- Không có `-o` → lấy kết quả từ stdout; `--format json` nếu muốn parse.
+
+## Ràng buộc chung cho mọi executor ngoài
+
+- **Prompt luôn đi qua stdin** từ `.bee/workers/<cell-id>.prompt.md` (giao kèo dispatch trong `bee-swarming`). CLI nào không đọc stdin thì bọc `bash -lc '... "$(cat)"'` — đừng nhét prompt thẳng vào command trong config.
+- `"$(cat)"` truyền prompt qua argv nên vẫn dính trần ARG_MAX; prompt cực dài (đính kèm diff to) thì cân nhắc rút gọn contract file hoặc dùng cơ chế attach file của chính CLI đó.
+- Slot `review` phải **read-only** (`--mode plan` / `--agent plan` / `-s read-only`); chỉ slot `generation` mới được quyền ghi, và giới hạn trong repo — không lấy bypass toàn máy làm mặc định.
+- Mọi `[DONE]` từ executor ngoài đều bị orchestrator chạy lại verify + frozen-judge (decision 0018/0019), không có ngoại lệ.
+
+## 7. `budget` — tiết kiệm tối đa
 
 Review rơi về generation (chấp nhận mất reviewer độc lập — hợp lane tiny/small):
 
