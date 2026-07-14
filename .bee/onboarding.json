@@ -1,18 +1,18 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.42",
+  "bee_version": "0.1.43",
   "managed": {
     "agents_block": "1bc8843bc9ed79c511c36327a31e9d25b4ba0e89f402dad845a8e843bcd431d1",
     "gitignore_block": "add7be1e25d3c4b7bbedff2f80c0f0e577c84610ebbac5d1eec1d70427424886",
     "helpers": {
-      "bee.mjs": "2f32b88de07e314324a8f5f973925d27a6cb8f0fc5eddb0becc33a62ce5817c2"
+      "bee.mjs": "1050a5b8d8ba5010b9affb1a05b95d02920b227555c5760e14a9660e3c4702da"
     },
     "lib": {
       "backlog.mjs": "2f4613721fa89bd264a4c02c459240e92d21159e7ceae3a9320e35d27c8ef0c8",
       "capture.mjs": "6ce4fa5947a015f156468aa5bc40e264a9d7a170744e8700de1d90b969b3908c",
-      "cells.mjs": "eca342c8a02a291dc8bb27f5f73a8b71444071fabd8daeca038371ffae8c285f",
+      "cells.mjs": "302104ad04327253909929f539aa1c28acf73741cb05def49ad0f0457b308e04",
       "claims.mjs": "53db159edf5e84ee78774c6f5141b7a2a355c31451920da60d6fb9fb02a13d52",
-      "command-registry.mjs": "2149ea9c489ab9a79b1a232a5d2abae97b8a4430a7ce1dd7fc226cf4e98eb72c",
+      "command-registry.mjs": "670f60dd8fa185392bf879d91684b43d84f69e57db2bb1542a24ca323e8e2bba",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
@@ -21,7 +21,7 @@
       "inject.mjs": "4ab94dbacd8e310600808c213fb387727dda6300d839976b77439701f36cf8d9",
       "reservations.mjs": "4643ef572599f1439504741499f3ec982c4344e1e3551052c2d27e66617fec86",
       "reviews.mjs": "56b7110d1737e515b282cc757354580dadbaf76f88f516581c90717630c9cead",
-      "state.mjs": "1bcf03dc61523740098852eb9d4a34dc27c740c2b17934167a95fa21ff04efd3",
+      "state.mjs": "6c98a721740f5a2108ae6bd2b27213fbd6d12c2111fa42510cdc70357c5cc3e5",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
     },
     "repo_hooks": {
@@ -41,5 +41,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-14T09:27:59.949Z"
+  "updated_at": "2026-07-14T14:30:41.136Z"
 }

@@ -459,6 +459,12 @@ its knowledge actually landed — the state and the specs can no longer disagree
   it mid-work would fire while the sync is not yet due, and never blocking on it
   at all is precisely what allowed a feature to be closed with its settled
   behavior absent from every spec (chain-integrity D2).
+- R24 — A configured external assistant whose reply is free prose is proven live
+  only by a **known-answer probe** — a question whose correct answer is already
+  known — never by its exit status alone. The command string is a contract with
+  an argument grammar: whether the assistant can even *receive* the question is
+  part of what must be validated. An assistant that exits zero while never having
+  been handed the prompt looks healthy and is silently useless, forever.
 - R23 — No instruction anywhere in the workflow may name a phase outside the
   closed vocabulary. A documented command that names a non-existent phase fails
   every time it is followed, and an agent whose documented command fails begins
