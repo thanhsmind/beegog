@@ -48,6 +48,8 @@ import {
   KNOWN_PHASES,
   MODEL_TIERS,
   isKnownPhase,
+  checkPhaseTransition,
+  checkScribingRunPhase,
   startFeature,
   hasStaleAdvisorKey,
   STALE_ADVISOR_KEY_WARNING,
@@ -775,6 +777,17 @@ function handleStateSet(root, flags) {
     );
   }
   const { record: state, write } = resolveMutationTarget(root, laneFeature, 'set');
+  // chain-integrity D1-REVISED / D2 — read `from` off the record actually being
+  // mutated (lanes included), never off global state.
+  let waived = null;
+  if (flags.phase !== undefined) {
+    const target = String(flags.phase);
+    const transition = checkPhaseTransition(state.phase, target);
+    if (!transition.ok) throw new Error(transition.reason);
+    if (target === 'compounding-complete') {
+      waived = closeGuardScribingDebt(root, flags);
+    }
+  }
   const changed = [];
   if (flags.phase !== undefined) {
     state.phase = String(flags.phase);
@@ -797,10 +810,41 @@ function handleStateSet(root, flags) {
     changed.push('summary');
   }
   write(state);
+  // D4 — the waiver is loud and attributable. Logged AFTER the write succeeds so
+  // a refused close never leaves a decision claiming one happened.
+  if (waived && waived.length > 0) {
+    logDecision(root, {
+      decision: `Closed feature "${state.feature}" with scribing debt WAIVED for ${waived.length} capped behavior_change cell(s): ${waived.join(', ')}. Their settled behavior is NOT in docs/specs/.`,
+      rationale:
+        'Explicitly waived via `state set --phase compounding-complete --waive-scribing-debt`. bee refuses this close by default (chain-integrity D2); the waiver is the sanctioned door, and this record is its price.',
+      scope: 'repo',
+      source: 'agent',
+    });
+  }
+  const waiverNote = waived && waived.length > 0
+    ? ` — SCRIBING DEBT WAIVED for ${waived.length} cell(s): ${waived.join(', ')} (decision logged)`
+    : '';
   return {
     result: state,
-    text: `Updated state: ${changed.join(' ')}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
+    text: `Updated state: ${changed.join(' ')}.${laneFeature ? ` (lane "${laneFeature}")` : ''}${waiverNote}`,
   };
+}
+
+// chain-integrity D2/D4 — the close boundary is the ONE place scribing debt is a
+// wall instead of a signal. It lives here, not in state.mjs: scribingDebt is in
+// cells.mjs, and cells.mjs already imports state.mjs (a back-import would close
+// the cycle state.mjs:6-7 exists to avoid). Returns the waived cell ids when the
+// caller explicitly waived them, otherwise null. Throws when debt stands.
+function closeGuardScribingDebt(root, flags) {
+  const debt = scribingDebt(root);
+  if (debt.count === 0) return null;
+  if (flags['waive-scribing-debt']) return debt.cells;
+  throw new Error(
+    `set: refusing to close this feature — ${debt.count} capped behavior_change cell(s) have not been synced to docs/specs/: ${debt.cells.join(', ')}.\n` +
+      '"compounding-complete" asserts that scribing already ran for them. It has not.\n' +
+      'FIX: run bee-scribing to merge the settled behavior into its area spec, then `bee state scribing-run ...` to stamp it.\n' +
+      'If the behavior genuinely belongs in no spec, close with --waive-scribing-debt — it is permitted, but it logs a decision naming every cell you waived.',
+  );
 }
 
 function handleStateGate(root, flags) {
@@ -991,6 +1035,11 @@ function handleStateScribingRun(root, flags) {
   const date = at.slice(0, 10);
   const laneFeature = optionalLaneFlag(flags, 'scribing-run');
   const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
+  // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
+  // so it is also the door that must be guarded. It used to advance the phase
+  // from anywhere, with no check that execution had happened at all.
+  const phaseCheck = checkScribingRunPhase(state.phase);
+  if (!phaseCheck.ok) throw new Error(phaseCheck.reason);
   state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
   // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
   state.phase = 'compounding';
@@ -1630,7 +1679,7 @@ const HANDLERS = {
 // handoff fsh-4, D2/D4) is state.start-feature's lane-mode opt-in — a
 // DISTINCT flag name from the `--lane <feature>` string flag used by
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

@@ -32,6 +32,54 @@ export function isKnownPhase(phase) {
   return KNOWN_PHASES.includes(phase);
 }
 
+// chain-integrity D1-REVISED — the chain's tail is guarded at the DOOR, not by
+// phase name. The enum check above is the ONLY thing that used to stand between
+// `swarming` and `compounding-complete`, so a hand-typed close asserted that
+// scribing AND compounding had run when neither had.
+//
+// Why not "compounding only from scribing": nothing in bee ever sets phase
+// `scribing` (zero hits repo-wide) — bee-scribing goes straight to `state
+// scribing-run`, which produces `compounding` directly. That rule would have
+// made `compounding` unreachable. So instead:
+//   - `compounding` is not settable at all; only a real scribing run yields it
+//   - `scribing-run` demands a phase where execution has actually happened
+//   - `compounding-complete` demands `compounding` (and, in bee.mjs, zero debt)
+// Everything else stays permissive: every backward move (hive law 5 needs them)
+// and `idle`, the de-facto abandon verb.
+//
+// PURE by necessity: cells.mjs already imports this file, so the scribing-debt
+// half of the rule cannot live here — it lives at the bee.mjs choke point.
+export const SCRIBING_RUN_FROM = ['swarming', 'reviewing', 'scribing'];
+
+export function checkPhaseTransition(from, to) {
+  const current = from || 'idle';
+  if (to === 'compounding') {
+    return {
+      ok: false,
+      reason:
+        'set: phase "compounding" is not settable directly — it is produced only by RECORDING a real scribing run, never by asserting one. FIX: run `bee state scribing-run --feature <f> --areas "<a,b>" --next-action "<n>"`, which stamps last_scribing_run and advances the phase for you.',
+    };
+  }
+  if (to === 'compounding-complete' && current !== 'compounding') {
+    return {
+      ok: false,
+      reason:
+        `set: phase "compounding-complete" may only be entered from "compounding" (current: "${current}"). That name asserts BOTH scribing and compounding ran; setting it from "${current}" claims work that did not happen and shuts the intake gate on a feature that never closed. FIX: close the chain in order — bee-scribing (\`state scribing-run\`), then bee-compounding.`,
+    };
+  }
+  return { ok: true };
+}
+
+export function checkScribingRunPhase(from) {
+  const current = from || 'idle';
+  if (SCRIBING_RUN_FROM.includes(current)) return { ok: true };
+  return {
+    ok: false,
+    reason:
+      `scribing-run: refused from phase "${current}" — a scribing run records the spec sync for work that has been EXECUTED. Legal from: ${SCRIBING_RUN_FROM.join(', ')}. FIX: if execution really is done, the phase should say so; if it is not, there is nothing to scribe yet.`,
+  };
+}
+
 // Host-project standard commands (docs/09 item 1, decision D1): the record is
 // the primitive — .bee/config.json `commands`, no init.sh, no second location.
 export const COMMAND_KEYS = ['setup', 'start', 'test', 'verify'];

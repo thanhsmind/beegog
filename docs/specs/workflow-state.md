@@ -1,8 +1,8 @@
 ---
 area: workflow-state
-updated: 2026-07-13
-sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13)]
-decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md)]
+updated: 2026-07-14
+sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
+decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable)]
 coverage: partial
 ---
 
@@ -35,7 +35,11 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 
 | Element | Meaning |
 |---|---|
-| phase | Where the active feature stands. Closed vocabulary: idle, exploring, planning, validating, swarming, reviewing, scribing, compounding, grooming, and the terminal alias compounding-complete. Any other value is rejected. |
+| phase | Where the active feature stands. Closed vocabulary: idle, exploring, planning, validating, swarming, reviewing, scribing, compounding, grooming, and the terminal alias compounding-complete. Any other value is rejected — including plausible-sounding stage-completion names, which are not phases: completion is carried by the granted gate, never by a phase name. |
+| tail of the chain | The final stretch a feature must pass through to be closed: execution → a recorded knowledge sync → learning capture → the terminal state. Its three steps are the only route to a closed feature; each demands proof that the step before it actually happened, so a feature cannot be declared closed by asserting the closure. |
+| knowledge sync record | The durable stamp that the settled behavior of the current feature has been merged into its area specs. It carries the feature, the areas synced, and a precise timestamp. Recording it is the ONLY way to enter the learning-capture phase — that phase can never be asserted directly. |
+| spec debt | Every completed unit of work that changed observable behavior and was completed *after* the last knowledge sync for this feature. Zero while idle. It is advisory wherever it is displayed (status, session preamble, worker-return nudge — none of them block), and binding at exactly one moment: the close. |
+| debt waiver | The sanctioned way to close a feature whose spec debt is genuinely spec-irrelevant. It permits the close, but it is never silent: it records a durable decision naming every unit of work whose behavior was left out of the specs. |
 | gate | One of four named human approvals (context, shape, execution, review). Granted per feature; all four reset to ungranted when a feature starts. The review gate is granted only through a user-invoked review session that covers the feature — a feature closes normally with it ungranted. |
 | terminal state | idle or compounding-complete — the only phases from which a new feature may start. |
 | nonterminal cell | A unit of work still open, claimed, or blocked. Its existence blocks a new feature start until it is capped or explicitly dropped on the record. |
@@ -288,6 +292,54 @@ work left", and the session stops honestly. Claiming the chosen unit is
 crash-safe: the cross-session claim file is taken first, the work record
 second, and a failure of the second releases the first (no orphaned claim).
 
+### Closing a feature — the tail of the chain
+
+Closing is the one stretch of the pipeline where each step must *prove* the step
+before it happened. The phase vocabulary alone never granted that proof: the
+names asserted history ("both the knowledge sync and the learning capture have
+run"), while nothing checked whether either had. A feature could therefore be
+marked closed straight from execution, and this is exactly what happened
+repeatedly — the settled behavior of six completed units never reached the
+specs, and the only trace was a knowledge-sync record that stayed empty.
+
+Three rules now hold the tail together. Together they make "declare it closed"
+impossible; the only way to close is to actually close.
+
+**Entering learning capture is never an assertion.** The learning-capture phase
+cannot be set directly, from any phase. It is *produced* — and only produced —
+by recording a knowledge sync. Attempting to set it names the recording step as
+the way. This means the phase is reachable if and only if a real sync was
+stamped, because stamping it is the sole door.
+
+**Recording a knowledge sync demands that work was executed.** The recording
+step is refused unless the feature currently stands in a phase where execution
+has actually happened (execution, independent review, or the sync itself). It is
+not possible to sync the knowledge of work that was never done.
+
+**Reaching the terminal state demands the phase before it AND zero spec debt.**
+The terminal state may be entered only from learning capture, and only while no
+completed behavior-changing unit is still missing from the specs. The refusal
+names *every* such unit by identity — not a count — and discloses the waiver.
+A refused close is side-effect-free: the phase is left exactly as it was.
+
+**The waiver is a door, not a hole.** A feature whose settled behavior genuinely
+belongs in no spec may still be closed, by waiving the debt explicitly. The
+waiver permits the close and simultaneously records a durable decision naming
+every unit whose behavior was left out. Nothing about it is silent, and nothing
+about it is the default. It exists because a guard with no door gets a hole
+punched in it — a fail-close with no sanctioned exit teaches its user to work
+around the guard instead of through it.
+
+Everything outside the tail stays permissive: moving backward to an earlier
+phase is always legal (a failed feasibility check or a negative proof must be
+able to return to planning), and returning to idle — the way an abandoned
+exploration is dropped — is unaffected.
+
+**What each actor observes.** The agent attempting a dishonest close gets a
+refusal that says which step was skipped and how to perform it, and the record is
+untouched. The human sees a feature that cannot be reported as finished until
+its knowledge actually landed — the state and the specs can no longer disagree.
+
 ## Actors & Access
 
 - **The agent** runs every verb itself; the human never runs workflow
@@ -387,6 +439,32 @@ second, and a failure of the second releases the first (no orphaned claim).
   and surfaced as one warning by both the status command and the onboarding
   report; it never errors, and the status display renders no advisor line
   (decision de967733).
+- R19 — The learning-capture phase is never settable. It is produced only by
+  recording a knowledge sync, which is its sole door; any attempt to set it
+  directly is refused and names the recording step as the way. Consequently the
+  phase is reachable if and only if a knowledge sync was truly stamped
+  (chain-integrity D1-REVISED).
+- R20 — Recording a knowledge sync is refused unless the feature stands in a
+  phase where execution has happened (execution, independent review, or the sync
+  itself). Knowledge of work that was never done cannot be synced
+  (chain-integrity D3).
+- R21 — The terminal state may be entered only from learning capture, and only
+  while spec debt is zero. The refusal names every completed behavior-changing
+  unit still missing from the specs, by identity, and leaves the phase untouched.
+  A close whose debt is genuinely spec-irrelevant proceeds only through an
+  explicit waiver, which records a durable decision naming every waived unit —
+  never silently, never by default (chain-integrity D2/D4).
+- R22 — Spec debt is advisory everywhere it is displayed and binding only at the
+  close. Debt is a signal throughout the work and a wall at the door: blocking on
+  it mid-work would fire while the sync is not yet due, and never blocking on it
+  at all is precisely what allowed a feature to be closed with its settled
+  behavior absent from every spec (chain-integrity D2).
+- R23 — No instruction anywhere in the workflow may name a phase outside the
+  closed vocabulary. A documented command that names a non-existent phase fails
+  every time it is followed, and an agent whose documented command fails begins
+  improvising the state machine — which is how the tail came to be bypassed in
+  the first place. This rule is machine-checked, not remembered
+  (chain-integrity D6).
 
 ## Edge Cases Settled
 
@@ -436,13 +514,20 @@ second, and a failure of the second releases the first (no orphaned claim).
   behavior is proven by suite fixtures and real-hook-child rows, but the
   literal two-terminals + `/clear` walk-through on this machine has not been
   performed by the owner yet.
-- The rest of the workflow record's semantics (worker registry lifecycle,
-  scribing-run stamps and debt counting, reservation TTL policy) are not yet
-  specced here — contracts live in the CLI usage comments and
-  `docs/history/cli-mutations/walkthrough.md`.
-- Skill prose still references invalid phase names in places; aligning the
-  skills to the closed vocabulary is owned by the codex-runtime-parity
-  Dispatch-and-skills slice.
+- The remaining workflow-record semantics not yet specced here: worker registry
+  lifecycle and reservation TTL policy. (The knowledge-sync stamp and spec-debt
+  counting were on this list and are now specced above — closing them is what
+  chain-integrity did.)
+- Spec debt is counted against the default record only, so a feature run in its
+  own lane has its debt measured against the wrong record. The close guard is
+  therefore weaker for lane-scoped work than for the default pipeline. Known,
+  filed, not yet fixed.
+- The workflow record can still be written with any phase by a caller that
+  bypasses the command layer entirely — the tail guard lives at the command
+  layer, and the record writer itself validates nothing. Today this is safe only
+  because direct edits to the record are separately blocked, i.e. a guard is
+  load-bearing for what should be an invariant of the store. Known, filed, not
+  yet fixed.
 - The review-session flow inside a running review (delta re-review after a
   fix, batch cumulative-diff mechanics) is contract-specced in the reviewing
   skill's own reference, not here; this area owns only the records and their

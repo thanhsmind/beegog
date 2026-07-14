@@ -36,7 +36,7 @@
   },
   "verify": "cd /home/thanhsmind/projects/goglbe/beegog && grep -qiF \"type === 'cli'\" skills/bee-hive/references/routing-and-contracts.md && grep -qiF 'stdout' skills/bee-hive/references/routing-and-contracts.md && grep -qiF 'cli' skills/bee-hive/templates/AGENTS.block.md && echo DELEGATION_OK",
   "behavior_change": true,
-  "status": "open",
+  "status": "dropped",
   "deps": [],
   "decisions": [],
   "trace": {
@@ -49,6 +49,7 @@
     "behavior_change": false,
     "verification_evidence": null,
     "verify_output": null,
-    "verify_passed": null
+    "verify_passed": null,
+    "dropped_reason": "Written against the Slice 2A plan that FAILED validation (reports/validation-slice-2a.md, 7 blockers). Re-plan from scratch; backlog row filed 2026-07-14. Not claimable as-is."
   }
 }

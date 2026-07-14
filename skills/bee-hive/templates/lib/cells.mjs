@@ -518,7 +518,16 @@ export function setTier(root, id, tier) {
 // (precise ISO, written by newer scribing runs) and falls back to .date (day
 // granularity) for older runs. A last run for a DIFFERENT feature (or none)
 // means the whole active feature is debt. Returns { count, cells: [ids] }; empty
-// while idle (no feature in flight). Pure read — never a blocker, only a signal.
+// while idle (no feature in flight).
+//
+// Still a pure read — but it is no longer only a signal (chain-integrity D2).
+// It is advisory everywhere it is DISPLAYED (status line, session preamble,
+// Stop-hook nudge — all fail-open) and a WALL at exactly one place: entering
+// phase `compounding-complete`, enforced at the bee.mjs choke point, which
+// refuses the close while debt stands. That reversal is the whole point: debt
+// being "never a blocker" is precisely why a feature could be marked closed
+// with six capped behavior_change cells whose behavior never reached
+// docs/specs/. Debt is a signal through the work, and a wall at the door.
 export function scribingDebt(root) {
   const state = readState(root);
   const feature = state.feature;

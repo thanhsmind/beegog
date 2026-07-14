@@ -29,6 +29,7 @@ import {
   writeState,
   gateApproved,
   isKnownPhase,
+  KNOWN_PHASES,
   readConfig,
   COMMAND_KEYS,
   modelForTier,
@@ -1601,6 +1602,12 @@ const EXPECTED_STATE_EXPORTS = [
   'resolveTier',
   'resolveAdvisor',
   'startFeature',
+  // chain-integrity (D1-REVISED/D3): the tail guard. Pure and cells-free by
+  // necessity — cells.mjs imports state.mjs, so the scribing-debt half of the
+  // rule lives at the bee.mjs choke point instead.
+  'SCRIBING_RUN_FROM',
+  'checkPhaseTransition',
+  'checkScribingRunPhase',
   // fsh-3 (fresh-session-handoff): the lane store — deliberate additions,
   // covered by the lane rows further down.
   'lanesDir',
@@ -3415,9 +3422,13 @@ check('bee.mjs state set refuses to mutate a present-but-corrupt state.json (rev
   }
 });
 
-check('bee.mjs state set accepts the compounding-complete terminal alias (isKnownPhase, not PHASES)', () => {
+check('bee.mjs state set accepts the compounding-complete terminal alias (isKnownPhase, not PHASES) — from compounding, per the tail guard', () => {
   const dir = makeStateRepo('bee-state-set-terminal-');
   try {
+    // chain-integrity: this fixture used to start at the `idle` default and walk
+    // straight to the terminal alias — the very transition the tail guard now
+    // refuses. The alias is still accepted; it just has to be reached honestly.
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'compounding' });
     const result = runBeeState(dir, ['set', '--phase', 'compounding-complete']);
     assert(result.status === 0, `terminal alias should be accepted, got ${result.status}: ${result.stderr}`);
     const state = readStateFile(dir);
@@ -3765,6 +3776,10 @@ check('bee.mjs state scribing-run stamps the exact key set from bee-scribing SKI
 check('bee.mjs state scribing-run accepts a single descriptive area with no comma (real-world shape)', () => {
   const dir = makeStateRepo('bee-state-scribing-single-');
   try {
+    // chain-integrity D3: scribing-run now demands a phase where execution
+    // actually happened — it used to advance to `compounding` from anywhere,
+    // including the `idle` default this fixture relied on.
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming' });
     const result = runBeeState(dir, [
       'scribing-run',
       '--feature',
@@ -7214,6 +7229,44 @@ check('census: the two-kind handoff rule (with its transport) and the multi-sess
       `${rel} must instruct picking other work on a hold deny, never working around the guard`,
     );
   }
+});
+
+// chain-integrity D6 — no shipped skill may teach a phase that does not exist.
+// Three of them did: bee-exploring said `--phase exploring-complete`,
+// bee-planning said `--phase planning-complete` and `--phase validated`,
+// bee-validating said `--phase validated`. None are in KNOWN_PHASES, so
+// `state set` threw EVERY time an agent followed its own skill verbatim — and an
+// agent whose documented command fails starts improvising one that passes.
+// Improvising the state machine is exactly how the chain broke. This is the
+// guard that keeps the docs honest, so nobody has to remember.
+check('no shipped SKILL.md or reference instructs a --phase value outside KNOWN_PHASES (chain-integrity D6)', () => {
+  const skillsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+  const docs = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.md')) docs.push(full);
+    }
+  };
+  walk(skillsRoot);
+
+  const offenders = [];
+  for (const file of docs) {
+    const text = fs.readFileSync(file, 'utf8');
+    // Only real command shapes: `--phase <name>`. A `<...>`/`...` placeholder is
+    // prose, not an instruction, and is deliberately not matched.
+    for (const m of text.matchAll(/--phase\s+([a-z][a-z-]*)/g)) {
+      const phase = m[1];
+      if (!KNOWN_PHASES.includes(phase)) {
+        offenders.push(`${path.relative(skillsRoot, file)}: --phase ${phase}`);
+      }
+    }
+  }
+  assert(
+    offenders.length === 0,
+    `these skills instruct a phase that does not exist (state set will throw, and the agent will improvise):\n  ${offenders.join('\n  ')}\nLegal phases: ${KNOWN_PHASES.join(', ')}`,
+  );
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

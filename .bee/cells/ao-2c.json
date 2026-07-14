@@ -40,7 +40,7 @@
   },
   "verify": "! grep -qF '|| \"generation\"' hooks/bee-model-guard.mjs && grep -qF 'resolveTier' hooks/bee-model-guard.mjs && cmp -s hooks/bee-model-guard.mjs .bee/bin/hooks/bee-model-guard.mjs && node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs",
   "behavior_change": true,
-  "status": "open",
+  "status": "dropped",
   "deps": [],
   "decisions": [],
   "trace": {
@@ -53,6 +53,7 @@
     "behavior_change": false,
     "verification_evidence": null,
     "verify_output": null,
-    "verify_passed": null
+    "verify_passed": null,
+    "dropped_reason": "Written against the Slice 2A plan that FAILED validation (reports/validation-slice-2a.md, 7 blockers). Re-plan from scratch; backlog row filed 2026-07-14. Not claimable as-is."
   }
 }

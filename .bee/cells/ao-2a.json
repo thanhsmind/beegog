@@ -34,7 +34,7 @@
   },
   "verify": "! grep -qF -- 'result.md - < .bee/workers/' skills/bee-swarming/references/swarming-reference.md && grep -qiF 'invoked verbatim' skills/bee-swarming/references/swarming-reference.md && grep -qiF 'absolute path' skills/bee-swarming/references/swarming-reference.md && echo CONTRACT_OK",
   "behavior_change": true,
-  "status": "open",
+  "status": "dropped",
   "deps": [],
   "decisions": [],
   "trace": {
@@ -47,6 +47,7 @@
     "behavior_change": false,
     "verification_evidence": null,
     "verify_output": null,
-    "verify_passed": null
+    "verify_passed": null,
+    "dropped_reason": "Written against the Slice 2A plan that FAILED validation (reports/validation-slice-2a.md, 7 blockers). Re-plan from scratch; backlog row filed 2026-07-14. Not claimable as-is."
   }
 }

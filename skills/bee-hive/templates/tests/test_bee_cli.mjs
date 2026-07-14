@@ -521,9 +521,64 @@ check('state.worker.prune example runs through the real dispatcher (no workers d
   assert(JSON.parse(result.stdout).pruned.length === 0, `expected 0 pruned, got ${result.stdout}`);
 });
 
-check('state.scribing-run example runs through the real dispatcher', () => {
+check('state.scribing-run example runs through the real dispatcher (from an executed phase — chain-integrity D3)', () => {
+  // The shared rootState sits at `planning` from the state.set example above.
+  // scribing-run used to advance to `compounding` from ANY phase; it now demands
+  // a phase where execution actually happened. Walking the legal path first is
+  // the point, not a workaround: this check now also proves swarming ->
+  // scribing-run -> compounding runs end to end through the real dispatcher.
+  const advance = runBee(['state', 'set', '--phase', 'swarming', '--json'], rootState);
+  assert(advance.status === 0, `advancing to swarming should succeed: ${advance.stderr}`);
   const result = assertExampleOk('state.scribing-run', { cwd: rootState });
   assert(JSON.parse(result.stdout).phase === 'compounding', `expected phase compounding, got ${result.stdout}`);
+});
+
+check('state.scribing-run is REFUSED from a phase where nothing was executed (chain-integrity D3)', () => {
+  const refused = runBee(
+    ['state', 'scribing-run', '--feature', 'newf', '--areas', 'x', '--next-action', 'n', '--json'],
+    rootState,
+  );
+  // rootState is now `compounding` — not an executed phase.
+  assert(refused.status !== 0, `scribing-run from compounding should be refused, got ${refused.stdout}`);
+  // --json routes the failure to stdout as {"error": ...}; bare runs use stderr.
+  assert(
+    /scribing-run: refused from phase/.test(refused.stdout + refused.stderr),
+    `expected the D3 refusal, got: ${refused.stdout}${refused.stderr}`,
+  );
+});
+
+check('state set --phase compounding-complete is REFUSED from swarming — the exact post-mortem call (chain-integrity D1-REVISED)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-tail-guard-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming' });
+    const refused = runBee(['state', 'set', '--phase', 'compounding-complete', '--json'], dir);
+    assert(refused.status !== 0, 'swarming -> compounding-complete must be refused');
+    // --json routes the failure to stdout as {"error": ...}; bare runs use stderr.
+    assert(
+      /may only be entered from/.test(refused.stdout + refused.stderr),
+      `expected the tail-guard refusal, got: ${refused.stdout}${refused.stderr}`,
+    );
+    assert(
+      JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8')).phase === 'swarming',
+      'a refused close must leave the phase untouched — no partial write',
+    );
+
+    // `compounding` is never settable directly: only a real scribing run yields it.
+    const direct = runBee(['state', 'set', '--phase', 'compounding', '--json'], dir);
+    assert(direct.status !== 0, '--phase compounding must be refused outright');
+    assert(
+      /scribing-run/.test(direct.stdout + direct.stderr),
+      `the refusal must name scribing-run as the way, got: ${direct.stdout}${direct.stderr}`,
+    );
+
+    // Backward moves and the de-facto abandon verb stay legal (hive law 5).
+    assert(runBee(['state', 'set', '--phase', 'planning', '--json'], dir).status === 0, 'backward move must stay legal');
+    assert(runBee(['state', 'set', '--phase', 'idle', '--json'], dir).status === 0, '--phase idle must stay legal');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ─── state.lanes / state.set|gate|scribing-run --lane / state.session.* :
@@ -566,6 +621,10 @@ check('state.gate --lane example (examples[1]) approves a gate on the lane recor
 });
 
 check('state.scribing-run --lane example (examples[1]) stamps the lane record only', () => {
+  // Same D3 rule on the lane record: the tail guard reads `from` off whichever
+  // record is being mutated, so the lane must reach an executed phase too.
+  const advance = runBee(['state', 'set', '--lane', 'demo-lane', '--phase', 'swarming', '--json'], rootState);
+  assert(advance.status === 0, `advancing the lane to swarming should succeed: ${advance.stderr}`);
   const result = assertExampleOk('state.scribing-run', { exampleIndex: 1, cwd: rootState });
   const lane = JSON.parse(result.stdout);
   assert(
@@ -778,6 +837,80 @@ check('capture.flush example runs through the real dispatcher against a pre-seed
   const result = assertExampleOk('capture.flush', { cwd: rootBacklogCapture });
   const record = JSON.parse(result.stdout);
   assert(record.id === seededId, `expected the seeded stub id flushed, got ${result.stdout}`);
+});
+
+// ─── chain-integrity D2/D4: scribing debt is a WALL at the close boundary ────
+// The post-mortem's real damage: six capped behavior_change cells whose settled
+// behavior never reached docs/specs/, while `last_scribing_run` stayed null and
+// the feature was marked closed anyway. That state used to be perfectly valid.
+
+function makeDebtRepo() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-scribing-debt-'));
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  // At `compounding`, so the tail-guard predecessor check passes and the DEBT
+  // check is the only thing left standing between here and the terminal phase.
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'compounding', feature: 'demo' });
+  for (const id of ['d-1', 'd-2']) {
+    writeJsonAtomic(path.join(dir, '.bee', 'cells', `${id}.json`), {
+      id,
+      feature: 'demo',
+      status: 'capped',
+      trace: { behavior_change: true, capped_at: new Date().toISOString() },
+    });
+  }
+  return dir;
+}
+
+check('state set --phase compounding-complete is REFUSED while capped behavior_change cells are unscribed, naming every cell (chain-integrity D2)', () => {
+  const dir = makeDebtRepo();
+  try {
+    const refused = runBee(['state', 'set', '--phase', 'compounding-complete', '--json'], dir);
+    assert(refused.status !== 0, 'closing with scribing debt must be refused');
+    const out = refused.stdout + refused.stderr;
+    assert(/d-1/.test(out) && /d-2/.test(out), `the refusal must name every unscribed cell, got: ${out}`);
+    assert(/waive-scribing-debt/.test(out), `the refusal must disclose the sanctioned door, got: ${out}`);
+    assert(
+      JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8')).phase === 'compounding',
+      'a refused close must leave the phase untouched — no partial write',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('--waive-scribing-debt permits the close but is never silent: it logs a decision naming the waived cells (chain-integrity D4)', () => {
+  const dir = makeDebtRepo();
+  try {
+    const ok = runBee(['state', 'set', '--phase', 'compounding-complete', '--waive-scribing-debt', '--json'], dir);
+    assert(ok.status === 0, `the waiver must permit the close, got: ${ok.stdout}${ok.stderr}`);
+    assert(
+      JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8')).phase === 'compounding-complete',
+      'the waived close must actually write the terminal phase',
+    );
+    const log = fs.readFileSync(path.join(dir, '.bee', 'decisions.jsonl'), 'utf8');
+    assert(/d-1/.test(log) && /d-2/.test(log), `the waiver decision must name every waived cell, got: ${log}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+check('a close with ZERO scribing debt passes and writes no waiver decision (chain-integrity D2)', () => {
+  const dir = makeDebtRepo();
+  try {
+    // Stamp a scribing run that post-dates both cells: debt cleared honestly.
+    const state = JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8'));
+    state.last_scribing_run = { feature: 'demo', at: new Date(Date.now() + 60_000).toISOString() };
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), state);
+    const ok = runBee(['state', 'set', '--phase', 'compounding-complete', '--json'], dir);
+    assert(ok.status === 0, `a debt-free close must pass, got: ${ok.stdout}${ok.stderr}`);
+    assert(
+      !fs.existsSync(path.join(dir, '.bee', 'decisions.jsonl')),
+      'a debt-free close must not log a waiver decision — nothing was waived',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 check('capture.count example runs through the real dispatcher', () => {
