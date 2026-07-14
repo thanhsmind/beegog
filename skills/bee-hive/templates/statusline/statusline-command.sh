@@ -37,8 +37,9 @@ fi
 
 if [ -n "$remaining" ]; then
   r=$(printf '%.0f' "$remaining")
-  if   [ "$r" -gt 80 ]; then c="${green}"
-  elif [ "$r" -gt 70 ]; then c="${yellow}"
+  # Red = past the ~65%-used handoff mark, not routine work.
+  if   [ "$r" -gt 35 ]; then c="${green}"
+  elif [ "$r" -ge 20 ]; then c="${yellow}"
   else c="${red}"; fi
   line="${line}${sep}${c}ctx: ${r}%${reset}"
 fi

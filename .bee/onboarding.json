@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.37",
+  "bee_version": "0.1.38",
   "managed": {
     "agents_block": "1bc8843bc9ed79c511c36327a31e9d25b4ba0e89f402dad845a8e843bcd431d1",
     "gitignore_block": "add7be1e25d3c4b7bbedff2f80c0f0e577c84610ebbac5d1eec1d70427424886",
@@ -21,7 +21,7 @@
       "inject.mjs": "4ab94dbacd8e310600808c213fb387727dda6300d839976b77439701f36cf8d9",
       "reservations.mjs": "4643ef572599f1439504741499f3ec982c4344e1e3551052c2d27e66617fec86",
       "reviews.mjs": "56b7110d1737e515b282cc757354580dadbaf76f88f516581c90717630c9cead",
-      "state.mjs": "da8558860d9725e5e0a2b0063bf08bc3abd454a3c0bc36e9a9534678ad273530",
+      "state.mjs": "2670e1cb2c17712bbd9ae23a3473701697b0eafe028bc78dffff806e683afe2f",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
     },
     "repo_hooks": {
@@ -36,10 +36,10 @@
       ".codex/hooks.json": "e613aa387f90456129310f80f1ce7def332c7509d5ad80bcdeec4feb473a4d45"
     },
     "statusline": {
-      "statusline-command.sh": "0965ae1c0d95a96fd7899df7549893e94fcc59693cab3b23da8dc228aa870b0e",
+      "statusline-command.sh": "de03ffbc330cef57fe2c6ced4a56af1987b7720a2ef35277e1ee95e2945fab21",
       "statusline-usage.mjs": "1914f6e7d421b240be3987f50d40a5151723b5302866b8838f6fb5a8de438f01"
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-14T03:03:31.165Z"
+  "updated_at": "2026-07-14T03:47:35.398Z"
 }

@@ -7,3 +7,5 @@
 {"id":"2cbdd3e8-d229-4c00-a93b-04690e24ee5c","type":"candidate","date":"2026-07-13T00:01:53.800Z","feature":"advisor","head":"41f295ff56a16ce639defe83dc165896d5bb1e6f","mode":"standard","baseline":null,"cells":[]}
 {"id":"3712ea02-4810-4efa-ae7e-3be019f75c21","type":"candidate","date":"2026-07-13T10:43:46.783Z","feature":"tier-transport-doctrine","head":"af4840c1fa77c613e76a3c20097f0340152508bd","mode":"tiny","baseline":null,"cells":[]}
 {"id":"56c1ba08-08cb-481a-afbd-d047756bcdef","type":"candidate","date":"2026-07-13T18:45:00.645Z","feature":"fresh-session-handoff","head":"b6fd1f92bdaa5604babf9ccfbd4a99b2a4132e10","mode":"high-risk","baseline":null,"cells":[]}
+{"id":"ab2579e9-e320-41d6-99d2-7f8027adf8c8","type":"candidate","date":"2026-07-13T18:50:06.754Z","feature":"release-v0.1.33","head":"0eb4b0380e468a41ee21df4a4c65414aab758b87","mode":"tiny","baseline":null,"cells":[]}
+{"id":"9812baad-a7ab-486f-b14a-e7f2e18f49bc","type":"candidate","date":"2026-07-13T21:53:13.823Z","feature":"shim-retire","head":"0d897538e5bfe8ec2fda0511f0691129b36be1b9","mode":"standard","baseline":null,"cells":[]}
