@@ -65,17 +65,24 @@ function Confirm-Step([string]$Question) {
 
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
 if (-not $nodeCmd) { Fail 'Node.js 18+ is required (node not found on PATH).' }
-$nodeMajor = [int](node -p 'process.versions.node.split(".")[0]')
-if ($nodeMajor -lt 18) { Fail "Node.js 18+ is required (found $(node --version))." }
+# Parse `node --version` in PowerShell itself: passing a quoted JS expression to
+# `node -p` breaks in Windows PowerShell 5.1 (embedded quotes are stripped for
+# native commands), which made this check fail even on new Node versions.
+$nodeVersionRaw = (node --version | Select-Object -First 1).Trim()
+$nodeMajor = 0
+if ($nodeVersionRaw -match '^v?(\d+)') { $nodeMajor = [int]$Matches[1] }
+if ($nodeMajor -lt 18) { Fail "Node.js 18+ is required (found $nodeVersionRaw)." }
 
 # ---------- resolve bee source (local checkout or clone) ----------
 
 $cleanupDir = $null
 try {
   if ($Source) {
-    $beeSrc = (Resolve-Path $Source).Path
+    # .ProviderPath, not .Path: on UNC paths PS 5.1 returns a provider-qualified
+    # string (Microsoft.PowerShell.Core\FileSystem::\\...) that node cannot open.
+    $beeSrc = (Resolve-Path $Source).ProviderPath
   } elseif ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot '..\skills\bee-hive\scripts\onboard_bee.mjs'))) {
-    $beeSrc = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    $beeSrc = (Resolve-Path (Join-Path $PSScriptRoot '..')).ProviderPath
   } else {
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
       Fail 'git is required to fetch bee (or pass -Source <local-checkout>).'
@@ -152,7 +159,7 @@ try {
       New-Item -ItemType Directory -Force -Path $Directory | Out-Null
     }
   }
-  if (Test-Path $Directory) { $Directory = (Resolve-Path $Directory).Path }
+  if (Test-Path $Directory) { $Directory = (Resolve-Path $Directory).ProviderPath }
 
   $mode = 'brownfield'
   if (-not (Test-Path (Join-Path $Directory '.git'))) {
@@ -196,7 +203,8 @@ try {
   try {
     $statusJson = node .bee\bin\bee.mjs status --json
     if ($LASTEXITCODE -ne 0) { Fail 'Verification failed: bee.mjs status did not run.' }
-    $status = $statusJson | ConvertFrom-Json
+    # Join first: PS 5.1 pipes a multi-line array into ConvertFrom-Json line by line.
+    $status = ($statusJson -join "`n") | ConvertFrom-Json
     if (-not $status.onboarding -or $status.onboarding.installed -ne $true) {
       Fail 'Verification failed: bee.mjs status reports not installed.'
     }
