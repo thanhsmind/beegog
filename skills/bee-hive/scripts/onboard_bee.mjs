@@ -1342,6 +1342,21 @@ function mergeRepoSettings(settingsPath) {
 
 const CODEX_TRANSPORT_DIAGNOSTIC = "bee: hook transport unavailable (no git root)";
 
+// A repo that ships hooks/catalog.mjs IS bee, and that catalog — not this file —
+// is the authority for its own .codex/hooks.json (TARGETS.REPO renders
+// `"$r"/hooks/<script>`, because bee's hooks live in hooks/). renderCodexHookEntries()
+// below is the HOST projection: it points at .bee/bin/hooks/, correct for a host repo
+// (which has no hooks/ dir, only the vendored copy) and WRONG for bee itself. Writing
+// it into bee's own repo silently clobbers the catalog rendering and turns
+// hooks/test_hook_contracts.mjs red on the NEXT run — which is exactly how a release
+// broke: the drift check fired, the file was "repaired" by hand, and the next
+// self-onboard undid the repair. Two renderers, one generated file; this is the
+// self-skip the skill sync already does (mode "self_skip"), keyed on the file that
+// makes a repo the catalog's owner rather than on where the script happens to run from.
+function repoOwnsHookCatalog(repoRoot) {
+  return fs.existsSync(path.join(repoRoot, "hooks", "catalog.mjs"));
+}
+
 function codexHookCommand(fileName) {
   return [
     'r="$(git rev-parse --show-toplevel 2>/dev/null)"',
@@ -1699,13 +1714,17 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
     }
     // Codex projection of the same hook set (see renderCodexHookEntries):
     // without it a Codex session in the host repo runs with NO bee guards.
-    const codexHooksPath = path.join(repoRoot, ".codex", "hooks.json");
-    try {
-      if (mergeCodexHooks(codexHooksPath).changed) {
+    // Skipped when the repo owns hooks/catalog.mjs — see repoOwnsHookCatalog:
+    // there the catalog is the authority and this projection would clobber it.
+    if (!repoOwnsHookCatalog(repoRoot)) {
+      const codexHooksPath = path.join(repoRoot, ".codex", "hooks.json");
+      try {
+        if (mergeCodexHooks(codexHooksPath).changed) {
+          plan.push({ action: "merge_codex_hooks", path: ".codex/hooks.json" });
+        }
+      } catch {
         plan.push({ action: "merge_codex_hooks", path: ".codex/hooks.json" });
       }
-    } catch {
-      plan.push({ action: "merge_codex_hooks", path: ".codex/hooks.json" });
     }
   }
 

@@ -1574,6 +1574,95 @@ function hashTree(dir) {
   }
 }
 
+// --- 10a2b. .codex/hooks.json has TWO renderers; the catalog owns it in bee's repo -
+// hooks/catalog.mjs (TARGETS.REPO) renders `"$r"/hooks/<script>` because bee's hooks
+// LIVE in hooks/. onboard_bee.mjs's renderCodexHookEntries() is the HOST projection:
+// `.bee/bin/hooks/<script>`, right for a host (no hooks/ dir there) and WRONG for bee.
+// Regression guard: a repo that ships hooks/catalog.mjs must NEVER have its
+// .codex/hooks.json rewritten by onboarding. This broke twice — the drift check fired,
+// the file was repaired by hand, and the next self-onboard silently undid the repair.
+// A host repo (no catalog) must still get the projection, or Codex runs with no guards.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-codexhooks-owner-"));
+  const home = makeFakeHome();
+  try {
+    const repo = path.join(base, "repo");
+    const { launcher } = makeFakeSkillsRoot(path.join(repo, "skills"), {
+      skills: { "bee-alpha": { "SKILL.md": "# alpha\n" } },
+    });
+    // This repo owns the catalog, and already carries the catalog's rendering.
+    fs.mkdirSync(path.join(repo, "hooks"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "hooks", "catalog.mjs"), "// catalog\n");
+    const codexHooks = path.join(repo, ".codex", "hooks.json");
+    fs.mkdirSync(path.dirname(codexHooks), { recursive: true });
+    const catalogRendering = JSON.stringify(
+      {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: 'exec node "$r"/hooks/bee-prompt-context.mjs --source=repo',
+                statusMessage: "bee: phase reminder",
+              },
+            ],
+          },
+        ],
+      },
+      null,
+      2,
+    );
+    fs.writeFileSync(codexHooks, catalogRendering);
+
+    // The DRY RUN is where the plan is visible — asserting against an --apply
+    // payload's plan would be vacuous (proven: that row stayed green with the fix
+    // deliberately broken, while the byte-identity rows below correctly went red).
+    const dry = runOnboardAt(launcher, ["--repo-root", repo, "--repo-hooks", "--json"], home);
+    const planned = (dry.payload?.plan || []).some((p) => p.action === "merge_codex_hooks");
+    check(
+      !planned,
+      "codex-hooks: a repo owning hooks/catalog.mjs never PLANS merge_codex_hooks (the catalog is the authority)",
+      JSON.stringify(dry.payload?.plan || []),
+    );
+
+    runOnboardAt(launcher, ["--repo-root", repo, "--repo-hooks", "--apply", "--json"], home);
+    check(
+      fs.readFileSync(codexHooks, "utf8") === catalogRendering,
+      "codex-hooks: the catalog's rendering survives self-onboard BYTE-FOR-BYTE (no clobber, no .bak dance)",
+      fs.readFileSync(codexHooks, "utf8").slice(0, 160),
+    );
+    check(
+      !fs.existsSync(`${codexHooks}.bak`),
+      "codex-hooks: no .bak is written for a file onboarding must not touch",
+    );
+    check(
+      !fs.readFileSync(codexHooks, "utf8").includes(".bee/bin/hooks/"),
+      "codex-hooks: the HOST projection (.bee/bin/hooks/) never leaks into bee's own repo",
+    );
+
+    // Falsifiability: a HOST repo (no hooks/catalog.mjs) must STILL get the projection.
+    const host = path.join(base, "host");
+    const { launcher: hostLauncher } = makeFakeSkillsRoot(path.join(base, "src", "skills"), {
+      skills: { "bee-alpha": { "SKILL.md": "# alpha\n" } },
+    });
+    fs.mkdirSync(host, { recursive: true });
+    const hostRes = runOnboardAt(
+      hostLauncher,
+      ["--repo-root", host, "--repo-hooks", "--apply", "--json"],
+      makeFakeHome(),
+    );
+    const hostCodex = path.join(host, ".codex", "hooks.json");
+    check(
+      fs.existsSync(hostCodex) && fs.readFileSync(hostCodex, "utf8").includes(".bee/bin/hooks/"),
+      "codex-hooks: a HOST repo still receives the .bee/bin/hooks/ projection (the skip is scoped, not a kill)",
+      `exists=${fs.existsSync(hostCodex)} status=${hostRes.payload?.status}`,
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
 // --- 10a3. self-onboard: repo contains the running source -> per-project skip -
 // beegog onboarding itself must never copy skills into its own .claude/skills
 // or .agents/skills; the skip is a distinct noop, never an error, and global
