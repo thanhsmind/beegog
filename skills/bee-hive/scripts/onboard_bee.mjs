@@ -149,6 +149,29 @@ bee-compounding appends hard-won patterns here; keep it short and current.
 (none captured yet)
 `;
 
+// State-layer skeletons (create-only, never overwritten): bee-scribing owns
+// the content; onboarding only guarantees the files exist so "read the spec
+// before the code" and "where does X live" have a landing page from day one.
+const READING_MAP_STUB = `# Reading Map
+
+Where each area of this project lives. bee-scribing owns this file: it is
+updated whenever an area spec is created or moved. Read this before any broad
+search — it answers "where does X live" without a grep.
+
+| Area | Spec | Code entry points |
+|---|---|---|
+| (none mapped yet — run a bee-scribing bootstrap pass) | | |
+`;
+
+const SYSTEM_OVERVIEW_STUB = `# System Overview
+
+One-page, technology-agnostic description of what this system does and how its
+areas fit together. bee-scribing owns this file; it is the first read for any
+human or agent new to the repository.
+
+(not written yet — run a bee-scribing bootstrap pass to fill this in)
+`;
+
 // CLAUDE.md @import fallback: Claude Code auto-loads CLAUDE.md but not
 // AGENTS.md; a bare @AGENTS.md line imports the BEE block at context-load
 // time (repository-harness pattern). Third belt when plugin hooks are absent.
@@ -1307,6 +1330,95 @@ function mergeRepoSettings(settingsPath) {
   };
 }
 
+// ---------- codex hooks (.codex/hooks.json) ----------
+// The Codex projection of the same repo-hook set, mirroring hooks/catalog.mjs
+// TARGETS.REPO but with host-repo paths: Codex never sets $CLAUDE_PROJECT_DIR
+// (the Claude-only variable above), so every command resolves the git root
+// from the session cwd and fails open VISIBLY when there is none. Two pinned
+// differences from renderRepoHookEntries(), both from hooks/catalog.mjs:
+//   - bee-model-guard.mjs is Claude-only (ALLOWED_DIFFERENCES: Codex does not
+//     expose collaboration spawn through PreToolUse) and is never wired here.
+//   - each entry carries a statusMessage (Codex TUI shows it while running).
+
+const CODEX_TRANSPORT_DIAGNOSTIC = "bee: hook transport unavailable (no git root)";
+
+function codexHookCommand(fileName) {
+  return [
+    'r="$(git rev-parse --show-toplevel 2>/dev/null)"',
+    `[ -n "$r" ] || { echo "${CODEX_TRANSPORT_DIAGNOSTIC}" >&2; exit 0; }`,
+    `exec node "$r"/.bee/bin/hooks/${fileName} --source=repo`,
+  ].join("\n");
+}
+
+function renderCodexHookEntries() {
+  const entry = (fileName, statusMessage) => ({
+    type: "command",
+    command: codexHookCommand(fileName),
+    statusMessage,
+  });
+  return {
+    SessionStart: [
+      {
+        matcher: "startup|resume|clear|compact",
+        hooks: [entry("bee-session-init.mjs", "bee: session bootstrap")],
+      },
+    ],
+    UserPromptSubmit: [{ hooks: [entry("bee-prompt-context.mjs", "bee: phase reminder")] }],
+    PreToolUse: [
+      {
+        matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep",
+        hooks: [entry("bee-write-guard.mjs", "bee: write guard")],
+      },
+    ],
+    PostToolUse: [
+      {
+        matcher: "TaskCreate|TaskUpdate|TodoWrite",
+        hooks: [entry("bee-state-sync.mjs", "bee: state sync")],
+      },
+    ],
+    SubagentStop: [
+      {
+        hooks: [
+          entry("bee-state-sync.mjs", "bee: state sync"),
+          entry("bee-chain-nudge.mjs", "bee: chain nudge"),
+        ],
+      },
+    ],
+    PreCompact: [{ hooks: [entry("bee-session-close.mjs", "bee: pre-compact flush check")] }],
+    Stop: [
+      {
+        hooks: [
+          entry("bee-state-sync.mjs", "bee: state sync"),
+          entry("bee-session-close.mjs", "bee: session close check"),
+        ],
+      },
+    ],
+  };
+}
+
+// Same merge discipline as mergeRepoSettings: non-bee entries are preserved
+// verbatim, stale bee entries are replaced, a second apply is a no-op.
+function mergeCodexHooks(hooksPath) {
+  const existing = readJsonIfExists(hooksPath) || {};
+  const hooks = existing.hooks && typeof existing.hooks === "object" ? existing.hooks : {};
+  const merged = { ...hooks };
+  let changed = false;
+
+  for (const [eventName, entries] of Object.entries(renderCodexHookEntries())) {
+    const current = Array.isArray(merged[eventName]) ? merged[eventName] : [];
+    const next = [...current.filter((e) => !isBeeHookEntry(e)), ...entries];
+    if (JSON.stringify(current) !== JSON.stringify(next)) {
+      changed = true;
+    }
+    merged[eventName] = next;
+  }
+
+  return {
+    text: `${JSON.stringify({ ...existing, hooks: merged }, null, 2)}\n`,
+    changed,
+  };
+}
+
 // ---------- standard commands notice (docs/09 item 1, decision D4) ----------
 
 const COMMAND_KEYS = ["setup", "start", "test", "verify"];
@@ -1495,6 +1607,15 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
     plan.push({ action: "create_stub", path: "docs/history/learnings/critical-patterns.md" });
   }
 
+  // 4a. state-layer skeletons: reading-map + system-overview must exist after
+  // onboarding (create-only — bee-scribing owns the content and an existing
+  // file is NEVER touched, drifted or not).
+  for (const name of ["reading-map.md", "system-overview.md"]) {
+    if (!fs.existsSync(path.join(repoRoot, "docs", "specs", name))) {
+      plan.push({ action: "create_specs_stub", path: `docs/specs/${name}` });
+    }
+  }
+
   // 4b. .gitignore managed block (D1): marker-splice pattern identical to the
   // AGENTS.md block above, but with '#'-comment markers (gitignore syntax -
   // never HTML comments, which gitignore would read as a literal pattern).
@@ -1529,6 +1650,16 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
       }
     } catch {
       plan.push({ action: "merge_repo_hook_settings", path: ".claude/settings.json" });
+    }
+    // Codex projection of the same hook set (see renderCodexHookEntries):
+    // without it a Codex session in the host repo runs with NO bee guards.
+    const codexHooksPath = path.join(repoRoot, ".codex", "hooks.json");
+    try {
+      if (mergeCodexHooks(codexHooksPath).changed) {
+        plan.push({ action: "merge_codex_hooks", path: ".codex/hooks.json" });
+      }
+    } catch {
+      plan.push({ action: "merge_codex_hooks", path: ".codex/hooks.json" });
     }
   }
 
@@ -1594,6 +1725,9 @@ function buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, 
     for (const name of listPluginHooks()) {
       hooks[name] = sha256(fs.readFileSync(path.join(PLUGIN_HOOKS_DIR, name), "utf8"));
     }
+    // Pseudo-entry: the desired Codex projection rides the same managed map,
+    // so a render change here surfaces as onboarding drift like any hook edit.
+    hooks[".codex/hooks.json"] = sha256(JSON.stringify(renderCodexHookEntries()));
     managed.repo_hooks = hooks;
   }
   if (statusline) {
@@ -1787,6 +1921,17 @@ function applyPlan(
         writeFileAtomic(target, CRITICAL_PATTERNS_STUB);
         break;
       }
+      case "create_specs_stub": {
+        // create-only: scribing owns these files; an existing one is never
+        // rewritten even when its content drifted from the stub.
+        if (!fs.existsSync(target)) {
+          writeFileAtomic(
+            target,
+            item.path.endsWith("reading-map.md") ? READING_MAP_STUB : SYSTEM_OVERVIEW_STUB,
+          );
+        }
+        break;
+      }
       case "create_claude_md": {
         writeFileAtomic(target, CLAUDE_MD_TEMPLATE);
         break;
@@ -1799,6 +1944,14 @@ function applyPlan(
       }
       case "merge_repo_hook_settings": {
         const merged = mergeRepoSettings(target);
+        if (fs.existsSync(target)) {
+          fs.copyFileSync(target, `${target}.bak`);
+        }
+        writeFileAtomic(target, merged.text);
+        break;
+      }
+      case "merge_codex_hooks": {
+        const merged = mergeCodexHooks(target);
         if (fs.existsSync(target)) {
           fs.copyFileSync(target, `${target}.bak`);
         }

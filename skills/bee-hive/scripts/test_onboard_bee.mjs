@@ -604,6 +604,77 @@ try {
     "every hooks/catalog.mjs ALLOWED_DIFFERENCES entry corresponds to an actual projection difference",
     JSON.stringify({ ALLOWED_DIFFERENCES, allProjectionDiffs }));
 
+  // --- 9c. Codex repo projection (.codex/hooks.json) -------------------------
+  // --repo-hooks must also wire the Codex side: without .codex/hooks.json a
+  // Codex session in the host repo runs with NO bee guards (the gap that
+  // motivated this projection). Structural checks, not string containment.
+  const codexRepoPath = path.join(tmp, ".codex", "hooks.json");
+  check(fs.existsSync(codexRepoPath), "--repo-hooks creates .codex/hooks.json");
+  const codexRepo = JSON.parse(fs.readFileSync(codexRepoPath, "utf8"));
+  const codexRepoText = JSON.stringify(codexRepo);
+  check(!codexRepoText.includes("CLAUDE_PROJECT_DIR"),
+    ".codex/hooks.json never uses $CLAUDE_PROJECT_DIR (Codex never sets it)");
+  check(!codexRepoText.includes("bee-model-guard.mjs"),
+    ".codex/hooks.json never wires bee-model-guard.mjs (Claude-only per catalog ALLOWED_DIFFERENCES)");
+  let codexCommandCount = 0;
+  let codexTransportOk = true;
+  let codexStatusMessageOk = true;
+  for (const entries of Object.values(codexRepo.hooks || {})) {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      for (const hook of entry.hooks || []) {
+        codexCommandCount += 1;
+        const cmd = String(hook.command || "");
+        if (!cmd.startsWith('r="$(git rev-parse --show-toplevel 2>/dev/null)"') ||
+            !cmd.includes("bee: hook transport unavailable (no git root)") ||
+            !cmd.includes('exec node "$r"/.bee/bin/hooks/bee-') ||
+            !cmd.includes("--source=repo")) {
+          codexTransportOk = false;
+        }
+        if (typeof hook.statusMessage !== "string" || !hook.statusMessage.startsWith("bee:")) {
+          codexStatusMessageOk = false;
+        }
+      }
+    }
+  }
+  check(codexCommandCount === 9, ".codex/hooks.json wires exactly 9 hook commands",
+    `count: ${codexCommandCount}`);
+  check(codexTransportOk,
+    "every .codex/hooks.json command uses the git-root transport with the pinned fail-open diagnostic");
+  check(codexStatusMessageOk, "every .codex/hooks.json command carries a bee statusMessage");
+
+  // Parity with the checked-in Codex plugin projection: identical
+  // (event, matcher, filename) triples — only the command root differs.
+  const codexRepoTriples = flattenHookTriples(codexRepo.hooks);
+  check(JSON.stringify(codexRepoTriples) === JSON.stringify(codexProjectionTriples),
+    ".codex/hooks.json and hooks/hooks.json (Codex plugin projection) expose identical triples",
+    `repo:   ${JSON.stringify(codexRepoTriples)}\nplugin: ${JSON.stringify(codexProjectionTriples)}`);
+
+  // Merge discipline: a user's non-bee Codex hook survives a re-apply, bee
+  // entries do not duplicate, and the pre-existing file is backed up.
+  const userCodexHook = {
+    type: "command",
+    command: "echo user-owned-codex-hook",
+  };
+  // Seed the user group AFTER the bee group: the merge normalizes to
+  // [non-bee..., bee...], so this ordering forces changed=true and exercises
+  // the rewrite + .bak path (user-before-bee is already canonical shape).
+  const codexSeed = JSON.parse(fs.readFileSync(codexRepoPath, "utf8"));
+  codexSeed.hooks.SessionStart = [
+    ...codexSeed.hooks.SessionStart,
+    { hooks: [userCodexHook] },
+  ];
+  fs.writeFileSync(codexRepoPath, `${JSON.stringify(codexSeed, null, 2)}\n`, "utf8");
+
+  // --- 9d. state-layer skeletons (docs/specs) --------------------------------
+  // The first apply (section 2) must have created both skeletons; a re-apply
+  // must never touch an existing (user/scribing-owned) file.
+  check(fs.existsSync(path.join(tmp, "docs", "specs", "reading-map.md")),
+    "onboarding creates docs/specs/reading-map.md skeleton");
+  check(fs.existsSync(path.join(tmp, "docs", "specs", "system-overview.md")),
+    "onboarding creates docs/specs/system-overview.md skeleton");
+  fs.writeFileSync(path.join(tmp, "docs", "specs", "reading-map.md"),
+    "# My map\n\nscribing-owned content\n", "utf8");
+
   // --repo-hooks apply twice -> no duplicate bee entries.
   runOnboard(["--repo-root", tmp, "--apply", "--repo-hooks", "--json"], tmpHome);
   const settings2 = JSON.parse(
@@ -616,6 +687,22 @@ try {
   check(agentTaskEntries2.length === 1,
     "exactly one PreToolUse Agent|Task entry survives a second --repo-hooks apply",
     `count: ${agentTaskEntries2.length}`);
+
+  // Codex side of the second apply: user entry preserved, no bee duplicates,
+  // .bak written, and the scribing-owned specs file untouched.
+  const codexRepo2 = JSON.parse(fs.readFileSync(codexRepoPath, "utf8"));
+  const codexText2 = JSON.stringify(codexRepo2);
+  check(codexText2.includes("user-owned-codex-hook"),
+    "non-bee .codex/hooks.json entry survives a second --repo-hooks apply");
+  const codexInitCount = codexText2.split("bee-session-init.mjs").length - 1;
+  check(codexInitCount === 1,
+    "no duplicate bee entries in .codex/hooks.json after second apply",
+    `count: ${codexInitCount}`);
+  check(fs.existsSync(`${codexRepoPath}.bak`),
+    ".codex/hooks.json.bak backup created when merging into an existing file");
+  check(fs.readFileSync(path.join(tmp, "docs", "specs", "reading-map.md"), "utf8")
+    .startsWith("# My map"),
+    "existing docs/specs/reading-map.md is never overwritten by a re-apply");
 
   // --claude-md: fresh repo -> created with header + bare import.
   const cmTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-claudemd-test-"));

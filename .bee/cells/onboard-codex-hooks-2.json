@@ -1,0 +1,39 @@
+{
+  "id": "onboard-codex-hooks-2",
+  "feature": "onboard-codex-hooks",
+  "lane": "standard",
+  "title": "Release 0.1.36: bump version, self-onboard, sync global skills",
+  "files": [
+    "skills/bee-hive/templates/lib/state.mjs"
+  ],
+  "read_first": [
+    "docs/history/onboard-codex-hooks/plan.md"
+  ],
+  "deps": [
+    "onboard-codex-hooks-1"
+  ],
+  "action": "Bump BEE_VERSION 0.1.35 -> 0.1.36; chay test_onboard_bee.mjs; self-onboard beegog (--apply) de dong bo global skills ~/.claude/skills/bee-*.",
+  "verify": "node skills/bee-hive/scripts/test_onboard_bee.mjs",
+  "must_haves": {
+    "truths": [
+      "global skills ~/.claude/skills/bee-hive mang onboard_bee.mjs moi (co merge_codex_hooks)"
+    ],
+    "artifacts": [
+      "BEE_VERSION = 0.1.36"
+    ]
+  },
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}
