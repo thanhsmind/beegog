@@ -1396,6 +1396,22 @@ function renderCodexHookEntries() {
   };
 }
 
+// A bee entry in a Codex hooks file, in ANY historical transport shape:
+// ".bee/bin/hooks/bee-*" (this projection), "$r"/hooks/bee-* (the bee source
+// repo's own file), or an old hand-authored "$CLAUDE_PROJECT_DIR" form (dead
+// on Codex — the exact MODULE_NOT_FOUND migration case in hooks/catalog.mjs).
+// All of them are bee-shipped wiring and must be REPLACED by the canonical
+// render, never preserved beside it (a preserved stale twin double-fires
+// every event).
+function isBeeCodexHookEntry(entry) {
+  for (const hook of entry?.hooks || []) {
+    if (/hooks\/bee-[a-z-]+\.mjs/.test(String(hook?.command || ""))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Same merge discipline as mergeRepoSettings: non-bee entries are preserved
 // verbatim, stale bee entries are replaced, a second apply is a no-op.
 function mergeCodexHooks(hooksPath) {
@@ -1406,7 +1422,7 @@ function mergeCodexHooks(hooksPath) {
 
   for (const [eventName, entries] of Object.entries(renderCodexHookEntries())) {
     const current = Array.isArray(merged[eventName]) ? merged[eventName] : [];
-    const next = [...current.filter((e) => !isBeeHookEntry(e)), ...entries];
+    const next = [...current.filter((e) => !isBeeCodexHookEntry(e)), ...entries];
     if (JSON.stringify(current) !== JSON.stringify(next)) {
       changed = true;
     }

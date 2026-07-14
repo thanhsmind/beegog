@@ -663,6 +663,23 @@ try {
     ...codexSeed.hooks.SessionStart,
     { hooks: [userCodexHook] },
   ];
+  // Stale bee wiring in historical transport shapes must be REPLACED, never
+  // preserved beside the canonical render (a stale twin double-fires the
+  // event): the bee source repo's own "$r"/hooks form, and the dead
+  // hand-authored $CLAUDE_PROJECT_DIR form.
+  codexSeed.hooks.Stop = [
+    {
+      hooks: [{
+        type: "command",
+        command: 'r="$(git rev-parse --show-toplevel 2>/dev/null)"\nexec node "$r"/hooks/bee-state-sync.mjs --source=repo',
+      }],
+    },
+    ...(codexSeed.hooks.Stop || []),
+  ];
+  codexSeed.hooks.UserPromptSubmit = [
+    { hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/.bee/bin/hooks/bee-prompt-context.mjs' }] },
+    ...(codexSeed.hooks.UserPromptSubmit || []),
+  ];
   fs.writeFileSync(codexRepoPath, `${JSON.stringify(codexSeed, null, 2)}\n`, "utf8");
 
   // --- 9d. state-layer skeletons (docs/specs) --------------------------------
@@ -698,6 +715,14 @@ try {
   check(codexInitCount === 1,
     "no duplicate bee entries in .codex/hooks.json after second apply",
     `count: ${codexInitCount}`);
+  check(!codexText2.includes('"$r"/hooks/bee-'),
+    'stale source-repo-shape ("$r"/hooks) bee entry replaced, not preserved');
+  check(!codexText2.includes("CLAUDE_PROJECT_DIR"),
+    "stale $CLAUDE_PROJECT_DIR-shape bee entry replaced, not preserved");
+  const codexStateSyncCount = codexText2.split("bee-state-sync.mjs").length - 1;
+  check(codexStateSyncCount === 3,
+    "bee-state-sync.mjs appears exactly 3x (canonical PostToolUse/SubagentStop/Stop; seeded stale Stop twin dropped)",
+    `count: ${codexStateSyncCount}`);
   check(fs.existsSync(`${codexRepoPath}.bak`),
     ".codex/hooks.json.bak backup created when merging into an existing file");
   check(fs.readFileSync(path.join(tmp, "docs", "specs", "reading-map.md"), "utf8")

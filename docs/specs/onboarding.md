@@ -175,6 +175,36 @@ a second run plans zero removals; a freshly onboarded host never receives the
 retired scripts at all. The installer's own post-install verification and its
 printed quickstart also speak only the unified dispatcher's status command.
 
+**Wire the second-runtime guards (repo-hook installs).** Trigger: any run for a
+project that vendors repo-local hooks (the explicit opt-in flag or its sticky
+record). What blocks it: nothing — the projection is derived from the same hook
+catalog as the first runtime's wiring. What changes: the second runtime's
+project hook file is created or merged so every guarded lifecycle event
+(session start, prompt, pre-write guard, post-task sync, subagent close,
+pre-compaction, session close) runs the same vendored guard scripts. Merge
+discipline: entries the project owner added themselves are preserved verbatim;
+bee-shipped entries in ANY historical shape — including wiring that resolved
+through the first runtime's project variable (dead on the second runtime) and
+the source-repository layout — are replaced by the canonical render, never
+preserved beside it (a stale twin would fire every event twice); a pre-existing
+file is backed up before the first rewrite; a second apply changes nothing.
+Two pinned asymmetries with the first runtime, both catalog-declared: the
+model-tier guard is not wired (the second runtime does not expose agent spawn
+through a pre-tool event), and every command resolves the project root from the
+session's working directory with a visible fail-open when there is none. What
+the human observes: after updating, the second runtime's hook panel lists the
+full bee guard set for the project (trust must still be granted once, in that
+runtime, per project — the installer cannot grant it).
+
+**Guarantee the state-layer landing pages (every apply run).** Trigger: any
+apply where the project lacks its reading map or its system overview in the
+specs area. What blocks it: nothing. What changes: each missing file is created
+as a small skeleton that names its owner (the spec-sync discipline) and points
+the reader to a bootstrap pass; an existing file is NEVER touched, drifted or
+not — content belongs to spec-sync, existence belongs to onboarding. What the
+human observes: "read the spec before the code" and "where does X live" have a
+landing page from day one in every onboarded project.
+
 ## Actors & Access
 
 - **Agent** — runs check and apply; the only actor that executes onboarding.
@@ -318,6 +348,12 @@ printed quickstart also speak only the unified dispatcher's status command.
 - `skills/bee-hive/scripts/test_onboard_bee.mjs` — section 9c sandbox cases.
 - `skills/bee-hive/templates/tests/test_lib.mjs` — statusline byte-equality sweep.
 - Host-side settings contract: `.claude/settings.json` → `statusLine.command`.
+- `skills/bee-hive/scripts/onboard_bee.mjs` — `renderCodexHookEntries()`,
+  `mergeCodexHooks()`, `isBeeCodexHookEntry()` (any-transport bee-entry
+  matcher), `merge_codex_hooks` plan/apply action, `.codex/hooks.json`
+  pseudo-entry in `buildManagedVersions`; `READING_MAP_STUB`/
+  `SYSTEM_OVERVIEW_STUB` + `create_specs_stub` (create-only) — host contract:
+  `.codex/hooks.json`, `docs/specs/reading-map.md`, `docs/specs/system-overview.md`.
 - `skills/bee-hive/scripts/onboard_bee.mjs` — `GITIGNORE_MARKER_START`/`_END`,
   `GITIGNORE_START_RE`/`_END_RE` (marker-resemblance guard),
   `gitignoreBlockPresent`, `normalizeGitignoreForCompare` (CRLF tolerance),

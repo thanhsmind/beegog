@@ -22,18 +22,23 @@
       "BEE_VERSION = 0.1.36"
     ]
   },
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "session-main",
+    "outcome": "Release 0.1.36: version bump, self-onboard beegog (codex hooks migrated sang vendored), global skills sync 13 skill",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/state.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-14T02:56:22.542Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null
+    "verify_output": "PASS - failures: 0, skipped: 1. Self-onboard applied 17 items (copy_lib state.mjs 0.1.36, create_specs_stub system-overview, merge_codex_hooks .codex/hooks.json, write_onboarding, 13 sync_skill), recheck up_to_date. ~/.claude/skills/bee-hive: BEE_VERSION 0.1.36, onboard_bee.mjs co merge_codex_hooks. beegog .codex/hooks.json migrated: 0 ref $r/hooks, 9 ref .bee/bin/hooks",
+    "verify_passed": true,
+    "claimed_at": "2026-07-14T02:52:01.195Z",
+    "verify_command": "node skills/bee-hive/scripts/test_onboard_bee.mjs && self-onboard --apply --global-skills",
+    "verified_at": "2026-07-14T02:56:22.494Z"
   }
 }
