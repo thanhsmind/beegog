@@ -723,6 +723,69 @@ try {
   check(codexStateSyncCount === 3,
     "bee-state-sync.mjs appears exactly 3x (canonical PostToolUse/SubagentStop/Stop; seeded stale Stop twin dropped)",
     `count: ${codexStateSyncCount}`);
+
+  // --- 9e. Codex user-config status line (machine-level, add-only) -----------
+  // Uses its own temp repo + fake homes: the check targets ~/.codex/config.toml
+  // via $HOME, which runOnboard already fakes per case.
+  const cslTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-codex-sl-"));
+  try {
+    // (a) Codex absent: no item, and apply never creates the file.
+    const cslHomeA = makeFakeHome();
+    const cslPlanA = runOnboard(["--repo-root", cslTmp, "--json"], cslHomeA);
+    check(!(cslPlanA.payload?.plan || []).some((i) => i.action === "ensure_codex_statusline"),
+      "no ~/.codex/config.toml -> no ensure_codex_statusline item");
+    runOnboard(["--repo-root", cslTmp, "--apply", "--json"], cslHomeA);
+    check(!fs.existsSync(path.join(cslHomeA, ".codex", "config.toml")),
+      "onboarding never creates ~/.codex/config.toml when Codex is absent");
+
+    // (b) config with [tui] but no status_line: spliced under the header,
+    // everything else preserved, .bak written, recheck clean.
+    const cslHomeB = makeFakeHome();
+    fs.mkdirSync(path.join(cslHomeB, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(cslHomeB, ".codex", "config.toml"),
+      'model = "gpt-x"\n\n[tui]\ntheme = "dark"\n\n[projects."/x"]\ntrust_level = "trusted"\n',
+      "utf8");
+    const cslPlanB = runOnboard(["--repo-root", cslTmp, "--json"], cslHomeB);
+    check((cslPlanB.payload?.plan || []).some((i) => i.action === "ensure_codex_statusline"),
+      "config.toml without status_line -> ensure_codex_statusline planned");
+    runOnboard(["--repo-root", cslTmp, "--apply", "--json"], cslHomeB);
+    const cslCfgB = fs.readFileSync(path.join(cslHomeB, ".codex", "config.toml"), "utf8");
+    check(/\[tui\]\nstatus_line = \["current-dir"/.test(cslCfgB),
+      "status_line spliced directly under the existing [tui] header");
+    check(cslCfgB.includes("status_line_use_colors = true"),
+      "status_line_use_colors rides the same splice");
+    check(cslCfgB.includes('theme = "dark"') && cslCfgB.includes('trust_level = "trusted"') &&
+      cslCfgB.includes('model = "gpt-x"'),
+      "existing config content preserved around the splice");
+    check(fs.existsSync(path.join(cslHomeB, ".codex", "config.toml.bak")),
+      "config.toml.bak written before the splice");
+    const cslPlanB2 = runOnboard(["--repo-root", cslTmp, "--json"], cslHomeB);
+    check(!(cslPlanB2.payload?.plan || []).some((i) => i.action === "ensure_codex_statusline"),
+      "recheck after apply plans no further statusline item");
+
+    // (c) config without a [tui] section (and no trailing newline): appended.
+    const cslHomeC = makeFakeHome();
+    fs.mkdirSync(path.join(cslHomeC, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(cslHomeC, ".codex", "config.toml"), 'model = "gpt-x"', "utf8");
+    runOnboard(["--repo-root", cslTmp, "--apply", "--json"], cslHomeC);
+    const cslCfgC = fs.readFileSync(path.join(cslHomeC, ".codex", "config.toml"), "utf8");
+    check(cslCfgC.startsWith('model = "gpt-x"') && /\n\[tui\]\nstatus_line = \[/.test(cslCfgC),
+      "[tui] section appended when absent, even after a no-trailing-newline file");
+
+    // (d) a present status_line — custom segments — is preference, not drift.
+    const cslHomeD = makeFakeHome();
+    fs.mkdirSync(path.join(cslHomeD, ".codex"), { recursive: true });
+    const cslCustomCfg = '[tui]\nstatus_line = ["model"]\n';
+    fs.writeFileSync(path.join(cslHomeD, ".codex", "config.toml"), cslCustomCfg, "utf8");
+    const cslPlanD = runOnboard(["--repo-root", cslTmp, "--json"], cslHomeD);
+    check(!(cslPlanD.payload?.plan || []).some((i) => i.action === "ensure_codex_statusline"),
+      "custom status_line present -> no item planned");
+    runOnboard(["--repo-root", cslTmp, "--apply", "--json"], cslHomeD);
+    check(fs.readFileSync(path.join(cslHomeD, ".codex", "config.toml"), "utf8") === cslCustomCfg,
+      "custom status_line left untouched byte-for-byte by apply");
+  } finally {
+    fs.rmSync(cslTmp, { recursive: true, force: true });
+  }
   check(fs.existsSync(`${codexRepoPath}.bak`),
     ".codex/hooks.json.bak backup created when merging into an existing file");
   check(fs.readFileSync(path.join(tmp, "docs", "specs", "reading-map.md"), "utf8")

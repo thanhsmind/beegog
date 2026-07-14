@@ -1435,6 +1435,36 @@ function mergeCodexHooks(hooksPath) {
   };
 }
 
+// ---------- codex user config status line (machine-level) ----------
+// Codex has no per-repo status line and no custom-script support: the only
+// surface is [tui] status_line in the USER config (~/.codex/config.toml),
+// built from Codex's fixed segment ids. Onboarding guarantees the key EXISTS
+// (mirroring the Claude statusline pair's intent: cwd | branch | model
+// [effort] | ctx | 5h | 7d + tokens) and never touches a present one — the
+// user's own segment choice is preference, not drift. When Codex is not
+// installed (no user config file), this stays out entirely: onboarding never
+// creates the file for a tool that is not there.
+
+const CODEX_STATUS_LINE_BLOCK = `status_line = ["current-dir", "git-branch", "model-with-reasoning", "context-remaining", "five-hour-limit", "weekly-limit", "used-tokens"]
+status_line_use_colors = true
+`;
+
+function codexUserConfigPath() {
+  return path.join(os.homedir(), ".codex", "config.toml");
+}
+
+function codexStatuslineMissing() {
+  try {
+    const configPath = codexUserConfigPath();
+    if (!fs.existsSync(configPath)) {
+      return false; // Codex absent — stay out
+    }
+    return !/^[ \t]*status_line[ \t]*=/m.test(fs.readFileSync(configPath, "utf8"));
+  } catch {
+    return false; // unreadable — fail open, never block onboarding on it
+  }
+}
+
 // ---------- standard commands notice (docs/09 item 1, decision D4) ----------
 
 const COMMAND_KEYS = ["setup", "start", "test", "verify"];
@@ -1677,6 +1707,13 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
     } catch {
       plan.push({ action: "merge_codex_hooks", path: ".codex/hooks.json" });
     }
+  }
+
+  // 5c. Codex user-config status line (machine-level, add-only): the item's
+  // path is display-only — the apply case resolves the real user-config path
+  // itself and never joins it under repoRoot.
+  if (codexStatuslineMissing()) {
+    plan.push({ action: "ensure_codex_statusline", path: "~/.codex/config.toml" });
   }
 
   // 5b. CLAUDE.md @import fallback (D1, default; --no-claude-md opts out):
@@ -1972,6 +2009,25 @@ function applyPlan(
           fs.copyFileSync(target, `${target}.bak`);
         }
         writeFileAtomic(target, merged.text);
+        break;
+      }
+      case "ensure_codex_statusline": {
+        // Machine-level target: NEVER the repoRoot-joined `target` above.
+        const configPath = codexUserConfigPath();
+        if (!codexStatuslineMissing()) {
+          break; // plan-to-apply race: someone added it meanwhile — stay out
+        }
+        const text = readTextIfExists(configPath);
+        fs.copyFileSync(configPath, `${configPath}.bak`);
+        const tuiHeader = /^\[tui\][ \t]*\r?$/m;
+        let next;
+        if (tuiHeader.test(text)) {
+          next = text.replace(tuiHeader, (header) => `${header}\n${CODEX_STATUS_LINE_BLOCK.trimEnd()}`);
+        } else {
+          const sep = !text || text.endsWith("\n") ? "" : "\n";
+          next = `${text}${sep}\n[tui]\n${CODEX_STATUS_LINE_BLOCK}`;
+        }
+        writeFileAtomic(configPath, next);
         break;
       }
       case "write_onboarding": {

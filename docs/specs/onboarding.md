@@ -196,6 +196,20 @@ the human observes: after updating, the second runtime's hook panel lists the
 full bee guard set for the project (trust must still be granted once, in that
 runtime, per project — the installer cannot grant it).
 
+**Guarantee the second runtime's status display (machine-level, add-only).**
+Trigger: any run on a machine whose second-runtime user config exists but
+carries no status-line key — the second runtime has no per-project status
+surface and no custom-script support, only a fixed-segment list in the user
+config. What blocks it: the tool being absent (no user config file — onboarding
+never creates it) or the key already being present, custom segments included: a
+present choice is preference, never drift, and is left untouched byte-for-byte.
+What changes: the canonical segment list (working directory, branch, model with
+effort, context remaining, both rate-limit windows, tokens used — mirroring the
+first runtime's status line) is spliced under the existing TUI section or
+appended as a new one, with a backup written first. What the human observes:
+after one apply per machine, the second runtime shows the same status story as
+the first; a re-run plans nothing.
+
 **Guarantee the state-layer landing pages (every apply run).** Trigger: any
 apply where the project lacks its reading map or its system overview in the
 specs area. What blocks it: nothing. What changes: each missing file is created
@@ -348,6 +362,10 @@ landing page from day one in every onboarded project.
 - `skills/bee-hive/scripts/test_onboard_bee.mjs` — section 9c sandbox cases.
 - `skills/bee-hive/templates/tests/test_lib.mjs` — statusline byte-equality sweep.
 - Host-side settings contract: `.claude/settings.json` → `statusLine.command`.
+- `skills/bee-hive/scripts/onboard_bee.mjs` — `CODEX_STATUS_LINE_BLOCK`,
+  `codexUserConfigPath()`, `codexStatuslineMissing()`,
+  `ensure_codex_statusline` plan/apply action (machine-level: `~/.codex/config.toml`,
+  never repoRoot-joined).
 - `skills/bee-hive/scripts/onboard_bee.mjs` — `renderCodexHookEntries()`,
   `mergeCodexHooks()`, `isBeeCodexHookEntry()` (any-transport bee-entry
   matcher), `merge_codex_hooks` plan/apply action, `.codex/hooks.json`

@@ -8,7 +8,7 @@ import { readJson, writeJsonAtomic } from './fsutil.mjs';
 import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './claims.mjs';
 import { pathsOverlap } from './reservations.mjs';
 
-export const BEE_VERSION = '0.1.36';
+export const BEE_VERSION = '0.1.37';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
