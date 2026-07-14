@@ -11,7 +11,7 @@
   "capabilities": {},
   "commands": {
     "test": "node skills/bee-hive/templates/tests/test_lib.mjs",
-    "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/test_portable_paths.mjs"
+    "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/test_portable_paths.mjs && node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs"
   },
   "gate_bypass": true,
   "models": {
@@ -22,7 +22,7 @@
         "effort": "medium"
       },
       "review": "opus",
-       "advisor":{
+      "advisor": {
         "kind": "cli",
         "command": "codex exec -m gpt-5.6-sol --yolo -c model_reasoning_effort=\"high\"  workspace-write"
       }
