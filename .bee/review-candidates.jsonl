@@ -9,3 +9,4 @@
 {"id":"56c1ba08-08cb-481a-afbd-d047756bcdef","type":"candidate","date":"2026-07-13T18:45:00.645Z","feature":"fresh-session-handoff","head":"b6fd1f92bdaa5604babf9ccfbd4a99b2a4132e10","mode":"high-risk","baseline":null,"cells":[]}
 {"id":"ab2579e9-e320-41d6-99d2-7f8027adf8c8","type":"candidate","date":"2026-07-13T18:50:06.754Z","feature":"release-v0.1.33","head":"0eb4b0380e468a41ee21df4a4c65414aab758b87","mode":"tiny","baseline":null,"cells":[]}
 {"id":"9812baad-a7ab-486f-b14a-e7f2e18f49bc","type":"candidate","date":"2026-07-13T21:53:13.823Z","feature":"shim-retire","head":"0d897538e5bfe8ec2fda0511f0691129b36be1b9","mode":"standard","baseline":null,"cells":[]}
+{"id":"a64db8af-b953-4f6e-8f59-cedbe62479c5","type":"candidate","date":"2026-07-14T12:41:23.223Z","feature":"chain-integrity","head":"0847310f7f99c13a4a51f6227b4e12227c9471b4","mode":"standard","baseline":null,"cells":[]}
