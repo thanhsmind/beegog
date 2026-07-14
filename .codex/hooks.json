@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-session-init.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-session-init.mjs --source=repo",
             "statusMessage": "bee: session bootstrap"
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-prompt-context.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-prompt-context.mjs --source=repo",
             "statusMessage": "bee: phase reminder"
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-write-guard.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-write-guard.mjs --source=repo",
             "statusMessage": "bee: write guard"
           }
         ]
@@ -41,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-state-sync.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-state-sync.mjs --source=repo",
             "statusMessage": "bee: state sync"
           }
         ]
@@ -52,12 +52,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-state-sync.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-state-sync.mjs --source=repo",
             "statusMessage": "bee: state sync"
           },
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-chain-nudge.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-chain-nudge.mjs --source=repo",
             "statusMessage": "bee: chain nudge"
           }
         ]
@@ -68,7 +68,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-session-close.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-session-close.mjs --source=repo",
             "statusMessage": "bee: pre-compact flush check"
           }
         ]
@@ -79,12 +79,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-state-sync.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-state-sync.mjs --source=repo",
             "statusMessage": "bee: state sync"
           },
           {
             "type": "command",
-            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/.bee/bin/hooks/bee-session-close.mjs --source=repo",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-session-close.mjs --source=repo",
             "statusMessage": "bee: session close check"
           }
         ]
