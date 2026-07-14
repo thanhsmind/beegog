@@ -159,6 +159,12 @@ Review rơi về generation (chấp nhận mất reviewer độc lập — hợp
 }
 ```
 
+## Config demo chạy được ngay
+
+Muốn một file `.bee/config.json` hoàn chỉnh thay vì ghép từng khối: [`.bee/config-sample-cli-executors.json`](../.bee/config-sample-cli-executors.json) — `generation` đi qua **agy** (`Gemini 3.5 Flash (High)`), `review` đi qua **opencode** (read-only), `extraction` giữ `haiku`. Copy đè `.bee/config.json` là chạy.
+
+Đã kiểm 2026-07-14: `resolveTier` đọc file này ra `generation -> cli`, `review -> cli` với command nguyên vẹn, và đúng lệnh `generation` trong đó chạy qua transport stdin của bee trả về kết quả thật. Chỉ copy khi máy đã cài `agy`/`opencode` — thiếu CLI thì mọi dispatch worker sẽ fail.
+
 ## Đổi preset
 
 Sửa `.bee/config.json` → chạy `node .bee/bin/bee.mjs status` xem dòng `Models (claude): ...` xác nhận. Không cần onboard lại.
