@@ -37,10 +37,19 @@ function mkFixture(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
+// Copy the WHOLE lib directory (readdirSync, name-agnostic — matches
+// hooks/test_write_guard.mjs:42-57's own copyLib) rather than a hardcoded
+// name list: a hardcoded list silently goes stale every time a new
+// transitive dependency ships (exactly what happened here — state.mjs's
+// claims.mjs/reservations.mjs imports shipped after this list was last
+// updated, so the fixture's state.mjs threw ERR_MODULE_NOT_FOUND at import,
+// bee-model-guard.mjs's fail-open catch turned that into exit 0, and every
+// expect-deny row read as "allowed").
 function copyLib(fixtureRoot) {
   const libDir = path.join(fixtureRoot, ".bee", "bin", "lib");
   fs.mkdirSync(libDir, { recursive: true });
-  for (const name of ["state.mjs", "fsutil.mjs"]) {
+  for (const name of fs.readdirSync(REAL_LIB_DIR)) {
+    if (!name.endsWith(".mjs")) continue;
     fs.copyFileSync(path.join(REAL_LIB_DIR, name), path.join(libDir, name));
   }
 }
