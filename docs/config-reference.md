@@ -112,4 +112,6 @@ Clean JSON — paste into `.bee/config.json` and edit values (keep any existing 
 
 The full, copyable version of this file lives at [`.bee/config-sample.json`](../.bee/config-sample.json) — it carries every key, including `hooks`, `lanes`/`capabilities`, and a `dogfood_repos` example.
 
+A second, ready-to-run demo lives at [`.bee/config-sample-cli-executors.json`](../.bee/config-sample-cli-executors.json): the same file with the `generation` slot dispatched to **agy** (Antigravity, `Gemini 3.5 Flash (High)`) and `review` to **opencode**, both wrapped in `bash -lc '… "$(cat)"'` because neither CLI reads the worker prompt from stdin. Copy it only if those CLIs are installed — otherwise every worker dispatch fails. Presets and the per-flag reasoning: [`docs/model-presets.md`](model-presets.md).
+
 > **ceiling** has no entry — it is always whatever model you run the session on.

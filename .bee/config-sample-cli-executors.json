@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "session-init": true,
+    "prompt-context": true,
+    "write-guard": true,
+    "state-sync": true,
+    "chain-nudge": true,
+    "session-close": true
+  },
+  "guards": {
+    "idle_gate": true
+  },
+  "lanes": {},
+  "capabilities": {},
+  "commands": {
+    "setup": "npm install",
+    "start": "npm run dev",
+    "test": "npm test",
+    "verify": "npm run build"
+  },
+  "gate_bypass": false,
+  "models": {
+    "claude": {
+      "extraction": "haiku",
+      "generation": {
+        "kind": "cli",
+        "command": "bash -lc 'agy -p \"$(cat)\" --model \"Gemini 3.5 Flash (High)\" --dangerously-skip-permissions --print-timeout 30m'"
+      },
+      "review": {
+        "kind": "cli",
+        "command": "bash -lc 'opencode run --agent plan -m anthropic/claude-opus-4-6 \"$(cat)\"'"
+      },
+      "advisor": null
+    },
+    "codex": {
+      "extraction": null,
+      "generation": null,
+      "review": {
+        "kind": "cli",
+        "command": "codex exec --skip-git-repo-check -s read-only -c model_reasoning_effort=xhigh -"
+      },
+      "advisor": null
+    }
+  }
+}
