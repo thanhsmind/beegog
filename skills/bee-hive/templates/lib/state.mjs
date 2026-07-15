@@ -723,6 +723,43 @@ export function hookEnabled(root, name) {
   return config.hooks[name] !== false;
 }
 
+// ── Gate-bypass autopilot levels (total-autopilot, decision dcf01d7b) ────────
+// The `.bee/config.json` `gate_bypass` value normalizes into one of four
+// levels. Backward compatible: the legacy boolean `true` maps to 'normal' (the
+// original tiny/small/standard bypass); `false`/absent/unknown map to 'off'.
+//   off    — every gate stops for the human (default; also plain `false`)
+//   normal — Gates 1-3 auto-approved for tiny/small/standard non-hard-gate
+//            work; high-risk/hard-gate, secret reads, and Gate 4 UAT still stop
+//   full   — ALL Gates 1-3 auto-approved incl. high-risk/hard-gate work; only
+//            secret-file reads and a review P1 finding still stop
+//   total  — ZERO stops: every gate at every lane, secret-file reads, Gate 4
+//            UAT, and review P1 findings auto-proceed; no human checkpoint left
+export const BYPASS_LEVELS = ['off', 'normal', 'full', 'total'];
+
+export function bypassLevel(root) {
+  const raw = readConfig(root).gate_bypass;
+  if (raw === 'total') return 'total';
+  if (raw === 'full') return 'full';
+  if (raw === true || raw === 'on' || raw === 'normal') return 'normal';
+  return 'off';
+}
+
+// One canonical loud banner per active level, shared by `bee status` and the
+// session preamble so bypass reads identically wherever it is surfaced. 'off'
+// renders no banner (empty string) — callers omit the line entirely.
+export function bypassBanner(level) {
+  switch (level) {
+    case 'total':
+      return '⚡⚡⚡ GATE BYPASS: TOTAL AUTOPILOT — ZERO STOPS. Every gate (any lane, high-risk/hard-gate included), secret-file reads, and review P1 findings auto-proceed; NO human checkpoint remains. Turn off: bee-bypass-gate off';
+    case 'full':
+      return '⚡⚡ GATE BYPASS: FULL AUTOPILOT — ALL Gates 1-3 auto-approved including high-risk/hard-gate work; only secret-file reads and a review P1 finding still stop for the human. Turn off: bee-bypass-gate off';
+    case 'normal':
+      return '⚡ GATE BYPASS: NORMAL — Gates 1-3 auto-approved for tiny/small/standard work only; high-risk/hard-gate, secret reads, and Gate 4 UAT still stop. Turn off: bee-bypass-gate off';
+    default:
+      return '';
+  }
+}
+
 // D1 — one shared warning line for both surfacers (`bee.mjs status` and
 // onboard_bee.mjs) so a stale `advisor` key reads identically wherever it is
 // noticed. Warn only, never error: readConfig above already tolerates the key.

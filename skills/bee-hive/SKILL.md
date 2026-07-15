@@ -126,14 +126,14 @@ Review is on demand (SPEC R1/R3/R8, decision 565e68d0): no lane auto-dispatches 
 
 ## The Four Gates
 
-Never skipped, never batched, never self-approved — including go mode and headless mode. The **one** exception is the opt-in gate-bypass switch (`bee-bypass-gate` skill → `.bee/config.json` `gate_bypass: true`), which auto-approves Gates 1-3 for `tiny`/`small`/`standard` work only; high-risk/hard-gate work, secrets, and Gate 4 UAT always stop (full rule: the Gate Presentation Contract in `references/routing-and-contracts.md`). Headless is not bypass — headless still stops at every gate.
+Never skipped, never batched, never self-approved — including go mode and headless mode. The **one** exception is the opt-in gate-bypass switch (`bee-bypass-gate` skill → `.bee/config.json` `gate_bypass`), which is a **level**: `normal` (legacy `true`) auto-approves Gates 1-3 for `tiny`/`small`/`standard` work only — high-risk/hard-gate work, secrets, and Gate 4 UAT still stop; `full` also auto-approves high-risk/hard-gate Gates 1-3 (only secret reads and a review P1 still stop); `total` auto-approves everything and stops for nothing at all. When the human sets `full`/`total` they have deliberately lifted the high-risk floor — honor it, do not re-erect a stop they removed (full rule: the Gate Presentation Contract in `references/routing-and-contracts.md`). Headless is not bypass — headless still stops at every gate.
 
 - **Gate 1:** "Decisions locked. Approve CONTEXT.md before planning?"
 - **Gate 2:** "Work shape is ready. Approve before current-work preparation?"
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
 
-**Gate 4 lives only inside a user-invoked review session (SPEC R8, decision 565e68d0).** It is asked when the user has explicitly called for independent review over a scope, never automatically after any lane's execution completes and never after an unreviewed feature close. Gate bypass never creates or auto-approves a review session — bypass covers Gates 1-3 only, and even inside a running session Gate 4's UAT items and any P1 always stop for the human.
+**Gate 4 lives only inside a user-invoked review session (SPEC R8, decision 565e68d0).** It is asked when the user has explicitly called for independent review over a scope, never automatically after any lane's execution completes and never after an unreviewed feature close. Gate bypass never *creates* a review session at any level. Under `normal`/`full`, even inside a running session Gate 4's UAT items and any P1 always stop for the human; only `total` auto-proceeds on them (the human chose zero stops).
 
 Lane exceptions (Modes and Lanes table): `docs` lane has no gates; `tiny` and `small` merge Gates 2+3 into one shape+execution question. Gates 1-3 are otherwise unchanged and asked one at a time; Gate 4 is never part of a lane's default chain for any lane, `tiny` through `high-risk` — it exists only inside an on-demand review session.
 
@@ -186,7 +186,7 @@ Hooks block or inject; the agent responds by contract.
 
 ## Headless
 
-With `mode:headless`: never ask blocking questions. Perform onboarding checks and routing only when unambiguous; defer every ambiguity (stale onboarding needing `--apply`, HANDOFF present, unclear route) into an `Outstanding Questions` section of a structured terminal report. The four gates are NEVER self-approved in headless mode — the only mode that self-approves gates is the explicit opt-in gate-bypass switch (and only for normal-lane work, never high-risk/hard-gate/UAT/secrets). Headless and bypass are independent: headless without bypass still stops at every gate.
+With `mode:headless`: never ask blocking questions. Perform onboarding checks and routing only when unambiguous; defer every ambiguity (stale onboarding needing `--apply`, HANDOFF present, unclear route) into an `Outstanding Questions` section of a structured terminal report. The four gates are NEVER self-approved in headless mode — the only mechanism that self-approves gates is the explicit opt-in gate-bypass switch, and how far it reaches is its level (`normal` = normal-lane only; `full` = also high-risk/hard-gate; `total` = everything incl. UAT/secrets). Headless and bypass are independent: headless without bypass still stops at every gate.
 
 ## Red Flags
 

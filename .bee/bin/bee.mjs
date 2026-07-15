@@ -36,6 +36,8 @@ import { pathToFileURL } from 'node:url';
 import {
   findRepoRoot,
   readConfig,
+  bypassLevel,
+  bypassBanner,
   readState,
   readStateStrict,
   writeState,
@@ -298,7 +300,8 @@ function buildStatus(root) {
     mode: state.mode,
     feature: state.feature,
     gates: state.approved_gates,
-    gate_bypass: readConfig(root).gate_bypass === true,
+    gate_bypass: bypassLevel(root) !== 'off',
+    gate_bypass_level: bypassLevel(root),
     models: readConfig(root).models,
     tier_mix: tierMix(root, { feature: state.feature || null }),
     ceiling_scarcity: ceilingScarcityWarning(root),
@@ -343,8 +346,8 @@ function renderStatusText(status) {
     `Onboarding: ${status.onboarding.installed ? `installed (bee ${status.onboarding.bee_version})` : 'MISSING'}${status.onboarding.drift ? ' [version drift]' : ''}`,
     `Phase: ${status.phase} | Mode: ${status.mode ?? 'none'} | Feature: ${status.feature ?? 'none'}`,
     `Gates: ${GATE_NAMES.map((g) => `${g}=${status.gates?.[g] ? 'approved' : 'pending'}`).join(' ')}`,
-    ...(status.gate_bypass
-      ? ['⚡ GATE BYPASS ON — Gates 1-3 auto-approved for normal-lane work; high-risk/hard-gate, secrets, UAT still stop. Off: bee-bypass-gate off']
+    ...(status.gate_bypass_level && status.gate_bypass_level !== 'off'
+      ? [bypassBanner(status.gate_bypass_level)]
       : []),
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,

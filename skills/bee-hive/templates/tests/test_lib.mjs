@@ -1596,6 +1596,9 @@ const EXPECTED_STATE_EXPORTS = [
   'readOnboarding',
   'readConfig',
   'hookEnabled',
+  'BYPASS_LEVELS',
+  'bypassLevel',
+  'bypassBanner',
   'STALE_ADVISOR_KEY_WARNING',
   'hasStaleAdvisorKey',
   'modelForTier',
@@ -1661,6 +1664,107 @@ check('readConfig strips a stale advisor key and never throws; advisor exports a
       actualExports.join(',') === expectedExports.join(','),
       `lib/state.mjs export surface drifted from the allowlist — actual: [${actualExports.join(', ')}] expected: [${expectedExports.join(', ')}]`,
     );
+  } finally {
+    fs.rmSync(sRoot, { recursive: true, force: true });
+  }
+});
+
+check('bypassLevel normalizes gate_bypass into off/normal/full/total (legacy true -> normal) and bypassBanner is loud for on-levels, empty for off', () => {
+  const { bypassLevel, bypassBanner, BYPASS_LEVELS } = stateModuleExports;
+  const bRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-bypass-level-'));
+  fs.mkdirSync(path.join(bRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(bRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  const setBypass = (value) =>
+    writeJsonAtomic(
+      path.join(bRoot, '.bee', 'config.json'),
+      value === undefined ? {} : { gate_bypass: value },
+    );
+  try {
+    assert(
+      BYPASS_LEVELS.join(',') === 'off,normal,full,total',
+      `BYPASS_LEVELS drifted: ${JSON.stringify(BYPASS_LEVELS)}`,
+    );
+
+    // absent / false / unknown -> off
+    setBypass(undefined);
+    assert(bypassLevel(bRoot) === 'off', 'absent gate_bypass -> off');
+    setBypass(false);
+    assert(bypassLevel(bRoot) === 'off', 'false -> off');
+    setBypass('garbage');
+    assert(bypassLevel(bRoot) === 'off', 'unknown string -> off (fail safe)');
+
+    // legacy boolean true and its aliases -> normal (backward compatible)
+    setBypass(true);
+    assert(bypassLevel(bRoot) === 'normal', 'legacy true -> normal');
+    setBypass('on');
+    assert(bypassLevel(bRoot) === 'normal', "'on' -> normal");
+    setBypass('normal');
+    assert(bypassLevel(bRoot) === 'normal', "'normal' -> normal");
+
+    // new levels
+    setBypass('full');
+    assert(bypassLevel(bRoot) === 'full', "'full' -> full");
+    setBypass('total');
+    assert(bypassLevel(bRoot) === 'total', "'total' -> total");
+
+    // banners: off is empty; every on-level is a non-empty loud line that
+    // names the level and how to turn it off.
+    assert(bypassBanner('off') === '', 'off banner is empty');
+    for (const level of ['normal', 'full', 'total']) {
+      const banner = bypassBanner(level);
+      assert(banner.length > 0, `${level} banner non-empty`);
+      assert(banner.includes('GATE BYPASS'), `${level} banner names GATE BYPASS`);
+      assert(banner.includes('bee-bypass-gate off'), `${level} banner states how to turn off`);
+    }
+    // full/total banners must advertise that high-risk is covered — that is the
+    // whole point of the new levels over normal.
+    assert(/high-risk/i.test(bypassBanner('full')), 'full banner mentions high-risk coverage');
+    assert(/ZERO STOPS/.test(bypassBanner('total')), 'total banner shouts ZERO STOPS');
+    assert(
+      !/high-risk\/hard-gate work/i.test(bypassBanner('normal')) ||
+        /still stop/i.test(bypassBanner('normal')),
+      'normal banner still says high-risk stops',
+    );
+  } finally {
+    fs.rmSync(bRoot, { recursive: true, force: true });
+  }
+});
+
+// bee.mjs status --json must carry the level string end to end, and the text
+// render must print the loud banner for a full/total repo.
+check('bee.mjs status surfaces gate_bypass_level and renders the loud banner for total', () => {
+  const sRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-bypass-status-'));
+  fs.mkdirSync(path.join(sRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(sRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  const beeMjsModulePath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
+  const runStatus = (args) =>
+    spawnSync(process.execPath, [beeMjsModulePath, 'status', ...args], {
+      cwd: sRoot,
+      encoding: 'utf8',
+    });
+  try {
+    writeJsonAtomic(path.join(sRoot, '.bee', 'config.json'), { gate_bypass: 'total' });
+    const jsonRun = runStatus(['--json']);
+    assert(jsonRun.status === 0, `status --json exited ${jsonRun.status} :: ${jsonRun.stderr}`);
+    const payload = JSON.parse(jsonRun.stdout);
+    assert(payload.gate_bypass === true, 'total => gate_bypass boolean true (back-compat field)');
+    assert(payload.gate_bypass_level === 'total', 'total => gate_bypass_level "total"');
+    const textRun = runStatus([]);
+    assert(textRun.status === 0, `status (text) exited ${textRun.status} :: ${textRun.stderr}`);
+    assert(/TOTAL AUTOPILOT/.test(textRun.stdout), 'text render prints the TOTAL AUTOPILOT banner');
+    assert(/ZERO STOPS/.test(textRun.stdout), 'text render shouts ZERO STOPS');
+
+    // off => no banner, boolean false
+    writeJsonAtomic(path.join(sRoot, '.bee', 'config.json'), { gate_bypass: false });
+    const offJson = JSON.parse(runStatus(['--json']).stdout);
+    assert(offJson.gate_bypass === false && offJson.gate_bypass_level === 'off', 'false => off');
+    assert(!/GATE BYPASS/.test(runStatus([]).stdout), 'off render prints no bypass banner');
   } finally {
     fs.rmSync(sRoot, { recursive: true, force: true });
   }

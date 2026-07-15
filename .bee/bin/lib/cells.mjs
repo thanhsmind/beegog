@@ -340,7 +340,7 @@ export function claimCell(root, id, worker) {
     throw new Error(
       laneRecord
         ? `claimCell: lane "${cell.feature}" gate "execution" is not approved — cells of this feature cannot be claimed before ITS lane passes Gate 3 (D2: only the lane's own approvals authorize its cells — the default pipeline's gate never does). Surface Gate 3 to the user for lane "${cell.feature}" and set its approved_gates.execution once approved.`
-        : 'claimCell: gate "execution" is not approved — cells cannot be claimed before execution is approved. Surface Gate 3 to the user ("Feasibility validated. Approve execution?") and set approved_gates.execution once approved. Only the opt-in gate_bypass switch may self-approve, and only for tiny/small/standard non-hard-gate work (decision 0010) — never self-approve high-risk/hard-gate execution.',
+        : 'claimCell: gate "execution" is not approved — cells cannot be claimed before execution is approved. Surface Gate 3 to the user ("Feasibility validated. Approve execution?") and set approved_gates.execution once approved. The opt-in gate_bypass switch may self-approve: level "normal" covers tiny/small/standard non-hard-gate work only; levels "full" and "total" also self-approve high-risk/hard-gate execution (decision 0010, total-autopilot dcf01d7b).',
     );
   }
   if (!cell) throw new Error(`claimCell: cell "${id}" not found.`);

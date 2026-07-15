@@ -175,20 +175,27 @@ Litmus test: **the user must be able to restate what they are approving in their
 
 This contract applies to all four gates, in every mode, including go mode.
 
-### Gate bypass mode (opt-in autopilot, decision 0010)
+### Gate bypass mode (opt-in autopilot, decisions 0010 / dcf01d7b)
 
-Off by default. Turned on with the `bee-bypass-gate` skill, which sets `.bee/config.json` `gate_bypass: true` (persistent per-repo). When it is on, the agent does **not** stop at a bypassable gate — it takes the RECOMMENDATION option itself and continues. This is the one deliberate exception to "gates are never self-approved"; **headless mode is not** — headless still stops at every gate.
+Off by default. Turned on with the `bee-bypass-gate` skill, which sets `.bee/config.json` `gate_bypass` (persistent per-repo). When on at any level, the agent does **not** stop at a bypassed gate — it takes the RECOMMENDATION option itself and continues. This is the one deliberate exception to "gates are never self-approved"; **headless mode is not** — headless still stops at every gate.
 
-When `config.gate_bypass` is `true`, at **Gate 1, 2, or 3**:
+**`gate_bypass` is a level.** `bypassLevel()` (lib/state.mjs) normalizes the config value; the level decides how far bypass reaches. The whole point of the levels above `normal` is that the human said, in advance and explicitly, "when you have a recommended option I will always approve it — do not stop me; the result is what I care about." Honor that literally: at the chosen level, the recommended option IS the approval.
 
-1. **Safety floor — check first, and it is absolute.** If the feature's lane is `high-risk`, or the work carries any hard-gate flag (auth · authorization · data loss · audit/security · external provider · validation removal · database migration/schema change), the gate is **NOT** bypassed. Present it to the human normally, exactly as if bypass were off. Bypass covers only `tiny`/`small`/`standard` non-hard-gate work.
-2. Otherwise, do not ask. Instead: select the option the RECOMMENDATION favors; set `approved_gates.<gate>` in `.bee/state.json` (same write the human's "yes" would trigger); still write the machine-layer report to `docs/history/<feature>/reports/`; log a one-line audit entry — `node .bee/bin/bee.mjs decisions log --decision "auto-approved Gate N (bypass): <choice>" --rationale "<the recommendation's why>"` — so the approval is never silent; then post a **short chat line** (not a question) — `⚡ auto-approved Gate N (bypass): <what/why in one plain sentence>` — and continue. The human sees what happened and can still interrupt.
+| Level | Config value | Auto-approves | Still stops for the human |
+|---|---|---|---|
+| `off` | `false` / absent | nothing — every gate stops | every gate (default) |
+| `normal` | `true` / `"on"` / `"normal"` | Gates 1-3 for `tiny`/`small`/`standard` non-hard-gate work | high-risk/hard-gate Gates 1-3 · secret reads · Gate 4 UAT/P1 |
+| `full` | `"full"` | **all** Gates 1-3 at every lane, high-risk/hard-gate included | secret-file reads · a review P1 finding |
+| `total` | `"total"` | **everything** — all Gates 1-3 any lane, secret-file reads, Gate 4 UAT, review P1 findings | **nothing — zero stops** |
 
-**Gate 4 is never fully bypassed, and bypass never creates a review session (SPEC R8, decision 565e68d0).** Gate 4 only exists once the user has explicitly invoked `bee-reviewing` over a scope; bypass cannot start that session on its own. Inside a running session, UAT items (the SEE/CALL/RUN decisions) are always presented to the human, and any P1 finding always stops. The merge is auto-approved only when P1 = 0 **and** every UAT item was confirmed pass by the human; otherwise Gate 4 stops as normal.
+Legacy `true` maps to `normal`, so existing repos are unchanged. At **Gate 1, 2, or 3** when the level bypasses that gate:
 
-**Privacy is never bypassed.** Reading secret-shaped files always requires explicit human approval, regardless of `gate_bypass`.
+1. **Safety floor is level-scoped, not absolute.** Under `normal` the floor is exactly as before: a `high-risk` lane or any hard-gate flag (auth · authorization · data loss · audit/security · external provider · validation removal · database migration/schema change) is **NOT** bypassed — present it to the human normally. Under `full` and `total` the high-risk/hard-gate floor is **lifted** — the human lifted it by choosing the level — so those gates auto-approve too.
+2. Do not ask. Instead: select the option the RECOMMENDATION favors; set `approved_gates.<gate>` in `.bee/state.json` (same write the human's "yes" would trigger); still write the machine-layer report to `docs/history/<feature>/reports/`; log a one-line audit entry — `node .bee/bin/bee.mjs decisions log --decision "auto-approved Gate N (bypass): <choice>" --rationale "<the recommendation's why>"` — so the approval is never silent; then post a **short chat line** (not a question) — `⚡ auto-approved Gate N (bypass): <what/why in one plain sentence>` — and continue. The human sees what happened and can still interrupt.
 
-The mechanical guards do not change: `claimCell` and the write-guard still require `approved_gates.execution: true` — bypass simply means the agent records that approval itself for eligible work instead of waiting for the human. Bypass state is surfaced every session (the preamble and `bee_status` both print a loud `GATE BYPASS ON` line) so it is never silently in effect.
+**Gate 4 and secret reads follow the level.** Under `normal` and `full`, Gate 4 is never fully bypassed and bypass never creates a review session (SPEC R8, decision 565e68d0): a review only exists once the user invoked `bee-reviewing`, its UAT items are always presented, and any P1 always stops. Under `total`, a review the user started runs to completion without stopping — UAT items and P1 findings auto-proceed on the recommended resolution. **Secret-file reads** stop for the human under `off`/`normal`/`full`; only `total` auto-proceeds on them (the human accepted that credential contents may enter context/logs unprompted). Bypass still never *creates* a review session on its own at any level.
+
+The mechanical guards do not change: `claimCell` and the write-guard still require `approved_gates.execution: true` — bypass simply means the agent records that approval itself for eligible work instead of waiting for the human. Bypass state is surfaced every session (the preamble and `bee_status` both print a loud level-specific `GATE BYPASS` banner — `NORMAL` / `FULL AUTOPILOT` / `TOTAL AUTOPILOT — ZERO STOPS`) so the active level is never silently in effect.
 
 ### Delegation contract (fan-out: decide-altitude vs gather-altitude)
 

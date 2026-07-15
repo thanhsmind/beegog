@@ -10,3 +10,5 @@
 {"id":"ab2579e9-e320-41d6-99d2-7f8027adf8c8","type":"candidate","date":"2026-07-13T18:50:06.754Z","feature":"release-v0.1.33","head":"0eb4b0380e468a41ee21df4a4c65414aab758b87","mode":"tiny","baseline":null,"cells":[]}
 {"id":"9812baad-a7ab-486f-b14a-e7f2e18f49bc","type":"candidate","date":"2026-07-13T21:53:13.823Z","feature":"shim-retire","head":"0d897538e5bfe8ec2fda0511f0691129b36be1b9","mode":"standard","baseline":null,"cells":[]}
 {"id":"a64db8af-b953-4f6e-8f59-cedbe62479c5","type":"candidate","date":"2026-07-14T12:41:23.223Z","feature":"chain-integrity","head":"0847310f7f99c13a4a51f6227b4e12227c9471b4","mode":"standard","baseline":null,"cells":[]}
+{"id":"b5396c84-e497-439f-a548-8717494834f6","type":"candidate","date":"2026-07-15T06:14:33.448Z","feature":"codex-harness-hardening","head":"6af1a9dd84c1e25101c4a62791f7fdaee409fefe","mode":"standard","baseline":null,"cells":[]}
+{"id":"2b3330cf-e906-4134-af55-5107cf8ded32","type":"candidate","date":"2026-07-15T06:43:02.359Z","feature":"codex-harness-hardening","head":"b6d40b43c356f9b5c36ba860283971e4be7540b6","mode":"standard","baseline":null,"cells":[]}

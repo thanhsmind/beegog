@@ -10,6 +10,8 @@ import {
   COMMAND_KEYS,
   GATE_NAMES,
   readConfig,
+  bypassLevel,
+  bypassBanner,
   readState,
   readHandoff,
   readOnboarding,
@@ -161,10 +163,18 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
       );
     }
   }
-  if (readConfig(root).gate_bypass === true) {
-    lines.push(
-      '- ⚡ GATE BYPASS ON — the agent auto-approves Gates 1-3 for tiny/small/standard work (records the recommended choice, logs it, continues). High-risk/hard-gate work, secret reads, and Gate 4 UAT still stop for the human. Turn off with the bee-bypass-gate skill.',
-    );
+  const bypass = bypassLevel(root);
+  if (bypass !== 'off') {
+    lines.push(`- ${bypassBanner(bypass)}`);
+    if (bypass === 'full' || bypass === 'total') {
+      lines.push(
+        `  The agent does NOT stop for these gates — it records the recommended choice, logs a one-line audit decision, and continues. ${
+          bypass === 'total'
+            ? 'This includes secret-file reads and review P1 findings: nothing pauses for the human.'
+            : 'Only reading a secret-shaped file and a review P1 finding still pause for the human.'
+        }`,
+      );
+    }
   }
   if (handoffOutcome && handoffOutcome.ok === true) {
     // fsh-10 (D1): adoption succeeded — start-now, no confirmation needed.
