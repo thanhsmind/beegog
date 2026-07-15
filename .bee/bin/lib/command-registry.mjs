@@ -111,10 +111,7 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: [
-      "printf '%s' '[{...cell...}]' | bee cells add --stdin --json",
-      'bee cells add --file cell-demo-1.json --json',
-    ],
+    examples: ['bee cells add --file cell-demo-1.json --json'],
     deprecated: null,
   },
   {
