@@ -1,0 +1,55 @@
+{
+  "id": "worktree-isolation-3",
+  "feature": "worktree-isolation",
+  "title": "Swarming worktree dispatch protocol: isolation param, branch report, integration step, disposition table",
+  "lane": "high-risk",
+  "deps": [
+    "worktree-isolation-1"
+  ],
+  "files": [
+    "skills/bee-swarming/SKILL.md",
+    "skills/bee-swarming/references/swarming-reference.md",
+    "skills/bee-executing/references/worker-details.md"
+  ],
+  "read_first": [
+    "docs/history/worktree-isolation/CONTEXT.md",
+    "docs/history/worktree-isolation/plan.md",
+    "skills/bee-swarming/SKILL.md",
+    "skills/bee-swarming/references/swarming-reference.md"
+  ],
+  "action": "Per D1/D3 (decisions 42a01cfd/649d91b3/5f05b038): (1) swarming SKILL.md wave-dispatch step: on Claude Code, a multi-worker wave (>=2 concurrent workers) dispatches each worker with the Agent tool's isolation: worktree; solo lanes and single-worker waves keep the shared checkout. (2) swarming-reference worker prompt template: add a Worktree contract block (used only for worktree dispatch): 'you work in your own git worktree; coordination store resolves to the main checkout automatically; report your branch name (git branch --show-current) in the [DONE] result fields'. Replace the aspirational line ~71 with the real protocol. (3) Tend/goal-check gains the INTEGRATION step: on [DONE] from a worktree worker — merge the reported branch into the main working branch (plain merge, worker commit identity preserved); a conflict = halt that cell (typed integration failure, cell blocked, friction filed, investigate — NEVER the worker rescue ladder, never force-resolve); then re-run the cell verify in the MAIN checkout (cell counts only on post-merge green); then cleanup (git worktree remove if still present + git branch -d). (4) Disposition table (D3): [BLOCKED]/[HANDOFF] worktrees preserved with path+branch recorded in the cell trace; removal only after re-completion or explicit drop, logged; feature close prunes only merged-or-logged leftovers under .claude/worktrees/. (5) worker-details.md Atomic Commit section: note the branch-report field for worktree dispatch. Keep every edit in the files' existing voice.",
+  "must_haves": {
+    "truths": [
+      "the prompt template's worktree block instructs the branch report and nothing else new",
+      "the integration step states merge -> conflict-halts -> post-merge verify -> cleanup, in that order",
+      "the disposition table covers DONE/BLOCKED/HANDOFF/abandoned and never discards uncommitted work silently",
+      "no prose contradicts reservations remaining the file-ownership primitive (D1)"
+    ],
+    "artifacts": [
+      "edited sections in the three files"
+    ],
+    "key_links": [
+      "docs/history/worktree-isolation/CONTEXT.md D1 D3"
+    ],
+    "prohibitions": [
+      "editing installed copies under .claude/skills or .agents/skills",
+      "making worktree dispatch mandatory for any lane"
+    ]
+  },
+  "verify": "rg -q 'isolation:\\s*\"?worktree' skills/bee-swarming/SKILL.md && rg -q \"coordination store\" skills/bee-swarming/references/swarming-reference.md && rg -q \"branch\" skills/bee-executing/references/worker-details.md",
+  "behavior_change": true,
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

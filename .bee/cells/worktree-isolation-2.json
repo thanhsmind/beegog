@@ -1,0 +1,65 @@
+{
+  "id": "worktree-isolation-2",
+  "feature": "worktree-isolation",
+  "title": "Hook adapter hop + write-guard store/work split (fail-closed ambiguity) — RED-first guard/contract tests + manifest regen",
+  "lane": "high-risk",
+  "deps": [
+    "worktree-isolation-1"
+  ],
+  "files": [
+    "hooks/adapter.mjs",
+    "hooks/bee-write-guard.mjs",
+    ".bee/bin/hooks/adapter.mjs",
+    ".bee/bin/hooks/bee-write-guard.mjs",
+    "hooks/test_write_guard.mjs",
+    "hooks/test_hook_contracts.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/worktree-isolation/CONTEXT.md",
+    "docs/history/worktree-isolation/plan.md",
+    "hooks/adapter.mjs",
+    "hooks/bee-write-guard.mjs",
+    "skills/bee-hive/templates/lib/state.mjs"
+  ],
+  "action": "Per D2/D4 (decisions 5aa8946d/23d67e0b, fresh-eyes findings 1-2): the adapter's OWN findRepoRoot copy (hooks/adapter.mjs ~89) gains the same linked-worktree hop as lib/state.mjs (keep the adapter import-light — duplicate the small hop, no new imports); buildContext exposes both roots (ctx.root = storeRoot for state/reservations reads; ctx.workRoot = worktree top). bee-write-guard.mjs: toRelPath computes rel against workRoot so a worktree edit at <worktree>/src/x matches a reservation recorded as src/x (one logical namespace); state/config/reservations reads use storeRoot. Ambiguous detection (unparseable .git file, gitdir outside <main>/.git/worktrees/) => for WRITE tools inside a suspected worktree, DENY fail-closed with a clear message (D4: never run unguarded); CLI/read paths keep fail-open. RED-first: hooks/test_write_guard.mjs rows — worktree edit matches main-store reservation (allow when owner, deny when other agent holds); worktree edit with no reservation behaves as main-checkout equivalent; ambiguity denies; non-worktree behavior byte-stable (existing rows untouched and green). hooks/test_hook_contracts.mjs row: pin lib/state.mjs and adapter.mjs worktree resolution to the same answers on a shared fixture (anti-divergence). Sync .bee/bin/hooks copies byte-identical. ORDERING (cold-pickup flag): the standing release manifest is intentionally stale from wt-1's state.mjs change — run `node scripts/release_manifest.mjs --write` FIRST (it captures wt-1's lib change; the hook files this cell touches are not manifest-tracked), THEN run the verify string; do not be alarmed by a red --check before the --write.",
+  "must_haves": {
+    "truths": [
+      "a worktree worker's Edit against a path another agent reserved is denied naming the holder (same as main checkout)",
+      "non-worktree hook behavior is unchanged (existing suites green untouched)",
+      "ambiguous worktree detection denies writes, never silently allows",
+      "adapter and lib resolve the same fixture identically (contract row proves it)",
+      "release_manifest --check green after regen"
+    ],
+    "artifacts": [
+      "hop in hooks/adapter.mjs + .bee/bin copy",
+      "store/work split in both bee-write-guard.mjs copies",
+      "new RED-first rows in test_write_guard + hook_contracts",
+      "regenerated release-manifest.json"
+    ],
+    "key_links": [
+      "docs/history/worktree-isolation/CONTEXT.md D2 D4"
+    ],
+    "prohibitions": [
+      "importing lib/state.mjs into the adapter (keep it import-light)",
+      "weakening any existing deny path",
+      "touching reservations.mjs semantics"
+    ]
+  },
+  "verify": "node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

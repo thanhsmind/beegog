@@ -1,0 +1,56 @@
+{
+  "id": "worktree-isolation-1",
+  "feature": "worktree-isolation",
+  "title": "findRepoRoot linked-worktree hop + BEE_ROOT override + resolveRoots (lib, both mirrors) — RED-first temp-worktree tests",
+  "lane": "high-risk",
+  "deps": [],
+  "files": [
+    "skills/bee-hive/templates/lib/state.mjs",
+    ".bee/bin/lib/state.mjs",
+    "skills/bee-hive/templates/tests/test_lib.mjs"
+  ],
+  "read_first": [
+    "docs/history/worktree-isolation/CONTEXT.md",
+    "docs/history/worktree-isolation/plan.md",
+    "skills/bee-hive/templates/lib/state.mjs"
+  ],
+  "action": "Per D2 (decisions 9ba51eb0/5aa8946d): in lib/state.mjs (both mirror copies), extend findRepoRoot: (1) FIRST check process.env.BEE_ROOT — valid only when <BEE_ROOT>/.bee/onboarding.json exists, else fall through silently; (2) after the existing walk resolves a root, add the linked-worktree hop — when <root>/.git is a FILE, parse its 'gitdir: <path>' line (absolute or relative; tolerate trailing whitespace and win32 backslashes); when that gitdir path matches <main>/.git/worktrees/<id>, derive <main> and return it ONLY when <main>/.bee/onboarding.json exists; any parse failure or missing onboarding = keep the walk's root (fail-open to today's behavior). Never loop (one hop max). Add export resolveRoots(startDir) -> {storeRoot, workRoot}: workRoot = the walk's root (worktree top when in one), storeRoot = after BEE_ROOT/hop resolution; equal outside worktrees. RED-first rows in test_lib.mjs: build a real temp git repo (git init, commit, git worktree add), assert findRepoRoot from inside the worktree returns the MAIN root; from the main root unchanged; BEE_ROOT valid/invalid; corrupt .git file falls back to worktree root; resolveRoots pair correct in and out of worktrees; gitdir with trailing newline; relative gitdir.",
+  "must_haves": {
+    "truths": [
+      "outside any worktree, findRepoRoot behavior is byte-for-byte unchanged (regression rows prove it)",
+      "inside a linked worktree, storeRoot = main checkout iff main carries .bee/onboarding.json; otherwise today's behavior",
+      "BEE_ROOT pointing at a non-bee directory is ignored (falls through), never trusted",
+      "the hop never recurses and never escapes above the gitdir-named main root",
+      "both state.mjs mirror copies byte-identical"
+    ],
+    "artifacts": [
+      "hop + BEE_ROOT + resolveRoots in both state.mjs copies",
+      "new RED-first rows in test_lib.mjs"
+    ],
+    "key_links": [
+      "docs/history/worktree-isolation/CONTEXT.md D2",
+      "decision 5aa8946d"
+    ],
+    "prohibitions": [
+      "touching hooks/ in this cell",
+      "changing the walk order for non-worktree cases",
+      "any network/exec call in root resolution (fs reads only)"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node scripts/test_lib_mirror.mjs",
+  "behavior_change": true,
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}
