@@ -3,131 +3,100 @@ artifact_contract: bee-plan/v1
 artifact_readiness: implementation-ready
 mode: standard
 feature: codex-harness-hardening
-slice: 0 — Freeze reality
+slice: 1a — Foundational guards (split from Slice 1; 1b = the downgrade fix, high-risk, planned next)
+note: Slice 1 overall is high-risk; 1a ALONE is standard (additive integrity guards, no hard-gate flag — the audit/security flag belongs to 1b's runtime downgrade rewrite). Flags for 1a: public-contracts + cross-platform + multi-domain = 3, no hard-gate → standard.
 context_source: docs/history/codex-harness-hardening/SPEC.md
-decisions: ed0b2920 (§15 D-01..D-14 locked)
+decisions: ed0b2920 (§15 locked), 49f032fe (verify self-guard), fe6593c0 (downgrade fix targets .bee/bin/lib copy path)
 ---
 
-# Slice 0 — Freeze reality
+# Slice 1 — Release manifest + source classifier
 
-## Purpose
+## Mode gate (mechanical)
 
-Pin today's harness reality as **executable, observable freezes** *before* any mirror /
-installer / guard logic is touched (SPEC §13.1 safe order, §14 Slice 0). Nothing in this
-slice fixes a defect; it captures the current defects as red-now artifacts and adds the one
-green release-gate wiring the spec already ratified (D-14 / TEST-11).
+Flags: **audit/security** (silent-downgrade prevention = integrity safety — HARD-GATE) · **public-contracts**
+(release manifest, release-tuple, status JSON shape) · **existing-covered-behavior** (rewrites
+`onboard_bee.mjs` source resolution + `bee.mjs` drift) · **cross-platform** (POSIX mode in manifest,
+Windows) · **multi-domain** (manifest + classifier + status + onboarding + preflight) = **5 flags incl. a
+hard-gate flag → high-risk.** Gate bypass does not apply. Smaller modes rejected: it changes a
+safety mechanism across multiple modules — nowhere near tiny/small/standard.
 
-**CONTEXT source of truth:** `SPEC.md` (§15 decisions locked, decision `ed0b2920`). No separate
-CONTEXT.md — Gate 1 is satisfied by the logged decision lock.
+## Discovery (L1 — verified against repo, recon 2026-07-15)
 
-## Mode gate
+- **E-03 hole located exactly:** `computePlan()` step 3 "vendored helpers + lib"
+  (`onboard_bee.mjs:1645-1651`) pushes `copy_lib` items by **pure byte-diff** against the running
+  launcher's own `templates/lib/`, with **no version gate**; apply (`:1977-1981`) `writeFileAtomic`s
+  unconditionally. `self_skip` (`:868-881`) gates only `computeSkillSyncTarget`, **not** `computePlan`
+  — confirmed by grep. So a stale 0.1.43 launcher silently downgrades `.bee/bin/lib/state.mjs`.
+- **False-green located:** `bee.mjs:295` — `drift = onboardingRaw.bee_version !== BEE_VERSION`, a
+  compare of a *recorded* `onboarding.json` field against the local constant; it never re-reads or
+  re-hashes actual `.bee/bin/lib` bytes and never calls onboard_bee's detectors. A `copy_lib`
+  downgrade leaves this `false`.
+- **Version primitives exist:** `readVersionStrict` (`:310`), `compareVersions` (`:349`),
+  `computeSkillSyncTarget` (`:625-778`, already emits `blocked_downgrade` for the skill-sync path).
+  The fix reuses these on the copy_lib path.
+- **No standing guards to build on:** no release-tuple equality check (only throwaway per-release
+  greps), and **no standing `templates/lib/` ↔ `.bee/bin/lib/` byte-identity mirror test** (only
+  ad-hoc `cmp -s` in individual cell verifies). Both are foundations this slice must add.
+- **Shared-module home:** `skills/bee-hive/templates/lib/*.mjs` (source, imported by both `bee.mjs`
+  and `onboard_bee.mjs` via `TEMPLATES_LIB_DIR`) mirrored to `.bee/bin/lib/*.mjs` (runtime). A new
+  shared classifier goes in both + a mirror check.
 
-Risk flags counted: **cross-platform** (census/snapshot, Windows `/tmp` fixture trap),
-**weak-proof-around-area** (this slice *is* the proof scaffolding), **public-contracts**
-(`commands.verify` is the release gate). = 3 flags, story-sized, multi-file → **standard**.
-No hard-gate flag (no auth / data-loss / external-provider / validation-removal): this slice
-adds tests, a data snapshot, a census, and one suite to `verify` — it removes nothing and
-mutates no product behavior. Smaller modes rejected: >3 files and it touches the release gate,
-so not `small`; it is not a single yes/no proof, so not `spike`.
+## SPLIT RECOMMENDED (Scope-Reduction Prohibition)
 
-Held to **human gates** regardless of the bypass switch: Slice 0 opens a high-risk program.
+Slice 1 bundles four deliverables across a hard-gate surface; that is too much for one honest
+high-risk cell wave. Proposed boundaries — each honors every locked decision it touches:
 
-## Discovery (L1 — verified against repo)
+### Slice 1a — Foundational guards (additive, no onboarding-logic change yet)
+- **Release manifest schema** — a generator/reader producing a tree-level manifest: per-file relative
+  path, SHA-256, POSIX mode, role (DIST-01/DIST-03/D-03).
+- **Strict release-tuple guard** — a standing test/module asserting `BEE_VERSION` == both
+  `plugin.json` versions == runtime == projections (DIST-05); replaces throwaway per-release greps.
+  Joins `commands.verify`.
+- **Standing mirror test** — assert `templates/lib/*.mjs` byte-identical to `.bee/bin/lib/*.mjs`
+  (PROJ-08 direction). Joins `commands.verify`. Needed *before* 1b adds a shared module.
+- Risk: MEDIUM (additive checks; no behavior change to onboarding). Flips no freeze yet.
 
-- Fixture harness lives in `skills/bee-hive/scripts/test_onboard_bee.mjs`: helpers
-  `makeFakeSkillsRoot({version})` (source tree), `seedRepoSkillTargets(repo, version)` (seeds
-  BOTH `.claude`+`.agents` projections), `makeInstalledSkills`, `runOnboardAt(launcher,args,home)`,
-  `hashTree(dir)` (full lstat digest for zero-mutation proof). These are **internal** to that
-  file today. **Resolved:** the regression fixture is **self-contained** — it builds its tree by
-  **recursively copying the real `skills/bee-hive` and `.bee/bin/lib` dirs** (via `readdirSync`,
-  never a hand-kept file list) then patching only the version markers. This avoids both the refactor
-  risk of extracting helpers out of the green suite AND the hand-kept-fixture rot of
-  critical-patterns 20260714 (the rot was about hand-enumerated lib lists; whole-tree copy has none).
-- Drift/status decision: `onboard_bee.mjs` `computeSkillSyncTarget` (:625-778) records
-  `versions {source, host_helpers, installed_skills}` and sets `blocked_downgrade` only when a
-  resolved target is **older than source** (:740-763); top-level `status` at :2247-2251. The
-  vendored-helper (`copy_lib`) path that would push `0.1.43` libs over the `0.1.44` runtime is a
-  **separate** plan path with no downgrade guard — that is the E-03 hole.
-- `test_bee_cli.mjs` confirmed at `skills/bee-hive/templates/tests/test_bee_cli.mjs` (121 checks,
-  `node`-run, `exitCode = failed>0?1:0`). Currently **green** (121/0). No mirror under `.bee/bin/`.
-  No existing test asserts the content of the real repo's `commands.verify` → this slice adds the
-  first frozen assertion.
-- No doc-lint / syntax-census script exists anywhere. Closest structural precedent:
-  `runPluginCensusRow()` in `hooks/test_hook_contracts.mjs:2152-2197` (scan → detect forbidden
-  entry → pass/fail row + note). Model the stale-spawn census on that shape.
+### Slice 1b — The downgrade fix (behavior change; flips the Slice 0 freeze green)
+- **Shared source classifier** — pure module (`source_checkout`/`project_projection`/`plugin_package`/
+  `legacy_global`/`unknown`) in `templates/lib/` + mirror, imported by BOTH `bee.mjs` status and
+  `onboard_bee.mjs` (SRC-01..06/DIST-04/D-04).
+- **Downgrade/unknown zero-mutation preflight on the copy_lib path** — gate `computePlan` step 3 with
+  a version check reusing `compareVersions`; refuse a source older than the target `.bee/bin/lib`,
+  zero-mutation (VER-01..06 + decision fe6593c0).
+- **Status drift via the shared detector** — `bee.mjs` drift re-reads real component versions through
+  the classifier so a `copy_lib` downgrade can no longer read `drift:false` (DIST-04).
+- Exit: `test_split_brain_regression.mjs` flips exit 3 → exit 0 and JOINS `commands.verify`; status &
+  plan can no longer contradict about identity/drift.
+- Risk: HIGH (hard-gate; rewrites source resolution + drift). Full persona-panel validation.
 
-## Approach
+**Why split here:** 1a is additive scaffolding that de-risks 1b (a mirror test must exist before a
+shared module is added; the release-tuple guard is independent). 1b is the single behavior-changing
+fix, provable by one exit criterion (the freeze flips green). Doing them together mixes additive
+guards with a hard-gate rewrite in one wave — harder to validate and to review.
 
-Five deliverables, split into red-now freezes vs green wiring:
+## Approach (if approved as split — 1a first)
 
-**Green (join `commands.verify`, baseline stays green):**
-1. Add `node skills/bee-hive/templates/tests/test_bee_cli.mjs` to `.bee/config.json` `commands.verify`
-   (D-14/TEST-11). It already passes, so the baseline stays green.
-2. A **frozen assertion** test that reads this repo's real `.bee/config.json` and asserts
-   `commands.verify` contains every mandatory suite **including `test_bee_cli.mjs`** — fails loudly
-   if a future edit drops it. Added to `verify` too (green).
+Slice 1a is the current slice. Likely files: new `templates/lib/release-manifest.mjs` (+ mirror),
+new `scripts/test_release_tuple.mjs`, new `scripts/test_lib_mirror.mjs`, both appended to
+`commands.verify` (create-if-missing config already proven editable, Slice 0). Order: manifest reader
+→ tuple guard → mirror guard. No change to `onboard_bee.mjs`/`bee.mjs` logic in 1a.
 
-**Red-now freezes (NOT in `commands.verify` — run on-demand, observable; fold into verify only when
-Slices 1–2 / Slice 5 make them green):**
-3. Regression freeze `test_split_brain_regression.mjs` reproducing E-02/E-03: fixture with source/
-   launcher `0.1.43`, `.bee` runtime `0.1.44`, projections `0.1.43`, ledger `drift:false`. Asserts
-   the *target* behavior — status RED + `--apply` zero-mutation (`hashTree` before==after). Current
-   code returns `changes_needed` and would mutate, so the fixture is RED. Its **cell verify** wraps
-   it: run the fixture, require it to report the defect signature (`OBSERVED changes_needed/drift:false,
-   EXPECTED blocked_downgrade + zero-mutation`) and exit nonzero — a passing wrapper proving the
-   freeze observes the real defect.
-4. Doc-schema census `census_stale_spawn_syntax.mjs`: greps operative skill docs for stale Codex
-   spawn syntax (`spawn_agent(agent_type=`, `fork_context`, `re-spawn`). Currently flags
-   `skills/bee-swarming/references/swarming-reference.md` (E-06). RED now; enforced (added to verify)
-   in Slice 5 after the docs are fixed. Cell verify: census flags the known swarming-reference
-   violation.
+## Risk map (1a)
 
-**Data (green):**
-5. Capability snapshot under `docs/history/codex-harness-hardening/snapshots/`: records `codex 0.144.4`
-   + the documented tool surface (outer `functions.exec`, nested `tools.exec_command`/`apply_patch`
-   per E-12) and the Claude profile, each field labelled `documented` vs `live-probed`. Honest: live
-   nested-event probe is L6 (needs a fresh Codex task) and is explicitly deferred, not asserted.
-
-**Explicitly out of scope (SPEC §14):** no change to mirror logic, source resolver, installer
-shell/PS, or any guard. Those are Slices 1–5.
-
-## Risk map
-
-| Component | Risk | Proof needed |
+| Component | Risk | Proof needed (validating) |
 |---|---|---|
-| Self-contained fixture (whole-tree copy, no extraction) | LOW — does not touch test_onboard_bee.mjs; risk is copy-completeness | copy via readdirSync recursive; assert fixture onboard runs (not ENOENT) before asserting the defect |
-| Red-now fixture's wrapper verify | MEDIUM — a fixture that fails for the *wrong* reason is a false freeze | wrapper asserts the exact defect signature, not just nonzero exit |
-| `.bee/config.json` verify edit surviving onboarding | LOW — onboarding may re-render config | confirm config.commands is repo-owned, not overwritten (validating) |
-| Census over-matching (archaeology docs, this plan) | LOW-MEDIUM | census scopes to operative refs, excludes docs/history + this SPEC |
+| Release manifest schema | MEDIUM | manifest reproducibly hashes the real tree; mode captured on POSIX |
+| Release-tuple guard | LOW-MED | fails when a version is desynced (negative proof); green now |
+| Mirror byte-identity test | MED | derives file set via readdirSync (no hand-list, crit-pattern 20260714); fails on an injected diff |
 
-## Test matrix (sketch, scaled to standard)
+## Open questions for validating (1a)
 
-- Happy: verify green with test_bee_cli added; frozen assertion passes; snapshot parses.
-- Freeze-red: regression fixture red-for-right-reason; census flags swarming-reference.
-- Negative/guard: frozen assertion FAILS if test_bee_cli removed from verify (prove it bites);
-  census does NOT flag this SPEC or docs/history archaeology (scope fence).
-- Portability: fixture uses stdin/scratchpad paths, not `/tmp` string to node (critical-pattern 20260708).
+1. Manifest scope: whole release tree vs just `lib/` + plugin manifests + version files? (Start with
+   the release-identity-critical set; expand in later slices.)
+2. Does the mirror test belong as a standalone suite or folded into `test_verify_manifest`/`test_lib`?
+3. Windows: assert POSIX mode on POSIX only; on Windows assert invocation contract (TEST-10).
 
-## Open questions for validating
+## Cells
 
-1. ~~Extract fixture helpers vs import?~~ **RESOLVED (validating):** self-contained fixture,
-   whole-tree `readdirSync` copy, and `hashTree` re-implemented **inline** in the regression file
-   (`test_onboard_bee.mjs` exports nothing; do NOT extract from the green suite).
-2. ~~Is `.bee/config.json` `commands` re-rendered by onboarding `--apply`?~~ **RESOLVED (validating):**
-   NO — `onboard_bee.mjs:1610-1621` lists `.bee/config.json` as create-if-missing only; existing config
-   is never overwritten. The frozen assertion targets the live `.bee/config.json`.
-3. ~~Home for the frozen assertion?~~ **RESOLVED:** standalone `scripts/test_verify_manifest.mjs`,
-   itself listed in `commands.verify`, with an internal self-test proving its checker flags a
-   verify-string missing `test_bee_cli` (so the assertion demonstrably bites).
-4. **Census scope fence (decide before Slice 5):** the census scans `skills/**/{SKILL.md,references/**/*.md}`
-   only, and excludes `*-LOG.md` (so `skills/bee-swarming/CREATION-LOG.md` — a build log, not operative
-   guidance — is out), `docs/history/**`, and the SPEC. Precedent to model on:
-   `skills/bee-hive/templates/tests/test_lib.mjs:7032` ("retired phrasing" census that already excludes
-   archaeology), NOT the plugin-census row.
-
-## Cells (current slice only — created after Gate 2)
-
-- C0-1: verify wiring + frozen assertion (green)
-- C0-2: split-brain regression freeze (red-now, wrapper-verified)
-- C0-3: stale-spawn-syntax census (red-now, flags swarming-reference)
-- C0-4: capability snapshot (data)
+None yet — Gate 2 (and the split decision) must be approved first. If the split is approved, cells are
+created for **1a only**; 1b returns to planning as its own high-risk slice.
