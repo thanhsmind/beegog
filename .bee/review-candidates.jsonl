@@ -12,3 +12,4 @@
 {"id":"a64db8af-b953-4f6e-8f59-cedbe62479c5","type":"candidate","date":"2026-07-14T12:41:23.223Z","feature":"chain-integrity","head":"0847310f7f99c13a4a51f6227b4e12227c9471b4","mode":"standard","baseline":null,"cells":[]}
 {"id":"b5396c84-e497-439f-a548-8717494834f6","type":"candidate","date":"2026-07-15T06:14:33.448Z","feature":"codex-harness-hardening","head":"6af1a9dd84c1e25101c4a62791f7fdaee409fefe","mode":"standard","baseline":null,"cells":[]}
 {"id":"2b3330cf-e906-4134-af55-5107cf8ded32","type":"candidate","date":"2026-07-15T06:43:02.359Z","feature":"codex-harness-hardening","head":"b6d40b43c356f9b5c36ba860283971e4be7540b6","mode":"standard","baseline":null,"cells":[]}
+{"id":"423c1a2a-e1b7-41bf-8d69-11c258591d4b","type":"candidate","date":"2026-07-15T08:05:12.755Z","feature":"codex-harness-hardening","head":"5c9345b82539b398181bc638cba92c2b7b502a44","mode":"high-risk","baseline":null,"cells":[]}

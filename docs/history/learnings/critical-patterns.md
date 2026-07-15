@@ -3,6 +3,28 @@
 Mandatory pre-planning / pre-execution context for this repository.
 bee-compounding appends hard-won patterns here; keep it short and current.
 
+## [20260715] A guard scoped inside a skippable loop is absent on the path that skips it
+**Category:** failure
+**Feature:** codex-harness-hardening
+**Tags:** [safety-guards, guard-placement, self-onboard, fail-open]
+
+A correct three-version downgrade preflight existed and had protected ordinary hosts for
+months — but it lived *inside* the per-skill-target loop. On the self-onboard path every
+target `self_skip`s with `continue` before the check runs, so the guard was skipped with
+the targets, while the sibling `copy_lib`/`copy_helper` loops downgraded `.bee/bin`
+unconditionally. The guard read run-global data (`hostVersion`) but had target-scoped
+*placement*.
+
+**Rule:** when a safety check depends only on run-global data, place it at run-global
+scope, never inside a per-item loop that can be skipped wholesale. Before trusting an
+existing guard, ask "on which code path is this guard's PLACEMENT skipped?" — not just
+"does it read the right values?". And when you add an ungated mutation path (a copy/write
+loop) beside a gated one, it inherits NONE of the old path's guards: audit every mutation
+vector against the guard, not the guard against one vector. Fix generalizes as: hoist the
+run-global check to fire unconditionally, fill the aggregate only when it's empty (no
+double-block), then reuse the existing whole-apply abort. Full entry:
+docs/history/learnings/20260715-codex-harness-hardening-1b.md
+
 ## [20260714] A state name that ASSERTS history, with nothing checking it, becomes the shortcut
 **Category:** failure
 **Feature:** chain-integrity

@@ -1,8 +1,9 @@
 ---
 area: onboarding
-updated: 2026-07-14
+updated: 2026-07-15
 coverage: partial
 sources:
+  - codex-harness-hardening cell codex-harness-hardening-1b-1 (runtime-lib downgrade guard R15; split-brain regression 3->0, 2026-07-15)
   - installer-hardening ih-1..ih-6 (cells, 2026-07-13; flushed capture stub 92c9bcf6)
   - shim-retire D2 retirement pass (cells shim-retire-2, shim-retire-6 self-onboard proof, 2026-07-14)
   - cell onboard-statusline-1 (verification_evidence, 2026-07-11)
@@ -15,6 +16,7 @@ sources:
   - fanout-delegation D1 (stale advisor key tolerance, 2026-07-12)
   - sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)
 decisions:
+  - fe6593c0 (runtime-lib downgrade refusal targets the vendored copy path; zero-mutation, self-install included — codex-harness-hardening 1b)
   - 3318374a (installer hardening: per-project skills default, global opt-in, default instructions import)
   - bbc6bcea (shim-retire: unified command surface; retired helper scripts removed from hosts)
   - 102efe08 (opt-in statusline vendor shape)
@@ -344,6 +346,21 @@ landing page from day one in every onboarded project.
   nine retired per-command helper scripts are deleted from a host on its next
   apply; removal is scoped to the exact retired filenames inside the managed
   tools directory and is idempotent (decision bbc6bcea, D1/D2).
+- **R15** — Onboarding never downgrades a project's vendored runtime. Before
+  vendoring its own runtime helpers into a project, it compares the running
+  installer's runtime version against the version already installed in the
+  project; if the installer is older, it refuses the **entire** apply before
+  making any change and reports a blocked downgrade. This holds even in the
+  self-install case — where the installer's own source tree lives inside the
+  project it targets, so the per-project skill syncs are skipped — because the
+  refusal is drawn from the runtime version alone, independent of any
+  per-location sync. A refused downgrade changes nothing anywhere (zero
+  mutation across every vendored file and the installation ledger). A project
+  with no runtime yet is a fresh install and proceeds; a project whose
+  installed runtime version cannot be read is treated as unknown and is also
+  refused — never overwritten by an older or unreadable source. An explicit
+  force override is honored only when both the source and the installed version
+  are known release numbers (decision fe6593c0; cell codex-harness-hardening-1b-1).
 
 ## Edge Cases Settled
 
@@ -391,10 +408,12 @@ landing page from day one in every onboarded project.
 ## Open Gaps
 
 - The remainder of the onboarding surface is unspecified here: instructions-block
-  merge rules, runtime-file creation, helper/lib vendoring, global skill sync and
-  its downgrade/force protections, hook vendoring, and the greenfield init lane.
-  Harvest needed; until then the authoritative description is the code and its
-  test suites.
+  merge rules, runtime-file creation, helper/lib vendoring, global skill sync, and
+  the greenfield init lane. The runtime-**downgrade** protection is now specced
+  (R15 — the self-install runtime-lib downgrade refusal, zero-mutation); the
+  broader force-override reporting and per-skill-target sync details remain to
+  harvest. Until then the authoritative description of the unspecced parts is the
+  code and its test suites.
 - P24 must define the transition from manually copied Codex skills and project
   hooks to the plugin-first contract, including how an installation detects and
   avoids duplicate hook sources.
