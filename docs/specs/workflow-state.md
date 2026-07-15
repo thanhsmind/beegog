@@ -490,7 +490,14 @@ its knowledge actually landed — the state and the specs can no longer disagree
   rule from doctrine elsewhere) still honors the level. A machine-check asserts
   every gate surface carries the level-aware rule and none carries a stale
   floor-is-absolute phrasing, so the per-gate application cannot silently
-  regress (decision 5aedc024; cell codex-bypass-per-skill-1).
+  regress (decision 5aedc024; cell codex-bypass-per-skill-1). Bypass suppresses
+  **approvals**, never genuine **information-gathering**: under `full`/`total`
+  the agent never asks merely to be approved (it takes its own confident best
+  answer and proceeds), but a question whose answer only the human holds — a
+  preference or knowledge the agent cannot settle from evidence — is still asked,
+  including during exploring. The litmus is "do I already have a confident best
+  answer?": yes proceeds, no-and-only-the-human-knows still asks (decision
+  a93994d3; cell bypass-info-vs-approval-1).
 
 ## Edge Cases Settled
 

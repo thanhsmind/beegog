@@ -70,6 +70,24 @@ for (const { file, gate, tokens } of GATE_SKILLS) {
   if (!fileFailed) ok(`${file} (${gate}): level-aware bypass carve-out present, no stale floor phrasing`);
 }
 
+// Information-vs-approval refinement (decision a93994d3): bee-exploring's
+// Socratic step must keep asking for genuine INFORMATION under full/total while
+// suppressing mere APPROVALS. Assert the distinguishing litmus survives.
+{
+  const exploringAbs = path.join(REPO_ROOT, 'skills/bee-exploring/SKILL.md');
+  let exploringText = '';
+  try {
+    exploringText = fs.readFileSync(exploringAbs, 'utf8');
+  } catch {
+    fail('skills/bee-exploring/SKILL.md: unreadable — the info-vs-approval refinement lives here');
+  }
+  if (!exploringText.includes('confident best answer')) {
+    fail('skills/bee-exploring/SKILL.md: missing the info-vs-approval litmus ("confident best answer") — under full/total, approval questions are suppressed but genuine information questions must still be asked (decision a93994d3)');
+  } else {
+    ok('skills/bee-exploring/SKILL.md: info-vs-approval refinement present (asks for information, not approval, under bypass)');
+  }
+}
+
 // Sentinel: prove the checker bites. A synthetic gate surface missing the tokens
 // (and carrying a banned phrase) MUST be flagged by the same predicates.
 const sentinelBad = 'Present Gate X, then verbatim ask. The safety floor is absolute.';
