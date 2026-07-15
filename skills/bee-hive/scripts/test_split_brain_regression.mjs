@@ -189,14 +189,14 @@ try {
   copyTree(REAL_HIVE_DIR, claudeHive);
   patchVersion(path.join(claudeHive, "templates", "lib", "state.mjs"), "0.1.43");
 
-  // Vendored runtime: real CURRENT .bee/bin (0.1.44), unpatched.
+  // Vendored runtime: real CURRENT .bee/bin (1.0.0), unpatched.
   const repoBeeBinDir = path.join(fixtureRepo, ".bee", "bin");
   copyTree(REAL_BEE_BIN_DIR, repoBeeBinDir);
   const repoLibStateFile = path.join(repoBeeBinDir, "lib", "state.mjs");
   const preVersion = readVersionLoose(repoLibStateFile);
-  if (preVersion !== "0.1.44") {
+  if (preVersion !== "1.0.0") {
     fixtureBug(
-      `this checkout's real .bee/bin/lib/state.mjs is not 0.1.44 (got ${preVersion}) - ` +
+      `this checkout's real .bee/bin/lib/state.mjs is not 1.0.0 (got ${preVersion}) - ` +
         "the fixture's expected runtime version needs updating, this is not the defect under test",
     );
   }
@@ -212,7 +212,7 @@ try {
     `${JSON.stringify(
       {
         schema_version: "1.0",
-        bee_version: "0.1.44",
+        bee_version: "1.0.0",
         managed: { agents_block: "fixture", gitignore_block: "fixture", helpers: {}, lib: {} },
         created_at: "2026-01-01T00:00:00.000Z",
         updated_at: "2026-01-01T00:00:00.000Z",

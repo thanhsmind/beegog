@@ -1,16 +1,16 @@
 {
   "schema_version": "1.0",
-  "bee_version": "0.1.44",
+  "bee_version": "1.0.0",
   "managed": {
-    "agents_block": "1bc8843bc9ed79c511c36327a31e9d25b4ba0e89f402dad845a8e843bcd431d1",
+    "agents_block": "dd0183635cb210a05b70a19844862f0c4170afeb529477faa674af5b44435c6b",
     "gitignore_block": "add7be1e25d3c4b7bbedff2f80c0f0e577c84610ebbac5d1eec1d70427424886",
     "helpers": {
-      "bee.mjs": "1050a5b8d8ba5010b9affb1a05b95d02920b227555c5760e14a9660e3c4702da"
+      "bee.mjs": "fdcfc6cba6d4bcb140760d64e752c01919eaa1fa90d8e64486f49a6b1d23034d"
     },
     "lib": {
       "backlog.mjs": "2f4613721fa89bd264a4c02c459240e92d21159e7ceae3a9320e35d27c8ef0c8",
       "capture.mjs": "6ce4fa5947a015f156468aa5bc40e264a9d7a170744e8700de1d90b969b3908c",
-      "cells.mjs": "302104ad04327253909929f539aa1c28acf73741cb05def49ad0f0457b308e04",
+      "cells.mjs": "2304873f56154ab7f9ad0a755e869eb38ba579150a79e823720f60e06b47ba29",
       "claims.mjs": "53db159edf5e84ee78774c6f5141b7a2a355c31451920da60d6fb9fb02a13d52",
       "command-registry.mjs": "fe71ec3b0fcb2d7eafd0fdab64aeb2070acaf21a6a738f3db7db92411cda2f69",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
@@ -18,10 +18,10 @@
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
       "fsutil.mjs": "7bbfb70e5f6bcf3b18d4c4be9342d55bb748683d419a219b3406dae0a04b3691",
       "guards.mjs": "5c02e267bb174bdd42219d7170be1d09e527d2f7323ab4c64e150a0d24ef6ef2",
-      "inject.mjs": "4ab94dbacd8e310600808c213fb387727dda6300d839976b77439701f36cf8d9",
+      "inject.mjs": "231be13229cee94a38dfd16c400b7123136769859a6122796ef2d485ccd6a0ba",
       "reservations.mjs": "4643ef572599f1439504741499f3ec982c4344e1e3551052c2d27e66617fec86",
       "reviews.mjs": "56b7110d1737e515b282cc757354580dadbaf76f88f516581c90717630c9cead",
-      "state.mjs": "970f001876a51a4a99a858a15ef2b97670280750cf6589832ba6fffdf14728f4",
+      "state.mjs": "21b4e21d76957c1dc684f9025759eff6de487bfd4cc6ab80eb547365e94b5faf",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
     },
     "repo_hooks": {
@@ -41,5 +41,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-15T03:51:31.178Z"
+  "updated_at": "2026-07-15T07:19:31.807Z"
 }
