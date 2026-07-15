@@ -3,9 +3,19 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 export function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
+}
+
+// hashFile — sha256 of a file's utf8 content. The SINGLE hasher shared by the
+// managed-hash recorder (onboard buildManagedVersions) and the drift reader
+// (bee.mjs computeRuntimeDrift), so the two can never disagree about what a
+// vendored file's fingerprint is. utf8 (not raw Buffer) matches the values the
+// onboarding ledger already records.
+export function hashFile(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file, 'utf8')).digest('hex');
 }
 
 export function readJson(file, fallback = null) {

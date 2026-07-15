@@ -1338,8 +1338,6 @@ try {
 // goes through runOnboardAt's fake HOME/USERPROFILE.
 
 const REAL_ONBOARD_SRC = fs.readFileSync(ONBOARD, "utf8");
-const REAL_DETECT_SRC = fs.readFileSync(
-  path.join(TEMPLATES_LIB_DIR, "commands_detect.mjs"), "utf8");
 const REAL_AGENTS_BLOCK_SRC = fs.readFileSync(
   path.join(TEMPLATES_DIR, "AGENTS.block.md"), "utf8");
 
@@ -1368,8 +1366,17 @@ function makeFakeSkillsRoot(skillsRoot, {
   fs.mkdirSync(path.join(hive, "scripts"), { recursive: true });
   fs.mkdirSync(path.join(hive, "templates", "lib"), { recursive: true });
   fs.writeFileSync(path.join(hive, "scripts", "onboard_bee.mjs"), REAL_ONBOARD_SRC, "utf8");
-  fs.writeFileSync(
-    path.join(hive, "templates", "lib", "commands_detect.mjs"), REAL_DETECT_SRC, "utf8");
+  // Vendor EVERY real templates/lib/*.mjs into the fixture launcher, derived via
+  // readdirSync — never a hand-list (crit-pattern 20260714: a curated subset
+  // rots silently the moment onboard imports a new lib module, e.g. fsutil for
+  // the shared hashFile). state.mjs stays version-controlled below; every other
+  // module is copied verbatim so the real onboard's imports all resolve.
+  for (const libName of fs.readdirSync(TEMPLATES_LIB_DIR)) {
+    if (!libName.endsWith(".mjs") || libName === "state.mjs") continue;
+    fs.writeFileSync(
+      path.join(hive, "templates", "lib", libName),
+      fs.readFileSync(path.join(TEMPLATES_LIB_DIR, libName), "utf8"), "utf8");
+  }
   fs.writeFileSync(
     path.join(hive, "templates", "lib", "state.mjs"),
     stateText !== null ? stateText : fakeStateSource(version), "utf8");

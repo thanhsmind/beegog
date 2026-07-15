@@ -100,7 +100,7 @@ import {
   CANDIDATE_STATUSES,
   REVIEW_MODES,
 } from './lib/reviews.mjs';
-import { readJson, writeJsonAtomic, appendJsonl } from './lib/fsutil.mjs';
+import { readJson, writeJsonAtomic, appendJsonl, hashFile } from './lib/fsutil.mjs';
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
@@ -248,10 +248,9 @@ function computeRuntimeDrift(root, onboardingRaw) {
       const relPosix = ['.bee', 'bin', relDir, name].filter(Boolean).join('/');
       let live;
       try {
-        // Hash the utf8-decoded text, byte-for-byte the way buildManagedVersions
-        // (onboard_bee.mjs) records it — same input type so the two hashers agree
-        // by construction, not by the incidental round-trip of valid UTF-8.
-        live = crypto.createHash('sha256').update(fs.readFileSync(abs, 'utf8')).digest('hex');
+        // hashFile is the SAME function buildManagedVersions (onboard_bee.mjs)
+        // records with — one hasher, so recorder and reader can never disagree.
+        live = hashFile(abs);
       } catch {
         detail.push(`${relPosix} (missing)`);
         continue;

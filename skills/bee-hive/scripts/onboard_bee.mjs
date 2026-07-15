@@ -41,6 +41,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { detectCommands } from "../templates/lib/commands_detect.mjs";
+import { hashFile } from "../templates/lib/fsutil.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPTS_DIR = path.dirname(SCRIPT_PATH);
@@ -1837,11 +1838,11 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
 function buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, statusline = false) {
   const helpers = {};
   for (const name of listTemplateHelpers()) {
-    helpers[name] = sha256(fs.readFileSync(path.join(TEMPLATES_DIR, name), "utf8"));
+    helpers[name] = hashFile(path.join(TEMPLATES_DIR, name));
   }
   const lib = {};
   for (const name of listTemplateLibModules()) {
-    lib[name] = sha256(fs.readFileSync(path.join(TEMPLATES_LIB_DIR, name), "utf8"));
+    lib[name] = hashFile(path.join(TEMPLATES_LIB_DIR, name));
   }
   const managed = {
     agents_block: sha256(renderedBlock),
