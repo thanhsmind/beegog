@@ -1,0 +1,5 @@
+interface:
+  display_name: "Bee Bypass Gate"
+  short_description: "Toggle opt-in gate-bypass autopilot. When on, the agent auto-approves Gates 1-3 for tiny/small/standard work (taking the recommended choice) instead of stopping for the human; high-risk/hard-gate work, secret reads, and Gate 4 UAT always still stop. Use when the user wants to run the pipeline without approving every gate, or to check or turn off bypass. Invocable as the command bee-bypass-gate with on / off / status."
+policy:
+  allow_implicit_invocation: true

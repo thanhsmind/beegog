@@ -1,0 +1,160 @@
+# Go Mode — Step-by-Step Reference
+
+Load this when executing go mode. Go mode is the full bee pipeline from raw feature request to compounded learnings, closing verified but `unreviewed` (decision 565e68d0). It chains every skill in sequence with up to **3 human gates** (fewer when the opt-in gate-bypass switch is on — see the end of this file). Each gate protects the next irreversible commitment. **Go mode never auto-enters independent review** (SPEC R1) — `bee-reviewing` and its Gate 4 are a separate, user-invoked flow layered over a completed scope; see the boxed note after the diagram.
+
+Trigger: `/go [feature]`, "run the full pipeline", or "go mode".
+
+**Lane fast paths short-circuit this diagram** (bee-hive Modes and Lanes): `docs` lane skips the pipeline entirely (announce → write → format-check → capture). `tiny`/`small` collapse Steps 2–5 into: short plan.md → inline reality check → **one merged shape+execution gate** → solo in-session execution → self-review (`tiny`) or one correctness reviewer (`small`) → scribing. The full diagram below is the `standard`/`high-risk` pipeline.
+
+```text
+User: "/go [feature]"
+       │
+       ▼
+[BOOTSTRAP] onboarding check, bee_status scout, critical-patterns.md, recent decisions
+       │
+       ▼
+[STEP 1] bee-exploring        → docs/history/<feature>/CONTEXT.md
+       ▼
+[GATE 1] ← HARD STOP
+       ▼
+[STEP 2] bee-planning (shape) → plan.md (requirements-only); discovery.md/approach.md
+                                 only for L2+ discovery or high-risk, else plan.md sections (D0009)
+         bee-briefing (render) → implement-plan.md  (high-risk always; standard/small on-demand)
+       ▼
+[GATE 2] ← HARD STOP (review the implement plan, or plan.md when no brief was rendered)
+       ▼
+[STEP 3] bee-planning (prep)  → plan.md enriched to implementation-ready, current-slice cells
+         bee-briefing (refresh) → implement-plan.md Affected Files + Steps re-projected
+       ▼
+[STEP 4] bee-validating       → reality gate, feasibility matrix, spikes, plan-checker, cell review
+         bee-briefing (refresh) → implement-plan.md Validation Plan patched with evidence
+       ▼
+[GATE 3] ← HARD STOP (the most critical gate)
+       ▼
+[STEP 5] bee-swarming (+ bee-executing × N) — current slice only
+       │
+       ├── more approved work remains → return to STEP 3 for the next slice
+       ▼
+[STEP 6] bee-scribing         → docs/specs/<area>.md BA-grade sync, reading map (feature closes unreviewed)
+       ▼
+[STEP 7] bee-compounding      → docs/history/learnings/, decision log, review-candidate report
+       ▼
+DONE — verified, unreviewed, development continues
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Independent review is a SEPARATE, user-invoked flow, not a pipeline     │
+│ step (SPEC R1/R3, decision 565e68d0). Go mode never dispatches it       │
+│ automatically — not after the final slice, not at DONE. When the user   │
+│ explicitly asks for review (any time, any scope: this feature, a named  │
+│ batch, a commit range), invoke bee-reviewing over that immutable scope: │
+│ P1/P2/P3 findings, artifact verification, UAT, then [GATE 4] ← HARD     │
+│ STOP (never auto-merge) inside that session, followed by bee-briefing   │
+│ (walkthrough) for standard/high-risk. A merge/ship/release request      │
+│ while candidates sit unreviewed/stale reports the count + risk level    │
+│ and asks ONE question before ever spending a reviewer token (7.4/A9).   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+## Pre-Pipeline: Bootstrap
+
+Before invoking `bee-exploring`:
+
+1. Run the State Bootstrap from `routing-and-contracts.md` (onboarding, `node .bee/bin/bee.mjs status --json`, critical-patterns, `node .bee/bin/bee.mjs decisions active --recent 3`).
+2. Apply the surface-scope-earlier check — clear acceptance criteria plus pattern references may skip Step 1 with user approval.
+3. Determine the feature slug (lowercase-hyphenated) and create `docs/history/<feature>/` if missing.
+4. Update `.bee/state.json`: `feature: <slug>`, `phase: exploring`, `mode: null` (set at the mode gate).
+
+## Gate Wording (fixed)
+
+- **Gate 1:** "Decisions locked. Approve CONTEXT.md before planning?"
+- **Gate 2:** "Work shape is ready. Approve before current-work preparation?"
+- **Gate 3:** "Feasibility validated. Approve execution?"
+- **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
+
+Each gate is one question in the standard CONTEXT / QUESTION / RECOMMENDATION / options format, presented per the **Gate Presentation Contract** (`routing-and-contracts.md`): plain-language layer in chat, in the user's language; full mechanical report written to `docs/history/<feature>/reports/` and linked, never pasted. Gates are asked **one at a time** — never batch Gate 2 and Gate 3 into a single question for `standard`/`high-risk` work, even when validation looks trivially clean. The **one designed exception** is the `tiny`/`small` merged shape+execution gate (bee-hive Modes and Lanes): there the inline reality check plus one merged question IS the contract, and `tiny` closes with a done-report instead of Gate 4. Optional at Gates 2–4: a cross-model second opinion; disagreement is quoted to the user, never auto-resolved.
+
+## Gate Presentations
+
+Templates below are the **human layer** — fill them in the user's language, in the user's terms. Square-bracket content is plain prose, never table dumps or jargon.
+
+**GATE 1** — after exploring:
+
+```text
+What we decided: [the feature in one plain sentence] — [N] choices locked, [M] questions still open.
+The key choices, in plain words: [max 3, one line each; more → "full list in CONTEXT.md"]
+If a choice is wrong: everything after this builds on it — fixing it now costs a conversation, fixing it later costs redone work.
+You are deciding: whether these choices match what you meant, before any planning starts.
+Full record: docs/history/<feature>/CONTEXT.md
+Decisions locked. Approve CONTEXT.md before planning? (yes / revise / show full CONTEXT.md)
+```
+
+Revise → return to exploring for the specific gray areas, update CONTEXT.md in place, re-present.
+
+**GATE 2** — after the planning shape pass:
+
+```text
+What I plan to build: [the shape in one plain sentence]. Size: [mode, glossed — e.g. "standard — a normal mid-size feature"].
+Why this size: [one plain sentence — the least workflow that honestly protects the work].
+If the shape is wrong: preparation gets built against it — revising now is cheap, revising after prep is not.
+You are deciding: whether this is the right thing and the right size, before detailed preparation.
+Full plan: docs/history/<feature>/plan.md
+Work shape is ready. Approve before current-work preparation? (yes / revise / show full plan.md)
+```
+
+Revise → return to the shape pass, update `plan.md` (still `requirements-only`), re-present.
+
+**GATE 3** — after validating:
+
+```text
+What I'm about to do: [the change in the user's terms, one sentence — what changes for them, not the mechanism].
+Why it's trustworthy: [the single strongest piece of evidence, plain words — e.g. "a dry run rebuilt all 3 pages byte-for-byte identical"].
+If it goes wrong: [what breaks for the user + how we'd notice — loud failure, rollback path].
+You are deciding: whether I may start editing real files — this slice of work only.
+Full validation report: docs/history/<feature>/reports/validation-<slice>.md
+Feasibility validated. Approve execution? (yes / review cells / no — revise plan)
+```
+
+Approval covers the **current slice only**. No → return to planning or validating.
+
+**GATE 4** — inside a user-invoked `bee-reviewing` session only (never at the end of go mode's default chain):
+
+```text
+What was built: [the shipped change in one plain sentence].
+Review found: [P1 count] problems that block merge — [each named in plain words] — plus [P2+P3 count] smaller issues filed for later.
+If we merge now: [the consequence in user terms — "nothing known breaks" or "X would ship broken for users who Y"].
+You are deciding: whether this goes into the main branch.
+Full review: docs/history/<feature>/reports/
+```
+
+- P1 > 0 → "P1 findings block merge. Fix before proceeding? (a) fix now (b) show details (c) explicit user override" — silence is not acknowledgment.
+- P1 = 0 → "Review complete. Approve merge? (yes / show P2s first / no)"
+
+Fix cells created for P1s run through swarming, then reviewing re-runs (targeted to the fix diff) before Gate 4 is re-presented. Repeat until P1 = 0 or explicit override.
+
+## The Slice Loop
+
+After each slice's swarm completes: later approved work remains → return to Step 3 (planning prep for the next slice) then Step 4 (validating) then Gate 3 again. Final slice done → Step 6 (bee-scribing) directly. `bee-reviewing` is never part of this loop — it is a separate flow the user invokes on demand, over whatever scope they choose, independent of slice boundaries.
+
+## Fallback Paths
+
+- **Spike returns NO:** STOP before Gate 3. Present "Spike [id] failed: [reason]. Current work is blocked." Options: revise approach / descope the risky part / change mode or boundaries. A workaround that "probably works" is not a path — plausibility is not evidence.
+- **Feasibility evidence missing:** STOP before Gate 3. Present the missing matrix rows and required proof; route to spike or planning revision. No execution cells for that work until proof exists.
+- **Plan-checker still failing after 3 iterations:** escalate — present the failing dimensions, ask "Return to planning with these specific concerns?", never iterate a 4th time silently.
+- **Context hits ~65% mid-swarm:** write `.bee/HANDOFF.json`, present "[X] cells capped, [Y] in flight. Resume in a new session." End gracefully.
+- **User rejects at any gate:** identify what feels wrong, return to the owning stage, update the artifact in place, re-present the same gate.
+
+## Close-out
+
+After compounding: set state `phase: idle`, `feature: null`, `mode: null`, summary "Go mode complete for <feature>", and delete `.bee/HANDOFF.json` if present. Report the §9 completion line from `bee_status` (verified/unreviewed candidate count) — never state or imply the feature was reviewed unless a review session actually ran and approved it.
+
+## Headless Go Mode
+
+`mode:headless` runs stages headlessly **between** gates only. Every gate still stops the pipeline and reports "awaiting Gate N approval" in the terminal report. Headless never self-approves a gate.
+
+## Gate bypass in go mode (opt-in)
+
+Separate from headless. When `.bee/config.json` `gate_bypass: true` (set via `bee-bypass-gate`), go mode does not stop at Gates 1-3 for `tiny`/`small`/`standard` non-hard-gate work: at each, the agent takes the RECOMMENDATION, records the approval, logs a one-line audit decision, posts a short `⚡ auto-approved Gate N` line, and continues to the next step. The **safety floor is absolute** — `high-risk` lane or any hard-gate flag (auth, authorization, data loss, audit/security, external provider, validation removal, migration) stops for the human as normal; secret reads always ask. Full rule: the Gate Presentation Contract in `routing-and-contracts.md`. With bypass off (the default), Gates 1-3 are never self-approved.
+
+Gate 4 sits outside this entirely (SPEC R8, decision 565e68d0): bypass never creates or auto-approves a review session, so go mode reaching DONE never triggers it. If the user later invokes `bee-reviewing`, bypass may auto-approve the merge question only once P1 = 0 and every UAT item passed; any P1 or UAT fail/skip always stops for the human inside that session.

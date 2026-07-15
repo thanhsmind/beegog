@@ -1,0 +1,5 @@
+interface:
+  display_name: "Bee Swarming"
+  short_description: "Orchestrate bounded workers over validated cells without implementing anything directly. Use when validating approves execution (Gate 3) and current-slice cells are open and validated."
+policy:
+  allow_implicit_invocation: true

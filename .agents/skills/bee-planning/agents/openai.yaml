@@ -1,0 +1,5 @@
+interface:
+  display_name: "Bee Planning"
+  short_description: "Research the work, pick the smallest honest mode, and shape an executable plan. Use when exploring has locked CONTEXT.md, or a clear-scope task needs a mode decision and work shape before validation."
+policy:
+  allow_implicit_invocation: true
