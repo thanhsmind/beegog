@@ -79,6 +79,13 @@ must mirror a runtime file set, derive it with `readdirSync` of the real directo
 never a hand-kept list. And a fail-open guard's test suite needs at least one
 sentinel-deny case, so universal fail-open can never read as all-pass.
 
+**Recurred 2026-07-15 (p2-1):** `test_onboard_bee.mjs`'s fixture launcher hand-wrote
+exactly `commands_detect.mjs` + `state.mjs` into `templates/lib`. The moment onboard
+gained one new import (`fsutil` for the shared `hashFile`), every fresh-install test
+crashed with `exit 1 status undefined` (the spawned launcher couldn't resolve the
+missing dep). **Adding an import to any module a fixture copies is a hand-list
+tripwire** — fixed by vendoring the whole real `templates/lib` via `readdirSync`.
+
 **Full entry:** docs/history/learnings/20260714-shim-retire.md
 
 ## [20260708] Windows Git Bash /tmp is invisible to node
