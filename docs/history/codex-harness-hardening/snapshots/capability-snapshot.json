@@ -1,0 +1,178 @@
+{
+  "snapshot_metadata": {
+    "date": "2026-07-15",
+    "description": "Capability snapshot of Bee host surfaces (Codex 0.144.4 + Claude Code profile). Documents known/observed tool and collaboration API surfaces. Nested event interception and fresh-task discovery (L6/L7 per SPEC D-05) are deferred and marked pending_live_probe."
+  },
+
+  "codex": {
+    "version": "0.144.4",
+    "version_provenance": "documented",
+
+    "tools": {
+      "outer_functions": {
+        "functions.exec": {
+          "description": "Outer function execution interface in Codex runtime",
+          "type": "execution_wrapper",
+          "provenance": "live_probed",
+          "source": "SPEC E-12, Codex 0.144.4 runtime catalog"
+        }
+      },
+
+      "nested_tools": {
+        "tools.exec_command": {
+          "description": "Nested tool for executing shell commands within Codex task",
+          "type": "nested_execution",
+          "provenance": "pending_live_probe",
+          "note": "SPEC E-12 documents existence; mechanical interception requires L6/L7 fresh-task probe"
+        },
+        "tools.apply_patch": {
+          "description": "Nested tool for applying file patches within Codex task",
+          "type": "nested_mutation",
+          "provenance": "pending_live_probe",
+          "note": "SPEC E-12 documents existence; guard coverage requires L6/L7 live interception proof"
+        }
+      }
+    },
+
+    "collaboration": {
+      "spawn_agent": {
+        "description": "Spawn isolated worker or reviewer agent in separate Codex task",
+        "signature": "spawn_agent({task_name, message, fork_turns})",
+        "parameters": {
+          "task_name": {
+            "type": "string",
+            "description": "Stable canonical name for spawned task",
+            "provenance": "documented"
+          },
+          "message": {
+            "type": "string",
+            "description": "Prompt to agent; MUST have [bee-tier: generation|extraction|review|ceiling] marker anchored at message start",
+            "provenance": "documented"
+          },
+          "fork_turns": {
+            "type": "string",
+            "enum": ["none"],
+            "description": "Isolation policy; 'none' means spawned task has no access to parent history beyond passed message",
+            "provenance": "documented"
+          }
+        },
+        "provenance": "documented",
+        "source": "SPEC §9.1, Codex 0.144.4 collaboration schema"
+      },
+
+      "followup_task": {
+        "description": "Send follow-up message to existing agent/task for continuation",
+        "signature": "followup_task({target, message})",
+        "parameters": {
+          "target": {
+            "type": "string",
+            "description": "Agent ID or canonical task name to continue",
+            "provenance": "documented"
+          },
+          "message": {
+            "type": "string",
+            "description": "Continuation prompt with tier marker if needed",
+            "provenance": "documented"
+          }
+        },
+        "provenance": "documented",
+        "source": "SPEC §9.1, Codex 0.144.4 collaboration schema"
+      },
+
+      "model_selector": {
+        "present": false,
+        "description": "Codex collaboration schema does not expose model selection parameter",
+        "provenance": "documented",
+        "source": "SPEC §3 row model_selection, D-06"
+      }
+    },
+
+    "nested_event_interception_capability": {
+      "description": "Capability to intercept and validate nested tool calls (exec_command, apply_patch) at guard points",
+      "status": "deferred_live_probe",
+      "provenance": "pending_live_probe",
+      "target_proof_level": "L6/L7",
+      "note": "SPEC D-05: nested write/read/spawn surfaces require fresh Codex task + trusted session mechanical proof before mechanical support can be claimed. Currently documented surface without interception proof."
+    }
+  },
+
+  "claude": {
+    "version": "Claude Code harness (version per AGENTS.md onboarding)",
+    "version_provenance": "documented",
+
+    "tools": [
+      {
+        "name": "Edit",
+        "description": "Modify file in place with exact replacement",
+        "type": "write",
+        "provenance": "documented"
+      },
+      {
+        "name": "Write",
+        "description": "Create or overwrite file with full content",
+        "type": "write",
+        "provenance": "documented"
+      },
+      {
+        "name": "MultiEdit",
+        "description": "Perform multiple file mutations in sequence",
+        "type": "write",
+        "provenance": "documented"
+      },
+      {
+        "name": "Bash",
+        "description": "Execute shell commands in session context",
+        "type": "execution",
+        "provenance": "documented"
+      },
+      {
+        "name": "Read",
+        "description": "Read file content with line numbers",
+        "type": "read",
+        "provenance": "documented"
+      },
+      {
+        "name": "Glob",
+        "description": "Find files by glob pattern",
+        "type": "read",
+        "provenance": "documented"
+      },
+      {
+        "name": "Grep",
+        "description": "Search for text pattern in files",
+        "type": "read",
+        "provenance": "documented"
+      },
+      {
+        "name": "Agent",
+        "description": "Spawn new agent with task assignment",
+        "type": "collaboration",
+        "provenance": "documented"
+      },
+      {
+        "name": "Task",
+        "description": "Create new task (variant of Agent)",
+        "type": "collaboration",
+        "provenance": "documented"
+      }
+    ]
+  },
+
+  "fresh_task_discovery": {
+    "description": "Codex capability to discover project-local Bee skills after task startup",
+    "level": "L6",
+    "status": "deferred_live_probe",
+    "provenance": "pending_live_probe",
+    "expected_behavior": "Fresh Codex task should discover project .agents/skills and list Bee skill roots with correct version matching runtime",
+    "source": "SPEC §5.3, L6 Live - Discovery live"
+  },
+
+  "guard_coverage_summary": {
+    "provenance_explanation": "documented = behavior described in spec/manifest; live_probed = observed in current runtime; pending_live_probe = documented but requires L6/L7 fresh-task/trusted-session proof before claiming mechanical support",
+    "outer_tool_coverage": "documented + live_probed via E-12 observation",
+    "nested_tool_interception": "pending_live_probe - SPEC D-05 requires fresh Codex task + trusted session deny/allow proof",
+    "collaboration_spawn_schema": "documented",
+    "collaboration_isolation": "documented + pending_live_probe for live confirmation",
+    "tier_marker_routing": "documented via SPEC §9.1; live enforcement requires L6/L7 probe"
+  }
+}
