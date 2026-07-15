@@ -22,6 +22,11 @@ import {
 import { sweepExpiredClaims, claimCellFile, releaseClaim } from './claims.mjs';
 import { findSessionConflicts } from './reservations.mjs';
 import { featureBacklogRank } from './backlog.mjs';
+// parallel-scheduler D2: cycle refusal at every dep-mutating write reuses the
+// SAME structural check schedule.mjs runs for diagnostics (one algorithm, one
+// definition of "cycle") — cells.mjs -> schedule.mjs stays one-directional
+// (schedule.mjs never imports cells.mjs back).
+import { detectCycles } from './schedule.mjs';
 
 export const LANES = ['tiny', 'small', 'standard', 'high-risk', 'spike'];
 
@@ -146,27 +151,61 @@ function normalizeNewCell(cell) {
   };
 }
 
+// assertNoCycle (D2) — the ONE cycle refusal used at every dep-mutating
+// write: addCell, addCells, updateCell (when it changes deps). Union of ALL
+// on-disk cells (every status — detectCycles is a structural check, not a
+// schedulability one; overlap stays legal and is never checked here) with the
+// incoming set (new cells being added, or an existing cell carrying a patched
+// `deps`), overlaid by id so a batch/patch that also touches an on-disk id
+// sees its OWN version, not the stale disk copy. Must run BEFORE any
+// writeCell — a refusal here must never leave partial state behind (addCells
+// stays all-or-nothing; addCell/updateCell touch nothing on a refusal).
+function assertNoCycle(root, verb, incomingCells) {
+  const byId = new Map();
+  for (const cell of listCells(root)) {
+    if (cell && typeof cell.id === 'string' && cell.id) byId.set(cell.id, cell);
+  }
+  for (const cell of incomingCells) {
+    if (cell && typeof cell.id === 'string' && cell.id) byId.set(cell.id, cell);
+  }
+  const cycles = detectCycles([...byId.values()]);
+  if (cycles.length > 0) {
+    const named = cycles.map((cycle) => cycle.join(' -> ')).join('; ');
+    throw new Error(
+      `${verb}: dependency cycle refused — ${named}. Cycles are illegal at every dep-mutating write (D2); file overlap stays legal and is never refused.`,
+    );
+  }
+}
+
 export function addCell(root, cell) {
   validateNewCell(root, cell);
-  return writeCell(root, normalizeNewCell(cell));
+  const normalized = normalizeNewCell(cell);
+  assertNoCycle(root, 'addCell', [normalized]);
+  return writeCell(root, normalized);
 }
 
 // Batch add: validates EVERY cell (against disk and against duplicate ids
 // within the batch itself) before writing any — all-or-nothing, so a failing
-// cell in the middle of a slice never leaves partial state behind.
+// cell in the middle of a slice never leaves partial state behind. The cycle
+// check (D2) runs over the whole batch + on-disk store, also before any
+// write, so a cycle spanning two cells in the same batch (or a batch cell and
+// an existing on-disk cell) refuses the entire batch, nothing written.
 export function addCells(root, cells) {
   if (!Array.isArray(cells) || cells.length === 0) {
     throw new Error('addCells: expected a non-empty JSON array of cells.');
   }
   const seen = new Set();
+  const normalized = [];
   for (const cell of cells) {
     validateNewCell(root, cell);
     if (seen.has(cell.id)) {
       throw new Error(`addCells: duplicate id "${cell.id}" within the batch.`);
     }
     seen.add(cell.id);
+    normalized.push(normalizeNewCell(cell));
   }
-  return cells.map((cell) => writeCell(root, normalizeNewCell(cell)));
+  assertNoCycle(root, 'addCells', normalized);
+  return normalized.map((cell) => writeCell(root, cell));
 }
 
 // ─── updateCell — door-validated in-place revision (cells-update-verb) ─────
@@ -285,6 +324,13 @@ export function updateCell(root, id, patch) {
         `updateCell: lane "${merged.lane}" requires non-empty must_haves.truths — the patch would leave "${id}" without them. The cell is untouched.`,
       );
     }
+  }
+  // D2: only a patch that changes `deps` can reintroduce a cycle — checking
+  // unconditionally would re-validate every unrelated field edit against the
+  // whole store for no reason. Runs before writeCell; a refusal leaves the
+  // cell untouched, same guarantee as every other updateCell refusal above.
+  if (Object.prototype.hasOwnProperty.call(patch, 'deps')) {
+    assertNoCycle(root, 'updateCell', [merged]);
   }
   return writeCell(root, merged);
 }

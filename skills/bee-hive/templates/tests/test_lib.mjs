@@ -331,6 +331,131 @@ check('addCells refuses a non-array and an empty array', () => {
   assertThrows(() => addCells(root, []), 'array', 'empty array refused');
 });
 
+// ─── cells: dependency-cycle refusal at every dep-mutating write (D2, ────────
+// parallel-scheduler-2) — addCell, addCells, updateCell-when-deps-change all
+// refuse fail-fast, all-or-nothing, before any writeCell. File overlap is
+// NEVER checked here (D2: overlap stays legal, only cycles are illegal) —
+// isolated temp roots so this section's ids never interact with the shared
+// `root` used above/below.
+
+function cycMakeCell(id, extra = {}) {
+  return makeCell(id, { feature: 'cyc-demo', ...extra });
+}
+
+check('addCells refuses an in-batch cycle (a<->b), nothing written, message names both ids', () => {
+  const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-batch-'));
+  try {
+    assertThrows(
+      () =>
+        addCells(cRoot, [
+          cycMakeCell('cyc-a', { deps: ['cyc-b'] }),
+          cycMakeCell('cyc-b', { deps: ['cyc-a'] }),
+        ]),
+      'cycle',
+      'in-batch two-cycle refused',
+    );
+    assertThrows(
+      () =>
+        addCells(cRoot, [
+          cycMakeCell('cyc-a2', { deps: ['cyc-b2'] }),
+          cycMakeCell('cyc-b2', { deps: ['cyc-a2'] }),
+        ]),
+      'cyc-a2',
+      'refusal message names the cycle ids',
+    );
+    assert(readCell(cRoot, 'cyc-a') === null, 'cyc-a must not exist — batch refused before any write');
+    assert(readCell(cRoot, 'cyc-b') === null, 'cyc-b must not exist — batch refused before any write');
+  } finally {
+    fs.rmSync(cRoot, { recursive: true, force: true });
+  }
+});
+
+check('addCell refuses a cycle formed against an existing on-disk cell (batch-vs-disk)', () => {
+  const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-disk-'));
+  try {
+    addCell(cRoot, cycMakeCell('cyc-disk-a', { deps: ['cyc-disk-b'] }));
+    // cyc-disk-b does not exist yet — cyc-disk-a's dep is merely unsatisfiable
+    // so far (no cycle: an unknown id can never close one). Adding cyc-disk-b
+    // with a dep back on cyc-disk-a closes it against the ON-DISK cell.
+    assertThrows(
+      () => addCell(cRoot, cycMakeCell('cyc-disk-b', { deps: ['cyc-disk-a'] })),
+      'cycle',
+      'new cell forming a cycle with an on-disk cell is refused',
+    );
+    assert(readCell(cRoot, 'cyc-disk-b') === null, 'cyc-disk-b must not exist — refused before write');
+  } finally {
+    fs.rmSync(cRoot, { recursive: true, force: true });
+  }
+});
+
+check('addCell refuses a self-dependency (a lists itself in deps)', () => {
+  const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-self-'));
+  try {
+    assertThrows(
+      () => addCell(cRoot, cycMakeCell('cyc-self', { deps: ['cyc-self'] })),
+      'cycle',
+      'self-dep refused',
+    );
+    assert(readCell(cRoot, 'cyc-self') === null, 'cyc-self must not exist');
+  } finally {
+    fs.rmSync(cRoot, { recursive: true, force: true });
+  }
+});
+
+check('updateCell refuses a patch that reintroduces a cycle via deps; the cell is untouched', () => {
+  const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-update-'));
+  try {
+    addCell(cRoot, cycMakeCell('cyc-upd-a', { deps: [] }));
+    addCell(cRoot, cycMakeCell('cyc-upd-b', { deps: ['cyc-upd-a'] }));
+    const before = readCell(cRoot, 'cyc-upd-a');
+    assertThrows(
+      () => updateCell(cRoot, 'cyc-upd-a', { deps: ['cyc-upd-b'] }),
+      'cycle',
+      'update that closes a<->b via deps is refused',
+    );
+    const after = readCell(cRoot, 'cyc-upd-a');
+    assert(JSON.stringify(after) === JSON.stringify(before), 'cyc-upd-a must be byte-unchanged after the refused update');
+    // A field edit that does NOT touch deps is untouched by the cycle check —
+    // proves the check is deps-gated, not a blanket re-validation.
+    const ok = updateCell(cRoot, 'cyc-upd-a', { title: 'renamed, no deps change' });
+    assert(ok.title === 'renamed, no deps change', 'non-deps patch still applies normally');
+  } finally {
+    fs.rmSync(cRoot, { recursive: true, force: true });
+  }
+});
+
+check('addCell over a store with pre-existing unsatisfiable deps (missing/blocked/dropped) still succeeds — never mistaken for a cycle', () => {
+  const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-unsat-'));
+  try {
+    addCell(cRoot, cycMakeCell('cyc-unsat-blocked', { deps: [] }));
+    updateCell(cRoot, 'cyc-unsat-blocked', { title: 'still open' }); // no-op sanity
+    // Simulate a blocked cell directly (blockCell requires the cell to exist first).
+    blockCell(cRoot, 'cyc-unsat-blocked', 'unrelated reason');
+    addCell(cRoot, cycMakeCell('cyc-unsat-dropped', { deps: [] }));
+    dropCell(cRoot, 'cyc-unsat-dropped', 'unrelated reason');
+    // A brand-new cell depending on a missing id, plus the blocked/dropped
+    // cells above, plus a dep on a capped cell (satisfied) — none of this is
+    // structurally a cycle; it must add cleanly.
+    addCell(cRoot, cycMakeCell('cyc-unsat-new', { deps: ['cyc-unsat-blocked', 'cyc-unsat-dropped', 'cyc-unsat-missing'] }));
+    assert(readCell(cRoot, 'cyc-unsat-new') !== null, 'cyc-unsat-new must be added — unsatisfiable deps are not cycles');
+  } finally {
+    fs.rmSync(cRoot, { recursive: true, force: true });
+  }
+});
+
+check('addCells: file overlap between two batch cells is NOT refused (D2 — only cycles are illegal)', () => {
+  const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-overlap-'));
+  try {
+    const added = addCells(cRoot, [
+      cycMakeCell('cyc-ov-a', { files: ['shared.mjs'] }),
+      cycMakeCell('cyc-ov-b', { files: ['shared.mjs'] }),
+    ]);
+    assert(added.length === 2, 'both overlapping cells are added — overlap is legal per D2');
+  } finally {
+    fs.rmSync(cRoot, { recursive: true, force: true });
+  }
+});
+
 check('bee.mjs cells add CLI: a JSON array on --stdin creates the whole slice in one call', () => {
   const cliPath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
   const batch = [makeCell('batch-cli-1'), makeCell('batch-cli-2')];
