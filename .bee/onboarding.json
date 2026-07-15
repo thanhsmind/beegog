@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.1.1",
+  "bee_version": "1.2.0",
   "managed": {
     "agents_block": "dd0183635cb210a05b70a19844862f0c4170afeb529477faa674af5b44435c6b",
     "gitignore_block": "add7be1e25d3c4b7bbedff2f80c0f0e577c84610ebbac5d1eec1d70427424886",
@@ -22,7 +22,7 @@
       "reservations.mjs": "4643ef572599f1439504741499f3ec982c4344e1e3551052c2d27e66617fec86",
       "reviews.mjs": "56b7110d1737e515b282cc757354580dadbaf76f88f516581c90717630c9cead",
       "source-identity.mjs": "93c2f9669f0103af26c48bd723873bf1bebc4d3fe2d8f51013f4be529095c81b",
-      "state.mjs": "48ff0927dca7891c119d3f512ddc4f0560da9f34c04538a2e8596f64bcc633db",
+      "state.mjs": "3bc700ced39ee2d12b57ec7ce75296a1535826affb86a9455f4991d401df6daa",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
     },
     "repo_hooks": {
@@ -42,5 +42,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-15T09:36:16.605Z"
+  "updated_at": "2026-07-15T10:11:20.893Z"
 }
