@@ -101,7 +101,7 @@ export const COMMAND_REGISTRY = [
     name: 'cells.add',
     invoke: 'bee cells add',
     description:
-      'Add a new cell from a JSON file or stdin. Exactly one of --file / --stdin is required at call time (both satisfy the schema; the handler itself enforces the choice).',
+      'Add a cell (or a whole-slice JSON array) from stdin, or from a JSON file. Prefer --stdin: pipe one cell object or an array for the whole slice in one call — no per-cell scratchpad files. Exactly one of --stdin / --file is required at call time (both satisfy the schema; the handler itself enforces the choice).',
     parameters: {
       type: 'object',
       properties: {
@@ -111,7 +111,10 @@ export const COMMAND_REGISTRY = [
       },
       required: [],
     },
-    examples: ['bee cells add --file cell-demo-1.json --json'],
+    examples: [
+      "printf '%s' '[{...cell...}]' | bee cells add --stdin --json",
+      'bee cells add --file cell-demo-1.json --json',
+    ],
     deprecated: null,
   },
   {

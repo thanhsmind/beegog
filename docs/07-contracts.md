@@ -129,7 +129,7 @@ bee.mjs status [--json]
     (pbi added additively, harness10 D10: counts of docs/backlog.md Status column, null when the file is absent)
 
 bee.mjs cells list [--feature F] [--status S] | ready [--feature F] | show --id ID
-             | add --file cell.json            (or --stdin)
+             | add --stdin                     (one cell object or a whole-slice JSON array; --file cell.json also accepted)
              | claim --id ID --worker NAME
              | verify --id ID --command CMD --passed true|false [--output TEXT | --output-file F]
              | cap --id ID [--outcome TEXT] [--files a,b] [--behavior-change] [--evidence-file F] [--deviations-file F] [--friction TEXT]
