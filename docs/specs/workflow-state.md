@@ -1,8 +1,8 @@
 ---
 area: workflow-state
 updated: 2026-07-15
-sources: [codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
-decisions: [codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable)]
+sources: [parallel-scheduler cells parallel-scheduler-1..4 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15 — computed schedule, cycle refusal, schedule query verb, orchestration prose), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
+decisions: [parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable)]
 coverage: partial
 ---
 
@@ -61,6 +61,11 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | reclaim (sweep) | Taking back an abandoned claim. Permitted only when BOTH the claim's lifetime has expired AND its owner's heartbeat is stale, re-verified while holding the claim's gate. A stall signal alone never justifies stealing live work. |
 | lane | One feature's own pipeline record — its feature name, mode, phase (same closed vocabulary), all four gates, summary and next action — living beside the default record so several features can be active at once. The default record is itself a lane: the one every unbound session sees. |
 | lane binding | The lane named on a working session's record. Resolution order is fixed: the session's bound lane when it names an existing lane, otherwise the default record — never a guess, never a scan. A binding to a missing or corrupt lane answers with a typed refusal (`LANE_MISSING`/`LANE_CORRUPT`/`LANE_INVALID`). While unbound, the session record simply omits the binding. |
+| computed schedule | The mechanically derived dispatch plan for a feature's units of work: numbered waves plus diagnostics (dependency cycles, unsatisfiable dependencies, units declaring no touched paths). Derived on demand from each unit's declared dependencies and declared touched paths; never stored, so it can never go stale. Advisory-but-default: orchestration follows it unless a reason for deviating is stated. |
+| wave | One numbered set of units safe to work concurrently: every dependency of every member is either satisfied or in an earlier wave, and no two members' declared touched paths overlap. Waves contain only units that are open or actively claimed. |
+| declared-path overlap | Two units collide when any pair of their declared touched paths overlaps, judged by the SAME path-overlap meaning the runtime write refusal uses — one semantics for prediction and enforcement, so the schedule can never call parallel-safe what the guard would deny. A unit declaring no paths overlaps nothing. |
+| auto-serialize | The scheduler's answer to a legal collision: the colliding unit moves to a later wave. Overlap is never refused and never dispatched concurrently "carefully". |
+| unsatisfiable dependency | A declared dependency that can never be satisfied as things stand: it names a unit that does not exist (`missing`), or one that is `blocked` or `dropped`. The dependent unit is excluded from every wave and reported in diagnostics with its reason — never a crash, never silently scheduled. |
 
 ## Behaviors & Operations
 
@@ -293,6 +298,34 @@ work left", and the session stops honestly. Claiming the chosen unit is
 crash-safe: the cross-session claim file is taken first, the work record
 second, and a failure of the second releases the first (no orphaned claim).
 
+**B17 — The schedule is computed, not guessed.** Trigger: anyone asks for a
+feature's dispatch plan (a read-only schedule query, filtered to one feature or
+spanning all work). What happens: the schedule is derived fresh from the
+declared record — dependency layering first (a dependency on a completed unit
+counts as satisfied), then collision packing (declared-path overlap within a
+layer defers the colliding unit to a later wave, in deterministic id order) —
+and answered as numbered waves plus diagnostics: dependency cycles, unsatisfiable
+dependencies with their reasons, and units declaring no paths. The query never
+writes anything. What each consumer observes: the orchestrator dispatches wave
+by wave and deviates only with a stated reason; feasibility validation of a
+multi-unit slice requires the diagnostics to be clean before execution is
+approved; a planner sees that overlapping declared paths are legal but cost a
+wave, so partitioning quality is visible at plan time instead of surfacing as
+mid-flight write refusals. The runtime write refusal stays in place unchanged —
+the schedule predicts it; it never replaces it (parallel-scheduler D1/D2/D4).
+
+**B18 — A dependency cycle is refused at the door.** Trigger: any write that
+creates or changes a unit's declared dependencies — adding one unit, adding a
+batch, or updating an existing unit's dependencies. What happens: the write is
+checked against the union of the existing record and the incoming change; if
+any cycle would result (self-dependency included), the entire write is refused
+before anything lands — a batch is all-or-nothing — and the refusal names the
+cycle's member ids. The structural check spans units of every status. What the
+caller observes: an immediate, specific "no" at write time, so an impossible
+plan is impossible to record; pre-existing records are never mutated by the
+check — a legacy store with a cycle is reported by the schedule query's
+diagnostics instead (parallel-scheduler D2).
+
 ### Closing a feature — the tail of the chain
 
 Closing is the one stretch of the pipeline where each step must *prove* the step
@@ -498,6 +531,20 @@ its knowledge actually landed — the state and the specs can no longer disagree
   including during exploring. The litmus is "do I already have a confident best
   answer?": yes proceeds, no-and-only-the-human-knows still asks (decision
   a93994d3; cell bypass-info-vs-approval-1).
+- R26 — No dependency cycle can ever be recorded: every write that creates or
+  changes declared dependencies is refused, all-or-nothing and naming the
+  cycle, when the union of the record and the change would contain one. A
+  cycle that predates the rule is surfaced by the schedule query's
+  diagnostics, never silently scheduled around (parallel-scheduler D2,
+  decisions b4740f68/0746db88).
+- R27 — One overlap semantics, two consumers: the computed schedule judges
+  declared-path collisions with exactly the same meaning the runtime write
+  refusal enforces. Collision between ready units is legal and auto-serializes
+  into a later wave — it is never refused, and never dispatched concurrently.
+  The computed schedule is the default dispatch order; deviating requires a
+  stated reason, and execution of a multi-unit slice is not validated while
+  the schedule's diagnostics report cycles (parallel-scheduler D1/D2/D3,
+  decisions a648ea2a/ecc8862d).
 
 ## Edge Cases Settled
 
@@ -653,3 +700,15 @@ its knowledge actually landed — the state and the specs can no longer disagree
   (208 passing). Evidence: commits cc1c34d, e4f51a2, da2e165; traces
   `.bee/cells/review-od-{1,2,3}.json`; acceptance map
   `docs/history/review-on-demand/reports/uat-scenarios.md`.
+- Computed schedule (B17/B18, R26/R27): `skills/bee-hive/templates/lib/schedule.mjs`
+  (`computeSchedule`, `detectCycles` — pure, Kahn layering + greedy `pathsOverlap`
+  packing, Tarjan SCC for cycles; byte-mirrored to `.bee/bin/lib/`); cycle refusal
+  wired in `cells.mjs` `addCell`/`addCells`/`updateCell` via `assertNoCycle`;
+  CLI verb `bee cells schedule` (`command-registry.mjs` `cells.schedule`,
+  `handleCellsSchedule` in both dispatcher copies); consumer prose in
+  `skills/bee-swarming/SKILL.md` (wave analysis), `skills/bee-validating/SKILL.md`
+  (feasibility matrix), `skills/bee-planning/references/planning-reference.md`
+  (files-authoring note). Tests: schedule + cycle-refusal rows in
+  `templates/tests/test_lib.mjs` (321 passing), verb example in
+  `templates/tests/test_bee_cli.mjs` (132 passing). Evidence: commits 390165a,
+  9e2156e, 5003503, 79217ae; traces `.bee/cells/parallel-scheduler-{1..4}.json`.

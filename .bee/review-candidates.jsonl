@@ -17,3 +17,4 @@
 {"id":"bf387e93-72ce-408d-bc76-cbd1eb5f92d5","type":"candidate","date":"2026-07-15T09:06:16.353Z","feature":"codex-harness-hardening-p2","head":"daba0833f811c2d8418c197ae3897e85020fc110","mode":"standard","baseline":null,"cells":[]}
 {"id":"dc8c5092-875c-47b9-bc1b-54cdda134a98","type":"candidate","date":"2026-07-15T09:38:31.621Z","feature":"codex-harness-hardening-1d","head":"c8b8b2fc7a13246de20eff5fbb8875649ca9e3e2","mode":"standard","baseline":null,"cells":[]}
 {"id":"cc896831-c874-4b8f-9b4d-5e2eaa10d3b3","type":"candidate","date":"2026-07-15T10:00:24.134Z","feature":"codex-bypass-per-skill","head":"8921d9d79e62533f843113f597acc42d865af4b9","mode":"standard","baseline":null,"cells":[]}
+{"id":"47f2b4db-eed7-4dab-97a4-dbe66b4fd752","type":"candidate","date":"2026-07-15T13:39:40.449Z","feature":"parallel-scheduler","head":"79217ae8eaa2aa902fd87e41e7969e2c95ae258b","mode":"standard","baseline":null,"cells":[]}

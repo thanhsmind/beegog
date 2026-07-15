@@ -477,3 +477,14 @@ path only** (`FREEZE-RED: <specific>`, `CENSUS-VIOLATION <file>:<line>`) and exi
 code** (a sentinel like `3`, not `1`); the wrapper asserts sentinel-string AND that code. Keep
 red-now freezes OUT of the mandatory verify command until the fix flips them green, so the baseline
 stays green meanwhile. **Full entry:** docs/history/learnings/20260715-codex-harness-hardening-slice0.md
+
+## [20260715] Shipping a lib file means shipping the manifest: regen release-manifest inside the feature
+**Category:** process
+**Feature:** parallel-scheduler
+**Tags:** [release-manifest, verify-chain, lib-files]
+Any cell that adds/renames/changes a file under `templates/lib/` or `.bee/bin/lib/` makes
+`release_manifest.mjs --check` (part of `commands.verify`) red until `--write` regenerates the
+stored manifest — so the regen is part of the FEATURE, owned by its last cell or its close step,
+never discovered at the close verify. Same rule generalized: before capping a slice, ask which
+standing repo-wide guards (manifest, mirror, census) hash the files you touched, and run their
+regen/check inside the slice. (Filed friction to mechanize the hint.)

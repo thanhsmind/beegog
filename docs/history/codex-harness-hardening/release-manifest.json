@@ -15,7 +15,7 @@
     },
     {
       "path": ".bee/bin/lib/cells.mjs",
-      "sha256": "2304873f56154ab7f9ad0a755e869eb38ba579150a79e823720f60e06b47ba29",
+      "sha256": "b4f0464318fea203fdb9d0bd3c268487e61d2c51f956efba5d475f430957a92e",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -27,7 +27,7 @@
     },
     {
       "path": ".bee/bin/lib/command-registry.mjs",
-      "sha256": "fe71ec3b0fcb2d7eafd0fdab64aeb2070acaf21a6a738f3db7db92411cda2f69",
+      "sha256": "70ba82f524c4cb7a19af5da138a4832d38a8177aa81c7d1b4222711a25383088",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -80,6 +80,12 @@
       "role": "runtime_lib"
     },
     {
+      "path": ".bee/bin/lib/schedule.mjs",
+      "sha256": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
+      "mode": "644",
+      "role": "runtime_lib"
+    },
+    {
       "path": ".bee/bin/lib/source-identity.mjs",
       "sha256": "93c2f9669f0103af26c48bd723873bf1bebc4d3fe2d8f51013f4be529095c81b",
       "mode": "644",
@@ -123,7 +129,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/cells.mjs",
-      "sha256": "2304873f56154ab7f9ad0a755e869eb38ba579150a79e823720f60e06b47ba29",
+      "sha256": "b4f0464318fea203fdb9d0bd3c268487e61d2c51f956efba5d475f430957a92e",
       "mode": "644",
       "role": "source_lib"
     },
@@ -135,7 +141,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/command-registry.mjs",
-      "sha256": "fe71ec3b0fcb2d7eafd0fdab64aeb2070acaf21a6a738f3db7db92411cda2f69",
+      "sha256": "70ba82f524c4cb7a19af5da138a4832d38a8177aa81c7d1b4222711a25383088",
       "mode": "644",
       "role": "source_lib"
     },
@@ -184,6 +190,12 @@
     {
       "path": "skills/bee-hive/templates/lib/reviews.mjs",
       "sha256": "56b7110d1737e515b282cc757354580dadbaf76f88f516581c90717630c9cead",
+      "mode": "644",
+      "role": "source_lib"
+    },
+    {
+      "path": "skills/bee-hive/templates/lib/schedule.mjs",
+      "sha256": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "mode": "644",
       "role": "source_lib"
     },
