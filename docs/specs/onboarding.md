@@ -3,6 +3,7 @@ area: onboarding
 updated: 2026-07-15
 coverage: partial
 sources:
+  - codex-harness-hardening-1c cell codex-harness-hardening-1c-1 (honest status drift R16 via the onboarding managed-hash ledger; 5 drift tests, 2026-07-15)
   - codex-harness-hardening cell codex-harness-hardening-1b-1 (runtime-lib downgrade guard R15; split-brain regression 3->0, 2026-07-15)
   - installer-hardening ih-1..ih-6 (cells, 2026-07-13; flushed capture stub 92c9bcf6)
   - shim-retire D2 retirement pass (cells shim-retire-2, shim-retire-6 self-onboard proof, 2026-07-14)
@@ -16,6 +17,8 @@ sources:
   - fanout-delegation D1 (stale advisor key tolerance, 2026-07-12)
   - sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)
 decisions:
+  - 485e949a (honest status drift reference = the onboarding managed-hash ledger; no new shipped artifact — codex-harness-hardening 1c)
+  - 579bbad7 (status drift is report-only, stays a boolean + optional detail; fail-open on absent/legacy ledger — codex-harness-hardening 1c)
   - fe6593c0 (runtime-lib downgrade refusal targets the vendored copy path; zero-mutation, self-install included — codex-harness-hardening 1b)
   - 3318374a (installer hardening: per-project skills default, global opt-in, default instructions import)
   - bbc6bcea (shim-retire: unified command surface; retired helper scripts removed from hosts)
@@ -361,6 +364,20 @@ landing page from day one in every onboarded project.
   refused — never overwritten by an older or unreadable source. An explicit
   force override is honored only when both the source and the installed version
   are known release numbers (decision fe6593c0; cell codex-harness-hardening-1b-1).
+- **R16** — The status report tells the truth about the vendored runtime. At
+  install, onboarding records a per-file content fingerprint of every vendored
+  helper and library module. The status report recomputes those fingerprints
+  from the files actually on disk and reports **drift** whenever any managed
+  file's content differs from what was recorded, a managed file is missing or an
+  unrecorded one has appeared, or the recorded version differs from the running
+  one — so a runtime altered without re-onboarding is caught **even when its
+  version string is unchanged**. Drift stays a single true/false fact; an
+  optional companion list names which files drifted. The report only *reports*:
+  it never repairs — bringing the runtime back into agreement is an apply run.
+  When no fingerprint record exists yet (a legacy installation) or it cannot be
+  read, the check degrades to the version comparison alone and the report still
+  renders — it never fails on a missing or unreadable record (decisions 485e949a,
+  579bbad7; cell codex-harness-hardening-1c-1).
 
 ## Edge Cases Settled
 
