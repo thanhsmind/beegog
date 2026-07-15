@@ -248,7 +248,10 @@ function computeRuntimeDrift(root, onboardingRaw) {
       const relPosix = ['.bee', 'bin', relDir, name].filter(Boolean).join('/');
       let live;
       try {
-        live = crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex');
+        // Hash the utf8-decoded text, byte-for-byte the way buildManagedVersions
+        // (onboard_bee.mjs) records it — same input type so the two hashers agree
+        // by construction, not by the incidental round-trip of valid UTF-8.
+        live = crypto.createHash('sha256').update(fs.readFileSync(abs, 'utf8')).digest('hex');
       } catch {
         detail.push(`${relPosix} (missing)`);
         continue;
@@ -264,7 +267,12 @@ function computeRuntimeDrift(root, onboardingRaw) {
   if (managed.lib && typeof managed.lib === 'object') {
     try {
       for (const f of fs.readdirSync(path.join(root, '.bee', 'bin', 'lib'))) {
-        if (f.endsWith('.mjs') && !(f in managed.lib)) detail.push(`.bee/bin/lib/${f} (extra)`);
+        // hasOwnProperty, not `in`: a lib file literally named constructor.mjs /
+        // toString.mjs would otherwise resolve through Object.prototype and
+        // escape extra-detection.
+        if (f.endsWith('.mjs') && !Object.prototype.hasOwnProperty.call(managed.lib, f)) {
+          detail.push(`.bee/bin/lib/${f} (extra)`);
+        }
       }
     } catch {
       /* fail-open: unreadable lib dir degrades to the checks above */
@@ -398,7 +406,7 @@ function formatSlot(value) {
 function renderStatusText(status) {
   const lines = [
     `bee status (plugin v${BEE_VERSION})`,
-    `Onboarding: ${status.onboarding.installed ? `installed (bee ${status.onboarding.bee_version})` : 'MISSING'}${status.onboarding.drift ? ' [version drift]' : ''}`,
+    `Onboarding: ${status.onboarding.installed ? `installed (bee ${status.onboarding.bee_version})` : 'MISSING'}${status.onboarding.drift ? ` [drift${status.onboarding.drift_detail ? `: ${status.onboarding.drift_detail.length} file(s)` : ''}]` : ''}`,
     `Phase: ${status.phase} | Mode: ${status.mode ?? 'none'} | Feature: ${status.feature ?? 'none'}`,
     `Gates: ${GATE_NAMES.map((g) => `${g}=${status.gates?.[g] ? 'approved' : 'pending'}`).join(' ')}`,
     ...(status.gate_bypass_level && status.gate_bypass_level !== 'off'

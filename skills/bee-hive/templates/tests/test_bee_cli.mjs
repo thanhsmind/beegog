@@ -1402,9 +1402,37 @@ check('drift: a content-edited managed lib file reads drift:true and names it, e
   assert(ob.drift === true, `expected drift:true after a content edit, got ${JSON.stringify(ob)}`);
   assert(typeof ob.drift === 'boolean', 'drift must stay a boolean (public contract)');
   assert(
-    Array.isArray(ob.drift_detail) && ob.drift_detail.some((d) => d.includes('sample.mjs')),
-    `drift_detail must name the drifted file, got ${JSON.stringify(ob.drift_detail)}`,
+    Array.isArray(ob.drift_detail) && ob.drift_detail.includes('.bee/bin/lib/sample.mjs'),
+    `drift_detail must name the exact drifted path, got ${JSON.stringify(ob.drift_detail)}`,
   );
+});
+
+check('drift: a content-edited managed HELPER (bee.mjs, not lib) reads drift:true and names it (review P1)', () => {
+  const dir = buildDriftFixture();
+  fs.writeFileSync(path.join(dir, '.bee', 'bin', 'bee.mjs'), '// tampered dispatcher\n');
+  const ob = statusOnboarding(dir);
+  assert(ob.drift === true, `expected drift:true after a helper edit, got ${JSON.stringify(ob)}`);
+  assert(
+    Array.isArray(ob.drift_detail) && ob.drift_detail.some((d) => d.includes('bee.mjs') && !d.includes('lib/')),
+    `drift_detail must name .bee/bin/bee.mjs (no lib/ prefix), got ${JSON.stringify(ob.drift_detail)}`,
+  );
+});
+
+check('drift: a legacy ledger (no managed map) with a mismatched bee_version reads drift:true (version-only signal is live)', () => {
+  const dir = buildDriftFixture();
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.0.1' });
+  const ob = statusOnboarding(dir);
+  assert(ob.drift === true, `legacy ledger with a mismatched version must read drift:true, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail === undefined, 'version-only drift carries no drift_detail');
+});
+
+check('drift: a corrupt (non-JSON) onboarding.json degrades fail-open — status renders exit 0, never throws', () => {
+  const dir = buildDriftFixture();
+  fs.writeFileSync(path.join(dir, '.bee', 'onboarding.json'), '{ broken not json');
+  const r = runBee(['status', '--json'], dir);
+  assert(r.status === 0, `status must still render on a corrupt ledger, got exit ${r.status}: ${r.stderr}`);
+  const ob = JSON.parse(r.stdout).onboarding;
+  assert(ob.drift === false, `corrupt ledger must degrade to drift:false, got ${JSON.stringify(ob)}`);
 });
 
 check('drift: a missing managed file reads drift:true (file-set drift)', () => {

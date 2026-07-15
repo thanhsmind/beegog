@@ -1,0 +1,70 @@
+{
+  "id": "review-integrity-2026-07-15",
+  "requested_by": "user",
+  "requested_at": "2026-07-15T08:28:55.834Z",
+  "scope_description": "Runtime-integrity hardening before host propagation: Slice 1a release/mirror guards, Slice 1b downgrade preflight, Slice 1c honest status drift, plus bypass-1 autopilot levels and the v1.0.0 release.",
+  "included": [
+    {
+      "type": "cell",
+      "id": "codex-harness-hardening-1a-1",
+      "reason": "release manifest generator (sha256+mode+role)"
+    },
+    {
+      "type": "cell",
+      "id": "codex-harness-hardening-1a-2",
+      "reason": "release-tuple + templates/lib mirror guards in verify"
+    },
+    {
+      "type": "cell",
+      "id": "codex-harness-hardening-bypass-1",
+      "reason": "gate_bypass autopilot levels off/normal/full/total"
+    },
+    {
+      "type": "cell",
+      "id": "codex-harness-hardening-1b-1",
+      "reason": "downgrade preflight closing the copy_lib split-brain hole"
+    },
+    {
+      "type": "cell",
+      "id": "codex-harness-hardening-1c-1",
+      "reason": "honest bee status drift via the onboarding managed-hash ledger"
+    }
+  ],
+  "excluded": [],
+  "baseline": "6af1a9dd84c1e25101c4a62791f7fdaee409fefe",
+  "head": "db65ed4be632bc72243d6b5c998b4bc7d5f81cf2",
+  "reviewer_manifest": [],
+  "verification_preflight": {
+    "checked_at": "2026-07-15T08:28:55.834Z",
+    "cells_checked": [
+      "codex-harness-hardening-1a-2",
+      "codex-harness-hardening-bypass-1",
+      "codex-harness-hardening-1b-1",
+      "codex-harness-hardening-1c-1"
+    ],
+    "passed": true
+  },
+  "findings": [
+    {
+      "severity": "P1",
+      "status": "resolved",
+      "layer": "test-coverage",
+      "feature": "codex-harness-hardening-1c",
+      "summary": "Helper (bee.mjs) content-drift branch was claimed but untested — a regression removing it passed green.",
+      "today": "computeRuntimeDrift checks managed.helpers, but all 5 drift tests mutated only lib/sample.mjs; the helper branch was hit only in the intact case.",
+      "why": "The whole slice hardens the vendored runtime, and bee.mjs is the dispatcher; a tampered/downgraded bee.mjs that the ledger should flag would have silently read drift:false with no test to catch a regression.",
+      "resolution": "Added a helper-drift test (content-edit .bee/bin/bee.mjs => drift:true naming it); + version-drift-alone and corrupt-ledger P2 tests; utf8-hash match; hasOwnProperty; label fix. Cell codex-harness-hardening-review-fix-1, 129/0, 11-suite green.",
+      "evidence": "skills/bee-hive/templates/tests/test_bee_cli.mjs; skills/bee-hive/templates/bee.mjs:260"
+    }
+  ],
+  "uat": [],
+  "decision": {
+    "status": "approved",
+    "summary": "Integrity work (1a+1b+1c) reviewed by a 4-reviewer opus wave. Zero CODE P1s — the downgrade guard, drift computation, and gate_bypass ladder are correct, edge-safe, fail-open where intended, live-verified (split-brain regression, drift tests). One test-coverage P1 (helper-drift untested) FIXED + delta-re-reviewed. 5 residuals (3 P2, 2 P3) backlogged, non-blocking. P1=0. Approved under gate_bypass=total.",
+    "p1_count": 0,
+    "p1_resolved": 1,
+    "residuals_backlogged": 5
+  },
+  "created_at": "2026-07-15T08:28:55.834Z",
+  "updated_at": "2026-07-15T08:41:58.215Z"
+}
