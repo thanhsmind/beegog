@@ -112,6 +112,7 @@ import {
   SCOPE_ENTRY_TYPES,
 } from '../lib/reviews.mjs';
 import { addCaptureStub, pendingCaptureStubs, flushCaptureStub, captureQueue } from '../lib/capture.mjs';
+import { detectCycles, computeSchedule } from '../lib/schedule.mjs';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.mjs';
 import {
   SCHEMA_VERSION,
@@ -7446,6 +7447,171 @@ check('classifySource: pure — classifying mutates nothing', () => {
   classifySource({ hiveDir: hive, homeDir: noHome });
   classifySource({ hiveDir: hive, homeDir: noHome });
   assert(fs.readdirSync(pkg).sort().join(',') === before, 'classifier mutated the tree');
+});
+
+// ─── schedule.mjs — parallel-scheduler D1/D2/D3 (ps-1) ─────────────────────
+// Pure functions, no disk fixtures: cells are plain objects. Test Matrix
+// rows from docs/history/parallel-scheduler/plan.md ("Test Matrix" section).
+
+function schedCell(id, extra = {}) {
+  return { id, status: 'open', deps: [], files: [], ...extra };
+}
+
+check('computeSchedule: chain A<-B<-C schedules across three waves in dep order', () => {
+  const cells = [
+    schedCell('sch-a', { files: ['a.mjs'] }),
+    schedCell('sch-b', { deps: ['sch-a'], files: ['b.mjs'] }),
+    schedCell('sch-c', { deps: ['sch-b'], files: ['c.mjs'] }),
+  ];
+  const { waves, diagnostics } = computeSchedule(cells);
+  assert(JSON.stringify(waves) === JSON.stringify([['sch-a'], ['sch-b'], ['sch-c']]), `chain: got ${JSON.stringify(waves)}`);
+  assert(diagnostics.cycles.length === 0, 'chain: expected no cycles');
+  assert(diagnostics.unsatisfiable_deps.length === 0, 'chain: expected no unsatisfiable deps');
+});
+
+check('computeSchedule: diamond A->{B,C}->D packs B and C into one wave', () => {
+  const cells = [
+    schedCell('sch-d', { deps: ['sch-b', 'sch-c'], files: ['d.mjs'] }),
+    schedCell('sch-a', { files: ['a.mjs'] }),
+    schedCell('sch-b', { deps: ['sch-a'], files: ['b.mjs'] }),
+    schedCell('sch-c', { deps: ['sch-a'], files: ['c.mjs'] }),
+  ];
+  const { waves } = computeSchedule(cells);
+  assert(
+    JSON.stringify(waves) === JSON.stringify([['sch-a'], ['sch-b', 'sch-c'], ['sch-d']]),
+    `diamond: got ${JSON.stringify(waves)}`,
+  );
+});
+
+check('computeSchedule: overlap-serialize — trailing-* glob vs a concrete path defers to the next wave (D2/D3)', () => {
+  const cells = [
+    schedCell('ov1', { files: ['src/api/*'] }),
+    schedCell('ov2', { files: ['src/api/x.mjs'] }),
+  ];
+  const { waves } = computeSchedule(cells);
+  assert(JSON.stringify(waves) === JSON.stringify([['ov1'], ['ov2']]), `overlap-serialize: got ${JSON.stringify(waves)}`);
+});
+
+check('computeSchedule: mid-path glob is a literal (not a glob engine) — no overlap, same wave', () => {
+  const cells = [
+    schedCell('lit1', { files: ['skills/*/SKILL.md'] }),
+    schedCell('lit2', { files: ['skills/x/SKILL.md'] }),
+  ];
+  const { waves } = computeSchedule(cells);
+  assert(JSON.stringify(waves) === JSON.stringify([['lit1', 'lit2']]), `mid-path glob literal: got ${JSON.stringify(waves)}`);
+});
+
+check('detectCycles: chain has no cycle; self-dep a->a is its own single-member cycle', () => {
+  const chain = [schedCell('dc-a'), schedCell('dc-b', { deps: ['dc-a'] })];
+  assert(detectCycles(chain).length === 0, 'chain must report no cycles');
+
+  const selfDep = [schedCell('dc-self', { deps: ['dc-self'] })];
+  assert(JSON.stringify(detectCycles(selfDep)) === JSON.stringify([['dc-self']]), 'self-dep must report its own cycle');
+});
+
+check('detectCycles: two-cycle A<->B is reported regardless of status (structural, spans on-disk + in-batch)', () => {
+  const cells = [
+    schedCell('cyc-a', { status: 'capped', deps: ['cyc-b'] }),
+    schedCell('cyc-b', { status: 'open', deps: ['cyc-a'] }),
+  ];
+  assert(
+    JSON.stringify(detectCycles(cells)) === JSON.stringify([['cyc-a', 'cyc-b']]),
+    `two-cycle across statuses: got ${JSON.stringify(detectCycles(cells))}`,
+  );
+});
+
+check('computeSchedule: a dependency cycle never crashes — members excluded from every wave, reported in diagnostics.cycles', () => {
+  const cells = [
+    schedCell('cyc2-a', { deps: ['cyc2-b'] }),
+    schedCell('cyc2-b', { deps: ['cyc2-a'] }),
+  ];
+  const { waves, diagnostics } = computeSchedule(cells);
+  assert(waves.length === 0, `cyclic pair must produce zero waves, got ${JSON.stringify(waves)}`);
+  assert(
+    JSON.stringify(diagnostics.cycles) === JSON.stringify([['cyc2-a', 'cyc2-b']]),
+    `expected the cycle in diagnostics, got ${JSON.stringify(diagnostics.cycles)}`,
+  );
+});
+
+check('computeSchedule: dep on a missing/blocked/dropped cell is unsatisfiable — excluded from waves, never a crash', () => {
+  const cells = [
+    schedCell('un-missing', { deps: ['ghost'] }),
+    schedCell('the-blocker', { status: 'blocked' }),
+    schedCell('un-blocked', { deps: ['the-blocker'] }),
+    schedCell('the-dropped', { status: 'dropped' }),
+    schedCell('un-dropped', { deps: ['the-dropped'] }),
+  ];
+  const { waves, diagnostics } = computeSchedule(cells);
+  const scheduled = waves.flat();
+  assert(!scheduled.includes('un-missing'), 'un-missing must never appear in a wave');
+  assert(!scheduled.includes('un-blocked'), 'un-blocked must never appear in a wave');
+  assert(!scheduled.includes('un-dropped'), 'un-dropped must never appear in a wave');
+  const byCellDep = (cell, dep, reason) =>
+    diagnostics.unsatisfiable_deps.some((row) => row.cell === cell && row.dep === dep && row.reason === reason);
+  assert(byCellDep('un-missing', 'ghost', 'missing'), 'expected a missing-reason row for un-missing');
+  assert(byCellDep('un-blocked', 'the-blocker', 'blocked'), 'expected a blocked-reason row for un-blocked');
+  assert(byCellDep('un-dropped', 'the-dropped', 'dropped'), 'expected a dropped-reason row for un-dropped');
+});
+
+check('computeSchedule: unsatisfiable exclusion propagates transitively without its own diagnostics row', () => {
+  const cells = [
+    schedCell('prop-root', { deps: ['ghost2'] }),
+    schedCell('prop-chain', { deps: ['prop-root'] }),
+  ];
+  const { waves, diagnostics } = computeSchedule(cells);
+  const scheduled = waves.flat();
+  assert(!scheduled.includes('prop-root'), 'prop-root must be excluded (direct unsatisfiable dep)');
+  assert(!scheduled.includes('prop-chain'), 'prop-chain must be excluded (transitive propagation)');
+  assert(
+    diagnostics.unsatisfiable_deps.some((row) => row.cell === 'prop-root' && row.dep === 'ghost2'),
+    'expected the direct-cause row for prop-root',
+  );
+  assert(
+    !diagnostics.unsatisfiable_deps.some((row) => row.cell === 'prop-chain'),
+    'prop-chain has no direct unsatisfiable dep of its own — no row expected',
+  );
+});
+
+check('computeSchedule: empty files overlaps nothing — schedules in the earliest ready wave and is flagged in diagnostics', () => {
+  const cells = [schedCell('ef1'), schedCell('ef2', { files: ['x.mjs'] })];
+  const { waves, diagnostics } = computeSchedule(cells);
+  assert(JSON.stringify(waves) === JSON.stringify([['ef1', 'ef2']]), `empty-files: got ${JSON.stringify(waves)}`);
+  assert(diagnostics.empty_files.includes('ef1'), 'ef1 (empty files) must be flagged in diagnostics.empty_files');
+  assert(!diagnostics.empty_files.includes('ef2'), 'ef2 has files — must not be flagged');
+});
+
+check('computeSchedule: a dep on a capped cell is satisfied — no schedule edge, dependent runs in the first wave', () => {
+  const cells = [
+    schedCell('capped1', { status: 'capped' }),
+    schedCell('dep-on-capped', { deps: ['capped1'] }),
+  ];
+  const { waves } = computeSchedule(cells);
+  assert(JSON.stringify(waves) === JSON.stringify([['dep-on-capped']]), `capped-dep satisfied: got ${JSON.stringify(waves)}`);
+});
+
+check('computeSchedule: deterministic — same input twice, and input order does not change the result', () => {
+  const cells = [
+    schedCell('det-c', { deps: ['det-a'] }),
+    schedCell('det-a'),
+    schedCell('det-b', { deps: ['det-a'] }),
+  ];
+  const first = JSON.stringify(computeSchedule(cells));
+  const second = JSON.stringify(computeSchedule(cells));
+  assert(first === second, 'calling computeSchedule twice on the same input must be identical');
+
+  const reversed = [...cells].reverse();
+  const fromReversed = JSON.stringify(computeSchedule(reversed));
+  assert(first === fromReversed, 'input array order must not change the computed schedule');
+});
+
+check('computeSchedule / detectCycles: empty input yields empty, well-shaped output', () => {
+  assert(JSON.stringify(detectCycles([])) === '[]', 'detectCycles([]) must be []');
+  const { waves, diagnostics } = computeSchedule([]);
+  assert(JSON.stringify(waves) === '[]', 'computeSchedule([]) waves must be []');
+  assert(
+    JSON.stringify(diagnostics) === JSON.stringify({ cycles: [], unsatisfiable_deps: [], empty_files: [] }),
+    `computeSchedule([]) diagnostics must be empty-shaped, got ${JSON.stringify(diagnostics)}`,
+  );
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────
