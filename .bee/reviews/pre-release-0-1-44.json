@@ -1,0 +1,135 @@
+{
+  "id": "pre-release-0-1-44",
+  "requested_by": "user",
+  "requested_at": "2026-07-15T03:24:35.032Z",
+  "scope_description": "All 12 unreviewed candidates before the v0.1.44 release (includes high-risk fresh-session-handoff)",
+  "included": [
+    {
+      "type": "feature",
+      "id": "review-on-demand"
+    },
+    {
+      "type": "feature",
+      "id": "cells-update-verb"
+    },
+    {
+      "type": "feature",
+      "id": "harness-integration-adopt"
+    },
+    {
+      "type": "feature",
+      "id": "skill-metadata-parity"
+    },
+    {
+      "type": "feature",
+      "id": "cells-batch-add"
+    },
+    {
+      "type": "feature",
+      "id": "dispatcher-unify"
+    },
+    {
+      "type": "feature",
+      "id": "advisor"
+    },
+    {
+      "type": "feature",
+      "id": "tier-transport-doctrine"
+    },
+    {
+      "type": "feature",
+      "id": "fresh-session-handoff"
+    },
+    {
+      "type": "feature",
+      "id": "release-v0.1.33"
+    },
+    {
+      "type": "feature",
+      "id": "shim-retire"
+    },
+    {
+      "type": "feature",
+      "id": "chain-integrity"
+    }
+  ],
+  "excluded": [
+    {
+      "type": "commit",
+      "id": "55cf3a4",
+      "reason": "release 0.1.43 commit — not a review candidate"
+    },
+    {
+      "type": "commit",
+      "id": "f3b4425",
+      "reason": "stdin-first-nudge — separate tiny docs change this session, not among the 12"
+    }
+  ],
+  "baseline": "c8886f88f5d2b189ddc98fc6013c331acedace07",
+  "head": "0847310f7f99c13a4a51f6227b4e12227c9471b4",
+  "reviewer_manifest": {
+    "dispatched_at": "2026-07-15",
+    "review_slot": "opus",
+    "reviewers": [
+      {
+        "role": "code-quality",
+        "focus": "correctness, readability, type safety"
+      },
+      {
+        "role": "architecture",
+        "focus": "boundaries, coupling, API design, maintainability"
+      },
+      {
+        "role": "security",
+        "focus": "auth, secrets, injection, permissions, data exposure, fail-closed guards"
+      },
+      {
+        "role": "test-coverage",
+        "focus": "missing edge cases, regression paths, weak assertions"
+      },
+      {
+        "role": "api-contract",
+        "focus": "CLI command surface, registry<->handler bijection, public shapes"
+      },
+      {
+        "role": "reliability",
+        "focus": "fail-closed state transitions, spawn/exec, error handling"
+      }
+    ],
+    "cap": 6,
+    "note": ".bee/bin/lib is a byte-identical vendored mirror of skills/bee-hive/templates/lib; reviewed at source only."
+  },
+  "verification_preflight": {
+    "checked_at": "2026-07-15T03:24:35.032Z",
+    "cells_checked": [],
+    "passed": true
+  },
+  "findings": [
+    {
+      "severity": "P1",
+      "category": "api-contract",
+      "status": "resolved",
+      "summary": "cells.add manifest example was non-runnable (shell pipeline + placeholder JSON), breaking test_bee_cli.mjs (109/12)",
+      "what": "examples[0] set to `printf '%s' '[{...cell...}]' | bee cells add --stdin --json`; registry contract requires every example to be a runnable `bee <group> <verb>` string executed by test_bee_cli.mjs, and cells.add's example must create the demo-1 fixture the rest of the CLI-test chain depends on.",
+      "why": "The first advertised example is what a Claude/OpenAI agent copies from the --help manifest; it fails when run, and it silently invalidated the 'every example is executed and asserted not to error' guarantee the whole registry rests on.",
+      "failure_scenario": "Copying the advertised example and piping it returns {\"error\":\"add: input is not valid JSON.\"}; the CLI contract test cascades to 109 passed / 12 failed.",
+      "evidence": "skills/bee-hive/templates/lib/command-registry.mjs:115 (introduced f3b4425); tests/test_bee_cli.mjs:114",
+      "fix": "Reverted examples[0] to 'bee cells add --file cell-demo-1.json --json'; kept stdin-first nudge in the non-executed description + 07-contracts.md; source+mirror byte-identical.",
+      "resolution": "Fixed in commit 434817b; delta re-review clean (test_bee_cli.mjs 121/0, full verify green). Defect class swept: the passing suite executes every registry example.",
+      "found_by": "api-contract reviewer (pre-release wave)"
+    }
+  ],
+  "uat": [],
+  "decision": {
+    "status": "approved",
+    "gate4": "approved",
+    "approved_by": "user",
+    "summary": "Pre-release review of 12 unreviewed candidates for v0.1.44. In-scope features: 0 P1. One P1 found at the release tip (cells.add non-runnable manifest example, introduced this session) was fixed in 434817b with a clean delta re-review (test_bee_cli.mjs 121/0). 9 P2 + 6 P3 filed to backlog, non-blocking. User approved merge + release with the P2s tracked.",
+    "p1_count": 0,
+    "p2_count": 9,
+    "p3_count": 6,
+    "report": "docs/history/pre-release-0-1-44-review/reports/review-findings.md"
+  },
+  "created_at": "2026-07-15T03:24:35.032Z",
+  "updated_at": "2026-07-15T03:50:10.145Z"
+}
