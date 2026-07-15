@@ -22,11 +22,18 @@
 // subsequent --apply performs ZERO mutation anywhere in the repo
 // (hashTree(repo) identical before/after).
 //
-// Confirmed CURRENT defect: plan reports changes_needed (via the ungated
-// copy_lib item for .bee/bin/lib/state.mjs) and --apply actually downgrades
-// that file's BEE_VERSION 0.1.44 -> 0.1.43 (plus writes whatever scaffolding
-// the minimal fixture repo was missing). On this confirmed-defect path the
-// fixture prints exactly:
+// STATUS: GREEN since cell codex-harness-hardening-1b-1 (2026-07-15). The fix
+// hoists a target-independent runtime-lib downgrade guard into computeSkillSync
+// (hostLibDowngradeBlock -> result.blocked) so it fires even when every skill
+// target self_skips; the existing whole-apply abort then refuses with zero
+// mutation. This fixture now GUARDS AGAINST REGRESSION and is part of
+// commands.verify. If it ever exits 3 again, the split-brain downgrade hole
+// has reopened.
+//
+// Pre-fix defect (for the record): plan reported changes_needed (via the
+// ungated copy_lib item for .bee/bin/lib/state.mjs) and --apply actually
+// downgraded that file's BEE_VERSION back to the stale launcher's version. On
+// that confirmed-defect path the fixture prints exactly:
 //   FREEZE-RED: split-brain defect present (OBSERVED=... EXPECTED=blocked_downgrade+zero-mutation)
 // and exits with SENTINEL code 3 - distinct from node's uncaught-throw exit
 // 1, so a fixture crash (spawn failure, unparseable JSON, unexpected
@@ -39,7 +46,8 @@
 // is discovered via readdirSync recursion, never a hand-kept file list.
 //
 // PROHIBITED in this file: any fix to onboard_bee.mjs / mirror / detector
-// logic, and adding this file to commands.verify while it stays red.
+// logic (the fix lives in onboard_bee.mjs, never here). Joining
+// commands.verify was gated on this fixture being GREEN - now satisfied.
 
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";

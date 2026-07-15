@@ -800,6 +800,52 @@ function aggregateSkillBlocked(targets) {
   };
 }
 
+// Target-independent runtime-lib downgrade guard (VER-02..06). computePlan
+// step 3 vendors the running script's lib (copy_lib -> .bee/bin/lib) and
+// helpers (copy_helper -> .bee/bin, bee.mjs itself included) into the host by
+// byte-diff, REGARDLESS of per-target self_skip - so an older launcher would
+// silently downgrade the host runtime even when every skill target is
+// self_skipped (the self-onboard hole). Ordinary hosts are already caught by
+// computeSkillSyncTarget's source-vs-host_helpers refusal (:741), but that
+// runs per non-self_skip target; when every target self_skips it never fires.
+// This guard is target-independent (it compares the running lib source against
+// the installed .bee/bin/lib) so it fires under self_skip too, returning a
+// blocked-first downgrade block that the whole-apply abort honors with zero
+// mutation (fe6593c0; SPEC VER-02..06).
+function hostLibDowngradeBlock(sourceVersion, hostVersion) {
+  // VER-04: a fully absent runtime lib is a fresh install, never a block.
+  if (hostVersion.state === "absent") return null;
+  const versions = {
+    source: versionLabel(sourceVersion),
+    host_helpers: versionLabel(hostVersion),
+    installed_skills: versionLabel(hostVersion),
+  };
+  // VER-03: the runtime lib exists but its version cannot be read (or the
+  // running source's own version is unreadable) - refuse, never forceable: an
+  // unresolved runtime must never be overwritten by an older/unknown source.
+  if (sourceVersion.state !== "resolved" || hostVersion.state !== "resolved") {
+    return {
+      status: "blocked_downgrade",
+      reason: `runtime lib .bee/bin/lib version unresolvable (source ${versionLabel(
+        sourceVersion,
+      )}, runtime ${versionLabel(hostVersion)}) - refusing (never forceable)`,
+      forceable: false,
+      versions,
+    };
+  }
+  // VER-02/05: both resolved - block only a true downgrade; forceable because
+  // both identities are trusted numeric (--force-downgrade overrides after review).
+  if (compareVersions(sourceVersion.value, hostVersion.value) < 0) {
+    return {
+      status: "blocked_downgrade",
+      reason: `source ${sourceVersion.value} is older than the installed runtime lib .bee/bin/lib ${hostVersion.value} - refusing (--force-downgrade overrides after review)`,
+      forceable: true,
+      versions,
+    };
+  }
+  return null;
+}
+
 // D2 resolution over ALL sync targets. Fully read-only.
 function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
   const sourceRoot = path.dirname(HIVE_DIR);
@@ -892,6 +938,17 @@ function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
     );
   }
   result.blocked = aggregateSkillBlocked(result.targets);
+  // Fill the self-onboard gap (VER-02..06): when every target self_skipped,
+  // aggregation finds no block, yet copy_lib/copy_helper (computePlan step 3)
+  // would still downgrade .bee/bin. A target-independent runtime-lib downgrade
+  // blocks the WHOLE apply here so the existing applyPlan abort refuses with
+  // zero mutation. Blocked-first: only ever FILLS a genuine gap, never
+  // overrides a block already found by the per-target host_helpers check - so
+  // ordinary hosts are unchanged and no forceable-combination ambiguity arises.
+  if (!result.blocked) {
+    const libBlocked = hostLibDowngradeBlock(sourceVersion, hostVersion);
+    if (libBlocked) result.blocked = libBlocked;
+  }
   return result;
 }
 
