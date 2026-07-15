@@ -11,7 +11,7 @@
   "capabilities": {},
   "commands": {
     "test": "node skills/bee-hive/templates/tests/test_lib.mjs",
-    "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/test_portable_paths.mjs && node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_verify_manifest.mjs"
+    "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/test_portable_paths.mjs && node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_verify_manifest.mjs && node scripts/test_release_tuple.mjs && node scripts/test_lib_mirror.mjs"
   },
   "gate_bypass": true,
   "models": {
