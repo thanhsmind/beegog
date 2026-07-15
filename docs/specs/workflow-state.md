@@ -1,8 +1,8 @@
 ---
 area: workflow-state
-updated: 2026-07-14
-sources: [codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
-decisions: [codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable)]
+updated: 2026-07-15
+sources: [codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
+decisions: [codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable)]
 coverage: partial
 ---
 
@@ -41,6 +41,7 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | spec debt | Every completed unit of work that changed observable behavior and was completed *after* the last knowledge sync for this feature. Zero while idle. It is advisory wherever it is displayed (status, session preamble, worker-return nudge — none of them block), and binding at exactly one moment: the close. |
 | debt waiver | The sanctioned way to close a feature whose spec debt is genuinely spec-irrelevant. It permits the close, but it is never silent: it records a durable decision naming every unit of work whose behavior was left out of the specs. |
 | gate | One of four named human approvals (context, shape, execution, review). Granted per feature; all four reset to ungranted when a feature starts. The review gate is granted only through a user-invoked review session that covers the feature — a feature closes normally with it ungranted. |
+| gate bypass level | The opt-in autopilot setting that decides *who* approves gates 1-3 — the human, or the agent recording the choice the human would recommend. Four levels, each a strictly wider floor than the last. `off` — every gate stops for the human (absent/false reads as `off`). `normal` (the legacy `true`/`on`) — gates 1-3 auto-approve for tiny/small/standard work only; high-risk and hard-gate work, secret-file reads, and the review Gate 4 still stop. `full` — also auto-approves high-risk/hard-gate gates 1-3; only secret-file reads and a review's P1 findings still stop. `total` — auto-approves everything and stops for nothing: every gate at every risk level, secret-file reads, and review P1 findings all auto-proceed. The status boolean stays true for any level other than `off`; the level string carries which floor is in force. No level ever creates or approves a review session (R11). |
 | terminal state | idle or compounding-complete — the only phases from which a new feature may start. |
 | nonterminal cell | A unit of work still open, claimed, or blocked. Its existence blocks a new feature start until it is capped or explicitly dropped on the record. |
 | handoff record | The baton one session leaves for the next, in exactly two kinds. **pause** — a mid-work snapshot (today's meaning): surfaced and WAITED on, never auto-resumed; blocks a default feature start until resolved. **planned-next** — a deliberate task handover written only through its guarded verb: the previous unit is finished with green verification, the next unit's claim is carried inside the record, and the writing session is named (`writer_session`). A record with a missing or unknown kind is treated as pause everywhere — the fail-safe for every legacy record. |
@@ -471,6 +472,18 @@ its knowledge actually landed — the state and the specs can no longer disagree
   improvising the state machine — which is how the tail came to be bypassed in
   the first place. This rule is machine-checked, not remembered
   (chain-integrity D6).
+- R25 — The gate bypass level is a strict ladder of floors, each honored
+  literally: `off` stops for every gate; `normal` lifts only the
+  tiny/small/standard gates 1-3; `full` additionally lifts high-risk and
+  hard-gate gates 1-3; `total` lifts everything, including secret-file reads and
+  a review's P1 findings, leaving no human checkpoint. A human who set `full` or
+  `total` deliberately removed the high-risk floor — the workflow never
+  re-erects a stop the human lifted at their chosen level. When bypass is active
+  the agent does not pause: it records the recommended choice, logs a one-line
+  audit decision, and continues. Whenever any level other than `off` is in
+  force, the status surface and the session preamble print a loud level-specific
+  banner (`NORMAL` / `FULL AUTOPILOT` / `TOTAL AUTOPILOT — ZERO STOPS`) so the
+  lifted floor is never silent (decision 0010; user authorization dcf01d7b).
 
 ## Edge Cases Settled
 
