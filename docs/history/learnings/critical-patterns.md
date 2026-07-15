@@ -3,6 +3,23 @@
 Mandatory pre-planning / pre-execution context for this repository.
 bee-compounding appends hard-won patterns here; keep it short and current.
 
+## [20260715] The bill is turns × prefix: keep the prefix immutable, warm, and lean
+**Category:** pattern
+**Feature:** session-economics
+**Tags:** [prompt-caching, prefix-stability, delegation, cost]
+
+Prompt caching is prefix matching: every tool call re-sends the whole conversation and only a
+byte-identical prefix bills at ~1/10 price — so a session's true cost is **turns ×
+context-per-turn**. A marathon session hit ~99% cached (opus 1.4M new / 120M cached; all
+subagents $0.53) by: (1) **never breaking the prefix** — append-only history, no compaction
+(compaction rewrites the prefix and re-bills everything; a big context window matters because it
+*postpones* it); (2) **staying inside the cache TTL** — continuous rhythm, no long idle gaps
+mid-flow; (3) **rule 13 fan-out** — every multi-file gather in a subagent, only digests enter
+the orchestrator's prefix, keeping it small AND stable; (4) **fewer, fatter turns** — batch
+commands, never re-read, never poll: each avoided call is a full prefix re-bill avoided.
+**Rule:** treat the prefix as an invariant and approaching-compaction as a cost cliff — split or
+hand off *before* it. Full entry: docs/history/learnings/20260715-cache-economics.md
+
 ## [20260715] A guard scoped inside a skippable loop is absent on the path that skips it
 **Category:** failure
 **Feature:** codex-harness-hardening
