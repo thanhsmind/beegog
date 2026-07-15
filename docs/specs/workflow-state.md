@@ -484,6 +484,13 @@ its knowledge actually landed — the state and the specs can no longer disagree
   force, the status surface and the session preamble print a loud level-specific
   banner (`NORMAL` / `FULL AUTOPILOT` / `TOTAL AUTOPILOT — ZERO STOPS`) so the
   lifted floor is never silent (decision 0010; user authorization dcf01d7b).
+  This ladder is applied at **every** gate step, not just some: each
+  gate-presenting step reads the active level and self-approves before it would
+  present, so a runtime that follows a step literally (rather than inferring the
+  rule from doctrine elsewhere) still honors the level. A machine-check asserts
+  every gate surface carries the level-aware rule and none carries a stale
+  floor-is-absolute phrasing, so the per-gate application cannot silently
+  regress (decision 5aedc024; cell codex-bypass-per-skill-1).
 
 ## Edge Cases Settled
 
