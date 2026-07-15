@@ -31,6 +31,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -104,6 +105,7 @@ import { readJson, writeJsonAtomic, appendJsonl, hashFile } from './lib/fsutil.m
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
+import { classifySource } from './lib/source-identity.mjs';
 
 // ─── shared small helpers (mirrors requireFlag/readFileText across all 4) ──
 
@@ -280,6 +282,22 @@ function computeRuntimeDrift(root, onboardingRaw) {
   return { drift: versionDrift || detail.length > 0, detail };
 }
 
+// The bee-hive source tree this repo carries, in canonical-first order: a dev
+// checkout's real source (skills/), else a host's vendored projection
+// (.claude/skills or .agents/skills). Used to classify the repo's source
+// identity for the status `source` field (DIST-04, SRC-01).
+function findRepoHive(root) {
+  for (const segs of [['skills'], ['.claude', 'skills'], ['.agents', 'skills']]) {
+    const hive = path.join(root, ...segs, 'bee-hive');
+    try {
+      if (fs.existsSync(hive)) return hive;
+    } catch {
+      /* fail-open: unreadable path is simply not this candidate */
+    }
+  }
+  return null;
+}
+
 function buildStatus(root) {
   const state = readState(root);
   const onboardingRaw = readOnboarding(root);
@@ -350,6 +368,10 @@ function buildStatus(root) {
   }
 
   const runtimeDrift = computeRuntimeDrift(root, onboardingRaw);
+  const repoHive = findRepoHive(root);
+  const sourceId = repoHive
+    ? classifySource({ hiveDir: repoHive, homeDir: os.homedir() })
+    : { kind: 'unknown', root: null };
   return {
     onboarding: {
       installed: Boolean(onboardingRaw),
@@ -358,6 +380,9 @@ function buildStatus(root) {
       drift: runtimeDrift.drift,
       ...(runtimeDrift.detail.length > 0 ? { drift_detail: runtimeDrift.detail } : {}),
     },
+    // Source identity of the bee-hive tree this repo carries (DIST-04, SRC-01):
+    // report-only — never a decision input here. Same classifier onboarding uses.
+    source: { kind: sourceId.kind, root: sourceId.root },
     phase: state.phase,
     mode: state.mode,
     feature: state.feature,

@@ -42,6 +42,7 @@ import { fileURLToPath } from "node:url";
 
 import { detectCommands } from "../templates/lib/commands_detect.mjs";
 import { hashFile } from "../templates/lib/fsutil.mjs";
+import { classifySource } from "../templates/lib/source-identity.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPTS_DIR = path.dirname(SCRIPT_PATH);
@@ -2307,6 +2308,10 @@ export function main(argv = process.argv.slice(2)) {
           : plan.length === 0
             ? "up_to_date"
             : "changes_needed",
+        // Source identity of THIS launcher (DIST-04, SRC-01): the same detector
+        // status uses. Report-only — the authoritative-source decision stays
+        // with identityOk/computeSkillSync; this only names what ran.
+        source: classifySource({ hiveDir: HIVE_DIR, homeDir: os.homedir() }).kind,
         bee_version: beeVersion,
         plan,
         skills: {

@@ -80,6 +80,12 @@
       "role": "runtime_lib"
     },
     {
+      "path": ".bee/bin/lib/source-identity.mjs",
+      "sha256": "93c2f9669f0103af26c48bd723873bf1bebc4d3fe2d8f51013f4be529095c81b",
+      "mode": "644",
+      "role": "runtime_lib"
+    },
+    {
       "path": ".bee/bin/lib/state.mjs",
       "sha256": "48ff0927dca7891c119d3f512ddc4f0560da9f34c04538a2e8596f64bcc633db",
       "mode": "644",
@@ -178,6 +184,12 @@
     {
       "path": "skills/bee-hive/templates/lib/reviews.mjs",
       "sha256": "56b7110d1737e515b282cc757354580dadbaf76f88f516581c90717630c9cead",
+      "mode": "644",
+      "role": "source_lib"
+    },
+    {
+      "path": "skills/bee-hive/templates/lib/source-identity.mjs",
+      "sha256": "93c2f9669f0103af26c48bd723873bf1bebc4d3fe2d8f51013f4be529095c81b",
       "mode": "644",
       "role": "source_lib"
     },

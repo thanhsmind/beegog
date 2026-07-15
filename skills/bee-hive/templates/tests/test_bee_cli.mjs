@@ -1460,6 +1460,21 @@ check('drift: an absent/legacy managed map degrades fail-open — status renders
   assert(ob.drift_detail === undefined, 'legacy fail-open path carries no drift_detail');
 });
 
+// ─── source identity in status (SRC-01 / DIST-04) ────────────────────────────
+
+check('status: surfaces a report-only source field classifying the repo bee-hive (project_projection for a host projection)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-src-status-'));
+  fs.mkdirSync(path.join(dir, '.claude', 'skills', 'bee-hive', 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: BEE_VERSION });
+  writeState(dir, defaultState());
+  const r = runBee(['status', '--json'], dir);
+  assert(r.status === 0, `status must render: ${r.stderr}`);
+  const j = JSON.parse(r.stdout);
+  assert(j.source && j.source.kind === 'project_projection', `expected source.kind project_projection, got ${JSON.stringify(j.source)}`);
+  assert(typeof j.onboarding.drift === 'boolean', 'existing onboarding.drift field must remain (additive change)');
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed`);

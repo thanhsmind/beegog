@@ -40,6 +40,7 @@ import {
   startFeature,
 } from '../lib/state.mjs';
 import { detectCommands } from '../lib/commands_detect.mjs';
+import { classifySource } from '../lib/source-identity.mjs';
 import {
   readBacklogCounts,
   BACKLOG_STATUSES,
@@ -7373,9 +7374,84 @@ check('no shipped SKILL.md or reference instructs a --phase value outside KNOWN_
   );
 });
 
+// ─── source-identity classifier (SRC-01..06) ────────────────────────────────
+const siRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-srcid-'));
+const noHome = path.join(siRoot, 'nohome'); // a homeDir that never matches the global root
+function siHive(base, ...segments) {
+  const hive = path.join(base, ...segments, 'bee-hive');
+  fs.mkdirSync(path.join(hive, 'scripts'), { recursive: true });
+  return hive;
+}
+function siPluginManifest(pkgRoot, valid = true) {
+  fs.mkdirSync(path.join(pkgRoot, '.claude-plugin'), { recursive: true });
+  fs.writeFileSync(
+    path.join(pkgRoot, '.claude-plugin', 'plugin.json'),
+    valid ? '{"name":"bee","version":"1.1.1"}' : '{ broken', 'utf8');
+}
+
+check('classifySource: source_checkout = plugin.json + .git at the package root', () => {
+  const pkg = path.join(siRoot, 'checkout');
+  const hive = siHive(pkg, 'skills');
+  siPluginManifest(pkg);
+  fs.mkdirSync(path.join(pkg, '.git'), { recursive: true });
+  assert(classifySource({ hiveDir: hive, homeDir: noHome }).kind === 'source_checkout', 'expected source_checkout');
+});
+
+check('classifySource: project_projection = launcher under .agents/skills or .claude/skills', () => {
+  for (const parent of ['.agents', '.claude']) {
+    const repo = path.join(siRoot, `proj${parent}`);
+    const hive = siHive(repo, parent, 'skills');
+    const r = classifySource({ hiveDir: hive, homeDir: noHome });
+    assert(r.kind === 'project_projection', `${parent}: got ${r.kind}`);
+  }
+});
+
+check('classifySource: plugin_package = plugin.json but NO .git; never a global authority (SRC-03)', () => {
+  const pkg = path.join(siRoot, 'pkg');
+  const hive = siHive(pkg, 'skills');
+  siPluginManifest(pkg);
+  const r = classifySource({ hiveDir: hive, homeDir: noHome });
+  assert(r.kind === 'plugin_package', `got ${r.kind}`);
+  assert(r.markers.can_target_global === false, 'plugin_package must not be a global authority');
+});
+
+check('classifySource: legacy_global = source root is ~/.claude/skills by realpath (checked before projection)', () => {
+  const home = path.join(siRoot, 'home');
+  const hive = siHive(path.join(home, '.claude'), 'skills'); // home/.claude/skills/bee-hive
+  assert(classifySource({ hiveDir: hive, homeDir: home }).kind === 'legacy_global', 'expected legacy_global');
+});
+
+check('classifySource: unknown (fail-closed) — no manifest, and an unparseable manifest too (sentinel TEST-01)', () => {
+  const mystery = siHive(path.join(siRoot, 'mystery'), 'skills');
+  assert(classifySource({ hiveDir: mystery, homeDir: noHome }).kind === 'unknown', 'no manifest must be unknown');
+  const bad = path.join(siRoot, 'badmanifest');
+  const badHive = siHive(bad, 'skills');
+  siPluginManifest(bad, false);
+  fs.mkdirSync(path.join(bad, '.git'), { recursive: true });
+  assert(classifySource({ hiveDir: badHive, homeDir: noHome }).kind === 'unknown', 'unparseable manifest must be unknown');
+});
+
+check('classifySource: never throws on odd input — returns unknown', () => {
+  assert(classifySource({}).kind === 'unknown', 'no hiveDir');
+  assert(classifySource({ hiveDir: 123 }).kind === 'unknown', 'non-string hiveDir');
+  assert(classifySource({ hiveDir: '/no/such/path/bee-hive' }).kind === 'unknown', 'nonexistent path');
+});
+
+check('classifySource: pure — classifying mutates nothing', () => {
+  const pkg = path.join(siRoot, 'purity');
+  const hive = siHive(pkg, 'skills');
+  siPluginManifest(pkg);
+  fs.mkdirSync(path.join(pkg, '.git'), { recursive: true });
+  const before = fs.readdirSync(pkg).sort().join(',');
+  classifySource({ hiveDir: hive, homeDir: noHome });
+  classifySource({ hiveDir: hive, homeDir: noHome });
+  assert(fs.readdirSync(pkg).sort().join(',') === before, 'classifier mutated the tree');
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 fs.rmSync(detectRoot, { recursive: true, force: true });
 fs.rmSync(root, { recursive: true, force: true });
+fs.rmSync(siRoot, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
