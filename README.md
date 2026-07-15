@@ -325,12 +325,12 @@ Safe on existing repos: content outside the managed `BEE:START/END` markers in `
 Point the installer at a directory that doesn't exist yet (it creates it and offers `git init`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -d /path/to/new-project -y
+curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -d ~/projects/my-new-app -y
 ```
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.ps1 -OutFile install-bee.ps1
-.\install-bee.ps1 -Directory C:\path\to\new-project -Yes
+.\install-bee.ps1 -Directory C:\projects\my-new-app -Yes
 ```
 
 ### Verify / update

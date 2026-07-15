@@ -202,7 +202,8 @@ if [ ! -d "$TARGET_DIR" ]; then
     log "would create  $TARGET_DIR (greenfield)"
   else
     confirm "Target $TARGET_DIR does not exist. Create it (greenfield)?" || fail "Aborted."
-    mkdir -p "$TARGET_DIR"
+    mkdir -p "$TARGET_DIR" 2>/dev/null \
+      || fail "cannot create target directory '$TARGET_DIR' (permission denied or invalid path). Pass a real, writable path to -d — e.g. -d ~/projects/my-app — not a literal '/path/to/...' placeholder."
   fi
 fi
 TARGET_DIR="$(cd "$TARGET_DIR" 2>/dev/null && pwd -P || printf '%s' "$TARGET_DIR")"
