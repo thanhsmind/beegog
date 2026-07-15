@@ -16,6 +16,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -23,7 +24,7 @@ import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { addCell } from '../lib/cells.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
-import { defaultState, writeState } from '../lib/state.mjs';
+import { defaultState, writeState, BEE_VERSION } from '../lib/state.mjs';
 import {
   splitCommandTokens,
   resolveCommand,
@@ -1350,6 +1351,85 @@ check('a registry content change surfaces manifest_changed on stderr, never resh
   // The drifted call re-persists the real hash, so the very next call is steady again (no stderr hint).
   const settled = runBee(['status', '--json']);
   assert(!settled.stderr.includes('manifest_changed'), 'the hash should self-heal to steady state after one drift report');
+});
+
+// ─── honest runtime drift (codex-harness-hardening 1c) ───────────────────────
+// bee status must compare LIVE .bee/bin managed bytes against the per-file
+// sha256 the onboarding ledger recorded — content drift is drift even at the
+// same bee_version (PROJ-08), and an absent ledger degrades fail-open.
+
+function sha256(buf) {
+  return crypto.createHash('sha256').update(buf).digest('hex');
+}
+
+function buildDriftFixture() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-drift-test-'));
+  const libDir = path.join(dir, '.bee', 'bin', 'lib');
+  fs.mkdirSync(libDir, { recursive: true });
+  const libBody = 'export const SAMPLE = 1;\n';
+  const helperBody = '// vendored dispatcher\n';
+  fs.writeFileSync(path.join(libDir, 'sample.mjs'), libBody);
+  fs.writeFileSync(path.join(dir, '.bee', 'bin', 'bee.mjs'), helperBody);
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: BEE_VERSION, // version matches so any drift is CONTENT drift
+    managed: {
+      lib: { 'sample.mjs': sha256(Buffer.from(libBody)) },
+      helpers: { 'bee.mjs': sha256(Buffer.from(helperBody)) },
+    },
+  });
+  writeState(dir, defaultState());
+  return dir;
+}
+
+function statusOnboarding(dir) {
+  const r = runBee(['status', '--json'], dir);
+  assert(r.status === 0, `status must render (exit 0), got ${r.status}: ${r.stderr}`);
+  return JSON.parse(r.stdout).onboarding;
+}
+
+check('drift: an intact runtime (live hashes == recorded managed map) reads drift:false, no drift_detail', () => {
+  const dir = buildDriftFixture();
+  const ob = statusOnboarding(dir);
+  assert(ob.drift === false, `expected drift:false on an intact runtime, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail === undefined, `intact runtime must carry no drift_detail, got ${JSON.stringify(ob.drift_detail)}`);
+});
+
+check('drift: a content-edited managed lib file reads drift:true and names it, even at the same bee_version (PROJ-08)', () => {
+  const dir = buildDriftFixture();
+  fs.writeFileSync(path.join(dir, '.bee', 'bin', 'lib', 'sample.mjs'), 'export const SAMPLE = 999;\n');
+  const ob = statusOnboarding(dir);
+  assert(ob.drift === true, `expected drift:true after a content edit, got ${JSON.stringify(ob)}`);
+  assert(typeof ob.drift === 'boolean', 'drift must stay a boolean (public contract)');
+  assert(
+    Array.isArray(ob.drift_detail) && ob.drift_detail.some((d) => d.includes('sample.mjs')),
+    `drift_detail must name the drifted file, got ${JSON.stringify(ob.drift_detail)}`,
+  );
+});
+
+check('drift: a missing managed file reads drift:true (file-set drift)', () => {
+  const dir = buildDriftFixture();
+  fs.rmSync(path.join(dir, '.bee', 'bin', 'lib', 'sample.mjs'));
+  const ob = statusOnboarding(dir);
+  assert(ob.drift === true, `expected drift:true for a missing managed file, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail.some((d) => d.includes('sample.mjs') && d.includes('missing')), `expected a "(missing)" detail, got ${JSON.stringify(ob.drift_detail)}`);
+});
+
+check('drift: an extra .mjs in the managed lib dir reads drift:true (file-set drift)', () => {
+  const dir = buildDriftFixture();
+  fs.writeFileSync(path.join(dir, '.bee', 'bin', 'lib', 'rogue.mjs'), 'export const X = 1;\n');
+  const ob = statusOnboarding(dir);
+  assert(ob.drift === true, `expected drift:true for an extra managed lib file, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail.some((d) => d.includes('rogue.mjs') && d.includes('extra')), `expected an "(extra)" detail, got ${JSON.stringify(ob.drift_detail)}`);
+});
+
+check('drift: an absent/legacy managed map degrades fail-open — status renders, drift falls back to version-only, never throws (sentinel)', () => {
+  const dir = buildDriftFixture();
+  // Legacy ledger: no managed map, version matches the running constant.
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: BEE_VERSION });
+  const ob = statusOnboarding(dir); // must not throw
+  assert(ob.drift === false, `legacy ledger with matching version must degrade to drift:false, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail === undefined, 'legacy fail-open path carries no drift_detail');
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

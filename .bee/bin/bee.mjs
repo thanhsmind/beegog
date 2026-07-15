@@ -220,6 +220,59 @@ function buildLaneRows(root) {
   return lanes.map((lane) => ({ ...lane, bound_sessions: boundBy[lane.feature] || [] }));
 }
 
+// Honest runtime drift (codex-harness-hardening 1c, decisions 485e949a /
+// 579bbad7). The false-green it replaces compared only the ledger version
+// string against the running constant — both of which a downgrade rewrites in
+// lockstep. Instead, compare the LIVE vendored runtime bytes against the
+// per-file sha256 the onboarding ledger recorded at install
+// (managed.lib + managed.helpers). A content mismatch, a missing/extra managed
+// lib file, or a version-string mismatch is drift — even at the same
+// bee_version (PROJ-08). Report-only and fail-open: an absent/legacy/unreadable
+// ledger degrades to the version-only signal and NEVER throws, so status always
+// renders. The managed file set is derived from the recorded map, never
+// hand-listed (crit-pattern 20260714).
+function computeRuntimeDrift(root, onboardingRaw) {
+  const versionDrift = Boolean(
+    onboardingRaw && onboardingRaw.bee_version && onboardingRaw.bee_version !== BEE_VERSION,
+  );
+  const managed = onboardingRaw && onboardingRaw.managed;
+  if (!managed || typeof managed !== 'object') {
+    // Legacy/absent managed map: fail-open to the version-only signal.
+    return { drift: versionDrift, detail: [] };
+  }
+  const detail = [];
+  const checkGroup = (recorded, relDir) => {
+    if (!recorded || typeof recorded !== 'object') return;
+    for (const [name, recordedHash] of Object.entries(recorded)) {
+      const abs = path.join(root, '.bee', 'bin', relDir, name);
+      const relPosix = ['.bee', 'bin', relDir, name].filter(Boolean).join('/');
+      let live;
+      try {
+        live = crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex');
+      } catch {
+        detail.push(`${relPosix} (missing)`);
+        continue;
+      }
+      if (live !== recordedHash) detail.push(relPosix);
+    }
+  };
+  checkGroup(managed.lib, 'lib');
+  checkGroup(managed.helpers, '');
+  // File-set drift for the fully-managed lib dir: an extra .mjs on disk that
+  // the recorded map does not list. (Helpers live beside non-managed files in
+  // .bee/bin, so extra-detection is scoped to lib to avoid false positives.)
+  if (managed.lib && typeof managed.lib === 'object') {
+    try {
+      for (const f of fs.readdirSync(path.join(root, '.bee', 'bin', 'lib'))) {
+        if (f.endsWith('.mjs') && !(f in managed.lib)) detail.push(`.bee/bin/lib/${f} (extra)`);
+      }
+    } catch {
+      /* fail-open: unreadable lib dir degrades to the checks above */
+    }
+  }
+  return { drift: versionDrift || detail.length > 0, detail };
+}
+
 function buildStatus(root) {
   const state = readState(root);
   const onboardingRaw = readOnboarding(root);
@@ -289,12 +342,14 @@ function buildStatus(root) {
     recommended = state.next_action || 'Invoke bee-hive.';
   }
 
+  const runtimeDrift = computeRuntimeDrift(root, onboardingRaw);
   return {
     onboarding: {
       installed: Boolean(onboardingRaw),
       bee_version: onboardingRaw?.bee_version ?? null,
       plugin_version: BEE_VERSION,
-      drift: Boolean(onboardingRaw && onboardingRaw.bee_version !== BEE_VERSION),
+      drift: runtimeDrift.drift,
+      ...(runtimeDrift.detail.length > 0 ? { drift_detail: runtimeDrift.detail } : {}),
     },
     phase: state.phase,
     mode: state.mode,
