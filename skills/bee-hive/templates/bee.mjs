@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bee status [--json]
-//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next> ... [--json]
+//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|schedule> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
@@ -87,6 +87,7 @@ import {
   claimNextCell,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
+import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
@@ -670,6 +671,37 @@ function handleCellsClaimNext(root, flags) {
     throw new Error(`claim-next: ${result.code} — ${result.reason}`);
   }
   return { result, text: `Claimed ${result.cell.id} for ${worker} (session ${sessionId}).` };
+}
+
+// D1/D4: plan-time only, read-only — loads the feature's declared cells (or
+// every cell when --feature is omitted) and hands them to computeSchedule
+// unmodified. Feature resolution mirrors handleCellsReady exactly: no
+// state.json fallback (plan-checker W3 resolution) — an unscoped call means
+// "every cell", not "the current session's feature".
+function handleCellsSchedule(root, flags) {
+  const cells = listCells(root, { feature: flags.feature ? String(flags.feature) : null });
+  const schedule = computeSchedule(cells);
+  const lines = [];
+  if (schedule.waves.length === 0) {
+    lines.push('No schedulable cells.');
+  } else {
+    schedule.waves.forEach((wave, index) => {
+      lines.push(`Wave ${index + 1}: ${wave.join(', ')}`);
+    });
+  }
+  const { cycles, unsatisfiable_deps: unsatisfiableDeps, empty_files: emptyFiles } = schedule.diagnostics;
+  if (cycles.length > 0) {
+    lines.push('Cycles:');
+    for (const cycle of cycles) lines.push(`- ${cycle.join(' -> ')}`);
+  }
+  if (unsatisfiableDeps.length > 0) {
+    lines.push('Unsatisfiable deps:');
+    for (const row of unsatisfiableDeps) lines.push(`- ${row.cell} -> ${row.dep} (${row.reason})`);
+  }
+  if (emptyFiles.length > 0) {
+    lines.push(`Empty files: ${emptyFiles.join(', ')}`);
+  }
+  return { result: schedule, text: lines.join('\n') };
 }
 
 function handleReservationsReserve(root, flags) {
@@ -1668,7 +1700,7 @@ function feedbackUsageFallback(leading) {
 // directly and parses this exact stderr line.
 function cellsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge, claim-next.`;
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge, claim-next, schedule.`;
 }
 
 function reservationsUsageFallback(leading) {
@@ -1707,6 +1739,7 @@ const HANDLERS = {
   'cells.tier': handleCellsTier,
   'cells.judge': handleCellsJudge,
   'cells.claim-next': handleCellsClaimNext,
+  'cells.schedule': handleCellsSchedule,
   'reservations.reserve': handleReservationsReserve,
   'reservations.release': handleReservationsRelease,
   'reservations.list': handleReservationsList,

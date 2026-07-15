@@ -413,6 +413,49 @@ check('cells.claim-next example runs through the real dispatcher (own-lane defau
   assert(parsed.cell.status === 'claimed', 'demo-2 should now be claimed');
 });
 
+// D1: cells.schedule — plan-time only, read-only. demo-1 is dropped by this
+// point in the chain (excluded from the schedulable node-set); demo-2 is
+// claimed with no deps and no files, so it lands alone in wave 1 with clean
+// diagnostics. The example omits --feature (schedules every cell), matching
+// handleCellsReady's own no-fallback resolution: this fixture repo only has
+// "demo" cells, so that is exactly wave 1's content.
+check('cells.schedule example runs through the real dispatcher (D1: waves + diagnostics, exact computeSchedule shape)', () => {
+  const result = assertExampleOk('cells.schedule');
+  const parsed = JSON.parse(result.stdout);
+  assert(Array.isArray(parsed.waves), `expected a waves array, got ${result.stdout}`);
+  assert(
+    parsed.waves.length === 1 && parsed.waves[0].length === 1 && parsed.waves[0][0] === 'demo-2',
+    `expected demo-2 alone in wave 1, got ${JSON.stringify(parsed.waves)}`,
+  );
+  assert(
+    Array.isArray(parsed.diagnostics.cycles) && parsed.diagnostics.cycles.length === 0,
+    `expected zero cycles, got ${JSON.stringify(parsed.diagnostics.cycles)}`,
+  );
+  assert(
+    Array.isArray(parsed.diagnostics.unsatisfiable_deps) && parsed.diagnostics.unsatisfiable_deps.length === 0,
+    `expected zero unsatisfiable deps, got ${JSON.stringify(parsed.diagnostics.unsatisfiable_deps)}`,
+  );
+});
+
+check('cells.schedule on an empty/zero-cell store exits 0 with empty waves (no crash, no refusal)', () => {
+  const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-schedule-empty-'));
+  fs.mkdirSync(path.join(emptyRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(emptyRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  writeState(emptyRoot, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'empty-demo',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  const result = spawnSync(process.execPath, [BEE_MJS, 'cells', 'schedule', '--json'], { cwd: emptyRoot, encoding: 'utf8' });
+  assert(result.status === 0, `expected exit 0 on an empty store, got ${result.status}: stderr=${result.stderr}`);
+  const parsed = JSON.parse(result.stdout);
+  assert(Array.isArray(parsed.waves) && parsed.waves.length === 0, `expected empty waves, got ${result.stdout}`);
+});
+
 check('reservations.reserve example runs through the real dispatcher', () => {
   const result = assertExampleOk('reservations.reserve');
   assert(JSON.parse(result.stdout).ok === true, 'reserve should succeed on a fresh path');

@@ -270,6 +270,22 @@ export const COMMAND_REGISTRY = [
     examples: ['bee cells claim-next --worker worker-a --session-id sess-claim-next --json'],
     deprecated: null,
   },
+  {
+    name: 'cells.schedule',
+    invoke: 'bee cells schedule',
+    description:
+      'Compute the wave schedule for a feature: dep layering + file-overlap serialization, with cycle/unsatisfiable-dep/empty-files diagnostics.',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Restrict to one feature slug. Omit to schedule every cell.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON (waves + diagnostics) instead of a human-readable report.' },
+      },
+      required: [],
+    },
+    examples: ['bee cells schedule --json'],
+    deprecated: null,
+  },
 
   // ─── reservations (bee_reservations.mjs) ─────────────────────────────────
   {
