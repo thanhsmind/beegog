@@ -15,3 +15,4 @@
 {"id":"423c1a2a-e1b7-41bf-8d69-11c258591d4b","type":"candidate","date":"2026-07-15T08:05:12.755Z","feature":"codex-harness-hardening","head":"5c9345b82539b398181bc638cba92c2b7b502a44","mode":"high-risk","baseline":null,"cells":[]}
 {"id":"94e6be6c-4c37-4f81-ac78-98ccea175ca1","type":"candidate","date":"2026-07-15T08:23:18.012Z","feature":"codex-harness-hardening-1c","head":"e15751173c6e8b03220107b735513e292864120d","mode":"small","baseline":null,"cells":[]}
 {"id":"bf387e93-72ce-408d-bc76-cbd1eb5f92d5","type":"candidate","date":"2026-07-15T09:06:16.353Z","feature":"codex-harness-hardening-p2","head":"daba0833f811c2d8418c197ae3897e85020fc110","mode":"standard","baseline":null,"cells":[]}
+{"id":"dc8c5092-875c-47b9-bc1b-54cdda134a98","type":"candidate","date":"2026-07-15T09:38:31.621Z","feature":"codex-harness-hardening-1d","head":"c8b8b2fc7a13246de20eff5fbb8875649ca9e3e2","mode":"standard","baseline":null,"cells":[]}

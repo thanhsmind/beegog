@@ -3,6 +3,7 @@ area: onboarding
 updated: 2026-07-15
 coverage: partial
 sources:
+  - codex-harness-hardening-1d cells 1d-1/1d-2 (SRC-01..06 source-identity classifier R17 + status source field; 8 classifier/status tests, 2026-07-15)
   - codex-harness-hardening-1c cell codex-harness-hardening-1c-1 (honest status drift R16 via the onboarding managed-hash ledger; 5 drift tests, 2026-07-15)
   - codex-harness-hardening cell codex-harness-hardening-1b-1 (runtime-lib downgrade guard R15; split-brain regression 3->0, 2026-07-15)
   - installer-hardening ih-1..ih-6 (cells, 2026-07-13; flushed capture stub 92c9bcf6)
@@ -17,6 +18,8 @@ sources:
   - fanout-delegation D1 (stale advisor key tolerance, 2026-07-12)
   - sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)
 decisions:
+  - ce4eee19 (SRC-01..06 shipped as a pure shared classifier, wrap-not-replace, consumed by status + onboarding — codex-harness-hardening 1d)
+  - 21be04f7 (status gains a report-only source field; unknown/legacy never implicit source — codex-harness-hardening 1d)
   - 485e949a (honest status drift reference = the onboarding managed-hash ledger; no new shipped artifact — codex-harness-hardening 1c)
   - 579bbad7 (status drift is report-only, stays a boolean + optional detail; fail-open on absent/legacy ledger — codex-harness-hardening 1c)
   - fe6593c0 (runtime-lib downgrade refusal targets the vendored copy path; zero-mutation, self-install included — codex-harness-hardening 1b)
@@ -378,6 +381,22 @@ landing page from day one in every onboarded project.
   read, the check degrades to the version comparison alone and the report still
   renders — it never fails on a missing or unreadable record (decisions 485e949a,
   579bbad7; cell codex-harness-hardening-1c-1).
+- **R17** — Source origin is named, never guessed from the nearest path. A single
+  shared detector classifies the bee source tree into exactly one of five
+  origins: a **canonical development checkout** (the authored source, carrying its
+  package manifest and version-control marker), a **project's vendored copy** (a
+  projection living inside a host project's assistant-runtime folders), an
+  **installed package** (a distributed manifested snapshot — usable as the source
+  for the same project's runtime and copies, but never permitted to install
+  shared/global targets), the **legacy shared location** (the old machine-global
+  root — only reported or migrated, never an implicit source), and **unrecognized**
+  (a missing or unreadable manifest, or anything ambiguous). The status report
+  surfaces this origin (report-only), and onboarding names the same origin using
+  the same detector, so the two never disagree about identity. Classification is
+  pure — it only reads, never changes anything, and never fails — and an
+  unrecognized origin is named as such, never silently treated as an authoritative
+  source that may overwrite an installation (decisions ce4eee19, b5341fe7,
+  21be04f7; cells codex-harness-hardening-1d-1, 1d-2).
 
 ## Edge Cases Settled
 
