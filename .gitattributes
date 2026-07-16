@@ -1,0 +1,8 @@
+# bee log tier — append-only event logs that must union-merge across parallel
+# branches/worktrees instead of producing trivial conflicts (P30 / P44 D3+D5,
+# worktree-feature-parallelism). git's built-in `union` merge driver keeps both
+# sides' appended lines; bee's readers/replay dedup by event id, so interleaved
+# duplicates fold cleanly (see .bee/bin/lib/worktree-store.mjs replayLog).
+.bee/decisions.jsonl merge=union
+.bee/backlog.jsonl merge=union
+.bee/review-candidates.jsonl merge=union

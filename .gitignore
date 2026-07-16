@@ -9,4 +9,8 @@
 .bee/HANDOFF.json
 .bee/spikes/
 .bee/manifest-hash.json
+.bee/sessions/
+.bee/claims/
+.bee/runtime/
+.bee/cache/
 # BEE:END
