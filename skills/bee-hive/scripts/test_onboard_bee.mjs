@@ -3542,6 +3542,168 @@ const RETIRED_HELPER_NAMES = [
   }
 }
 
+// --- legacy-global version-parity refresh (installer-version-parity-1-3-1) ---
+// WITHOUT --global-skills, a managed skill that ALREADY EXISTS under the legacy
+// global ~/.claude/skills root is refreshed in place to current source content
+// (action refresh_legacy_global_skill). A managed skill ABSENT there is never
+// created; a non-managed dir (bee-custom, foreign) is never touched; nothing is
+// ever deleted; and the parity pass never flips drift/up_to_date once applied.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-legacy-refresh-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "1.0.0",
+      skills: {
+        "bee-alpha": { "SKILL.md": "# alpha CURRENT\n" },
+        "bee-beta": { "SKILL.md": "# beta CURRENT\n" },
+      },
+    });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    // Stale legacy global install: OLD bee-hive + OLD bee-alpha content, NO
+    // bee-beta at all, plus a non-managed bee-custom skill and a foreign
+    // (non-bee) dir that must both survive byte-identical.
+    const installedRoot = makeInstalledSkills(home, {
+      version: "0.1.42", // pre-1.0 global install (older than the 1.0.0 source)
+      skills: {
+        "bee-alpha": { "SKILL.md": "# alpha STALE 0.1.42\n" },
+        "bee-custom": { "SKILL.md": "# user's own skill, not managed\n" },
+      },
+    });
+    writeSkillFiles(installedRoot, "agent-browser", {
+      "SKILL.md": "# foreign non-bee skill\n",
+      "references/keep.md": "precious\n",
+    });
+    const customBefore = hashTree(path.join(installedRoot, "bee-custom"));
+    const foreignBefore = hashTree(path.join(installedRoot, "agent-browser"));
+
+    // (1) plan mode lists refresh_legacy_global_skill for the EXISTING managed
+    //     skills (bee-hive, bee-alpha) and never a create for the absent bee-beta.
+    const plan = await runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(plan.status === 0 && plan.payload?.status === "changes_needed",
+      "legacy refresh: plan reports changes_needed (stale global drift present)",
+      `exit ${plan.status} status ${plan.payload?.status}`);
+    const refreshItems = (plan.payload?.plan || [])
+      .filter((i) => i.action === "refresh_legacy_global_skill")
+      .map((i) => i.skill).sort();
+    check(JSON.stringify(refreshItems) === JSON.stringify(["bee-alpha", "bee-hive"]),
+      "legacy refresh: plan refreshes exactly the managed skills already present in the global root",
+      JSON.stringify(refreshItems));
+    check((plan.payload?.plan || []).every(
+      (i) => i.target !== "legacy-global" || i.skill !== "bee-beta"),
+      "legacy refresh: a managed skill absent from the global root is never planned (never created)");
+    check(!(plan.payload?.plan || []).some(
+      (i) => i.action === "remove_skill" && i.target === "legacy-global"),
+      "legacy refresh: never a remove_skill item against the legacy global root");
+    check(readInstalled(home, "bee-alpha/SKILL.md") === "# alpha STALE 0.1.42\n",
+      "legacy refresh: plan mode mutates nothing in the global root");
+
+    // (2) apply refreshes the stale copies to source content, distinctly labeled.
+    const apply = await runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(apply.status === 0 && apply.payload?.status === "applied",
+      "legacy refresh: apply succeeds", `exit ${apply.status}`);
+    const applied = (apply.payload?.applied || [])
+      .filter((i) => i.action === "refresh_legacy_global_skill").map((i) => i.skill).sort();
+    check(JSON.stringify(applied) === JSON.stringify(["bee-alpha", "bee-hive"]),
+      "legacy refresh: apply output labels the refresh action distinctly",
+      JSON.stringify(applied));
+    check(readInstalled(home, "bee-alpha/SKILL.md") === "# alpha CURRENT\n",
+      "legacy refresh: stale bee-alpha refreshed to current source content",
+      String(readInstalled(home, "bee-alpha/SKILL.md")));
+    check(readInstalled(home, "bee-hive/templates/lib/state.mjs") === fakeStateSource("1.0.0"),
+      "legacy refresh: stale bee-hive marker refreshed to the current source version",
+      String(readInstalled(home, "bee-hive/templates/lib/state.mjs")));
+
+    // (3) never created: absent bee-beta stays absent in the global root.
+    check(!fs.existsSync(path.join(installedRoot, "bee-beta")),
+      "legacy refresh: a managed skill absent from the global root is never created");
+
+    // (4) never touched: non-managed bee-custom + foreign agent-browser survive.
+    check(hashTree(path.join(installedRoot, "bee-custom")) === customBefore,
+      "legacy refresh: non-managed bee-custom skill survives byte-identical");
+    check(hashTree(path.join(installedRoot, "agent-browser")) === foreignBefore,
+      "legacy refresh: foreign non-bee dir survives byte-identical");
+
+    // (5) drift/up_to_date consistency: repeat onboard is up_to_date, no refresh.
+    check(apply.payload?.recheck === "up_to_date",
+      "legacy refresh: recheck lands up_to_date after refresh",
+      JSON.stringify(apply.payload?.recheck_plan || []));
+    const replan = await runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(replan.payload?.status === "up_to_date" &&
+      !(replan.payload?.plan || []).some((i) => i.action === "refresh_legacy_global_skill"),
+      "legacy refresh: a refreshed global never re-drifts (repeat onboard up_to_date, zero refresh items)",
+      JSON.stringify(replan.payload?.plan || []));
+
+    // (6) core-parity repo + a freshly-stale global: the legacy refresh is a
+    //     side pass - it is listed (and would be applied) but NEVER flips the
+    //     repo's up_to_date status to changes_needed (mirrors the un-isolated
+    //     installer recheck against a stale real ~/.claude/skills).
+    fs.writeFileSync(path.join(installedRoot, "bee-alpha", "SKILL.md"), "# alpha re-STALED\n", "utf8");
+    const sideplan = await runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(sideplan.payload?.status === "up_to_date",
+      "legacy refresh: a stale global never flips a core-parity repo to changes_needed (side pass)",
+      JSON.stringify(sideplan.payload?.status));
+    check((sideplan.payload?.plan || []).some(
+      (i) => i.action === "refresh_legacy_global_skill" && i.skill === "bee-alpha"),
+      "legacy refresh: the stale global skill is still LISTED in the plan for transparency",
+      JSON.stringify(sideplan.payload?.plan || []));
+    await runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(readInstalled(home, "bee-alpha/SKILL.md") === "# alpha CURRENT\n",
+      "legacy refresh: --apply still refreshes the freshly-stale global even while status read up_to_date",
+      String(readInstalled(home, "bee-alpha/SKILL.md")));
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- legacy refresh: --global-skills path is unchanged (full management) -----
+// WITH the flag the global root is a fully managed target: an absent managed
+// skill IS created there and items are labeled sync_skill (target global), never
+// refresh_legacy_global_skill.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-legacy-refresh-gs-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "1.0.0",
+      skills: {
+        "bee-alpha": { "SKILL.md": "# alpha CURRENT\n" },
+        "bee-beta": { "SKILL.md": "# beta CURRENT\n" },
+      },
+    });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    makeInstalledSkills(home, {
+      version: "0.1.42",
+      skills: { "bee-alpha": { "SKILL.md": "# alpha STALE\n" } },
+    });
+    const apply = await runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
+    check(apply.status === 0 && apply.payload?.status === "applied",
+      "legacy refresh (--global-skills): apply succeeds", `exit ${apply.status}`);
+    check(!(apply.payload?.applied || []).some(
+      (i) => i.action === "refresh_legacy_global_skill"),
+      "legacy refresh (--global-skills): never emits refresh_legacy_global_skill (full-management path unchanged)");
+    check(readInstalled(home, "bee-beta/SKILL.md") === "# beta CURRENT\n",
+      "legacy refresh (--global-skills): an absent managed skill IS created in the global root (unchanged)");
+    check(readInstalled(home, "bee-alpha/SKILL.md") === "# alpha CURRENT\n",
+      "legacy refresh (--global-skills): stale global skill synced to source (unchanged)");
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
 // --- suite-wide isolation invariant -----------------------------------------
 // Helper-level check: not a single spawn across the whole suite inherited the
 // real HOME/USERPROFILE unmodified. launchedHomes is populated by runOnboard

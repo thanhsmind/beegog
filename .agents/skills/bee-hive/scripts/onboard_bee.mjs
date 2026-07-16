@@ -15,8 +15,15 @@
 // roots (installer-hardening D2/D6): <repo>/.claude/skills (Claude Code) and
 // <repo>/.agents/skills (Codex), committed to the host repo (D4 - never
 // gitignored). --global-skills additionally targets the legacy global
-// ~/.claude/skills root (D3); without the flag the global root is never read
-// as a sync target, written, or deleted. Per target (D1-D5): drift shows up as
+// ~/.claude/skills root (D3) as a fully managed target (creation + deletion).
+// WITHOUT the flag the global root is never created into or deleted from, but a
+// best-effort version-parity pass (installer-version-parity-1-3-1) refreshes IN
+// PLACE every managed skill whose directory ALREADY EXISTS there to current
+// source content (action refresh_legacy_global_skill) - so a pre-1.0 global
+// install can no longer keep loading a stale bee version alongside the
+// per-project copy. That pass never creates an absent skill, never deletes, and
+// never blocks the primary repo sync (see computeLegacyGlobalRefresh). Per
+// target (D1-D5): drift shows up as
 // sync_skill/remove_skill plan items, an older source refuses with zero
 // mutations (--force-downgrade overrides only a fully-resolved version
 // refusal), and non-bee skills are structurally untouchable. When the repo
@@ -947,6 +954,98 @@ function hostLibDowngradeBlock(sourceVersion, hostVersion) {
   return null;
 }
 
+// Legacy-global version-parity refresh (installer-version-parity-1-3-1).
+// Field report: a repo on the current bee release still loads a pre-1.0
+// ~/.claude/skills/bee-* global install alongside its per-project copy, so the
+// user sees two conflicting bee versions. Since per-project sync became the
+// default the legacy global root is only touched under --global-skills, so its
+// stale copies never update. WITHOUT the flag this best-effort pass refreshes,
+// IN PLACE, every MANAGED skill (the exact source name set the sync manages)
+// whose directory ALREADY EXISTS under the legacy global root to current source
+// content. It NEVER creates a global copy that is absent, NEVER deletes anything
+// (no remove pass), and never touches non-managed dirs (bee-custom, foreign -
+// they surface only as computeSkillItems remove_skill items, which are dropped).
+// It is strictly additive: it never participates in blocked-first aggregation,
+// so an unrefreshable global never refuses the primary repo sync; and it is
+// skipped entirely when the running source IS the legacy global root (a global
+// install / legacy_global source, or a self-onboard from there) so it can never
+// self-copy. Under --global-skills it does not run at all - the global root is a
+// fully managed target there, semantics unchanged. Fully read-only.
+function computeLegacyGlobalRefresh({ sourceRoot, realSource, realRepo, sourceVersion }) {
+  const globalRoot = skillsTargetRoot();
+  const out = { target_root: globalRoot, items: [] };
+  if (!fs.existsSync(globalRoot)) {
+    return out; // nothing installed there -> never create
+  }
+  let realGlobal;
+  try {
+    realGlobal = fs.realpathSync(globalRoot);
+  } catch {
+    return out;
+  }
+  // Never self-copy: the running source tree IS the legacy global root.
+  if (realSource === realGlobal) {
+    return out;
+  }
+  // Fail-closed overlaps (same spirit as the global target's own guards): a
+  // repo inside/containing the global root, or a source overlapping it, is
+  // never refreshed by this pass.
+  if (
+    realRepo === realGlobal ||
+    realRepo.startsWith(realGlobal + path.sep) ||
+    realGlobal.startsWith(realRepo + path.sep) ||
+    realGlobal.startsWith(realSource + path.sep) ||
+    realSource.startsWith(realGlobal + path.sep)
+  ) {
+    return out;
+  }
+  // Downgrade guard: never overwrite a RESOLVED-newer global copy with older
+  // source. An absent/unknown installed version proceeds (parity intent: bring
+  // pre-1.0 copies, whose marker may be unreadable, up to current).
+  const installedVersion = readVersionStrict(
+    path.join(globalRoot, "bee-hive", "templates", "lib", "state.mjs"),
+    true,
+    { componentRoot: globalRoot },
+  );
+  if (
+    sourceVersion.state === "resolved" &&
+    installedVersion.state === "resolved" &&
+    compareVersions(sourceVersion.value, installedVersion.value) < 0
+  ) {
+    return out; // source older than the installed global -> skip, never downgrade
+  }
+  // Scope the whole pass to bee-* dirs that ALREADY EXIST under the global root.
+  // computeSkillItems() carries every symlink/alias safety check; we drop its
+  // remove pass (never delete) and its create case (never create an absent
+  // dir), relabel a drifted managed dir as refresh_legacy_global_skill, and keep
+  // any per-skill block as a loud skip.
+  for (const item of computeSkillItems(sourceRoot, globalRoot)) {
+    if (item.action === "remove_skill") {
+      continue; // never delete from the legacy global root
+    }
+    const st = lstatIfExists(path.join(globalRoot, item.skill));
+    if (!st) {
+      continue; // skill not present in the legacy global -> never create, never report
+    }
+    if (item.action === "sync_skill") {
+      if (st.isSymbolicLink() || !st.isDirectory()) {
+        continue; // present but not a plain dir -> never create/replace
+      }
+      out.items.push({
+        ...item,
+        action: "refresh_legacy_global_skill",
+        target: "legacy-global",
+        scope: "installed",
+      });
+      continue;
+    }
+    // blocked_symlink / blocked_alias on a present entry: keep, tagged, so it is
+    // reported and skipped loudly at apply time.
+    out.items.push({ ...item, target: "legacy-global" });
+  }
+  return out;
+}
+
 // D2 resolution over ALL sync targets. Fully read-only.
 function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
   const sourceRoot = path.dirname(HIVE_DIR);
@@ -1029,6 +1128,13 @@ function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
     const libBlocked = hostLibDowngradeBlock(sourceVersion, hostVersion);
     if (libBlocked) result.blocked = libBlocked;
   }
+  // Legacy-global version-parity refresh (installer-version-parity-1-3-1): only
+  // WITHOUT --global-skills (with the flag the global root is already a fully
+  // managed target). Strictly additive and never part of blocked-first
+  // aggregation - see computeLegacyGlobalRefresh.
+  result.legacyRefresh = globalSkills
+    ? null
+    : computeLegacyGlobalRefresh({ sourceRoot, realSource, realRepo, sourceVersion });
   return result;
 }
 
@@ -1960,9 +2066,26 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
     for (const target of skillSync.targets) {
       plan.push(...target.items);
     }
+    // Legacy-global version-parity refresh items (installer-version-parity):
+    // additive, never blocked; only present without --global-skills.
+    if (skillSync.legacyRefresh) {
+      plan.push(...skillSync.legacyRefresh.items);
+    }
   }
 
   return { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync };
+}
+
+// Legacy-global version-parity refresh items are a best-effort side pass over
+// ~/.claude/skills (installer-version-parity-1-3-1): they are listed in the plan
+// for transparency and applied on --apply, but they NEVER drive the
+// up_to_date/changes_needed status. A fully-onboarded repo must not read
+// "changes_needed" forever merely because the user's legacy global install is
+// stale, and requirement (5): a refreshed global never flips drift or breaks
+// recheck. Status counts only the repo/target work; refresh_legacy_global_skill
+// is excluded here (and only here - apply still applies these items).
+function coreChangesNeeded(plan) {
+  return plan.some((item) => item.action !== "refresh_legacy_global_skill");
 }
 
 function buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, statusline = false) {
@@ -2065,6 +2188,9 @@ function applyPlan(
       for (const target of skillSync.targets) {
         plan.push(...target.items);
       }
+      if (skillSync.legacyRefresh) {
+        plan.push(...skillSync.legacyRefresh.items);
+      }
     } else {
       // Review P1-6 / D2: computeSkillSyncTarget() already computed each
       // target's items whenever its refusal is forceable (empty [] otherwise)
@@ -2088,6 +2214,12 @@ function applyPlan(
   const skillTargetRootByKind = new Map(
     skillSync.targets.map((t) => [t.kind, t.target_root]),
   );
+  // The legacy-global refresh target is not one of skillSync.targets (it never
+  // participates in aggregation); register its root so refresh items resolve
+  // the same way sync_skill items do.
+  if (skillSync.legacyRefresh) {
+    skillTargetRootByKind.set("legacy-global", skillSync.legacyRefresh.target_root);
+  }
 
   const applied = [];
   const skippedSkills = [];
@@ -2248,6 +2380,28 @@ function applyPlan(
           skillTargetRootByKind.get(item.target),
           item.skill,
         );
+        if (result.blocked) {
+          skippedSkills.push({ skill: item.skill, target: item.target, reason: result.blocked });
+          continue; // skipped loudly, not applied
+        }
+        break;
+      }
+      case "refresh_legacy_global_skill": {
+        // Version-parity in-place refresh of a managed skill that ALREADY
+        // EXISTS under the legacy global root. Honor "already exists" at apply
+        // time too (plan-to-apply race): never create a copy that vanished, and
+        // never replace a non-plain entry.
+        const root = skillTargetRootByKind.get(item.target);
+        const st = lstatIfExists(path.join(root, item.skill));
+        if (!st || st.isSymbolicLink() || !st.isDirectory()) {
+          skippedSkills.push({
+            skill: item.skill,
+            target: item.target,
+            reason: "legacy global skill is absent or not a plain directory - skipped, never created",
+          });
+          continue;
+        }
+        const result = applySyncSkill(skillSync.source_root, root, item.skill);
         if (result.blocked) {
           skippedSkills.push({ skill: item.skill, target: item.target, reason: result.blocked });
           continue; // skipped loudly, not applied
@@ -2447,9 +2601,9 @@ export function main(argv = process.argv.slice(2)) {
         // Blocked-first across targets (D5): any blocked target's status wins.
         status: skillSync.blocked
           ? skillSync.blocked.status
-          : plan.length === 0
-            ? "up_to_date"
-            : "changes_needed",
+          : coreChangesNeeded(plan)
+            ? "changes_needed"
+            : "up_to_date",
         // Source identity of THIS launcher (DIST-04, SRC-01): the same detector
         // status uses. Report-only — the authoritative-source decision stays
         // with identityOk/computeSkillSync; this only names what ran.
@@ -2520,9 +2674,9 @@ export function main(argv = process.argv.slice(2)) {
       applied: result.applied,
       recheck: recheckBlocked
         ? recheckBlocked.status
-        : recheck.plan.length === 0
-          ? "up_to_date"
-          : "changes_needed",
+        : coreChangesNeeded(recheck.plan)
+          ? "changes_needed"
+          : "up_to_date",
       recheck_plan: recheck.plan,
       recheck_skills: recheckBlocked
         ? {
