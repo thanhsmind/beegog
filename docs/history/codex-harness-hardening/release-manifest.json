@@ -99,7 +99,7 @@
     },
     {
       "path": ".bee/bin/lib/state.mjs",
-      "sha256": "18b46a70985b4abe38796202838215faacdec05eaa0b03ecb421dc8ba3ae24dd",
+      "sha256": "4f12e7c26fda8504276aa137be4d0ccb469a5e4fc3a34b0416fdad0a6600e3d2",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -138,7 +138,7 @@
     },
     {
       "path": "hooks/adapter.mjs",
-      "sha256": "bf399a16026e8f93a044b8f4bc4c776ed30ab8ffc68e6956e8e51b53cadc9206",
+      "sha256": "e71be1d018da1c268711a1786ae7e3c1e607316b83dd3f740a824d13bd4d73fa",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/adapter.mjs"
@@ -666,7 +666,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/state.mjs",
-      "sha256": "18b46a70985b4abe38796202838215faacdec05eaa0b03ecb421dc8ba3ae24dd",
+      "sha256": "4f12e7c26fda8504276aa137be4d0ccb469a5e4fc3a34b0416fdad0a6600e3d2",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/state.mjs"

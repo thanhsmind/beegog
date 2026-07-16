@@ -177,11 +177,26 @@ export function resolveRoots(startDir) {
     if (!reverse || path.resolve(reverse) !== markerReal) {
       return { storeRoot: null, workRoot, worktreeResolution: "linked-invalid" };
     }
-    const storeRoot = realpathOrNull(path.dirname(commonGitDir));
-    if (!storeRoot) {
+    const mainRoot = realpathOrNull(path.dirname(commonGitDir));
+    if (!mainRoot) {
       return { storeRoot: null, workRoot, worktreeResolution: "linked-invalid" };
     }
-    return { storeRoot, workRoot, worktreeResolution: "linked-valid" };
+    // Opt-in per-worktree store (worktree-feature-parallelism): read the grant
+    // INLINE (never via a lib import) to keep this adapter import-light and
+    // fail-open. A worktree whose git-verified id is registered in the MAIN
+    // store resolves to its own local store; unregistered => main (P40 default,
+    // byte-for-byte). Read only from the main store; any error => main default.
+    const id = path.basename(gitdir);
+    let storeRoot = mainRoot;
+    try {
+      const grants = JSON.parse(
+        fs.readFileSync(path.join(mainRoot, ".bee", "runtime", "worktree-grants.json"), "utf8"),
+      );
+      if (grants && grants[id] === true) storeRoot = workRoot;
+    } catch {
+      // no/invalid grants registry => main default (fail-open)
+    }
+    return { storeRoot, workRoot, worktreeResolution: "linked-valid", id, mainRoot, worktreeRoot: workRoot };
   } catch {
     return { storeRoot: null, workRoot: null, worktreeResolution: "ordinary" };
   }
