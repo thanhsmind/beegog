@@ -8,8 +8,9 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultRoot = path.resolve(scriptDir, '../../..');
 
 function fail(message) {
-  process.stderr.write(`${message}\n`);
-  process.exit(1);
+  // Throw instead of calling process.exit so direct-entry callers and the
+  // isolated CLI runner can observe the diagnostic before the process closes.
+  throw new Error(message);
 }
 
 function slash(filePath) {
@@ -194,19 +195,14 @@ function main() {
     const label = relative(root, projection.metadataFile);
     if (check) {
       if (!fs.existsSync(projection.metadataFile)) {
-        process.stderr.write(`MISSING ${label}\n`);
-        failures += 1;
-        continue;
+        throw new Error(`MISSING ${label}`);
       }
       const stat = fs.lstatSync(projection.metadataFile);
       if (!stat.isFile() || stat.isSymbolicLink()) {
-        process.stderr.write(`STALE ${label}\n`);
-        failures += 1;
-        continue;
+        throw new Error(`STALE ${label}`);
       }
       if (fs.readFileSync(projection.metadataFile, 'utf8') !== projection.content) {
-        process.stderr.write(`STALE ${label}\n`);
-        failures += 1;
+        throw new Error(`STALE ${label}`);
       }
     } else {
       fs.mkdirSync(path.dirname(projection.metadataFile), { recursive: true });
@@ -214,7 +210,12 @@ function main() {
     }
   }
 
-  if (failures > 0) process.exit(1);
+  if (failures > 0) {
+    // Let stderr flush so callers running this as a child process receive the
+    // concrete stale/missing path instead of an empty diagnostic.
+    process.exitCode = 1;
+    return;
+  }
   process.stdout.write(`${check ? 'Checked' : 'Rendered'} ${projections.length} OpenAI metadata projections\n`);
 }
 

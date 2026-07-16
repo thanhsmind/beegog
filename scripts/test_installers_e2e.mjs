@@ -36,7 +36,6 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const INSTALL_SH = path.join(REPO_ROOT, "scripts", "install.sh");
-const REAL_MANIFEST = path.join(REPO_ROOT, "docs/history/codex-harness-hardening/release-manifest.json");
 const SOURCE_VERSION = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, ".claude-plugin/plugin.json"), "utf8")).version;
 
 // A clean PATH: node's own dir plus the standard bins. It deliberately OMITS the

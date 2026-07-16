@@ -20,8 +20,8 @@
 // sync_skill/remove_skill plan items, an older source refuses with zero
 // mutations (--force-downgrade overrides only a fully-resolved version
 // refusal), and non-bee skills are structurally untouchable. When the repo
-// being onboarded contains the running script's own skill tree (beegog
-// self-onboard), the per-project targets are skipped as a distinct noop.
+// being onboarded contains the running script's own skill tree, its discoverable
+// per-project projections are refreshed like every other managed target.
 // --repo-hooks additionally vendors the plugin hooks into <repo>/.bee/bin/hooks/
 // and merges the hook entries into <repo>/.claude/settings.json (with a .bak
 // backup) for environments that do not load plugin hooks.
@@ -41,6 +41,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { detectCommands } from "../templates/lib/commands_detect.mjs";
+import { hashFile } from "../templates/lib/fsutil.mjs";
+import { classifySource } from "../templates/lib/source-identity.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPTS_DIR = path.dirname(SCRIPT_PATH);
@@ -53,7 +55,6 @@ const PLUGIN_ROOT = path.dirname(path.dirname(HIVE_DIR));
 const PLUGIN_HOOKS_DIR = path.join(PLUGIN_ROOT, "hooks");
 
 const ONBOARDING_SCHEMA_VERSION = "1.0";
-const FALLBACK_BEE_VERSION = "0.1.0";
 const MIN_NODE_MAJOR = 18;
 const MARKER_START = "<!-- BEE:START -->";
 const MARKER_END = "<!-- BEE:END -->";
@@ -93,6 +94,10 @@ const HOOK_FILENAMES = [
   // (cell codex-parity-3) — vendoring the wrappers without it would break
   // their import and crash every repo-fallback hook in the host repo.
   "adapter.mjs",
+  // Codex repo projections wire this handler on both SubagentStart and
+  // SubagentStop. It must travel with the generated projection on a fresh
+  // host; plugin-first loads the same handler from the package instead.
+  "bee-codex-subagent-audit.mjs",
   "bee-session-init.mjs",
   "bee-prompt-context.mjs",
   "bee-write-guard.mjs",
@@ -229,14 +234,6 @@ function nodeRuntimeStatus() {
   };
 }
 
-// Legacy reporting-only reader: silently falls back to 0.1.0. NEVER used for
-// skill-sync preflight decisions (D3) - see readVersionStrict below.
-function readBeeVersion() {
-  const stateSource = readTextIfExists(path.join(TEMPLATES_LIB_DIR, "state.mjs"));
-  const match = stateSource.match(/BEE_VERSION\s*=\s*['"]([^'"]+)['"]/);
-  return match ? match[1] : FALLBACK_BEE_VERSION;
-}
-
 // ---------- skill sync (D1-D5, per-target since installer-hardening) ----------
 //
 // Source = the skill tree the RUNNING script belongs to (D2), proven by a
@@ -293,10 +290,10 @@ function unknownVersionsTriple() {
   return { source: "unknown", host_helpers: "unknown", installed_skills: "unknown" };
 }
 
-// Fallback-free version reader (D3, hardened per review P1-1/P1-2). The
-// legacy readBeeVersion() silently returns 0.1.0 on a missing/unparsable
-// state.mjs, which would let a resolution failure masquerade as an old version
-// and become force-able. Here: treeExists=false -> "absent" (fresh install /
+// Fallback-free version reader (D3, hardened per review P1-1/P1-2). A fallback
+// version on a missing/unparsable state.mjs would let a resolution failure
+// masquerade as an old version and become force-able. Here: treeExists=false
+// means "absent" (fresh install /
 // first onboard, proceed); an EXISTING tree whose version cannot be read ->
 // "unknown" (refuse, never forceable). "Read" is strict: the marker must be a
 // REGULAR, non-symlinked file - when componentRoot is given, every path
@@ -306,6 +303,7 @@ function unknownVersionsTriple() {
 // line-anchored `export const BEE_VERSION = 'x.y.z'` declaration. Substring
 // matches (comment decoys) never resolve; multiple declarations are unknown.
 const BEE_VERSION_LINE_RE = /^export const BEE_VERSION = ['"]([^'"]*)['"];?[ \t]*\r?$/gm;
+const NUMERIC_RELEASE_VERSION_RE = /^\d+\.\d+\.\d+$/;
 
 function readVersionStrict(stateFile, treeExists, { componentRoot = null } = {}) {
   if (!treeExists) {
@@ -340,10 +338,113 @@ function readVersionStrict(stateFile, treeExists, { componentRoot = null } = {})
     return unknown;
   }
   const matches = [...text.matchAll(BEE_VERSION_LINE_RE)];
-  if (matches.length !== 1 || !/^\d+\.\d+\.\d+$/.test(matches[0][1])) {
+  if (matches.length !== 1 || !NUMERIC_RELEASE_VERSION_RE.test(matches[0][1])) {
     return unknown;
   }
   return { state: "resolved", value: matches[0][1] };
+}
+
+function readManifestVersionStrict(manifestPath) {
+  const unknown = { state: "unknown", value: null };
+  const stat = lstatIfExists(manifestPath);
+  if (!stat || stat.isSymbolicLink() || !stat.isFile()) return unknown;
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  } catch {
+    return unknown;
+  }
+  if (
+    !parsed ||
+    Array.isArray(parsed) ||
+    typeof parsed !== "object" ||
+    typeof parsed.version !== "string" ||
+    !NUMERIC_RELEASE_VERSION_RE.test(parsed.version)
+  ) {
+    return unknown;
+  }
+  return { state: "resolved", value: parsed.version };
+}
+
+// Installer-version-parity D1: the canonical runtime marker and both package
+// manifests are one authoritative source identity. This runs before any plan
+// that can be applied, including plugin-first runs that intentionally skip
+// project skill projection, so a malformed or mixed package can never mutate a
+// target and only discover the split afterwards.
+function readSourceReleaseIdentity() {
+  const runtimeComponent = {
+    name: "skills/bee-hive/templates/lib/state.mjs",
+    version: readVersionStrict(path.join(TEMPLATES_LIB_DIR, "state.mjs"), true),
+  };
+  let sourceKind = "unknown";
+  try {
+    sourceKind = classifySource({ hiveDir: HIVE_DIR, homeDir: os.homedir() }).kind;
+  } catch {}
+
+  // Project/global projections intentionally do not carry package manifests.
+  // They remain valid downgrade sentinels, but never become package release
+  // authorities: validate only their runtime marker and let the existing
+  // three-version guard compare it against the target runtime/skills.
+  if (sourceKind === "project_projection" || sourceKind === "legacy_global") {
+    if (runtimeComponent.version.state !== "resolved") {
+      return {
+        version: null,
+        components: [runtimeComponent],
+        blocked: {
+          status: "blocked_no_source",
+          reason: "projection runtime version is missing, unreadable, or non-numeric",
+          forceable: false,
+        },
+      };
+    }
+    return { version: runtimeComponent.version.value, components: [runtimeComponent], blocked: null };
+  }
+
+  const components = [
+    runtimeComponent,
+    {
+      name: ".claude-plugin/plugin.json",
+      version: readManifestVersionStrict(path.join(PLUGIN_ROOT, ".claude-plugin", "plugin.json")),
+    },
+    {
+      name: ".codex-plugin/plugin.json",
+      version: readManifestVersionStrict(path.join(PLUGIN_ROOT, ".codex-plugin", "plugin.json")),
+    },
+  ];
+  const unreadable = components.filter(function ({ version }) {
+    return version.state !== "resolved";
+  });
+  if (unreadable.length !== 0) {
+    return {
+      version: null,
+      components,
+      blocked: {
+        status: "blocked_no_source",
+        reason:
+          "authoritative source release tuple is invalid: missing, unreadable, or non-numeric " +
+          unreadable.map(function ({ name }) { return name; }).join(", "),
+        forceable: false,
+      },
+    };
+  }
+  const values = new Set(components.map(function ({ version }) { return version.value; }));
+  if (values.size !== 1) {
+    return {
+      version: null,
+      components,
+      blocked: {
+        status: "blocked_no_source",
+        reason:
+          "authoritative source release tuple is invalid: tuple members disagree (" +
+          components.map(function ({ name, version }) {
+            return `${name}=${version.value}`;
+          }).join(", ") +
+          ")",
+        forceable: false,
+      },
+    };
+  }
+  return { version: components[0].version.value, components, blocked: null };
 }
 
 function compareVersions(a, b) {
@@ -634,7 +735,7 @@ function computeSkillSyncTarget({
   const target = {
     kind,
     target_root: targetRoot,
-    mode: null, // "sync" | "fresh" | "noop" | "self_skip" | null (blocked before resolution)
+    mode: null, // "sync" | "fresh" | "noop" | null (blocked before resolution)
     versions: null,
     blocked: null, // { status, reason, forceable }
     items: [],
@@ -800,6 +901,52 @@ function aggregateSkillBlocked(targets) {
   };
 }
 
+// Target-independent runtime-lib downgrade guard (VER-02..06). computePlan
+// step 3 vendors the running script's lib (copy_lib -> .bee/bin/lib) and
+// helpers (copy_helper -> .bee/bin, bee.mjs itself included) into the host by
+// byte-diff. This guard stays target-independent: runtime safety must not
+// depend on which projection targets exist or how an individual target's
+// resolution path evolves. It returns a blocked-first downgrade block that the
+// whole-apply abort honors with zero mutation (fe6593c0; SPEC VER-02..06).
+// runs per non-self_skip target; when every target self_skips it never fires.
+// This guard is target-independent (it compares the running lib source against
+// the installed .bee/bin/lib) so it fires under self_skip too, returning a
+// blocked-first downgrade block that the whole-apply abort honors with zero
+// mutation (fe6593c0; SPEC VER-02..06).
+function hostLibDowngradeBlock(sourceVersion, hostVersion) {
+  // VER-04: a fully absent runtime lib is a fresh install, never a block.
+  if (hostVersion.state === "absent") return null;
+  const versions = {
+    source: versionLabel(sourceVersion),
+    host_helpers: versionLabel(hostVersion),
+    installed_skills: versionLabel(hostVersion),
+  };
+  // VER-03: the runtime lib exists but its version cannot be read (or the
+  // running source's own version is unreadable) - refuse, never forceable: an
+  // unresolved runtime must never be overwritten by an older/unknown source.
+  if (sourceVersion.state !== "resolved" || hostVersion.state !== "resolved") {
+    return {
+      status: "blocked_downgrade",
+      reason: `runtime lib .bee/bin/lib version unresolvable (source ${versionLabel(
+        sourceVersion,
+      )}, runtime ${versionLabel(hostVersion)}) - refusing (never forceable)`,
+      forceable: false,
+      versions,
+    };
+  }
+  // VER-02/05: both resolved - block only a true downgrade; forceable because
+  // both identities are trusted numeric (--force-downgrade overrides after review).
+  if (compareVersions(sourceVersion.value, hostVersion.value) < 0) {
+    return {
+      status: "blocked_downgrade",
+      reason: `source ${sourceVersion.value} is older than the installed runtime lib .bee/bin/lib ${hostVersion.value} - refusing (--force-downgrade overrides after review)`,
+      forceable: true,
+      versions,
+    };
+  }
+  return null;
+}
+
 // D2 resolution over ALL sync targets. Fully read-only.
 function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
   const sourceRoot = path.dirname(HIVE_DIR);
@@ -848,14 +995,6 @@ function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
     realRepo = path.resolve(repoRoot);
   }
 
-  // Self-onboard noop rule (installer-hardening): the repo being onboarded
-  // contains the RUNNING script's own skill tree (beegog itself) - per-project
-  // targets are SKIPPED as a distinct noop, never an error; global sync
-  // behavior is unchanged. A host repo that merely contains a skills/ dir
-  // never trips this: onboarding runs from an external bee source, whose
-  // sourceRoot is outside the repo.
-  const selfOnboard = realSource === realRepo || realSource.startsWith(realRepo + path.sep);
-
   // Shared version resolutions (D3): source and host helpers are per-run, the
   // installed tree is per target (resolved inside computeSkillSyncTarget).
   const sourceVersion = readVersionStrict(
@@ -866,19 +1005,6 @@ function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
   const hostVersion = readVersionStrict(hostStateFile, fs.existsSync(hostStateFile));
 
   for (const { kind, target_root } of targetSpecs) {
-    if (kind !== "global" && selfOnboard) {
-      result.targets.push({
-        kind,
-        target_root,
-        mode: "self_skip",
-        versions: null,
-        blocked: null,
-        items: [],
-        reason:
-          "repo contains the running script's own skill source - per-project sync skipped (self-onboard)",
-      });
-      continue;
-    }
     result.targets.push(
       computeSkillSyncTarget({
         realRepo,
@@ -892,6 +1018,17 @@ function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
     );
   }
   result.blocked = aggregateSkillBlocked(result.targets);
+  // Fill the self-onboard gap (VER-02..06): when every target self_skipped,
+  // aggregation finds no block, yet copy_lib/copy_helper (computePlan step 3)
+  // would still downgrade .bee/bin. A target-independent runtime-lib downgrade
+  // blocks the WHOLE apply here so the existing applyPlan abort refuses with
+  // zero mutation. Blocked-first: only ever FILLS a genuine gap, never
+  // overrides a block already found by the per-target host_helpers check - so
+  // ordinary hosts are unchanged and no forceable-combination ambiguity arises.
+  if (!result.blocked) {
+    const libBlocked = hostLibDowngradeBlock(sourceVersion, hostVersion);
+    if (libBlocked) result.blocked = libBlocked;
+  }
   return result;
 }
 
@@ -1391,12 +1528,20 @@ function renderCodexHookEntries() {
         hooks: [entry("bee-state-sync.mjs", "bee: state sync")],
       },
     ],
+    SubagentStart: [
+      {
+        hooks: [entry("bee-codex-subagent-audit.mjs", "bee: subagent start audit")],
+      },
+    ],
     SubagentStop: [
       {
         hooks: [
           entry("bee-state-sync.mjs", "bee: state sync"),
           entry("bee-chain-nudge.mjs", "bee: chain nudge"),
         ],
+      },
+      {
+        hooks: [entry("bee-codex-subagent-audit.mjs", "bee: subagent stop audit")],
       },
     ],
     PreCompact: [{ hooks: [entry("bee-session-close.mjs", "bee: pre-compact flush check")] }],
@@ -1581,9 +1726,50 @@ function trackedPathsNotices(repoRoot) {
 
 // ---------- plan computation ----------
 
-function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkills = false } = {}) {
+function blockedSourceIdentitySkillSync(repoRoot, options, identity) {
+  const targetSpecs = options.syncSkills
+    ? skillSyncTargets(repoRoot, { globalSkills: options.globalSkills })
+    : [];
+  const versions = {
+    source: versionLabel(identity.components[0].version),
+    host_helpers: "unknown",
+    installed_skills: "unknown",
+  };
+  const blocked = { ...identity.blocked, versions };
+  return {
+    source_root: path.dirname(HIVE_DIR),
+    targets: targetSpecs.map(function ({ kind, target_root }) {
+      return {
+        kind,
+        target_root,
+        mode: null,
+        versions,
+        blocked: { ...identity.blocked },
+        items: [],
+      };
+    }),
+    blocked,
+  };
+}
+
+function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkills = false, syncSkills = true } = {}) {
   const plan = [];
-  const beeVersion = readBeeVersion();
+  const releaseIdentity = readSourceReleaseIdentity();
+  if (releaseIdentity.blocked) {
+    return {
+      plan,
+      beeVersion: null,
+      renderedBlock: "",
+      renderedGitignoreBlock: "",
+      desiredManaged: {},
+      skillSync: blockedSourceIdentitySkillSync(
+        repoRoot,
+        { globalSkills, syncSkills },
+        releaseIdentity,
+      ),
+    };
+  }
+  const beeVersion = releaseIdentity.version;
   const renderedBlock = renderAgentsBlock();
   const renderedGitignoreBlock = renderGitignoreBlock();
 
@@ -1767,7 +1953,9 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
   // with its target kind. Read-only. A blocked stage (any target) withholds
   // ALL skill items from the flat plan; per-target items stay visible in
   // skills.targets for forced-apply transparency (D2).
-  const skillSync = computeSkillSync(repoRoot, { globalSkills });
+  const skillSync = syncSkills
+    ? computeSkillSync(repoRoot, { globalSkills })
+    : { blocked: null, source_root: HIVE_DIR, targets: [] };
   if (!skillSync.blocked) {
     for (const target of skillSync.targets) {
       plan.push(...target.items);
@@ -1780,11 +1968,11 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
 function buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, statusline = false) {
   const helpers = {};
   for (const name of listTemplateHelpers()) {
-    helpers[name] = sha256(fs.readFileSync(path.join(TEMPLATES_DIR, name), "utf8"));
+    helpers[name] = hashFile(path.join(TEMPLATES_DIR, name));
   }
   const lib = {};
   for (const name of listTemplateLibModules()) {
-    lib[name] = sha256(fs.readFileSync(path.join(TEMPLATES_LIB_DIR, name), "utf8"));
+    lib[name] = hashFile(path.join(TEMPLATES_LIB_DIR, name));
   }
   const managed = {
     agents_block: sha256(renderedBlock),
@@ -1849,13 +2037,14 @@ function subsetManaged(managed, repoHooks, statusline = false) {
 
 function applyPlan(
   repoRoot,
-  { repoHooks = false, claudeMd = true, globalSkills = false, forceDowngrade = false } = {},
+  { repoHooks = false, claudeMd = true, globalSkills = false, syncSkills = true, forceDowngrade = false } = {},
 ) {
   const { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync } =
     computePlan(repoRoot, {
       repoHooks,
       claudeMd,
       globalSkills,
+      syncSkills,
     });
 
   // D3 preflight: refusal aborts the ENTIRE apply BEFORE any write - the item
@@ -2134,6 +2323,7 @@ function parseArgs(argv) {
     // opt-in; without the flag it is never read as a sync target, written, or
     // deleted.
     globalSkills: false,
+    pluginSource: false,
     forceDowngrade: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -2155,11 +2345,13 @@ function parseArgs(argv) {
       args.claudeMd = false;
     } else if (arg === "--global-skills") {
       args.globalSkills = true;
+    } else if (arg === "--plugin-source") {
+      args.pluginSource = true;
     } else if (arg === "--force-downgrade") {
       args.forceDowngrade = true;
     } else if (arg === "--help" || arg === "-h") {
       process.stdout.write(
-        "Usage: onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--no-claude-md] [--claude-md] [--global-skills] [--force-downgrade]\n",
+        "Usage: onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--plugin-source] [--no-claude-md] [--claude-md] [--global-skills] [--force-downgrade]\n",
       );
       process.exit(0);
     } else {
@@ -2201,6 +2393,14 @@ function emit(payload, asJson) {
   }
 }
 
+function sourceKindForReport() {
+  try {
+    return classifySource({ hiveDir: HIVE_DIR, homeDir: os.homedir() }).kind;
+  } catch {
+    return "unknown";
+  }
+}
+
 export function main(argv = process.argv.slice(2)) {
   let args;
   try {
@@ -2234,9 +2434,10 @@ export function main(argv = process.argv.slice(2)) {
       // first-onboard guards running against current doctrine — silently, and while
       // still reporting up_to_date, because subsetManaged() ignores repo_hooks when
       // the flag is absent. Every prior upgrade did exactly that.
-      repoHooks: args.repoHooks || hasRepoHooksRecorded(repoRoot),
+      repoHooks: args.pluginSource ? false : args.repoHooks || hasRepoHooksRecorded(repoRoot),
       claudeMd: args.claudeMd,
       globalSkills: args.globalSkills,
+      syncSkills: !args.pluginSource,
       forceDowngrade: args.forceDowngrade,
     };
     if (!args.apply) {
@@ -2249,6 +2450,10 @@ export function main(argv = process.argv.slice(2)) {
           : plan.length === 0
             ? "up_to_date"
             : "changes_needed",
+        // Source identity of THIS launcher (DIST-04, SRC-01): the same detector
+        // status uses. Report-only — the authoritative-source decision stays
+        // with identityOk/computeSkillSync; this only names what ran.
+        source: sourceKindForReport(),
         bee_version: beeVersion,
         plan,
         skills: {

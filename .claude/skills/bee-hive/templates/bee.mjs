@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bee status [--json]
-//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next> ... [--json]
+//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|schedule> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
@@ -31,11 +31,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 import {
   findRepoRoot,
   readConfig,
+  bypassLevel,
+  bypassBanner,
   readState,
   readStateStrict,
   writeState,
@@ -84,6 +87,7 @@ import {
   claimNextCell,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
+import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
@@ -98,10 +102,11 @@ import {
   CANDIDATE_STATUSES,
   REVIEW_MODES,
 } from './lib/reviews.mjs';
-import { readJson, writeJsonAtomic, appendJsonl } from './lib/fsutil.mjs';
+import { readJson, writeJsonAtomic, appendJsonl, hashFile } from './lib/fsutil.mjs';
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
+import { classifySource } from './lib/source-identity.mjs';
 
 // ─── shared small helpers (mirrors requireFlag/readFileText across all 4) ──
 
@@ -218,6 +223,82 @@ function buildLaneRows(root) {
   return lanes.map((lane) => ({ ...lane, bound_sessions: boundBy[lane.feature] || [] }));
 }
 
+// Honest runtime drift (codex-harness-hardening 1c, decisions 485e949a /
+// 579bbad7). The false-green it replaces compared only the ledger version
+// string against the running constant — both of which a downgrade rewrites in
+// lockstep. Instead, compare the LIVE vendored runtime bytes against the
+// per-file sha256 the onboarding ledger recorded at install
+// (managed.lib + managed.helpers). A content mismatch, a missing/extra managed
+// lib file, or a version-string mismatch is drift — even at the same
+// bee_version (PROJ-08). Report-only and fail-open: an absent/legacy/unreadable
+// ledger degrades to the version-only signal and NEVER throws, so status always
+// renders. The managed file set is derived from the recorded map, never
+// hand-listed (crit-pattern 20260714).
+function computeRuntimeDrift(root, onboardingRaw) {
+  const versionDrift = Boolean(
+    onboardingRaw && onboardingRaw.bee_version && onboardingRaw.bee_version !== BEE_VERSION,
+  );
+  const managed = onboardingRaw && onboardingRaw.managed;
+  if (!managed || typeof managed !== 'object') {
+    // Legacy/absent managed map: fail-open to the version-only signal.
+    return { drift: versionDrift, detail: [] };
+  }
+  const detail = [];
+  const checkGroup = (recorded, relDir) => {
+    if (!recorded || typeof recorded !== 'object') return;
+    for (const [name, recordedHash] of Object.entries(recorded)) {
+      const abs = path.join(root, '.bee', 'bin', relDir, name);
+      const relPosix = ['.bee', 'bin', relDir, name].filter(Boolean).join('/');
+      let live;
+      try {
+        // hashFile is the SAME function buildManagedVersions (onboard_bee.mjs)
+        // records with — one hasher, so recorder and reader can never disagree.
+        live = hashFile(abs);
+      } catch {
+        detail.push(`${relPosix} (missing)`);
+        continue;
+      }
+      if (live !== recordedHash) detail.push(relPosix);
+    }
+  };
+  checkGroup(managed.lib, 'lib');
+  checkGroup(managed.helpers, '');
+  // File-set drift for the fully-managed lib dir: an extra .mjs on disk that
+  // the recorded map does not list. (Helpers live beside non-managed files in
+  // .bee/bin, so extra-detection is scoped to lib to avoid false positives.)
+  if (managed.lib && typeof managed.lib === 'object') {
+    try {
+      for (const f of fs.readdirSync(path.join(root, '.bee', 'bin', 'lib'))) {
+        // hasOwnProperty, not `in`: a lib file literally named constructor.mjs /
+        // toString.mjs would otherwise resolve through Object.prototype and
+        // escape extra-detection.
+        if (f.endsWith('.mjs') && !Object.prototype.hasOwnProperty.call(managed.lib, f)) {
+          detail.push(`.bee/bin/lib/${f} (extra)`);
+        }
+      }
+    } catch {
+      /* fail-open: unreadable lib dir degrades to the checks above */
+    }
+  }
+  return { drift: versionDrift || detail.length > 0, detail };
+}
+
+// The bee-hive source tree this repo carries, in canonical-first order: a dev
+// checkout's real source (skills/), else a host's vendored projection
+// (.claude/skills or .agents/skills). Used to classify the repo's source
+// identity for the status `source` field (DIST-04, SRC-01).
+function findRepoHive(root) {
+  for (const segs of [['skills'], ['.claude', 'skills'], ['.agents', 'skills']]) {
+    const hive = path.join(root, ...segs, 'bee-hive');
+    try {
+      if (fs.existsSync(hive)) return hive;
+    } catch {
+      /* fail-open: unreadable path is simply not this candidate */
+    }
+  }
+  return null;
+}
+
 function buildStatus(root) {
   const state = readState(root);
   const onboardingRaw = readOnboarding(root);
@@ -287,18 +368,28 @@ function buildStatus(root) {
     recommended = state.next_action || 'Invoke bee-hive.';
   }
 
+  const runtimeDrift = computeRuntimeDrift(root, onboardingRaw);
+  const repoHive = findRepoHive(root);
+  const sourceId = repoHive
+    ? classifySource({ hiveDir: repoHive, homeDir: os.homedir() })
+    : { kind: 'unknown', root: null };
   return {
     onboarding: {
       installed: Boolean(onboardingRaw),
       bee_version: onboardingRaw?.bee_version ?? null,
       plugin_version: BEE_VERSION,
-      drift: Boolean(onboardingRaw && onboardingRaw.bee_version !== BEE_VERSION),
+      drift: runtimeDrift.drift,
+      ...(runtimeDrift.detail.length > 0 ? { drift_detail: runtimeDrift.detail } : {}),
     },
+    // Source identity of the bee-hive tree this repo carries (DIST-04, SRC-01):
+    // report-only — never a decision input here. Same classifier onboarding uses.
+    source: { kind: sourceId.kind, root: sourceId.root },
     phase: state.phase,
     mode: state.mode,
     feature: state.feature,
     gates: state.approved_gates,
-    gate_bypass: readConfig(root).gate_bypass === true,
+    gate_bypass: bypassLevel(root) !== 'off',
+    gate_bypass_level: bypassLevel(root),
     models: readConfig(root).models,
     tier_mix: tierMix(root, { feature: state.feature || null }),
     ceiling_scarcity: ceilingScarcityWarning(root),
@@ -340,11 +431,11 @@ function formatSlot(value) {
 function renderStatusText(status) {
   const lines = [
     `bee status (plugin v${BEE_VERSION})`,
-    `Onboarding: ${status.onboarding.installed ? `installed (bee ${status.onboarding.bee_version})` : 'MISSING'}${status.onboarding.drift ? ' [version drift]' : ''}`,
+    `Onboarding: ${status.onboarding.installed ? `installed (bee ${status.onboarding.bee_version})` : 'MISSING'}${status.onboarding.drift ? ` [drift${status.onboarding.drift_detail ? `: ${status.onboarding.drift_detail.length} file(s)` : ''}]` : ''}`,
     `Phase: ${status.phase} | Mode: ${status.mode ?? 'none'} | Feature: ${status.feature ?? 'none'}`,
     `Gates: ${GATE_NAMES.map((g) => `${g}=${status.gates?.[g] ? 'approved' : 'pending'}`).join(' ')}`,
-    ...(status.gate_bypass
-      ? ['⚡ GATE BYPASS ON — Gates 1-3 auto-approved for normal-lane work; high-risk/hard-gate, secrets, UAT still stop. Off: bee-bypass-gate off']
+    ...(status.gate_bypass_level && status.gate_bypass_level !== 'off'
+      ? [bypassBanner(status.gate_bypass_level)]
       : []),
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,
@@ -582,6 +673,37 @@ function handleCellsClaimNext(root, flags) {
   return { result, text: `Claimed ${result.cell.id} for ${worker} (session ${sessionId}).` };
 }
 
+// D1/D4: plan-time only, read-only — loads the feature's declared cells (or
+// every cell when --feature is omitted) and hands them to computeSchedule
+// unmodified. Feature resolution mirrors handleCellsReady exactly: no
+// state.json fallback (plan-checker W3 resolution) — an unscoped call means
+// "every cell", not "the current session's feature".
+function handleCellsSchedule(root, flags) {
+  const cells = listCells(root, { feature: flags.feature ? String(flags.feature) : null });
+  const schedule = computeSchedule(cells);
+  const lines = [];
+  if (schedule.waves.length === 0) {
+    lines.push('No schedulable cells.');
+  } else {
+    schedule.waves.forEach((wave, index) => {
+      lines.push(`Wave ${index + 1}: ${wave.join(', ')}`);
+    });
+  }
+  const { cycles, unsatisfiable_deps: unsatisfiableDeps, empty_files: emptyFiles } = schedule.diagnostics;
+  if (cycles.length > 0) {
+    lines.push('Cycles:');
+    for (const cycle of cycles) lines.push(`- ${cycle.join(' -> ')}`);
+  }
+  if (unsatisfiableDeps.length > 0) {
+    lines.push('Unsatisfiable deps:');
+    for (const row of unsatisfiableDeps) lines.push(`- ${row.cell} -> ${row.dep} (${row.reason})`);
+  }
+  if (emptyFiles.length > 0) {
+    lines.push(`Empty files: ${emptyFiles.join(', ')}`);
+  }
+  return { result: schedule, text: lines.join('\n') };
+}
+
 function handleReservationsReserve(root, flags) {
   const ttl = flags.ttl !== undefined ? Number.parseInt(String(flags.ttl), 10) : undefined;
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
@@ -788,6 +910,23 @@ function handleStateSet(root, flags) {
       waived = closeGuardScribingDebt(root, flags);
     }
   }
+  const selectedRecord = laneFeature ? `lane "${laneFeature}"` : 'default state';
+  if (!isKnownPhase(state.phase)) {
+    throw new Error(
+      `set: refused — selected ${selectedRecord} has missing or invalid pre-mutation phase "${state.phase ?? ''}". Ownership cannot be derived from a corrupt routing record, so nothing was written. FIX: restore a valid phase before retrying.`,
+    );
+  }
+  if (flags.owner === undefined || flags.owner === true || flags.owner === '') {
+    throw new Error(
+      `set: missing --owner — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}". FIX: retry with --owner ${state.phase}.`,
+    );
+  }
+  const owner = String(flags.owner);
+  if (owner !== state.phase) {
+    throw new Error(
+      `set: owner mismatch — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}", not "${owner}". FIX: retry with --owner ${state.phase}.`,
+    );
+  }
   const changed = [];
   if (flags.phase !== undefined) {
     state.phase = String(flags.phase);
@@ -849,6 +988,11 @@ function closeGuardScribingDebt(root, flags) {
 
 function handleStateGate(root, flags) {
   rejectDryRun(flags);
+  if (flags.owner !== undefined) {
+    throw new Error(
+      'gate: --owner is not accepted — routing ownership protects generic `state set` fields only. FIX: omit --owner and use the dedicated gate command.',
+    );
+  }
   const name = requireFlag(flags, 'name');
   if (!GATE_NAMES.includes(name)) {
     throw new Error(
@@ -1578,7 +1722,7 @@ function feedbackUsageFallback(leading) {
 // directly and parses this exact stderr line.
 function cellsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge, claim-next.`;
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge, claim-next, schedule.`;
 }
 
 function reservationsUsageFallback(leading) {
@@ -1617,6 +1761,7 @@ const HANDLERS = {
   'cells.tier': handleCellsTier,
   'cells.judge': handleCellsJudge,
   'cells.claim-next': handleCellsClaimNext,
+  'cells.schedule': handleCellsSchedule,
   'reservations.reserve': handleReservationsReserve,
   'reservations.release': handleReservationsRelease,
   'reservations.list': handleReservationsList,

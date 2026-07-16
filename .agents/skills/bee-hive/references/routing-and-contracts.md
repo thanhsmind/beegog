@@ -175,20 +175,29 @@ Litmus test: **the user must be able to restate what they are approving in their
 
 This contract applies to all four gates, in every mode, including go mode.
 
-### Gate bypass mode (opt-in autopilot, decision 0010)
+### Gate bypass mode (opt-in autopilot, decisions 0010 / dcf01d7b)
 
-Off by default. Turned on with the `bee-bypass-gate` skill, which sets `.bee/config.json` `gate_bypass: true` (persistent per-repo). When it is on, the agent does **not** stop at a bypassable gate — it takes the RECOMMENDATION option itself and continues. This is the one deliberate exception to "gates are never self-approved"; **headless mode is not** — headless still stops at every gate.
+Off by default. Turned on with the `bee-bypass-gate` skill, which sets `.bee/config.json` `gate_bypass` (persistent per-repo). When on at any level, the agent does **not** stop at a bypassed gate — it takes the RECOMMENDATION option itself and continues. This is the one deliberate exception to "gates are never self-approved"; **headless mode is not** — headless still stops at every gate.
 
-When `config.gate_bypass` is `true`, at **Gate 1, 2, or 3**:
+**`gate_bypass` is a level.** `bypassLevel()` (lib/state.mjs) normalizes the config value; the level decides how far bypass reaches. The whole point of the levels above `normal` is that the human said, in advance and explicitly, "when you have a recommended option I will always approve it — do not stop me; the result is what I care about." Honor that literally: at the chosen level, the recommended option IS the approval.
 
-1. **Safety floor — check first, and it is absolute.** If the feature's lane is `high-risk`, or the work carries any hard-gate flag (auth · authorization · data loss · audit/security · external provider · validation removal · database migration/schema change), the gate is **NOT** bypassed. Present it to the human normally, exactly as if bypass were off. Bypass covers only `tiny`/`small`/`standard` non-hard-gate work.
-2. Otherwise, do not ask. Instead: select the option the RECOMMENDATION favors; set `approved_gates.<gate>` in `.bee/state.json` (same write the human's "yes" would trigger); still write the machine-layer report to `docs/history/<feature>/reports/`; log a one-line audit entry — `node .bee/bin/bee.mjs decisions log --decision "auto-approved Gate N (bypass): <choice>" --rationale "<the recommendation's why>"` — so the approval is never silent; then post a **short chat line** (not a question) — `⚡ auto-approved Gate N (bypass): <what/why in one plain sentence>` — and continue. The human sees what happened and can still interrupt.
+| Level | Config value | Auto-approves | Still stops for the human |
+|---|---|---|---|
+| `off` | `false` / absent | nothing — every gate stops | every gate (default) |
+| `normal` | `true` / `"on"` / `"normal"` | Gates 1-3 for `tiny`/`small`/`standard` non-hard-gate work | high-risk/hard-gate Gates 1-3 · secret reads · Gate 4 UAT/P1 |
+| `full` | `"full"` | **all** Gates 1-3 at every lane, high-risk/hard-gate included | secret-file reads · a review P1 finding |
+| `total` | `"total"` | **everything** — all Gates 1-3 any lane, secret-file reads, Gate 4 UAT, review P1 findings | **nothing — zero stops** |
 
-**Gate 4 is never fully bypassed, and bypass never creates a review session (SPEC R8, decision 565e68d0).** Gate 4 only exists once the user has explicitly invoked `bee-reviewing` over a scope; bypass cannot start that session on its own. Inside a running session, UAT items (the SEE/CALL/RUN decisions) are always presented to the human, and any P1 finding always stops. The merge is auto-approved only when P1 = 0 **and** every UAT item was confirmed pass by the human; otherwise Gate 4 stops as normal.
+Legacy `true` maps to `normal`, so existing repos are unchanged. At **Gate 1, 2, or 3** when the level bypasses that gate:
 
-**Privacy is never bypassed.** Reading secret-shaped files always requires explicit human approval, regardless of `gate_bypass`.
+1. **Safety floor is level-scoped, not absolute.** Under `normal` the floor is exactly as before: a `high-risk` lane or any hard-gate flag (auth · authorization · data loss · audit/security · external provider · validation removal · database migration/schema change) is **NOT** bypassed — present it to the human normally. Under `full` and `total` the high-risk/hard-gate floor is **lifted** — the human lifted it by choosing the level — so those gates auto-approve too.
+2. Do not ask. Instead: select the option the RECOMMENDATION favors; set `approved_gates.<gate>` in `.bee/state.json` (same write the human's "yes" would trigger); still write the machine-layer report to `docs/history/<feature>/reports/`; log a one-line audit entry — `node .bee/bin/bee.mjs decisions log --decision "auto-approved Gate N (bypass): <choice>" --rationale "<the recommendation's why>"` — so the approval is never silent; then post a **short chat line** (not a question) — `⚡ auto-approved Gate N (bypass): <what/why in one plain sentence>` — and continue. The human sees what happened and can still interrupt.
 
-The mechanical guards do not change: `claimCell` and the write-guard still require `approved_gates.execution: true` — bypass simply means the agent records that approval itself for eligible work instead of waiting for the human. Bypass state is surfaced every session (the preamble and `bee_status` both print a loud `GATE BYPASS ON` line) so it is never silently in effect.
+**Bypass suppresses approvals, never genuine information-gathering (decision a93994d3).** The point of the levels is to stop the agent asking merely to be *approved* — not to gag a real question. So distinguish two kinds of "question": an **approval** (the agent already has a confident best answer; the human would only rubber-stamp it) is suppressed under `full`/`total` — the agent takes its own answer and continues. An **information** question (the answer turns on a preference or knowledge only the human holds, and the agent cannot resolve it from evidence with a confident default) is still asked, even under `total`. This is where `bee-exploring`'s Socratic step still stops when it must (§4 materiality test + the information-vs-approval refinement): the human asked to keep being consulted for real information, only never for a rubber stamp. Litmus: *"do I already have a confident best answer?"* — yes → proceed; no, and only the human can supply it → ask.
+
+**Gate 4 and secret reads follow the level.** Under `normal` and `full`, Gate 4 is never fully bypassed and bypass never creates a review session (SPEC R8, decision 565e68d0): a review only exists once the user invoked `bee-reviewing`, its UAT items are always presented, and any P1 always stops. Under `total`, a review the user started runs to completion without stopping — UAT items and P1 findings auto-proceed on the recommended resolution. **Secret-file reads** stop for the human under `off`/`normal`/`full`; only `total` auto-proceeds on them (the human accepted that credential contents may enter context/logs unprompted). Bypass still never *creates* a review session on its own at any level.
+
+The mechanical guards do not change: `claimCell` and the write-guard still require `approved_gates.execution: true` — bypass simply means the agent records that approval itself for eligible work instead of waiting for the human. Bypass state is surfaced every session (the preamble and `bee_status` both print a loud level-specific `GATE BYPASS` banner — `NORMAL` / `FULL AUTOPILOT` / `TOTAL AUTOPILOT — ZERO STOPS`) so the active level is never silently in effect.
 
 ### Delegation contract (fan-out: decide-altitude vs gather-altitude)
 
@@ -199,6 +208,23 @@ The one orchestration pattern bee runs: the session model (the owner's best mode
 - **D3 lane rule** — the rubric applies in every lane and every phase, tiny/small included. Lane scaling v2's (d02a6bc6) "0 subagents" for tiny/small means zero *ceremony* subagents (reviewers/checkers/panels); I/O workers are exempt. A 1-file tiny fix never crosses the rubric, so it stays inline naturally.
 - **Digest contract** — an I/O worker returns paths read, the facts extracted (with file:line anchors), and verbatim quotes only where asked; the orchestrator never re-reads what a digest already answers.
 - **Transport unchanged** — anchored `[bee-tier: <tier>]` marker or `model` param (decision 0023), model name in the Agent description, background dispatch where the runtime supports it (decision 0017), P22 dispatch log as the audit trail. I/O workers do **not** register in `bee.mjs state worker add` — the registry stays swarm-cell-scoped (reservations/status are execution concerns); the dispatch log is the audit surface for gathers.
+
+### Native Codex subagent tending
+
+For every bee-owned native Codex subagent flow, including ordinary delegated
+gathers, a completed `wait_agent` call with no completion is an **empty wait**:
+it is a timeout signal only, never failure. Never follow an empty wait directly
+with another `wait_agent`; authority, urgency, and no-chatter instructions create
+no exception. Before any later bounded wait, continue material task-local work
+when any remains; otherwise take exactly one `list_agents` snapshot. Then send
+one concise commentary update naming both the live agent state and the next
+action; only then may a later bounded wait run. No-op work, repeated state reads,
+hidden reasoning, generic commentary, or commentary alone do not qualify.
+Timeout never licenses interrupt, duplicate dispatch, claim release, or
+reservation release; every running agent, claim, and reservation stays owned.
+This refines, rather than replaces, the ban on file/scratchpad polling for
+harness-managed subagents. External process and artifact polling keeps its own
+contract and is outside this native-agent rule.
 
 ## Question Format
 
@@ -257,7 +283,7 @@ node .bee/bin/bee.mjs cells list [--feature F] [--status S] | ready [--feature F
 node .bee/bin/bee.mjs cells add --stdin   # one cell object or a whole-slice JSON array (all-or-nothing); --file cell.json also accepted
 node .bee/bin/bee.mjs reservations list [--active-only] | sweep
 node .bee/bin/bee.mjs decisions active [--recent N] | search --text T
-node .bee/bin/bee.mjs state set | gate | worker add/update/remove/clear/prune | scribing-run | start-feature
+node .bee/bin/bee.mjs state set --owner <selected pre-mutation phase> | gate | worker add/update/remove/clear/prune | scribing-run | start-feature
 node .bee/bin/bee.mjs backlog add | counts | rank | badges
 node .bee/bin/bee.mjs capture add | list | flush | count
 node .bee/bin/bee.mjs reviews create | list | show | record | candidate add | candidates | status

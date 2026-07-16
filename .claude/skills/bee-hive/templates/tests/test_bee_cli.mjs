@@ -16,14 +16,16 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+
+import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
 
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { addCell } from '../lib/cells.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
-import { defaultState, writeState } from '../lib/state.mjs';
+import { defaultState, writeState, BEE_VERSION } from '../lib/state.mjs';
 import {
   splitCommandTokens,
   resolveCommand,
@@ -44,9 +46,9 @@ const BEE_MJS = path.join(TEMPLATES_DIR, 'bee.mjs');
 let passed = 0;
 let failed = 0;
 
-function check(name, fn) {
+async function check(name, fn) {
   try {
-    fn();
+    await fn();
     passed += 1;
     console.log(`PASS  ${name}`);
   } catch (error) {
@@ -105,7 +107,7 @@ const executedNames = new Set();
  * `invoke` string. Execute them through the real dispatcher (bee.mjs) — the
  * surface the manifest actually advertises — rather than the legacy helper,
  * which the manifest-as-tested-contract claim did not previously cover. */
-function runExample(entryName, { exampleIndex = 0, cwd = root } = {}) {
+async function runExample(entryName, { exampleIndex = 0, cwd = root } = {}) {
   const entry = entryByName(entryName);
   executedNames.add(entry.name);
   const exampleString = entry.examples[exampleIndex];
@@ -113,15 +115,15 @@ function runExample(entryName, { exampleIndex = 0, cwd = root } = {}) {
   const tokens = tokenize(exampleString);
   assert(tokens[0] === 'bee', `${entry.name}: example must be full dispatcher-form starting with "bee", got "${exampleString}"`);
   const args = tokens.slice(1);
-  const result = spawnSync(process.execPath, [BEE_MJS, ...args], {
+  const result = await runModuleWorker(BEE_MJS, {
+    args,
     cwd,
-    encoding: 'utf8',
   });
   return { entry, result };
 }
 
-function assertExampleOk(entryName, opts) {
-  const { entry, result } = runExample(entryName, opts);
+async function assertExampleOk(entryName, opts) {
+  const { entry, result } = await runExample(entryName, opts);
   assert(
     result.status === 0,
     `${entry.name} example "${entry.examples[0]}" exited ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`,
@@ -131,7 +133,7 @@ function assertExampleOk(entryName, opts) {
 
 // ─── registry shape (D3: JSON-Schema parameters, no bespoke format) ────────
 
-check('SCHEMA_VERSION is the top-level manifest field, not per-entry', () => {
+await check('SCHEMA_VERSION is the top-level manifest field, not per-entry', async () => {
   assert(SCHEMA_VERSION === '1.0', `expected "1.0", got ${SCHEMA_VERSION}`);
   assert(
     COMMAND_REGISTRY.every((entry) => entry.schema_version === undefined),
@@ -139,7 +141,7 @@ check('SCHEMA_VERSION is the top-level manifest field, not per-entry', () => {
   );
 });
 
-check('every registry entry has the required manifest fields, no TODO/stub entries', () => {
+await check('every registry entry has the required manifest fields, no TODO/stub entries', async () => {
   assert(Array.isArray(COMMAND_REGISTRY) && COMMAND_REGISTRY.length > 0, 'registry must be a non-empty array');
   for (const entry of COMMAND_REGISTRY) {
     assert(typeof entry.name === 'string' && entry.name.trim(), `entry missing a name: ${JSON.stringify(entry)}`);
@@ -150,14 +152,14 @@ check('every registry entry has the required manifest fields, no TODO/stub entri
   }
 });
 
-check('every registry entry\'s parameters is valid JSON-Schema (D3 shape: type/properties/required)', () => {
+await check('every registry entry\'s parameters is valid JSON-Schema (D3 shape: type/properties/required)', async () => {
   for (const entry of COMMAND_REGISTRY) {
     assert(isValidParameterSchema(entry.parameters), `${entry.name}: parameters is not valid JSON-Schema — ${JSON.stringify(entry.parameters)}`);
     assert(entry.parameters.type === 'object', `${entry.name}: parameters.type must be "object"`);
   }
 });
 
-check('registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*, state.*, backlog.*, capture.*, reviews.*, feedback.*)', () => {
+await check('registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*, state.*, backlog.*, capture.*, reviews.*, feedback.*)', async () => {
   const names = COMMAND_REGISTRY.map((e) => e.name);
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
@@ -166,7 +168,7 @@ check('registry names are unique and dot-namespaced by group (status, cells.*, r
   }
 });
 
-check('registry covers every subcommand of the 4 existing helpers', () => {
+await check('registry covers every subcommand of the 4 existing helpers', async () => {
   const names = new Set(COMMAND_REGISTRY.map((e) => e.name));
   const expected = [
     'status',
@@ -203,10 +205,10 @@ const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', '
 // bee-onboarded temp repo (created above) — bee.mjs refuses to run outside a
 // bee repo root at all, so probing needs a real one, not a mutation of it
 // (an unrecognized command never reaches any handler).
-function groupRuntimeVerbs(group) {
-  const result = spawnSync(process.execPath, [BEE_MJS, group, '__bee_bijection_probe__'], {
+async function groupRuntimeVerbs(group) {
+  const result = await runModuleWorker(BEE_MJS, {
+    args: [group, '__bee_bijection_probe__'],
     cwd: root,
-    encoding: 'utf8',
   });
   const contractLine = (result.stderr || '').split('\n').find((line) => line.startsWith('Unknown command'));
   assert(
@@ -234,9 +236,9 @@ function groupRuntimeVerbs(group) {
     .filter(Boolean);
 }
 
-check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/decisions/state/backlog/capture/reviews/feedback has a matching registry entry, and vice versa', () => {
+await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/decisions/state/backlog/capture/reviews/feedback has a matching registry entry, and vice versa', async () => {
   for (const group of GROUP_NAMES) {
-    const runtimeVerbs = new Set(groupRuntimeVerbs(group));
+    const runtimeVerbs = new Set(await groupRuntimeVerbs(group));
     assert(runtimeVerbs.size > 0, `bee.mjs ${group}: parsed zero runtime verbs — the parser is broken, not the dispatcher`);
     // Collapse nested verbs to their top-level segment (state.worker.add ->
     // worker) so the bijection matches the dispatcher's runtime "Use:" line,
@@ -264,7 +266,7 @@ check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/decisions
   }
 });
 
-check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback', () => {
+await check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback', async () => {
   const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
@@ -277,7 +279,7 @@ check('DA5 bijection: the only dot-free registry entry is "status", and every en
 
 // ─── validate-args.mjs: structured rejection, never a throw ────────────────
 
-check('validate() rejects a missing required field with the structured {field,reason,command} shape', () => {
+await check('validate() rejects a missing required field with the structured {field,reason,command} shape', async () => {
   const showEntry = entryByName('cells.show');
   const result = validate(showEntry, {});
   assert(result.ok === false, 'missing required "id" must not validate ok');
@@ -286,13 +288,13 @@ check('validate() rejects a missing required field with the structured {field,re
   assert(result.error.command === 'cells.show', `error.command should be "cells.show", got ${result.error.command}`);
 });
 
-check('validate() accepts a call with every required field present', () => {
+await check('validate() accepts a call with every required field present', async () => {
   const claimEntry = entryByName('cells.claim');
   const result = validate(claimEntry, { id: 'demo-1', worker: 'worker-a' });
   assert(result.ok === true, `expected ok:true, got ${JSON.stringify(result)}`);
 });
 
-check('validate() flags a wrong-typed value without throwing', () => {
+await check('validate() flags a wrong-typed value without throwing', async () => {
   const tierEntry = entryByName('cells.tier');
   const result = validate(tierEntry, { id: 'demo-1', tier: 42 });
   assert(result.ok === false, 'a number where a string tier is expected must not validate ok');
@@ -300,13 +302,13 @@ check('validate() flags a wrong-typed value without throwing', () => {
   assert(result.error.command === 'cells.tier', 'error.command should name the command');
 });
 
-check('validate() never throws on a malformed commandEntry', () => {
+await check('validate() never throws on a malformed commandEntry', async () => {
   const result = validate({ name: 'bogus' }, { anything: 'x' });
   assert(result.ok === false, 'a command with no parameters schema must not validate ok');
   assert(result.error.command === 'bogus', 'error.command still names the command');
 });
 
-check('isValidParameterSchema() rejects a bespoke (non-JSON-Schema) shape', () => {
+await check('isValidParameterSchema() rejects a bespoke (non-JSON-Schema) shape', async () => {
   assert(isValidParameterSchema({ id: 'string', worker: 'string' }) === false, 'a flat key->type map is not the D3 shape');
   assert(isValidParameterSchema({ type: 'object', properties: {}, required: ['missing'] }) === false, 'required field absent from properties must fail');
   assert(isValidParameterSchema({ type: 'object', properties: { id: { type: 'string' } }, required: [] }) === true, 'a minimal valid schema passes');
@@ -317,7 +319,7 @@ check('isValidParameterSchema() rejects a bespoke (non-JSON-Schema) shape', () =
 // run before show/claim/verify/cap/judge/tier/block/drop can succeed against
 // the same fixture cell, and cells.claim needs the Gate-3 state written above.
 
-check('cells.add example creates the fixture cell used by the rest of the chain', () => {
+await check('cells.add example creates the fixture cell used by the rest of the chain', async () => {
   const cellFixture = {
     id: 'demo-1',
     feature: 'demo',
@@ -327,66 +329,66 @@ check('cells.add example creates the fixture cell used by the rest of the chain'
     verify: 'node -e "process.exit(0)"',
   };
   fs.writeFileSync(path.join(root, 'cell-demo-1.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
-  assertExampleOk('cells.add');
+  await assertExampleOk('cells.add');
   assert(fs.existsSync(path.join(root, '.bee', 'cells', 'demo-1.json')), 'demo-1 cell file should now exist');
 });
 
-check('cells.list example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.list');
+await check('cells.list example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.list');
   assert(result.stdout.includes('demo-1'), `expected demo-1 in list output, got ${result.stdout}`);
 });
 
-check('cells.ready example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.ready');
+await check('cells.ready example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.ready');
   assert(result.stdout.includes('demo-1'), `demo-1 should be ready (open, no deps), got ${result.stdout}`);
 });
 
-check('cells.show example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.show');
+await check('cells.show example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.show');
   assert(JSON.parse(result.stdout).id === 'demo-1', 'show should return the demo-1 cell');
 });
 
-check('cells.update example runs through the real dispatcher', () => {
+await check('cells.update example runs through the real dispatcher', async () => {
   const patch = { title: 'Demo cell for registry example test (updated)' };
   fs.writeFileSync(path.join(root, 'cell-demo-1-update.json'), JSON.stringify(patch, null, 2), 'utf8');
-  const result = assertExampleOk('cells.update');
+  const result = await assertExampleOk('cells.update');
   const updated = JSON.parse(result.stdout);
   assert(updated.id === 'demo-1', `expected demo-1, got ${result.stdout}`);
   assert(updated.title === patch.title, `expected patched title, got ${result.stdout}`);
 });
 
-check('cells.claim example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.claim');
+await check('cells.claim example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.claim');
   assert(JSON.parse(result.stdout).status === 'claimed', 'demo-1 should now be claimed');
 });
 
-check('cells.verify example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.verify');
+await check('cells.verify example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.verify');
   assert(JSON.parse(result.stdout).trace.verify_passed === true, 'verify_passed should be true');
 });
 
-check('cells.cap example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.cap');
+await check('cells.cap example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.cap');
   assert(JSON.parse(result.stdout).status === 'capped', 'demo-1 should now be capped');
 });
 
-check('cells.judge example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.judge');
+await check('cells.judge example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.judge');
   assert(JSON.parse(result.stdout).hits.length === 0, 'a cell.json fixture file is not a frozen-judge pattern hit');
 });
 
-check('cells.tier example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.tier');
+await check('cells.tier example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.tier');
   assert(JSON.parse(result.stdout).tier === 'generation', 'demo-1 tier should now be "generation"');
 });
 
-check('cells.block example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.block');
+await check('cells.block example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.block');
   assert(JSON.parse(result.stdout).status === 'blocked', 'demo-1 should now be blocked');
 });
 
-check('cells.drop example runs through the real dispatcher', () => {
-  const result = assertExampleOk('cells.drop');
+await check('cells.drop example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.drop');
   assert(JSON.parse(result.stdout).status === 'dropped', 'demo-1 should now be dropped');
 });
 
@@ -397,7 +399,7 @@ check('cells.drop example runs through the real dispatcher', () => {
 // "demo") already has execution approved from the root setup above, and
 // "sess-claim-next" has no prior session record, so resolvePipeline resolves
 // it straight to that default pipeline (D4 zero-lane parity).
-check('cells.claim-next example runs through the real dispatcher (own-lane default-pipeline pick, no prior session/lane state)', () => {
+await check('cells.claim-next example runs through the real dispatcher (own-lane default-pipeline pick, no prior session/lane state)', async () => {
   addCell(root, {
     id: 'demo-2',
     feature: 'demo',
@@ -406,66 +408,112 @@ check('cells.claim-next example runs through the real dispatcher (own-lane defau
     action: 'Exercise the cells.claim-next example against a real fixture cell.',
     verify: 'node -e "process.exit(0)"',
   });
-  const result = assertExampleOk('cells.claim-next');
+  const result = await assertExampleOk('cells.claim-next');
   const parsed = JSON.parse(result.stdout);
   assert(parsed.ok === true && parsed.cell.id === 'demo-2', `expected demo-2 claimed, got ${result.stdout}`);
   assert(parsed.cell.status === 'claimed', 'demo-2 should now be claimed');
 });
 
-check('reservations.reserve example runs through the real dispatcher', () => {
-  const result = assertExampleOk('reservations.reserve');
+// D1: cells.schedule — plan-time only, read-only. demo-1 is dropped by this
+// point in the chain (excluded from the schedulable node-set); demo-2 is
+// claimed with no deps and no files, so it lands alone in wave 1 with clean
+// diagnostics. The example omits --feature (schedules every cell), matching
+// handleCellsReady's own no-fallback resolution: this fixture repo only has
+// "demo" cells, so that is exactly wave 1's content.
+await check('cells.schedule example runs through the real dispatcher (D1: waves + diagnostics, exact computeSchedule shape)', async () => {
+  const result = await assertExampleOk('cells.schedule');
+  const parsed = JSON.parse(result.stdout);
+  assert(Array.isArray(parsed.waves), `expected a waves array, got ${result.stdout}`);
+  assert(
+    parsed.waves.length === 1 && parsed.waves[0].length === 1 && parsed.waves[0][0] === 'demo-2',
+    `expected demo-2 alone in wave 1, got ${JSON.stringify(parsed.waves)}`,
+  );
+  assert(
+    Array.isArray(parsed.diagnostics.cycles) && parsed.diagnostics.cycles.length === 0,
+    `expected zero cycles, got ${JSON.stringify(parsed.diagnostics.cycles)}`,
+  );
+  assert(
+    Array.isArray(parsed.diagnostics.unsatisfiable_deps) && parsed.diagnostics.unsatisfiable_deps.length === 0,
+    `expected zero unsatisfiable deps, got ${JSON.stringify(parsed.diagnostics.unsatisfiable_deps)}`,
+  );
+});
+
+await check('cells.schedule on an empty/zero-cell store exits 0 with empty waves (no crash, no refusal)', async () => {
+  const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-schedule-empty-'));
+  fs.mkdirSync(path.join(emptyRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(emptyRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  writeState(emptyRoot, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'empty-demo',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'schedule', '--json'],
+    cwd: emptyRoot,
+  });
+  assert(result.status === 0, `expected exit 0 on an empty store, got ${result.status}: stderr=${result.stderr}`);
+  const parsed = JSON.parse(result.stdout);
+  assert(Array.isArray(parsed.waves) && parsed.waves.length === 0, `expected empty waves, got ${result.stdout}`);
+});
+
+await check('reservations.reserve example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('reservations.reserve');
   assert(JSON.parse(result.stdout).ok === true, 'reserve should succeed on a fresh path');
 });
 
-check('reservations.reserve --session example (examples[1]) stamps the reservation with the owning session id (D3)', () => {
-  const result = assertExampleOk('reservations.reserve', { exampleIndex: 1 });
+await check('reservations.reserve --session example (examples[1]) stamps the reservation with the owning session id (D3)', async () => {
+  const result = await assertExampleOk('reservations.reserve', { exampleIndex: 1 });
   const parsed = JSON.parse(result.stdout);
   assert(parsed.ok === true, 'session-owned reserve should succeed on a fresh path');
   assert(parsed.reservation.session === 'sess-fsh7', `expected the reservation to carry session "sess-fsh7", got ${result.stdout}`);
 });
 
-check('reservations.list example runs through the real dispatcher', () => {
-  const result = assertExampleOk('reservations.list');
+await check('reservations.list example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('reservations.list');
   assert(result.stdout.includes('worker-a'), `expected the reservation just made, got ${result.stdout}`);
 });
 
-check('reservations.release example runs through the real dispatcher', () => {
-  const result = assertExampleOk('reservations.release');
+await check('reservations.release example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('reservations.release');
   assert(JSON.parse(result.stdout).released >= 1, 'release should free at least the one reservation just made');
 });
 
-check('reservations.sweep example runs through the real dispatcher', () => {
-  const result = assertExampleOk('reservations.sweep');
+await check('reservations.sweep example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('reservations.sweep');
   assert(typeof JSON.parse(result.stdout).released === 'number', 'sweep should report a released count');
 });
 
-check('decisions.log example runs through the real dispatcher', () => {
-  const result = assertExampleOk('decisions.log');
+await check('decisions.log example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('decisions.log');
   assert(typeof JSON.parse(result.stdout).id === 'string', 'log should return the new decision id');
 });
 
-check('decisions.active example runs through the real dispatcher', () => {
-  const result = assertExampleOk('decisions.active');
+await check('decisions.active example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('decisions.active');
   assert(JSON.parse(result.stdout).decisions.length >= 1, 'the decision just logged should be active');
 });
 
-check('decisions.search example runs through the real dispatcher', () => {
-  const result = assertExampleOk('decisions.search');
+await check('decisions.search example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('decisions.search');
   assert(JSON.parse(result.stdout).decisions.length >= 1, 'search for "registry" should match the decision just logged');
 });
 
-check('decisions.supersede example runs through the real dispatcher (arbitrary id — event-sourced, no existence check)', () => {
-  const result = assertExampleOk('decisions.supersede');
+await check('decisions.supersede example runs through the real dispatcher (arbitrary id — event-sourced, no existence check)', async () => {
+  const result = await assertExampleOk('decisions.supersede');
   assert(typeof JSON.parse(result.stdout).id === 'string', 'supersede should return the new event id');
 });
 
-check('decisions.redact example runs through the real dispatcher (arbitrary id — event-sourced, no existence check)', () => {
-  const result = assertExampleOk('decisions.redact');
+await check('decisions.redact example runs through the real dispatcher (arbitrary id — event-sourced, no existence check)', async () => {
+  const result = await assertExampleOk('decisions.redact');
   assert(typeof JSON.parse(result.stdout).id === 'string', 'redact should return the new event id');
 });
 
-check('status example runs through the real dispatcher', () => {
-  const result = assertExampleOk('status');
+await check('status example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('status');
   assert(JSON.parse(result.stdout).phase === 'swarming', 'status should reflect the fixture repo\'s phase');
 });
 
@@ -481,60 +529,60 @@ writeJsonAtomic(path.join(rootState, '.bee', 'onboarding.json'), {
   bee_version: '0.1.0',
 });
 
-check('state.start-feature example runs through the real dispatcher (clean idle repo)', () => {
-  const result = assertExampleOk('state.start-feature', { cwd: rootState });
+await check('state.start-feature example runs through the real dispatcher (clean idle repo)', async () => {
+  const result = await assertExampleOk('state.start-feature', { cwd: rootState });
   assert(JSON.parse(result.stdout).feature === 'newf', `expected feature newf, got ${result.stdout}`);
 });
 
-check('state.set example runs through the real dispatcher', () => {
-  const result = assertExampleOk('state.set', { cwd: rootState });
+await check('state.set example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('state.set', { cwd: rootState });
   assert(JSON.parse(result.stdout).phase === 'planning', `expected phase planning, got ${result.stdout}`);
 });
 
-check('state.gate example runs through the real dispatcher', () => {
-  const result = assertExampleOk('state.gate', { cwd: rootState });
+await check('state.gate example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('state.gate', { cwd: rootState });
   assert(JSON.parse(result.stdout).approved_gates.execution === true, `expected execution approved, got ${result.stdout}`);
 });
 
-check('state.worker.add example runs through the real dispatcher', () => {
-  const result = assertExampleOk('state.worker.add', { cwd: rootState });
+await check('state.worker.add example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('state.worker.add', { cwd: rootState });
   assert(JSON.parse(result.stdout).workers.some((w) => w.nickname === 'w1'), `expected worker w1, got ${result.stdout}`);
 });
 
-check('state.worker.update example runs through the real dispatcher (w1 added above)', () => {
-  const result = assertExampleOk('state.worker.update', { cwd: rootState });
+await check('state.worker.update example runs through the real dispatcher (w1 added above)', async () => {
+  const result = await assertExampleOk('state.worker.update', { cwd: rootState });
   assert(JSON.parse(result.stdout).workers.find((w) => w.nickname === 'w1').status === 'done', `expected w1 status done, got ${result.stdout}`);
 });
 
-check('state.worker.remove example runs through the real dispatcher', () => {
-  const result = assertExampleOk('state.worker.remove', { cwd: rootState });
+await check('state.worker.remove example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('state.worker.remove', { cwd: rootState });
   assert(!JSON.parse(result.stdout).workers.some((w) => w.nickname === 'w1'), `expected w1 removed, got ${result.stdout}`);
 });
 
-check('state.worker.clear example runs through the real dispatcher', () => {
-  const result = assertExampleOk('state.worker.clear', { cwd: rootState });
+await check('state.worker.clear example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('state.worker.clear', { cwd: rootState });
   assert(JSON.parse(result.stdout).workers.length === 0, `expected empty workers, got ${result.stdout}`);
 });
 
-check('state.worker.prune example runs through the real dispatcher (no workers dir -> 0 pruned)', () => {
-  const result = assertExampleOk('state.worker.prune', { cwd: rootState });
+await check('state.worker.prune example runs through the real dispatcher (no workers dir -> 0 pruned)', async () => {
+  const result = await assertExampleOk('state.worker.prune', { cwd: rootState });
   assert(JSON.parse(result.stdout).pruned.length === 0, `expected 0 pruned, got ${result.stdout}`);
 });
 
-check('state.scribing-run example runs through the real dispatcher (from an executed phase — chain-integrity D3)', () => {
+await check('state.scribing-run example runs through the real dispatcher (from an executed phase — chain-integrity D3)', async () => {
   // The shared rootState sits at `planning` from the state.set example above.
   // scribing-run used to advance to `compounding` from ANY phase; it now demands
   // a phase where execution actually happened. Walking the legal path first is
   // the point, not a workaround: this check now also proves swarming ->
   // scribing-run -> compounding runs end to end through the real dispatcher.
-  const advance = runBee(['state', 'set', '--phase', 'swarming', '--json'], rootState);
+  const advance = await runBee(['state', 'set', '--owner', 'planning', '--phase', 'swarming', '--json'], rootState);
   assert(advance.status === 0, `advancing to swarming should succeed: ${advance.stderr}`);
-  const result = assertExampleOk('state.scribing-run', { cwd: rootState });
+  const result = await assertExampleOk('state.scribing-run', { cwd: rootState });
   assert(JSON.parse(result.stdout).phase === 'compounding', `expected phase compounding, got ${result.stdout}`);
 });
 
-check('state.scribing-run is REFUSED from a phase where nothing was executed (chain-integrity D3)', () => {
-  const refused = runBee(
+await check('state.scribing-run is REFUSED from a phase where nothing was executed (chain-integrity D3)', async () => {
+  const refused = await runBee(
     ['state', 'scribing-run', '--feature', 'newf', '--areas', 'x', '--next-action', 'n', '--json'],
     rootState,
   );
@@ -547,13 +595,13 @@ check('state.scribing-run is REFUSED from a phase where nothing was executed (ch
   );
 });
 
-check('state set --phase compounding-complete is REFUSED from swarming — the exact post-mortem call (chain-integrity D1-REVISED)', () => {
+await check('state set --phase compounding-complete is REFUSED from swarming — the exact post-mortem call (chain-integrity D1-REVISED)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-tail-guard-'));
   fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
   writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming' });
-    const refused = runBee(['state', 'set', '--phase', 'compounding-complete', '--json'], dir);
+    const refused = await runBee(['state', 'set', '--owner', 'swarming', '--phase', 'compounding-complete', '--json'], dir);
     assert(refused.status !== 0, 'swarming -> compounding-complete must be refused');
     // --json routes the failure to stdout as {"error": ...}; bare runs use stderr.
     assert(
@@ -566,7 +614,7 @@ check('state set --phase compounding-complete is REFUSED from swarming — the e
     );
 
     // `compounding` is never settable directly: only a real scribing run yields it.
-    const direct = runBee(['state', 'set', '--phase', 'compounding', '--json'], dir);
+    const direct = await runBee(['state', 'set', '--owner', 'swarming', '--phase', 'compounding', '--json'], dir);
     assert(direct.status !== 0, '--phase compounding must be refused outright');
     assert(
       /scribing-run/.test(direct.stdout + direct.stderr),
@@ -574,8 +622,8 @@ check('state set --phase compounding-complete is REFUSED from swarming — the e
     );
 
     // Backward moves and the de-facto abandon verb stay legal (hive law 5).
-    assert(runBee(['state', 'set', '--phase', 'planning', '--json'], dir).status === 0, 'backward move must stay legal');
-    assert(runBee(['state', 'set', '--phase', 'idle', '--json'], dir).status === 0, '--phase idle must stay legal');
+    assert((await runBee(['state', 'set', '--owner', 'swarming', '--phase', 'planning', '--json'], dir)).status === 0, 'backward move must stay legal');
+    assert((await runBee(['state', 'set', '--owner', 'planning', '--phase', 'idle', '--json'], dir)).status === 0, '--phase idle must stay legal');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -588,9 +636,9 @@ check('state set --phase compounding-complete is REFUSED from swarming — the e
 // checks can run in any order relative to the default-pipeline checks
 // above/below without disturbing either.
 
-check('state.start-feature --as-lane example (examples[1]) starts a lane record beside the untouched default state.json', () => {
+await check('state.start-feature --as-lane example (examples[1]) starts a lane record beside the untouched default state.json', async () => {
   const beforeDefault = fs.readFileSync(path.join(rootState, '.bee', 'state.json'), 'utf8');
-  const result = assertExampleOk('state.start-feature', { exampleIndex: 1, cwd: rootState });
+  const result = await assertExampleOk('state.start-feature', { exampleIndex: 1, cwd: rootState });
   const lane = JSON.parse(result.stdout);
   assert(lane.feature === 'demo-lane', `expected lane feature demo-lane, got ${result.stdout}`);
   assert(lane.approved_gates.execution === false, `expected a fresh lane's gates all reset, got ${result.stdout}`);
@@ -599,33 +647,33 @@ check('state.start-feature --as-lane example (examples[1]) starts a lane record 
   assert(beforeDefault === afterDefault, 'default state.json must stay byte-untouched by a lane-mode start (D4)');
 });
 
-check('state.lanes example lists the demo-lane record just started', () => {
-  const result = assertExampleOk('state.lanes', { cwd: rootState });
+await check('state.lanes example lists the demo-lane record just started', async () => {
+  const result = await assertExampleOk('state.lanes', { cwd: rootState });
   const lanes = JSON.parse(result.stdout);
   assert(Array.isArray(lanes) && lanes.some((l) => l.feature === 'demo-lane'), `expected demo-lane in lanes list, got ${result.stdout}`);
 });
 
-check('state.set --lane example (examples[1]) routes the mutation to the lane record, not state.json', () => {
+await check('state.set --lane example (examples[1]) routes the mutation to the lane record, not state.json', async () => {
   const beforeDefault = fs.readFileSync(path.join(rootState, '.bee', 'state.json'), 'utf8');
-  const result = assertExampleOk('state.set', { exampleIndex: 1, cwd: rootState });
+  const result = await assertExampleOk('state.set', { exampleIndex: 1, cwd: rootState });
   const lane = JSON.parse(result.stdout);
   assert(lane.feature === 'demo-lane' && lane.phase === 'planning', `expected lane phase planning, got ${result.stdout}`);
   const afterDefault = fs.readFileSync(path.join(rootState, '.bee', 'state.json'), 'utf8');
   assert(beforeDefault === afterDefault, 'default state.json must stay byte-untouched by a --lane routed set');
 });
 
-check('state.gate --lane example (examples[1]) approves a gate on the lane record only', () => {
-  const result = assertExampleOk('state.gate', { exampleIndex: 1, cwd: rootState });
+await check('state.gate --lane example (examples[1]) approves a gate on the lane record only', async () => {
+  const result = await assertExampleOk('state.gate', { exampleIndex: 1, cwd: rootState });
   const lane = JSON.parse(result.stdout);
   assert(lane.feature === 'demo-lane' && lane.approved_gates.execution === true, `expected lane execution gate approved, got ${result.stdout}`);
 });
 
-check('state.scribing-run --lane example (examples[1]) stamps the lane record only', () => {
+await check('state.scribing-run --lane example (examples[1]) stamps the lane record only', async () => {
   // Same D3 rule on the lane record: the tail guard reads `from` off whichever
   // record is being mutated, so the lane must reach an executed phase too.
-  const advance = runBee(['state', 'set', '--lane', 'demo-lane', '--phase', 'swarming', '--json'], rootState);
+  const advance = await runBee(['state', 'set', '--lane', 'demo-lane', '--owner', 'planning', '--phase', 'swarming', '--json'], rootState);
   assert(advance.status === 0, `advancing the lane to swarming should succeed: ${advance.stderr}`);
-  const result = assertExampleOk('state.scribing-run', { exampleIndex: 1, cwd: rootState });
+  const result = await assertExampleOk('state.scribing-run', { exampleIndex: 1, cwd: rootState });
   const lane = JSON.parse(result.stdout);
   assert(
     lane.feature === 'demo-lane' && lane.phase === 'compounding' && lane.last_scribing_run.feature === 'demo-lane',
@@ -633,58 +681,56 @@ check('state.scribing-run --lane example (examples[1]) stamps the lane record on
   );
 });
 
-check('state.set --lane refuses loudly when the named lane does not exist, no partial write (must-have truth)', () => {
-  const result = spawnSync(process.execPath, [BEE_MJS, 'state', 'set', '--lane', 'ghost-lane', '--phase', 'planning'], {
+await check('state.set --lane refuses loudly when the named lane does not exist, no partial write (must-have truth)', async () => {
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['state', 'set', '--lane', 'ghost-lane', '--owner', 'exploring', '--phase', 'planning'],
     cwd: rootState,
-    encoding: 'utf8',
   });
   assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
   assert(/ghost-lane/.test(result.stderr) && /does not exist/.test(result.stderr), `expected a named-lane refusal, got stderr=${result.stderr}`);
   assert(!fs.existsSync(path.join(rootState, '.bee', 'lanes', 'ghost-lane.json')), 'no partial lane file should be created on refusal');
 });
 
-check('state.gate --lane refuses loudly over a corrupt lane record, file left byte-untouched (must-have truth)', () => {
+await check('state.gate --lane refuses loudly over a corrupt lane record, file left byte-untouched (must-have truth)', async () => {
   const corruptPath = path.join(rootState, '.bee', 'lanes', 'corrupt-lane.json');
   fs.writeFileSync(corruptPath, '{ this is not a valid lane record', 'utf8');
   const before = fs.readFileSync(corruptPath, 'utf8');
-  const result = spawnSync(
-    process.execPath,
-    [BEE_MJS, 'state', 'gate', '--lane', 'corrupt-lane', '--name', 'execution', '--approved', 'true'],
-    { cwd: rootState, encoding: 'utf8' },
-  );
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['state', 'gate', '--lane', 'corrupt-lane', '--name', 'execution', '--approved', 'true'],
+    cwd: rootState,
+  });
   assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
   const after = fs.readFileSync(corruptPath, 'utf8');
   assert(before === after, 'corrupt lane file must be byte-identical after the refused mutation');
 });
 
-check('state.set --lane refuses when combined with --feature (a lane\'s identity is not a mutable field)', () => {
-  const result = spawnSync(
-    process.execPath,
-    [BEE_MJS, 'state', 'set', '--lane', 'demo-lane', '--feature', 'renamed-lane', '--phase', 'planning'],
-    { cwd: rootState, encoding: 'utf8' },
-  );
+await check('state.set --lane refuses when combined with --feature (a lane\'s identity is not a mutable field)', async () => {
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['state', 'set', '--lane', 'demo-lane', '--owner', 'planning', '--feature', 'renamed-lane', '--phase', 'planning'],
+    cwd: rootState,
+  });
   assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
   assert(/--feature/.test(result.stderr) && /--lane/.test(result.stderr), `expected a --feature/--lane conflict refusal, got stderr=${result.stderr}`);
 });
 
-check('state.session.list example lists a manually-seeded session record', () => {
+await check('state.session.list example lists a manually-seeded session record', async () => {
   writeJsonAtomic(path.join(rootState, '.bee', 'sessions', 'sess-demo.json'), {
     id: 'sess-demo',
     started_at: new Date().toISOString(),
     last_heartbeat: new Date().toISOString(),
   });
-  const result = assertExampleOk('state.session.list', { cwd: rootState });
+  const result = await assertExampleOk('state.session.list', { cwd: rootState });
   assert(result.stdout.includes('sess-demo'), `expected sess-demo in session list, got ${result.stdout}`);
 });
 
-check('state.session.bind example binds the seeded session to demo-lane', () => {
-  const result = assertExampleOk('state.session.bind', { cwd: rootState });
+await check('state.session.bind example binds the seeded session to demo-lane', async () => {
+  const result = await assertExampleOk('state.session.bind', { cwd: rootState });
   const session = JSON.parse(result.stdout);
   assert(session.id === 'sess-demo' && session.lane === 'demo-lane', `expected sess-demo bound to demo-lane, got ${result.stdout}`);
 });
 
-check('state.session.unbind example removes the binding (lane key omitted, not null)', () => {
-  const result = assertExampleOk('state.session.unbind', { cwd: rootState });
+await check('state.session.unbind example removes the binding (lane key omitted, not null)', async () => {
+  const result = await assertExampleOk('state.session.unbind', { cwd: rootState });
   const session = JSON.parse(result.stdout);
   assert(session.id === 'sess-demo' && !('lane' in session), `expected the lane key omitted after unbind, got ${result.stdout}`);
 });
@@ -693,20 +739,20 @@ check('state.session.unbind example removes the binding (lane key omitted, not n
 // handoff lifecycle CLI surface. Uses its own prev/next cell + claim fixtures
 // inside rootState so it never disturbs the demo-lane/session rows above.
 
-check('state.handoff.write --kind pause example (examples[0]) writes a free-form pause handoff', () => {
-  const result = assertExampleOk('state.handoff.write', { cwd: rootState });
+await check('state.handoff.write --kind pause example (examples[0]) writes a free-form pause handoff', async () => {
+  const result = await assertExampleOk('state.handoff.write', { cwd: rootState });
   const record = JSON.parse(result.stdout);
   assert(record.kind === 'pause', `expected a pause handoff, got ${result.stdout}`);
   assert(fs.existsSync(path.join(rootState, '.bee', 'HANDOFF.json')), 'HANDOFF.json should now exist');
 });
 
-check('state.handoff.show example shows the pause handoff just written', () => {
-  const result = assertExampleOk('state.handoff.show', { cwd: rootState });
+await check('state.handoff.show example shows the pause handoff just written', async () => {
+  const result = await assertExampleOk('state.handoff.show', { cwd: rootState });
   const record = JSON.parse(result.stdout);
   assert(record.kind === 'pause', `expected pause kind on show, got ${result.stdout}`);
 });
 
-check('state.handoff.write --kind planned-next example (examples[1]) succeeds once its cap/claim fixtures are seeded, carries writer_session/previous_cell/next_cell', () => {
+await check('state.handoff.write --kind planned-next example (examples[1]) succeeds once its cap/claim fixtures are seeded, carries writer_session/previous_cell/next_cell', async () => {
   writeJsonAtomic(path.join(rootState, '.bee', 'cells', 'handoff-prev.json'), {
     id: 'handoff-prev',
     status: 'capped',
@@ -718,7 +764,7 @@ check('state.handoff.write --kind planned-next example (examples[1]) succeeds on
     ttl_seconds: 3600,
     claimed_at: new Date().toISOString(),
   });
-  const result = assertExampleOk('state.handoff.write', { exampleIndex: 1, cwd: rootState });
+  const result = await assertExampleOk('state.handoff.write', { exampleIndex: 1, cwd: rootState });
   const record = JSON.parse(result.stdout);
   assert(
     record.kind === 'planned-next' &&
@@ -729,11 +775,9 @@ check('state.handoff.write --kind planned-next example (examples[1]) succeeds on
   );
 });
 
-check('state.handoff.write --kind planned-next refuses (typed, non-zero exit) when the previous cell is not capped, no partial file (must-have truth)', () => {
-  const result = spawnSync(
-    process.execPath,
-    [
-      BEE_MJS,
+await check('state.handoff.write --kind planned-next refuses (typed, non-zero exit) when the previous cell is not capped, no partial file (must-have truth)', async () => {
+  const result = await runModuleWorker(BEE_MJS, {
+    args: [
       'state',
       'handoff',
       'write',
@@ -746,14 +790,14 @@ check('state.handoff.write --kind planned-next refuses (typed, non-zero exit) wh
       '--next-cell',
       'handoff-next',
     ],
-    { cwd: rootState, encoding: 'utf8' },
-  );
+    cwd: rootState,
+  });
   assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
   assert(/capped/.test(result.stderr), `expected a capped-precondition refusal, got stderr=${result.stderr}`);
 });
 
-check('state.handoff.adopt example transfers the carried claim and clears the handoff', () => {
-  const result = assertExampleOk('state.handoff.adopt', { cwd: rootState });
+await check('state.handoff.adopt example transfers the carried claim and clears the handoff', async () => {
+  const result = await assertExampleOk('state.handoff.adopt', { cwd: rootState });
   const parsed = JSON.parse(result.stdout);
   assert(parsed.ok === true, `expected adoption to succeed, got ${result.stdout}`);
   assert(!fs.existsSync(path.join(rootState, '.bee', 'HANDOFF.json')), 'handoff should be cleared after adopt');
@@ -761,10 +805,13 @@ check('state.handoff.adopt example transfers the carried claim and clears the ha
   assert(claim.session === 'sess-handoff-adopter', `expected the claim transferred to the adopting session, got ${JSON.stringify(claim)}`);
 });
 
-check('state.handoff.show reports no handoff (null result) once cleared; the text form (no --json) prints "No handoff."', () => {
-  const result = assertExampleOk('state.handoff.show', { cwd: rootState });
+await check('state.handoff.show reports no handoff (null result) once cleared; the text form (no --json) prints "No handoff."', async () => {
+  const result = await assertExampleOk('state.handoff.show', { cwd: rootState });
   assert(JSON.parse(result.stdout) === null, `expected a null result once cleared, got ${result.stdout}`);
-  const textResult = spawnSync(process.execPath, [BEE_MJS, 'state', 'handoff', 'show'], { cwd: rootState, encoding: 'utf8' });
+  const textResult = await runModuleWorker(BEE_MJS, {
+    args: ['state', 'handoff', 'show'],
+    cwd: rootState,
+  });
   assert(/No handoff\./.test(textResult.stdout), `expected "No handoff." in the text render, got stdout=${textResult.stdout}`);
 });
 
@@ -788,42 +835,42 @@ fs.writeFileSync(
 );
 fs.writeFileSync(path.join(rootBacklogCapture, 'README.md'), '# Demo repo\n', 'utf8');
 
-check('backlog.counts example runs through the real dispatcher', () => {
-  const result = assertExampleOk('backlog.counts', { cwd: rootBacklogCapture });
+await check('backlog.counts example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('backlog.counts', { cwd: rootBacklogCapture });
   const counts = JSON.parse(result.stdout);
   assert(counts.done === 1 && counts.proposed === 1 && counts.inFlight === 1, `expected 1/1/1, got ${result.stdout}`);
 });
 
-check('backlog.rank example runs through the real dispatcher', () => {
-  const result = assertExampleOk('backlog.rank', { cwd: rootBacklogCapture });
+await check('backlog.rank example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('backlog.rank', { cwd: rootBacklogCapture });
   assert(Array.isArray(JSON.parse(result.stdout).order), `expected an order array, got ${result.stdout}`);
 });
 
-check('backlog.badges example runs through the real dispatcher', () => {
-  const result = assertExampleOk('backlog.badges', { cwd: rootBacklogCapture });
+await check('backlog.badges example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('backlog.badges', { cwd: rootBacklogCapture });
   assert(typeof JSON.parse(result.stdout).badges === 'string', `expected a badges string, got ${result.stdout}`);
 });
 
-check('backlog.add example runs through the real dispatcher and appends to .bee/backlog.jsonl', () => {
-  const result = assertExampleOk('backlog.add', { cwd: rootBacklogCapture });
+await check('backlog.add example runs through the real dispatcher and appends to .bee/backlog.jsonl', async () => {
+  const result = await assertExampleOk('backlog.add', { cwd: rootBacklogCapture });
   const row = JSON.parse(result.stdout);
   assert(row.type === 'friction' && row.severity === 'P2', `expected the example row, got ${result.stdout}`);
   assert(fs.existsSync(path.join(rootBacklogCapture, '.bee', 'backlog.jsonl')), 'backlog.jsonl should now exist');
 });
 
-check('capture.add example runs through the real dispatcher and returns a stub id', () => {
-  const result = assertExampleOk('capture.add', { cwd: rootBacklogCapture });
+await check('capture.add example runs through the real dispatcher and returns a stub id', async () => {
+  const result = await assertExampleOk('capture.add', { cwd: rootBacklogCapture });
   const stub = JSON.parse(result.stdout);
   assert(typeof stub.id === 'string' && stub.id, `expected a stub id, got ${result.stdout}`);
 });
 
-check('capture.list example runs through the real dispatcher and includes the stub just added', () => {
-  const result = assertExampleOk('capture.list', { cwd: rootBacklogCapture });
+await check('capture.list example runs through the real dispatcher and includes the stub just added', async () => {
+  const result = await assertExampleOk('capture.list', { cwd: rootBacklogCapture });
   const listed = JSON.parse(result.stdout);
   assert(listed.count >= 1, `expected at least 1 pending stub, got ${result.stdout}`);
 });
 
-check('capture.flush example runs through the real dispatcher against a pre-seeded stub id', () => {
+await check('capture.flush example runs through the real dispatcher against a pre-seeded stub id', async () => {
   // flushCaptureStub refuses an id with no matching pending stub (lib/capture.mjs,
   // never edited by this cell) — capture.add's own example generates a random
   // crypto.randomUUID(), so the literal fixed id in capture.flush's own
@@ -834,7 +881,7 @@ check('capture.flush example runs through the real dispatcher against a pre-seed
     `${JSON.stringify({ kind: 'stub', id: seededId, at: new Date().toISOString(), outcome: 'seeded for capture.flush example', dids: [], area: null, files: [], lane: null })}\n`,
     'utf8',
   );
-  const result = assertExampleOk('capture.flush', { cwd: rootBacklogCapture });
+  const result = await assertExampleOk('capture.flush', { cwd: rootBacklogCapture });
   const record = JSON.parse(result.stdout);
   assert(record.id === seededId, `expected the seeded stub id flushed, got ${result.stdout}`);
 });
@@ -862,10 +909,10 @@ function makeDebtRepo() {
   return dir;
 }
 
-check('state set --phase compounding-complete is REFUSED while capped behavior_change cells are unscribed, naming every cell (chain-integrity D2)', () => {
+await check('state set --phase compounding-complete is REFUSED while capped behavior_change cells are unscribed, naming every cell (chain-integrity D2)', async () => {
   const dir = makeDebtRepo();
   try {
-    const refused = runBee(['state', 'set', '--phase', 'compounding-complete', '--json'], dir);
+    const refused = await runBee(['state', 'set', '--owner', 'compounding', '--phase', 'compounding-complete', '--json'], dir);
     assert(refused.status !== 0, 'closing with scribing debt must be refused');
     const out = refused.stdout + refused.stderr;
     assert(/d-1/.test(out) && /d-2/.test(out), `the refusal must name every unscribed cell, got: ${out}`);
@@ -879,10 +926,10 @@ check('state set --phase compounding-complete is REFUSED while capped behavior_c
   }
 });
 
-check('--waive-scribing-debt permits the close but is never silent: it logs a decision naming the waived cells (chain-integrity D4)', () => {
+await check('--waive-scribing-debt permits the close but is never silent: it logs a decision naming the waived cells (chain-integrity D4)', async () => {
   const dir = makeDebtRepo();
   try {
-    const ok = runBee(['state', 'set', '--phase', 'compounding-complete', '--waive-scribing-debt', '--json'], dir);
+    const ok = await runBee(['state', 'set', '--owner', 'compounding', '--phase', 'compounding-complete', '--waive-scribing-debt', '--json'], dir);
     assert(ok.status === 0, `the waiver must permit the close, got: ${ok.stdout}${ok.stderr}`);
     assert(
       JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8')).phase === 'compounding-complete',
@@ -895,14 +942,14 @@ check('--waive-scribing-debt permits the close but is never silent: it logs a de
   }
 });
 
-check('a close with ZERO scribing debt passes and writes no waiver decision (chain-integrity D2)', () => {
+await check('a close with ZERO scribing debt passes and writes no waiver decision (chain-integrity D2)', async () => {
   const dir = makeDebtRepo();
   try {
     // Stamp a scribing run that post-dates both cells: debt cleared honestly.
     const state = JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8'));
     state.last_scribing_run = { feature: 'demo', at: new Date(Date.now() + 60_000).toISOString() };
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), state);
-    const ok = runBee(['state', 'set', '--phase', 'compounding-complete', '--json'], dir);
+    const ok = await runBee(['state', 'set', '--owner', 'compounding', '--phase', 'compounding-complete', '--json'], dir);
     assert(ok.status === 0, `a debt-free close must pass, got: ${ok.stdout}${ok.stderr}`);
     assert(
       !fs.existsSync(path.join(dir, '.bee', 'decisions.jsonl')),
@@ -913,8 +960,8 @@ check('a close with ZERO scribing debt passes and writes no waiver decision (cha
   }
 });
 
-check('capture.count example runs through the real dispatcher', () => {
-  const result = assertExampleOk('capture.count', { cwd: rootBacklogCapture });
+await check('capture.count example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('capture.count', { cwd: rootBacklogCapture });
   assert(typeof JSON.parse(result.stdout).count === 'number', `expected a numeric count, got ${result.stdout}`);
 });
 
@@ -940,11 +987,11 @@ writeState(rootReviewsFeedback, {
   approved_gates: { context: true, shape: true, execution: true, review: false },
 });
 
-function runBeeReviewsFeedbackFixture(args) {
-  return spawnSync(process.execPath, [BEE_MJS, ...args], { cwd: rootReviewsFeedback, encoding: 'utf8' });
+async function runBeeReviewsFeedbackFixture(args) {
+  return await runModuleWorker(BEE_MJS, { args, cwd: rootReviewsFeedback });
 }
 
-check('reviews fixture setup: a capped behavior_change cell ("ok-1") with recorded verification_evidence exists in scope', () => {
+await check('reviews fixture setup: a capped behavior_change cell ("ok-1") with recorded verification_evidence exists in scope', async () => {
   const cellFixture = {
     id: 'ok-1',
     feature: 'demo3',
@@ -955,25 +1002,25 @@ check('reviews fixture setup: a capped behavior_change cell ("ok-1") with record
     behavior_change: true,
   };
   fs.writeFileSync(path.join(rootReviewsFeedback, 'cell-ok-1.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
-  const added = runBeeReviewsFeedbackFixture(['cells', 'add', '--file', 'cell-ok-1.json', '--json']);
+  const added = await runBeeReviewsFeedbackFixture(['cells', 'add', '--file', 'cell-ok-1.json', '--json']);
   assert(added.status === 0, `cells add setup failed: ${added.status}: stdout=${added.stdout} stderr=${added.stderr}`);
 
-  const claimed = runBeeReviewsFeedbackFixture(['cells', 'claim', '--id', 'ok-1', '--worker', 'worker-rev', '--json']);
+  const claimed = await runBeeReviewsFeedbackFixture(['cells', 'claim', '--id', 'ok-1', '--worker', 'worker-rev', '--json']);
   assert(claimed.status === 0, `cells claim setup failed: ${claimed.status}: stdout=${claimed.stdout} stderr=${claimed.stderr}`);
 
-  const verified = runBeeReviewsFeedbackFixture(['cells', 'verify', '--id', 'ok-1', '--command', 'node -e 0', '--output', 'ok', '--passed', 'true', '--json']);
+  const verified = await runBeeReviewsFeedbackFixture(['cells', 'verify', '--id', 'ok-1', '--command', 'node -e 0', '--output', 'ok', '--passed', 'true', '--json']);
   assert(verified.status === 0, `cells verify setup failed: ${verified.status}: stdout=${verified.stdout} stderr=${verified.stderr}`);
 
-  const capped = spawnSync(
-    process.execPath,
-    [BEE_MJS, 'cells', 'cap', '--id', 'ok-1', '--outcome', 'done', '--files', 'a.js', '--behavior-change', '--evidence-stdin', '--json'],
-    { cwd: rootReviewsFeedback, encoding: 'utf8', input: JSON.stringify({ red_failure_evidence: 'prior behavior', verification_run: 'node -e 0' }) },
-  );
+  const capped = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'cap', '--id', 'ok-1', '--outcome', 'done', '--files', 'a.js', '--behavior-change', '--evidence-stdin', '--json'],
+    cwd: rootReviewsFeedback,
+    input: JSON.stringify({ red_failure_evidence: 'prior behavior', verification_run: 'node -e 0' }),
+  });
   assert(capped.status === 0, `cells cap setup failed: ${capped.status}: stdout=${capped.stdout} stderr=${capped.stderr}`);
   assert(JSON.parse(capped.stdout).trace.verification_evidence, 'ok-1 should carry recorded verification_evidence for the A10 preflight');
 });
 
-check('reviews.create example runs through the real dispatcher (A10 preflight satisfied by the ok-1 fixture cell)', () => {
+await check('reviews.create example runs through the real dispatcher (A10 preflight satisfied by the ok-1 fixture cell)', async () => {
   const scope = {
     id: 'rev-example',
     requested_by: 'user',
@@ -983,65 +1030,65 @@ check('reviews.create example runs through the real dispatcher (A10 preflight sa
     head: 'sha-head',
   };
   fs.writeFileSync(path.join(rootReviewsFeedback, 'scope.json'), JSON.stringify(scope), 'utf8');
-  const result = assertExampleOk('reviews.create', { cwd: rootReviewsFeedback });
+  const result = await assertExampleOk('reviews.create', { cwd: rootReviewsFeedback });
   assert(JSON.parse(result.stdout).id === 'rev-example', `expected rev-example, got ${result.stdout}`);
 });
 
-check('reviews.list example runs through the real dispatcher', () => {
-  const result = assertExampleOk('reviews.list', { cwd: rootReviewsFeedback });
+await check('reviews.list example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('reviews.list', { cwd: rootReviewsFeedback });
   assert(result.stdout.includes('rev-example'), `expected rev-example in list output, got ${result.stdout}`);
 });
 
-check('reviews.show example runs through the real dispatcher', () => {
-  const result = assertExampleOk('reviews.show', { cwd: rootReviewsFeedback });
+await check('reviews.show example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('reviews.show', { cwd: rootReviewsFeedback });
   assert(JSON.parse(result.stdout).id === 'rev-example', `expected rev-example, got ${result.stdout}`);
 });
 
-check('reviews.record example runs through the real dispatcher', () => {
+await check('reviews.record example runs through the real dispatcher', async () => {
   fs.writeFileSync(path.join(rootReviewsFeedback, 'finding.json'), JSON.stringify({ severity: 'P2', description: 'nit' }), 'utf8');
-  const result = assertExampleOk('reviews.record', { cwd: rootReviewsFeedback });
+  const result = await assertExampleOk('reviews.record', { cwd: rootReviewsFeedback });
   assert(JSON.parse(result.stdout).id === 'rev-example', `expected the updated rev-example session, got ${result.stdout}`);
 });
 
-check('reviews.candidate.add example runs through the real dispatcher (nested 3-token verb)', () => {
-  const result = assertExampleOk('reviews.candidate.add', { cwd: rootReviewsFeedback });
+await check('reviews.candidate.add example runs through the real dispatcher (nested 3-token verb)', async () => {
+  const result = await assertExampleOk('reviews.candidate.add', { cwd: rootReviewsFeedback });
   const entry = JSON.parse(result.stdout);
   assert(entry.feature === 'demo3' && entry.mode === 'standard', `expected the example candidate, got ${result.stdout}`);
 });
 
-check('reviews.candidates example runs through the real dispatcher (flat 2-token verb, distinct from candidate add)', () => {
-  const result = assertExampleOk('reviews.candidates', { cwd: rootReviewsFeedback });
+await check('reviews.candidates example runs through the real dispatcher (flat 2-token verb, distinct from candidate add)', async () => {
+  const result = await assertExampleOk('reviews.candidates', { cwd: rootReviewsFeedback });
   const entries = JSON.parse(result.stdout);
   assert(entries.length === 1 && entries[0].feature === 'demo3', `expected the candidate just added, got ${result.stdout}`);
 });
 
-check('reviews.status example runs through the real dispatcher', () => {
-  const result = assertExampleOk('reviews.status', { cwd: rootReviewsFeedback });
+await check('reviews.status example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('reviews.status', { cwd: rootReviewsFeedback });
   const summary = JSON.parse(result.stdout);
   assert(summary.counts.verified === 1, `expected 1 verified candidate, got ${result.stdout}`);
 });
 
-check('feedback.digest example runs through the real dispatcher', () => {
-  const result = assertExampleOk('feedback.digest', { cwd: rootReviewsFeedback });
+await check('feedback.digest example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('feedback.digest', { cwd: rootReviewsFeedback });
   assert(typeof JSON.parse(result.stdout).digest === 'object', `expected a digest object, got ${result.stdout}`);
 });
 
-check('feedback.count example runs through the real dispatcher', () => {
-  const result = assertExampleOk('feedback.count', { cwd: rootReviewsFeedback });
+await check('feedback.count example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('feedback.count', { cwd: rootReviewsFeedback });
   assert(typeof JSON.parse(result.stdout).entries === 'number', `expected a numeric entries count, got ${result.stdout}`);
 });
 
-check('feedback.collect example runs through the real dispatcher', () => {
-  const result = assertExampleOk('feedback.collect', { cwd: rootReviewsFeedback });
+await check('feedback.collect example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('feedback.collect', { cwd: rootReviewsFeedback });
   assert(typeof JSON.parse(result.stdout).counts === 'object', `expected a counts object, got ${result.stdout}`);
 });
 
-check('feedback.rank example runs through the real dispatcher', () => {
-  const result = assertExampleOk('feedback.rank', { cwd: rootReviewsFeedback });
+await check('feedback.rank example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('feedback.rank', { cwd: rootReviewsFeedback });
   assert(Array.isArray(JSON.parse(result.stdout)), `expected a ranked cluster array, got ${result.stdout}`);
 });
 
-check('every registry entry had its example executed at least once (nothing silently skipped)', () => {
+await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {
   const allNames = new Set(COMMAND_REGISTRY.map((e) => e.name));
   const missing = [...allNames].filter((name) => !executedNames.has(name));
   assert(missing.length === 0, `these registry entries were never exercised: ${missing.join(', ')}`);
@@ -1065,20 +1112,20 @@ writeState(root2, {
   approved_gates: { context: true, shape: true, execution: true, review: false },
 });
 
-function runBee(args, cwd = root2) {
-  return spawnSync(process.execPath, [BEE_MJS, ...args], { cwd, encoding: 'utf8' });
+async function runBee(args, cwd = root2) {
+  return await runModuleWorker(BEE_MJS, { args, cwd });
 }
 
 // ─── pure-logic unit tests (direct import, no spawn — no side effects since
 // bee.mjs guards main() behind a direct-run check) ──────────────────────────
 
-check('splitCommandTokens separates leading command tokens from the flag section', () => {
+await check('splitCommandTokens separates leading command tokens from the flag section', async () => {
   const { leading, rest } = splitCommandTokens(['cells', 'show', '--id', 'demo-1', '--json']);
   assert(leading.length === 2 && leading[0] === 'cells' && leading[1] === 'show', `leading: ${JSON.stringify(leading)}`);
   assert(rest.length === 3 && rest[0] === '--id', `rest: ${JSON.stringify(rest)}`);
 });
 
-check('resolveCommand special-cases "status" (no subcommand) and dot-joins other groups', () => {
+await check('resolveCommand special-cases "status" (no subcommand) and dot-joins other groups', async () => {
   assert(resolveCommand([]).commandName === null, 'empty leading -> no command');
   assert(resolveCommand(['status']).commandName === 'status', 'status alone');
   const statusExtra = resolveCommand(['status', 'extra']);
@@ -1089,44 +1136,44 @@ check('resolveCommand special-cases "status" (no subcommand) and dot-joins other
   assert(bareGroup.commandName === 'cells' && bareGroup.extra.length === 0, 'a bare group with no action stays ungrouped (misses the registry -> nearest-match)');
 });
 
-check('parseFlags treats json/stdin/behavior-change/evidence-stdin/active-only as flag-alone booleans', () => {
+await check('parseFlags treats json/stdin/behavior-change/evidence-stdin/active-only as flag-alone booleans', async () => {
   const { flags, json } = parseFlags(['--stdin', '--json']);
   assert(json === true, 'json should be stripped into the json flag');
   assert(flags.stdin === true, 'stdin should be boolean true with no value consumed');
 });
 
-check('parseFlags requires an explicit value for a non-boolean-alone flag, even one the schema types boolean (cells.verify --passed)', () => {
+await check('parseFlags requires an explicit value for a non-boolean-alone flag, even one the schema types boolean (cells.verify --passed)', async () => {
   const { flags, error } = parseFlags(['--id', 'demo-1', '--command', 'manual check', '--passed', 'true']);
   assert(!error, `unexpected parse error: ${JSON.stringify(error)}`);
   assert(flags.id === 'demo-1' && flags.command === 'manual check' && flags.passed === 'true', `flags: ${JSON.stringify(flags)}`);
 });
 
-check('parseFlags returns a structured error (never throws) for a flag missing its value', () => {
+await check('parseFlags returns a structured error (never throws) for a flag missing its value', async () => {
   const { error } = parseFlags(['--id']);
   assert(error && error.field === 'id' && /requires a value/.test(error.reason), `error: ${JSON.stringify(error)}`);
 });
 
-check('parseFlags returns a structured error for a stray non-flag argument', () => {
+await check('parseFlags returns a structured error for a stray non-flag argument', async () => {
   const { error } = parseFlags(['not-a-flag']);
   assert(error && /unexpected argument/.test(error.reason), `error: ${JSON.stringify(error)}`);
 });
 
-check("parseFlags supports the --name=value form for any flag, taking precedence over the boolean-alone default", () => {
+await check("parseFlags supports the --name=value form for any flag, taking precedence over the boolean-alone default", async () => {
   const { flags } = parseFlags(['--id=demo-1', '--behavior-change=false']);
   assert(flags.id === 'demo-1', 'id should read from the = form');
   assert(flags['behavior-change'] === 'false', '= form overrides flag-alone boolean handling, matching the original CLIs\' own eq-first parsing order');
 });
 
-check('nearestCommandName suggests the closest real command for a typo', () => {
+await check('nearestCommandName suggests the closest real command for a typo', async () => {
   assert(nearestCommandName('cells.lst') === 'cells.list', `got ${nearestCommandName('cells.lst')}`);
   assert(nearestCommandName('staus') === 'status', `got ${nearestCommandName('staus')}`);
 });
 
-check('deprecatedRedirect is null for a live (non-deprecated) registry entry', () => {
+await check('deprecatedRedirect is null for a live (non-deprecated) registry entry', async () => {
   assert(deprecatedRedirect(entryByName('status')) === null, 'status.deprecated is null -> no redirect');
 });
 
-check('deprecatedRedirect returns a structured redirect naming use_instead for a synthetic deprecated entry, without executing anything', () => {
+await check('deprecatedRedirect returns a structured redirect naming use_instead for a synthetic deprecated entry, without executing anything', async () => {
   const fakeEntry = { name: 'cells.oldAction', deprecated: { since: '2026-01-01', use_instead: 'cells.newAction' } };
   const redirect = deprecatedRedirect(fakeEntry);
   assert(redirect && redirect.result.ok === false && redirect.result.deprecated === true, `redirect: ${JSON.stringify(redirect)}`);
@@ -1134,7 +1181,7 @@ check('deprecatedRedirect returns a structured redirect naming use_instead for a
   assert(/use "cells.newAction" instead/.test(redirect.text), `text: ${redirect.text}`);
 });
 
-check('computeManifestHash is deterministic and sensitive to content', () => {
+await check('computeManifestHash is deterministic and sensitive to content', async () => {
   const h1 = computeManifestHash();
   const h2 = computeManifestHash();
   assert(h1 === h2, 'the same registry content must hash the same');
@@ -1144,8 +1191,8 @@ check('computeManifestHash is deterministic and sensitive to content', () => {
 
 // ─── end-to-end: --help / --help --json (D3 tool-schema manifest) ─────────
 
-check('bee --help --json parses as valid JSON and lists every existing subcommand', () => {
-  const result = runBee(['--help', '--json']);
+await check('bee --help --json parses as valid JSON and lists every existing subcommand', async () => {
+  const result = await runBee(['--help', '--json']);
   assert(result.status === 0, `exit ${result.status}: ${result.stderr}`);
   const manifest = JSON.parse(result.stdout);
   assert(manifest.schema_version === SCHEMA_VERSION, `schema_version: ${manifest.schema_version}`);
@@ -1156,15 +1203,15 @@ check('bee --help --json parses as valid JSON and lists every existing subcomman
   assert(manifest.commands.every((c) => !('helper' in c)), 'the public manifest must never leak the internal `helper` dispatch field');
 });
 
-check('bee --help renders non-empty prose naming known commands', () => {
-  const result = runBee(['--help']);
+await check('bee --help renders non-empty prose naming known commands', async () => {
+  const result = await runBee(['--help']);
   assert(result.status === 0, `exit ${result.status}: ${result.stderr}`);
   assert(result.stdout.includes('bee cells ready'), `expected "bee cells ready" invoke text, got: ${result.stdout}`);
 });
 
 // ─── demo-2 fixture chain, driven entirely through the bee.mjs dispatcher ──
 
-check('bee cells add creates the demo-2 fixture cell used by the rest of this dispatcher chain', () => {
+await check('bee cells add creates the demo-2 fixture cell used by the rest of this dispatcher chain', async () => {
   const cellFixture = {
     id: 'demo-2',
     feature: 'demo2',
@@ -1174,131 +1221,131 @@ check('bee cells add creates the demo-2 fixture cell used by the rest of this di
     verify: 'node -e "process.exit(0)"',
   };
   fs.writeFileSync(path.join(root2, 'cell-demo-2.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
-  const result = runBee(['cells', 'add', '--file', 'cell-demo-2.json', '--json']);
+  const result = await runBee(['cells', 'add', '--file', 'cell-demo-2.json', '--json']);
   assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
   assert(fs.existsSync(path.join(root2, '.bee', 'cells', 'demo-2.json')), 'demo-2 cell file should now exist');
 });
 
-check('bee cells list --json includes demo-2', () => {
-  const result = runBee(['cells', 'list', '--json']);
+await check('bee cells list --json includes demo-2', async () => {
+  const result = await runBee(['cells', 'list', '--json']);
   assert(result.status === 0, `exit ${result.status}`);
   const cells = JSON.parse(result.stdout);
   assert(cells.some((c) => c.id === 'demo-2'), `expected demo-2 in list, got ${result.stdout}`);
 });
 
-check('bee cells ready --json lists demo-2 (open, no deps)', () => {
-  const result = runBee(['cells', 'ready', '--json']);
+await check('bee cells ready --json lists demo-2 (open, no deps)', async () => {
+  const result = await runBee(['cells', 'ready', '--json']);
   assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
   assert(JSON.parse(result.stdout).some((c) => c.id === 'demo-2'), 'demo-2 should be ready (open, no deps)');
 });
 
-check('bee cells show --id demo-2 --json returns the cell', () => {
-  const result = runBee(['cells', 'show', '--id', 'demo-2', '--json']);
+await check('bee cells show --id demo-2 --json returns the cell', async () => {
+  const result = await runBee(['cells', 'show', '--id', 'demo-2', '--json']);
   assert(JSON.parse(result.stdout).id === 'demo-2', `expected demo-2, got ${result.stdout}`);
 });
 
-check('bee cells update patches an allowed field on the open demo-2 fixture, through the dispatcher', () => {
+await check('bee cells update patches an allowed field on the open demo-2 fixture, through the dispatcher', async () => {
   const patch = { title: 'Demo cell for bee.mjs dispatcher test (updated)' };
   fs.writeFileSync(path.join(root2, 'cell-demo-2-update.json'), JSON.stringify(patch, null, 2), 'utf8');
-  const result = runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-update.json', '--json']);
+  const result = await runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-update.json', '--json']);
   assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
   assert(JSON.parse(result.stdout).title === patch.title, `expected patched title, got ${result.stdout}`);
 });
 
-check('bee cells update refuses a frozen key (status)', () => {
+await check('bee cells update refuses a frozen key (status)', async () => {
   const patch = { status: 'capped' };
   fs.writeFileSync(path.join(root2, 'cell-demo-2-frozen.json'), JSON.stringify(patch, null, 2), 'utf8');
-  const result = runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-frozen.json']);
+  const result = await runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-frozen.json']);
   assert(result.status === 1, `expected exit 1, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
   assert(/status/.test(result.stderr), `expected the frozen field named in stderr, got: ${result.stderr}`);
 });
 
-check('bee cells claim --id demo-2 --worker claims it', () => {
-  const result = runBee(['cells', 'claim', '--id', 'demo-2', '--worker', 'worker-test', '--json']);
+await check('bee cells claim --id demo-2 --worker claims it', async () => {
+  const result = await runBee(['cells', 'claim', '--id', 'demo-2', '--worker', 'worker-test', '--json']);
   assert(JSON.parse(result.stdout).status === 'claimed', `expected claimed, got ${result.stdout}`);
 });
 
-check('bee cells verify --passed true (explicit "true" argument, not a bare flag) records a passing verify', () => {
-  const result = runBee([
+await check('bee cells verify --passed true (explicit "true" argument, not a bare flag) records a passing verify', async () => {
+  const result = await runBee([
     'cells', 'verify', '--id', 'demo-2', '--command', 'manual check', '--output', '0 failing', '--passed', 'true', '--json',
   ]);
   assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
   assert(JSON.parse(result.stdout).trace.verify_passed === true, `expected verify_passed true, got ${result.stdout}`);
 });
 
-check('bee cells cap --id demo-2 caps the cell', () => {
-  const result = runBee(['cells', 'cap', '--id', 'demo-2', '--outcome', 'dispatcher test cap', '--files', 'cell-demo-2.json', '--json']);
+await check('bee cells cap --id demo-2 caps the cell', async () => {
+  const result = await runBee(['cells', 'cap', '--id', 'demo-2', '--outcome', 'dispatcher test cap', '--files', 'cell-demo-2.json', '--json']);
   assert(JSON.parse(result.stdout).status === 'capped', `expected capped, got ${result.stdout}`);
 });
 
-check('bee cells judge --id demo-2 reports no frozen-judge hits', () => {
-  const result = runBee(['cells', 'judge', '--id', 'demo-2', '--json']);
+await check('bee cells judge --id demo-2 reports no frozen-judge hits', async () => {
+  const result = await runBee(['cells', 'judge', '--id', 'demo-2', '--json']);
   assert(JSON.parse(result.stdout).hits.length === 0, `expected no hits, got ${result.stdout}`);
 });
 
-check('bee cells tier --id demo-2 --tier generation sets the tier', () => {
-  const result = runBee(['cells', 'tier', '--id', 'demo-2', '--tier', 'generation', '--json']);
+await check('bee cells tier --id demo-2 --tier generation sets the tier', async () => {
+  const result = await runBee(['cells', 'tier', '--id', 'demo-2', '--tier', 'generation', '--json']);
   assert(JSON.parse(result.stdout).tier === 'generation', `expected generation, got ${result.stdout}`);
 });
 
-check('bee cells block --id demo-2 --reason blocks the cell', () => {
-  const result = runBee(['cells', 'block', '--id', 'demo-2', '--reason', 'dispatcher test block', '--json']);
+await check('bee cells block --id demo-2 --reason blocks the cell', async () => {
+  const result = await runBee(['cells', 'block', '--id', 'demo-2', '--reason', 'dispatcher test block', '--json']);
   assert(JSON.parse(result.stdout).status === 'blocked', `expected blocked, got ${result.stdout}`);
 });
 
-check('bee cells drop --id demo-2 --reason drops the cell', () => {
-  const result = runBee(['cells', 'drop', '--id', 'demo-2', '--reason', 'dispatcher test drop', '--json']);
+await check('bee cells drop --id demo-2 --reason drops the cell', async () => {
+  const result = await runBee(['cells', 'drop', '--id', 'demo-2', '--reason', 'dispatcher test drop', '--json']);
   assert(JSON.parse(result.stdout).status === 'dropped', `expected dropped, got ${result.stdout}`);
 });
 
 // ─── reservations, through the dispatcher ──────────────────────────────────
 
-check('bee reservations reserve/list/release/sweep round-trip through the dispatcher', () => {
-  const reserveResult = runBee(['reservations', 'reserve', '--agent', 'worker-test', '--cell', 'demo-2', '--path', 'src/dispatcher-test.js', '--json']);
+await check('bee reservations reserve/list/release/sweep round-trip through the dispatcher', async () => {
+  const reserveResult = await runBee(['reservations', 'reserve', '--agent', 'worker-test', '--cell', 'demo-2', '--path', 'src/dispatcher-test.js', '--json']);
   assert(JSON.parse(reserveResult.stdout).ok === true, `reserve failed: ${reserveResult.stdout}`);
 
-  const listResult = runBee(['reservations', 'list', '--active-only', '--json']);
+  const listResult = await runBee(['reservations', 'list', '--active-only', '--json']);
   assert(listResult.stdout.includes('worker-test'), `expected worker-test in list, got ${listResult.stdout}`);
 
-  const releaseResult = runBee(['reservations', 'release', '--agent', 'worker-test', '--json']);
+  const releaseResult = await runBee(['reservations', 'release', '--agent', 'worker-test', '--json']);
   assert(JSON.parse(releaseResult.stdout).released >= 1, `expected at least 1 released, got ${releaseResult.stdout}`);
 
-  const sweepResult = runBee(['reservations', 'sweep', '--json']);
+  const sweepResult = await runBee(['reservations', 'sweep', '--json']);
   assert(typeof JSON.parse(sweepResult.stdout).released === 'number', `expected a released count, got ${sweepResult.stdout}`);
 });
 
-check('bee reservations reserve returns a CONFLICT (exit 1) when another agent already holds an overlapping path', () => {
-  const first = runBee(['reservations', 'reserve', '--agent', 'agent-a', '--cell', 'demo-2', '--path', 'src/conflict-test.js', '--json']);
+await check('bee reservations reserve returns a CONFLICT (exit 1) when another agent already holds an overlapping path', async () => {
+  const first = await runBee(['reservations', 'reserve', '--agent', 'agent-a', '--cell', 'demo-2', '--path', 'src/conflict-test.js', '--json']);
   assert(JSON.parse(first.stdout).ok === true, `first reserve should succeed: ${first.stdout}`);
-  const second = runBee(['reservations', 'reserve', '--agent', 'agent-b', '--cell', 'demo-2', '--path', 'src/conflict-test.js', '--json']);
+  const second = await runBee(['reservations', 'reserve', '--agent', 'agent-b', '--cell', 'demo-2', '--path', 'src/conflict-test.js', '--json']);
   assert(second.status === 1, `expected exit 1 on conflict, got ${second.status}`);
   assert(JSON.parse(second.stdout).ok === false, `expected ok:false on conflict, got ${second.stdout}`);
 });
 
 // ─── decisions, through the dispatcher ─────────────────────────────────────
 
-check('bee decisions log/active/search round-trip through the dispatcher', () => {
-  const logResult = runBee(['decisions', 'log', '--decision', 'Use the unified bee.mjs dispatcher', '--rationale', 'Single discoverable CLI surface', '--json']);
+await check('bee decisions log/active/search round-trip through the dispatcher', async () => {
+  const logResult = await runBee(['decisions', 'log', '--decision', 'Use the unified bee.mjs dispatcher', '--rationale', 'Single discoverable CLI surface', '--json']);
   assert(typeof JSON.parse(logResult.stdout).id === 'string', `log failed: ${logResult.stdout}`);
 
-  const activeResult = runBee(['decisions', 'active', '--recent', '5', '--json']);
+  const activeResult = await runBee(['decisions', 'active', '--recent', '5', '--json']);
   assert(JSON.parse(activeResult.stdout).decisions.length >= 1, `expected at least 1 active decision, got ${activeResult.stdout}`);
 
-  const searchResult = runBee(['decisions', 'search', '--text', 'dispatcher', '--json']);
+  const searchResult = await runBee(['decisions', 'search', '--text', 'dispatcher', '--json']);
   assert(JSON.parse(searchResult.stdout).decisions.length >= 1, `expected the logged decision to match, got ${searchResult.stdout}`);
 });
 
 // ─── malformed input / unknown command (never a bare not-found or a stack trace) ─
 
-check('a call missing a required parameter returns a structured {ok:false,error} shape, never a stack trace', () => {
-  const result = runBee(['cells', 'show', '--json']);
+await check('a call missing a required parameter returns a structured {ok:false,error} shape, never a stack trace', async () => {
+  const result = await runBee(['cells', 'show', '--json']);
   assert(result.status === 1, `expected exit 1, got ${result.status}`);
   const parsed = JSON.parse(result.stdout);
   assert(parsed.ok === false && parsed.error && parsed.error.field === 'id', `expected structured id-missing error, got ${result.stdout}`);
   assert(!result.stdout.includes('at Object.'), 'a stack trace must never reach stdout');
 });
 
-check('an unrecognized command returns a nearest-match suggestion, not a bare not-found', () => {
+await check('an unrecognized command returns a nearest-match suggestion, not a bare not-found', async () => {
   // Retargeted off "cells lst" (dispatcher-unify du-4): now that "cells" is
   // one of the 8 GROUP_USAGE_FALLBACKS groups (DB3 — the dispatcher must
   // reproduce the group's legacy "Use: ..." text for ANY unrecognized
@@ -1309,23 +1356,23 @@ check('an unrecognized command returns a nearest-match suggestion, not a bare no
   // "status", the one dot-free registry entry) has no group of its own to
   // fall back to, so it still exercises the exact same generic
   // nearestCommandName suggestion path end-to-end.
-  const result = runBee(['staus', '--json']);
+  const result = await runBee(['staus', '--json']);
   assert(result.status === 1, `expected exit 1, got ${result.status}`);
   const parsed = JSON.parse(result.stdout);
   assert(parsed.ok === false && parsed.suggestion === 'status', `expected suggestion "status", got ${result.stdout}`);
 });
 
-check('a call shaped like a bee.mjs invocation with an unregistered command is denied with a structured error, never executed', () => {
-  const result = runBee(['not', 'a-real-command', '--json']);
+await check('a call shaped like a bee.mjs invocation with an unregistered command is denied with a structured error, never executed', async () => {
+  const result = await runBee(['not', 'a-real-command', '--json']);
   assert(result.status === 1, `expected exit 1, got ${result.status}`);
   assert(JSON.parse(result.stdout).ok === false, `expected ok:false, got ${result.stdout}`);
 });
 
 // ─── manifest content-hash drift ───────────────────────────────────────────
 
-check('a registry content change surfaces manifest_changed on stderr, never reshaping stdout (P1 fix, review-phase-1.md)', () => {
+await check('a registry content change surfaces manifest_changed on stderr, never reshaping stdout (P1 fix, review-phase-1.md)', async () => {
   // Baseline call: persists the real hash to .bee/manifest-hash.json.
-  const baseline = runBee(['status', '--json']);
+  const baseline = await runBee(['status', '--json']);
   assert(baseline.status === 0, `baseline exit ${baseline.status}`);
   const baselineBody = JSON.parse(baseline.stdout);
   assert(!('manifest_changed' in baselineBody), 'steady state must never carry manifest_changed on stdout (byte-parity requirement)');
@@ -1335,7 +1382,7 @@ check('a registry content change surfaces manifest_changed on stderr, never resh
   const hashFile = path.join(root2, '.bee', 'manifest-hash.json');
   writeJsonAtomic(hashFile, { hash: 'deadbeef', checked_at: new Date().toISOString() });
 
-  const drifted = runBee(['status', '--json']);
+  const drifted = await runBee(['status', '--json']);
   const driftedBody = JSON.parse(drifted.stdout);
   // stdout's top-level shape is IDENTICAL to the baseline's — same keys, no
   // manifest_changed / manifest_changed_hint / result nesting — a consumer
@@ -1348,8 +1395,130 @@ check('a registry content change surfaces manifest_changed on stderr, never resh
   assert(drifted.stderr.includes('manifest_changed: true'), `expected the drift hint on stderr, got: ${drifted.stderr}`);
 
   // The drifted call re-persists the real hash, so the very next call is steady again (no stderr hint).
-  const settled = runBee(['status', '--json']);
+  const settled = await runBee(['status', '--json']);
   assert(!settled.stderr.includes('manifest_changed'), 'the hash should self-heal to steady state after one drift report');
+});
+
+// ─── honest runtime drift (codex-harness-hardening 1c) ───────────────────────
+// bee status must compare LIVE .bee/bin managed bytes against the per-file
+// sha256 the onboarding ledger recorded — content drift is drift even at the
+// same bee_version (PROJ-08), and an absent ledger degrades fail-open.
+
+function sha256(buf) {
+  return crypto.createHash('sha256').update(buf).digest('hex');
+}
+
+function buildDriftFixture() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-drift-test-'));
+  const libDir = path.join(dir, '.bee', 'bin', 'lib');
+  fs.mkdirSync(libDir, { recursive: true });
+  const libBody = 'export const SAMPLE = 1;\n';
+  const helperBody = '// vendored dispatcher\n';
+  fs.writeFileSync(path.join(libDir, 'sample.mjs'), libBody);
+  fs.writeFileSync(path.join(dir, '.bee', 'bin', 'bee.mjs'), helperBody);
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: BEE_VERSION, // version matches so any drift is CONTENT drift
+    managed: {
+      lib: { 'sample.mjs': sha256(Buffer.from(libBody)) },
+      helpers: { 'bee.mjs': sha256(Buffer.from(helperBody)) },
+    },
+  });
+  writeState(dir, defaultState());
+  return dir;
+}
+
+async function statusOnboarding(dir) {
+  const r = await runBee(['status', '--json'], dir);
+  assert(r.status === 0, `status must render (exit 0), got ${r.status}: ${r.stderr}`);
+  return JSON.parse(r.stdout).onboarding;
+}
+
+await check('drift: an intact runtime (live hashes == recorded managed map) reads drift:false, no drift_detail', async () => {
+  const dir = buildDriftFixture();
+  const ob = await statusOnboarding(dir);
+  assert(ob.drift === false, `expected drift:false on an intact runtime, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail === undefined, `intact runtime must carry no drift_detail, got ${JSON.stringify(ob.drift_detail)}`);
+});
+
+await check('drift: a content-edited managed lib file reads drift:true and names it, even at the same bee_version (PROJ-08)', async () => {
+  const dir = buildDriftFixture();
+  fs.writeFileSync(path.join(dir, '.bee', 'bin', 'lib', 'sample.mjs'), 'export const SAMPLE = 999;\n');
+  const ob = await statusOnboarding(dir);
+  assert(ob.drift === true, `expected drift:true after a content edit, got ${JSON.stringify(ob)}`);
+  assert(typeof ob.drift === 'boolean', 'drift must stay a boolean (public contract)');
+  assert(
+    Array.isArray(ob.drift_detail) && ob.drift_detail.includes('.bee/bin/lib/sample.mjs'),
+    `drift_detail must name the exact drifted path, got ${JSON.stringify(ob.drift_detail)}`,
+  );
+});
+
+await check('drift: a content-edited managed HELPER (bee.mjs, not lib) reads drift:true and names it (review P1)', async () => {
+  const dir = buildDriftFixture();
+  fs.writeFileSync(path.join(dir, '.bee', 'bin', 'bee.mjs'), '// tampered dispatcher\n');
+  const ob = await statusOnboarding(dir);
+  assert(ob.drift === true, `expected drift:true after a helper edit, got ${JSON.stringify(ob)}`);
+  assert(
+    Array.isArray(ob.drift_detail) && ob.drift_detail.some((d) => d.includes('bee.mjs') && !d.includes('lib/')),
+    `drift_detail must name .bee/bin/bee.mjs (no lib/ prefix), got ${JSON.stringify(ob.drift_detail)}`,
+  );
+});
+
+await check('drift: a legacy ledger (no managed map) with a mismatched bee_version reads drift:true (version-only signal is live)', async () => {
+  const dir = buildDriftFixture();
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.0.1' });
+  const ob = await statusOnboarding(dir);
+  assert(ob.drift === true, `legacy ledger with a mismatched version must read drift:true, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail === undefined, 'version-only drift carries no drift_detail');
+});
+
+await check('drift: a corrupt (non-JSON) onboarding.json degrades fail-open — status renders exit 0, never throws', async () => {
+  const dir = buildDriftFixture();
+  fs.writeFileSync(path.join(dir, '.bee', 'onboarding.json'), '{ broken not json');
+  const r = await runBee(['status', '--json'], dir);
+  assert(r.status === 0, `status must still render on a corrupt ledger, got exit ${r.status}: ${r.stderr}`);
+  const ob = JSON.parse(r.stdout).onboarding;
+  assert(ob.drift === false, `corrupt ledger must degrade to drift:false, got ${JSON.stringify(ob)}`);
+});
+
+await check('drift: a missing managed file reads drift:true (file-set drift)', async () => {
+  const dir = buildDriftFixture();
+  fs.rmSync(path.join(dir, '.bee', 'bin', 'lib', 'sample.mjs'));
+  const ob = await statusOnboarding(dir);
+  assert(ob.drift === true, `expected drift:true for a missing managed file, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail.some((d) => d.includes('sample.mjs') && d.includes('missing')), `expected a "(missing)" detail, got ${JSON.stringify(ob.drift_detail)}`);
+});
+
+await check('drift: an extra .mjs in the managed lib dir reads drift:true (file-set drift)', async () => {
+  const dir = buildDriftFixture();
+  fs.writeFileSync(path.join(dir, '.bee', 'bin', 'lib', 'rogue.mjs'), 'export const X = 1;\n');
+  const ob = await statusOnboarding(dir);
+  assert(ob.drift === true, `expected drift:true for an extra managed lib file, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail.some((d) => d.includes('rogue.mjs') && d.includes('extra')), `expected an "(extra)" detail, got ${JSON.stringify(ob.drift_detail)}`);
+});
+
+await check('drift: an absent/legacy managed map degrades fail-open — status renders, drift falls back to version-only, never throws (sentinel)', async () => {
+  const dir = buildDriftFixture();
+  // Legacy ledger: no managed map, version matches the running constant.
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: BEE_VERSION });
+  const ob = await statusOnboarding(dir); // must not throw
+  assert(ob.drift === false, `legacy ledger with matching version must degrade to drift:false, got ${JSON.stringify(ob)}`);
+  assert(ob.drift_detail === undefined, 'legacy fail-open path carries no drift_detail');
+});
+
+// ─── source identity in status (SRC-01 / DIST-04) ────────────────────────────
+
+await check('status: surfaces a report-only source field classifying the repo bee-hive (project_projection for a host projection)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-src-status-'));
+  fs.mkdirSync(path.join(dir, '.claude', 'skills', 'bee-hive', 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: BEE_VERSION });
+  writeState(dir, defaultState());
+  const r = await runBee(['status', '--json'], dir);
+  assert(r.status === 0, `status must render: ${r.stderr}`);
+  const j = JSON.parse(r.stdout);
+  assert(j.source && j.source.kind === 'project_projection', `expected source.kind project_projection, got ${JSON.stringify(j.source)}`);
+  assert(typeof j.onboarding.drift === 'boolean', 'existing onboarding.drift field must remain (additive change)');
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

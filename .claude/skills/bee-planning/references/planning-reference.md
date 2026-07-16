@@ -103,7 +103,7 @@ Use **phases** only when the work has observable milestones a user could demo in
 A cell is an executable prompt a cold worker can pick up with zero session history.
 
 1. **Directive action, no code blocks.** Prose that says what to do and cites decisions (`per D2`). Code belongs in the repo, written by the worker.
-2. **Bounded files.** `files` lists everything the worker may write; `read_first` what it must read. A worker touching other paths returns `[BLOCKED]`.
+2. **Bounded files.** `files` lists everything the worker may write; `read_first` what it must read. A worker touching other paths returns `[BLOCKED]`. Cross-cell file overlap is legal, not a scoping error — it only costs a wave (auto-serialized per D2); prefer explicit paths or trailing-`*` patterns in `files`, since overlap detection uses `pathsOverlap` semantics (mid-path globs are treated as literals, not wildcards).
 3. **Testable exit.** `verify` is a real command that runs in this repo today. "Manually check" is not a verify.
 4. **must_haves are contracts:** `truths` (observable behavior), `artifacts` (path + substantive description — no stub counts), `key_links` (wired, not just existing), `prohibitions` (what must NOT change). Required for `standard` and `high-risk` lanes; `tiny` may omit.
 5. **behavior_change honesty.** Any cell changing observable behavior is `behavior_change: true` — the cap helper refuses these without both verification evidence and a "before" characterization (`red_failure_evidence`), and reviewing double-checks it; mislabeling is a P1 waiting to happen.

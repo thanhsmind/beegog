@@ -27,9 +27,65 @@ For `tiny` and `small`, **no workers are spawned** — you implement the cell(s)
 - Sweep stale reservations: `node .bee/bin/bee.mjs reservations sweep`
 - `docs/history/learnings/critical-patterns.md` has been read when present.
 
+## Opt-in Native Worktree Dispatch
+
+Native isolation is an opt-in Git-consistency mode, not the default dispatch path.
+Normal native isolation is eligible only for an enabled Claude Code wave with at
+least two workers; solo lanes and single-worker waves stay in the shared checkout.
+The enabling implementation itself is serialized in that checkout as
+`worktree-isolation-1 → worktree-isolation-2 → worktree-isolation-3`, so no two
+workers contend for its shared index. `worktree-isolation-4` is the sole
+validation-only one-worker exception and may run only after those three cells cap.
+
+### Protected pre-dispatch attestation
+
+Before spawning a worktree worker — therefore before any worker output or worker
+result exists — the orchestrator independently captures and retains a protected
+control-plane attestation. It is never populated or amended from the worker
+prompt, result text, branch text, or claimed identity. The record contains:
+
+- canonical `commonDir` from `git rev-parse --path-format=absolute --git-common-dir`;
+- canonical `worktreePath` and native `worktreeId`, with the id derived from the
+  linked Git directory under `commonDir/worktrees/<id>` and its backlink;
+- initial symbolic `headRef` (a detached HEAD is not eligible);
+- exact `baseCommit` at dispatch;
+- normalized repo-relative `declaredPaths` from the cell and `reservedPaths`
+  proven successfully held for the worker.
+
+The attestation stays in the orchestrator's control plane for the complete
+dispatch/integration transaction. A runtime that cannot capture or retain this
+attestation is ineligible for worktree mode and is refused with the typed halt
+`WORKTREE_ATTESTATION_UNAVAILABLE`; use the shared checkout instead.
+
+### Threat model and protected integration check
+
+A same-UID worker is cooperative and fallible, not a security principal. Git
+metadata is consistency evidence, never independent authorization or a security
+boundary against that worker. Worker-reported id, branch, base, path, and commit
+are informational only; the orchestrator derives the candidate from the protected
+attestation and freshly read Git metadata.
+
+After `[DONE]` and before any merge, re-resolve the attested worktree and require:
+
+1. canonical path, native id, `commonDir`, forward link/backlink, and symbolic
+   `headRef` still match the attestation. A detached HEAD returns
+   `WORKTREE_IDENTITY_MISMATCH`; any path/id/common-dir/ref/backlink mismatch also
+   returns `WORKTREE_IDENTITY_MISMATCH`.
+2. the candidate is the freshly read worktree HEAD and
+   `git merge-base --is-ancestor <baseCommit> <candidate>` succeeds. A
+   non-descendant returns `WORKTREE_BASE_ANCESTRY_MISMATCH`.
+3. the NUL-delimited `git diff --name-only <baseCommit>..<candidate>` is a subset
+   of attested `reservedPaths` after the same logical normalization used by
+   reservations. Any extra path returns `WORKTREE_RESERVED_DIFF_MISMATCH`.
+
+These are typed identity halts: stop integration, preserve the worktree and
+branch, and never reinterpret worker result wording as authority. Transactional
+merge, verification, revert, cleanup, and destructive-drop disposition remain the
+acceptance procedure owned by `worktree-isolation-4` and the swarming reference.
+
 ## Operating Contract
 
-1. **Wave analysis.** List claimable cells with `node .bee/bin/bee.mjs cells ready` and walk their deps: cells with all deps capped and no shared files run in parallel within one wave; dependent or file-overlapping cells go to later waves. Two ready cells sharing a file means fix the reservations or split the cell scope — never "spawn both and be careful". The dep/overlap walk and verify-output capture delegate as extraction-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`); judgment (assignment, tier choice, goal-check verdicts) stays on the orchestrator.
+1. **Wave analysis.** Run `node .bee/bin/bee.mjs cells schedule --json`: the computed waves are the **default** dispatch order — override only with a stated reason recorded in the swarm report. Refuse to dispatch when diagnostics report cycles. Two ready cells sharing a file means fix the reservations or split the cell scope — never "spawn both and be careful"; the schedule already auto-serializes file overlap into a later wave rather than refusing it. The schedule computation and verify-output capture delegate as extraction-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`); judgment (assignment, tier choice, goal-check verdicts, override decisions) stays on the orchestrator.
 2. **Assign.** The orchestrator picks exactly **one cell per worker**. Workers never self-select, browse the ready list, or take a second cell.
 3. **Spawn with the isolation contract.** Each worker prompt contains: the cell id, the path to `docs/history/<feature>/CONTEXT.md` and `docs/history/<feature>/plan.md`, the global constraints, its reservation identity (agent nickname), and the status-token protocol (`[DONE] [BLOCKED] [HANDOFF] [NOOP]`) — **nothing else, never session history**. Use the template in `references/swarming-reference.md`. Spawn as the runtime's default/general subagent type with that template inline — NEVER as an agent type registered by another plugin, even when the name matches the role: a same-named agent carries a different contract and makes the run depend on what happens to be installed.
 4. **Judge each cell's model tier at dispatch** — you (the orchestrator) assess the task in front of you and pick the fitting tier; it is NOT fixed by planning (a planning `tier` is at most a hint you may override; decision 0016). Rubric from the cell's lane + action + must_haves + files:

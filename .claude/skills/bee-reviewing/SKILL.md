@@ -141,7 +141,7 @@ All three = OK. EXISTS + SUBSTANTIVE only = P2. Missing or EXISTS-only = P1.
 
 ## 5. Human UAT
 
-Walk the user through every SEE/CALL/RUN decision in CONTEXT.md, for every feature in scope (wording in the reference). Failure → P1 fix cell + rerun the item. Skip requires a recorded reason: `node .bee/bin/bee.mjs state set --summary "<skip reason>"`. UAT failures are never logged as passes. Record each item's outcome to the session: `node .bee/bin/bee.mjs reviews record --id <session-id> --kind uat --file <uat-item.json>`.
+Walk the user through every SEE/CALL/RUN decision in CONTEXT.md, for every feature in scope (wording in the reference). Failure → P1 fix cell + rerun the item. A skip requires its reason in the UAT item itself; record that session-local outcome with `node .bee/bin/bee.mjs reviews record --id <session-id> --kind uat --file <uat-item.json>`. Independent review owns no active routing state and never calls generic `state set`. UAT failures are never logged as passes.
 
 ## 6. Delta Re-Review (fix protocol, R9/A12)
 
