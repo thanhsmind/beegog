@@ -255,7 +255,7 @@
     },
     {
       "path": "scripts/test_release_tuple.mjs",
-      "sha256": "45601bf2e3091ddc8c21d89e11555a593ea8d41b7f418f7f3486e1767ee7c5df",
+      "sha256": "2be718dae4d657cd76a254ff7a5a1ae685ff5f66a8fba5c57977a8a6439795bf",
       "mode": "644",
       "role": "distribution_test"
     },
@@ -526,7 +526,7 @@
     },
     {
       "path": "skills/bee-hive/scripts/test_split_brain_regression.mjs",
-      "sha256": "d99fb45a139c4711fcc8b5da9243a33ba1ad305b24e868ff27000ff682d34dbf",
+      "sha256": "c056821dc7a74c7ed1b63e7539c9158e9fd2d62f4ab22ba68f49a2000521cc20",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/scripts/test_split_brain_regression.mjs"

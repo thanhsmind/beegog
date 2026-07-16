@@ -567,6 +567,19 @@ landing page from day one in every onboarded project.
   package wiring, cross-platform entrypoints, metadata, inventory, and staged
   cachebuster proof. Evidence: `.bee/cells/codex-hook-state-parity-3.json` and
   `docs/history/codex-hook-state-parity/reports/codex-hook-state-parity-3.md`.
+- Release-version single-source (decision cba8b832): the four physical homes of
+  the version — `templates/lib/state.mjs` + its `.bee/bin/lib` mirror, and the
+  two plugin manifests' `.version` — are enumerated once in
+  `scripts/lib/release-tuple.mjs` (a side-effect-free registry of location +
+  read/write). `scripts/test_release_tuple.mjs` (check) and
+  `scripts/bump_version.mjs` (write) both import it, so a release sets every
+  member from one command — `node scripts/bump_version.mjs <version>` — which
+  also regenerates the hash manifest. The split-brain regression fixture's
+  "current version" is derived at runtime from the canonical
+  `templates/lib/state.mjs` (no hand-edited anchor); `scripts/test_bump_version.mjs`
+  proves the writer covers every registry component and preserves each file's
+  surrounding bytes. Plugin manifests keep a literal `.version` because external
+  plugin systems read them as raw JSON and cannot import the JS const.
 - Fresh-host handler-delivery proof: `.bee/cells/codex-hook-state-parity-5.json`
   and `docs/history/codex-hook-state-parity/reports/codex-hook-state-parity-5.md`.
 - `skills/bee-hive/scripts/onboard_bee.mjs` — `statuslineOptIn()`, plan stage 3b,

@@ -5,97 +5,12 @@
 // top-level `.version`. All four must always read the same value — this is
 // the mechanical guard that catches a release that bumped one and missed
 // another.
+//
+// WHERE the four components live, and how each is read, is defined once in
+// scripts/lib/release-tuple.mjs (decision cba8b832). This file only runs the
+// check; scripts/bump_version.mjs writes them. Both import the same registry.
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.join(__dirname, "..");
-
-const COMPONENTS = [
-  {
-    name: "skills/bee-hive/templates/lib/state.mjs (BEE_VERSION)",
-    path: path.join(REPO_ROOT, "skills", "bee-hive", "templates", "lib", "state.mjs"),
-    kind: "js-const",
-  },
-  {
-    name: ".bee/bin/lib/state.mjs (BEE_VERSION)",
-    path: path.join(REPO_ROOT, ".bee", "bin", "lib", "state.mjs"),
-    kind: "js-const",
-  },
-  {
-    name: ".claude-plugin/plugin.json (.version)",
-    path: path.join(REPO_ROOT, ".claude-plugin", "plugin.json"),
-    kind: "json-version",
-  },
-  {
-    name: ".codex-plugin/plugin.json (.version)",
-    path: path.join(REPO_ROOT, ".codex-plugin", "plugin.json"),
-    kind: "json-version",
-  },
-];
-
-const BEE_VERSION_RE = /export\s+const\s+BEE_VERSION\s*=\s*['"]([^'"]+)['"]/;
-
-/**
- * Extracts BEE_VERSION from a state.mjs source string. Returns null if not
- * found (caller treats that as a read failure, not a silent pass).
- */
-function extractJsConstVersion(source) {
-  const match = source.match(BEE_VERSION_RE);
-  return match ? match[1] : null;
-}
-
-/**
- * Reads a single component's version given its {path, kind}. Returns the
- * version string, or throws with a message naming the component.
- */
-function readComponentVersion(component, readFileFn = fs.readFileSync) {
-  let raw;
-  try {
-    raw = readFileFn(component.path, "utf8");
-  } catch (error) {
-    throw new Error(`could not read ${component.name} at ${component.path}: ${error.message}`);
-  }
-
-  if (component.kind === "js-const") {
-    const version = extractJsConstVersion(raw);
-    if (!version) {
-      throw new Error(`${component.name}: no BEE_VERSION export found in ${component.path}`);
-    }
-    return version;
-  }
-
-  if (component.kind === "json-version") {
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (error) {
-      throw new Error(`${component.name}: could not parse JSON at ${component.path}: ${error.message}`);
-    }
-    if (typeof parsed.version !== "string" || !parsed.version) {
-      throw new Error(`${component.name}: no top-level .version string in ${component.path}`);
-    }
-    return parsed.version;
-  }
-
-  throw new Error(`${component.name}: unknown component kind "${component.kind}"`);
-}
-
-/**
- * Given a list of {name, version} entries, checks they are all equal.
- * Returns { ok, desynced } — desynced is the list of {name, version} entries
- * that do not match the majority/first value, empty when all equal.
- */
-function checkTupleEquality(entries) {
-  if (entries.length === 0) {
-    return { ok: true, desynced: [] };
-  }
-  const baseline = entries[0].version;
-  const desynced = entries.filter((entry) => entry.version !== baseline);
-  return { ok: desynced.length === 0, desynced };
-}
+import { COMPONENTS, readComponentVersion, checkTupleEquality } from "./lib/release-tuple.mjs";
 
 // ─── internal self-test: prove the checker actually bites ─────────────────
 // Feed checkTupleEquality() a synthetic desynced tuple built in-memory only —
@@ -141,6 +56,7 @@ if (!result.ok) {
     const marker = result.desynced.includes(entry) ? " <-- DESYNCED" : "";
     console.error(`      ${entry.name}: ${entry.version}${marker}`);
   }
+  console.error("      FIX: run `node scripts/bump_version.mjs <version>` to set every component from one command.");
   process.exit(1);
 }
 

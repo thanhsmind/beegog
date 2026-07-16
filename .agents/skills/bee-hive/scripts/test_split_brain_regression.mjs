@@ -198,15 +198,31 @@ try {
   copyTree(REAL_HIVE_DIR, claudeHive);
   patchVersion(path.join(claudeHive, "templates", "lib", "state.mjs"), "0.1.43");
 
-  // Vendored runtime: real CURRENT .bee/bin (1.3.5), unpatched.
+  // The current release version is derived from the real source of truth, not
+  // hardcoded here — a release bump no longer has to hand-edit this fixture
+  // (decision cba8b832). The value must be equal across the whole tuple; the
+  // canonical source is templates/lib/state.mjs (test_release_tuple guards the
+  // rest).
+  const expectedCurrentVersion = readVersionLoose(
+    path.join(REAL_HIVE_DIR, "templates", "lib", "state.mjs"),
+  );
+  if (!expectedCurrentVersion) {
+    fixtureBug(
+      "could not read the current BEE_VERSION from skills/bee-hive/templates/lib/state.mjs - " +
+        "cannot establish the fixture's expected runtime version",
+    );
+  }
+
+  // Vendored runtime: real CURRENT .bee/bin (expectedCurrentVersion), unpatched.
   const repoBeeBinDir = path.join(fixtureRepo, ".bee", "bin");
   copyTree(REAL_BEE_BIN_DIR, repoBeeBinDir);
   const repoLibStateFile = path.join(repoBeeBinDir, "lib", "state.mjs");
   const preVersion = readVersionLoose(repoLibStateFile);
-  if (preVersion !== "1.3.5") {
+  if (preVersion !== expectedCurrentVersion) {
     fixtureBug(
-      `this checkout's real .bee/bin/lib/state.mjs is not 1.0.0 (got ${preVersion}) - ` +
-        "the fixture's expected runtime version needs updating, this is not the defect under test",
+      `this checkout's real .bee/bin/lib/state.mjs (${preVersion}) does not match the ` +
+        `canonical templates/lib/state.mjs (${expectedCurrentVersion}) - the release tuple is ` +
+        "desynced, this is not the defect under test (run test_release_tuple / bump_version)",
     );
   }
 
@@ -221,7 +237,7 @@ try {
     `${JSON.stringify(
       {
         schema_version: "1.0",
-        bee_version: "1.3.5",
+        bee_version: expectedCurrentVersion,
         managed: { agents_block: "fixture", gitignore_block: "fixture", helpers: {}, lib: {} },
         created_at: "2026-01-01T00:00:00.000Z",
         updated_at: "2026-01-01T00:00:00.000Z",
