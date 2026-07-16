@@ -1,18 +1,18 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.3.4",
+  "bee_version": "1.3.5",
   "managed": {
     "agents_block": "c3b9ccfa37fe058f3cfe1096f667b55d164194e7d84d4591543aa5631985a9da",
-    "gitignore_block": "add7be1e25d3c4b7bbedff2f80c0f0e577c84610ebbac5d1eec1d70427424886",
+    "gitignore_block": "b39fe93c0e919a6bc424f80fcc4a9f791579fbc75bb11956f0cb037848f6a0b8",
     "helpers": {
-      "bee.mjs": "c7d6945f3b4b76c92a632180f30d80a47a58b483bd67a9199ce9b42fb5de981f"
+      "bee.mjs": "1c4a1f96f8fe0681929333f4ec1cbcd8f8f69a27cd9931c5c6062242a6b16061"
     },
     "lib": {
       "backlog.mjs": "2f4613721fa89bd264a4c02c459240e92d21159e7ceae3a9320e35d27c8ef0c8",
       "capture.mjs": "6ce4fa5947a015f156468aa5bc40e264a9d7a170744e8700de1d90b969b3908c",
       "cells.mjs": "8a49dbf84450a6109758e1abe81ae4f756fc074d21b00e78209b8d495102105f",
       "claims.mjs": "53db159edf5e84ee78774c6f5141b7a2a355c31451920da60d6fb9fb02a13d52",
-      "command-registry.mjs": "b1f4df8d78525d3646814536f54eedfe4518282275ea1e5a7793163f14ebd688",
+      "command-registry.mjs": "98af4b4f8dca16cdbae784d126f8f81402c877807b117037a2957fb515b16d76",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
@@ -24,11 +24,12 @@
       "reviews.mjs": "6008cb1de50fb223c84638abaa4bdcd2521743c858ffd3e6b95bbcc6cce97502",
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "source-identity.mjs": "93c2f9669f0103af26c48bd723873bf1bebc4d3fe2d8f51013f4be529095c81b",
-      "state.mjs": "18b46a70985b4abe38796202838215faacdec05eaa0b03ecb421dc8ba3ae24dd",
-      "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23"
+      "state.mjs": "f341f1206c0ef367b15db82afafd8076ef850b3867a1c479b89992c5876ec5d7",
+      "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
+      "worktree-store.mjs": "9b7370e16a317f156a868d9311371b7497cb25603e51e13856af5f47bfabbd18"
     },
     "repo_hooks": {
-      "adapter.mjs": "bf399a16026e8f93a044b8f4bc4c776ed30ab8ffc68e6956e8e51b53cadc9206",
+      "adapter.mjs": "e71be1d018da1c268711a1786ae7e3c1e607316b83dd3f740a824d13bd4d73fa",
       "bee-codex-subagent-audit.mjs": "f9f6900705aa20dfc0035a8c8c5c4b22fc56c9d0a4953e1b0ba3fd9466dec85e",
       "bee-session-init.mjs": "3bc1706a7d716017fac407898f06405239d2fefbd98639c581460a4d3a0be4e6",
       "bee-prompt-context.mjs": "4a50dfeae57f70b95d9e7020df2deac5d980b09e059d0aae5a64dc2c1c338ca6",
@@ -45,5 +46,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-16T09:53:22.456Z"
+  "updated_at": "2026-07-16T12:16:02.766Z"
 }

@@ -61,6 +61,7 @@ import {
   listLanes,
   writeHandoff,
   adoptHandoff,
+  resolveRoots,
 } from './lib/state.mjs';
 // Lane + session CLI surface (fresh-session-handoff fsh-4, D2/D4): claims.mjs
 // stays out of this cell's file scope — these are already-exported read/
@@ -87,6 +88,7 @@ import {
   claimNextCell,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
+import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore } from './lib/worktree-store.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
@@ -1858,6 +1860,96 @@ function handlePerfReport(_root, flags) {
   return { result: matrix, text: lines.join('\n') };
 }
 
+// ─── worktree: register/list/unregister the opt-in per-worktree store grant
+// (worktree-feature-parallelism Slice A). `root` here is main()'s already-
+// resolved storeRoot, whose value is GRANT-STATE-DEPENDENT for a linked
+// worktree (resolveRoots falls back to mainRoot when ungranted, but returns
+// the worktree's own root once granted) — so every handler below re-resolves
+// `process.cwd()` itself via resolveRoots to get the authoritative, grant-
+// state-INDEPENDENT `{ id, mainRoot, worktreeRoot }` rather than trusting the
+// ambient `root` value. ───────────────────────────────────────────────────
+
+/**
+ * The MAIN store's checkout root, regardless of the current directory's own
+ * grant state: for a linked worktree (granted or not), resolveRoots' own
+ * `mainRoot` field is authoritative; for an ordinary checkout, `root` (the
+ * dispatcher's already-resolved storeRoot) already IS the main root.
+ */
+function resolveMainRoot(root) {
+  let resolution;
+  try {
+    resolution = resolveRoots(process.cwd());
+  } catch {
+    return root;
+  }
+  if (resolution.worktreeResolution === 'linked-valid' && resolution.mainRoot) {
+    return resolution.mainRoot;
+  }
+  return root;
+}
+
+function handleWorktreeRegister(_root, flags) {
+  const feature = requireFlag(flags, 'feature');
+  let resolution;
+  try {
+    resolution = resolveRoots(process.cwd());
+  } catch (error) {
+    throw new Error(
+      `"bee worktree register" must be run from inside a linked git worktree (git worktree add): ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (resolution.worktreeResolution !== 'linked-valid') {
+    throw new Error(
+      `"bee worktree register" must be run from inside a linked git worktree (git worktree add), not an "${resolution.worktreeResolution}" checkout.`,
+    );
+  }
+  const { id, mainRoot, worktreeRoot } = resolution;
+  const mainStoreRoot = path.join(mainRoot, '.bee');
+  writeGrant(mainStoreRoot, id);
+  const bootstrap = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature);
+  const result = { ok: true, id, feature, main_root: mainRoot, worktree_root: worktreeRoot, bootstrap };
+  const text = [
+    `Registered worktree grant: id ${id} (feature "${feature}").`,
+    `  worktree:    ${worktreeRoot}`,
+    `  main store:  ${mainStoreRoot}`,
+    bootstrap.created
+      ? `  bootstrapped ${bootstrap.worktreeStoreRoot} (phase idle, gates unapproved).`
+      : `  worktree .bee/state.json already existed — left untouched (${bootstrap.reason}).`,
+  ].join('\n');
+  return { result, text };
+}
+
+function handleWorktreeList(root, _flags) {
+  const mainRoot = resolveMainRoot(root);
+  const mainStoreRoot = path.join(mainRoot, '.bee');
+  const grants = listGrants(mainStoreRoot);
+  const ids = Object.keys(grants).filter((id) => grants[id] === true);
+  const text = ids.length ? ids.map((id) => `${id} (granted)`).join('\n') : 'No worktree grants.';
+  return { result: { grants, main_root: mainRoot }, text };
+}
+
+function handleWorktreeUnregister(root, flags) {
+  const mainRoot = resolveMainRoot(root);
+  const mainStoreRoot = path.join(mainRoot, '.bee');
+  let id = flags.id ? String(flags.id) : null;
+  if (!id) {
+    let resolution;
+    try {
+      resolution = resolveRoots(process.cwd());
+    } catch (error) {
+      throw new Error(
+        `--id not given, and the current directory is not a linked worktree: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (resolution.worktreeResolution !== 'linked-valid' || !resolution.id) {
+      throw new Error('--id not given, and the current directory is not a linked worktree — pass --id explicitly.');
+    }
+    id = resolution.id;
+  }
+  removeGrant(mainStoreRoot, id);
+  return { result: { ok: true, id, main_root: mainRoot }, text: `Removed worktree grant for id ${id}.` };
+}
+
 // Per-group usage fallback (dispatcher-unify du-1): the shim always supplies
 // the group token, so the generic no-command path can never fire for helper
 // calls. When a leading group token resolves to no registry entry, its group's
@@ -1920,6 +2012,11 @@ function perfUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: start, stop, section, log, render, report, sync.`;
 }
 
+function worktreeUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister.`;
+}
+
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
 // bee_reservations.mjs/bee_decisions.mjs are now shims, so their own
 // default-case "Unknown command ... Use: ..." messages (previously emitted
@@ -1951,6 +2048,7 @@ const GROUP_USAGE_FALLBACKS = {
   reviews: reviewsUsageFallback,
   feedback: feedbackUsageFallback,
   perf: perfUsageFallback,
+  worktree: worktreeUsageFallback,
 };
 
 const HANDLERS = {
@@ -2020,6 +2118,9 @@ const HANDLERS = {
   'perf.render': handlePerfRender,
   'perf.report': handlePerfReport,
   'perf.sync': handlePerfSync,
+  'worktree.register': handleWorktreeRegister,
+  'worktree.list': handleWorktreeList,
+  'worktree.unregister': handleWorktreeUnregister,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─

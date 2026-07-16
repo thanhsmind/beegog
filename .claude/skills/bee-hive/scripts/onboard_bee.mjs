@@ -94,6 +94,14 @@ const GITIGNORE_BLOCK_PATTERNS = [
   ".bee/HANDOFF.json",
   ".bee/spikes/",
   ".bee/manifest-hash.json",
+  // Runtime + cache tiers (worktree-feature-parallelism D3): live coordination
+  // and derived caches — never tracked, never merged. .bee/runtime/ holds the
+  // worktree grant registry; .bee/sessions/ and .bee/claims/ are live session
+  // state; .bee/cache/ is replay-derived.
+  ".bee/sessions/",
+  ".bee/claims/",
+  ".bee/runtime/",
+  ".bee/cache/",
 ];
 
 const HOOK_FILENAMES = [

@@ -34,3 +34,43 @@ when `.bee/config.json` lacks `commands`, and writes the answers to config. Base
 evidence: docs/09 — fresh sessions could answer "where are we" but not "how do I run/verify
 this project". Pressure scenario: agent infers `npm test` from package.json instead of
 asking — RED; never invent command values.
+
+## Amendment 2026-07-16 — Batch independent questions (P45, feature exploring-batch-questions)
+
+Source: user report "bước đó chờ lâu quá" — the one-question-per-message Hard Gate
+serialized every gray-area question, so a set of independent product decisions cost N user
+round-trips. Full TDD-for-skills RED→GREEN.
+
+**RED (current skill, before edit).** Scenario: CSV export, gray-areas Q1 columns / Q2
+delimiter / Q3 filename (three independent) + Q4 persist-selection (depends on Q1).
+Pressures: user slow-complaint · total autopilot · efficiency · tool takes 4 questions.
+A fresh subagent following the skill faithfully produced **4 serial rounds** (3 if
+Q1=fixed) and rejected batching, quoting verbatim:
+- `Ask **one question per message**; wait for the user before asking the next.` (L19 Hard Gate)
+- "confirmed by the Red Flags list: 'bundled questions' is explicitly named as a violation."
+- "the Hard Gate is unconditional — it does not carve out an exception for questions that
+  happen to be independent."
+Two independent skill locations (L19 Hard Gate + the "bundled questions" Red Flag) each
+forbade batching; the gate-bypass split only decides *whether* a question is asked, never
+how many per message.
+
+**GREEN (edit, addressing exactly those two locations + ordering + a pre-pass).**
+1. L19 Hard Gate → "Batch independent questions into one message; serialize only dependent
+   ones" + independent/dependent definitions + "never blind-bundle."
+2. Step 3 gains a "Pre-classify for batching" bullet — the delegated pre-pass returns the
+   slate tagged independent/dependent with dependency edges, so step 4 opens holding the plan.
+3. Step 4 opening → "Ask in the fewest rounds the dependencies allow"; "Start broad, then
+   narrow" reframed so the independent batch leads and the dependents it gates follow.
+4. Red Flag → "blind-bundling" (dependent batched / unclassified dump) is the violation, not
+   batching per se; added the opposite red flag (serializing independent questions).
+
+**GREEN verification (two directions, fresh subagent, WITH the edit):**
+- Scenario A (3 indep + 1 dep) → **2 rounds** (batch {Q1,Q2,Q3} + conditional Q4), 1 if
+  Q1=fixed. Down from RED's 4.
+- Scenario B (genuine Qa→Qb→Qc dependency chain) → **3 rounds, zero batching** — the caveat
+  holds; Qb "cannot even be worded before Qa resolves," so no blind-bundle.
+The agent cited the new L19/step-4/Red-Flag lines verbatim, produced no new rationalization,
+and offered no letter-satisfying "hybrid." No REFACTOR loop needed.
+
+Mirrors (`.claude/skills/bee-exploring/`, `.agents/skills/bee-exploring/`) synced
+byte-identical; parity verified.

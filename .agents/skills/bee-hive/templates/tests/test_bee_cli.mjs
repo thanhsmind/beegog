@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
@@ -167,12 +168,12 @@ await check('every registry entry\'s parameters is valid JSON-Schema (D3 shape: 
   }
 });
 
-await check('registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*, state.*, backlog.*, capture.*, reviews.*, feedback.*, perf.*)', async () => {
+await check('registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*, state.*, backlog.*, capture.*, reviews.*, feedback.*, perf.*, worktree.*)', async () => {
   const names = COMMAND_REGISTRY.map((e) => e.name);
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -203,7 +204,7 @@ await check('registry covers every subcommand of the 4 existing helpers', async 
 // prepended, exactly what each shim used to do internally, so the observed
 // "Unknown command" contract line is unchanged.
 
-const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf'];
+const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree'];
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
 // bee.mjs's own `cells update` verb separately emits an unrelated
@@ -274,11 +275,11 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
   }
 });
 
-await check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf', async () => {
-  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf']);
+await check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree', async () => {
+  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
-    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback`);
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree`);
     if (!entry.name.includes('.')) {
       assert(entry.name === 'status', `dot-free registry entry "${entry.name}" is not "status" — only "status" may be dot-free`);
     }
@@ -1134,6 +1135,69 @@ await check('perf.sync example scans + writes the log (transcript-less temp env)
   const result = await assertExampleOk('perf.sync');
   const res = JSON.parse(result.stdout);
   assert(typeof res.sessions === 'number', 'perf sync --json reports a session count');
+});
+
+// ─── worktree group examples: a REAL git repo + real `git worktree add`,
+// mirroring the fixture pattern scripts/test_worktree_cli.mjs already proved
+// end-to-end. A dedicated temp tree (not the shared `root` above, which has
+// no .git and is deliberately classified 'ordinary') so register's own
+// "must run from inside a linked worktree" requirement is satisfiable. ─────
+await check('worktree.register/list/unregister examples run through the real dispatcher against a real linked git worktree', async () => {
+  const wtTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-worktree-'));
+  try {
+    const git = (cwd, args) => {
+      const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert(r.status === 0, `git ${args.join(' ')} (cwd=${cwd}) failed: ${r.stderr}`);
+      return r.stdout;
+    };
+
+    const wtMain = path.join(wtTmp, 'main');
+    fs.mkdirSync(wtMain);
+    git(wtMain, ['init', '-q', '-b', 'main']);
+    git(wtMain, ['config', 'user.email', 's@e']);
+    git(wtMain, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(wtMain, 'f'), 'x');
+    git(wtMain, ['add', '.']);
+    git(wtMain, ['commit', '-q', '-m', 'init']);
+    fs.mkdirSync(path.join(wtMain, '.bee'), { recursive: true });
+    writeJsonAtomic(path.join(wtMain, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+
+    const wtLinked = path.join(wtTmp, 'wt');
+    git(wtMain, ['worktree', 'add', '-q', '-b', 'wt-example-feature', wtLinked]);
+
+    // registry example: 'bee worktree register --feature demo-feature --json'
+    await assertExampleOk('worktree.register', { cwd: wtLinked });
+    const worktreeStateFile = path.join(wtLinked, '.bee', 'state.json');
+    assert(fs.existsSync(worktreeStateFile), 'worktree.register example should bootstrap .bee/state.json');
+    const worktreeState = JSON.parse(fs.readFileSync(worktreeStateFile, 'utf8'));
+    assert(worktreeState.feature === 'demo-feature' && worktreeState.phase === 'idle', `expected a fresh idle demo-feature state, got ${JSON.stringify(worktreeState)}`);
+    const grantsFile = path.join(wtMain, '.bee', 'runtime', 'worktree-grants.json');
+    const grantedIds = Object.keys(JSON.parse(fs.readFileSync(grantsFile, 'utf8')));
+    assert(grantedIds.length === 1, `expected exactly one grant after register, got ${JSON.stringify(grantedIds)}`);
+    const realId = grantedIds[0];
+
+    // registry example: 'bee worktree list --json'
+    const listResult = await assertExampleOk('worktree.list', { cwd: wtLinked });
+    const listed = JSON.parse(listResult.stdout);
+    assert(listed.grants[realId] === true, `worktree.list example should show the real grant, got ${listResult.stdout}`);
+
+    // registry example: 'bee worktree unregister --id abc123 --json' — a real
+    // dispatcher call for an id that was never granted, scoped-removal no-op
+    // (never an error): proves the example runs cleanly AND that unregister
+    // never touches an unrelated id's grant.
+    await assertExampleOk('worktree.unregister', { cwd: wtLinked });
+    const afterExampleGrants = JSON.parse(fs.readFileSync(grantsFile, 'utf8'));
+    assert(afterExampleGrants[realId] === true, `unregister --id abc123 must not remove the real grant, got ${JSON.stringify(afterExampleGrants)}`);
+
+    // Now exercise the real (no --id) default path directly, proving it
+    // resolves the CURRENT worktree's own id and actually removes it.
+    const realUnregisterResult = await runModuleWorker(BEE_MJS, { args: ['worktree', 'unregister', '--json'], cwd: wtLinked });
+    assert(realUnregisterResult.status === 0, `real unregister (no --id) should exit 0, got status=${realUnregisterResult.status} stderr=${realUnregisterResult.stderr}`);
+    const finalGrants = JSON.parse(fs.readFileSync(grantsFile, 'utf8'));
+    assert(!(realId in finalGrants), `real unregister (no --id) should remove the current worktree's own grant, got ${JSON.stringify(finalGrants)}`);
+  } finally {
+    fs.rmSync(wtTmp, { recursive: true, force: true });
+  }
 });
 
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {

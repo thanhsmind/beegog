@@ -7,8 +7,9 @@ import { readJson, writeJsonAtomic } from './fsutil.mjs';
 // nothing but fsutil/node builtins (unlike cells.mjs, which imports THIS file).
 import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './claims.mjs';
 import { pathsOverlap } from './reservations.mjs';
+import { readGrants } from './worktree-store.mjs';
 
-export const BEE_VERSION = '1.3.4';
+export const BEE_VERSION = '1.3.5';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -316,8 +317,14 @@ export function resolveRoots(startDir) {
   if (!reverse || path.resolve(reverse) !== path.resolve(marker)) {
     return invalid('linked worktree reverse gitdir pointer is missing or mismatched');
   }
-  const storeRoot = path.dirname(commonGitDir);
-  return { storeRoot, workRoot, worktreeResolution: 'linked-valid' };
+  const mainRoot = path.dirname(commonGitDir);
+  // Opt-in per-worktree store (worktree-feature-parallelism): a worktree whose
+  // git-verified id is registered in the MAIN store's grant registry resolves
+  // to its own local store; an unregistered id resolves to main (P40 default,
+  // byte-for-byte). Grants are read only from the main store, never from
+  // anything the worktree claims about itself.
+  const storeRoot = readGrants(path.join(mainRoot, '.bee'))[id] === true ? workRoot : mainRoot;
+  return { storeRoot, workRoot, worktreeResolution: 'linked-valid', id, mainRoot, worktreeRoot: workRoot };
 }
 
 export function findRepoRoot(startDir) {
