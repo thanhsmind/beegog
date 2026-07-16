@@ -1,0 +1,279 @@
+{
+  "id": "unreviewed-batch-20260716",
+  "requested_by": "user",
+  "requested_at": "2026-07-16T04:26:24.039Z",
+  "scope_description": "Everything completed and unreviewed since the last review baseline: codex-harness-hardening (all slices incl. one high-risk candidate), codex-harness-hardening-1c/-p2/-1d, codex-bypass-per-skill, parallel-scheduler, release-1-3-0. Cumulative immutable diff 0847310..beb75c9 (42 commits).",
+  "included": [
+    {
+      "type": "feature",
+      "id": "codex-harness-hardening"
+    },
+    {
+      "type": "feature",
+      "id": "codex-harness-hardening-1c"
+    },
+    {
+      "type": "feature",
+      "id": "codex-harness-hardening-p2"
+    },
+    {
+      "type": "feature",
+      "id": "codex-harness-hardening-1d"
+    },
+    {
+      "type": "feature",
+      "id": "codex-bypass-per-skill"
+    },
+    {
+      "type": "feature",
+      "id": "parallel-scheduler"
+    },
+    {
+      "type": "feature",
+      "id": "release-1-3-0"
+    }
+  ],
+  "excluded": [
+    {
+      "type": "feature",
+      "id": "worktree-isolation",
+      "reason": "in progress (compounding not closed; live acceptance pending)"
+    },
+    {
+      "type": "feature",
+      "id": "codex-hook-state-parity",
+      "reason": "post-head work; candidate not yet registered, external UAT pending"
+    },
+    {
+      "type": "feature",
+      "id": "codex-sandbox-baseline",
+      "reason": "post-head work; candidate deferred at close"
+    },
+    {
+      "type": "feature",
+      "id": "codex-agent-wait-loop",
+      "reason": "in progress (validating; execution blocked on baseline)"
+    },
+    {
+      "type": "feature",
+      "id": "installer-version-parity-1-3-1",
+      "reason": "in progress (swarming; cells not executed)"
+    },
+    {
+      "type": "feature",
+      "id": "review-on-demand",
+      "reason": "covered by pre-release-0-1-44; staleness delta falls inside this session's range"
+    },
+    {
+      "type": "feature",
+      "id": "chain-integrity",
+      "reason": "covered by pre-release-0-1-44; staleness delta falls inside this session's range"
+    }
+  ],
+  "baseline": "0847310f7f99c13a4a51f6227b4e12227c9471b4",
+  "head": "beb75c933f9d7076b642c16590cfd0373402d6be",
+  "reviewer_manifest": {
+    "reviewers": [
+      {
+        "name": "code-quality",
+        "slot": "review",
+        "model": "opus",
+        "kind": "core"
+      },
+      {
+        "name": "architecture",
+        "slot": "review",
+        "model": "opus",
+        "kind": "core"
+      },
+      {
+        "name": "security",
+        "slot": "review",
+        "model": "opus",
+        "kind": "core"
+      },
+      {
+        "name": "test-coverage",
+        "slot": "review",
+        "model": "opus",
+        "kind": "core"
+      },
+      {
+        "name": "api-contract",
+        "slot": "review",
+        "model": "opus",
+        "kind": "conditional",
+        "trigger": "command-registry/manifest/catalog files in diff"
+      },
+      {
+        "name": "reliability",
+        "slot": "review",
+        "model": "opus",
+        "kind": "conditional",
+        "trigger": "hooks/adapter/worker lifecycle files in diff"
+      }
+    ],
+    "dispatch": "claude-code Agent tool, default agent type, persona inline, isolated context (cumulative diff + feature docs only)",
+    "scope_risk": "high-risk content present (codex-harness-hardening high-risk candidate 423c1a2a)"
+  },
+  "verification_preflight": {
+    "checked_at": "2026-07-16T04:26:24.039Z",
+    "cells_checked": [],
+    "passed": true
+  },
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Store-global cycle refusal blocks unrelated cell writes (contradicts locked D2)",
+      "reviewers": [
+        "api-contract",
+        "architecture"
+      ],
+      "promoted_from": "P2 (independent corroboration)",
+      "autofix_class": "manual",
+      "evidence": "lib/cells.mjs assertNoCycle unioned ALL on-disk cells; reproduced: featureA cycle refused unrelated featureB add",
+      "status": "resolved",
+      "fix_cell": "parallel-scheduler-5",
+      "resolution": "refusal scoped to cycles intersecting incoming ids; regression test added; test_lib 334/0; mirrors byte-identical"
+    },
+    {
+      "severity": "P1",
+      "title": "Operative Codex spawn doc teaches retired API; ORCH-01 census red and unwired in verify",
+      "reviewers": [
+        "architecture",
+        "test-coverage"
+      ],
+      "promoted_from": "P2 (independent corroboration)",
+      "autofix_class": "manual",
+      "evidence": "swarming-reference.md:120,123,125 agent_type/fork_context/re-spawn; census exits 1, absent from commands.verify",
+      "status": "resolved",
+      "fix_cell": "codex-harness-hardening-6",
+      "resolution": "table rewritten to ORCH-01 API; census green and appended to verify (suite #16); projections synced"
+    },
+    {
+      "severity": "P2",
+      "title": "Cycle-refusal guard has cross-session TOCTOU: concurrent sessions can co-commit a cycle",
+      "reviewer": "reliability",
+      "autofix_class": "advisory",
+      "evidence": "assertNoCycle read-check-write without lock; schedule diagnostics remain the durable backstop",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P2",
+      "title": "Runtime dispatcher .bee/bin/bee.mjs has no template-parity guard (PROJ-08 hazard)",
+      "reviewer": "test-coverage",
+      "autofix_class": "gated_auto",
+      "evidence": "test_lib_mirror scopes lib/+hooks only; release_manifest omits .bee/bin/bee.mjs",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": "onboarding.drift_detail is a conditional JSON key",
+      "reviewer": "api-contract",
+      "autofix_class": "advisory",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": "cells.schedule added to manifest without SCHEMA_VERSION bump (additive, defensible)",
+      "reviewer": "api-contract",
+      "autofix_class": "advisory",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": "addCells all-or-nothing comment overpromises across the write phase",
+      "reviewer": "reliability",
+      "autofix_class": "advisory",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": "gate_bypass total lifts high-risk floor incl secret reads (intended, documented, banner+audit)",
+      "reviewer": "security",
+      "autofix_class": "advisory",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": ".codex/config.toml approval_policy=never + gate_bypass total are committed repo-wide",
+      "reviewer": "security",
+      "autofix_class": "advisory",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": "cells schedule --feature mislabels cross-feature deps as unsatisfiable",
+      "reviewer": "code-quality",
+      "autofix_class": "advisory",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": "fsutil.hashFile (utf8) vs release_manifest sha256File (buffer) — two fingerprint conventions",
+      "reviewer": "architecture",
+      "autofix_class": "advisory",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": "status source classifies repo-carried hive; onboarding classifies running launcher (same field name)",
+      "reviewer": "architecture",
+      "autofix_class": "advisory",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "severity": "P3",
+      "title": "New integrity guards not frozen into test_verify_manifest MANDATORY_SUITES",
+      "reviewer": "test-coverage",
+      "autofix_class": "gated_auto",
+      "status": "open",
+      "route": "backlog"
+    },
+    {
+      "kind": "delta-rereview",
+      "severity": "info",
+      "title": "Delta re-review + defect-class sweep: both P1 fixes PASS",
+      "detail": "Fix 1 (cycle scope): filter proven complete — every write-introduced cycle intersects incoming ids; regression test fails on old code; mirrors byte-identical; 334/0. Fix 2 (ORCH-01 doc+census): table matches SPEC exactly; census exit 0; wired as verify suite #16; 3 copies identical. Class-1 sweep (overly-global write guards): clean. Class-2 sweep (dormant enforcement artifacts): one pre-existing item — test_bee_write_guard_hook.mjs unwired (filed P3).",
+      "status": "closed"
+    },
+    {
+      "severity": "P3",
+      "title": "test_bee_write_guard_hook.mjs is dormant — end-to-end hook integration test not wired into verify",
+      "reviewer": "delta-rereview sweep",
+      "autofix_class": "gated_auto",
+      "evidence": "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs absent from commands.verify and not imported by any suite; pre-existing, not a regression of this session",
+      "status": "open",
+      "route": "backlog"
+    }
+  ],
+  "uat": [
+    {
+      "kind": "uat",
+      "items": "all SEE/CALL/RUN decisions across the 7 features in scope",
+      "outcome": "skip",
+      "reason": "gate_bypass=total (zero stops) set by the owner — no human checkpoint remains; runtime deliverables machine-verified instead (16-suite verify green, artifact scan EXISTS+SUBSTANTIVE+WIRED). User may run any UAT item on demand; skip is recorded here and in the decisions log."
+    }
+  ],
+  "decision": {
+    "status": "approved",
+    "gate4": "auto-approved merge (gate_bypass=total)",
+    "p1_open": 0,
+    "p1_fixed": 2,
+    "p2_backlogged": 2,
+    "p3_backlogged": 12,
+    "note": "Both promoted P1s fixed in-session (parallel-scheduler-5, codex-harness-hardening-6), delta re-review PASS, defect-class sweeps clean; full 16-suite verify green after fixes. UAT items skipped under total autopilot with recorded reason."
+  },
+  "created_at": "2026-07-16T04:26:24.039Z",
+  "updated_at": "2026-07-16T04:49:35.240Z"
+}
