@@ -1,0 +1,59 @@
+{
+  "id": "perf-log-3",
+  "feature": "perf-log",
+  "title": "mirror lib+dispatcher into .bee/bin + distribution trees, regen manifest, full verify",
+  "lane": "standard",
+  "behavior_change": true,
+  "depends_on": [
+    "perf-log-2"
+  ],
+  "files": [
+    ".bee/bin/lib/perf.mjs",
+    ".bee/bin/bee.mjs",
+    ".bee/bin/lib/command-registry.mjs"
+  ],
+  "read_first": [
+    "docs/history/perf-log/plan.md",
+    "scripts/test_lib_mirror.mjs",
+    "scripts/release_manifest.mjs"
+  ],
+  "action": "Propagate the source-of-truth changes into every mirror so all standing guards go green. (1) Copy skills/bee-hive/templates/lib/perf.mjs -> .bee/bin/lib/perf.mjs byte-identical, and copy the edited skills/bee-hive/templates/bee.mjs + lib/command-registry.mjs -> .bee/bin/ byte-identical (satisfy scripts/test_lib_mirror.mjs which auto-derives the lib file list). (2) Re-sync the plugin-distribution copies under .claude/skills/bee-hive/templates/ and .agents/skills/bee-hive/templates/ (bee.mjs + lib/perf.mjs + lib/command-registry.mjs + tests) so distribution parity holds (governed by skills/bee-hive/scripts/test_plugin_distribution.mjs). (3) Run node scripts/release_manifest.mjs --write to regenerate the manifest (a new lib file makes --check red until regenerated — critical-patterns 20260715), then --check to confirm green. (4) Run the full recorded verify command and confirm every suite green; record its output as cap evidence.",
+  "must_haves": {
+    "truths": [
+      "templates/lib and .bee/bin/lib byte-identical (test_lib_mirror.mjs green).",
+      "bee.mjs identical across templates/, .bee/bin/, .claude/skills, .agents/skills.",
+      "release_manifest.mjs --check green after --write.",
+      "The full recorded verify command passes end-to-end."
+    ],
+    "artifacts": [
+      "byte-identical .bee/bin/lib/perf.mjs + .bee/bin/bee.mjs + .bee/bin/lib/command-registry.mjs",
+      "re-synced .claude/skills + .agents/skills distribution copies",
+      "regenerated release manifest"
+    ],
+    "key_links": [
+      "docs/history/learnings/critical-patterns.md 20260715 manifest rule"
+    ],
+    "prohibitions": [
+      "Do NOT change behavior here — pure propagation + regen only.",
+      "Cap requires the FULL verify output as evidence, not an assertion."
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node skills/bee-hive/scripts/test_plugin_distribution.mjs && node scripts/test_portable_paths.mjs && node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_verify_manifest.mjs && node scripts/test_release_tuple.mjs && node scripts/test_lib_mirror.mjs && node skills/bee-hive/scripts/test_split_brain_regression.mjs && node scripts/release_manifest.mjs --selftest && node scripts/release_manifest.mjs --check && node scripts/test_gate_bypass_doctrine.mjs && node scripts/census_stale_spawn_syntax.mjs && node scripts/test_installers_e2e.mjs --installer bash",
+  "status": "open",
+  "deps": [
+    "perf-log-2"
+  ],
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}
