@@ -3,6 +3,39 @@
 Mandatory pre-planning / pre-execution context for this repository.
 bee-compounding appends hard-won patterns here; keep it short and current.
 
+## [20260716] A tolerant regression net, frozen green BEFORE the edit, is what makes a load-bearing function safe to change
+**Category:** process
+**Feature:** worktree-feature-parallelism
+**Tags:** [test-first, regression-net, resolver, blast-radius, additive-change]
+
+`resolveRoots` (two copies: throwing lib + non-throwing hook adapter) is the highest-blast-radius
+function in the repo — every write-guard call resolves through it, and a logic bug that DENIES can
+lock the session out of its own fix. It was changed safely by writing a P40 byte-for-byte
+regression test FIRST, running it GREEN against the unmodified code, THEN making the edit purely
+additive (compute `mainRoot`, consult the grant registry, add `{id,mainRoot,worktreeRoot}` fields;
+the no-grant path returns exactly today's `storeRoot`). The net stayed 6/6 green after — that is
+the proof of no regression, not an assertion. **Two rules:** (1) freeze a load-bearing function's
+current behavior in a regression net and see it green before you touch it; (2) make the net
+**tolerant of NEW fields** (pin the fields that exist, never assert the absence of others) so an
+additive change stays compatible — a strict deep-equal net would have failed on the harmless new
+fields and taught you nothing about real regressions.
+
+## [20260716] Realize a structural model via git config, not a file migration, when the boundaries already exist
+**Category:** pattern
+**Feature:** worktree-feature-parallelism
+**Tags:** [tiering, gitignore, gitattributes, no-migration]
+
+The "three-tier `.bee/` store" (log / cache / runtime) sounded like a directory restructure, but
+beegog's flat store already had the boundaries: logs tracked, cache/runtime gitignored. The tiers
+were realized as a LOGICAL classification — `.gitattributes merge=union` on the tracked log jsonl
+(so worktree branches union-merge provenance) plus gitignore entries for the runtime/cache dirs —
+moving zero files. Before migrating a layout to match a model, check whether the model is already
+expressible as config over the existing layout. Corollary (list-rot, AGAIN): the onboarding
+gitignore block has a hand-kept twin in `test_onboard_bee` (an independent sha256 reconstruction);
+adding one pattern to the source silently reddened the test until the twin was updated — the same
+"hardcoded fixture list rots" failure from 20260714/20260715, third recurrence. Derive the twin
+from the source, or expect to update both every time.
+
 ## [20260715] The bill is turns × prefix: keep the prefix immutable, warm, and lean
 **Category:** pattern
 **Feature:** session-economics
