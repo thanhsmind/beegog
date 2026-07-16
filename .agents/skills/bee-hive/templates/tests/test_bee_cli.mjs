@@ -99,6 +99,14 @@ writeState(root, {
   approved_gates: { context: true, shape: true, execution: true, review: false },
 });
 
+// perf group: redirect the global perf log and the Claude transcript root into
+// the temp repo so perf examples never touch the real ~/.config/beehive or
+// ~/.claude. runModuleWorker inherits process.env by default, so these reach
+// the dispatched worker. With no transcript under the fake CLAUDE_CONFIG_DIR,
+// perf resolves an empty window and degrades to zeroed metrics (never throws).
+process.env.BEEHIVE_PERF_DIR = path.join(root, 'perf-global');
+process.env.CLAUDE_CONFIG_DIR = path.join(root, 'fake-claude');
+
 const executedNames = new Set();
 
 /** Run the executable-th (default 0) example of a registry entry inside `root`.
@@ -159,12 +167,12 @@ await check('every registry entry\'s parameters is valid JSON-Schema (D3 shape: 
   }
 });
 
-await check('registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*, state.*, backlog.*, capture.*, reviews.*, feedback.*)', async () => {
+await check('registry names are unique and dot-namespaced by group (status, cells.*, reservations.*, decisions.*, state.*, backlog.*, capture.*, reviews.*, feedback.*, perf.*)', async () => {
   const names = COMMAND_REGISTRY.map((e) => e.name);
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -195,7 +203,7 @@ await check('registry covers every subcommand of the 4 existing helpers', async 
 // prepended, exactly what each shim used to do internally, so the observed
 // "Unknown command" contract line is unchanged.
 
-const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback'];
+const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf'];
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
 // bee.mjs's own `cells update` verb separately emits an unrelated
@@ -266,8 +274,8 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
   }
 });
 
-await check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback', async () => {
-  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback']);
+await check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf', async () => {
+  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
     assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback`);
@@ -1086,6 +1094,36 @@ await check('feedback.collect example runs through the real dispatcher', async (
 await check('feedback.rank example runs through the real dispatcher', async () => {
   const result = await assertExampleOk('feedback.rank', { cwd: rootReviewsFeedback });
   assert(Array.isArray(JSON.parse(result.stdout)), `expected a ranked cluster array, got ${result.stdout}`);
+});
+
+// ─── perf group examples (global perf log; env redirected to the temp repo) ─
+// start must run before stop (stop reads the marker start writes). All five run
+// against a transcript-less window (fake CLAUDE_CONFIG_DIR) and must still exit 0.
+await check('perf.start example writes an open-section marker and exits 0', async () => {
+  const result = await assertExampleOk('perf.start');
+  const marker = JSON.parse(fs.readFileSync(path.join(root, '.bee', 'perf-open.json'), 'utf8'));
+  assert(marker.started_at, 'marker records a start time');
+  assert(result.status === 0, 'perf start exits 0');
+});
+await check('perf.stop example closes the section, appends to the global log, clears the marker', async () => {
+  const result = await assertExampleOk('perf.stop');
+  const rec = JSON.parse(result.stdout);
+  assert(rec.schema === 'bee-perf/v1', `section schema tag, got ${result.stdout}`);
+  assert(!fs.existsSync(path.join(root, '.bee', 'perf-open.json')), 'marker cleared after stop');
+  const log = fs.readFileSync(path.join(root, 'perf-global', 'performance.jsonl'), 'utf8').trim();
+  assert(log.split('\n').length >= 1, 'section appended to the global log');
+});
+await check('perf.section one-shot example computes + appends and exits 0', async () => {
+  const result = await assertExampleOk('perf.section');
+  assert(JSON.parse(result.stdout).schema === 'bee-perf/v1', 'one-shot section logged');
+});
+await check('perf.log example reads sections back and exits 0', async () => {
+  const result = await assertExampleOk('perf.log');
+  assert(Array.isArray(JSON.parse(result.stdout)), 'perf log --json returns an array');
+});
+await check('perf.render example emits Markdown and exits 0', async () => {
+  const result = await assertExampleOk('perf.render');
+  assert(/bee performance log/.test(result.stdout), 'render emits the report heading');
 });
 
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {

@@ -1072,4 +1072,93 @@ export const COMMAND_REGISTRY = [
     examples: ['bee feedback rank --json'],
     deprecated: null,
   },
+
+  // ─── perf (lib/perf.mjs) — global cross-project performance log ───────────
+  // Each section summarizes a piece of work: models used, per-model tokens
+  // (new/cached/total), whether parallel, and running time (active, not idle).
+  // The store is ~/.config/beehive/performance.jsonl (XDG-aware; BEEHIVE_PERF_DIR
+  // override), shared across every project. Metrics are recovered from the
+  // Claude Code session transcript on disk.
+  {
+    name: 'perf.start',
+    invoke: 'bee perf start',
+    description:
+      'Open a named performance section: record the resolved session transcript + start time in .bee/perf-open.json so `perf stop` measures the same window.',
+    parameters: {
+      type: 'object',
+      properties: {
+        label: { type: 'string', description: 'A short name for the piece of work this section covers.' },
+        session: { type: 'string', description: 'Explicit Claude Code session id; default is the newest-mtime transcript for this project.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee perf start --label demo --json'],
+    deprecated: null,
+  },
+  {
+    name: 'perf.stop',
+    invoke: 'bee perf stop',
+    description:
+      'Close the open section: slice the recorded transcript window, aggregate per-model tokens + parallelism + running time, append the section to the global log, and clear the marker.',
+    parameters: {
+      type: 'object',
+      properties: {
+        note: { type: 'string', description: 'An optional summary note stored on the section.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee perf stop --json'],
+    deprecated: null,
+  },
+  {
+    name: 'perf.section',
+    invoke: 'bee perf section',
+    description:
+      'One-shot section over a trailing window (no prior start): compute + append a section covering everything since --since (e.g. 30m, 2h, 1d, or an ISO time).',
+    parameters: {
+      type: 'object',
+      properties: {
+        since: { type: 'string', description: 'Window start: a duration like 30m/2h/1d, or an ISO timestamp.' },
+        label: { type: 'string', description: 'A short name for this section.' },
+        note: { type: 'string', description: 'An optional summary note.' },
+        session: { type: 'string', description: 'Explicit session id; default newest-mtime transcript for this project.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee perf section --since 1h --label demo --json'],
+    deprecated: null,
+  },
+  {
+    name: 'perf.log',
+    invoke: 'bee perf log',
+    description: 'Read recent sections from the global performance log (one line each, most recent last).',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'string', description: 'Show only the most recent N sections.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of one-line summaries.' },
+      },
+      required: [],
+    },
+    examples: ['bee perf log --json'],
+    deprecated: null,
+  },
+  {
+    name: 'perf.render',
+    invoke: 'bee perf render',
+    description: 'Render the global performance log as a Markdown report.',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'string', description: 'Render only the most recent N sections.' },
+        json: { type: 'boolean', description: 'Emit the underlying sections as JSON instead of Markdown.' },
+      },
+      required: [],
+    },
+    examples: ['bee perf render'],
+    deprecated: null,
+  },
 ];

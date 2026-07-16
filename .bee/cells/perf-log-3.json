@@ -39,21 +39,39 @@
     ]
   },
   "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node skills/bee-hive/scripts/test_plugin_distribution.mjs && node scripts/test_portable_paths.mjs && node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_verify_manifest.mjs && node scripts/test_release_tuple.mjs && node scripts/test_lib_mirror.mjs && node skills/bee-hive/scripts/test_split_brain_regression.mjs && node scripts/release_manifest.mjs --selftest && node scripts/release_manifest.mjs --check && node scripts/test_gate_bypass_doctrine.mjs && node scripts/census_stale_spawn_syntax.mjs && node scripts/test_installers_e2e.mjs --installer bash",
-  "status": "open",
+  "status": "capped",
   "deps": [
     "perf-log-2"
   ],
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "orchestrator",
+    "outcome": "Mirrored perf.mjs+bee.mjs+command-registry into .bee/bin + .claude + .agents (byte-identical), regenerated release manifest (139 files), full 17-suite recorded verify GREEN",
+    "files_changed": [
+      ".bee/bin/bee.mjs",
+      ".bee/bin/lib/perf.mjs",
+      ".bee/bin/lib/command-registry.mjs",
+      ".claude/skills/bee-hive/templates/bee.mjs",
+      ".claude/skills/bee-hive/templates/lib/perf.mjs",
+      ".claude/skills/bee-hive/templates/lib/command-registry.mjs",
+      ".claude/skills/bee-hive/templates/tests/test_perf.mjs",
+      ".claude/skills/bee-hive/templates/tests/test_bee_cli.mjs",
+      ".agents/skills/bee-hive/templates/bee.mjs",
+      ".agents/skills/bee-hive/templates/lib/perf.mjs",
+      ".agents/skills/bee-hive/templates/lib/command-registry.mjs",
+      ".agents/skills/bee-hive/templates/tests/test_perf.mjs",
+      ".agents/skills/bee-hive/templates/tests/test_bee_cli.mjs",
+      "docs/history/codex-harness-hardening/release-manifest.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null
+    "capped_at": "2026-07-16T09:05:51.700Z",
+    "behavior_change": true,
+    "verification_evidence": "{ \"deliberate_exceptions\": [\"Propagation-only cell: the perf behavior was delivered and characterized in perf-log-1/2 (test_perf 19/0, test_bee_cli 137/0, real-transcript run). This cell mirrors the already-tested files into the runtime + distribution trees and regenerates the manifest; proof of correctness = the full 17-suite recorded verify exiting 0 with mirror byte-identity and manifest --check green.\"] }\n",
+    "verify_output": "test_lib_mirror: templates/lib and .bee/bin/lib byte-identical (18 files); release_manifest --check: 139 files match stored manifest; test_bee_cli: 137 passed, 0 failed; test_hook_contracts: 148 rows 0 failing; gate-bypass doctrine 0 failures; census clean; test_installers_e2e (bash): 16 passed, 0 failed; FULL VERIFY EXIT 0",
+    "verify_passed": true,
+    "claimed_at": "2026-07-16T09:03:54.371Z",
+    "verify_command": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node skills/bee-hive/scripts/test_plugin_distribution.mjs && node scripts/test_portable_paths.mjs && node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_verify_manifest.mjs && node scripts/test_release_tuple.mjs && node scripts/test_lib_mirror.mjs && node skills/bee-hive/scripts/test_split_brain_regression.mjs && node scripts/release_manifest.mjs --selftest && node scripts/release_manifest.mjs --check && node scripts/test_gate_bypass_doctrine.mjs && node scripts/census_stale_spawn_syntax.mjs && node scripts/test_installers_e2e.mjs --installer bash",
+    "verified_at": "2026-07-16T09:05:51.650Z"
   }
 }
