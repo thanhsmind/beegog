@@ -408,7 +408,7 @@
     },
     {
       "path": "skills/bee-exploring/CREATION-LOG.md",
-      "sha256": "04a72550db899ec987a576221cf41d17b27fe163505af991ec0a1f7a283c56fd",
+      "sha256": "682b3f0d2e0056ad7686ef006cff0cb874f143a145f1fc4a68b8dbbb256d62b2",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-exploring/CREATION-LOG.md"
@@ -429,7 +429,7 @@
     },
     {
       "path": "skills/bee-exploring/SKILL.md",
-      "sha256": "1eca880919504ba959dccd8ec53a8c95727148ce8637b9ac9f0f77078e4f9217",
+      "sha256": "69d48da7c7d66ccfd53e0949e122bbeb938961746da42f0aacbe273a0287e153",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-exploring/SKILL.md"

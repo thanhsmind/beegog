@@ -16,7 +16,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 
 ## Hard Gates
 
-- Ask **one question per message**; wait for the user before asking the next.
+- **Batch independent questions into one message; serialize only dependent ones** (mechanics in step 4). *Independent* = its answer changes the framing of, and makes redundant, no other pending question — ask all of a phase's independent survivors in ONE `AskUserQuestion` message (the tool takes up to 4). *Dependent/branching* = its wording or its very existence hinges on another question's answer — ask it alone, only after that answer lands. Never blind-bundle: a question a prior answer could moot is dependent, not independent, and never rides in the batch.
 - Do not answer your own question — even when you are sure of the answer.
 - Do not research implementation, propose architecture, create cells, or write code — the sole exception is a throwaway SEE mock under `.bee/spikes/<feature>/mocks/` (P11, decision 0020; step 4).
 - Do not invoke planning yourself. End by handing the user to `bee-planning`.
@@ -48,10 +48,11 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
      ```
    - Cite the existing patterns you found in your questions ("today, exports go through `src/report/csv.ts` — should this follow that?").
    - Exclude implementation choices, performance tuning, and new scope. If a candidate question only matters to the implementer, it belongs to planning, not here.
+   - **Pre-classify for batching (the delegated pre-pass produces this — Hard Gates §Delegation bullet):** tag each candidate question *independent* or *dependent*, and for every dependent one name the question + answer it hinges on (the dependency edge). This slate — questions + tags + edges — is the input to step 4's batching; producing it inside the step-3 worker means the interactive phase opens already holding the whole plan instead of composing each question inline, one round-trip at a time.
 
 4. **Socratic Locking**
-   - One concise question per message, preferably single-choice, **outcome-framed** ("what breaks for users if…"), using the standard CONTEXT / QUESTION / RECOMMENDATION / options format.
-   - Start broad, then narrow into constraints.
+   - **Ask in the fewest rounds the dependencies allow.** After the materiality test and the gate-bypass split (below) have removed every question that should not be asked, read the step-3 slate's independent/dependent tags and: put ALL surviving *independent* questions of a phase into ONE `AskUserQuestion` message (up to 4); ask each *dependent* question alone, in its own message, only after the answer it hinges on lands — where it is often dropped outright once that answer arrives (materiality). Batching changes the number of rounds, never the quality of a question: each stays concise, single-choice where possible, **outcome-framed** ("what breaks for users if…"), CONTEXT / QUESTION / RECOMMENDATION / options format.
+   - Start broad, then narrow: the broad questions are the ones others depend on, so they lead — the independent batch first, then the dependents it gates.
    - **Materiality test (P20):** every candidate question passes three checks before it is asked — **material** (the answer changes scope, architecture, UX, data model, or acceptance criteria), **grounded** (cites scout evidence or a concrete uncertainty, never generic preference), **answerable** (the user can pick an option, approve a default, or supply a reference). A failing question is never asked: pin it as a labeled assumption for Context Assembly to write into CONTEXT.md, or hand it to planning if only the implementer cares about the answer.
    - **Gate-bypass refinement — information vs approval (decisions 0010/dcf01d7b/a93994d3).** Read the active level (`gate_bypass_level`). Under `full`/`total`, split every candidate question in two: an **approval** question — one where the agent already has a confident best answer and the user would only rubber-stamp it — is **NOT asked**; lock it from that recommendation (record it as a decision with its D-ID) and move on. Only an **information** question — one whose answer the agent genuinely cannot determine from evidence with a confident default, because it turns on a preference or knowledge only the user holds — is still asked, even under `total`. The litmus is one line: *"do I already have a confident best answer?"* — yes → proceed with it; no, and only the user can supply it → ask. This never gags a real information need (the user explicitly wants to still be asked for those); it only stops the agent asking merely to be approved. Under `off`/`normal`, ask per the materiality test as usual.
    - **Blindspot pass — teach before asking (P9, decision 0020):** when the user signals unfamiliarity with a gray area's domain — says so, answers with guesses ("chắc là…"), or asks what the options mean — invert for that area: explain the 2–3 concepts needed to answer well (one short outcome-framed message, no jargon), *then* ask. A decision locked from a guessed answer is a fake decision. The user can also request a full "blindspot pass" by name: sweep the unknown-unknowns (what good looks like, common potholes, prior art in this repo) before locking begins.
@@ -83,7 +84,8 @@ With `mode:headless`: no Socratic dialogue. Lock only decisions the request stat
 
 ## Red Flags
 
-- bundled questions, or a question answered by the asker
+- **blind-bundling** — batching a dependent question a prior answer could moot, or dumping unclassified questions together (independent questions SHOULD batch; dependent ones must not); or a question answered by the asker
+- serializing *independent* questions into separate one-per-message rounds when a single batched message would do
 - a question asked that fails the materiality test — immaterial, ungrounded, or unanswerable
 - deep implementation analysis or architecture proposals during exploring
 - creating cells or writing code (except a `.bee/spikes/<feature>/mocks/` SEE mock per decision 0020)
