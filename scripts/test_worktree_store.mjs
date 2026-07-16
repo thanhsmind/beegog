@@ -6,7 +6,15 @@
 // throwaway spike .bee/spikes/worktree-feature-parallelism/seam-proof.mjs
 // (5/5 passed), now against the real module.
 
-import { decideWorktreeStore, readGrants, replayLog } from "../.bee/bin/lib/worktree-store.mjs";
+import {
+  decideWorktreeStore,
+  readGrants,
+  replayLog,
+  writeGrant,
+  removeGrant,
+  listGrants,
+  bootstrapWorktreeStore,
+} from "../.bee/bin/lib/worktree-store.mjs";
 
 import fs from "node:fs";
 import os from "node:os";
@@ -275,6 +283,157 @@ function tmpDir(prefix) {
   replayLog(events);
   const after = JSON.stringify(events);
   record("replayLog: does not mutate its input array", before === after, `${before} vs ${after}`);
+}
+
+// ---------------------------------------------------------------------------
+// writeGrant / removeGrant / listGrants (Slice A: CLI-usable write side)
+// ---------------------------------------------------------------------------
+
+{
+  const dir = tmpDir("worktree-store-write-grant-");
+  try {
+    const next = writeGrant(dir, "id-a");
+    const ok = next["id-a"] === true && JSON.stringify(readGrants(dir)) === JSON.stringify(next);
+    record("writeGrant: creates the runtime dir + grants file when absent", ok, JSON.stringify(next));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = tmpDir("worktree-store-write-grant-merge-");
+  try {
+    writeGrant(dir, "id-a");
+    const next = writeGrant(dir, "id-b");
+    const ok = next["id-a"] === true && next["id-b"] === true && Object.keys(next).length === 2;
+    record("writeGrant: merges into existing entries, never drops prior grants", ok, JSON.stringify(next));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = tmpDir("worktree-store-remove-grant-");
+  try {
+    writeGrant(dir, "id-a");
+    writeGrant(dir, "id-b");
+    const next = removeGrant(dir, "id-a");
+    const ok = !("id-a" in next) && next["id-b"] === true && !("id-a" in readGrants(dir));
+    record("removeGrant: deletes only the named id, preserves the rest", ok, JSON.stringify(next));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = tmpDir("worktree-store-remove-grant-missing-");
+  try {
+    const before = readGrants(dir);
+    const after = removeGrant(dir, "never-granted");
+    const ok = JSON.stringify(before) === "{}" && JSON.stringify(after) === "{}";
+    record("removeGrant: no-op (never throws) when the id/file does not exist", ok, JSON.stringify(after));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = tmpDir("worktree-store-list-grants-");
+  try {
+    writeGrant(dir, "id-a");
+    const ok = JSON.stringify(listGrants(dir)) === JSON.stringify(readGrants(dir));
+    record("listGrants: matches readGrants (thin named alias, no second read implementation)", ok, JSON.stringify(listGrants(dir)));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// bootstrapWorktreeStore
+// ---------------------------------------------------------------------------
+
+{
+  const tmpRoot = tmpDir("worktree-store-bootstrap-");
+  try {
+    const worktreeRoot = path.join(tmpRoot, "wt");
+    const mainStoreRoot = path.join(tmpRoot, "main", ".bee");
+    fs.mkdirSync(worktreeRoot, { recursive: true });
+    fs.mkdirSync(mainStoreRoot, { recursive: true });
+    fs.writeFileSync(path.join(mainStoreRoot, "onboarding.json"), JSON.stringify({ schema_version: "1.0" }));
+    fs.writeFileSync(path.join(mainStoreRoot, "config.json"), JSON.stringify({ commands: {} }));
+
+    const result = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, "my-feature");
+    const stateFile = path.join(worktreeRoot, ".bee", "state.json");
+    const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    const ok =
+      result.created === true &&
+      state.feature === "my-feature" &&
+      state.phase === "idle" &&
+      state.approved_gates.context === false &&
+      state.approved_gates.shape === false &&
+      state.approved_gates.execution === false &&
+      state.approved_gates.review === false &&
+      fs.existsSync(path.join(worktreeRoot, ".bee", "onboarding.json")) &&
+      fs.existsSync(path.join(worktreeRoot, ".bee", "config.json"));
+    record(
+      "bootstrapWorktreeStore: writes a fresh idle/all-gates-false state.json and copies onboarding.json/config.json from main",
+      ok,
+      JSON.stringify({ result, state }),
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+{
+  const tmpRoot = tmpDir("worktree-store-bootstrap-idempotent-");
+  try {
+    const worktreeRoot = path.join(tmpRoot, "wt");
+    const mainStoreRoot = path.join(tmpRoot, "main", ".bee");
+    fs.mkdirSync(worktreeRoot, { recursive: true });
+    fs.mkdirSync(mainStoreRoot, { recursive: true });
+
+    bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, "first-feature");
+    const stateFile = path.join(worktreeRoot, ".bee", "state.json");
+    fs.writeFileSync(stateFile, JSON.stringify({ sentinel: "do-not-clobber", phase: "swarming" }));
+
+    const second = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, "second-feature");
+    const afterState = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    const ok = second.created === false && afterState.sentinel === "do-not-clobber" && afterState.phase === "swarming";
+    record(
+      "bootstrapWorktreeStore: idempotent — re-running with an existing state.json never overwrites it",
+      ok,
+      JSON.stringify({ second, afterState }),
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+{
+  const tmpRoot = tmpDir("worktree-store-bootstrap-no-main-files-");
+  try {
+    const worktreeRoot = path.join(tmpRoot, "wt");
+    const mainStoreRoot = path.join(tmpRoot, "main", ".bee");
+    fs.mkdirSync(worktreeRoot, { recursive: true });
+    fs.mkdirSync(mainStoreRoot, { recursive: true }); // no onboarding.json/config.json on the main side
+
+    const result = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, null);
+    const state = JSON.parse(fs.readFileSync(path.join(worktreeRoot, ".bee", "state.json"), "utf8"));
+    const ok =
+      result.created === true &&
+      result.onboarding.copied === false &&
+      result.config.copied === false &&
+      state.feature === null &&
+      !fs.existsSync(path.join(worktreeRoot, ".bee", "onboarding.json"));
+    record(
+      "bootstrapWorktreeStore: missing main onboarding.json/config.json degrades to copied:false, never throws; null feature is preserved",
+      ok,
+      JSON.stringify({ result, state }),
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
 }
 
 // ---------------------------------------------------------------------------

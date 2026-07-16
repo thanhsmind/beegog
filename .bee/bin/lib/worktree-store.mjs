@@ -147,3 +147,125 @@ export function replayLog(events) {
   for (const id of ids) state[id] = map.get(id);
   return state;
 }
+
+// ---------------------------------------------------------------------------
+// writeGrant / removeGrant / listGrants — MAIN store grant registry mutators
+// (worktree-feature-parallelism Slice A: the wire-in above is read-only —
+// nothing before this point could ever put a `true` into the registry.
+// These are the write-side companion to readGrants: readGrants itself is
+// left completely untouched, still the fail-open, read-only primitive
+// resolveRoots depends on).
+// ---------------------------------------------------------------------------
+
+function grantsFile(mainStoreRoot) {
+  return path.join(mainStoreRoot, 'runtime', 'worktree-grants.json');
+}
+
+function writeGrantsFileAtomic(mainStoreRoot, grants) {
+  const file = grantsFile(mainStoreRoot);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(grants, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+/**
+ * Merges `{ [id]: true }` into <mainStoreRoot>/runtime/worktree-grants.json,
+ * preserving every other entry already on disk. Creates the runtime/ dir and
+ * the grants file if either is missing. Atomic write (tmp file + rename),
+ * the same pattern fsutil.mjs's writeJsonAtomic uses (not imported directly,
+ * to keep this module's zero-deps-beyond-node-builtins contract intact).
+ */
+export function writeGrant(mainStoreRoot, id) {
+  const next = { ...readGrants(mainStoreRoot), [id]: true };
+  writeGrantsFileAtomic(mainStoreRoot, next);
+  return next;
+}
+
+/**
+ * Deletes `id` from the MAIN store's grant registry. A no-op (returns the
+ * registry unchanged, no write) when `id` was never present or the file
+ * does not exist yet.
+ */
+export function removeGrant(mainStoreRoot, id) {
+  const existing = readGrants(mainStoreRoot);
+  if (!(id in existing)) return existing;
+  const next = { ...existing };
+  delete next[id];
+  writeGrantsFileAtomic(mainStoreRoot, next);
+  return next;
+}
+
+/**
+ * Returns the MAIN store's grant registry object. A thin named alias over
+ * readGrants for the `bee worktree list` CLI surface — deliberately not a
+ * second read implementation.
+ */
+export function listGrants(mainStoreRoot) {
+  return readGrants(mainStoreRoot);
+}
+
+// ---------------------------------------------------------------------------
+// bootstrapWorktreeStore — set up a newly granted worktree's OWN .bee/ so
+// bee actually works there (Slice A: the resolver has honored a granted
+// worktree's local store since the wire-in slice, but until this function
+// existed nothing ever populated that local store, so a granted worktree
+// resolved to a store that was simply empty).
+// ---------------------------------------------------------------------------
+
+// Mirrors state.mjs's defaultState() schema/gate shape exactly. NOT imported
+// from state.mjs: state.mjs imports readGrants FROM this module, so an
+// import the other way would be a cycle. Kept as a literal here on purpose.
+const FRESH_STATE_SCHEMA_VERSION = '1.0';
+
+/**
+ * Creates <worktreeRoot>/.bee/ if missing, copies onboarding.json and
+ * config.json from the MAIN store when present (copy-if-absent, never
+ * overwrite — a worktree has no installer of its own to produce them), and
+ * writes a FRESH state.json for the worktree: `feature` set, `phase: 'idle'`,
+ * every gate false. An independent-feature worktree runs its OWN lifecycle —
+ * main's live phase/gates/workers/log are deliberately NOT copied, so a
+ * worktree can never inherit a gate approval it never earned locally.
+ *
+ * Idempotent: if <worktreeRoot>/.bee/state.json already exists, this call
+ * does NOT overwrite it — re-running bootstrap must never clobber real
+ * in-progress worktree state. onboarding.json/config.json follow the same
+ * copy-if-absent rule independently of state.json's presence.
+ */
+export function bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature) {
+  const worktreeStoreRoot = path.join(worktreeRoot, '.bee');
+  fs.mkdirSync(worktreeStoreRoot, { recursive: true });
+
+  const copyIfAbsent = (name) => {
+    const dest = path.join(worktreeStoreRoot, name);
+    if (fs.existsSync(dest)) return { copied: false, reason: `${name} already exists` };
+    const src = path.join(mainStoreRoot, name);
+    if (!fs.existsSync(src)) return { copied: false, reason: `main store has no ${name}` };
+    fs.copyFileSync(src, dest);
+    return { copied: true };
+  };
+
+  const onboarding = copyIfAbsent('onboarding.json');
+  const config = copyIfAbsent('config.json');
+
+  const stateFile = path.join(worktreeStoreRoot, 'state.json');
+  if (fs.existsSync(stateFile)) {
+    return { created: false, reason: 'state.json already exists', worktreeStoreRoot, onboarding, config };
+  }
+
+  const freshState = {
+    schema_version: FRESH_STATE_SCHEMA_VERSION,
+    phase: 'idle',
+    feature: feature ?? null,
+    mode: null,
+    approved_gates: { context: false, shape: false, execution: false, review: false },
+    workers: [],
+    summary: '',
+    next_action: 'Invoke bee-hive.',
+  };
+  const tmp = `${stateFile}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(freshState, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmp, stateFile);
+
+  return { created: true, worktreeStoreRoot, onboarding, config, state: freshState };
+}

@@ -1194,4 +1194,55 @@ export const COMMAND_REGISTRY = [
     examples: ['bee perf sync --json'],
     deprecated: null,
   },
+
+  // ─── worktree (worktree-feature-parallelism Slice A) — register/list/
+  // unregister a linked git worktree's opt-in per-worktree `.bee` store, and
+  // bootstrap the granted worktree's own store so bee actually works there.
+  // The resolver has honored `<main>/.bee/runtime/worktree-grants.json`
+  // since the wire-in slice; this group is what lets a human populate it. ──
+  {
+    name: 'worktree.register',
+    invoke: 'bee worktree register',
+    description:
+      "Grant the CURRENT linked git worktree its own local .bee store (writes its id into the MAIN checkout's runtime/worktree-grants.json) and bootstrap that worktree's .bee/: copies onboarding.json/config.json from the main store if present, and writes a FRESH state.json (phase idle, every gate unapproved, feature set) so the worktree runs its own independent lifecycle. Must be run from inside a linked worktree created with `git worktree add`; fails with a typed error from an ordinary checkout or an invalid/broken worktree link. Idempotent: re-running never overwrites an existing worktree state.json.",
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Feature slug the worktree will run (stamped into its bootstrapped state.json).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a short confirmation report.' },
+      },
+      required: ['feature'],
+    },
+    examples: ['bee worktree register --feature demo-feature --json'],
+    deprecated: null,
+  },
+  {
+    name: 'worktree.list',
+    invoke: 'bee worktree list',
+    description: "List the MAIN store's worktree grant registry (which worktree ids currently have their own local .bee store).",
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line-per-grant summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee worktree list --json'],
+    deprecated: null,
+  },
+  {
+    name: 'worktree.unregister',
+    invoke: 'bee worktree unregister',
+    description: "Remove a worktree's grant from the MAIN store's registry, so the resolver falls back to the main store (P40 default) for that id. Defaults to the CURRENT linked worktree's own id when --id is omitted.",
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Worktree id to revoke. Omit to use the current directory\'s own linked-worktree id.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee worktree unregister --id abc123 --json'],
+    deprecated: null,
+  },
 ];
