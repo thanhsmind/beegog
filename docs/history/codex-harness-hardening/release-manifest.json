@@ -93,7 +93,7 @@
     },
     {
       "path": ".bee/bin/lib/state.mjs",
-      "sha256": "ea6152e44f3f4eab454456f423e0f0f9adc584644c144b30f54d910d5fc8d3ae",
+      "sha256": "578f23495c0035aa2f89667c78769acbf6004e27e4f90f89a381369d23d90d73",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -112,14 +112,14 @@
     },
     {
       "path": ".claude-plugin/plugin.json",
-      "sha256": "ecb2e765775610c1ef9dfc8d751bffe58641d1d9ba6c9cfec65ade45565e7acc",
+      "sha256": "e7dbebdb9ff6ee12912085d5d4c336b30ae1df10a8b632b94eedeeb79fff19c7",
       "mode": "644",
       "role": "plugin_manifest",
       "packagePath": ".claude-plugin/plugin.json"
     },
     {
       "path": ".codex-plugin/plugin.json",
-      "sha256": "f091205214ed28201072885048ea72c88b4611f7d99805ae1841df8b0ce82984",
+      "sha256": "fbc10e862fe7b75bc2d1e7927103dd30119f2de8b3368d025df33b5402a0c5fb",
       "mode": "644",
       "role": "plugin_manifest",
       "packagePath": ".codex-plugin/plugin.json"
@@ -514,7 +514,7 @@
     },
     {
       "path": "skills/bee-hive/scripts/test_split_brain_regression.mjs",
-      "sha256": "c9f809b99c48f188e3e43b567da4fab70aebcb95734911907c52f4b7896a184f",
+      "sha256": "7f03fc1aa2024758dfdb38be588e15758fa3e571d571a68a739f45dc5449ad23",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/scripts/test_split_brain_regression.mjs"
@@ -647,7 +647,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/state.mjs",
-      "sha256": "ea6152e44f3f4eab454456f423e0f0f9adc584644c144b30f54d910d5fc8d3ae",
+      "sha256": "578f23495c0035aa2f89667c78769acbf6004e27e4f90f89a381369d23d90d73",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/state.mjs"
