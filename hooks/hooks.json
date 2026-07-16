@@ -47,6 +47,17 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/bee-codex-subagent-audit.mjs\"",
+            "statusMessage": "bee: subagent start audit"
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "hooks": [
@@ -59,6 +70,15 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/bee-chain-nudge.mjs\"",
             "statusMessage": "bee: chain nudge"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/bee-codex-subagent-audit.mjs\"",
+            "statusMessage": "bee: subagent stop audit"
           }
         ]
       }

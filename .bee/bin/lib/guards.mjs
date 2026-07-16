@@ -53,7 +53,7 @@ const TERMINAL_PHASES = new Set(['idle', 'compounding-complete']);
 // own writes: hooks see tool calls (Edit/Write/MultiEdit/Bash), never the
 // bee.mjs state / bee.mjs backlog child process's internal file I/O.
 const DIRECT_EDIT_DENY = {
-  '.bee/state.json': 'bee.mjs state set/gate/worker/scribing-run',
+  '.bee/state.json': 'bee.mjs state set --owner <selected pre-mutation phase>, or the dedicated state gate/worker/scribing-run verb',
   '.bee/backlog.jsonl': 'bee.mjs backlog add',
 };
 

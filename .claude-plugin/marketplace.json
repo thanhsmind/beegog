@@ -3,11 +3,19 @@
   "owner": {
     "name": "bee"
   },
+  "interface": {
+    "displayName": "Bee"
+  },
   "plugins": [
     {
       "name": "bee",
       "source": "./",
-      "description": "Validate-first agentic development: staged workflow with four human gates, evidence-based validation, bounded swarms over verified cells, and a compounding knowledge loop."
+      "description": "Validate-first agentic development: staged workflow with four human gates, evidence-based validation, bounded swarms over verified cells, and a compounding knowledge loop.",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
     }
   ]
 }

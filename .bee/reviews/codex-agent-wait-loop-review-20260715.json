@@ -1,0 +1,42 @@
+{
+  "id": "codex-agent-wait-loop-review-20260715",
+  "requested_by": "user",
+  "requested_at": "2026-07-15T16:52:37.897Z",
+  "scope_description": "Review and fix the Codex repeated empty subagent-wait problem shown in the supplied screenshot; feature codex-agent-wait-loop working-tree scope.",
+  "included": [
+    {
+      "type": "feature",
+      "id": "codex-agent-wait-loop",
+      "reason": "User-requested feature review; includes capped implementation cell, doctrine/spec/backlog close artifacts, and frozen working-tree diff."
+    }
+  ],
+  "excluded": [
+    {
+      "type": "cell",
+      "id": "codex-agent-wait-loop-1",
+      "reason": "Dropped before feature wording changed after .agents write denial; only its blocker report remains as review evidence."
+    },
+    {
+      "type": "feature",
+      "id": "worktree-isolation",
+      "reason": "Separate active feature; all of its changes are outside this review hash."
+    }
+  ],
+  "baseline": "45cac8574411bec18a7a6f8fc91efaa6e52dabce",
+  "head": "working-tree-sha256:111504718f1f4e5a7a59c12248da966f97fab1673d025adc0fc9f721478c81a6",
+  "reviewer_manifest": [],
+  "verification_preflight": {
+    "checked_at": "2026-07-15T16:52:37.897Z",
+    "cells_checked": [],
+    "passed": true
+  },
+  "findings": [],
+  "uat": [],
+  "decision": {
+    "status": "blocked",
+    "gate4": null,
+    "reason": "Scope freeze used only a feature entry, so verification preflight checked zero behavior-change cells. Superseded by a new immutable session that includes codex-agent-wait-loop-2 explicitly."
+  },
+  "created_at": "2026-07-15T16:52:37.897Z",
+  "updated_at": "2026-07-15T16:52:56.589Z"
+}

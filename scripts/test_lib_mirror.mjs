@@ -15,6 +15,9 @@ const REPO_ROOT = path.join(__dirname, "..");
 
 const TEMPLATES_LIB = path.join(REPO_ROOT, "skills", "bee-hive", "templates", "lib");
 const BIN_LIB = path.join(REPO_ROOT, ".bee", "bin", "lib");
+const SOURCE_HOOKS = path.join(REPO_ROOT, "hooks");
+const BIN_HOOKS = path.join(REPO_ROOT, ".bee", "bin", "hooks");
+const HOOK_PROJECTIONS = [path.join(SOURCE_HOOKS, "hooks.json"), path.join(SOURCE_HOOKS, "claude-hooks.json")];
 
 /**
  * Lists the plain files (not directories) directly inside dir, derived via
@@ -54,6 +57,56 @@ function compareDirs(dirA, dirB) {
   return { ok, missingInB, extraInB, diffing };
 }
 
+function launcherModules(projectionFiles) {
+  const out = new Set();
+  const visit = (value) => {
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (!value || typeof value !== "object") return;
+    if (typeof value.command === "string") {
+      for (const match of value.command.matchAll(/(?:^|[\\/])(bee-[A-Za-z0-9-]+\.mjs)(?=["'\s]|$)/g)) {
+        out.add(match[1]);
+      }
+    }
+    Object.values(value).forEach(visit);
+  };
+  for (const file of projectionFiles) visit(JSON.parse(fs.readFileSync(file, "utf8")));
+  return out;
+}
+
+function runtimeHookInventory(sourceDir, projectionFiles) {
+  const expected = launcherModules(projectionFiles);
+  const queue = [...expected];
+  const importRe = /(?:import|export)\s+(?:[^"']*?\s+from\s+)?["']\.\/([^"']+\.mjs)["']/g;
+  while (queue.length) {
+    const name = queue.shift();
+    const file = path.join(sourceDir, name);
+    if (!fs.existsSync(file)) throw new Error(`runtime hook inventory: launcher/import target missing: ${name}`);
+    const text = fs.readFileSync(file, "utf8");
+    for (const match of text.matchAll(importRe)) {
+      const dep = path.basename(match[1]);
+      if (dep !== match[1] || !dep.endsWith(".mjs")) {
+        throw new Error(`runtime hook inventory: unsafe relative import from ${name}: ${match[1]}`);
+      }
+      if (!expected.has(dep)) {
+        expected.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+  return [...expected].sort();
+}
+
+function compareInventory(expected, sourceDir, runtimeDir) {
+  const expectedSet = new Set(expected);
+  const actual = new Set(listFiles(runtimeDir));
+  const missing = expected.filter((name) => !actual.has(name));
+  const extra = [...actual].filter((name) => !expectedSet.has(name)).sort();
+  const diffing = expected
+    .filter((name) => actual.has(name))
+    .filter((name) => !fs.readFileSync(path.join(sourceDir, name)).equals(fs.readFileSync(path.join(runtimeDir, name))));
+  return { ok: missing.length === 0 && extra.length === 0 && diffing.length === 0, missing, extra, diffing };
+}
+
 // ─── internal self-test: prove the checker actually bites ─────────────────
 // Build two TEMP directories (never the real tree), seed them identically,
 // then inject a single byte-diff into one file on the copy side and assert
@@ -91,6 +144,44 @@ function compareDirs(dirA, dirB) {
   }
 }
 
+// Derivation self-test: launcher -> transitive same-directory import, plus
+// missing/extra/byte-drift detection. Source-only catalog/tests/config never
+// enter expected unless a production launcher imports them.
+{
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "test-hook-mirror-selftest-"));
+  const source = path.join(tmpRoot, "source");
+  const runtime = path.join(tmpRoot, "runtime");
+  fs.mkdirSync(source);
+  fs.mkdirSync(runtime);
+  try {
+    fs.writeFileSync(path.join(tmpRoot, "hooks.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/bee-a.mjs"' }] }] } }));
+    fs.writeFileSync(path.join(source, "bee-a.mjs"), 'import "./adapter.mjs";\n');
+    fs.writeFileSync(path.join(source, "adapter.mjs"), "export const x = 1;\n");
+    fs.writeFileSync(path.join(source, "catalog.mjs"), "source only\n");
+    fs.copyFileSync(path.join(source, "bee-a.mjs"), path.join(runtime, "bee-a.mjs"));
+    fs.writeFileSync(path.join(runtime, "adapter.mjs"), "export const x = 2;\n");
+    fs.writeFileSync(path.join(runtime, "extra.mjs"), "extra\n");
+    const expected = runtimeHookInventory(source, [path.join(tmpRoot, "hooks.json")]);
+    const injected = compareInventory(expected, source, runtime);
+    if (
+      expected.join(",") !== "adapter.mjs,bee-a.mjs" ||
+      !injected.diffing.includes("adapter.mjs") ||
+      !injected.extra.includes("extra.mjs") ||
+      injected.missing.length !== 0
+    ) {
+      throw new Error(`hook inventory self-test did not catch derivation/diff/extra: ${JSON.stringify({ expected, injected })}`);
+    }
+    fs.rmSync(path.join(runtime, "bee-a.mjs"));
+    const missing = compareInventory(expected, source, runtime);
+    if (!missing.missing.includes("bee-a.mjs")) {
+      throw new Error(`hook inventory self-test did not catch missing launcher: ${JSON.stringify(missing)}`);
+    }
+    console.log("PASS test_lib_mirror: runtime hook inventory derives launchers/imports and catches missing, extra, and byte drift");
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
 // ─── real check: THIS repo's real templates/lib <-> .bee/bin/lib mirror ────
 
 if (!fs.existsSync(TEMPLATES_LIB)) {
@@ -118,3 +209,15 @@ if (!result.ok) {
 }
 
 console.log(`PASS test_lib_mirror: templates/lib and .bee/bin/lib are byte-identical (${listFiles(TEMPLATES_LIB).length} files)`);
+
+if (!fs.existsSync(BIN_HOOKS)) {
+  console.error(`FAIL test_lib_mirror: ${BIN_HOOKS} does not exist`);
+  process.exit(1);
+}
+const hookExpected = runtimeHookInventory(SOURCE_HOOKS, HOOK_PROJECTIONS);
+const hookResult = compareInventory(hookExpected, SOURCE_HOOKS, BIN_HOOKS);
+if (!hookResult.ok) {
+  console.error(`FAIL test_lib_mirror: runtime-derived hook mirror drifted: ${JSON.stringify(hookResult)}`);
+  process.exit(1);
+}
+console.log(`PASS test_lib_mirror: runtime-derived hook inventory is byte-identical (${hookExpected.length} files)`);

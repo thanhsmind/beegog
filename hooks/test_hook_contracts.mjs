@@ -5,11 +5,12 @@
 // every compatible event and tool path ... unsupported paths fail open with
 // visible limits and runtime-specific tests").
 //
-// Spawns EACH of the seven production wrapper hooks
+// Executes EACH of the seven established production wrapper hooks
 // (bee-session-init, bee-prompt-context, bee-state-sync, bee-chain-nudge,
-// bee-session-close, bee-model-guard, bee-write-guard) as a REAL child
-// process - same spawnSync-a-child pattern as hooks/test_write_guard.mjs and
-// hooks/test_model_guard.mjs - and feeds it a table of adversarial stdin
+// bee-session-close, bee-model-guard, bee-write-guard) through the shared
+// isolated Worker runner - the same real direct-entry path as
+// hooks/test_write_guard.mjs and hooks/test_model_guard.mjs - and feeds it a
+// table of adversarial stdin
 // rows: empty input, junk bytes, top-level null, JSON array, object cwd,
 // missing cwd, a ~2MB payload, plus Codex event-output parse rows
 // (PreCompact/SubagentStop/Stop advisory shape, PreToolUse apply_patch deny
@@ -47,6 +48,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runModuleWorker } from "../scripts/lib/run-module-worker.mjs";
+import { resolveRoots as resolveHookRoots } from "./adapter.mjs";
 import {
   RUNTIMES,
   TARGETS,
@@ -89,7 +92,10 @@ const CODEX_REPO_HOOKS_PATH = path.join(REPO_ROOT, ".codex", "hooks.json");
 // ALL PASS and exits 0. That is a hole big enough to cap a cell through
 // having done nothing. These row ids MUST be present AND MUST NOT be skipped
 // in the group they belong to, or the run exits non-zero.
-const REQUIRED_CATALOG_ROW_IDS = Object.freeze(["codex-repo-target-drift"]);
+const REQUIRED_CATALOG_ROW_IDS = Object.freeze([
+  "codex-repo-target-generated-topology",
+  "codex-generated-repo-audit-execution",
+]);
 
 // Turn "required row is absent or skipped" into a real, visible FAILING row,
 // so it flows through the ordinary failures filter and the ordinary output.
@@ -137,6 +143,56 @@ function genericRow(group, id, pass, note, extra = {}) {
     pass,
     note,
   };
+}
+
+function runWorktreeAdapterRows() {
+  const mainRoot = mkFixture("hook-adapter-main-");
+  const workRoot = mkFixture("hook-adapter-work-");
+  const invalidRoot = mkFixture("hook-adapter-invalid-");
+  const separateRoot = mkFixture("hook-adapter-separate-");
+  try {
+    const gitdir = path.join(mainRoot, ".git", "worktrees", "fixture");
+    fs.mkdirSync(gitdir, { recursive: true });
+    fs.writeFileSync(path.join(workRoot, ".git"), `gitdir: ${gitdir}\n`);
+    fs.writeFileSync(path.join(gitdir, "gitdir"), `${path.join(workRoot, ".git")}\n`);
+    const linked = resolveHookRoots(workRoot);
+
+    const badGitdir = path.join(mainRoot, ".git", "worktrees", "bad");
+    fs.mkdirSync(badGitdir, { recursive: true });
+    fs.writeFileSync(path.join(invalidRoot, ".git"), `gitdir: ${badGitdir}\n`);
+    const invalid = resolveHookRoots(invalidRoot);
+
+    const detached = path.join(separateRoot, "git-data");
+    fs.mkdirSync(detached);
+    fs.writeFileSync(path.join(separateRoot, ".git"), `gitdir: ${detached}\n`);
+    const separate = resolveHookRoots(separateRoot);
+
+    return [
+      genericRow(
+        "worktree-adapter",
+        "typed-linked-valid-root-store-split",
+        linked.worktreeResolution === "linked-valid" && linked.workRoot === fs.realpathSync.native(workRoot) && linked.storeRoot === fs.realpathSync.native(mainRoot),
+        `linked=${JSON.stringify(linked)}`,
+      ),
+      genericRow(
+        "worktree-adapter",
+        "typed-linked-invalid-nonthrowing",
+        invalid.worktreeResolution === "linked-invalid" && invalid.workRoot === fs.realpathSync.native(invalidRoot) && invalid.storeRoot === null,
+        `invalid=${JSON.stringify(invalid)}`,
+      ),
+      genericRow(
+        "worktree-adapter",
+        "separate-git-dir-remains-ordinary",
+        separate.worktreeResolution === "ordinary" && separate.workRoot === fs.realpathSync.native(separateRoot) && separate.storeRoot === fs.realpathSync.native(separateRoot),
+        `separate=${JSON.stringify(separate)}`,
+      ),
+    ];
+  } finally {
+    fs.rmSync(mainRoot, { recursive: true, force: true });
+    fs.rmSync(workRoot, { recursive: true, force: true });
+    fs.rmSync(invalidRoot, { recursive: true, force: true });
+    fs.rmSync(separateRoot, { recursive: true, force: true });
+  }
 }
 
 const WRAPPERS = [
@@ -201,14 +257,13 @@ function buildFixture(prefix) {
 
 // --- wrapper invocation ----------------------------------------------------
 
-function runWrapper(wrapperBase, input, cwd, extraArgs = []) {
+async function runWrapper(wrapperBase, input, cwd, extraArgs = []) {
   const hookPath = path.join(HOOKS_DIR, wrapperBase);
-  return spawnSync(process.execPath, [hookPath, ...extraArgs], {
+  return await runModuleWorker(hookPath, {
+    args: extraArgs,
     input,
-    encoding: "utf8",
     cwd,
     timeout: SPAWN_TIMEOUT_MS,
-    maxBuffer: SPAWN_MAX_BUFFER,
   });
 }
 
@@ -226,11 +281,11 @@ function truncate(text, len) {
 // (usually 1) with a stack trace on stderr - that is exactly the failure
 // mode this row set is built to catch.
 function expectNoCrash(result) {
-  if (result.error) {
-    return { pass: false, note: `spawn error: ${result.error.message}` };
-  }
   if (result.status === 0) {
     return { pass: true, note: "exit 0 (fail-open) as required" };
+  }
+  if (result.status == null && result.error) {
+    return { pass: false, note: `launch error: ${result.error.message}` };
   }
   return {
     pass: false,
@@ -257,10 +312,10 @@ function parseAdvisoryStdout(stdout) {
 // silent); any non-empty stdout must be a JSON object with a string
 // `systemMessage` and never `decision:"block"`.
 function expectAdvisoryJsonOrSilent(result) {
-  if (result.error) {
-    return { pass: false, note: `spawn error: ${result.error.message}` };
-  }
   if (result.status !== 0) {
+    if (result.status == null && result.error) {
+      return { pass: false, note: `launch error: ${result.error.message}` };
+    }
     return { pass: false, note: `expected exit 0 (advisory-only, never blocking); got status=${result.status}` };
   }
   const parsed = parseAdvisoryStdout(result.stdout);
@@ -297,11 +352,11 @@ function expectAdvisoryJsonOrSilent(result) {
 // hooks/test_write_guard.mjs row1/row6) - so an apply_patch write targeting
 // it must be denied (exit 2) exactly like an Edit/Write/Bash write is today.
 function expectApplyPatchDenied(result) {
-  if (result.error) {
-    return { pass: false, note: `spawn error: ${result.error.message}` };
-  }
   if (result.status === 2 && typeof result.stderr === "string" && result.stderr.trim()) {
     return { pass: true, note: "apply_patch target denied (exit 2) with a reason" };
+  }
+  if (result.status == null && result.error) {
+    return { pass: false, note: `launch error: ${result.error.message}` };
   }
   return {
     pass: false,
@@ -566,14 +621,55 @@ function writeBaselineReport(results, failures) {
 // Proves hooks/catalog.mjs is the single source of truth for both checked-in
 // projections: rendering "claude" must reproduce hooks/claude-hooks.json
 // byte-for-byte, rendering "codex" must reproduce hooks/hooks.json (the
-// Codex default projection) byte-for-byte, and the only structural
-// difference between the two rendered projections is the declared
-// ALLOWED_DIFFERENCES set (presently: bee-model-guard.mjs stays Claude-only,
-// approach.md section 2). Any other drift — added, removed, or reordered
-// rules that are not declared — fails this row.
+// Codex default projection) byte-for-byte, and every directional structural
+// difference between them is named in ALLOWED_DIFFERENCES. Any other drift —
+// added, removed, or reordered rules that are not declared — fails this row.
 
 function catalogDriftRow(id, pass, note) {
   return { wrapper: "catalog-drift", id, status: 0, signal: null, stdout: "", stderr: "", pass, note };
+}
+
+function groupMatchesDifference(group, difference) {
+  const matcherMatches = difference.matcher === null
+    ? group.matcher === undefined
+    : group.matcher === difference.matcher;
+  return matcherMatches && group.hooks.some(
+    (hook) => typeof hook.command === "string" && hook.command.includes(`/hooks/${difference.script}`),
+  );
+}
+
+function projectionHasDifference(projection, difference) {
+  return (projection.hooks[difference.event] || []).some(
+    (group) => groupMatchesDifference(group, difference),
+  );
+}
+
+function removeDifference(projection, difference) {
+  const groups = projection.hooks[difference.event] || [];
+  const remainingGroups = [];
+  for (const group of groups) {
+    const matcherMatches = difference.matcher === null
+      ? group.matcher === undefined
+      : group.matcher === difference.matcher;
+    if (!matcherMatches) {
+      remainingGroups.push(group);
+      continue;
+    }
+    const hooks = group.hooks.filter(
+      (hook) => !(typeof hook.command === "string" && hook.command.includes(`/hooks/${difference.script}`)),
+    );
+    if (hooks.length > 0) remainingGroups.push({ ...group, hooks });
+  }
+  if (remainingGroups.length > 0) projection.hooks[difference.event] = remainingGroups;
+  else delete projection.hooks[difference.event];
+}
+
+function commandEntries(projection, event, script) {
+  return (projection.hooks[event] || [])
+    .flatMap((group) => group.hooks || [])
+    .filter(
+      (hook) => typeof hook.command === "string" && hook.command.includes(`/hooks/${script}`),
+    );
 }
 
 function runCatalogDriftChecks() {
@@ -606,29 +702,25 @@ function runCatalogDriftChecks() {
   const claudeProjection = renderProjection(RUNTIMES.CLAUDE);
   const codexProjection = renderProjection(RUNTIMES.CODEX);
 
-  // Every declared difference must actually be present in claude and absent
-  // from codex (otherwise the declaration is stale/wrong).
+  // Every directional difference must be present only on its named runtime.
   const declaredAccurate = ALLOWED_DIFFERENCES.every((d) => {
-    const claudeGroups = claudeProjection.hooks[d.event] || [];
-    const codexGroups = codexProjection.hooks[d.event] || [];
-    const inClaude = claudeGroups.some((g) => g.matcher === d.matcher);
-    const inCodex = codexGroups.some((g) => g.matcher === d.matcher);
-    return inClaude && !inCodex;
+    const owning = d.runtime === RUNTIMES.CLAUDE ? claudeProjection : codexProjection;
+    const other = d.runtime === RUNTIMES.CLAUDE ? codexProjection : claudeProjection;
+    return projectionHasDifference(owning, d) && !projectionHasDifference(other, d);
   });
 
-  // Remove exactly the declared differences from the claude projection; the
-  // remainder must equal the codex projection exactly. That proves no
-  // OTHER (undeclared) drift exists between the two projections.
+  // Remove exactly the declared runtime-owned hooks from both sides; the
+  // remainder must be byte-structurally equal.
   const claudeWithAllowedRemoved = JSON.parse(JSON.stringify(claudeProjection));
+  const codexWithAllowedRemoved = JSON.parse(JSON.stringify(codexProjection));
   for (const d of ALLOWED_DIFFERENCES) {
-    const groups = claudeWithAllowedRemoved.hooks[d.event];
-    if (!groups) continue;
-    const filtered = groups.filter((g) => g.matcher !== d.matcher);
-    if (filtered.length > 0) claudeWithAllowedRemoved.hooks[d.event] = filtered;
-    else delete claudeWithAllowedRemoved.hooks[d.event];
+    removeDifference(
+      d.runtime === RUNTIMES.CLAUDE ? claudeWithAllowedRemoved : codexWithAllowedRemoved,
+      d,
+    );
   }
   const noUndeclaredDrift =
-    JSON.stringify(claudeWithAllowedRemoved) === JSON.stringify(codexProjection);
+    JSON.stringify(claudeWithAllowedRemoved) === JSON.stringify(codexWithAllowedRemoved);
 
   const allowedDifferencesOk = declaredAccurate && noUndeclaredDrift;
   rows.push(
@@ -642,27 +734,47 @@ function runCatalogDriftChecks() {
     ),
   );
 
-  // --- repo-target rows (cell codex-parity-6a) ----------------------------
-  //
-  // The ACTIVE source-repository fallback .codex/hooks.json must be generated
-  // ONLY by renderProjectionText("codex", { target: "repo" }) — so hand-drift
-  // in that live file turns this suite red. `codex-repo-target-drift` is a
-  // REQUIRED row (see REQUIRED_CATALOG_ROW_IDS): it may never be absent or
-  // skipped.
-  const repoText = renderProjectionText(RUNTIMES.CODEX, { target: TARGETS.REPO });
-  const onDiskRepo = fs.readFileSync(CODEX_REPO_HOOKS_PATH, "utf8");
-  const repoMatches = repoText === onDiskRepo;
+  const codexStartAudit = commandEntries(
+    codexProjection,
+    "SubagentStart",
+    "bee-codex-subagent-audit.mjs",
+  );
+  const codexStopAudit = commandEntries(
+    codexProjection,
+    "SubagentStop",
+    "bee-codex-subagent-audit.mjs",
+  );
+  const claudeAuditCount = ["SubagentStart", "SubagentStop"].reduce(
+    (count, event) => count + commandEntries(
+      claudeProjection,
+      event,
+      "bee-codex-subagent-audit.mjs",
+    ).length,
+    0,
+  );
+  const expectedPluginAuditCommand =
+    'node "${CLAUDE_PLUGIN_ROOT}/hooks/bee-codex-subagent-audit.mjs"';
+  const pluginTopologyOk =
+    codexStartAudit.length === 1 &&
+    codexStopAudit.length === 1 &&
+    codexStartAudit[0].command === expectedPluginAuditCommand &&
+    codexStopAudit[0].command === expectedPluginAuditCommand &&
+    claudeAuditCount === 0;
   rows.push(
     catalogDriftRow(
-      "codex-repo-target-drift",
-      repoMatches,
-      repoMatches
-        ? "rendering the logical catalog for \"codex\" at target \"repo\" reproduces .codex/hooks.json byte-for-byte"
-        : "DRIFT: rendering the logical catalog for \"codex\" at target \"repo\" does NOT reproduce " +
-            ".codex/hooks.json byte-for-byte — the active Codex project fallback is hand-drifted " +
-            "or stale (regenerate it from the catalog; never hand-author event groups)",
+      "codex-plugin-subagent-audit-topology",
+      pluginTopologyOk,
+      pluginTopologyOk
+        ? "Codex plugin maps SubagentStart and SubagentStop exactly once to one plugin-root audit handler; Claude maps neither"
+        : `unexpected plugin topology: start=${codexStartAudit.length} stop=${codexStopAudit.length} claude=${claudeAuditCount}`,
     ),
   );
+
+  // --- generated repo-target rows -----------------------------------------
+  //
+  // D9: root .codex/hooks.json is a development/fallback snapshot, not the
+  // plugin release proof surface. Prove the generated repo projection itself;
+  // a separate fixture executes its new audit commands below.
 
   // D2 / the incident itself: the repo transport must carry NO Claude-only
   // root variable (Codex sets neither; $CLAUDE_PROJECT_DIR unset is exactly
@@ -686,18 +798,32 @@ function runCatalogDriftChecks() {
       c.includes(`echo "${REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC}" >&2`) &&
       c.includes("exit 0"),
   );
+  const repoStartAudit = commandEntries(
+    repoProjection,
+    "SubagentStart",
+    "bee-codex-subagent-audit.mjs",
+  );
+  const repoStopAudit = commandEntries(
+    repoProjection,
+    "SubagentStop",
+    "bee-codex-subagent-audit.mjs",
+  );
   const transportOk =
-    repoCommands.length === 9 && noClaudeVars && launchesSourceWrappers && visibleFailOpen;
+    repoCommands.length === 11 &&
+    noClaudeVars &&
+    launchesSourceWrappers &&
+    visibleFailOpen &&
+    repoStartAudit.length === 1 &&
+    repoStopAudit.length === 1;
   rows.push(
     catalogDriftRow(
-      "codex-repo-target-transport",
+      "codex-repo-target-generated-topology",
       transportOk,
       transportOk
-        ? `all ${repoCommands.length} repo commands carry no Claude root variable, launch hooks/bee-*.mjs ` +
-            "with --source=repo, and fail open VISIBLY on stderr when the git root cannot be resolved"
-        : `repo transport contract violated: commands=${repoCommands.length} (expected 9) ` +
+        ? `all ${repoCommands.length} generated repo commands carry no Claude root variable, include paired audit events, launch hooks/bee-*.mjs with --source=repo, and fail open visibly`
+        : `repo transport contract violated: commands=${repoCommands.length} (expected 11) ` +
             `noClaudeVars=${noClaudeVars} launchesSourceWrappers=${launchesSourceWrappers} ` +
-            `visibleFailOpen=${visibleFailOpen}`,
+            `visibleFailOpen=${visibleFailOpen} startAudit=${repoStartAudit.length} stopAudit=${repoStopAudit.length}`,
     ),
   );
 
@@ -719,11 +845,17 @@ function runCatalogDriftChecks() {
 
 function detectCodexCli() {
   const result = spawnSync("codex", ["--version"], { encoding: "utf8", timeout: 10000 });
-  if (result.error) return { present: false, reason: result.error.message };
   if (result.status !== 0) {
-    return { present: false, reason: `exit status=${result.status} stderr=${truncate(result.stderr, 300)}` };
+    return {
+      present: false,
+      reason:
+        `exit status=${result.status} stderr=${truncate(result.stderr, 300)}` +
+        (result.status == null && result.error ? ` launch error=${result.error.message}` : ""),
+    };
   }
-  return { present: true, version: (result.stdout || "").trim() };
+  const version = typeof result.stdout === "string" ? result.stdout.trim() : "";
+  if (!version) return { present: false, reason: "exit 0 but version stdout was empty" };
+  return { present: true, version };
 }
 
 function codexAcceptanceRow(id, pass, note, extra = {}) {
@@ -770,7 +902,7 @@ function runCodexAcceptanceRows() {
       addJson = null;
     }
     const addAccepted = Boolean(
-      !addResult.error && addResult.status === 0 && addJson && addJson.installedRoot === REPO_ROOT,
+      addResult.status === 0 && addJson && addJson.installedRoot === REPO_ROOT,
     );
     rows.push(
       codexAcceptanceRow(
@@ -798,7 +930,7 @@ function runCodexAcceptanceRows() {
     }
     const available = listJson && Array.isArray(listJson.available) ? listJson.available : [];
     const beePlugin = available.find((p) => p && (p.pluginId === "bee@bee" || p.name === "bee"));
-    const listedCleanly = Boolean(!listResult.error && listResult.status === 0 && beePlugin);
+    const listedCleanly = Boolean(listResult.status === 0 && beePlugin);
     rows.push(
       codexAcceptanceRow(
         "codex-plugin-list-available",
@@ -886,7 +1018,147 @@ function findGapLine(fixtureRoot, hook, gap) {
   );
 }
 
-function runNicknameRows() {
+async function runCodexSubagentAuditRows() {
+  const rows = [];
+  const root = buildFixture("hook-contracts-codex-subagent-audit-");
+  const forbiddenSentinel = "FORBIDDEN_PROMPT_TRANSCRIPT_ENV_SECRET_7f3a";
+  const longAgentName = "agent-" + "x".repeat(180);
+
+  const start = await runWrapper(
+    "bee-codex-subagent-audit.mjs",
+    JSON.stringify({
+      hook_event_name: "SubagentStart",
+      cwd: root,
+      session_id: "session-audit",
+      agent_id: "agent-audit",
+      agent_name: longAgentName,
+      agent_type: "worker",
+      prompt: forbiddenSentinel,
+      transcript: forbiddenSentinel,
+      environment: { SECRET: forbiddenSentinel },
+      credentials: forbiddenSentinel,
+    }),
+    root,
+    ["--source=plugin"],
+  );
+  const stop = await runWrapper(
+    "bee-codex-subagent-audit.mjs",
+    JSON.stringify({
+      hook_event_name: "SubagentStop",
+      cwd: root,
+      session_id: "session-audit",
+      agent_id: "agent-audit",
+      agent_name: longAgentName,
+      agent_type: "worker",
+      prompt: forbiddenSentinel,
+      transcript_path: forbiddenSentinel,
+      env: forbiddenSentinel,
+      secret: forbiddenSentinel,
+    }),
+    root,
+    ["--source=plugin"],
+  );
+  const auditLines = readHooksJsonl(root).filter(
+    (line) => line.hook === "codex-subagent-audit" && line.event === "subagent-audit",
+  );
+  const startLine = auditLines.find((line) => line.lifecycle === "start");
+  const stopLine = auditLines.find((line) => line.lifecycle === "stop");
+  const logBytes = fs.readFileSync(path.join(root, ".bee", "logs", "hooks.jsonl"), "utf8");
+  const boundedAndAllowlisted = Boolean(
+    startLine &&
+      stopLine &&
+      startLine.authority === "audit-only" &&
+      startLine.timing === "post-start" &&
+      startLine.source === "plugin" &&
+      stopLine.authority === "audit-only" &&
+      stopLine.source === "plugin" &&
+      typeof startLine.agent_name === "string" &&
+      startLine.agent_name.length <= 123 &&
+      !logBytes.includes(forbiddenSentinel) &&
+      !("prompt" in startLine) &&
+      !("transcript" in startLine) &&
+      !("environment" in startLine),
+  );
+  rows.push(
+    adapterRow(
+      "codex-subagent-audit",
+      "paired-bounded-audit",
+      start.status === 0 &&
+        stop.status === 0 &&
+        start.stdout === "" &&
+        stop.stdout === "" &&
+        start.stderr === "" &&
+        stop.stderr === "" &&
+        auditLines.length === 2 &&
+        boundedAndAllowlisted,
+      boundedAndAllowlisted
+        ? "start/stop write two silent audit-only records with bounded allowlisted identifiers; prompt/transcript/env/secret content is absent"
+        : `unexpected audit contract: start=${start.status} stop=${stop.status} lines=${JSON.stringify(auditLines)}`,
+    ),
+  );
+
+  const malformedRoot = buildFixture("hook-contracts-codex-subagent-malformed-");
+  const malformed = await runWrapper(
+    "bee-codex-subagent-audit.mjs",
+    "null",
+    malformedRoot,
+    ["--source=plugin"],
+  );
+  const malformedGap = findGapLine(
+    malformedRoot,
+    "codex-subagent-audit",
+    "malformed-payload",
+  );
+  const unsupportedGap = findGapLine(
+    malformedRoot,
+    "codex-subagent-audit",
+    "unsupported-subagent-event",
+  );
+  const malformedAuditLines = readHooksJsonl(malformedRoot).filter(
+    (line) => line.event === "subagent-audit",
+  );
+  rows.push(
+    adapterRow(
+      "codex-subagent-audit",
+      "malformed-input-fails-open",
+      malformed.status === 0 &&
+        malformed.stdout === "" &&
+        malformed.stderr === "" &&
+        Boolean(malformedGap) &&
+        Boolean(unsupportedGap) &&
+        malformedAuditLines.length === 0,
+      malformed.status === 0 && malformedGap && unsupportedGap
+        ? "top-level null fails open, records bounded coverage gaps, and fabricates no lifecycle audit"
+        : `malformed contract failed: status=${malformed.status} gaps=${JSON.stringify(readHooksJsonl(malformedRoot))}`,
+    ),
+  );
+
+  const logFailRoot = buildFixture("hook-contracts-codex-subagent-logfail-");
+  fs.writeFileSync(path.join(logFailRoot, ".bee", "logs"), "not a directory\n");
+  const logFail = await runWrapper(
+    "bee-codex-subagent-audit.mjs",
+    JSON.stringify({
+      hook_event_name: "SubagentStart",
+      cwd: logFailRoot,
+      agent_id: "agent-logfail",
+    }),
+    logFailRoot,
+  );
+  rows.push(
+    adapterRow(
+      "codex-subagent-audit",
+      "audit-write-failure-never-gates",
+      logFail.status === 0 && logFail.stdout === "" && logFail.stderr === "",
+      logFail.status === 0 && logFail.stdout === "" && logFail.stderr === ""
+        ? "an unwritable audit log stays silent and never denies, blocks, or changes exit success"
+        : `audit failure changed behavior: status=${logFail.status} stdout=${truncate(logFail.stdout, 200)} stderr=${truncate(logFail.stderr, 200)}`,
+    ),
+  );
+
+  return rows;
+}
+
+async function runNicknameRows() {
   const rows = [];
   // Dedicated fixture: a NON-swarming, non-reviewing phase (validating), so
   // the nudge can only fire through registered-worker matching — never
@@ -915,7 +1187,7 @@ function runNicknameRows() {
   const subagentStop = (agent) =>
     JSON.stringify({ hook_event_name: "SubagentStop", agent_name: agent, cwd: root });
 
-  const r1 = runWrapper("bee-chain-nudge.mjs", subagentStop("kevin"), root);
+  const r1 = await runWrapper("bee-chain-nudge.mjs", subagentStop("kevin"), root);
   const p1 = parseAdvisoryStdout(r1.stdout);
   const r1pass = Boolean(
     r1.status === 0 &&
@@ -936,7 +1208,7 @@ function runNicknameRows() {
     ),
   );
 
-  const r2 = runWrapper("bee-chain-nudge.mjs", subagentStop("legacy-worker"), root);
+  const r2 = await runWrapper("bee-chain-nudge.mjs", subagentStop("legacy-worker"), root);
   const p2 = parseAdvisoryStdout(r2.stdout);
   const r2pass = Boolean(
     r2.status === 0 &&
@@ -956,7 +1228,7 @@ function runNicknameRows() {
     ),
   );
 
-  const r3 = runWrapper("bee-chain-nudge.mjs", subagentStop("stranger"), root);
+  const r3 = await runWrapper("bee-chain-nudge.mjs", subagentStop("stranger"), root);
   const r3pass = r3.status === 0 && !(r3.stdout || "").trim();
   rows.push(
     adapterRow(
@@ -980,7 +1252,7 @@ function runNicknameRows() {
 // touching bee-session-init.mjs (S4's SessionStart threading stays out of
 // scope here). Writes lane/session records directly as JSON, mirroring this
 // file's existing buildFixture style rather than importing lib/state.mjs or
-// lib/claims.mjs (this harness spawns wrappers as real child processes and
+// lib/claims.mjs (this harness executes wrappers as isolated Workers and
 // never imports the lib it is testing).
 function writeLaneFile(root, feature, extra = {}) {
   const lanesDir = path.join(root, ".bee", "lanes");
@@ -1017,7 +1289,7 @@ function writeSessionFile(root, sessionId, { lane } = {}) {
   fs.writeFileSync(path.join(sessionsDir, `${sessionId}.json`), `${JSON.stringify(record, null, 2)}\n`);
 }
 
-function runLaneSessionRows() {
+async function runLaneSessionRows() {
   const rows = [];
 
   // ── bee-chain-nudge: a bound session's SWARMING lane fires the nudge even
@@ -1043,7 +1315,7 @@ function runLaneSessionRows() {
   const subagentStopWithSession = (sessionId) =>
     JSON.stringify({ hook_event_name: "SubagentStop", session_id: sessionId, cwd: chainRoot });
 
-  const cControl = runWrapper("bee-chain-nudge.mjs", JSON.stringify({ hook_event_name: "SubagentStop", cwd: chainRoot }), chainRoot);
+  const cControl = await runWrapper("bee-chain-nudge.mjs", JSON.stringify({ hook_event_name: "SubagentStop", cwd: chainRoot }), chainRoot);
   const cControlPass = cControl.status === 0 && !(cControl.stdout || "").trim();
   rows.push(
     adapterRow(
@@ -1057,7 +1329,7 @@ function runLaneSessionRows() {
     ),
   );
 
-  const cUnbound = runWrapper("bee-chain-nudge.mjs", subagentStopWithSession("sess-unbound"), chainRoot);
+  const cUnbound = await runWrapper("bee-chain-nudge.mjs", subagentStopWithSession("sess-unbound"), chainRoot);
   const cUnboundPass = cUnbound.status === 0 && !(cUnbound.stdout || "").trim();
   rows.push(
     adapterRow(
@@ -1071,7 +1343,7 @@ function runLaneSessionRows() {
     ),
   );
 
-  const cBound = runWrapper("bee-chain-nudge.mjs", subagentStopWithSession("sess-bound"), chainRoot);
+  const cBound = await runWrapper("bee-chain-nudge.mjs", subagentStopWithSession("sess-bound"), chainRoot);
   const cBoundParsed = parseAdvisoryStdout(cBound.stdout);
   const cBoundPass = Boolean(
     cBound.status === 0 &&
@@ -1104,7 +1376,7 @@ function runLaneSessionRows() {
   const stopWithSession = (sessionId) =>
     JSON.stringify({ hook_event_name: "Stop", session_id: sessionId, cwd: closeRoot });
 
-  const sControl = runWrapper("bee-session-close.mjs", JSON.stringify({ hook_event_name: "Stop", cwd: closeRoot }), closeRoot);
+  const sControl = await runWrapper("bee-session-close.mjs", JSON.stringify({ hook_event_name: "Stop", cwd: closeRoot }), closeRoot);
   const sControlParsed = parseAdvisoryStdout(sControl.stdout);
   const sControlPass = Boolean(
     sControl.status === 0 &&
@@ -1124,7 +1396,7 @@ function runLaneSessionRows() {
     ),
   );
 
-  const sUnbound = runWrapper("bee-session-close.mjs", stopWithSession("sess-close-unbound"), closeRoot);
+  const sUnbound = await runWrapper("bee-session-close.mjs", stopWithSession("sess-close-unbound"), closeRoot);
   const sUnboundParsed = parseAdvisoryStdout(sUnbound.stdout);
   const sUnboundPass = Boolean(
     sUnbound.status === 0 &&
@@ -1144,7 +1416,7 @@ function runLaneSessionRows() {
     ),
   );
 
-  const sBound = runWrapper("bee-session-close.mjs", stopWithSession("sess-close-bound"), closeRoot);
+  const sBound = await runWrapper("bee-session-close.mjs", stopWithSession("sess-close-bound"), closeRoot);
   const sBoundPass = sBound.status === 0 && !(sBound.stdout || "").trim();
   rows.push(
     adapterRow(
@@ -1166,7 +1438,7 @@ function runLaneSessionRows() {
 // (fsh-5's contract, fsh-7's hold-deny + corrupt-store implementation). No
 // reservations.json fixture writer existed before this cell — authored here
 // mirroring writeSessionFile/writeLaneFile's direct-JSON style (this harness
-// spawns wrappers as real child processes and never imports the lib under
+// executes wrappers as isolated Workers and never imports the lib under
 // test).
 function writeReservationsFile(root, reservations) {
   const dir = path.join(root, ".bee");
@@ -1195,7 +1467,7 @@ function editPayload({ sessionId, cwd, filePath }) {
   });
 }
 
-function runHoldSessionRows() {
+async function runHoldSessionRows() {
   const rows = [];
 
   // ── group 1: cross-session hold deny, phase-independence via a bound
@@ -1227,7 +1499,7 @@ function runHoldSessionRows() {
     { agent: "otto", cell: "fsh-x", path: "src/legacy.js", ttl_seconds: 3600, reserved_at: nowIso, released_at: null },
   ]);
 
-  const rHeld = runWrapper(
+  const rHeld = await runWrapper(
     "bee-write-guard.mjs",
     editPayload({ sessionId: "sess-acting", cwd: holdRoot, filePath: "src/held.js" }),
     holdRoot,
@@ -1251,7 +1523,7 @@ function runHoldSessionRows() {
     ),
   );
 
-  const rOwn = runWrapper(
+  const rOwn = await runWrapper(
     "bee-write-guard.mjs",
     editPayload({ sessionId: "sess-acting", cwd: holdRoot, filePath: "src/own.js" }),
     holdRoot,
@@ -1269,7 +1541,7 @@ function runHoldSessionRows() {
     ),
   );
 
-  const rExpired = runWrapper(
+  const rExpired = await runWrapper(
     "bee-write-guard.mjs",
     editPayload({ sessionId: "sess-acting", cwd: holdRoot, filePath: "src/expired.js" }),
     holdRoot,
@@ -1287,7 +1559,7 @@ function runHoldSessionRows() {
     ),
   );
 
-  const rLegacy = runWrapper(
+  const rLegacy = await runWrapper(
     "bee-write-guard.mjs",
     editPayload({ sessionId: "sess-acting", cwd: holdRoot, filePath: "src/legacy.js" }),
     holdRoot,
@@ -1316,7 +1588,7 @@ function runHoldSessionRows() {
   });
   writeSessionFile(gateRoot, "sess-gated", { lane: "lane-gated" });
 
-  const gControl = runWrapper(
+  const gControl = await runWrapper(
     "bee-write-guard.mjs",
     editPayload({ cwd: gateRoot, filePath: "src/new.js" }),
     gateRoot,
@@ -1334,7 +1606,7 @@ function runHoldSessionRows() {
     ),
   );
 
-  const gBound = runWrapper(
+  const gBound = await runWrapper(
     "bee-write-guard.mjs",
     editPayload({ sessionId: "sess-gated", cwd: gateRoot, filePath: "src/new.js" }),
     gateRoot,
@@ -1362,7 +1634,7 @@ function runHoldSessionRows() {
   const corruptRoot = buildFixture("hook-contracts-holdcorrupt-");
   writeCorruptReservationsFile(corruptRoot);
 
-  const rCorrupt = runWrapper(
+  const rCorrupt = await runWrapper(
     "bee-write-guard.mjs",
     editPayload({ sessionId: "sess-corrupt", cwd: corruptRoot, filePath: "src/anything.js" }),
     corruptRoot,
@@ -1391,7 +1663,7 @@ function runHoldSessionRows() {
   writeReservationsFile(zeroDiffRoot, [
     { agent: "otto", cell: "fsh-x", path: "src/heldzero.js", ttl_seconds: 3600, reserved_at: nowIso, released_at: null, session: "sess-other" },
   ]);
-  const rZero = runWrapper(
+  const rZero = await runWrapper(
     "bee-write-guard.mjs",
     editPayload({ cwd: zeroDiffRoot, filePath: "src/heldzero.js" }),
     zeroDiffRoot,
@@ -1418,7 +1690,7 @@ function runHoldSessionRows() {
 // fsh-9's adoptHandoff, and passes the typed outcome into the pure builder
 // (buildSessionPreamble). Direct-JSON fixture writers, mirroring this file's
 // existing writeLaneFile/writeSessionFile/writeReservationsFile style (this
-// harness spawns wrappers as real child processes and never imports the lib
+// harness executes wrappers as isolated Workers and never imports the lib
 // under test).
 function writeCellFileFixture(root, id, extra = {}) {
   const dir = path.join(root, ".bee", "cells");
@@ -1480,13 +1752,13 @@ function buildPlannedNextFixture(prefix, { writerSession = "sess-writer" } = {})
   return root;
 }
 
-function runHandoffSessionRows() {
+async function runHandoffSessionRows() {
   const rows = [];
 
   // ── row (a): source "clear" through the REAL hook child — start-now block
   // naming the adopted cell, AND the claim's ownership actually transfers.
   const clearRoot = buildPlannedNextFixture("hook-contracts-handoff-clear-");
-  const rClear = runWrapper(
+  const rClear = await runWrapper(
     "bee-session-init.mjs",
     sessionStartPayload({ sessionId: "sess-fresh", source: "clear", cwd: clearRoot }),
     clearRoot,
@@ -1516,7 +1788,7 @@ function runHandoffSessionRows() {
   // same as "clear" when the acting session is genuinely a different session
   // than the one that wrote the handoff.
   const startupRoot = buildPlannedNextFixture("hook-contracts-handoff-startup-");
-  const rStartup = runWrapper(
+  const rStartup = await runWrapper(
     "bee-session-init.mjs",
     sessionStartPayload({ sessionId: "sess-fresh-2", source: "startup", cwd: startupRoot }),
     startupRoot,
@@ -1546,7 +1818,7 @@ function runHandoffSessionRows() {
   // unchanged, and the preamble shows a pending-wait block (never start-now).
   for (const source of ["resume", "compact"]) {
     const root = buildPlannedNextFixture(`hook-contracts-handoff-${source}-`);
-    const result = runWrapper(
+    const result = await runWrapper(
       "bee-session-init.mjs",
       sessionStartPayload({ sessionId: "sess-fresh-neg", source, cwd: root }),
       root,
@@ -1579,7 +1851,7 @@ function runHandoffSessionRows() {
   const sameSessionRoot = buildPlannedNextFixture("hook-contracts-handoff-samesession-", {
     writerSession: "sess-same",
   });
-  const rSameSession = runWrapper(
+  const rSameSession = await runWrapper(
     "bee-session-init.mjs",
     sessionStartPayload({ sessionId: "sess-same", source: "startup", cwd: sameSessionRoot }),
     sameSessionRoot,
@@ -1611,12 +1883,12 @@ function runHandoffSessionRows() {
   writeHandoffFileFixture(pauseRootA, { kind: "pause", cell: "wip-x", next_action: "resume wip-x" });
   const pauseRootB = buildFixture("hook-contracts-handoff-pause-b-");
   writeHandoffFileFixture(pauseRootB, { kind: "pause", cell: "wip-x", next_action: "resume wip-x" });
-  const rPauseNoSession = runWrapper(
+  const rPauseNoSession = await runWrapper(
     "bee-session-init.mjs",
     sessionStartPayload({ cwd: pauseRootA }),
     pauseRootA,
   );
-  const rPauseWithSession = runWrapper(
+  const rPauseWithSession = await runWrapper(
     "bee-session-init.mjs",
     sessionStartPayload({ sessionId: "sess-pause", source: "clear", cwd: pauseRootB }),
     pauseRootB,
@@ -1645,12 +1917,12 @@ function runHandoffSessionRows() {
   writeHandoffFileFixture(kindlessRootA, { cell: "wip-legacy", done: [], remaining: [] });
   const kindlessRootB = buildFixture("hook-contracts-handoff-kindless-b-");
   writeHandoffFileFixture(kindlessRootB, { cell: "wip-legacy", done: [], remaining: [] });
-  const rKindlessNoSession = runWrapper(
+  const rKindlessNoSession = await runWrapper(
     "bee-session-init.mjs",
     sessionStartPayload({ cwd: kindlessRootA }),
     kindlessRootA,
   );
-  const rKindlessWithSession = runWrapper(
+  const rKindlessWithSession = await runWrapper(
     "bee-session-init.mjs",
     sessionStartPayload({ sessionId: "sess-kindless", source: "clear", cwd: kindlessRootB }),
     kindlessRootB,
@@ -1677,8 +1949,8 @@ function runHandoffSessionRows() {
   // EVEN with a planned-next handoff present — no adoption is ever attempted.
   const noIdRootA = buildPlannedNextFixture("hook-contracts-handoff-noid-a-");
   const noIdRootB = buildPlannedNextFixture("hook-contracts-handoff-noid-b-");
-  const rNoIdBare = runWrapper("bee-session-init.mjs", sessionStartPayload({ cwd: noIdRootA }), noIdRootA);
-  const rNoIdWithSource = runWrapper(
+  const rNoIdBare = await runWrapper("bee-session-init.mjs", sessionStartPayload({ cwd: noIdRootA }), noIdRootA);
+  const rNoIdWithSource = await runWrapper(
     "bee-session-init.mjs",
     sessionStartPayload({ source: "clear", cwd: noIdRootB }),
     noIdRootB,
@@ -1710,12 +1982,12 @@ function runHandoffSessionRows() {
   return rows;
 }
 
-function runCoverageGapRows() {
+async function runCoverageGapRows() {
   const rows = [];
 
   // -- gap class: malformed-payload (top-level null) + source threading -----
   const f1 = buildFixture("hook-contracts-gap-malformed-");
-  const g1 = runWrapper("bee-session-init.mjs", "null", f1, ["--source=plugin"]);
+  const g1 = await runWrapper("bee-session-init.mjs", "null", f1, ["--source=plugin"]);
   const line1 = findGapLine(f1, "session-init", "malformed-payload");
   const g1pass = Boolean(g1.status === 0 && line1 && line1.source === "plugin");
   rows.push(
@@ -1732,7 +2004,7 @@ function runCoverageGapRows() {
 
   // -- gap class: invalid-cwd ------------------------------------------------
   const f2 = buildFixture("hook-contracts-gap-cwd-");
-  const g2 = runWrapper("bee-session-init.mjs", JSON.stringify({ cwd: { not: "a string" } }), f2);
+  const g2 = await runWrapper("bee-session-init.mjs", JSON.stringify({ cwd: { not: "a string" } }), f2);
   const line2 = findGapLine(f2, "session-init", "invalid-cwd");
   const g2pass = Boolean(g2.status === 0 && line2);
   rows.push(
@@ -1749,7 +2021,7 @@ function runCoverageGapRows() {
 
   // -- gap class: invalid-source ----------------------------------------------
   const f3 = buildFixture("hook-contracts-gap-source-");
-  const g3 = runWrapper("bee-session-init.mjs", JSON.stringify({ cwd: f3 }), f3, [
+  const g3 = await runWrapper("bee-session-init.mjs", JSON.stringify({ cwd: f3 }), f3, [
     "--source=weird",
   ]);
   const line3 = findGapLine(f3, "session-init", "invalid-source");
@@ -1779,7 +2051,7 @@ function runCoverageGapRows() {
   // codex-parity-3, and codex-parity-4's plan-reviewed P1 repair explicitly
   // retargets it to deny.
   const f4 = buildFixture("hook-contracts-gap-applypatch-");
-  const g4 = runWrapper(
+  const g4 = await runWrapper(
     "bee-write-guard.mjs",
     JSON.stringify({
       hook_event_name: "PreToolUse",
@@ -1811,7 +2083,7 @@ function runCoverageGapRows() {
   // fails) AND one provable direct-edit-denied target — the deny must survive.
   const f5 = buildFixture("hook-contracts-logfail-deny-");
   fs.writeFileSync(path.join(f5, ".bee", "logs"), "not a directory\n");
-  const g5 = runWrapper(
+  const g5 = await runWrapper(
     "bee-write-guard.mjs",
     JSON.stringify({
       hook_event_name: "PreToolUse",
@@ -1842,7 +2114,7 @@ function runCoverageGapRows() {
   // -- invariant: a log-write failure never flips an ALLOW into a deny --------
   const f6 = buildFixture("hook-contracts-logfail-allow-");
   fs.writeFileSync(path.join(f6, ".bee", "logs"), "not a directory\n");
-  const g6 = runWrapper("bee-session-init.mjs", "null", f6);
+  const g6 = await runWrapper("bee-session-init.mjs", "null", f6);
   const g6pass = g6.status === 0;
   rows.push(
     adapterRow(
@@ -1935,7 +2207,7 @@ function readRepoHooksConfig(configRef) {
     timeout: SPAWN_TIMEOUT_MS,
     maxBuffer: SPAWN_MAX_BUFFER,
   });
-  if (shown.error || shown.status !== 0) {
+  if (shown.status !== 0 || typeof shown.stdout !== "string") {
     throw new Error(
       `cannot read ${CODEX_REPO_HOOKS_REPO_RELPATH} at ref "${configRef}": ` +
         `status=${shown.status} ${truncate(shown.stderr, 300)}`,
@@ -1997,8 +2269,23 @@ function routePayload(event, cwd, fixtureRoot) {
       return routeApplyPatchPayload(cwd, fixtureRoot);
     case "PostToolUse":
       return JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "TodoWrite", cwd });
+    case "SubagentStart":
+      return JSON.stringify({
+        hook_event_name: "SubagentStart",
+        session_id: "session-route",
+        agent_id: "agent-route",
+        agent_type: "worker",
+        cwd,
+      });
     case "SubagentStop":
-      return JSON.stringify({ hook_event_name: "SubagentStop", agent_name: "kevin", cwd });
+      return JSON.stringify({
+        hook_event_name: "SubagentStop",
+        session_id: "session-route",
+        agent_id: "agent-route",
+        agent_name: "kevin",
+        agent_type: "worker",
+        cwd,
+      });
     case "SessionStart":
       return JSON.stringify({ hook_event_name: "SessionStart", source: "startup", cwd });
     case "UserPromptSubmit":
@@ -2058,8 +2345,10 @@ function buildRouteFixture() {
     env: { ...process.env, HOME: home },
     timeout: SPAWN_TIMEOUT_MS,
   });
-  if (gitInit.error || gitInit.status !== 0) {
-    throw new Error(`route fixture: git init failed: ${gitInit.error?.message || gitInit.stderr}`);
+  if (gitInit.status !== 0) {
+    throw new Error(
+      `route fixture: git init failed: status=${gitInit.status} ${gitInit.stderr || gitInit.error?.message || ""}`,
+    );
   }
 
   // The git-absent shim: node + bash + the login shell's usual coreutils, and
@@ -2097,14 +2386,111 @@ function routeEnv(fixture, { noGit = false } = {}) {
 }
 
 function runRouteCommand(command, cwd, input, env) {
-  return spawnSync(ROUTE_SHELL, ["-lc", command], {
-    input,
-    cwd,
-    env,
-    encoding: "utf8",
-    timeout: SPAWN_TIMEOUT_MS,
-    maxBuffer: SPAWN_MAX_BUFFER,
-  });
+  // The managed Codex sandbox can attach EPERM metadata even when the real
+  // Bash command ran and returned a concrete status. When Bash's final
+  // `exec node ...` replaces the shell, pipe capture can additionally lose
+  // that hook's stdout/stderr. File descriptors keep the single real
+  // Bash -> installed Node command boundary intact while preserving the
+  // streams every existing route assertion grades.
+  const captureDir = fs.mkdtempSync(path.join(os.tmpdir(), "bee-route-output-"));
+  const stdinPath = path.join(captureDir, "stdin");
+  const stdoutPath = path.join(captureDir, "stdout");
+  const stderrPath = path.join(captureDir, "stderr");
+  fs.writeFileSync(stdinPath, input === undefined || input === null ? "" : String(input));
+  const stdinFd = fs.openSync(stdinPath, "r");
+  const stdoutFd = fs.openSync(stdoutPath, "w");
+  const stderrFd = fs.openSync(stderrPath, "w");
+  try {
+    const result = spawnSync(ROUTE_SHELL, ["-lc", command], {
+      cwd,
+      env,
+      encoding: "utf8",
+      stdio: [stdinFd, stdoutFd, stderrFd],
+      timeout: SPAWN_TIMEOUT_MS,
+      maxBuffer: SPAWN_MAX_BUFFER,
+    });
+    fs.closeSync(stdinFd);
+    fs.closeSync(stdoutFd);
+    fs.closeSync(stderrFd);
+    return {
+      ...result,
+      stdout: fs.readFileSync(stdoutPath, "utf8"),
+      stderr: fs.readFileSync(stderrPath, "utf8"),
+    };
+  } finally {
+    try {
+      fs.closeSync(stdinFd);
+    } catch {}
+    try {
+      fs.closeSync(stdoutFd);
+    } catch {}
+    try {
+      fs.closeSync(stderrFd);
+    } catch {}
+    fs.rmSync(captureDir, { recursive: true, force: true });
+  }
+}
+
+function runGeneratedRepoAuditRows() {
+  const projection = renderProjection(RUNTIMES.CODEX, { target: TARGETS.REPO });
+  const commands = parseConfiguredCommands(`${JSON.stringify(projection, null, 2)}\n`).filter(
+    (entry) => entry.script === "codex-subagent-audit",
+  );
+  const fixture = buildRouteFixture();
+  try {
+    const expectedEvents = ["SubagentStart", "SubagentStop"];
+    const results = [];
+    for (const event of expectedEvents) {
+      const configured = commands.filter((entry) => entry.event === event);
+      if (configured.length !== 1) {
+        return [
+          catalogDriftRow(
+            "codex-generated-repo-audit-execution",
+            false,
+            `generated repo projection expected one ${event} audit command, found ${configured.length}`,
+          ),
+        ];
+      }
+      const cwd = event === "SubagentStart" ? fixture.root : fixture.nested;
+      results.push({
+        event,
+        result: runRouteCommand(
+          configured[0].command,
+          cwd,
+          routePayload(event, cwd, fixture.root),
+          routeEnv(fixture),
+        ),
+      });
+    }
+    const auditLines = readHooksJsonl(fixture.root).filter(
+      (line) => line.hook === "codex-subagent-audit" && line.event === "subagent-audit",
+    );
+    const startLine = auditLines.find((line) => line.lifecycle === "start");
+    const stopLine = auditLines.find((line) => line.lifecycle === "stop");
+    const pass =
+      results.every(
+        ({ result }) => result.status === 0 && result.stdout === "" && result.stderr === "",
+      ) &&
+      auditLines.length === 2 &&
+      startLine &&
+      stopLine &&
+      startLine.source === "repo" &&
+      stopLine.source === "repo" &&
+      startLine.agent_id === "agent-route" &&
+      stopLine.agent_id === "agent-route";
+    return [
+      catalogDriftRow(
+        "codex-generated-repo-audit-execution",
+        Boolean(pass),
+        pass
+          ? "generated repo-target SubagentStart/Stop commands execute fixture-locally from root/nested cwd and write paired source=repo audit records"
+          : `generated repo audit execution failed: results=${JSON.stringify(results.map(({ event, result }) => ({ event, status: result.status, stdout: result.stdout, stderr: result.stderr })))} lines=${JSON.stringify(auditLines)}`,
+      ),
+    ];
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+    fs.rmSync(fixture.nonGit, { recursive: true, force: true });
+  }
 }
 
 // The pinned fail-open contract (codex-parity-6a): exit 0, stdout EMPTY,
@@ -2112,11 +2498,11 @@ function runRouteCommand(command, cwd, input, env) {
 // /etc/profile.d script complaining about a utility the shim does not carry)
 // may share stderr — the literal must be PRESENT, not alone.
 function expectTransportFailOpen(result) {
-  if (result.error) return { pass: false, note: `spawn error: ${result.error.message}` };
   const stdout = result.stdout || "";
   const stderr = result.stderr || "";
   const problems = [];
   if (result.status !== 0) problems.push(`expected exit 0 (fail-open), got status=${result.status}`);
+  if (result.status == null && result.error) problems.push(`launch error: ${result.error.message}`);
   if (stdout.trim()) problems.push(`expected EMPTY stdout, got: ${truncate(stdout, 300)}`);
   if (!stderr.includes(REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC)) {
     problems.push(
@@ -2170,7 +2556,7 @@ function runPluginCensusRow() {
   } catch {
     json = null;
   }
-  if (listed.error || listed.status !== 0 || !json || typeof json !== "object") {
+  if (listed.status !== 0 || !json || typeof json !== "object") {
     return routeRow(
       "route-plugin-census",
       false,
@@ -2617,7 +3003,11 @@ async function main() {
   // codex-parity-3's exit target), and --baseline keeps cell codex-parity-1's
   // characterization contract untouched.
   if (catalogOnlyMode) {
-    const results = [...runCatalogDriftChecks(), ...runCodexAcceptanceRows()];
+    const results = [
+      ...runCatalogDriftChecks(),
+      ...runGeneratedRepoAuditRows(),
+      ...runCodexAcceptanceRows(),
+    ];
     results.push(...enforceRequiredRows(results, REQUIRED_CATALOG_ROW_IDS));
     const failures = results.filter((r) => !r.pass);
     const skipped = results.filter((r) => r.skip);
@@ -2641,7 +3031,7 @@ async function main() {
     const fixtureRoot = buildFixture(`hook-contracts-${wrapperBase.replace(/\.mjs$/, "")}-`);
     const rows = buildRowsForWrapper(wrapperBase, fixtureRoot);
     for (const row of rows) {
-      const spawnResult = runWrapper(wrapperBase, row.input, fixtureRoot);
+      const spawnResult = await runWrapper(wrapperBase, row.input, fixtureRoot);
       const verdict = row.expect(spawnResult);
       results.push({
         wrapper: wrapperBase,
@@ -2685,12 +3075,15 @@ async function main() {
   // codex-acceptance rows, plus cell codex-parity-3's adapter contract rows
   // (registered-worker nickname matching and visible coverage-gap logging).
   results.push(...runCatalogDriftChecks());
+  results.push(...runWorktreeAdapterRows());
+  results.push(...runGeneratedRepoAuditRows());
   results.push(...runCodexAcceptanceRows());
-  results.push(...runNicknameRows());
-  results.push(...runLaneSessionRows());
-  results.push(...runHoldSessionRows());
-  results.push(...runHandoffSessionRows());
-  results.push(...runCoverageGapRows());
+  results.push(...await runCodexSubagentAuditRows());
+  results.push(...await runNicknameRows());
+  results.push(...await runLaneSessionRows());
+  results.push(...await runHoldSessionRows());
+  results.push(...await runHandoffSessionRows());
+  results.push(...await runCoverageGapRows());
   // ...plus cell codex-parity-6b's installed-route rows: the default suite
   // must also prove the ACTIVE .codex/hooks.json commands work through the
   // real Codex route, so deleting the route group cannot hide behind

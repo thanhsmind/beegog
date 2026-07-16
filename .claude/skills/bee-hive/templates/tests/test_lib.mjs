@@ -7166,6 +7166,49 @@ check('census: the Delegation contract (fan-out) lives in the always-loaded doct
   }
 });
 
+check('census: native Codex empty waits require a material-action then commentary interval before another bounded wait on doctrine, ordinary-gather, and swarming surfaces', () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = findRepoRoot(templatesRoot);
+  if (!repoRoot) return; // no repo context to check against (bare checkout)
+
+  const doctrineSurfaces = [
+    path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+    path.join(repoRoot, 'AGENTS.md'),
+    path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+  ];
+  const procedureSurfaces = [
+    path.join(repoRoot, 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
+    path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
+    path.join(repoRoot, 'skills', 'bee-swarming', 'SKILL.md'),
+    path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'SKILL.md'),
+    path.join(repoRoot, 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+    path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+  ];
+
+  for (const surface of doctrineSurfaces) {
+    assert(fs.existsSync(surface), `required doctrine surface missing: ${path.relative(repoRoot, surface)}`);
+    const text = fs.readFileSync(surface, 'utf8');
+    const rel = path.relative(repoRoot, surface);
+    assert(/wait_agent/.test(text) && /list_agents/.test(text), `${rel} must name native Codex wait_agent and list_agents`);
+    assert(/empty wait[^\n]*never[^\n]*wait_agent|never[^\n]*wait_agent[^\n]*twice consecutively/i.test(text), `${rel} must forbid empty wait -> wait_agent with no exception`);
+    assert(/material task-local work/i.test(text) && /exactly\s+one[\s\S]{0,50}list_agents[\s\S]{0,30}snapshot/i.test(text), `${rel} must require material task-local work or exactly one list_agents snapshot`);
+    assert(/commentary[\s\S]{0,180}(live|running)\s+agent\s+state[\s\S]{0,100}next\s+action/i.test(text), `${rel} commentary must name both live agent state and next action`);
+    assert(/no-op/i.test(text) && /repeated state read/i.test(text) && /hidden reasoning/i.test(text) && /commentary alone/i.test(text), `${rel} must close no-op, repeated-read, hidden-reasoning, and commentary-only loopholes`);
+    assert(/interrupt/i.test(text) && /duplicate dispatch/i.test(text) && /claim/i.test(text) && /reservation/i.test(text), `${rel} timeout must preserve agents, claims, and reservations`);
+    assert(/external (process|CLI|executor)/i.test(text) && /artifact polling/i.test(text), `${rel} must keep external process/artifact polling outside the native-agent rule`);
+  }
+
+  for (const surface of procedureSurfaces) {
+    assert(fs.existsSync(surface), `required procedure surface missing: ${path.relative(repoRoot, surface)}`);
+    const text = fs.readFileSync(surface, 'utf8');
+    const rel = path.relative(repoRoot, surface);
+    assert(/empty wait/i.test(text) && /wait_agent/.test(text) && /list_agents/.test(text), `${rel} must carry the native empty-wait procedure`);
+    assert(/material task-local work/i.test(text) && /exactly\s+one[\s\S]{0,50}list_agents[\s\S]{0,30}snapshot/i.test(text), `${rel} must carry the exact material-action fallback`);
+    assert(/commentary[\s\S]{0,180}(live|running)\s+agent\s+state[\s\S]{0,100}next\s+action/i.test(text), `${rel} must require the state-and-next-action commentary update`);
+    assert(/duplicate\s+dispatch/i.test(text) && /claim/i.test(text) && /reservation/i.test(text), `${rel} must preserve dispatch and ownership on timeout`);
+  }
+});
+
 check('census: the two-kind handoff rule (with its transport) and the multi-session etiquette rule live in the always-loaded doctrine layer — AGENTS.block.md + root AGENTS.md carry both, not just the runtime lib (fresh-session-handoff S5, D1/D3)', () => {
   const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
   const repoRoot = findRepoRoot(templatesRoot);

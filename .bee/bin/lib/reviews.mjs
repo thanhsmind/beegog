@@ -410,10 +410,9 @@ function runGit(root, args) {
 function headCoveredBy(root, head, ref) {
   if (head === ref) return { covered: true, unresolved: false };
   const result = runGit(root, ['merge-base', '--is-ancestor', head, ref]);
-  if (result.error || result.status === null) return { covered: null, unresolved: true };
   if (result.status === 0) return { covered: true, unresolved: false };
   if (result.status === 1) return { covered: false, unresolved: false };
-  return { covered: null, unresolved: true }; // e.g. exit 128 — unknown/invalid revision
+  return { covered: null, unresolved: true }; // null or e.g. exit 128 — unknown/invalid revision
 }
 
 /**
@@ -423,7 +422,7 @@ function headCoveredBy(root, head, ref) {
  */
 function commitsSince(root, ref) {
   const result = runGit(root, ['rev-list', `${ref}..HEAD`, '--count']);
-  if (result.error || result.status === null || result.status !== 0) {
+  if (result.status !== 0) {
     return { count: null, unresolved: true };
   }
   const count = parseInt(String(result.stdout).trim(), 10);

@@ -41,6 +41,8 @@
 //   - invalid-source     : --source value is not plugin|repo
 //   - applypatch-unparsed: (logged by bee-write-guard) an intercepted
 //                          apply_patch whose targets could not all be proved
+//   - unsupported-subagent-event: (logged by bee-codex-subagent-audit) input
+//                          did not name SubagentStart or SubagentStop
 
 import fs from "node:fs";
 import path from "node:path";
@@ -86,18 +88,107 @@ export function parseSourceIdentity(argv = process.argv) {
 
 // --- root discovery --------------------------------------------------------
 
-export function findRepoRoot(startDir) {
+function realpathOrNull(value) {
+  try {
+    return fs.realpathSync.native(value);
+  } catch {
+    return null;
+  }
+}
+
+function readGitdirFile(file, base) {
+  try {
+    let raw = fs.readFileSync(file, "utf8").trim();
+    if (!raw) return null;
+    if (raw.startsWith("gitdir:")) raw = raw.slice("gitdir:".length).trim();
+    if (!raw) return null;
+    return path.resolve(base, raw.replace(/\\/g, path.sep));
+  } catch {
+    return null;
+  }
+}
+
+function locateGitRoot(startDir) {
   let candidate = path.resolve(typeof startDir === "string" && startDir ? startDir : process.cwd());
   while (true) {
-    if (fs.existsSync(path.join(candidate, ".bee", "onboarding.json"))) {
-      return candidate;
-    }
+    const marker = path.join(candidate, ".git");
+    if (fs.existsSync(marker)) return { workRoot: candidate, marker };
     const parent = path.dirname(candidate);
-    if (parent === candidate) {
-      return null;
-    }
+    if (parent === candidate) return null;
     candidate = parent;
   }
+}
+
+function locateOnboardedRoot(startDir) {
+  let candidate = path.resolve(typeof startDir === "string" && startDir ? startDir : process.cwd());
+  while (true) {
+    if (fs.existsSync(path.join(candidate, ".bee", "onboarding.json"))) return candidate;
+    const parent = path.dirname(candidate);
+    if (parent === candidate) return null;
+    candidate = parent;
+  }
+}
+
+// Non-throwing hook-side twin of state.mjs resolveRoots. `root` remains the
+// physical checkout for every existing hook consumer; only write-guard uses
+// storeRoot for coordination state and authorization.
+export function resolveRoots(startDir) {
+  try {
+    const onboarded = locateOnboardedRoot(startDir);
+    if (onboarded && !fs.existsSync(path.join(onboarded, ".git"))) {
+      const root = realpathOrNull(onboarded);
+      return { storeRoot: root, workRoot: root, worktreeResolution: "ordinary" };
+    }
+    const located = locateGitRoot(startDir);
+    if (!located) {
+      const root = onboarded && realpathOrNull(onboarded);
+      return { storeRoot: root, workRoot: root, worktreeResolution: "ordinary" };
+    }
+
+    const workRoot = realpathOrNull(located.workRoot);
+    if (!workRoot) {
+      return { storeRoot: null, workRoot: null, worktreeResolution: "ordinary" };
+    }
+    let markerStat;
+    try {
+      markerStat = fs.statSync(located.marker);
+    } catch {
+      return { storeRoot: null, workRoot, worktreeResolution: "linked-invalid" };
+    }
+    if (!markerStat.isFile()) {
+      return { storeRoot: workRoot, workRoot, worktreeResolution: "ordinary" };
+    }
+
+    const gitdir = readGitdirFile(located.marker, located.workRoot);
+    if (!gitdir) {
+      return { storeRoot: null, workRoot, worktreeResolution: "linked-invalid" };
+    }
+    const worktreesRoot = path.resolve(gitdir, "..");
+    const commonGitDir = path.resolve(worktreesRoot, "..");
+    const linkedShape = path.basename(worktreesRoot) === "worktrees" && path.basename(commonGitDir) === ".git";
+    // A legitimate `git init --separate-git-dir` checkout also has a .git
+    // file, but not the .git/worktrees/<id> relationship. It stays ordinary.
+    if (!linkedShape) {
+      return { storeRoot: workRoot, workRoot, worktreeResolution: "ordinary" };
+    }
+
+    const reverse = readGitdirFile(path.join(gitdir, "gitdir"), gitdir);
+    const markerReal = path.resolve(located.marker);
+    if (!reverse || path.resolve(reverse) !== markerReal) {
+      return { storeRoot: null, workRoot, worktreeResolution: "linked-invalid" };
+    }
+    const storeRoot = realpathOrNull(path.dirname(commonGitDir));
+    if (!storeRoot) {
+      return { storeRoot: null, workRoot, worktreeResolution: "linked-invalid" };
+    }
+    return { storeRoot, workRoot, worktreeResolution: "linked-valid" };
+  } catch {
+    return { storeRoot: null, workRoot: null, worktreeResolution: "ordinary" };
+  }
+}
+
+export function findRepoRoot(startDir) {
+  return resolveRoots(startDir).workRoot;
 }
 
 export function libModuleUrl(root, name) {
@@ -204,14 +295,8 @@ export async function readHookContext(hookName, { argv = process.argv } = {}) {
     });
   }
 
-  let root = null;
-  try {
-    root = findRepoRoot(cwd);
-  } catch {
-    // fail-open boundary: a discovery throw means "no root" — with no root
-    // there is nowhere to log, so the hook simply no-ops (exit 0 upstream).
-    root = null;
-  }
+  const roots = resolveRoots(cwd);
+  const root = roots.workRoot;
 
   if (root) {
     for (const g of gaps) {
@@ -220,7 +305,16 @@ export async function readHookContext(hookName, { argv = process.argv } = {}) {
   }
 
   const event = typeof payload.hook_event_name === "string" ? payload.hook_event_name : "";
-  return { payload, cwd, root, source: parsedSource.source, event, gaps };
+  return {
+    payload,
+    cwd,
+    root,
+    storeRoot: roots.storeRoot,
+    worktreeResolution: roots.worktreeResolution,
+    source: parsedSource.source,
+    event,
+    gaps,
+  };
 }
 
 // --- output encoding -------------------------------------------------------

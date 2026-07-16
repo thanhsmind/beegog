@@ -43,13 +43,70 @@ const APPLY_PATCH_TOOLS = new Set(["apply_patch", "ApplyPatch"]);
 
 // Convert a tool-supplied path (absolute or relative) to a forward-slash
 // path relative to the repo root. Returns null when the path escapes the repo.
-function toRelPath(root, cwd, rawPath) {
+function lexicalRelPath(root, cwd, rawPath) {
   if (!rawPath || typeof rawPath !== "string") {
     return null;
   }
   const abs = path.isAbsolute(rawPath) ? rawPath : path.resolve(cwd || root, rawPath);
   const rel = path.relative(root, abs);
   if (!rel || rel === "." || rel.startsWith("..") || path.isAbsolute(rel)) {
+    return null;
+  }
+  return rel.split(path.sep).join("/");
+}
+
+function normalizeToolPath(rawPath) {
+  // Preserve shell's `\ ` escaped-space spelling, but treat every other
+  // backslash as a Windows separator so traversal cannot hide behind it.
+  return String(rawPath).replace(/\\(?!\s)/g, path.sep);
+}
+
+function canonicalRelPath(workRoot, cwd, rawPath) {
+  if (!rawPath || typeof rawPath !== "string") return null;
+  const rootReal = (() => {
+    try {
+      return fs.realpathSync.native(workRoot);
+    } catch {
+      return null;
+    }
+  })();
+  if (!rootReal) return null;
+
+  const normalized = normalizeToolPath(rawPath);
+  // A foreign Windows absolute/UNC spelling cannot be safely mapped by a
+  // POSIX host. Windows itself handles these through path.isAbsolute and its
+  // case-insensitive path.relative implementation below.
+  if (path.sep !== "\\" && (/^[A-Za-z]:[\\/]/.test(rawPath) || /^\\\\/.test(rawPath))) {
+    return null;
+  }
+  if (!path.isAbsolute(normalized) && normalized.split(path.sep).includes("..")) return null;
+
+  const cwdBase = path.isAbsolute(cwd || "") ? cwd : rootReal;
+  const lexicalTarget = path.isAbsolute(normalized) ? path.resolve(normalized) : path.resolve(cwdBase, normalized);
+  let cursor = lexicalTarget;
+  const unresolved = [];
+  while (true) {
+    try {
+      fs.lstatSync(cursor);
+      break;
+    } catch (error) {
+      if (!error || error.code !== "ENOENT") return null;
+      const parent = path.dirname(cursor);
+      if (parent === cursor) return null;
+      unresolved.unshift(path.basename(cursor));
+      cursor = parent;
+    }
+  }
+
+  let ancestorReal;
+  try {
+    ancestorReal = fs.realpathSync.native(cursor);
+  } catch {
+    return null;
+  }
+  const canonicalTarget = path.resolve(ancestorReal, ...unresolved);
+  const rel = path.relative(rootReal, canonicalTarget);
+  if (!rel || rel === "." || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
     return null;
   }
   return rel.split(path.sep).join("/");
@@ -291,26 +348,35 @@ async function main() {
   if (!root) {
     return 0;
   }
-  if (!fs.existsSync(path.join(root, ".bee", "bin", "lib", "state.mjs"))) {
-    return 0;
-  }
 
   const payload = ctx.payload;
+  const toolName = payload.tool_name || payload.toolName || "";
+  const writeCapable =
+    WRITE_TOOLS.has(toolName) || toolName === "Bash" || APPLY_PATCH_TOOLS.has(toolName);
+  if (writeCapable && ctx.worktreeResolution === "linked-invalid") {
+    process.stderr.write(
+      "bee worktree guard denied this write: WORKTREE_LINK_INVALID — linked worktree metadata could not be validated. " +
+        "FIX: repair or recreate the Git worktree before retrying; no worktree-local .bee store is trusted.",
+    );
+    return 2;
+  }
+  const storeRoot = ctx.storeRoot || root;
+  if (!fs.existsSync(path.join(storeRoot, ".bee", "bin", "lib", "state.mjs"))) return 0;
+
   let denial = null; // { reason }
   try {
-    const stateLib = await import(libModuleUrl(root, "state.mjs"));
-    if (!stateLib.hookEnabled(root, HOOK_NAME)) {
+    const stateLib = await import(libModuleUrl(storeRoot, "state.mjs"));
+    if (!stateLib.hookEnabled(storeRoot, HOOK_NAME)) {
       return 0;
     }
-    const guards = await import(libModuleUrl(root, "guards.mjs"));
+    const guards = await import(libModuleUrl(storeRoot, "guards.mjs"));
 
-    const toolName = payload.tool_name || payload.toolName || "";
     const toolInput =
       payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
     const cwd = ctx.cwd;
 
     if (READ_TOOLS.has(toolName)) {
-      const rel = toRelPath(root, cwd, toolInput.file_path || toolInput.path || "");
+      const rel = lexicalRelPath(root, cwd, toolInput.file_path || toolInput.path || "");
       if (rel) {
         const verdict = guards.checkRead(rel);
         if (verdict && verdict.allow === false) {
@@ -326,7 +392,7 @@ async function main() {
       toolName === "Bash" ||
       APPLY_PATCH_TOOLS.has(toolName)
     ) {
-      const state = stateLib.readState(root);
+      const state = stateLib.readState(storeRoot);
       const agentName = inferAgentName(payload, toolInput);
       // fresh-session-handoff fsh-8 (D3/D4): thread the acting session into
       // guards.checkWrite so a cross-session hold (fsh-7) and lane-bound
@@ -357,7 +423,7 @@ async function main() {
           );
         } else {
           const targets = extractApplyPatchTargets(patchText);
-          relPaths = targets.map((p) => toRelPath(root, cwd, p)).filter(Boolean);
+          relPaths = targets.map((p) => canonicalRelPath(root, cwd, p)).filter(Boolean);
           if (targets.length === 0 || relPaths.length < targets.length) {
             // P1 repair (codex-parity-4): the envelope WAS intercepted, but
             // the target set cannot be fully proved (no Add/Update/Delete/
@@ -387,20 +453,36 @@ async function main() {
         if (command) {
           const targets = guards.extractBashTargets(command);
           const paths = (targets && targets.paths) || [];
-          relPaths = paths.map((p) => toRelPath(root, cwd, p)).filter(Boolean);
-          if (relPaths.length === 0 && targets && targets.broadWrite) {
+          relPaths = paths.map((p) => canonicalRelPath(root, cwd, p)).filter(Boolean);
+          if (paths.length !== relPaths.length) {
+            denial = {
+              reason:
+                "bee write guard denied Bash: one or more extracted targets could not be canonically contained inside the physical worktree. " +
+                "FIX: use plain in-worktree paths without traversal, outside absolute paths, or symlink escapes.",
+            };
+          } else if (relPaths.length === 0 && targets && targets.broadWrite) {
             relPaths = ["**"];
           }
         }
       } else {
-        const rel = toRelPath(root, cwd, toolInput.file_path || "");
+        const rel = canonicalRelPath(root, cwd, toolInput.file_path || "");
         if (rel) {
           relPaths = [rel];
+        } else {
+          denial = {
+            reason:
+              "bee write guard denied this target: it could not be canonically contained inside the physical worktree. " +
+              "FIX: use a plain in-worktree path without traversal, outside absolute paths, or symlink escapes.",
+          };
         }
       }
 
+      // Preserve the established diagnostic precedence when a mixed request
+      // contains both an unprovable target and a proved policy-denied target:
+      // the whole request is denied either way, and the concrete policy
+      // reason (for example direct-edit) remains the user-facing correction.
       for (const rel of relPaths) {
-        const verdict = guards.checkWrite(root, state, rel, agentName, { sessionId });
+        const verdict = guards.checkWrite(storeRoot, state, rel, agentName, { sessionId });
         if (verdict && verdict.allow === false) {
           denial = {
             reason:
@@ -425,8 +507,8 @@ async function main() {
       const command = typeof toolInput.command === "string" ? toolInput.command : "";
       if (command) {
         try {
-          const validateLib = await import(libModuleUrl(root, "validate-args.mjs"));
-          const registryLib = await import(libModuleUrl(root, "command-registry.mjs"));
+          const validateLib = await import(libModuleUrl(storeRoot, "validate-args.mjs"));
+          const registryLib = await import(libModuleUrl(storeRoot, "command-registry.mjs"));
           const cliDenial = checkCliShape(command, registryLib.COMMAND_REGISTRY, validateLib.validate);
           if (cliDenial && !denial) {
             denial = cliDenial;

@@ -1,156 +1,319 @@
 ---
 artifact_contract: bee-implement-plan/v1
-status: validated-pending
-mode: high-risk
+feature: worktree-isolation
+lane: high-risk
+status: Revision pending delta re-review and executable baseline
+updated: 2026-07-15
+sources:
+  - CONTEXT.md
+  - approach.md
+  - plan.md
+  - .bee/cells/worktree-isolation-1.json
+  - .bee/cells/worktree-isolation-2.json
+  - .bee/cells/worktree-isolation-3.json
+  - .bee/cells/worktree-isolation-4.json
+  - .bee/state.json
+decisions: [D1, D2, D3, D4, 42a01cfd, 5aa8946d, 5de1fd36, 649d91b3, 5f05b038, 23d67e0b, 58c56bb6, 33b6ac73, 70e2dbeb, 8cc1bde1-b631-4fe9-a110-931d76d40a69, b24a2efc-f102-417d-87c5-c871733aec2a]
 ---
 
-# worktree-isolation — Implement Plan
+# Implementation Plan: Worktree Isolation
 
-## What & Why
+> Human-layer projection of the truth artifacts. Truth lives in CONTEXT.md
+> (decisions), plan.md + cells (work), and the validating report (evidence).
+> Feedback on this document flows back to those artifacts, then this re-renders.
+> The planning documents and prepared cell files contain the accepted review
+> repairs. Delta re-review and an executable fresh baseline remain pending.
 
-Multi-worker swarm waves share one git checkout today, so a wave of 2+ workers
-hits `index.lock` contention and commit-order coupling — flagged when
-parallel-scheduler shipped computed waves and left git-contention unresolved
-(backlog P40). This feature lets 2+-worker waves on Claude Code each get their own
-git worktree (Agent tool's native `isolation: worktree`), while cells, claims,
-reservations, and state keep living in and being read from the one main checkout's
-`.bee/` — no forked runtime state, no unguarded writes. A prior worktree-per-worker
-attempt was rejected as "a foundation swap without demonstrated need" (decision
-0018); this feature is scoped narrowly enough not to repeat that.
+## 1. Goal
 
-## Locked Decisions
+Allow qualifying Claude Code swarm waves to dispatch workers into independent Git
+worktrees without creating a second coordination store, bypassing reservation
+enforcement, or counting work before it is integrated and verified in the main
+checkout.
 
-- **D1** — Opt-in only for multi-worker waves (≥2) on Claude Code, via the Agent
-  tool's native `isolation: worktree`; shared checkout stays default elsewhere;
-  Codex/manual lifecycle out of scope; reservations remain the file-ownership
-  primitive. (Decision `42a01cfd`.)
-- **D2** — One coordination store: the main checkout's `.bee/`. Linked-worktree
-  resolution (root's `.git` is a FILE pointing into
-  `<main>/.git/worktrees/<id>`) resolves the store to `<main>`; `BEE_ROOT` env is
-  an explicit escape hatch for CLI only, validated against
-  `.bee/onboarding.json`. Both `findRepoRoot` copies
-  (`lib/state.mjs:239`, `hooks/adapter.mjs:89`) get the resolution. (Decisions
-  `9ba51eb0`, `5aa8946d`.)
-- **D3** — Merge-back is an orchestrator goal-check step: after `[DONE]`, merge
-  the worker's reported branch, re-run cell verify in the MAIN checkout; a
-  conflict halts that cell's integration (typed failure, blocked, friction
-  filed — never force-resolved); `[BLOCKED]`/`[HANDOFF]` worktrees are preserved
-  (path + branch in cell trace) until re-completed or explicitly dropped.
-  (Decision `649d91b3` + amendment.)
-- **D4** — The write guard keeps enforcing under worktree dispatch: reservation
-  paths stay logical/repo-relative; the guard normalizes `<worktree>/src/x` →
-  `src/x`. Where normalization can't be made safe, worktree mode is refused, never
-  run unguarded. (Decision `23d67e0b`.)
+**Success looks like**
 
-## Affected Files
+- Worktree dispatch is opt-in for Claude Code waves with at least two workers;
+  solo and single-worker work stays in the shared checkout. (D1; `42a01cfd`)
+- Every worker uses the main checkout's `.bee/`; linked-shaped invalid metadata
+  produces typed `WORKTREE_LINK_INVALID` for library/CLI store access while the
+  hook adapter stays non-throwing. Ordinary repository forms retain ordinary
+  behavior. (D2)
+- The orchestrator captures pre-dispatch attestation, rechecks identity, ancestry,
+  and reserved-path subset, integrates transactionally, and records exact
+  committed-main full-verify provenance before completion counts. (D3)
+- Reservations keep one logical namespace after canonical work-root containment;
+  escape and ambiguous requests deny every write tool before mutation. (D4)
+- Automatic cleanup is limited to clean, reachable, full-green work; failures
+  preserve, and destructive drop requires approval plus recovery evidence.
 
-- **Cell 1** (lib): `skills/bee-hive/templates/lib/state.mjs`,
-  `.bee/bin/lib/state.mjs`, `skills/bee-hive/templates/tests/test_lib.mjs`
-- **Cell 2** (adapter+guard, deps: -1): `hooks/adapter.mjs`,
-  `hooks/bee-write-guard.mjs`, `.bee/bin/hooks/adapter.mjs`,
-  `.bee/bin/hooks/bee-write-guard.mjs`, `hooks/test_write_guard.mjs`,
-  `hooks/test_hook_contracts.mjs`,
-  `docs/history/codex-harness-hardening/release-manifest.json`
-- **Cell 3** (dispatch protocol, deps: -1): `skills/bee-swarming/SKILL.md`,
-  `skills/bee-swarming/references/swarming-reference.md`,
-  `skills/bee-executing/references/worker-details.md`
+## 2. Current State
 
-## Implementation Steps
+Concurrent workers currently share one checkout and Git index, which creates
+`index.lock` contention and commit-order coupling. A native-worktree probe found
+that worker commits are visible from the main checkout and that hooks receive the
+physical worktree through `payload.cwd`. It also reproduced the blocking defect:
+root discovery treats the worktree's checked-out `.bee/` as a separate empty
+store, so the worker reaches the intake guard as idle. The existing swarming
+documentation mentions worktree isolation but does not yet define the trusted
+root split, integration sequence, failure disposition, or cleanup contract.
 
-### Cell 1 — findRepoRoot hop + BEE_ROOT + resolveRoots (lib, both mirrors)
+## 3. Scope
 
-- RED first in `test_lib.mjs`: build a real temp git repo (`git init`, one
-  commit, `git worktree add`); assert `findRepoRoot` from inside the worktree
-  returns MAIN root, from main root is unchanged, `BEE_ROOT` valid/invalid,
-  corrupt `.git` falls back to worktree root, `resolveRoots` pair correct in/out
-  of a worktree, gitdir with trailing newline, relative gitdir.
-- Add `BEE_ROOT` as the FIRST check — valid only when
-  `<BEE_ROOT>/.bee/onboarding.json` exists, else fall through silently.
-- After the walk resolves a root, add the linked-worktree hop: if `<root>/.git`
-  is a FILE, parse its `gitdir:` line (absolute/relative, trailing whitespace,
-  win32 backslashes); if it points into `<main>/.git/worktrees/<id>`, derive
-  `<main>` and return it only when `<main>/.bee/onboarding.json` exists;
-  otherwise keep today's walk result. One hop max, never loop.
-- Export `resolveRoots(startDir) -> {storeRoot, workRoot}` — `workRoot` is the
-  raw walk root, `storeRoot` is after resolution; equal outside worktrees.
-- Apply byte-identically to both mirror copies. Make RED rows pass; confirm zero
-  behavior change outside worktrees.
+**In scope**
 
-### Cell 2 — adapter hop + write-guard store/work split (deps: cell 1)
+- Add typed linked-worktree resolution to the library and non-throwing hook
+  adapter while preserving `workRoot`/`storeRoot`, loud CLI invalid-link failure,
+  and ordinary directory/submodule/separate-git-dir controls. (D2)
+- Make the write guard read coordination data from `storeRoot`, normalize target
+  paths relative to `workRoot`, and fail closed for ambiguous write-capable
+  requests. (D4)
+- Canonically contain every target before logical normalization. (D4)
+- Derive hook parity from runtime production inventory with explicit source-only
+  exclusions; exact filenames follow the implementation gather.
+- Define opt-in eligibility, independent attestation, transactional merge/check/
+  commit/full-verify/revert, failure preservation, and gated cleanup/drop. (D1, D3)
+- Run a real linked-worktree acceptance after the enabling resolver, guard, and
+  protocol changes are present.
 
-- RED first: `test_write_guard.mjs` rows for a worktree edit matching a
-  main-store reservation (allow when owner, deny naming the holder otherwise), a
-  worktree edit with no reservation behaving like the main-checkout equivalent,
-  and ambiguous-worktree detection denying the write. `test_hook_contracts.mjs`
-  row pinning `lib/state.mjs` and `adapter.mjs` to identical resolution on a
-  shared fixture.
-- Duplicate the same hop into the adapter's own `findRepoRoot` copy (~line 89) —
-  keep the adapter import-light, no new import of `lib/state.mjs`.
-- `buildContext` exposes both roots: `ctx.root` = `storeRoot` (state/config/
-  reservations reads), `ctx.workRoot` = worktree top (path normalization).
-- `toRelPath` in `bee-write-guard.mjs` computes against `workRoot`; state/
-  reservations reads use `storeRoot` — one logical namespace (D4).
-- Ambiguous detection (unparseable `.git`, gitdir outside
-  `<main>/.git/worktrees/`) DENIES write tools fail-closed; CLI/read paths keep
-  fail-open. Sync `.bee/bin/hooks` copies byte-identical.
-- Run `node scripts/release_manifest.mjs --write` (lib/hook files changed), then
-  confirm `--check` green.
+**Out of scope**
 
-### Cell 3 — swarming dispatch protocol (deps: cell 1)
+- Codex or manually managed `git worktree` lifecycle for external CLI executors.
+- Scheduler annotations or recommendations for worktree use.
+- Changes to reservation ownership, TTL, overlap, or meaning.
+- Any authority input other than the independently captured control-plane
+  attestation and reservation scope. Git metadata and derived worktree identity
+  remain consistency checks, not security authority.
 
-- `SKILL.md` wave-dispatch step: on Claude Code, a ≥2-worker wave dispatches
-  each worker with `isolation: worktree`; solo/single-worker waves keep shared
-  checkout (D1).
-- `swarming-reference.md`: replace the aspirational worktree line (~71) with a
-  worktree-only prompt contract block — worker reports its branch
-  (`git branch --show-current`) in `[DONE]`; coordination store resolves to main
-  automatically.
-- Add the INTEGRATION step to tend/goal-check: merge the reported branch into
-  main; conflict = typed failure, blocked, friction filed, never
-  force-resolved/never worker-rescued; re-run cell verify in MAIN (cell counts
-  only post-merge green); cleanup (`git worktree remove` + `git branch -d`).
-- Add the D3 disposition table: `[BLOCKED]`/`[HANDOFF]` worktrees preserved
-  (path+branch in cell trace) until re-completion or explicit drop (logged);
-  feature close prunes only merged-or-logged `.claude/worktrees/` leftovers.
-- `worker-details.md` Atomic Commit section: note the branch-report field.
-- Do not touch installed copies under `.claude/skills`/`.agents/skills`; never
-  make worktree dispatch mandatory for any lane.
+## 4. Proposed Approach
 
-## Validation Plan
+Implement typed linked-worktree resolution in both root-discovery locations.
+Library/CLI coordination access raises `WORKTREE_LINK_INVALID` rather than using
+local `.bee/`; the adapter transports `linked-invalid` without throwing. Existing
+hook consumers keep the physical root; the write guard alone uses the store root
+and canonically contains targets before logical normalization. Serialize wt-1 →
+wt-2 → wt-3 in shared checkout, then run the attested, transactional wt-4 native
+acceptance with exact full-main verify provenance and conservative disposition.
 
-- **Cell 1:** `node skills/bee-hive/templates/tests/test_lib.mjs && node
-  scripts/test_lib_mirror.mjs`
-- **Cell 2:** `node hooks/test_write_guard.mjs && node
-  hooks/test_hook_contracts.mjs && node scripts/test_lib_mirror.mjs && node
-  scripts/release_manifest.mjs --check`
-- **Cell 3:** `rg -q "isolation: worktree" skills/bee-swarming/SKILL.md && rg -q
-  "worktree" skills/bee-swarming/references/swarming-reference.md && rg -q
-  "branch" skills/bee-executing/references/worker-details.md && node
-  skills/bee-hive/templates/tests/test_bee_cli.mjs`
-- **Spike evidence collected (2026-07-15):** native worktree =
-  `<main>/.claude/worktrees/agent-<id>` on branch `worktree-agent-<id>`, sharing
-  main `.git`; commit reachable from main by branch name alone. An un-pinned
-  worktree worker resolves root to itself, finds no `state.json`, reads phase
-  `idle`, intake gate blocks writes — confirms D2's store-pinning is load-bearing.
-  The write-guard hook fires inside the worktree via `payload.cwd`
-  (`CLAUDE_PROJECT_DIR` is empty/unusable) — confirms the `.git`-file channel is
-  the only viable detection path for both CLI and hook adapter.
+**Why this approach** — It keeps one coordination store and one reservation
+namespace while limiting the change to the two existing root-resolution paths
+and the swarming integration contract.
 
-## Risks & Mitigations
+**Alternatives considered**
 
-| Component | Risk | Mitigation |
-|---|---|---|
-| findRepoRoot hop (both copies) | HIGH — every host, every verb/hook | RED-first temp-repo tests; explicit non-worktree regression rows; win32 gitdir parsing covered |
-| Guard store/work split | HIGH — safety machinery, hard-gate | Reservation-match rows from worktree edits; fail-closed on ambiguity; non-worktree behavior byte-stable |
-| BEE_ROOT escape hatch | LOW | Validated-or-ignored rows; never trusted on non-bee dir |
-| Dispatch/merge-back prose | MED | Grep-anchored verify + dogfood: this feature's own wave 2 (cells 2 ∥ 3) runs under worktree dispatch itself |
-| Harness auto-clean semantics | MED | Spike showed worktree "locked" while running; post-completion behavior probed during dogfood; D3 disposition table covers both outcomes |
+- Environment-based root override — rejected because CLI and hook resolution can
+  diverge.
+- A copied repository marker as proof of the main checkout — rejected because it
+  does not establish a linked-worktree relationship.
+- Worker-supplied integration identity — rejected; identity is derived from the
+  native worktree id.
+- Git metadata as a security boundary against a same-UID worker — rejected;
+  metadata is consistency evidence and attestation is independently captured.
+- Lexical-only path checks and automatic non-green cleanup — rejected because
+  they permit escapes or destroy recoverable state.
+- Running the enabling guard and protocol cells inside worktrees — rejected
+  because the pre-fix guard cannot safely enable its own environment.
+- Importing the state library into the hook adapter — rejected to preserve the
+  adapter's import-light fail-open boundary; parity is enforced by fixtures.
+- Bee-managed worktree lifecycle and scheduler hints — deferred beyond this
+  feature.
 
-## Out of Scope
+## 5. Technical Design
 
-- Codex/manual `git worktree` lifecycle for external CLI executors (own backlog
-  row, filed at scribing).
-- Worktree-aware `bee cells schedule` hints ("worktree recommended" annotation)
-  — not needed for v1.
-- Any change to what a reservation means (D1: reservations remain the
-  file-ownership primitive; worktrees remove only git-level contention).
+Root resolution keeps two identities and one explicit resolution state. Starting
+from the command or hook working directory, the resolver identifies the physical
+`workRoot`, classifies it as `ordinary`, `linked-valid`, or `linked-invalid`, and
+returns `{storeRoot, workRoot, worktreeResolution}`. For a linked candidate it
+parses the worktree-side `gitdir`, requires the canonical target to be
+`<main>/.git/worktrees/<id>`, and verifies that the main-side metadata points back
+to the same canonical worktree. Only that bidirectional Git relationship promotes
+`<main>` to `storeRoot`. A linked-shaped but malformed, forged, missing, or
+ambiguous relationship is `linked-invalid`: library and CLI coordination access
+raises `WORKTREE_LINK_INVALID` and never falls back to a worktree-local `.bee/`.
+An ordinary checkout, submodule, or valid separate-git-dir repository remains an
+ordinary control and keeps `workRoot === storeRoot`.
+
+```text
+payload.cwd
+  -> physical workRoot
+  -> classify ordinary | linked-valid | linked-invalid
+  -> validate canonical Git links in both directions
+  -> linked-valid: main-checkout storeRoot
+  -> linked-invalid: fail coordination access loudly
+  -> read shared state/reservations
+  -> canonically contain the target inside workRoot
+  -> authorize its logical path against shared reservations
+```
+
+The hook adapter preserves `ctx.root = workRoot` for every existing consumer,
+adds `ctx.storeRoot` as an opt-in value used only by the write guard, and carries
+the same typed resolution without throwing across the import-light fail-open
+boundary. The write guard reads state, lanes, claims, and reservations from
+`storeRoot`. Before reservation normalization it canonically contains every
+write target inside `workRoot`: existing targets use their real path, new targets
+use the nearest existing ancestor, and absolute-outside, traversal, symlink,
+Windows-separator, and case-alias escapes are denied. On `linked-invalid`, every
+write-capable tool is denied before mutation with a typed verdict; read-only tools
+and ordinary shared-checkout behavior keep their current contract.
+
+Runtime hook parity is derived rather than hand-enumerated. The expected shipped
+set starts from command targets in both launcher manifests and closes over safe
+same-directory relative imports. Tests compare that derived runtime inventory
+with direct files under `.bee/bin/hooks/`, rejecting missing, extra, and byte-
+different files while deliberately excluding source-only catalogs, configs, and
+test files.
+
+Execution stays in the shared checkout and is serialized `wt-1 → wt-2 → wt-3`, so
+no two write-heavy steps compete for the same Git index. Before dispatching the
+one validation-only acceptance worker, the orchestrator records a control-plane
+attestation: canonical common directory, worktree path and id, initial symbolic
+HEAD ref, base commit, and reserved paths. The same-UID worker is cooperative but
+is not a security principal; worker-reported identity and mutable Git metadata are
+consistency evidence only. Integration rechecks the attestation, base ancestry,
+the symbolic branch, reported commit, and that the final diff is a subset of the
+attested reservations. Detached HEAD, backlink mismatch, ancestry mismatch,
+unexpected paths, or commit mismatch halts integration and preserves evidence.
+
+Integration is transactional. Main records its pre-integration SHA, runs
+`git merge --no-ff --no-commit`, executes targeted precommit checks, and aborts the
+merge on conflict or red. It commits only after those checks pass, then runs the
+exact repository-wide verification command from the committed main checkout and
+records working directory, HEAD, ancestry, command, and output. An unexpected
+postcommit failure is repaired non-destructively with a revert commit before any
+later work. Automatic cleanup is non-force and allowed only when the worktree is
+clean, verification is green, and its commit is reachable from main. Destructive
+drop requires explicit operator authorization plus captured recovery coordinates.
+Deterministic temporary-repository fault injection covers conflict, identity,
+ancestry, path-subset, precommit-red, postcommit-red, blocked, handoff, and
+abandoned dispositions.
+
+**Security / Permissions** — The control-plane attestation and reservation scope
+are the integration authorization inputs. Git backlinks and worker reports are
+rechecked consistency signals, not an independent security boundary against a
+same-UID process that can edit both ends. Tracked onboarding files, environment
+variables, worker-reported ids/branches, and post-dispatch metadata alone grant no
+authority. Existing reservation ownership, overlap, TTL, and holder-denial rules
+remain the authorization boundary for file writes; canonical containment prevents
+an apparently relative target from escaping that boundary.
+
+## 6. Affected Files
+
+The prepared cells are authoritative for this list.
+
+| Action | File / Component | Purpose |
+|--------|------------------|---------|
+| Modify | `skills/bee-hive/templates/lib/state.mjs` | Add validated linked-worktree root resolution and `resolveRoots`. |
+| Modify | `.bee/bin/lib/state.mjs` | Keep the runtime library mirror byte-identical. |
+| Modify | `skills/bee-hive/templates/tests/test_lib.mjs` | Add root-resolution fixtures, focused dispatch/identity assertions, then detailed protocol assertions in acceptance. |
+| Modify | `hooks/adapter.mjs` | Add the paired resolver and expose `ctx.storeRoot` without changing `ctx.root`. |
+| Modify | `hooks/bee-write-guard.mjs` | Read coordination state from the store root, normalize against the work root, and deny ambiguity. |
+| Modify | `.bee/bin/hooks/adapter.mjs` | Keep the runtime adapter mirror byte-identical. |
+| Modify | `.bee/bin/hooks/bee-write-guard.mjs` | Keep the runtime write-guard mirror byte-identical. |
+| Modify | `hooks/test_write_guard.mjs` | Cover worktree reservations, ambiguity denials, and ordinary-host regressions. |
+| Modify | `hooks/test_hook_contracts.mjs` | Pin adapter/library root behavior and all write-capable tool paths. |
+| Modify | `scripts/test_lib_mirror.mjs` | Derive the runtime hook inventory from both launchers plus safe relative imports, then enforce missing/extra/byte parity. |
+| Modify | `docs/history/codex-harness-hardening/release-manifest.json` | Refresh tracked hashes after library and hook changes. |
+| Modify | `skills/bee-swarming/SKILL.md` | Define qualifying dispatch, control-plane attestation, and integration consistency checks. |
+| Modify | `skills/bee-executing/references/worker-details.md` | Define worktree result fields and identity-mismatch handling. |
+| Modify | `skills/bee-swarming/references/swarming-reference.md` | Install the detailed integration and disposition protocol during live acceptance. |
+
+## 7. Implementation Steps
+
+- [ ] Add validated linked-worktree root resolution and RED-first path/backlink
+  fixtures in both library mirrors (`worktree-isolation-1`; shared checkout; no
+  dependencies).
+- [ ] Add the adapter root split, guarded logical-path handling, typed ambiguity
+  denials, hook parity checks, and manifest refresh (`worktree-isolation-2`;
+  shared checkout; depends on `worktree-isolation-1`).
+- [ ] Add qualifying dispatch, control-plane attestation, and identity/ancestry/
+  reserved-path-subset checks to the swarming and worker contracts
+  (`worktree-isolation-3`; shared checkout;
+  depends on `worktree-isolation-2`, preserving serialized shared-checkout work).
+- [ ] Perform the live linked-worktree acceptance, install the detailed
+  attestation and transactional integration/disposition reference, run the exact
+  full verification command on committed main, exercise deterministic failure
+  dispositions, and apply only the proven-safe cleanup or preservation outcome
+  (`worktree-isolation-4`; native worktree; depends on `worktree-isolation-2` and
+  `worktree-isolation-3`).
+
+## 8. Validation Plan
+
+Validation is still in progress. The following checks will be run; no result is
+claimed by this document yet.
+
+**Automated**
+
+- `worktree-isolation-1` — `node skills/bee-hive/templates/tests/test_lib.mjs && node scripts/test_lib_mirror.mjs` will check root fixtures and library mirror parity.
+- `worktree-isolation-2` — `node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check` will check guard behavior, contracts, hook parity, and the manifest.
+- `worktree-isolation-3` — `node skills/bee-hive/templates/tests/test_lib.mjs` will run focused assertions for dispatch eligibility, the validation exception, attestation capture, and identity/ancestry/reserved-path-subset mismatch halts.
+- `worktree-isolation-4` — the exact configured repository verification command
+  will run from committed main after integration:
+  `node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/test_portable_paths.mjs && node hooks/test_model_guard.mjs && node hooks/test_write_guard.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_verify_manifest.mjs && node scripts/test_release_tuple.mjs && node scripts/test_lib_mirror.mjs && node skills/bee-hive/scripts/test_split_brain_regression.mjs && node scripts/release_manifest.mjs --selftest && node scripts/release_manifest.mjs --check && node scripts/test_gate_bypass_doctrine.mjs`. Evidence records cwd, committed HEAD, ancestry, command, exit status, and output.
+
+**Manual**
+
+- [ ] Create the post-enablement native linked worktree, capture the control-plane
+  attestation before dispatch, reserve both declared files, commit the acceptance
+  edits once, recheck ancestry/identity/diff scope, then integrate transactionally.
+- [ ] Confirm conflict or targeted-red aborts the uncommitted merge; unexpected
+  postcommit-red creates a revert commit before later work.
+- [ ] Confirm green completion permits only non-force cleanup when the worktree is
+  clean and reachable; confirm incomplete, mismatched, conflicting, abandoned, or
+  red outcomes preserve recovery coordinates and require explicit authorization
+  before destructive drop.
+- [ ] Run deterministic fault rows for identity, ancestry, reservation subset,
+  conflict, blocked/handoff/abandoned, precommit red, and postcommit red.
+
+**Evidence** — [Current validation report](reports/validation-current.md). The
+planning documents and cells are synchronized, but execution stays held pending
+delta re-review and a fresh full baseline in a child-process-capable environment.
+
+## 9. Risks & Mitigation
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Library root resolver silently creates a second coordination store | High | Type linked-invalid separately, make library/CLI access raise `WORKTREE_LINK_INVALID`, and cover ordinary/submodule/separate-git-dir controls. |
+| Hook adapter resolver diverges from the library copy | High | Use shared fixtures plus existing hook-contract checks. |
+| Root/store split changes unrelated hook behavior or forks guard reads | High | Preserve `ctx.root` as the physical root and limit `ctx.storeRoot` consumption to the write guard. |
+| A write-capable tool bypasses the ambiguity gate | High | Add negative pre-mutation rows for every write-capable tool class. |
+| A canonical or platform-specific path escapes a logical reservation | High | Realpath existing targets, resolve the nearest existing ancestor for new targets, and deny absolute-outside, traversal, symlink, separator, and case-alias escapes. |
+| Shipped hook mirrors drift or source-only files are mistaken for runtime files | High | Derive the runtime set from both launchers plus transitive imports; test missing, extra, and byte-different files. |
+| Same-UID worker rewrites Git metadata to impersonate another worktree | High | Treat metadata as consistency evidence only; capture pre-dispatch attestation and recheck ancestry, branch, commit, and reserved-path subset. |
+| Integration commits red work or destroys the only recovery copy | High | Use no-commit merge plus prechecks, full postcommit verification with provenance, revert-on-red, conservative cleanup, and authorized destructive drop only. |
+| Happy-path fixtures hide failure-disposition bugs | High | Run deterministic temporary-repository fault injection for every preservation, abort, revert, and cleanup outcome. |
+
+## 10. Rollback Plan
+
+Rollback is commit-based and runs in reverse dependency order. First stop new
+native worktree dispatch. If integration is still uncommitted, abort the merge; if
+it was committed and the exact full verification is red, create a revert commit
+before any later work. Then revert the protocol/acceptance commit, the hook/guard
+commit and manifest update as one unit, and finally the resolver commit with both
+`state.mjs` copies and fixtures. Keep the derived hook runtime set byte-aligned and
+run the exact repository verification command after the reverts.
+
+Do not delete a worktree that contains an unmerged, blocked, handoff, conflicting,
+dirty, unreachable, or otherwise red result during rollback. Preserve its path,
+attestation, derived branch, base, and commit until the work is explicitly
+integrated or an operator authorizes destructive drop after recovery coordinates
+are captured. This feature changes no persistent data model or external service,
+so rollback requires no migration.
+
+## 11. Open Questions
+
+There are no unresolved product decisions. Validation must still establish:
+
+- whether both resolver copies accept valid absolute, relative, whitespace, and
+  Windows-backslash metadata, reject forged one-way relationships, and fail
+  library/CLI access loudly on every linked-invalid form;
+- whether existing hook consumers retain their current root meaning while only
+  the write guard uses the coordination-store root;
+- whether ambiguity denies every write-capable tool before mutation;
+- whether canonical containment rejects traversal, symlink, outside-absolute,
+  Windows-separator, and case-alias escapes for existing and new targets;
+- whether launcher/import-derived mirror checking catches drift, missing files,
+  and extra runtime files without including source-only files; and
+- whether live acceptance records pre-dispatch attestation, rechecks identity,
+  ancestry, and reserved-path subset, integrates transactionally, proves the exact
+  full-main verification with provenance, and exercises every cleanup,
+  preservation, abort, and revert disposition.

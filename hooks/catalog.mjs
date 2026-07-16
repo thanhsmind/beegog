@@ -14,11 +14,11 @@
 // repair, plan-review.md) so no intermediate state leaves Claude consuming
 // the Codex projection.
 //
-// Exactly one difference is currently allowed between the two rendered
-// projections (approach.md section 2: "Keep model-tier guard in the Claude
-// projection because Codex does not expose collaboration spawn through
-// PreToolUse."): the Agent|Task -> bee-model-guard.mjs rule renders
-// Claude-only. Every other rule renders byte-identically into both files.
+// Runtime differences are explicit data, never hand-maintained projection
+// drift. Claude alone has the native pre-spawn model guard; Codex alone has
+// post-start / stop native-subagent audit hooks because those are the events
+// Codex exposes today. See ALLOWED_DIFFERENCES and the drift-check test in
+// hooks/test_hook_contracts.mjs.
 // No wrapper .mjs is forked per runtime — only this catalog's projection
 // output differs; see ALLOWED_DIFFERENCES and the drift-check test in
 // hooks/test_hook_contracts.mjs.
@@ -53,6 +53,7 @@ export const TARGETS = Object.freeze({ PLUGIN: "plugin", REPO: "repo" });
 
 const BOTH = Object.freeze([RUNTIMES.CLAUDE, RUNTIMES.CODEX]);
 const CLAUDE_ONLY = Object.freeze([RUNTIMES.CLAUDE]);
+const CODEX_ONLY = Object.freeze([RUNTIMES.CODEX]);
 
 // The PINNED fail-open diagnostic for the repo transport. It goes to STDERR
 // and the command writes NOTHING to stdout: stdout on a Stop hook must parse
@@ -139,6 +140,15 @@ const CATALOG = Object.freeze([
     ],
   },
   {
+    event: "SubagentStart",
+    groups: [
+      {
+        runtimes: CODEX_ONLY,
+        hooks: [cmd("bee-codex-subagent-audit.mjs", "bee: subagent start audit")],
+      },
+    ],
+  },
+  {
     event: "SubagentStop",
     groups: [
       {
@@ -147,6 +157,10 @@ const CATALOG = Object.freeze([
           cmd("bee-state-sync.mjs", "bee: state sync"),
           cmd("bee-chain-nudge.mjs", "bee: chain nudge"),
         ],
+      },
+      {
+        runtimes: CODEX_ONLY,
+        hooks: [cmd("bee-codex-subagent-audit.mjs", "bee: subagent stop audit")],
       },
     ],
   },
@@ -233,11 +247,35 @@ export const EVENTS = Object.freeze(CATALOG.map((entry) => entry.event));
 export const ALLOWED_DIFFERENCES = Object.freeze([
   {
     id: "model-tier-guard-claude-only",
+    runtime: RUNTIMES.CLAUDE,
     event: "PreToolUse",
     matcher: "Agent|Task",
+    script: "bee-model-guard.mjs",
     description:
       'bee-model-guard.mjs (PreToolUse matcher "Agent|Task") is Claude-only: ' +
       "Codex does not expose collaboration spawn through PreToolUse " +
       "(approach.md section 2; CONTEXT.md decisions D1/D2).",
+  },
+  {
+    id: "subagent-start-audit-codex-only",
+    runtime: RUNTIMES.CODEX,
+    event: "SubagentStart",
+    matcher: null,
+    script: "bee-codex-subagent-audit.mjs",
+    description:
+      "Codex exposes SubagentStart only after the native subagent has started; " +
+      "bee records bounded bootstrap/audit evidence and claims no pre-spawn authority " +
+      "(CONTEXT.md decisions D1/D2).",
+  },
+  {
+    id: "subagent-stop-audit-codex-only",
+    runtime: RUNTIMES.CODEX,
+    event: "SubagentStop",
+    matcher: null,
+    script: "bee-codex-subagent-audit.mjs",
+    description:
+      "Codex pairs SubagentStop with the same bounded audit handler used at start; " +
+      "Claude keeps its existing state-sync and chain-nudge behavior unchanged " +
+      "(CONTEXT.md decisions D1/D2).",
   },
 ]);

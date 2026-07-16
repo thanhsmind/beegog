@@ -49,12 +49,13 @@
 // logic (the fix lives in onboard_bee.mjs, never here). Joining
 // commands.verify was gated on this fixture being GREEN - now satisfied.
 
-import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { runModuleWorker } from "../../../scripts/lib/run-module-worker.mjs";
 
 const SENTINEL_DEFECT = 3;
 const FIXTURE_BUG_CODE = 2;
@@ -150,13 +151,13 @@ function parseJsonOrNull(text) {
 // Spawn the real onboard from the given launcher and FIRST confirm it
 // actually ran: a spawn error or unparseable/statusless stdout is a fixture
 // bug, never the confirmed defect.
-function runOnboard(launcher, fixtureRepo, fakeHome, extraArgs) {
+async function runOnboard(launcher, fixtureRepo, fakeHome, extraArgs) {
   const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome };
-  const result = spawnSync(
-    process.execPath,
-    [launcher, "--repo-root", fixtureRepo, "--json", ...extraArgs],
-    { encoding: "utf8", env },
-  );
+  const result = await runModuleWorker(launcher, {
+    args: ["--repo-root", fixtureRepo, "--json", ...extraArgs],
+    env,
+    fakeHome,
+  });
   if (result.error) {
     fixtureBug(
       `onboard_bee.mjs (${extraArgs.join(" ") || "plan"}) failed to spawn: ${result.error.message}`,
@@ -237,14 +238,14 @@ try {
   // 2. Spawn the real onboard from the stale launcher, plan mode. Confirms
   //    it actually ran (inside runOnboard) BEFORE any defect assertion.
   // ---------------------------------------------------------------------
-  const planPayload = runOnboard(launcher, fixtureRepo, fakeHome, []);
+  const planPayload = await runOnboard(launcher, fixtureRepo, fakeHome, []);
   const planStatus = planPayload.status;
 
   // ---------------------------------------------------------------------
   // 3. Zero-mutation check: hash the whole repo before and after --apply.
   // ---------------------------------------------------------------------
   const hashBefore = hashTree(fixtureRepo);
-  const applyPayload = runOnboard(launcher, fixtureRepo, fakeHome, ["--apply"]);
+  const applyPayload = await runOnboard(launcher, fixtureRepo, fakeHome, ["--apply"]);
   const hashAfter = hashTree(fixtureRepo);
   const zeroMutation = hashBefore === hashAfter;
   const postVersion = readVersionLoose(repoLibStateFile);

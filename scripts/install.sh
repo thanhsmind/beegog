@@ -3,11 +3,12 @@ set -euo pipefail
 
 # install.sh — install bee (https://github.com/thanhsmind/beegog) into a project.
 #
-# Two layers:
-#   1. Runtime layer (opt-in, --global-skills): copy the bee skills into your
-#      agent's global skills directory (~/.claude/skills and/or ~/.codex/skills).
-#      Off by default — the per-project sync in layer 2 is the default layout.
-#   2. Repo layer: run onboard_bee.mjs against the target project — installs the
+# Two authoritative distribution modes:
+#   1. plugin-first: prove the installed plugin package before removing legacy
+#      project projections; onboarding never creates repo skill/hook copies.
+#   2. repo-copy: prove the plugin inactive before onboarding vendors skills and
+#      hooks into the repository.
+#      Both modes run onboard_bee.mjs against the target project — it installs the
 #      AGENTS.md BEE block, .bee/ runtime files, vendored helpers, and (by
 #      default) syncs the bee skills per-project into <repo>/.claude/skills and
 #      <repo>/.agents/skills.
@@ -30,6 +31,14 @@ Options:
                           directory. Created if missing (greenfield).
       --runtime <which>   Which runtime skills to install: claude, codex, or
                           both. Default: both.
+      --distribution <mode>
+                          plugin-first or repo-copy. Default: repo-copy.
+      --plugin-state-file <path>
+                          Read runtime plugin-list JSON from a fixture/probe file.
+                          Primarily for automation; otherwise runtime CLIs are used.
+      --ownership-ledger <path>
+                          Exact installer ledger required before plugin-first may
+                          clean user/global skill roots.
       --source <path>     Use a local bee checkout instead of cloning GitHub.
       --ref <ref>         Git branch/tag to clone. Default: main.
       --no-hooks          Skip --repo-hooks wiring for Claude Code. By default
@@ -96,6 +105,9 @@ confirm() {
 
 TARGET_DIR="$PWD"
 RUNTIME="both"
+DISTRIBUTION_MODE="repo-copy"
+PLUGIN_STATE_FILE=""
+OWNERSHIP_LEDGER=""
 SOURCE=""
 REF="main"
 REPO_HOOKS=1
@@ -109,6 +121,9 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -d|--directory) TARGET_DIR="$2"; shift 2 ;;
     --runtime)      RUNTIME="$2"; shift 2 ;;
+    --distribution) DISTRIBUTION_MODE="$2"; shift 2 ;;
+    --plugin-state-file) PLUGIN_STATE_FILE="$2"; shift 2 ;;
+    --ownership-ledger) OWNERSHIP_LEDGER="$2"; shift 2 ;;
     --source)       SOURCE="$2"; shift 2 ;;
     --ref)          REF="$2"; shift 2 ;;
     --no-hooks)     REPO_HOOKS=0; shift ;;
@@ -125,6 +140,7 @@ while [ $# -gt 0 ]; do
 done
 
 case "$RUNTIME" in claude|codex|both) ;; *) fail "--runtime must be claude, codex, or both" ;; esac
+case "$DISTRIBUTION_MODE" in plugin-first|repo-copy) ;; *) fail "--distribution must be plugin-first or repo-copy" ;; esac
 
 # ---------- prerequisites ----------
 
@@ -136,7 +152,11 @@ NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd -P || true)"
 CLEANUP_DIR=""
-cleanup() { [ -n "$CLEANUP_DIR" ] && rm -rf "$CLEANUP_DIR" || true; }
+STATE_TMP=""
+cleanup() {
+  [ -n "$CLEANUP_DIR" ] && rm -rf "$CLEANUP_DIR" || true
+  [ -n "$STATE_TMP" ] && rm -rf "$STATE_TMP" || true
+}
 trap cleanup EXIT
 
 if [ -n "$SOURCE" ]; then
@@ -154,45 +174,17 @@ fi
 
 ONBOARD="$BEE_SRC/skills/bee-hive/scripts/onboard_bee.mjs"
 [ -f "$ONBOARD" ] || fail "Not a bee checkout (missing skills/bee-hive/scripts/onboard_bee.mjs): $BEE_SRC"
+DIST_HELPER="$BEE_SRC/skills/bee-hive/scripts/plugin_distribution.mjs"
+RELEASE_MANIFEST="$BEE_SRC/docs/history/codex-harness-hardening/release-manifest.json"
+[ -f "$DIST_HELPER" ] || fail "Not a bee release (missing plugin_distribution.mjs): $BEE_SRC"
+[ -f "$RELEASE_MANIFEST" ] || fail "Not a bee release (missing release manifest): $BEE_SRC"
 BEE_VERSION="$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).version)" "$BEE_SRC/.claude-plugin/plugin.json" 2>/dev/null || echo unknown)"
 log "source   $BEE_SRC (bee $BEE_VERSION)"
 
-# ---------- layer 1: global runtime skills (opt-in via --global-skills) ----------
-
-install_skills_to() {
-  local dest="$1" label="$2" copied=0 updated=0 same=0
-  mkdir -p "$dest"
-  for skill in "$BEE_SRC"/skills/*/; do
-    local name; name="$(basename "$skill")"
-    local target="$dest/$name"
-    if [ -d "$target" ]; then
-      if diff -rq "$skill" "$target" >/dev/null 2>&1; then
-        same=$((same + 1)); continue
-      fi
-      if [ "$DRY_RUN" -eq 1 ]; then log "would update  $label/$name"; updated=$((updated + 1)); continue; fi
-      rm -rf "$target"; cp -R "$skill" "$target"; updated=$((updated + 1))
-    else
-      if [ "$DRY_RUN" -eq 1 ]; then log "would copy    $label/$name"; copied=$((copied + 1)); continue; fi
-      cp -R "$skill" "$target"; copied=$((copied + 1))
-    fi
-  done
-  log "skills   $label: $copied new, $updated updated, $same unchanged"
-}
-
-if [ "$GLOBAL_SKILLS" -eq 1 ]; then
-  if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then
-    install_skills_to "${CLAUDE_HOME:-$HOME/.claude}/skills" "~/.claude/skills"
-  fi
-  if [ "$RUNTIME" = "codex" ] || [ "$RUNTIME" = "both" ]; then
-    install_skills_to "${CODEX_HOME:-$HOME/.codex}/skills" "~/.codex/skills"
-  fi
-else
-  log "skills   global copy skipped (pass --global-skills to also populate ~/.claude/skills, ~/.codex/skills)"
-fi
-if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then
-  log "note     prefer the Claude Code plugin route when available:"
-  log "         /plugin marketplace add thanhsmind/beegog  ->  /plugin install bee@bee"
-  log "         (plugin route ships hooks automatically; this copy route wires repo hooks instead)"
+# Direct global replacement is intentionally gone: user-root cleanup is legal
+# only through an exact ownership ledger consumed by the shared planner.
+if [ "$GLOBAL_SKILLS" -eq 1 ] && [ -z "$OWNERSHIP_LEDGER" ]; then
+  fail "--global-skills requires --ownership-ledger; basename-only global replacement is refused"
 fi
 
 # ---------- layer 2: target repo (greenfield / brownfield) ----------
@@ -226,10 +218,10 @@ fi
 log "target   $TARGET_DIR [$MODE]"
 
 ONBOARD_FLAGS=()
-if [ "$REPO_HOOKS" -eq 1 ]; then
-  if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then
-    ONBOARD_FLAGS+=("--repo-hooks")
-  fi
+if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
+  ONBOARD_FLAGS+=("--plugin-source")
+elif [ "$REPO_HOOKS" -eq 1 ]; then
+  ONBOARD_FLAGS+=("--repo-hooks")
 fi
 if [ "$NO_CLAUDE_MD" -eq 1 ]; then
   ONBOARD_FLAGS+=("--no-claude-md")
@@ -237,6 +229,57 @@ fi
 if [ "$GLOBAL_SKILLS" -eq 1 ]; then
   ONBOARD_FLAGS+=("--global-skills")
 fi
+
+collect_plugin_state() {
+  if [ -n "$PLUGIN_STATE_FILE" ]; then
+    [ -f "$PLUGIN_STATE_FILE" ] || fail "--plugin-state-file not found: $PLUGIN_STATE_FILE"
+    STATE_FILE="$PLUGIN_STATE_FILE"
+    return
+  fi
+  STATE_TMP="$(mktemp -d)"
+  local claude_json="$STATE_TMP/claude.json" codex_json="$STATE_TMP/codex.json"
+  printf '[]\n' > "$claude_json"; printf '[]\n' > "$codex_json"
+  if [ "$RUNTIME" = "codex" ] || [ "$RUNTIME" = "both" ]; then
+    if command -v codex >/dev/null 2>&1; then
+      if [ "$DRY_RUN" -eq 0 ]; then
+        if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
+          codex plugin marketplace add "$BEE_SRC" --json >/dev/null || fail "Codex marketplace registration failed"
+          codex plugin add bee@bee --json >/dev/null || fail "Codex bee plugin install failed"
+        else
+          codex plugin remove bee@bee --json >/dev/null 2>&1 || true
+        fi
+      fi
+      codex plugin list --json > "$codex_json" || fail "Codex plugin status probe failed"
+    elif [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then fail "Codex CLI is required for plugin-first"; fi
+  fi
+  if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then
+    if command -v claude >/dev/null 2>&1; then
+      if [ "$DRY_RUN" -eq 0 ]; then
+        if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
+          claude plugin marketplace add "$BEE_SRC" >/dev/null || fail "Claude marketplace registration failed"
+          claude plugin install bee@bee >/dev/null || fail "Claude bee plugin install failed"
+        else
+          claude plugin uninstall bee@bee >/dev/null 2>&1 || true
+        fi
+      fi
+      claude plugin list --json > "$claude_json" || fail "Claude plugin status probe failed"
+    elif [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then fail "Claude CLI is required for plugin-first"; fi
+  fi
+  node -e 'const fs=require("fs"); const read=p=>JSON.parse(fs.readFileSync(p,"utf8")); fs.writeFileSync(process.argv[3], JSON.stringify({claude:read(process.argv[1]),codex:read(process.argv[2])}));' "$claude_json" "$codex_json" "$STATE_TMP/state.json"
+  STATE_FILE="$STATE_TMP/state.json"
+}
+
+STATE_FILE=""
+collect_plugin_state
+DIST_ARGS=(--mode "$DISTRIBUTION_MODE" --runtime "$RUNTIME" --repo-root "$TARGET_DIR" --release-manifest "$RELEASE_MANIFEST" --plugin-state-file "$STATE_FILE")
+if [ -n "$OWNERSHIP_LEDGER" ]; then DIST_ARGS+=(--ledger "$OWNERSHIP_LEDGER"); fi
+if [ "$GLOBAL_SKILLS" -eq 1 ]; then
+  if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then DIST_ARGS+=(--user-skill-root "${CLAUDE_HOME:-$HOME/.claude}/skills"); fi
+  if [ "$RUNTIME" = "codex" ] || [ "$RUNTIME" = "both" ]; then DIST_ARGS+=(--user-skill-root "${CODEX_HOME:-$HOME/.codex}/skills"); fi
+fi
+
+# The first helper call proves every destructive precondition before onboarding.
+node "$DIST_HELPER" "${DIST_ARGS[@]}" || fail "Distribution preflight refused"
 
 log "plan     onboard_bee.mjs ${ONBOARD_FLAGS[*]:-} (dry-run first)"
 node "$ONBOARD" --repo-root "$TARGET_DIR" ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} || fail "Onboarding plan failed."
@@ -250,6 +293,10 @@ confirm "Apply this onboarding plan to $TARGET_DIR?" || fail "Aborted — nothin
 node "$ONBOARD" --repo-root "$TARGET_DIR" --apply ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} >/dev/null \
   || fail "Onboarding apply failed."
 
+if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
+  node "$DIST_HELPER" "${DIST_ARGS[@]}" --apply || fail "Plugin-first cleanup refused; repository fallbacks were preserved"
+fi
+
 # ---------- verify ----------
 
 STATUS="$(cd "$TARGET_DIR" && node .bee/bin/bee.mjs status --json 2>/dev/null)" \
@@ -257,8 +304,13 @@ STATUS="$(cd "$TARGET_DIR" && node .bee/bin/bee.mjs status --json 2>/dev/null)" 
 printf '%s' "$STATUS" | node -e '
   const s = JSON.parse(require("fs").readFileSync(0, "utf8"));
   if (!s.onboarding || s.onboarding.installed !== true) { console.error("bee.mjs status reports not installed"); process.exit(1); }
+  const expected = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version;
+  if (s.onboarding.bee_version !== expected || s.onboarding.plugin_version !== expected || s.onboarding.drift !== false) {
+    console.error(`version parity failed: expected ${expected}, got bee=${s.onboarding.bee_version}, plugin=${s.onboarding.plugin_version}, drift=${s.onboarding.drift}`);
+    process.exit(1);
+  }
   console.log(`verify   onboarding ok (bee ${s.onboarding.bee_version}), phase: ${s.phase}`);
-' || fail "Verification failed: unexpected bee.mjs status output."
+' "$BEE_SRC/.claude-plugin/plugin.json" || fail "Verification failed: unexpected bee.mjs status output."
 
 log ""
 log "bee installed."

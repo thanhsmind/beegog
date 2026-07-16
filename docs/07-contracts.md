@@ -145,7 +145,7 @@ bee.mjs decisions log --decision D --rationale R [--alternatives A] [--scope S] 
                  | redact --id UUID --reason R
                  | active [--recent N] | search --text T
 
-bee.mjs state set | gate | worker add|update|remove|clear|prune | scribing-run | start-feature | handoff show|write|adopt
+bee.mjs state set --owner <selected pre-mutation phase> | gate | worker add|update|remove|clear|prune | scribing-run | start-feature | handoff show|write|adopt
 
 bee.mjs backlog add | counts | rank | badges
 

@@ -7,11 +7,12 @@
 // no test run ever touches this project's real .bee/logs/hooks.jsonl.
 // Exits 1 on any failure.
 
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { runModuleWorker } from "../scripts/lib/run-module-worker.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const HOOKS_DIR = path.dirname(SCRIPT_PATH);
@@ -102,20 +103,18 @@ function buildThrowingStateFixture() {
 
 // --- hook invocation -----------------------------------------------------
 
-function runHookPayload(payload, cwd) {
+async function runHookPayload(payload, cwd) {
   const body = { ...payload, cwd };
   const input = JSON.stringify(body);
-  const result = spawnSync(process.execPath, [HOOK_PATH], { input, encoding: "utf8" });
-  return result;
+  return await runModuleWorker(HOOK_PATH, { input });
 }
 
 // spawnCwd pins the child's process.cwd() so cwd-fallback paths inside the
 // hook always resolve to a fixture, never to the real repo the suite runs
 // from (row17 previously appended a real .bee/logs/dispatch.jsonl line).
-function runHookRaw(rawInput, spawnCwd) {
-  return spawnSync(process.execPath, [HOOK_PATH], {
+async function runHookRaw(rawInput, spawnCwd) {
+  return await runModuleWorker(HOOK_PATH, {
     input: rawInput,
-    encoding: "utf8",
     cwd: spawnCwd,
   });
 }
@@ -164,7 +163,7 @@ async function main() {
       description: "some description",
     },
   };
-  const r1 = runHookPayload(barePayload, enabledRoot);
+  const r1 = await runHookPayload(barePayload, enabledRoot);
   check(r1.status === 2, "row1: bare Agent dispatch denied (exit 2)", `status=${r1.status} stderr=${r1.stderr}`);
   check(r1.stderr.includes("bee-tier"), "row1: stderr mentions bee-tier", r1.stderr);
   check(r1.stderr.includes("FIX"), "row1: stderr has a FIX line", r1.stderr);
@@ -193,18 +192,18 @@ async function main() {
   );
 
   // --- 2. model:'sonnet' -> exit 0 -----------------------------------------
-  const r2 = runHookPayload({ tool_name: "Agent", tool_input: { model: "sonnet" } }, enabledRoot);
+  const r2 = await runHookPayload({ tool_name: "Agent", tool_input: { model: "sonnet" } }, enabledRoot);
   check(r2.status === 0, "row2: model param set is allowed", `status=${r2.status} stderr=${r2.stderr}`);
 
   // --- 3. prompt marker -> exit 0 ------------------------------------------
-  const r3 = runHookPayload(
+  const r3 = await runHookPayload(
     { tool_name: "Agent", tool_input: { prompt: "[bee-tier: ceiling] do the thing" } },
     enabledRoot,
   );
   check(r3.status === 0, "row3: ceiling marker in prompt is allowed", `status=${r3.status} stderr=${r3.stderr}`);
 
   // --- 4. description marker only -> exit 0 --------------------------------
-  const r4 = runHookPayload(
+  const r4 = await runHookPayload(
     {
       tool_name: "Agent",
       tool_input: { description: "[bee-tier: generation] short task", prompt: "no marker here at all" },
@@ -214,7 +213,7 @@ async function main() {
   check(r4.status === 0, "row4: marker in description alone is allowed", `status=${r4.status} stderr=${r4.stderr}`);
 
   // --- 5. case-insensitive marker -> exit 0 --------------------------------
-  const r5 = runHookPayload(
+  const r5 = await runHookPayload(
     { tool_name: "Agent", tool_input: { description: "[BEE-TIER: Generation] mixed case" } },
     enabledRoot,
   );
@@ -223,7 +222,7 @@ async function main() {
   // --- 6. marker at head of prompt with leading whitespace -> exit 0 -------
   // (P1-1: leading whitespace is allowed before the anchored marker)
   const marker = "[bee-tier: ceiling]";
-  const r6 = runHookPayload(
+  const r6 = await runHookPayload(
     { tool_name: "Agent", tool_input: { prompt: `   ${marker} do the thing, with lots of trailing detail after it too` } },
     enabledRoot,
   );
@@ -235,13 +234,13 @@ async function main() {
   // 500-char scan window; the marker must anchor to the head of the prompt)
   const pad100 = "x".repeat(100);
   const promptEmbedded = `${pad100} ${marker} rest of prompt`;
-  const r7 = runHookPayload({ tool_name: "Agent", tool_input: { prompt: promptEmbedded } }, enabledRoot);
+  const r7 = await runHookPayload({ tool_name: "Agent", tool_input: { prompt: promptEmbedded } }, enabledRoot);
   check(r7.status === 2, "row7: marker embedded after other prompt text (char ~100) is denied",
     `status=${r7.status} stderr=${r7.stderr}`);
 
   // --- 7b. marker embedded mid-description (not at the start) -> exit 2 ---
   // (P1-1 CONFIRMED red: this was previously ALLOWED)
-  const r7b = runHookPayload(
+  const r7b = await runHookPayload(
     { tool_name: "Agent", tool_input: { description: `some description text before ${marker} marker` } },
     enabledRoot,
   );
@@ -252,7 +251,7 @@ async function main() {
   // (P1-1: proves the window logic is truly gone — a head-anchored marker
   // stays valid no matter how long the rest of the prompt is)
   const longTail = "y".repeat(2000);
-  const r7c = runHookPayload(
+  const r7c = await runHookPayload(
     { tool_name: "Agent", tool_input: { prompt: `${marker} ${longTail}` } },
     enabledRoot,
   );
@@ -260,32 +259,32 @@ async function main() {
     `status=${r7c.status} stderr=${r7c.stderr}`);
 
   // --- 8. tool_input absent -> exit 0, empty stderr ------------------------
-  const r8 = runHookPayload({ tool_name: "Agent" }, enabledRoot);
+  const r8 = await runHookPayload({ tool_name: "Agent" }, enabledRoot);
   check(r8.status === 0, "row8: absent tool_input is allowed", `status=${r8.status} stderr=${r8.stderr}`);
   check(r8.stderr === "", "row8: absent tool_input produces empty stderr", JSON.stringify(r8.stderr));
 
   // --- 9. tool_input non-object (string) -> exit 0 -------------------------
-  const r9 = runHookPayload({ tool_name: "Agent", tool_input: "oops" }, enabledRoot);
+  const r9 = await runHookPayload({ tool_name: "Agent", tool_input: "oops" }, enabledRoot);
   check(r9.status === 0, "row9: non-object tool_input is allowed", `status=${r9.status} stderr=${r9.stderr}`);
   check(r9.stderr === "", "row9: non-object tool_input produces empty stderr", JSON.stringify(r9.stderr));
 
   // --- 10. tool_name 'Edit' -> exit 0 ---------------------------------------
-  const r10 = runHookPayload({ tool_name: "Edit", tool_input: {} }, enabledRoot);
+  const r10 = await runHookPayload({ tool_name: "Edit", tool_input: {} }, enabledRoot);
   check(r10.status === 0, "row10: non-dispatch tool_name is allowed", `status=${r10.status} stderr=${r10.stderr}`);
 
   // --- 11. junk stdin -> exit 0 ---------------------------------------------
-  const r11 = runHookRaw("not json at all {{{", noRepoRoot);
+  const r11 = await runHookRaw("not json at all {{{", noRepoRoot);
   check(r11.status === 0, "row11: junk stdin is allowed", `status=${r11.status} stderr=${r11.stderr}`);
 
   // --- 12. cwd with no .bee anywhere -> exit 0 ------------------------------
-  const r12 = runHookPayload(
+  const r12 = await runHookPayload(
     { tool_name: "Agent", tool_input: { prompt: "no marker, no model" } },
     noRepoRoot,
   );
   check(r12.status === 0, "row12: no repo root found is allowed", `status=${r12.status} stderr=${r12.stderr}`);
 
   // --- 13. hooks.model-guard: false -> exit 0 (toggle respected) ----------
-  const r13 = runHookPayload(
+  const r13 = await runHookPayload(
     { tool_name: "Agent", tool_input: { prompt: "no marker, no model" } },
     disabledRoot,
   );
@@ -295,13 +294,13 @@ async function main() {
   // --- 15. null top-level payload -> exit 0, empty stderr ------------------
   // (P1-2 CONFIRMED red: `echo null | node hooks/bee-model-guard.mjs` crashed
   // with an uncaught TypeError on `payload.cwd`, exit 1)
-  const r15 = runHookRaw("null", noRepoRoot);
+  const r15 = await runHookRaw("null", noRepoRoot);
   check(r15.status === 0, "row15: null top-level payload is allowed (fail-open)",
     `status=${r15.status} stderr=${r15.stderr}`);
   check(r15.stderr === "", "row15: null top-level payload produces empty stderr", JSON.stringify(r15.stderr));
 
   // --- 16. array top-level payload -> exit 0, empty stderr ------------------
-  const r16 = runHookRaw("[]", noRepoRoot);
+  const r16 = await runHookRaw("[]", noRepoRoot);
   check(r16.status === 0, "row16: array top-level payload is allowed (fail-open)",
     `status=${r16.status} stderr=${r16.stderr}`);
   check(r16.stderr === "", "row16: array top-level payload produces empty stderr", JSON.stringify(r16.stderr));
@@ -309,7 +308,7 @@ async function main() {
   // --- 17. cwd as a non-string (object) -> exit 0, dispatch still evaluated
   // via the process.cwd() fallback (P1-2: normalize cwd before ANY use, never
   // let a non-string reach findRepoRoot/path.resolve) -----------------------
-  const r17 = runHookRaw(
+  const r17 = await runHookRaw(
     JSON.stringify({ tool_name: "Agent", cwd: { not: "a string" }, tool_input: { model: "sonnet" } }),
     enabledRoot,
   );
@@ -329,7 +328,7 @@ async function main() {
 
   // --- 18. vendored state.mjs throws on import -> exit 0, empty stderr, one
   // parseable model-guard crash line in that fixture's hooks.jsonl (P1-2) ---
-  const r18 = runHookPayload(
+  const r18 = await runHookPayload(
     { tool_name: "Agent", tool_input: { prompt: "no marker, no model" } },
     throwStateRoot,
   );
@@ -351,7 +350,7 @@ async function main() {
   // a refactor dropping Task would stay green. Run bare-deny + model-allow +
   // anchored-marker-allow for BOTH names. ------------------------------------
   for (const toolName of ["Agent", "Task"]) {
-    const bare = runHookPayload(
+    const bare = await runHookPayload(
       { tool_name: toolName, tool_input: { prompt: "implement the widget with no tier given" } },
       enabledRoot,
     );
@@ -363,11 +362,11 @@ async function main() {
       bare.stderr,
     );
 
-    const withModel = runHookPayload({ tool_name: toolName, tool_input: { model: "sonnet" } }, enabledRoot);
+    const withModel = await runHookPayload({ tool_name: toolName, tool_input: { model: "sonnet" } }, enabledRoot);
     check(withModel.status === 0, `row-table[${toolName}]: model param set is allowed`,
       `status=${withModel.status} stderr=${withModel.stderr}`);
 
-    const withMarker = runHookPayload(
+    const withMarker = await runHookPayload(
       { tool_name: toolName, tool_input: { prompt: "[bee-tier: generation] do the thing" } },
       enabledRoot,
     );
@@ -380,7 +379,7 @@ async function main() {
   // transport; logging is fail-open and never changes the guard's decision ---
   const dispatchLog = path.join(enabledRoot, ".bee", "logs", "dispatch.jsonl");
 
-  const r20a = runHookPayload(
+  const r20a = await runHookPayload(
     {
       tool_name: "Agent",
       tool_input: { model: "haiku", description: "pattern extractor", subagent_type: "general-purpose" },
@@ -400,7 +399,7 @@ async function main() {
     JSON.stringify(d20a),
   );
 
-  const r20b = runHookPayload(
+  const r20b = await runHookPayload(
     { tool_name: "Task", tool_input: { prompt: "[bee-tier: review] check the diff" } },
     enabledRoot,
   );
@@ -412,7 +411,7 @@ async function main() {
     JSON.stringify(d20b),
   );
 
-  const r20c = runHookPayload(
+  const r20c = await runHookPayload(
     { tool_name: "Agent", tool_input: { prompt: "bare dispatch with nothing declared" } },
     enabledRoot,
   );
@@ -423,7 +422,7 @@ async function main() {
     `status=${r20c.status} line=${JSON.stringify(d20c)}`,
   );
 
-  const r20d = runHookPayload(
+  const r20d = await runHookPayload(
     { tool_name: "Agent", tool_input: { model: "sonnet", description: "z".repeat(300) } },
     enabledRoot,
   );
@@ -436,7 +435,7 @@ async function main() {
   );
 
   const disabledDispatchLog = path.join(disabledRoot, ".bee", "logs", "dispatch.jsonl");
-  runHookPayload({ tool_name: "Agent", tool_input: { model: "sonnet" } }, disabledRoot);
+  await runHookPayload({ tool_name: "Agent", tool_input: { model: "sonnet" } }, disabledRoot);
   check(
     !fs.existsSync(disabledDispatchLog),
     "row20e: disabled guard writes no dispatch log",

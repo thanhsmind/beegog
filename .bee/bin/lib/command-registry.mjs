@@ -461,7 +461,7 @@ export const COMMAND_REGISTRY = [
     name: 'state.set',
     invoke: 'bee state set',
     description:
-      'Set one or more top-level state fields; only the flags given are written and every other field is preserved. --phase is validated against the known-phase enum AND against the tail guard (chain-integrity D1-REVISED): "compounding" is never settable directly (only `state scribing-run` produces it), and "compounding-complete" is legal only from "compounding" and only with zero scribing debt. Every other transition, including all backward moves and --phase idle, stays permissive. Optional --lane <feature> (fresh-session-handoff D2/D4) routes the mutation to that per-feature lane record (.bee/lanes/<feature>.json, via readLaneStrict) instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes. --feature is rejected when --lane is given (a lane\'s feature is its identity/filename, not a mutable field).',
+      'Set one or more top-level routing fields; only the flags given are written and every other field is preserved. Every call requires explicit --owner equal to the selected default/lane record\'s valid pre-mutation phase; missing/mismatched ownership or a corrupt phase refuses before write, and a successful phase change rolls ownership forward without persisting an owner field. --phase is validated against the known-phase enum AND against the tail guard (chain-integrity D1-REVISED): "compounding" is never settable directly (only `state scribing-run` produces it), and "compounding-complete" is legal only from "compounding" and only with zero scribing debt. Every other transition, including all backward moves and --phase idle, stays permissive. Optional --lane <feature> routes the mutation to that per-feature lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes. --feature is rejected when --lane is given.',
     parameters: {
       type: 'object',
       properties: {
@@ -470,6 +470,7 @@ export const COMMAND_REGISTRY = [
         feature: { type: 'string', description: 'Feature slug to set. Rejected together with --lane.' },
         'next-action': { type: 'string', description: 'Top-level next_action string.' },
         summary: { type: 'string', description: 'Session summary string.' },
+        owner: { type: 'string', description: 'Selected record\'s exact pre-mutation phase. Required for every state set mutation; never persisted.' },
         lane: { type: 'string', description: 'Route the mutation to this lane record instead of the default state.json. Refuses if the lane is missing or corrupt.' },
         'waive-scribing-debt': { type: 'boolean', description: 'Permit --phase compounding-complete while capped behavior_change cells are still unsynced to docs/specs/. Never silent: it logs a decision naming every waived cell (chain-integrity D4).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
@@ -477,15 +478,15 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: [
-      'bee state set --phase planning --json',
-      'bee state set --lane demo-lane --phase planning --json',
+      'bee state set --owner exploring --phase planning --json',
+      'bee state set --lane demo-lane --owner exploring --phase planning --json',
     ],
     deprecated: null,
   },
   {
     name: 'state.gate',
     invoke: 'bee state gate',
-    description: 'Approve or unapprove a named gate. Idempotent: the same call run twice yields an identical file. Optional --lane <feature> (D2/D4) routes the gate mutation to that lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes.',
+    description: 'Approve or unapprove a named gate. This dedicated command does not accept routing --owner. Idempotent: the same call run twice yields an identical file. Optional --lane <feature> routes the gate mutation to that lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes.',
     parameters: {
       type: 'object',
       properties: {

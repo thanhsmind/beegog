@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// race_claims_child.mjs — self-contained multi-process race orchestrator for
+// race_claims_child.mjs — self-contained multi-worker race orchestrator for
 // claims.mjs (fresh-session-handoff fsh-2).
 //
 // HARNESS CONSTRAINT (validating repair, cell-review CRITICAL): test_lib.mjs's
@@ -7,14 +7,13 @@
 // check() would report PASS before its assertions ran. So the ENTIRE race
 // lives HERE, inside a self-contained orchestrator that:
 //   - is invoked with a scenario argument (process.argv[2]),
-//   - forks its own barrier-synchronized racers (adapting the pattern proven
+//   - starts its own barrier-synchronized Worker racers (adapting the pattern proven
 //     in .bee/spikes/fresh-session-handoff/probe_atomic_claim.mjs),
 //   - asserts winner counts / typed-failure shapes internally,
 //   - prints ONE summary line, and
 //   - exits 0 (pass) / 1 (fail).
-// test_lib.mjs runs this via ONE blocking spawnSync per scenario and asserts
-// exit code + summary line — check() itself is never restructured or made
-// async.
+// test_lib.mjs runs this through the shared module Worker per scenario and
+// asserts exit code + summary line.
 //
 // Barrier files (go-*, stop-*) are the correctness mechanism for who-wins-the-
 // race. Any setTimeout below is either (a) a scheduling nudge that lets forked
@@ -25,11 +24,11 @@
 // thing under test (staleness is defined in terms of elapsed time), used with
 // a generous safety margin over the heartbeat interval.
 
-import { fork } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Worker, workerData } from 'node:worker_threads';
 import {
   createSession,
   claimCellFile,
@@ -43,10 +42,10 @@ import { writeJsonAtomic } from '../lib/fsutil.mjs';
 
 const self = fileURLToPath(import.meta.url);
 
-// ─── racer entry point (this file re-execs itself via fork) ────────────────
+// ─── racer entry point (this file re-execs itself in a Worker) ─────────────
 
-if (process.env.RACE_ROLE) {
-  runRacer(JSON.parse(process.env.RACE_ROLE));
+if (workerData?.raceRole) {
+  runRacer(workerData.raceRole);
 } else {
   main();
 }
@@ -133,8 +132,8 @@ function raceHeartbeat({ root, sessionId, goFile, stopFile, intervalMs }) {
 
 // ─── orchestrator (parent) side ─────────────────────────────────────────────
 
-function forkRacer(role) {
-  return fork(self, [], { env: { ...process.env, RACE_ROLE: JSON.stringify(role) }, stdio: 'ignore' });
+function startRacer(role) {
+  return new Worker(self, { workerData: { raceRole: role } });
 }
 
 function waitExit(child) {
@@ -149,7 +148,7 @@ function freshRoot(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-// Scenario 1: N forked processes race claimCellFile for one cell across
+// Scenario 1: N workers race claimCellFile for one cell across
 // repeated rounds. Truth: exactly one winner each round.
 async function claimContention() {
   const root = freshRoot('bee-race-claim-');
@@ -164,7 +163,7 @@ async function claimContention() {
       const sessionId = `race-sess-${r}-${i}`;
       const created = createSession(root, { id: sessionId });
       if (!created.ok) failures.push(`round ${r}: session ${sessionId} setup failed`);
-      children.push(forkRacer({ kind: 'claim', root, sessionId, cellId, goFile, ttl: 60 }));
+      children.push(startRacer({ kind: 'claim', root, sessionId, cellId, goFile, ttl: 60 }));
     }
     const exits = Promise.all(children.map(waitExit));
     await sleep(120); // scheduling nudge only — the goFile barrier below is the correctness mechanism
@@ -207,11 +206,11 @@ async function adoptionSteal() {
       continue;
     }
     const goFile = path.join(root, `go-${r}`);
-    const children = [forkRacer({ kind: 'adopt', root, cellId, sessionId: adopterSession, goFile })];
+    const children = [startRacer({ kind: 'adopt', root, cellId, sessionId: adopterSession, goFile })];
     for (let t = 0; t < THIEVES; t += 1) {
       const thiefSession = `thief-${r}-${t}`;
       createSession(root, { id: thiefSession });
-      children.push(forkRacer({ kind: 'steal', root, sessionId: thiefSession, cellId, goFile, ttl: 60 }));
+      children.push(startRacer({ kind: 'steal', root, sessionId: thiefSession, cellId, goFile, ttl: 60 }));
     }
     const exits = Promise.all(children.map(waitExit));
     await sleep(120);
@@ -274,10 +273,10 @@ async function sweepHeartbeat() {
     const goFile = path.join(root, `go-${r}`);
     const stopFile = path.join(root, `stop-${r}`);
     const children = [
-      forkRacer({ kind: 'heartbeat', root, sessionId: ownerSession, goFile, stopFile, intervalMs: HEARTBEAT_INTERVAL_MS }),
+      startRacer({ kind: 'heartbeat', root, sessionId: ownerSession, goFile, stopFile, intervalMs: HEARTBEAT_INTERVAL_MS }),
     ];
     for (let s = 0; s < SWEEPERS; s += 1) {
-      children.push(forkRacer({ kind: 'sweep', root, cellId, goFile, stopFile, staleSeconds: STALE_SECONDS }));
+      children.push(startRacer({ kind: 'sweep', root, cellId, goFile, stopFile, staleSeconds: STALE_SECONDS }));
     }
     const exits = Promise.all(children.map(waitExit));
     await sleep(120);

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "feature": "codex-agent-wait-loop",
+  "mode": "standard",
+  "phase": "validating",
+  "approved_gates": {
+    "context": true,
+    "shape": true,
+    "execution": false,
+    "review": false
+  },
+  "summary": "Repair validation: root-only replay 3/3 green; native ordinary-gather timeout trace green; literal cell judge 322/0 and diff check green; execution blocked by red configured baseline and invalid historical cell-2 verify evidence.",
+  "next_action": "Rerun the exact configured repository verify in a child-process-capable environment; only green baseline may approve execution of codex-agent-wait-loop-3.",
+  "created_at": "2026-07-15T15:48:41.070Z",
+  "last_scribing_run": {
+    "feature": "codex-agent-wait-loop",
+    "date": "2026-07-15",
+    "at": "2026-07-15T16:44:57.222Z",
+    "areas_synced": [
+      "doctrine-layer"
+    ],
+    "next_action": "Invoke bee-compounding, then independent review of the frozen working-tree diff requested by the user."
+  }
+}

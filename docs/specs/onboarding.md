@@ -1,8 +1,11 @@
 ---
 area: onboarding
-updated: 2026-07-15
+updated: 2026-07-16
 coverage: partial
 sources:
+  - installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; implementation pending, 2026-07-16)
+  - codex-sandbox-baseline cells codex-sandbox-baseline-1/codex-sandbox-baseline-2 (real onboarding entrypoint through the shared isolated test runner; full onboarding suite green, 2026-07-16)
+  - codex-hook-state-parity cells 2, 3, 5 (paired Codex lifecycle audit, exclusive plugin-first/repo-copy distribution, and fresh-host handler delivery; capped traces and reports, 2026-07-16)
   - codex-harness-hardening-1d cells 1d-1/1d-2 (SRC-01..06 source-identity classifier R17 + status source field; 8 classifier/status tests, 2026-07-15)
   - codex-harness-hardening-1c cell codex-harness-hardening-1c-1 (honest status drift R16 via the onboarding managed-hash ledger; 5 drift tests, 2026-07-15)
   - codex-harness-hardening cell codex-harness-hardening-1b-1 (runtime-lib downgrade guard R15; split-brain regression 3->0, 2026-07-15)
@@ -18,6 +21,12 @@ sources:
   - fanout-delegation D1 (stale advisor key tolerance, 2026-07-12)
   - sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)
 decisions:
+  - 55ff17ef (release-version parity is fail-closed across every distributed projection)
+  - 09b776b5 (both installers prove complete greenfield/brownfield postconditions before success)
+  - fc76ce41 (release 1.3.1 excludes unfinished wait-loop/worktree-isolation work)
+  - 17bfc14a (Codex-safe onboarding tests preserve the real CLI entrypoint and observable process contract through an isolated Worker)
+  - a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external)
+  - cf511ff3 (plugin/package and repo-copy sources are mutually exclusive; cleanup is integrity- and ownership-proof-gated in both directions)
   - ce4eee19 (SRC-01..06 shipped as a pure shared classifier, wrap-not-replace, consumed by status + onboarding — codex-harness-hardening 1d)
   - 21be04f7 (status gains a report-only source field; unknown/legacy never implicit source — codex-harness-hardening 1d)
   - 485e949a (honest status drift reference = the onboarding managed-hash ledger; no new shipped artifact — codex-harness-hardening 1c)
@@ -27,8 +36,9 @@ decisions:
   - bbc6bcea (shim-retire: unified command surface; retired helper scripts removed from hosts)
   - 102efe08 (opt-in statusline vendor shape)
   - c6ee6b6e (Gate 4 onboard-statusline: anchored detection, sweep opt-in)
-  - 4cc1c355 (Codex plugin-first distribution; not yet implemented)
-  - b7af1bf9 (full compatible Codex lifecycle-hook parity; not yet implemented)
+  - 4cc1c355 (Codex plugin-first distribution)
+  - b7af1bf9 (full compatible Codex lifecycle-hook parity)
+  - codex-hook-state-parity D1-D3, D8-D14
   - 73ed41d6 (workspace-scoped Codex executors; blanket bypass forbidden)
   - d7d5f459 (current Codex dispatch contract first; custom profiles deferred)
   - 26203bd3 (managed ignore-list section; machine-local vs team-durable split)
@@ -46,17 +56,19 @@ and — for projects that opted in — the workspace status-display scripts. Re-
 is always safe: it reports what would change before changing anything, and an
 up-to-date project reports "nothing to do".
 
-> **Coverage note:** this spec currently describes the **status-display (statusline)
-> vendoring** and the **managed version-control ignore section** behaviors in
-> full. The rest of the onboarding surface (instructions block, runtime files,
-> helper vendoring, global skill sync, downgrade protection) is listed under
-> Open Gaps awaiting harvest.
+> **Coverage note:** this spec describes status-display vendoring, the managed
+> ignore section, distribution-mode selection, exclusive hook-source
+> arbitration, fenced cleanup, and installed-package proof. Remaining surfaces
+> are listed under Open Gaps.
 
 ## Entry Points & Triggers
 
 - A check run: the agent asks onboarding what would change (report-only, no writes).
 - An apply run: the agent authorizes onboarding to perform the reported changes.
 - Both runs are executed by the agent, never handed to the human.
+- Plugin-capable installs default to a plugin-first check/apply transaction;
+  `repo-copy` is an explicit fallback mode.
+- A dry run plans the complete distribution transaction and mutates nothing.
 
 ## Data Dictionary
 
@@ -69,6 +81,11 @@ up-to-date project reports "nothing to do".
 | machine-local runtime record | Content the managed ignore section silences: workflow state, reservations, worker scratch, logs, capture queue, feedback snapshot, injection cache, the pause/handoff record, and disposable experiment files. |
 | team-durable knowledge | Content that always stays version-tracked, never silenced by the managed ignore section: vendored tooling, configuration, the decision log, the friction log, and work-cell records. |
 | ignore-section fingerprint | A hash of the managed ignore section's expected content, stored in the project's onboarding record so a later run can detect drift in that section specifically. |
+| distribution mode | The exclusive source selected for one install: `plugin-first` or explicit `repo-copy`. The two are never active together. |
+| release inventory | The complete, duplicate-free file set and package metadata that an enabled installed package must match before cleanup is authorized. |
+| ownership ledger | The installer's exact record of user-runtime roots and directories it created; name similarity alone never grants deletion authority. |
+| recognized bee hook entry | A hook entry whose event, matcher, and handler match the generated bee catalog. Foreign and user entries are never recognized by name alone. |
+| whole-run snapshot | The inputs revalidated immediately before mutation: paths, aliases, symlinks, package status, inventory, ledger, and hook shapes. Any mismatch aborts the entire run with zero writes. |
 
 ## Behaviors & Operations
 
@@ -170,6 +187,21 @@ behavior. Side effects: none. What the agent and human observe: the report
 carries one warning naming the count of already-tracked paths and the exact
 one-time command the operator must run to untrack them; the warning
 disappears once no silenced path remains tracked.
+
+**Select and prove exactly one distribution source.** Plugin-first is the
+default on a capable runtime. It proves an enabled installed package and its
+complete release inventory, preflights the whole transaction, then removes only
+direct plain `bee-*` skill directories and catalog-recognized bee hook entries
+from project fallback roots. Repo-copy first proves the package inactive, then
+generates the managed project projections; Codex-only receives the same hook
+catalog as a combined-runtime install. Bash and PowerShell installers use the
+same planner and proof rules. A symlink, alias, unknown target, invalid ledger,
+package mismatch, or hook-shape mismatch aborts before any write. Release proof
+uses a staged cachebuster without changing the canonical package/version tuple;
+live user-home installation and fresh-thread loading remain outstanding UAT.
+Every generated repository hook command must resolve to a handler included in
+the same fresh-host onboarding payload; projection topology without referenced
+file delivery is a failed install, even when catalog parity itself is green.
 
 **An opt-in is remembered, and what it opted into stays current (every run).**
 Trigger: any run against a project that has previously opted into carrying its
@@ -304,12 +336,14 @@ landing page from day one in every onboarded project.
   byte-identical; a one-sided edit anywhere (including deleting the vendored
   copies while still opted in) is drift and fails the standing verification suite
   (decision c6ee6b6e, review finding P2-3).
-- **R5 (not yet implemented — P24)** — Codex receives bee primarily as one
-  installable plugin containing the shared workflow skills and compatible
-  lifecycle hooks. Project-local Codex hook wiring remains a fallback and
-  dogfood route; one installation activates exactly one hook source so an event
-  never runs twice (decision 4cc1c355).
-- **R6 (not yet implemented — P24)** — On Codex, every lifecycle capability
+- **R5** — Plugin-capable runtimes
+  receive bee primarily as one installable package containing the shared workflow
+  skills and compatible lifecycle hooks. Release and reinstall update the package
+  the runtime loads directly; project-local skill and hook projections remain an
+  explicit fallback and dogfood route. One installation activates exactly one
+  source so a skill or event never runs twice (decision 4cc1c355, extended by
+  codex-hook-state-parity D9; decision cf511ff3).
+- **R6** — On Codex, every lifecycle capability
   exposed compatibly by the host participates in bee's mechanical belt: session
   bootstrap, phase reminders, write/privacy/reservation checks, state refresh,
   worker-completion nudges, and close-time hygiene. Shared helper commands remain
@@ -341,10 +375,12 @@ landing page from day one in every onboarded project.
   tracked, the report warns and names the exact one-time untrack command for
   the operator to run instead (decision 26203bd3).
 
-- **R12** — Skills ship per-project by default: synced into each supported
-  runtime's project-level discovery location and version-tracked in the host
-  repo; a machine-global install is explicit opt-in only; the workflow's own
-  source tree never receives per-project copies (decision 3318374a, D2/D3/D4).
+- **R12** — Plugin-first is
+  the default distribution when the selected runtime can install the package.
+  Per-project copies are created only by the explicit repo-copy fallback; a
+  machine-global copy remains explicit opt-in. The workflow's source tree is not
+  a host-install target (codex-hook-state-parity D9/D10; supersedes the
+  default-copy portion of decision 3318374a; decision cf511ff3).
 - **R13** — The assistant-instructions import artifact is created by default on
   onboarding; declining it is an explicit opt-out. Content outside the managed
   import is never replaced without consent (decision 3318374a, D1).
@@ -397,6 +433,54 @@ landing page from day one in every onboarded project.
   unrecognized origin is named as such, never silently treated as an authoritative
   source that may overwrite an installation (decisions ce4eee19, b5341fe7,
   21be04f7; cells codex-harness-hardening-1d-1, 1d-2).
+- **R18** — Plugin-first migration
+  cleans duplicate skills and bee hook entries only after the installed package is
+  reported enabled and its installed skills/hooks match the release inventory;
+  command success alone is not proof. Skill cleanup is fenced to plain `bee-*`
+  directories in the selected repository's Claude, shared-agent, and Codex skill
+  roots. Hook cleanup removes only catalog-recognized bee entries and preserves
+  user entries and their container files. Non-bee entries, files, symlinks,
+  aliases, unknown targets, and paths outside those roots make the whole cleanup
+  refuse before mutation (codex-hook-state-parity D10/D11/D13; decision cf511ff3).
+- **R19** — Repo-copy fallback is
+  the reverse exclusive transition: the installer first disables or uninstalls the
+  bee plugin and verifies it inactive, then creates managed repository copies. If
+  deactivation cannot be proven, nothing is copied or removed. User-runtime cleanup
+  additionally requires a valid installer ownership ledger naming the exact root
+  and directories; a name match alone does not authorize global deletion
+  (codex-hook-state-parity D12/D14; decision cf511ff3).
+- **R20** — Immediately before the first mutation, the installer revalidates a
+  whole-run snapshot. Any path, symlink, alias, package, inventory, ledger, or
+  hook-shape mismatch aborts the transaction with zero writes.
+- **R21 (not yet implemented — installer-version-parity-1-3-1)** — An install
+  has one release version across its authoritative source, enabled package,
+  project runtime, and every project-local assistant capability copy. Every
+  required source marker must exist, be readable, and agree before the target
+  changes. Target surfaces may be absent for a new project, but every applicable
+  one must exist and equal the validated source version before success; an
+  existing unreadable or different target is never ignored. A successful run
+  can never report one version while an assistant discovers another (decision
+  55ff17ef).
+- **R22 (not yet implemented — installer-version-parity-1-3-1)** — A top-level
+  installer reports success only after the target reports the requested release
+  version for both onboarding and the selected package source, reports no managed
+  drift, and an immediate second check reports nothing left to update. A mere
+  "installed" flag is not a sufficient success condition (decision 09b776b5).
+- **R23 (not yet implemented — installer-version-parity-1-3-1)** — The Linux and
+  Windows entry points prove the same observable outcomes for a new project and
+  an already-onboarded project: all required onboarding information exists,
+  owner content and prior workflow state survive an upgrade, managed capability
+  copies move to the requested release, and repeating the run is idempotent
+  (decision 09b776b5).
+- **R24 (not yet implemented — installer-version-parity-1-3-1)** — Removing
+  project fallback capabilities requires proof that each candidate belongs to
+  the managed release set. Sharing the workflow's name prefix is not ownership;
+  a project-owned capability remains untouched.
+- **R25 (not yet implemented — installer-version-parity-1-3-1)** — Planning,
+  preview, and dry-run never install, remove, or change a runtime package.
+  Package transition begins only after confirmation and is exercised in an
+  isolated environment that proves the ordering rather than bypassing it with a
+  prewritten status response.
 
 ## Edge Cases Settled
 
@@ -450,12 +534,10 @@ landing page from day one in every onboarded project.
   broader force-override reporting and per-skill-target sync details remain to
   harvest. Until then the authoritative description of the unspecced parts is the
   code and its test suites.
-- P24 must define the transition from manually copied Codex skills and project
-  hooks to the plugin-first contract, including how an installation detects and
-  avoids duplicate hook sources.
-- P24 must map each Codex lifecycle event and tool path to its observable bee
-  outcome, and state every path that remains helper-enforced because the host
-  cannot intercept it.
+- Plugin-first/repo-copy implementation, fixture metadata, release inventory,
+  lifecycle mapping, and repository verification are green. Real user-home
+  install/reinstall plus fresh-thread loading remain outstanding because this
+  environment exposes the Codex home read-only.
 - P24 must replace executor presets that imply workspace isolation without
   actually enforcing it, and verify the effective sandbox/approval boundary.
 - Custom Codex explorer/worker/reviewer profiles remain deferred under P25 until
@@ -464,6 +546,22 @@ landing page from day one in every onboarded project.
 
 ## Pointers (implementation)
 
+- `scripts/lib/run-module-worker.mjs` — shared isolated test-entrypoint runner;
+  preserves arguments, environment, stdout, stderr, and exit status without
+  changing the production entrypoint.
+- `skills/bee-hive/scripts/test_onboard_bee.mjs` — the complete onboarding
+  suite keeps its real and fixture-local entrypoints and all prior assertions
+  while routing nested Node launches through the shared runner.
+- `skills/bee-hive/scripts/plugin_distribution.mjs` and
+  `skills/bee-hive/scripts/test_plugin_distribution.mjs` — shared strict
+  planner/prover and the 22-case transaction suite used by both installers.
+- `scripts/install.sh`, `scripts/install.ps1`, `.codex-plugin/plugin.json`,
+  `.claude-plugin/marketplace.json`, and the release inventory/tuple tests —
+  package wiring, cross-platform entrypoints, metadata, inventory, and staged
+  cachebuster proof. Evidence: `.bee/cells/codex-hook-state-parity-3.json` and
+  `docs/history/codex-hook-state-parity/reports/codex-hook-state-parity-3.md`.
+- Fresh-host handler-delivery proof: `.bee/cells/codex-hook-state-parity-5.json`
+  and `docs/history/codex-hook-state-parity/reports/codex-hook-state-parity-5.md`.
 - `skills/bee-hive/scripts/onboard_bee.mjs` — `statuslineOptIn()`, plan stage 3b,
   `copy_statusline` apply case, `buildManagedVersions`/`subsetManaged` conditional
   `statusline` key.

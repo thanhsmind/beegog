@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "feature": "codex-sandbox-baseline",
+  "mode": "standard",
+  "phase": "compounding-complete",
+  "approved_gates": {
+    "context": true,
+    "shape": true,
+    "execution": true,
+    "review": false
+  },
+  "summary": "learnings: docs/history/learnings/20260716-codex-sandbox-baseline.md; promoted: 0; scribing verified; feedback digest refreshed; immutable review candidate deferred because HEAD does not contain the uncommitted feature diff",
+  "next_action": "Resume codex-hook-state-parity, approve execution from the green unchanged baseline, and implement state owner, Codex lifecycle hooks, then plugin-first installer cleanup.",
+  "created_at": "2026-07-15T19:20:33.726Z",
+  "last_scribing_run": {
+    "feature": "codex-sandbox-baseline",
+    "date": "2026-07-15",
+    "at": "2026-07-15T20:45:44.115Z",
+    "areas_synced": [
+      "onboarding",
+      "hook-runtime",
+      "workflow-state"
+    ],
+    "next_action": "Invoke bee-compounding, then resume codex-hook-state-parity execution."
+  }
+}

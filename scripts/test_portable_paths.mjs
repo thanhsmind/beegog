@@ -5,7 +5,7 @@
 // failure. Windows rejects < > : " | ? * and control characters in filenames, plus a
 // trailing dot/space and the reserved DOS device names.
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 const NUL = String.fromCharCode(0);
 const ILLEGAL_CHARS = new Set(['<', '>', ':', '"', '|', '?', '*']);
@@ -20,7 +20,16 @@ function illegalIn(segment) {
   return null;
 }
 
-const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
+const gitResult = spawnSync("git", ["ls-files", "-z"], { encoding: "utf8" });
+if (gitResult.status !== 0 || typeof gitResult.stdout !== "string") {
+  console.error(
+    "FAIL portable-paths: git ls-files did not return a concrete zero status and text output " +
+      `(status=${gitResult.status}, stderr=${gitResult.stderr || ""})`,
+  );
+  process.exit(1);
+}
+
+const tracked = gitResult.stdout
   .split(NUL)
   .filter(Boolean);
 

@@ -104,6 +104,15 @@ git commit -m "feat(<cell-id>): <summary matching the cap outcome>"
 
 Every result starts with exactly one token and includes, minimum: nickname, cell id, files touched/requested, reservation outcome (released yes/no), verification result, and the parent's next action. Mirror the result into `docs/history/<feature>/reports/<cell-id>.md` as a short summary that **links** the cell (`.bee/cells/<cell-id>.json`) for the full trace and evidence — never a second copy of the `verification_evidence` JSON or the verify output (decision 0009: the trace is the single source).
 
+When dispatched with native worktree isolation, also report the observed working
+directory, symbolic ref (or detached state), and resulting commit. These values
+are informational and never authoritative: the worker does not choose or attest
+its integration identity. The orchestrator must derive and recheck identity from
+its protected pre-dispatch attestation and fresh Git metadata, then independently
+prove base ancestry and the reserved-path diff subset before the result counts.
+Do not describe a branch name, worktree id, base, or commit as integration
+authority, and do not ask the orchestrator to trust a worker-supplied value.
+
 - `[DONE]` — cell capped, one commit made, verification recorded as passed, reservations released.
 - `[BLOCKED]` — cannot continue safely; include the blocker, diagnosis, and current reservation state.
 - `[HANDOFF]` — `.bee/HANDOFF.json` written; include progress, active reservations, and the resume point.

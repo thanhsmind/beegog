@@ -200,6 +200,23 @@ The one orchestration pattern bee runs: the session model (the owner's best mode
 - **Digest contract** — an I/O worker returns paths read, the facts extracted (with file:line anchors), and verbatim quotes only where asked; the orchestrator never re-reads what a digest already answers.
 - **Transport unchanged** — anchored `[bee-tier: <tier>]` marker or `model` param (decision 0023), model name in the Agent description, background dispatch where the runtime supports it (decision 0017), P22 dispatch log as the audit trail. I/O workers do **not** register in `bee.mjs state worker add` — the registry stays swarm-cell-scoped (reservations/status are execution concerns); the dispatch log is the audit surface for gathers.
 
+### Native Codex subagent tending
+
+For every bee-owned native Codex subagent flow, including ordinary delegated
+gathers, a completed `wait_agent` call with no completion is an **empty wait**:
+it is a timeout signal only, never failure. Never follow an empty wait directly
+with another `wait_agent`; authority, urgency, and no-chatter instructions create
+no exception. Before any later bounded wait, continue material task-local work
+when any remains; otherwise take exactly one `list_agents` snapshot. Then send
+one concise commentary update naming both the live agent state and the next
+action; only then may a later bounded wait run. No-op work, repeated state reads,
+hidden reasoning, generic commentary, or commentary alone do not qualify.
+Timeout never licenses interrupt, duplicate dispatch, claim release, or
+reservation release; every running agent, claim, and reservation stays owned.
+This refines, rather than replaces, the ban on file/scratchpad polling for
+harness-managed subagents. External process and artifact polling keeps its own
+contract and is outside this native-agent rule.
+
 ## Question Format
 
 Used at all gates and Socratic steps:

@@ -23,6 +23,21 @@ Load after Gate 3 approval, before spawning the first wave.
 
 On both runtimes the integrity rails are identical because they live in the helpers: `bee.mjs cells cap` refuses without a verify pass, and `bee.mjs reservations reserve` reports conflicts the worker must turn into `[BLOCKED]`.
 
+### Native Codex timeout interval
+
+A `wait_agent` result with no completion is an **empty wait**, not a worker
+failure. Never follow an empty wait directly with `wait_agent`; authority,
+urgency, and no-chatter instructions create no exception. Before a later bounded
+wait, continue material task-local work when any remains; otherwise take exactly
+one `list_agents` snapshot. Then send one concise commentary update naming both
+the live agent state and the next action; only then may a later bounded wait run.
+No-op work, repeated state reads, hidden reasoning, generic commentary, or
+commentary alone do not qualify. The timeout never licenses interrupt, duplicate
+dispatch, claim release, or reservation release: every running agent, claim, and
+reservation stays owned. Do not poll files or scratchpads for harness-managed
+native agents. External process and artifact polling stays governed by External
+Executors below and is outside this native-agent rule.
+
 ## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
 
 Only the **cheaper** slots are configured, in `.bee/config.json` `models`, keyed by runtime first (bee is dual-runtime and each names models differently), then slot. **The ceiling is never configured** — it is always the session/orchestrator model (decision 0015). The default is the all-Claude role split (decision 0021) — session model orchestrates, opus reviews, sonnet implements, haiku extracts — and **every slot is editable to whatever models the user actually has** (only a Claude subscription → keep all-Claude; a Codex plan too → point slots at GPT via cli executors):

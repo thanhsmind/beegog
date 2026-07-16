@@ -236,26 +236,93 @@ function normalizeModels(raw) {
  * anywhere up the tree, walk up again for the first `.git`; else null.
  * (Onboarding marker wins over .git even when .git is closer to startDir.)
  */
+export class WorktreeLinkInvalidError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'WorktreeLinkInvalidError';
+    this.code = 'WORKTREE_LINK_INVALID';
+  }
+}
+
+function readGitdirFile(file, base) {
+  try {
+    let raw = fs.readFileSync(file, 'utf8').trim();
+    if (!raw) return null;
+    if (raw.startsWith('gitdir:')) raw = raw.slice('gitdir:'.length).trim();
+    return path.resolve(base, raw.replace(/\\/g, path.sep));
+  } catch {
+    return null;
+  }
+}
+
+function locateGitRoot(start) {
+  let dir = path.resolve(start || process.cwd());
+  while (true) {
+    const marker = path.join(dir, '.git');
+    if (fs.existsSync(marker)) return { workRoot: dir, marker };
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** Resolve the physical checkout and the single coordination-store root. */
+export function resolveRoots(startDir) {
+  // A fixture/project may live below an unrelated ancestor that happens to
+  // contain a .git directory (for example /tmp/.git). Prefer the nearest
+  // onboarding marker when the current directory itself is not a Git root;
+  // linked worktrees still have a .git file at their own root and continue
+  // through the bidirectional validation below.
+  let nearest = path.resolve(startDir || process.cwd());
+  while (true) {
+    if (fs.existsSync(path.join(nearest, '.bee', 'onboarding.json')) && !fs.existsSync(path.join(nearest, '.git'))) {
+      return { storeRoot: nearest, workRoot: nearest, worktreeResolution: 'ordinary' };
+    }
+    const parent = path.dirname(nearest);
+    if (parent === nearest) break;
+    nearest = parent;
+  }
+  const located = locateGitRoot(startDir);
+  if (!located) {
+    let dir = path.resolve(startDir || process.cwd());
+    while (true) {
+      if (fs.existsSync(path.join(dir, '.bee', 'onboarding.json'))) {
+        return { storeRoot: dir, workRoot: dir, worktreeResolution: 'ordinary' };
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    return { storeRoot: null, workRoot: null, worktreeResolution: 'ordinary' };
+  }
+  const { workRoot, marker } = located;
+  if (!fs.statSync(marker).isFile()) {
+    return { storeRoot: workRoot, workRoot, worktreeResolution: 'ordinary' };
+  }
+
+  const gitdir = readGitdirFile(marker, workRoot);
+  const invalid = (reason) => {
+    throw new WorktreeLinkInvalidError(`${reason} (${marker})`);
+  };
+  if (!gitdir) return invalid('linked worktree gitdir is missing or malformed');
+  const worktreesRoot = path.resolve(gitdir, '..');
+  const commonGitDir = path.resolve(worktreesRoot, '..');
+  if (path.basename(commonGitDir) !== '.git' || path.basename(worktreesRoot) !== 'worktrees') {
+    return invalid('linked worktree gitdir is outside the expected .git/worktrees namespace');
+  }
+  const id = path.basename(gitdir);
+  if (!id || id === '.' || id === '..') return invalid('linked worktree id is empty');
+  const reverse = readGitdirFile(path.join(gitdir, 'gitdir'), gitdir);
+  if (!reverse || path.resolve(reverse) !== path.resolve(marker)) {
+    return invalid('linked worktree reverse gitdir pointer is missing or mismatched');
+  }
+  const storeRoot = path.dirname(commonGitDir);
+  return { storeRoot, workRoot, worktreeResolution: 'linked-valid' };
+}
+
 export function findRepoRoot(startDir) {
-  const start = path.resolve(startDir || process.cwd());
-
-  let dir = start;
-  while (true) {
-    if (fs.existsSync(path.join(dir, '.bee', 'onboarding.json'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-
-  dir = start;
-  while (true) {
-    if (fs.existsSync(path.join(dir, '.git'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-
-  return null;
+  const roots = resolveRoots(startDir);
+  return roots.storeRoot;
 }
 
 export function defaultState() {

@@ -1,0 +1,233 @@
+{
+  "id": "codex-agent-wait-loop-review-20260715-r2",
+  "requested_by": "user",
+  "requested_at": "2026-07-15T16:52:56.948Z",
+  "scope_description": "Review and fix the Codex repeated empty subagent-wait problem shown in the supplied screenshot; explicit capped cell plus frozen feature-close working-tree artifacts.",
+  "included": [
+    {
+      "type": "cell",
+      "id": "codex-agent-wait-loop-2",
+      "reason": "Capped behavior-change implementation with RED/GREEN evidence."
+    },
+    {
+      "type": "commit",
+      "id": "working-tree-sha256:111504718f1f4e5a7a59c12248da966f97fab1673d025adc0fc9f721478c81a6",
+      "reason": "Immutable content identity for uncommitted feature history, spec, backlog, badge, and learning artifacts; no A10 cell preflight implied for this commit-only entry."
+    }
+  ],
+  "excluded": [
+    {
+      "type": "cell",
+      "id": "codex-agent-wait-loop-1",
+      "reason": "Dropped before feature wording changed after .agents write denial; blocker report is evidence only."
+    },
+    {
+      "type": "feature",
+      "id": "worktree-isolation",
+      "reason": "Separate active feature; excluded from the frozen hash."
+    }
+  ],
+  "baseline": "45cac8574411bec18a7a6f8fc91efaa6e52dabce",
+  "head": "working-tree-sha256:111504718f1f4e5a7a59c12248da966f97fab1673d025adc0fc9f721478c81a6",
+  "reviewer_manifest": {
+    "reviewers": [
+      {
+        "name": "code-quality",
+        "tier": "review",
+        "transport": "native collaboration agent",
+        "wave": 1
+      },
+      {
+        "name": "architecture",
+        "tier": "review",
+        "transport": "native collaboration agent",
+        "wave": 1
+      },
+      {
+        "name": "test-coverage",
+        "tier": "review",
+        "transport": "native collaboration agent",
+        "wave": 1
+      },
+      {
+        "name": "security",
+        "tier": "review",
+        "transport": "native collaboration agent",
+        "wave": 2
+      },
+      {
+        "name": "reliability",
+        "tier": "review",
+        "transport": "native collaboration agent",
+        "wave": 2
+      }
+    ],
+    "scope_hash": "111504718f1f4e5a7a59c12248da966f97fab1673d025adc0fc9f721478c81a6",
+    "runtime_constraint": "Four total collaboration slots require 3+2 dispatch while preserving the same frozen scope."
+  },
+  "verification_preflight": {
+    "checked_at": "2026-07-15T16:52:56.948Z",
+    "cells_checked": [
+      "codex-agent-wait-loop-2"
+    ],
+    "passed": true
+  },
+  "findings": [
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "architecture",
+      "feature": "codex-agent-wait-loop",
+      "summary": "Live root-only Codex deployment is not behaviorally proven.",
+      "today": "The current Codex boundary relies on root AGENTS.md because .agents is sandbox-read-only, but the GREEN replay also loaded canonical procedure files.",
+      "why": "The replay proves the combined future payload, not that root AGENTS.md alone overrides the stale live skill projection.",
+      "scenario": "A precedence or wording regression makes root doctrine ineffective while canonical procedure wording still drives the expected answer, yielding a false GREEN.",
+      "evidence": "docs/history/codex-agent-wait-loop/plan.md:52-57; skills/bee-swarming/CREATION-LOG.md:116-122; docs/history/learnings/20260715-codex-wait-discipline-sandbox-proof.md:95-117",
+      "fix": "Replay all frozen scenarios with a fresh child loading only root AGENTS.md, record verbatim output, and require the exact D3 sequence in all three cases.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "architecture"
+      ]
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "code-quality",
+      "feature": "codex-agent-wait-loop",
+      "summary": "Shipped wording does not explicitly lock D3's at-least-one minimum.",
+      "today": "Live surfaces say to continue material task-local work when any remains, without defining when the progress interval is satisfied.",
+      "why": "The locked decision requires at least one material non-wait action before a later wait.",
+      "scenario": "Different orchestrators either re-wait after one useful action or postpone result collection until every independent check finishes.",
+      "evidence": "docs/history/codex-agent-wait-loop/CONTEXT.md:26; AGENTS.md:57; skills/bee-hive/references/routing-and-contracts.md:218-221; docs/specs/doctrine-layer.md:119-125",
+      "fix": "Use 'perform at least one material task-local action when work remains' across doctrine, procedures, spec, projections, and census.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "code-quality"
+      ]
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "test-coverage",
+      "feature": "codex-agent-wait-loop",
+      "summary": "The procedure census permits contradictory timeout instructions to pass.",
+      "today": "Procedure surfaces only need scattered keywords and do not inherit all no-exception, loophole, interruption, and external-polling assertions.",
+      "why": "A later procedure can retain those tokens while adding an urgency or no-chatter exception.",
+      "scenario": "Swarming guidance adds 'under deadline pressure, immediately re-wait'; the census remains green and repeated empty panels return.",
+      "evidence": "skills/bee-hive/templates/tests/test_lib.mjs:7432-7439; docs/history/codex-agent-wait-loop/CONTEXT.md:25-28; docs/history/codex-agent-wait-loop/plan.md:77-83",
+      "fix": "Apply the full doctrine assertions to every bounded procedure section, including no exceptions, loopholes, interruption, and external polling.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "code-quality"
+      ]
+    },
+    {
+      "severity": "P1",
+      "status": "open",
+      "layer": "verification",
+      "feature": "codex-agent-wait-loop",
+      "summary": "The cell is capped as verified even though its exact stored verify command exits 1.",
+      "today": "The cell records verify_passed=true for `node skills/bee-hive/templates/tests/test_lib.mjs && git diff --check`, while a fresh execution returns exit 1 with empty output; only the two constituents were observed green separately.",
+      "why": "Capping requires the exact runnable verify command to pass with proof. Marking a failing literal command as passed makes the review preflight and merge evidence untrustworthy.",
+      "scenario": "A later review treats the capped cell as verified, even though the command encoded in the cell cannot demonstrate success in the current environment.",
+      "evidence": ".bee/cells/codex-agent-wait-loop-2.json: verify, trace.verification_evidence, trace.verify_output, trace.verify_passed; fresh review execution on 2026-07-15: exit 1, empty stdout/stderr",
+      "fix": "Do not treat constituent success as success of a failing stored conjunction. Reopen/repair verification state or rerun the exact command in a child-process-capable environment and record its real passing output before approval.",
+      "autofix_class": "manual",
+      "corroborated_by": [
+        "review-orchestrator"
+      ]
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "test-coverage",
+      "feature": "codex-agent-wait-loop",
+      "summary": "No test executes the native wait sequence the feature claims to fix.",
+      "today": "The GREEN proof is a model answering an A/B/C questionnaire and is forbidden from calling further tools.",
+      "why": "It proves rule comprehension, not live tool-selection behavior after a real timeout.",
+      "scenario": "Codex explains the right sequence in replay but still emits wait_agent → timeout → wait_agent in an actual delegated gather.",
+      "evidence": "docs/history/codex-agent-wait-loop/pressure-tests.md:73-81; skills/bee-swarming/CREATION-LOG.md:143-157; docs/history/codex-agent-wait-loop/plan.md:87-90",
+      "fix": "Add controlled native traces for ordinary delegation and swarming that force one empty timeout and assert the full progress/commentary/later-wait sequence without interrupt, redispatch, or ownership release.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "test-coverage"
+      ]
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "test-coverage",
+      "feature": "codex-agent-wait-loop",
+      "summary": "The doctrine census can pass contradictory D3 ordering.",
+      "today": "Assertions check independent keywords across whole files but never tie material work/list snapshot, commentary, and later wait into the required order.",
+      "why": "A surface can contain every required token while explicitly placing the later wait before commentary.",
+      "scenario": "A mutation stating 'later bounded wait may run before commentary' satisfies the current predicates and keeps the regression suite green.",
+      "evidence": "skills/bee-hive/templates/tests/test_lib.mjs:7423-7429; skills/bee-hive/templates/tests/test_lib.mjs:7436-7439",
+      "fix": "Validate a localized normalized contract block with order-sensitive assertions and mutation rows for D1-D5 inversions.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "test-coverage"
+      ]
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "test-coverage",
+      "feature": "codex-agent-wait-loop",
+      "summary": "GREEN covers only the no-local-work fallback and scores one ambiguous scenario as exhausted.",
+      "today": "All three GREEN outcomes choose one list_agents snapshot; none requires doing material local work, and scenario 3 omits the exhaustion precondition used by the rubric.",
+      "why": "The other half of D3 is unproved and an always-snapshot behavior would still pass.",
+      "scenario": "Useful report synthesis remains after a timeout, but the orchestrator snapshots agent status instead; current GREEN evidence endorses it.",
+      "evidence": "docs/history/codex-agent-wait-loop/pressure-tests.md:45-49,91-98; skills/bee-swarming/CREATION-LOG.md:146-150; docs/history/codex-agent-wait-loop/plan.md:109-122",
+      "fix": "Add a frozen material-work-remains scenario, clarify scenario 3, and cover zero-agent plus completion-during-interval traces.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "test-coverage"
+      ]
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "reliability",
+      "feature": "codex-agent-wait-loop",
+      "summary": "Completion events can satisfy the interval without being handled.",
+      "today": "Shipped doctrine requires material work or list_agents then commentary, but does not carry the locked condition that a completion event counts only when its result is handled.",
+      "why": "A completion can arrive during local work and leave the next commentary and wait based on stale agent state.",
+      "scenario": "wait_agent times out; an agent completes during unrelated local work; the orchestrator reports it as running and waits again without consuming the completed report.",
+      "evidence": "docs/history/codex-agent-wait-loop/CONTEXT.md:39-41; docs/history/codex-agent-wait-loop/plan.md:112-115; skills/bee-hive/references/routing-and-contracts.md:214-227; skills/bee-hive/templates/tests/test_lib.mjs:7423-7439",
+      "fix": "Carry the event-handling condition into doctrine/procedures and anchor a completion-during-interval case that is processed exactly once before another wait.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "security"
+      ]
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "security",
+      "feature": "codex-agent-wait-loop",
+      "summary": "Safety anchors can pass after ownership protections are inverted.",
+      "today": "The prose forbids interrupt, duplicate dispatch, claim release, and reservation release, but whole-file keyword checks do not pin negation or the external-process boundary on every procedure.",
+      "why": "A future edit can invert 'never licenses' to 'licenses' while retaining every token.",
+      "scenario": "A timeout instruction begins canceling and redispatching quiet workers and releasing ownership while the census remains green.",
+      "evidence": "AGENTS.md:57; skills/bee-swarming/references/swarming-reference.md:28-39; skills/bee-hive/templates/tests/test_lib.mjs:7428-7429,7436-7439; docs/history/codex-agent-wait-loop/pressure-tests.md:33-49",
+      "fix": "Assert localized normalized safety clauses with explicit negation and external carve-out on every surface; add mutation cases for redispatch, ownership release, stale completion, and external executor timeout.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "security"
+      ]
+    }
+  ],
+  "uat": [],
+  "decision": {
+    "status": "blocked",
+    "gate4": "blocked",
+    "summary": "Independent five-angle review found one unresolved P1: the exact cell verify command exits 1 although the capped trace records verify_passed=true. Seven deduplicated P2 groups require repair or stronger proof. No merge approval until P1 is replaced by literal passing evidence and the repair delta is re-reviewed.",
+    "p1_count": 1,
+    "p2_count": 7,
+    "p3_count": 0,
+    "next_action": "Open a separate repair scope for gated-auto findings, produce root-only and native trace evidence, then delta re-review; rerun exact verification in a capable environment."
+  },
+  "created_at": "2026-07-15T16:52:56.948Z",
+  "updated_at": "2026-07-15T17:08:25.098Z"
+}

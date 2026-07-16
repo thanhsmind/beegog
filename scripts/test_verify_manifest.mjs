@@ -13,10 +13,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
 const CONFIG_PATH = path.join(REPO_ROOT, ".bee", "config.json");
 
-// The 7 suites that MUST always run as part of commands.verify.
+// The suites that MUST always run as part of commands.verify.
 const MANDATORY_SUITES = [
   "test_lib",
   "test_onboard_bee",
+  "test_plugin_distribution",
   "test_portable_paths",
   "test_model_guard",
   "test_write_guard",

@@ -1,0 +1,81 @@
+{
+  "id": "codex-agent-wait-loop-3",
+  "feature": "codex-agent-wait-loop",
+  "title": "Repair reviewed wait discipline and prove live native behavior",
+  "lane": "standard",
+  "deps": [
+    "codex-agent-wait-loop-2"
+  ],
+  "decisions": [
+    "44bccc55-d97d-44a7-8418-32e1a8db77ce"
+  ],
+  "pbi": "P42",
+  "files": [
+    "AGENTS.md",
+    "skills/bee-hive/templates/AGENTS.block.md",
+    "skills/bee-hive/references/routing-and-contracts.md",
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "skills/bee-swarming/SKILL.md",
+    "skills/bee-swarming/references/swarming-reference.md",
+    "skills/bee-swarming/CREATION-LOG.md",
+    ".claude/skills/bee-hive/templates/AGENTS.block.md",
+    ".claude/skills/bee-hive/references/routing-and-contracts.md",
+    ".claude/skills/bee-hive/templates/tests/test_lib.mjs",
+    ".claude/skills/bee-swarming/SKILL.md",
+    ".claude/skills/bee-swarming/references/swarming-reference.md",
+    ".claude/skills/bee-swarming/CREATION-LOG.md",
+    "docs/history/codex-agent-wait-loop/pressure-tests.md",
+    "docs/history/codex-agent-wait-loop/reports/codex-agent-wait-loop-3.md",
+    "docs/specs/doctrine-layer.md"
+  ],
+  "read_first": [
+    "docs/history/codex-agent-wait-loop/CONTEXT.md",
+    "docs/history/codex-agent-wait-loop/plan.md",
+    "docs/history/codex-agent-wait-loop/pressure-tests.md",
+    ".bee/reviews/codex-agent-wait-loop-review-20260715-r2.json",
+    "docs/specs/doctrine-layer.md"
+  ],
+  "action": "Repair only the independently reviewed delta. Change every writable doctrine/procedure surface to say that at least one material task-local action satisfies the progress interval; it does not require exhausting all local work. If completion arrives during the interval, handle its result exactly once before commentary, recompute the relevant live-agent set, and never call wait_agent when that set is empty. Preserve the one-list_agents fallback only when no material work remains, all D1 ownership protections, no authority/urgency exception, and the native-versus-external boundary. Replace whole-file scattered-keyword census logic with a localized normalized contract assertion plus order-sensitive and mutation cases that fail on wait-before-commentary, urgency/no-chatter exceptions, timeout-as-failure, interrupt/redispatch/ownership release, stale completion, zero-agent re-wait, and loss of external carve-out. Add one frozen material-work-remains scenario and clarify scenario 3's exhaustion precondition. Record an isolated root-AGENTS-only replay separately from the combined future-sync replay. Capture controlled native collaboration traces for an ordinary delegated gather and a swarm/review wave: force at least one empty timeout, perform the exact interval, handle completion once, stop at zero live agents, and preserve ownership. Record exact tool/result chronology without inventing output. Keep .agents read-only and do not touch worktree-isolation. Use the literal judge exactly as stored; run git diff --check and the configured full verify separately and never infer conjunction success.",
+  "must_haves": {
+    "truths": [
+      "at least one material action satisfies the interval and does not require exhausting all local work",
+      "completion arriving during the interval is handled exactly once before commentary",
+      "relevant liveness is recomputed and zero live agents forbids another wait",
+      "localized order-sensitive and mutation assertions pin D1-D6 on every writable surface",
+      "root-only replay proves current Codex deployment independently of canonical procedure text",
+      "real native traces cover ordinary delegation and swarm/review flows",
+      "the stored literal judge actually exits zero with captured output"
+    ],
+    "artifacts": [
+      "repaired doctrine/procedure wording and projections",
+      "mutation-resistant census tests",
+      "expanded frozen pressure scenarios",
+      "root-only replay evidence",
+      "ordinary-gather and swarm/review native trace evidence",
+      "updated doctrine spec and worker report"
+    ],
+    "prohibitions": [
+      "no rewrite of historical cell-2 trace",
+      "no .agents writes or false sync claim",
+      "no worktree-isolation changes",
+      "no inferred pass from separately green constituents",
+      "no commentary-only or repeated-read loophole"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_lib.mjs",
+  "behavior_change": true,
+  "status": "open",
+  "tier": "generation",
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

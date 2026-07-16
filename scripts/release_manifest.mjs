@@ -4,8 +4,9 @@
 // Enumerates the release-identity file set for the bee distribution:
 //   - skills/bee-hive/templates/lib/*.mjs   -> role "source_lib"
 //   - .bee/bin/lib/*.mjs                    -> role "runtime_lib"
-//   - .claude-plugin/plugin.json            -> role "plugin_manifest"
-//   - .codex-plugin/plugin.json             -> role "plugin_manifest"
+//   - skills/** and hooks/**                 -> canonical plugin package
+//   - both plugin manifests + marketplace   -> plugin metadata
+//   - both installers + distribution engine -> migration machinery
 //
 // The lib directories are enumerated via fs.readdirSync — never a hand-kept
 // list (crit-pattern 20260714: hand-kept file lists silently drift from the
@@ -39,11 +40,19 @@ const MANIFEST_PATH = path.join(
   "release-manifest.json",
 );
 
-const SOURCE_LIB_DIR = path.join(REPO_ROOT, "skills", "bee-hive", "templates", "lib");
 const RUNTIME_LIB_DIR = path.join(REPO_ROOT, ".bee", "bin", "lib");
 const NAMED_PLUGIN_MANIFESTS = [
   path.join(REPO_ROOT, ".claude-plugin", "plugin.json"),
   path.join(REPO_ROOT, ".codex-plugin", "plugin.json"),
+];
+const PLUGIN_MARKETPLACE = path.join(REPO_ROOT, ".claude-plugin", "marketplace.json");
+const DISTRIBUTION_TOOLS = [
+  path.join(REPO_ROOT, "scripts", "install.sh"),
+  path.join(REPO_ROOT, "scripts", "install.ps1"),
+];
+const DISTRIBUTION_TESTS = [
+  path.join(REPO_ROOT, "scripts", "test_verify_manifest.mjs"),
+  path.join(REPO_ROOT, "scripts", "test_release_tuple.mjs"),
 ];
 
 const SCHEMA_VERSION = 1;
@@ -63,13 +72,31 @@ function modeOctal(absPath) {
   return mode.toString(8).padStart(3, "0");
 }
 
-function buildRecord(absPath, role) {
-  return {
+function buildRecord(absPath, role, packagePath = null) {
+  const record = {
     path: relPosix(absPath),
     sha256: sha256File(absPath),
     mode: modeOctal(absPath),
     role,
   };
+  if (packagePath) record.packagePath = packagePath;
+  return record;
+}
+
+function enumerateTree(dirAbsPath, role) {
+  if (!fs.existsSync(dirAbsPath)) throw new Error(`release_manifest: expected directory missing: ${dirAbsPath}`);
+  const records = [];
+  const walk = (current) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const absPath = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) throw new Error(`release_manifest: symlink forbidden in package inventory: ${absPath}`);
+      if (entry.isDirectory()) walk(absPath);
+      else if (entry.isFile()) records.push(buildRecord(absPath, role, relPosix(absPath)));
+      else throw new Error(`release_manifest: unsupported package entry: ${absPath}`);
+    }
+  };
+  walk(dirAbsPath);
+  return records.sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /** Enumerate *.mjs files directly inside dirAbsPath (no recursion), sorted. */
@@ -90,16 +117,22 @@ function enumerateMjsDir(dirAbsPath, role) {
  */
 function buildCurrentRecords() {
   const records = [
-    ...enumerateMjsDir(SOURCE_LIB_DIR, "source_lib"),
     ...enumerateMjsDir(RUNTIME_LIB_DIR, "runtime_lib"),
+    ...enumerateTree(path.join(REPO_ROOT, "skills"), "plugin_skill"),
+    ...enumerateTree(path.join(REPO_ROOT, "hooks"), "plugin_hook"),
     ...NAMED_PLUGIN_MANIFESTS.map((absPath) => {
       if (!fs.existsSync(absPath)) {
         throw new Error(`release_manifest: expected plugin manifest missing: ${absPath}`);
       }
-      return buildRecord(absPath, "plugin_manifest");
+      return buildRecord(absPath, "plugin_manifest", relPosix(absPath));
     }),
+    buildRecord(PLUGIN_MARKETPLACE, "plugin_marketplace", relPosix(PLUGIN_MARKETPLACE)),
+    ...DISTRIBUTION_TOOLS.map((absPath) => buildRecord(absPath, "distribution_tool")),
+    ...DISTRIBUTION_TESTS.map((absPath) => buildRecord(absPath, "distribution_test")),
   ];
   records.sort((a, b) => a.path.localeCompare(b.path));
+  const duplicates = records.filter((record, index) => index > 0 && record.path === records[index - 1].path);
+  if (duplicates.length) throw new Error(`release_manifest: duplicate inventory path(s): ${duplicates.map((record) => record.path).join(", ")}`);
   return records;
 }
 
@@ -145,6 +178,7 @@ function compareManifests(stored, current) {
     if (storedRecord.sha256 !== currentRecord.sha256) reasons.push("sha256");
     if (storedRecord.mode !== currentRecord.mode) reasons.push("mode");
     if (storedRecord.role !== currentRecord.role) reasons.push("role");
+    if ((storedRecord.packagePath ?? null) !== (currentRecord.packagePath ?? null)) reasons.push("packagePath");
     if (reasons.length > 0) changed.push({ path: p, reasons });
   }
   changed.sort((a, b) => a.path.localeCompare(b.path));

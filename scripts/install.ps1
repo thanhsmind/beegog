@@ -36,6 +36,10 @@ param(
   [string]$Directory = (Get-Location).Path,
   [ValidateSet('claude', 'codex', 'both')]
   [string]$Runtime = 'both',
+  [ValidateSet('plugin-first', 'repo-copy')]
+  [string]$Distribution = 'repo-copy',
+  [string]$PluginStateFile = '',
+  [string]$OwnershipLedger = '',
   [string]$Source = '',
   [string]$Ref = 'main',
   [switch]$NoHooks,
@@ -76,6 +80,7 @@ if ($nodeMajor -lt 18) { Fail "Node.js 18+ is required (found $nodeVersionRaw)."
 # ---------- resolve bee source (local checkout or clone) ----------
 
 $cleanupDir = $null
+$stateTempDir = $null
 try {
   if ($Source) {
     # .ProviderPath, not .Path: on UNC paths PS 5.1 returns a provider-qualified
@@ -105,7 +110,7 @@ try {
     # sparse-checkout needs git 2.25+; on older git it exits non-zero and the checkout
     # below is simply a full one (which may still trip over an invalid path; the probe
     # is what turns that into an honest error instead of a silent empty source).
-    git -C $clonePath sparse-checkout set skills .claude-plugin
+    git -C $clonePath sparse-checkout set skills .claude-plugin docs/history/codex-harness-hardening
     git -C $clonePath checkout --quiet HEAD
 
     $beeSrc = $clonePath
@@ -116,57 +121,19 @@ try {
 
   $onboard = Join-Path $beeSrc 'skills\bee-hive\scripts\onboard_bee.mjs'
   if (-not (Test-Path $onboard)) { Fail "Not a bee checkout (missing skills/bee-hive/scripts/onboard_bee.mjs): $beeSrc" }
+  $distributionHelper = Join-Path $beeSrc 'skills\bee-hive\scripts\plugin_distribution.mjs'
+  $releaseManifest = Join-Path $beeSrc 'docs\history\codex-harness-hardening\release-manifest.json'
+  if (-not (Test-Path $distributionHelper)) { Fail "Not a bee release (missing plugin_distribution.mjs): $beeSrc" }
+  if (-not (Test-Path $releaseManifest)) { Fail "Not a bee release (missing release manifest): $beeSrc" }
   $beeVersion = try {
     (Get-Content (Join-Path $beeSrc '.claude-plugin\plugin.json') -Raw | ConvertFrom-Json).version
   } catch { 'unknown' }
   Write-Host "source   $beeSrc (bee $beeVersion)"
 
-  # ---------- layer 1: runtime skills (opt-in, -GlobalSkills) ----------
-
-  function Install-Skills([string]$Dest, [string]$Label) {
-    $copied = 0; $updated = 0; $same = 0
-    New-Item -ItemType Directory -Force -Path $Dest | Out-Null
-    foreach ($skill in Get-ChildItem -Directory (Join-Path $beeSrc 'skills')) {
-      $target = Join-Path $Dest $skill.Name
-      if (Test-Path $target) {
-        $srcFiles = Get-ChildItem -Recurse -File $skill.FullName | Sort-Object { $_.FullName.Substring($skill.FullName.Length) }
-        $dstFiles = Get-ChildItem -Recurse -File $target | Sort-Object { $_.FullName.Substring($target.Length) }
-        $identical = ($srcFiles.Count -eq $dstFiles.Count)
-        if ($identical) {
-          for ($i = 0; $i -lt $srcFiles.Count; $i++) {
-            if (($srcFiles[$i].FullName.Substring($skill.FullName.Length) -ne $dstFiles[$i].FullName.Substring($target.Length)) -or
-                ((Get-FileHash $srcFiles[$i].FullName).Hash -ne (Get-FileHash $dstFiles[$i].FullName).Hash)) {
-              $identical = $false; break
-            }
-          }
-        }
-        if ($identical) { $same++; continue }
-        if ($DryRun) { Write-Host "would update  $Label/$($skill.Name)"; $updated++; continue }
-        Remove-Item -Recurse -Force $target
-        Copy-Item -Recurse $skill.FullName $target
-        $updated++
-      } else {
-        if ($DryRun) { Write-Host "would copy    $Label/$($skill.Name)"; $copied++; continue }
-        Copy-Item -Recurse $skill.FullName $target
-        $copied++
-      }
-    }
-    Write-Host "skills   ${Label}: $copied new, $updated updated, $same unchanged"
-  }
-
-  if ($GlobalSkills) {
-    $claudeHome = if ($env:CLAUDE_HOME) { $env:CLAUDE_HOME } else { Join-Path $HOME '.claude' }
-    $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
-    if ($Runtime -in @('claude', 'both')) { Install-Skills (Join-Path $claudeHome 'skills') '~/.claude/skills' }
-    if ($Runtime -in @('codex', 'both')) { Install-Skills (Join-Path $codexHome 'skills') '~/.codex/skills' }
-  } else {
-    Write-Host 'skills   per-project sync (layer 2, default): <repo>/.claude/skills + <repo>/.agents/skills'
-    Write-Host '         pass -GlobalSkills to also copy into ~/.claude/skills / ~/.codex/skills'
-  }
-  if ($Runtime -in @('claude', 'both')) {
-    Write-Host 'note     prefer the Claude Code plugin route when available:'
-    Write-Host '         /plugin marketplace add thanhsmind/beegog  ->  /plugin install bee@bee'
-    Write-Host '         (plugin route ships hooks automatically; this copy route wires repo hooks instead)'
+  # Basename-only replacement of user/global roots is forbidden. The shared
+  # planner consumes an exact ledger before any such cleanup.
+  if ($GlobalSkills -and -not $OwnershipLedger) {
+    Fail '-GlobalSkills requires -OwnershipLedger; basename-only global replacement is refused'
   }
 
   # ---------- layer 2: target repo (greenfield / brownfield) ----------
@@ -199,10 +166,77 @@ try {
   Write-Host "target   $Directory [$mode]"
 
   $onboardFlags = @()
-  if ((-not $NoHooks) -and ($Runtime -in @('claude', 'both'))) { $onboardFlags += '--repo-hooks' }
+  if ($Distribution -eq 'plugin-first') { $onboardFlags += '--plugin-source' }
+  elseif (-not $NoHooks) { $onboardFlags += '--repo-hooks' }
   if ($NoClaudeMd) { $onboardFlags += '--no-claude-md' }
   if ($ClaudeMd) { $onboardFlags += '--claude-md' }
   if ($GlobalSkills) { $onboardFlags += '--global-skills' }
+
+  if ($PluginStateFile) {
+    if (-not (Test-Path $PluginStateFile)) { Fail "-PluginStateFile not found: $PluginStateFile" }
+    $stateFile = (Resolve-Path $PluginStateFile).ProviderPath
+  } else {
+    $stateTempDir = Join-Path ([IO.Path]::GetTempPath()) ("bee-plugin-state-" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $stateTempDir | Out-Null
+    $claudeStatePath = Join-Path $stateTempDir 'claude.json'
+    $codexStatePath = Join-Path $stateTempDir 'codex.json'
+    Set-Content -Encoding ASCII -Path $claudeStatePath -Value '[]'
+    Set-Content -Encoding ASCII -Path $codexStatePath -Value '[]'
+
+    if ($Runtime -in @('codex', 'both')) {
+      $codex = Get-Command codex -ErrorAction SilentlyContinue
+      if ($codex) {
+        if (-not $DryRun) {
+          if ($Distribution -eq 'plugin-first') {
+            & codex plugin marketplace add $beeSrc --json | Out-Null
+            if ($LASTEXITCODE -ne 0) { Fail 'Codex marketplace registration failed' }
+            & codex plugin add 'bee@bee' --json | Out-Null
+            if ($LASTEXITCODE -ne 0) { Fail 'Codex bee plugin install failed' }
+          } else {
+            & codex plugin remove 'bee@bee' --json | Out-Null
+          }
+        }
+        $codexList = & codex plugin list --json
+        if ($LASTEXITCODE -ne 0) { Fail 'Codex plugin status probe failed' }
+        Set-Content -Encoding UTF8 -Path $codexStatePath -Value ($codexList -join "`n")
+      } elseif ($Distribution -eq 'plugin-first') { Fail 'Codex CLI is required for plugin-first' }
+    }
+
+    if ($Runtime -in @('claude', 'both')) {
+      $claude = Get-Command claude -ErrorAction SilentlyContinue
+      if ($claude) {
+        if (-not $DryRun) {
+          if ($Distribution -eq 'plugin-first') {
+            & claude plugin marketplace add $beeSrc | Out-Null
+            if ($LASTEXITCODE -ne 0) { Fail 'Claude marketplace registration failed' }
+            & claude plugin install 'bee@bee' | Out-Null
+            if ($LASTEXITCODE -ne 0) { Fail 'Claude bee plugin install failed' }
+          } else {
+            & claude plugin uninstall 'bee@bee' | Out-Null
+          }
+        }
+        $claudeList = & claude plugin list --json
+        if ($LASTEXITCODE -ne 0) { Fail 'Claude plugin status probe failed' }
+        Set-Content -Encoding UTF8 -Path $claudeStatePath -Value ($claudeList -join "`n")
+      } elseif ($Distribution -eq 'plugin-first') { Fail 'Claude CLI is required for plugin-first' }
+    }
+
+    $combined = @{ claude = (Get-Content $claudeStatePath -Raw | ConvertFrom-Json); codex = (Get-Content $codexStatePath -Raw | ConvertFrom-Json) }
+    $stateFile = Join-Path $stateTempDir 'state.json'
+    Set-Content -Encoding UTF8 -Path $stateFile -Value ($combined | ConvertTo-Json -Depth 100)
+  }
+
+  $distributionArgs = @('--mode', $Distribution, '--runtime', $Runtime, '--repo-root', $Directory, '--release-manifest', $releaseManifest, '--plugin-state-file', $stateFile)
+  if ($OwnershipLedger) { $distributionArgs += @('--ledger', $OwnershipLedger) }
+  if ($GlobalSkills) {
+    $claudeHome = if ($env:CLAUDE_HOME) { $env:CLAUDE_HOME } else { Join-Path $HOME '.claude' }
+    $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+    if ($Runtime -in @('claude', 'both')) { $distributionArgs += @('--user-skill-root', (Join-Path $claudeHome 'skills')) }
+    if ($Runtime -in @('codex', 'both')) { $distributionArgs += @('--user-skill-root', (Join-Path $codexHome 'skills')) }
+  }
+
+  node $distributionHelper @distributionArgs
+  if ($LASTEXITCODE -ne 0) { Fail 'Distribution preflight refused' }
 
   Write-Host "plan     onboard_bee.mjs $($onboardFlags -join ' ') (dry-run first)"
   node $onboard --repo-root $Directory @onboardFlags
@@ -217,6 +251,11 @@ try {
   node $onboard --repo-root $Directory --apply @onboardFlags | Out-Null
   if ($LASTEXITCODE -ne 0) { Fail 'Onboarding apply failed.' }
 
+  if ($Distribution -eq 'plugin-first') {
+    node $distributionHelper @distributionArgs --apply
+    if ($LASTEXITCODE -ne 0) { Fail 'Plugin-first cleanup refused; repository fallbacks were preserved' }
+  }
+
   # ---------- verify ----------
 
   Push-Location $Directory
@@ -227,6 +266,12 @@ try {
     $status = ($statusJson -join "`n") | ConvertFrom-Json
     if (-not $status.onboarding -or $status.onboarding.installed -ne $true) {
       Fail 'Verification failed: bee.mjs status reports not installed.'
+    }
+    $expectedVersion = (Get-Content (Join-Path $beeSrc '.claude-plugin\plugin.json') -Raw | ConvertFrom-Json).version
+    if ($status.onboarding.bee_version -ne $expectedVersion -or
+        $status.onboarding.plugin_version -ne $expectedVersion -or
+        $status.onboarding.drift -ne $false) {
+      Fail "Verification failed: version parity mismatch (expected $expectedVersion; bee $($status.onboarding.bee_version), plugin $($status.onboarding.plugin_version), drift $($status.onboarding.drift))."
     }
     Write-Host "verify   onboarding ok (bee $($status.onboarding.bee_version)), phase: $($status.phase)"
   } finally {
@@ -242,5 +287,8 @@ try {
 } finally {
   if ($cleanupDir -and (Test-Path $cleanupDir)) {
     Remove-Item -Recurse -Force $cleanupDir -ErrorAction SilentlyContinue
+  }
+  if ($stateTempDir -and (Test-Path $stateTempDir)) {
+    Remove-Item -Recurse -Force $stateTempDir -ErrorAction SilentlyContinue
   }
 }

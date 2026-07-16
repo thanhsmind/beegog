@@ -10,11 +10,12 @@
 // .bee/state.json or hooks.jsonl.
 // Exits 1 on any failure.
 
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { runModuleWorker } from "../scripts/lib/run-module-worker.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const HOOKS_DIR = path.dirname(SCRIPT_PATH);
@@ -123,13 +124,52 @@ function buildReservationFixture(prefix, reservedPath, holderAgent) {
   return root;
 }
 
+function buildLinkedFixture(prefix, { invalid = false, reservedPath = null, holderAgent = null } = {}) {
+  const mainRoot = mkFixture(`${prefix}-main-`);
+  const workRoot = mkFixture(`${prefix}-work-`);
+  const gitdir = path.join(mainRoot, ".git", "worktrees", "fixture");
+  fs.mkdirSync(gitdir, { recursive: true });
+  fs.writeFileSync(path.join(workRoot, ".git"), `gitdir: ${gitdir}\n`);
+  if (!invalid) {
+    fs.writeFileSync(path.join(gitdir, "gitdir"), `${path.join(workRoot, ".git")}\n`);
+  }
+  fs.mkdirSync(path.join(mainRoot, ".bee"), { recursive: true });
+  copyLib(mainRoot);
+  writeState(mainRoot, {
+    phase: "swarming",
+    mode: "high-risk",
+    feature: "worktree-isolation",
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  if (reservedPath && holderAgent) {
+    fs.writeFileSync(
+      path.join(mainRoot, ".bee", "reservations.json"),
+      `${JSON.stringify({ reservations: [{ agent: holderAgent, cell: "other", path: reservedPath, ttl_seconds: 3600, reserved_at: new Date().toISOString(), released_at: null }] }, null, 2)}\n`,
+    );
+  }
+  fs.mkdirSync(path.join(workRoot, "src"), { recursive: true });
+  return { mainRoot, workRoot };
+}
+
+function writePayloadFor(toolName, target) {
+  if (toolName === "Bash") {
+    return { tool_name: toolName, tool_input: { command: `printf x > "${target}"` } };
+  }
+  if (toolName === "apply_patch") {
+    return {
+      tool_name: toolName,
+      tool_input: { input: `*** Begin Patch\n*** Add File: ${target}\n+x\n*** End Patch` },
+    };
+  }
+  return { tool_name: toolName, tool_input: { file_path: target } };
+}
+
 // --- hook invocation -----------------------------------------------------
 
-function runHookPayload(payload, cwd) {
+async function runHookPayload(payload, cwd) {
   const body = { ...payload, cwd };
   const input = JSON.stringify(body);
-  const result = spawnSync(process.execPath, [HOOK_PATH], { input, encoding: "utf8", cwd });
-  return result;
+  return await runModuleWorker(HOOK_PATH, { input, cwd });
 }
 
 function readLastJsonl(file) {
@@ -151,7 +191,7 @@ async function main() {
   process.stdout.write(`fixture: ${root}\n`);
 
   // --- 1. Edit .bee/state.json -> denied (exit 2), message names the CLI verb
-  const r1 = runHookPayload(
+  const r1 = await runHookPayload(
     { tool_name: "Edit", tool_input: { file_path: ".bee/state.json" } },
     root,
   );
@@ -161,7 +201,7 @@ async function main() {
   check(r1.stderr.includes("direct-edit"), "row1: stderr identifies the direct-edit guard", r1.stderr);
 
   // --- 2. Write .bee/backlog.jsonl -> denied (exit 2), message names bee_backlog.mjs add
-  const r2 = runHookPayload(
+  const r2 = await runHookPayload(
     { tool_name: "Write", tool_input: { file_path: ".bee/backlog.jsonl", content: "{}\n" } },
     root,
   );
@@ -170,7 +210,7 @@ async function main() {
 
   // --- 3. bash-redirect row: `cat foo.txt >> .bee/backlog.jsonl` -> denied,
   // proving the deny reaches Bash-extracted targets, not just Edit/Write.
-  const r3 = runHookPayload(
+  const r3 = await runHookPayload(
     { tool_name: "Bash", tool_input: { command: "cat notes.txt >> .bee/backlog.jsonl" } },
     root,
   );
@@ -179,7 +219,7 @@ async function main() {
   check(r3.stderr.includes("bee.mjs backlog add"), "row3: stderr names bee.mjs backlog add", r3.stderr);
 
   // --- 3b. bash-redirect row for state.json (sed -i) -> denied
-  const r3b = runHookPayload(
+  const r3b = await runHookPayload(
     { tool_name: "Bash", tool_input: { command: 'sed -i "s/idle/swarming/" .bee/state.json' } },
     root,
   );
@@ -188,7 +228,7 @@ async function main() {
   check(r3b.stderr.includes("bee.mjs state"), "row3b: stderr names bee.mjs state", r3b.stderr);
 
   // --- 4. pass row: Edit .bee/cells/x.json still passes (untouched verdict)
-  const r4 = runHookPayload(
+  const r4 = await runHookPayload(
     { tool_name: "Edit", tool_input: { file_path: ".bee/cells/demo-1.json" } },
     root,
   );
@@ -196,7 +236,7 @@ async function main() {
 
   // --- 5. pass row: a plain bee CLI invocation extracts no bash target and
   // passes untouched (extractBashTargets behavior validated in validation-1.md)
-  const r5 = runHookPayload(
+  const r5 = await runHookPayload(
     { tool_name: "Bash", tool_input: { command: "node .bee/bin/bee_state.mjs set --phase swarming" } },
     root,
   );
@@ -204,7 +244,7 @@ async function main() {
     `status=${r5.status} stderr=${r5.stderr}`);
 
   // --- 5b. same for bee_backlog.mjs add
-  const r5b = runHookPayload(
+  const r5b = await runHookPayload(
     {
       tool_name: "Bash",
       tool_input: { command: 'node .bee/bin/bee_backlog.mjs add --type bug --title "x" --severity P2' },
@@ -220,7 +260,7 @@ async function main() {
   // missing the required --id proves resolution actually happened (a
   // shape the guard doesn't recognize fails open at exit 0 instead, per
   // checkCliShape's documented "unrecognized shapes are left alone" rule).
-  const r5c = runHookPayload(
+  const r5c = await runHookPayload(
     { tool_name: "Bash", tool_input: { command: 'node .bee/bin/bee_cells.mjs cap --outcome "done"' } },
     root,
   );
@@ -229,7 +269,7 @@ async function main() {
   check(r5c.stderr.includes("cells.cap"), "row5c: stderr names the resolved cells.cap command", r5c.stderr);
   check(r5c.stderr.includes("field: id"), "row5c: stderr names the missing id field", r5c.stderr);
 
-  const r5d = runHookPayload(
+  const r5d = await runHookPayload(
     { tool_name: "Bash", tool_input: { command: 'node .bee/bin/bee.mjs cells cap --outcome "done"' } },
     root,
   );
@@ -242,7 +282,7 @@ async function main() {
   // (idle is otherwise the most permissive phase for .bee/ writes — this
   // proves the deny rule really runs before GATE_ALLOWED_PREFIXES / phase logic)
   const idleRoot = buildFixture("bee-write-guard-idle-", { phase: "idle" });
-  const r6 = runHookPayload(
+  const r6 = await runHookPayload(
     { tool_name: "Edit", tool_input: { file_path: ".bee/state.json" } },
     idleRoot,
   );
@@ -250,7 +290,7 @@ async function main() {
     `status=${r6.status} stderr=${r6.stderr}`);
   check(r6.stderr.includes("bee.mjs state"), "row6: idle-phase denial still names bee.mjs state", r6.stderr);
   // control: an unrelated .bee/ path keeps its current (allowed) idle verdict
-  const r6b = runHookPayload(
+  const r6b = await runHookPayload(
     { tool_name: "Edit", tool_input: { file_path: ".bee/cells/demo-1.json" } },
     idleRoot,
   );
@@ -261,7 +301,7 @@ async function main() {
   // exits 0 with empty stderr, and a crash line lands in that fixture's
   // hooks.jsonl (HOOK-level try/catch, not the pure checkWrite rule).
   const throwRoot = buildThrowingGuardsFixture();
-  const r7 = runHookPayload(
+  const r7 = await runHookPayload(
     { tool_name: "Edit", tool_input: { file_path: ".bee/state.json" } },
     throwRoot,
   );
@@ -289,13 +329,13 @@ async function main() {
 
   // --- 8. Add File, single safe target -> passes
   const patchAdd = "*** Begin Patch\n*** Add File: src/new-file.txt\n+hello world\n*** End Patch";
-  const r8 = runHookPayload({ tool_name: "apply_patch", tool_input: { input: patchAdd } }, root);
+  const r8 = await runHookPayload({ tool_name: "apply_patch", tool_input: { input: patchAdd } }, root);
   check(r8.status === 0, "row8: apply_patch Add File to a safe path passes", `status=${r8.status} stderr=${r8.stderr}`);
 
   // --- 9. Update File, single target denied via direct-edit (.bee/state.json)
   const patchUpdateDenied =
     "*** Begin Patch\n*** Update File: .bee/state.json\n@@\n-old\n+new\n*** End Patch";
-  const r9 = runHookPayload(
+  const r9 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchUpdateDenied } },
     root,
   );
@@ -305,7 +345,7 @@ async function main() {
 
   // --- 10. Delete File, single target denied via direct-edit (.bee/backlog.jsonl)
   const patchDeleteDenied = "*** Begin Patch\n*** Delete File: .bee/backlog.jsonl\n*** End Patch";
-  const r10 = runHookPayload(
+  const r10 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchDeleteDenied } },
     root,
   );
@@ -316,7 +356,7 @@ async function main() {
   // --- 11. Move (Update File + Move to), both targets safe -> passes
   const patchMoveSafe =
     "*** Begin Patch\n*** Update File: src/old-name.txt\n*** Move to: src/new-name.txt\n@@\n-old\n+new\n*** End Patch";
-  const r11 = runHookPayload(
+  const r11 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchMoveSafe } },
     root,
   );
@@ -326,7 +366,7 @@ async function main() {
   // --- 12. Move destination is the direct-edit-denied file -> whole patch denied
   const patchMoveDenied =
     "*** Begin Patch\n*** Update File: src/old-name.txt\n*** Move to: .bee/state.json\n@@\n-old\n+new\n*** End Patch";
-  const r12 = runHookPayload(
+  const r12 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchMoveDenied } },
     root,
   );
@@ -341,7 +381,7 @@ async function main() {
     "*** Update File: src/b.txt\n@@\n-x\n+y\n" +
     "*** Delete File: .bee/state.json\n" +
     "*** End Patch";
-  const r13 = runHookPayload(
+  const r13 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchMultiOneDenied } },
     root,
   );
@@ -357,7 +397,7 @@ async function main() {
     "*** Update File: src/b.txt\n@@\n-x\n+y\n" +
     "*** Delete File: src/c.txt\n" +
     "*** End Patch";
-  const r14 = runHookPayload(
+  const r14 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchMultiSafe } },
     root,
   );
@@ -370,7 +410,7 @@ async function main() {
   const unicodePath = "café/résumé.md";
   const uniRoot = buildReservationFixture("bee-write-guard-applypatch-unicode-", unicodePath, "otto");
   const patchUnicode = `*** Begin Patch\n*** Add File: ${unicodePath}\n+hello\n*** End Patch`;
-  const r15 = runHookPayload(
+  const r15 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchUnicode }, agent_name: "mel" },
     uniRoot,
   );
@@ -385,7 +425,7 @@ async function main() {
   const spacedPath = "my folder/file name.txt";
   const spaceRoot = buildReservationFixture("bee-write-guard-applypatch-space-", spacedPath, "otto");
   const patchSpace = `*** Begin Patch\n*** Update File: ${spacedPath}\n@@\n-a\n+b\n*** End Patch`;
-  const r16 = runHookPayload(
+  const r16 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchSpace }, agent_name: "mel" },
     spaceRoot,
   );
@@ -401,7 +441,7 @@ async function main() {
   const escapedPath = "my\\ folder/escaped.txt";
   const escRoot = buildReservationFixture("bee-write-guard-applypatch-escape-", escapedPath, "otto");
   const patchEscaped = `*** Begin Patch\n*** Add File: ${escapedPath}\n+hi\n*** End Patch`;
-  const r17 = runHookPayload(
+  const r17 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchEscaped }, agent_name: "mel" },
     escRoot,
   );
@@ -413,7 +453,7 @@ async function main() {
   // --- 18. Malformed patch body: a verb line with no colon/path at all ->
   // zero targets extracted -> denied (P1 repair: unprovable target set).
   const patchMalformedNoColon = "*** Begin Patch\n*** Add File\n+content\n*** End Patch";
-  const r18 = runHookPayload(
+  const r18 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchMalformedNoColon } },
     root,
   );
@@ -426,7 +466,7 @@ async function main() {
   // Delete/Move) parses to zero targets -> denied, never silently allowed
   // through an unexamined operation.
   const patchUnknownVerb = "*** Begin Patch\n*** Rename File: src/a.txt -> src/b.txt\n*** End Patch";
-  const r19 = runHookPayload(
+  const r19 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchUnknownVerb } },
     root,
   );
@@ -439,7 +479,7 @@ async function main() {
   // extraction bug fix: a lone leftover whitespace char must not count as a
   // proved target).
   const patchEmptyPath = "*** Begin Patch\n*** Add File:    \n+content\n*** End Patch";
-  const r20 = runHookPayload(
+  const r20 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchEmptyPath } },
     root,
   );
@@ -451,7 +491,7 @@ async function main() {
   // --- 21. Path traversal escape (relative .. outside the repo) -> denied
   // (unprovable target: toRelPath returns null for an escaping path).
   const patchTraversal = "*** Begin Patch\n*** Add File: ../../outside-repo.txt\n+x\n*** End Patch";
-  const r21 = runHookPayload(
+  const r21 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchTraversal } },
     root,
   );
@@ -462,7 +502,7 @@ async function main() {
 
   // --- 22. Absolute path outside the repo -> denied (unprovable target).
   const patchAbsoluteOutside = "*** Begin Patch\n*** Add File: /etc/passwd\n+x\n*** End Patch";
-  const r22 = runHookPayload(
+  const r22 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchAbsoluteOutside } },
     root,
   );
@@ -475,7 +515,7 @@ async function main() {
   // canonical "*** Begin Patch" envelope at all -> stays D2's visible
   // fail-open (this class is explicitly NOT the deny-on-unprovable P1
   // repair -- nothing was genuinely intercepted).
-  const r23 = runHookPayload(
+  const r23 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: "not a patch at all" } },
     root,
   );
@@ -492,7 +532,7 @@ async function main() {
     executionApproved: false,
   });
   const patchGateSrc = "*** Begin Patch\n*** Add File: src/feature.txt\n+new code\n*** End Patch";
-  const r24 = runHookPayload(
+  const r24 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchGateSrc } },
     gateRoot,
   );
@@ -505,7 +545,7 @@ async function main() {
   // docs/ target, proving row24 denied on gate policy, not a broad apply_patch
   // block.
   const patchGateDocs = "*** Begin Patch\n*** Add File: docs/notes.md\n+notes\n*** End Patch";
-  const r25 = runHookPayload(
+  const r25 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchGateDocs } },
     gateRoot,
   );
@@ -517,7 +557,7 @@ async function main() {
   // agent has no self-conflict and passes.
   const selfRoot = buildReservationFixture("bee-write-guard-applypatch-self-", "src/mine.txt", "mel");
   const patchSelf = "*** Begin Patch\n*** Update File: src/mine.txt\n@@\n-a\n+b\n*** End Patch";
-  const r26 = runHookPayload(
+  const r26 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchSelf }, agent_name: "mel" },
     selfRoot,
   );
@@ -542,7 +582,7 @@ async function main() {
     "*** Add File: src/safe-first.txt\n+hello\n" +
     "*** Update File:    \n@@\n-old\n+new\n" +
     "*** End Patch";
-  const r27 = runHookPayload(
+  const r27 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchPartialProvableFirst } },
     root,
   );
@@ -560,7 +600,7 @@ async function main() {
     "*** Update File:    \n@@\n-old\n+new\n" +
     "*** Add File: src/safe-second.txt\n+hello\n" +
     "*** End Patch";
-  const r28 = runHookPayload(
+  const r28 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchPartialUnprovableFirst } },
     root,
   );
@@ -579,7 +619,7 @@ async function main() {
     "*** Update File: src/valid.txt\n@@\n-old\n+new\n" +
     "*** Update File: src/other.txt\n*** Move to: ../../outside-repo.txt\n@@\n-a\n+b\n" +
     "*** End Patch";
-  const r29 = runHookPayload(
+  const r29 = await runHookPayload(
     { tool_name: "apply_patch", tool_input: { input: patchPartialMoveOutside } },
     root,
   );
@@ -587,6 +627,78 @@ async function main() {
     "row29: apply_patch mixing a valid Update (provable) with a second operation's outside-repo Move destination (unprovable) denies the WHOLE patch",
     `status=${r29.status} stderr=${r29.stderr}`);
   check(r29.stderr.includes("FIX"), "row29: stderr carries the corrective FIX guidance", r29.stderr);
+
+  // --- 30+. Worktree isolation matrix (D2/D4). Every write-capable tool
+  // uses the physical workRoot for canonical containment and the validated
+  // main checkout storeRoot for state/reservations.
+  const writeToolClasses = ["Edit", "Write", "MultiEdit", "Bash", "apply_patch"];
+  const linked = buildLinkedFixture("bee-write-guard-linked", {
+    reservedPath: "src/held.txt",
+    holderAgent: "otto",
+  });
+  for (const toolName of writeToolClasses) {
+    const foreign = await runHookPayload(
+      { ...writePayloadFor(toolName, "src/held.txt"), agent_name: "mel" },
+      linked.workRoot,
+    );
+    check(
+      foreign.status === 2 && foreign.stderr.includes("otto"),
+      `row30[${toolName}]: linked worktree reads foreign reservation from main store and denies`,
+      `status=${foreign.status} stderr=${foreign.stderr}`,
+    );
+    const owner = await runHookPayload(
+      { ...writePayloadFor(toolName, "src/held.txt"), agent_name: "otto" },
+      linked.workRoot,
+    );
+    check(
+      owner.status === 0,
+      `row31[${toolName}]: linked worktree reservation owner remains allowed`,
+      `status=${owner.status} stderr=${owner.stderr}`,
+    );
+  }
+
+  const invalidLinked = buildLinkedFixture("bee-write-guard-linked-invalid", { invalid: true });
+  for (const toolName of writeToolClasses) {
+    const result = await runHookPayload(writePayloadFor(toolName, "src/new.txt"), invalidLinked.workRoot);
+    check(
+      result.status === 2 && result.stderr.includes("WORKTREE_LINK_INVALID"),
+      `row32[${toolName}]: linked-invalid resolution denies before mutation`,
+      `status=${result.status} stderr=${result.stderr}`,
+    );
+  }
+
+  const outside = mkFixture("bee-write-guard-outside-");
+  const outsideExisting = path.join(outside, "existing.txt");
+  fs.writeFileSync(outsideExisting, "outside\n");
+  const symlink = path.join(linked.workRoot, "src", "escape-link");
+  fs.symlinkSync(outside, symlink, "dir");
+  const escapeRows = [
+    ["traversal", "../outside.txt"],
+    ["absolute-main", path.join(linked.mainRoot, "src", "main-only.txt")],
+    ["symlink-existing", path.join(symlink, "existing.txt")],
+    ["symlink-new", path.join(symlink, "new", "nested.txt")],
+    ["windows-separator-traversal", "..\\outside-win.txt"],
+    ["case-alias", path.join(path.dirname(linked.workRoot), path.basename(linked.workRoot).toUpperCase(), "src", "case.txt")],
+  ];
+  for (const [kind, target] of escapeRows) {
+    for (const toolName of writeToolClasses) {
+      const result = await runHookPayload(writePayloadFor(toolName, target), linked.workRoot);
+      check(
+        result.status === 2,
+        `row33[${kind}][${toolName}]: canonical containment denies target escape`,
+        `status=${result.status} stderr=${result.stderr}`,
+      );
+    }
+  }
+
+  for (const toolName of writeToolClasses) {
+    const result = await runHookPayload(writePayloadFor(toolName, "src\\nested\\new.txt"), linked.workRoot);
+    check(
+      result.status === 0,
+      `row34[${toolName}]: contained Windows separators normalize to the logical reservation namespace`,
+      `status=${result.status} stderr=${result.stderr}`,
+    );
+  }
 
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;

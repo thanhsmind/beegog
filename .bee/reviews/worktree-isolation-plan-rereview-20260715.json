@@ -1,0 +1,208 @@
+{
+  "id": "worktree-isolation-plan-rereview-20260715",
+  "requested_by": "user",
+  "requested_at": "2026-07-15T15:00:49.477Z",
+  "scope_description": "Independent re-review of the current content-addressed worktree-isolation planning and validation snapshot before execution.",
+  "included": [
+    {
+      "type": "commit",
+      "id": "worktree-snapshot:b2e440bf477c6cfbad21d3cbbd66d708deb0823b6c3495b4e3b36c8f6f5077c7",
+      "reason": "Immutable hash of CONTEXT, approach, plan, implementation brief, validation report, decisions, and four cell definitions. Commit-only planning scope; no completed-cell evidence preflight applies."
+    }
+  ],
+  "excluded": [
+    {
+      "type": "cell",
+      "id": "worktree-isolation-1",
+      "reason": "in progress — implementation not started"
+    },
+    {
+      "type": "cell",
+      "id": "worktree-isolation-2",
+      "reason": "in progress — implementation not started"
+    },
+    {
+      "type": "cell",
+      "id": "worktree-isolation-3",
+      "reason": "in progress — implementation not started"
+    },
+    {
+      "type": "cell",
+      "id": "worktree-isolation-4",
+      "reason": "in progress — implementation not started"
+    }
+  ],
+  "baseline": "45cac8574411bec18a7a6f8fc91efaa6e52dabce",
+  "head": "worktree-snapshot:b2e440bf477c6cfbad21d3cbbd66d708deb0823b6c3495b4e3b36c8f6f5077c7",
+  "reviewer_manifest": {
+    "dispatched_at": "2026-07-15",
+    "review_slot": "review tier (configured Codex gpt-5.5; isolated subagents)",
+    "reviewers": [
+      {
+        "role": "code-quality",
+        "focus": "correctness, internal consistency, error handling, cold-pickup clarity"
+      },
+      {
+        "role": "architecture",
+        "focus": "boundaries, coupling, root/store semantics, maintainability"
+      },
+      {
+        "role": "security",
+        "focus": "trust channels, fail-open/fail-closed behavior, reservations, integration identity"
+      },
+      {
+        "role": "test-coverage",
+        "focus": "missing edge cases, weak assertions, proof-surface honesty"
+      }
+    ],
+    "cap": 4,
+    "note": "Planning-only content-addressed snapshot; open implementation cells excluded and no completed-cell evidence preflight applies."
+  },
+  "verification_preflight": {
+    "checked_at": "2026-07-15T15:00:49.477Z",
+    "cells_checked": [],
+    "passed": true
+  },
+  "findings": [
+    {
+      "severity": "P1",
+      "status": "open",
+      "layer": "architecture",
+      "feature": "worktree-isolation",
+      "summary": "wt-2 and wt-3 run concurrently in one shared checkout, recreating index.lock and mixed-commit risk.",
+      "today": "The plan schedules both enabling cells in parallel while both must commit through the same Git index and HEAD.",
+      "why": "Reservations isolate files, not Git staging or commit ownership; one-commit-per-cell evidence can become false.",
+      "scenario": "wt-2 and wt-3 stage disjoint files concurrently; one commit captures both sets or one process loses on index.lock.",
+      "evidence": "docs/history/worktree-isolation/plan.md:84-88; .bee/cells/worktree-isolation-2.json:27; .bee/cells/worktree-isolation-3.json:20",
+      "fix": "Serialize the shared enabling work by making wt-3 depend on wt-2 and update schedule projections.",
+      "autofix_class": "gated_auto",
+      "corroborated_by": [
+        "architecture",
+        "code-quality"
+      ]
+    },
+    {
+      "severity": "P1",
+      "status": "open",
+      "layer": "architecture",
+      "feature": "worktree-isolation",
+      "summary": "Invalid linked-worktree metadata can fall back to the worktree-local .bee store.",
+      "today": "wt-1 collapses corrupt or backlink-mismatched metadata to local-root behavior; only hooks carry linked-invalid.",
+      "why": "Direct CLI/store consumers can hide the main coordination state or create a second store, violating D2.",
+      "scenario": "A stale backlink makes bee status/cells/reservations read the checked-out empty .bee and report idle.",
+      "evidence": "docs/history/worktree-isolation/CONTEXT.md:35; .bee/cells/worktree-isolation-1.json:17; .bee/cells/worktree-isolation-2.json:27",
+      "fix": "Return a typed invalid result from the library resolver and fail closed for coordination-store operations, with legitimate submodule/separate-git-dir controls.",
+      "autofix_class": "manual",
+      "corroborated_by": [
+        "architecture",
+        "code-quality"
+      ]
+    },
+    {
+      "severity": "P1",
+      "status": "open",
+      "layer": "security",
+      "feature": "worktree-isolation",
+      "summary": "Bidirectional Git metadata is not independent authority against a same-UID worker.",
+      "today": "The plan treats mutable worktree metadata/backlinks/HEAD as the basis for trusted store and integration identity.",
+      "why": "A worker able to modify both ends can forge a symmetric relationship and attacker-selected branch.",
+      "scenario": "The worker rewrites its .git pointer plus main worktree metadata and passes every bidirectional consistency check.",
+      "evidence": "docs/history/worktree-isolation/CONTEXT.md:35-36; docs/history/worktree-isolation/implement-plan.md:115-159",
+      "fix": "Lock the same-UID threat model; if tampering is in scope, capture non-worker-writable dispatch attestation before writes and recheck base, path/id, ref, ancestry, and declared-path diff.",
+      "autofix_class": "manual"
+    },
+    {
+      "severity": "P1",
+      "status": "open",
+      "layer": "security",
+      "feature": "worktree-isolation",
+      "summary": "Logical path normalization lacks canonical containment within workRoot.",
+      "today": "The plan maps physical targets to repo-relative paths but does not reject traversal, absolute main paths, or symlink escapes first.",
+      "why": "An escaped path can miss the reservation key and mutate a held file.",
+      "scenario": "A worker targets ../main/src/x or a symlink outside the worktree; normalization yields an unmatched escaping key.",
+      "evidence": "docs/history/worktree-isolation/CONTEXT.md:37; .bee/cells/worktree-isolation-2.json:27; docs/history/worktree-isolation/plan.md:103",
+      "fix": "Require canonical containment, reject .. results, canonicalize nearest existing ancestor for new files, and test traversal/symlink/Windows variants for every write tool.",
+      "autofix_class": "gated_auto"
+    },
+    {
+      "severity": "P1",
+      "status": "open",
+      "layer": "security",
+      "feature": "worktree-isolation",
+      "summary": "Explicit drop and feature-close pruning can destroy the only recoverable worktree state.",
+      "today": "Logged or explicitly dropped leftovers may be removed without a human destructive approval or recovery capture.",
+      "why": "A blocked/handoff worktree can contain unique uncommitted changes or unreachable commits.",
+      "scenario": "An agent prunes a logged dirty worktree and branch, deleting the only copy of unfinished work.",
+      "evidence": "docs/history/worktree-isolation/CONTEXT.md:36; .bee/cells/worktree-isolation-4.json:22-31; docs/history/worktree-isolation/implement-plan.md:249-252",
+      "fix": "Require explicit human approval plus status/diff/HEAD/reachability/recovery capture; automatic cleanup only on clean, green, reachable state using non-force removal.",
+      "autofix_class": "manual"
+    },
+    {
+      "severity": "P1",
+      "status": "open",
+      "layer": "test-coverage",
+      "feature": "worktree-isolation",
+      "summary": "No cell owns the promised provenance-bound full repository verification after integration.",
+      "today": "The proof map promises full verify after wt-4, but wt-4 runs only test_lib and mirror checks and captures no main-path/HEAD/ancestry provenance.",
+      "why": "Global resolver or hook regressions can ship while focused suites pass; worktree output can be mistaken for main evidence.",
+      "scenario": "wt-4 focused checks pass but another CLI path regresses, or evidence comes from the worker checkout rather than merged main.",
+      "evidence": "docs/history/worktree-isolation/plan.md:107; .bee/cells/worktree-isolation-4.json:53; docs/history/worktree-isolation/implement-plan.md:205-216",
+      "fix": "Make wt-4 or a dependent final verification cell own the exact full verify and capture pwd, main HEAD, merged ancestry, command, and output.",
+      "autofix_class": "manual",
+      "corroborated_by": [
+        "architecture",
+        "test-coverage"
+      ]
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "reliability",
+      "feature": "worktree-isolation",
+      "summary": "A red post-merge verify leaves rejected changes integrated in main.",
+      "today": "The plan preserves the worker branch/worktree after red but does not restore main after integration.",
+      "why": "Later work can run on unverified changes and retry semantics become ambiguous.",
+      "scenario": "Merge succeeds, verify fails, and main retains the failed commit while the cell remains incomplete.",
+      "evidence": "docs/history/worktree-isolation/CONTEXT.md:36; .bee/cells/worktree-isolation-4.json:22",
+      "fix": "Use transactional integration with pre-integration SHA and no-commit merge/abort or an equivalent reversible mechanism.",
+      "autofix_class": "gated_auto"
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "test-coverage",
+      "feature": "worktree-isolation",
+      "summary": "Complete hook-directory parity conflicts with source-only hook test files.",
+      "today": "The plan says compare complete hooks/ and .bee/bin/hooks/ sets although source contains tests that should not ship.",
+      "why": "Literal parity cannot pass without copying tests into runtime or weakening the declared requirement.",
+      "scenario": "The derived checker reports test_write_guard.mjs and test_hook_contracts.mjs as missing runtime files.",
+      "evidence": "docs/history/worktree-isolation/approach.md:43; .bee/cells/worktree-isolation-2.json:9,27",
+      "fix": "Define a derived production-hook inventory with explicit source-only exclusions, then enforce missing/extra/byte drift within that inventory.",
+      "autofix_class": "gated_auto"
+    },
+    {
+      "severity": "P2",
+      "status": "open",
+      "layer": "test-coverage",
+      "feature": "worktree-isolation",
+      "summary": "Non-green disposition and cleanup rules lack executable fault injection.",
+      "today": "Static protocol assertions and one green acceptance do not exercise identity mismatch, conflict, red verify, or incomplete-worker cleanup suppression.",
+      "why": "A destructive failure-path regression can pass every planned check.",
+      "scenario": "Identity mismatch or merge conflict still removes the worktree, while all static assertions and green acceptance remain green.",
+      "evidence": ".bee/cells/worktree-isolation-4.json:22,53; docs/history/worktree-isolation/plan.md:117-119",
+      "fix": "Add a deterministic temporary-repo harness or separate acceptance cases injecting identity mismatch, conflict, red verify, and incomplete disposition.",
+      "autofix_class": "manual"
+    }
+  ],
+  "uat": [],
+  "decision": {
+    "status": "blocked",
+    "summary": "Independent review of the content-addressed worktree-isolation planning snapshot found 6 open P1 findings and 3 P2 findings. Implementation cells were excluded as in progress; UAT was not applicable. Review approval and merge remain blocked within this review session. These findings may inform planning and validation, but this review does not own or mutate execution readiness.",
+    "p1_count": 6,
+    "p2_count": 3,
+    "uat": "not run — implementation excluded as in progress",
+    "report": "docs/history/worktree-isolation/reports/review-plan-rereview.md"
+  },
+  "created_at": "2026-07-15T15:00:49.477Z",
+  "updated_at": "2026-07-15T18:32:26.483Z"
+}

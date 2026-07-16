@@ -100,7 +100,7 @@ This holds **regardless of whether you recognize the error**. An unfamiliar, nev
 
 ## 9. Update State
 
-Record the completed compounding run: `node .bee/bin/bee.mjs state set --phase compounding-complete --next-action "<next action>" --summary "learnings: <file path>; promoted: <count>"`.
+Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner compounding --phase compounding-complete --next-action "<next action>" --summary "learnings: <file path>; promoted: <count>"`.
 
 ## Hard Gates
 

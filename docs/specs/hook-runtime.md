@@ -1,8 +1,8 @@
 ---
 area: hook-runtime
-updated: 2026-07-14
-sources: [codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14)]
-decisions: [codex-runtime-parity D1, D2; 0023; d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional)]
+updated: 2026-07-16
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14)]
+decisions: [codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated)]
 coverage: partial
 ---
 
@@ -24,12 +24,12 @@ belt for anything a checkpoint cannot see.
 - A supported assistant runtime (two are supported today) fires a checkpoint at
   each lifecycle event: session start, user prompt submitted, before a tool
   runs, after tracked task updates, before context compaction, when a child
-  agent stops, and when the session stops.
+  agent starts, when a child agent stops, and when the session stops.
 - Which checkpoints are active comes from one **catalog of record** rendered
   into projections. Each supported runtime consumes only its own projection;
-  the projections differ only by an explicitly named allowed list (today
-  exactly one difference: the dispatch model-tier audit runs only on the
-  runtime that exposes agent dispatch at the before-tool checkpoint).
+  the projections differ only by an explicitly named allowed list. There are
+  three directional differences: Claude alone has the pre-spawn model-tier
+  guard, while Codex alone has child-start and child-stop lifecycle audits.
 - One runtime loads its checkpoints from two possible delivery locations: a
   packaged location, and its own project's source-repository fallback
   location. Both are rendered from the same catalog of record, at an explicit
@@ -43,6 +43,7 @@ belt for anything a checkpoint cannot see.
 | catalog of record | The single logical definition of every checkpoint: event, matcher, handler. Both runtime projections are rendered from it deterministically — rendering again must reproduce both byte-for-byte. |
 | projection | The runtime-specific checkpoint list a given assistant actually loads. One per runtime, checked in, never hand-divergent. |
 | allowed difference | A named, exported exception explaining why one projection carries a checkpoint the other lacks. Any un-named difference between projections is a defect. |
+| native-subagent audit | A silent, bounded lifecycle record written after a Codex child starts or stops. It is evidence only: never authorization, never a block, and never a replacement for pre-spawn control. |
 | fail-open | On unreadable/hostile input or an internal crash, the checkpoint permits the action and logs the gap visibly. It never silently swallows the event. |
 | fail-closed (deny) | The checkpoint blocks the action with a corrective message telling the actor how to proceed correctly. |
 | advisory | A checkpoint message that informs the assistant without blocking or continuing any turn — delivered as a parseable structured message, never as a turn-control verdict. |
@@ -98,7 +99,9 @@ reserve files); an unregistered child still gets the generic nudge.
 **B5 — Two projections, one truth.** Changing the catalog of record and
 re-rendering updates both projections in the same change; the parity check in
 the installation suite compares the assistant-facing settings against the
-correct projection for that runtime and fails on any un-allowed drift.
+correct projection for that runtime and fails on any un-allowed drift. Each
+difference is declared by runtime, event, and handler, and each projection is
+proved independently.
 
 **B6 — Project checkpoints are active, rooted, and reviewed.** Project
 checkpoints are enabled unless an active configuration explicitly disables
@@ -112,11 +115,13 @@ owner sees the pending-review warning.
 
 **B7 — The source-repository fallback is derived, not authored.** The
 fallback delivery location's checkpoint file is produced by rendering the
-catalog of record at the source-repository target; it is checked in only as
-the output of that rendering, never edited by hand. The installation suite
-reproduces the same rendering and compares it byte-for-byte against the
-checked-in file — any hand drift is a defect the suite catches, not a silent
-divergence (codex-runtime-parity cell 6a).
+catalog of record at the source-repository target. Release proof renders fresh
+root and nested-directory fixtures; a checked-in project snapshot is tested
+separately as a development/fallback artifact and never substitutes for package
+proof (codex-runtime-parity cell 6a; codex-hook-state-parity cells 2-3).
+Fresh-host proof also requires every handler filename referenced by the rendered
+projection to exist in the copied handler payload; structural parity without
+artifact delivery is not a working fallback (codex-hook-state-parity cell 5).
 
 **B8 — Fallback checkpoint commands are environment-independent.** A
 checkpoint command rendered for the source-repository target does not depend
@@ -182,6 +187,17 @@ allowed to do. Escape hatch: unchanged — a repository may disable the intake
 gate entirely in its configuration, and doing so disables it for both terminal
 states alike, never one but not the other (decision c2c46488).
 
+**B13 — Codex records paired native-subagent lifecycle evidence.** The same
+bounded audit handler receives child-start and child-stop events. It records
+only bounded lifecycle identifiers and never prompt, transcript, environment,
+credentials, or secrets. Malformed input and write failures stay silent and
+fail open; the handler has no deny or block path.
+
+**B14 — Exactly one bee hook source is active.** An installation selects the
+package projection or the project fallback. Package activation is proved before
+recognized fallback entries are removed; fallback activation is proved only
+after the package is known inactive. User and foreign hook entries survive.
+
 ## Actors & Access
 
 - **The assistant** (either runtime) — subject of every checkpoint; observes
@@ -195,7 +211,8 @@ states alike, never one but not the other (decision c2c46488).
 ## Business Rules
 
 - R1 — One catalog of record; projections are rendered, never hand-edited;
-  differences must be exported by name (codex-runtime-parity D1).
+  all three directional differences must be exported by name
+  (codex-runtime-parity D1; codex-hook-state-parity D1-D3).
 - R2 — A checkpoint failure never flips an allow/deny decision; fail-open is
   visible, never silent (codex-runtime-parity D2).
 - R3 — An intercepted batch change with unprovable targets is denied, not
@@ -253,6 +270,20 @@ states alike, never one but not the other (decision c2c46488).
   the unified surface — it is slated for removal once hosts have upgraded (a
   debt item tracks it), and its recognition never revives the deleted scripts
   themselves (decision bbc6bcea, D3).
+- R15 — Codex plugin delivery loads
+  the catalog-derived hook projection from the installed package. The checked-in
+  project checkpoint file is a development and repo-fallback projection only;
+  release/reinstall proof exercises the installed package, and project fallback
+  success never substitutes for that package proof (codex-hook-state-parity
+  D9/D13; decision cf511ff3).
+- R16 — Plugin and project hooks are
+  mutually exclusive bee sources. Migration to plugin delivery removes only
+  catalog-recognized bee entries after installed-package integrity is proven;
+  migration to project fallback first proves the plugin inactive. User hook entries
+  survive both transitions unchanged (codex-hook-state-parity D10–D13; decision
+  cf511ff3).
+- R17 — Codex native-subagent audit is bounded, audit-only, and post-start. It
+  never claims pre-spawn authority and never records arbitrary event content.
 
 ## Edge Cases Settled
 
@@ -277,8 +308,9 @@ states alike, never one but not the other (decision c2c46488).
 - Native (non-shell) file reads and the incomplete unified-shell path on the
   second runtime cannot be intercepted — governed by the durable instructions
   and helper checks; logged as coverage gaps at runtime.
-- Live proof that the second runtime loads the plugin-delivered projection in a
-  real trusted session is owned by the Distribution slice (installation area).
+- Fixture and installed-package proofs are green. Live proof that Codex loads
+  the package-delivered projection in a real trusted session remains
+  outstanding because this environment cannot write the user Codex home.
 - Child-agent event payloads on the second runtime may not carry a correlatable
   identity for reservation ownership; until proven, those paths rely on the
   helper checks (named fallback, codex-runtime-parity validation).
@@ -318,13 +350,20 @@ states alike, never one but not the other (decision c2c46488).
 
 ## Pointers (implementation)
 
+- `scripts/lib/run-module-worker.mjs` — shared isolated runner for nested test
+  entrypoints used by the hook, command, onboarding, and metadata suites.
+- `scripts/test_portable_paths.mjs` and `hooks/test_hook_contracts.mjs` — real
+  external integration remains external; assertions grade concrete exit status,
+  stdout, and stderr even when the execution environment adds a launch warning.
 - Catalog + renderer: `hooks/catalog.mjs` (exports `ALLOWED_DIFFERENCES`,
   `TARGETS`, `REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC`); `renderProjection`/
   `renderProjectionText` take an explicit `target` (`plugin` default, `repo`)
   so both rendering targets share one function, never forked logic.
   Projections: `hooks/hooks.json` (Codex, plugin target), `hooks/claude-hooks.json`
   (Claude, plugin target; `.claude-plugin/plugin.json` points here).
-- Shared adapter: `hooks/adapter.mjs`; the seven handlers `hooks/bee-*.mjs`.
+- Shared adapter: `hooks/adapter.mjs`; the eight handlers `hooks/bee-*.mjs`,
+  including the paired Codex native-subagent audit handler and its vendored
+  mirror.
 - Batch guard: `hooks/bee-write-guard.mjs` (`extractApplyPatchTargets`).
 - CLI-shape guard incl. 3-token verb resolution: `hooks/bee-write-guard.mjs`
   against the `command-registry.mjs` catalog. Evidence: `.bee/cells/du-2.json`,
@@ -339,6 +378,11 @@ states alike, never one but not the other (decision c2c46488).
   `--catalog-only`, `--repo-route-only`), `hooks/test_write_guard.mjs`,
   `hooks/test_model_guard.mjs`; parity check in
   `skills/bee-hive/scripts/test_onboard_bee.mjs`.
+- Package/fallback distribution proof: `skills/bee-hive/scripts/plugin_distribution.mjs`
+  and `skills/bee-hive/scripts/test_plugin_distribution.mjs`. The checked-in
+  `.codex/hooks.json` is a development/fallback snapshot, not package proof.
+- Parity evidence: `.bee/cells/codex-hook-state-parity-{2,3}.json` and
+  `docs/history/codex-hook-state-parity/reports/`.
 - Evidence: `docs/history/codex-runtime-parity/` (red-baseline.md, cell reports);
   commits `d1777ed`, `5458b34`, `cf1ce51`, `a30fb0c`, `f0860ac`, `7499a71`.
 - Codex source-repository fallback: `.codex/hooks.json`, generated only by

@@ -1,8 +1,8 @@
 ---
 area: doctrine-layer
-updated: 2026-07-13
-sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13)]
-decisions: [ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a)]
+updated: 2026-07-15
+sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15)]
+decisions: [ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface)]
 coverage: partial
 ---
 
@@ -47,6 +47,8 @@ it is kept from silently emptying out.
 | **Always-applies rule** | A rule whose answer to *"must this hold when no workflow stage is running?"* is yes. Always-applies rules belong on the standing sheet, without exception. |
 | **Decide-altitude** | Work that requires judgment the orchestrating model must not hand off: approval gates, the mode decision, synthesis of findings, accepting or rejecting a helper's result, durable state writes, and conversation with the human. |
 | **Gather-altitude** | Mechanical work whose output the orchestrator needs only as a summary: file hunts, codebase scans, multi-file inventories, routine rendering. |
+| **Empty wait** | A native Codex `wait_agent` call that returns timeout or no completed agent. It reports only that no completion arrived in that interval; it is not a worker failure or ownership signal. |
+| **Progress interval** | Before another bounded native wait: continue material task-local work if any remains, otherwise take exactly one `list_agents` snapshot; then send concise commentary naming both the live agent state and the next action. |
 
 ## Behaviors & Operations
 
@@ -114,6 +116,26 @@ approval, and a gap in a guard is not a gap in the rules; treating the guard as
 the authority makes the guard's coverage the real protocol and quietly deletes
 every rule it fails to cover (decision c2c46488).
 
+**B6 — A native Codex empty wait is separated from any later wait by visible,
+material progress.** Trigger: `wait_agent` returns timeout or no completion for
+a bee-owned native subagent. What happens: the assistant never calls
+`wait_agent` again immediately. It first continues material task-local work; if
+none remains, it takes exactly one `list_agents` snapshot. At least one material
+task-local action satisfies this branch; exhausting every independent action is
+not required. If an agent completes during the interval, its result is handled
+exactly once, the relevant live-agent set is recomputed, and zero live agents
+ends collection without another wait. The assistant then sends one concise
+commentary update naming both the live agent state and the next action, after
+which a later bounded wait is allowed only when a relevant agent remains. What
+does not count: no-op work,
+repeated state reads, hidden reasoning, generic commentary, or commentary alone.
+What remains owned: every running agent, claim, and reservation; timeout never
+licenses interrupt, duplicate dispatch, claim release, or reservation release.
+This applies to ordinary gathers and all bee stages using native Codex agents.
+External CLI processes and artifact polling keep their separate executor
+contract. Authority, urgency, or a no-chatter request creates no exception
+(codex-agent-wait-loop D1-D7).
+
 ## Actors & Access
 
 - **The orchestrating assistant** — reads the standing sheet every session and
@@ -150,6 +172,15 @@ every rule it fails to cover (decision c2c46488).
   the human. The human's only actions are approvals, decisions, and permissions.
 - **R8** — The workflow's internal vocabulary stays out of the conversation. The
   human hears the work in their own terms; the machinery runs silently (1689af1b).
+- **R9** — For bee-owned native Codex agents, `empty wait → wait_agent` is
+  forbidden. Another bounded wait is allowed only after the exact progress
+  interval: at least one material task-local action or, only when none remains,
+  exactly one `list_agents` snapshot; handle any completion exactly once,
+  recompute liveness, then commentary naming live agent state and next action.
+  Zero relevant live agents means no later wait.
+- **R10** — A native wait timeout never changes worker or ownership state. It
+  never licenses interrupt, duplicate dispatch, claim release, or reservation
+  release; external process and artifact polling remains a separate contract.
 
 ## Edge Cases Settled
 
@@ -166,6 +197,14 @@ every rule it fails to cover (decision c2c46488).
 - **Doctrine is not gated.** Amending the standing sheet is knowledge work, and
   knowledge locations stay writable in every phase, including the terminal ones
   where source edits are shut (hook-runtime B12).
+- **“Sit idle” does not ban native bounded waiting.** It bans scratchpad/file
+  polling for harness-managed agents. Native Codex uses `wait_agent` as its yield
+  mechanism, with B6's mandatory progress interval after an empty wait; external
+  executors continue to use their process/artifact contract.
+- **A completion during the interval is not merely elapsed time.** It satisfies
+  progress only when its result is consumed exactly once before the update. The
+  assistant then recomputes liveness and stops collection instead of issuing an
+  unnecessary empty wait when no relevant agent remains.
 
 ## Open Gaps
 
@@ -196,6 +235,7 @@ every rule it fails to cover (decision c2c46488).
   `hooks/bee-model-guard.mjs`.
 - Anchor tests (B4/R2): `skills/bee-hive/templates/tests/test_lib.mjs` — the
   `census:` checks, including the delegation-layer anchor and the on-demand
-  review anchors.
+  review anchors, plus the native Codex empty-wait anchor across the master,
+  root, canonical procedure, and writable `.claude` surfaces.
 - Model tiers behind R3: `.bee/config.json` `models` (extraction / generation /
   review / advisor slots), resolved per dispatch by `bee-swarming`.

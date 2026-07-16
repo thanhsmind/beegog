@@ -1,8 +1,10 @@
 ---
 area: workflow-state
-updated: 2026-07-15
-sources: [parallel-scheduler cells parallel-scheduler-1..4 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15 — computed schedule, cycle refusal, schedule query verb, orchestration prose), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
-decisions: [parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable)]
+updated: 2026-07-16
+parity_sources: [codex-hook-state-parity cell codex-hook-state-parity-1 (pre-phase routing ownership and review isolation; report and capped trace, 2026-07-16)]
+parity_decisions: [codex-hook-state-parity D4-D6]
+sources: [worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..4 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15 — computed schedule, cycle refusal, schedule query verb, orchestration prose), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
+decisions: [worktree-isolation D1-D4 (docs/history/worktree-isolation/CONTEXT.md; logged 58c56bb6/5de1fd36/8cc1bde1/b24a2efc); a83a3613 (shared isolated runner plus real external command status/output grading); parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable)]
 coverage: partial
 ---
 
@@ -30,12 +32,16 @@ never inherit the previous feature's approvals or bury its unfinished work**.
   automated assistant discovers exact call shapes without reading code.
 - **Starting a feature** is a single guarded operation, invoked when new work
   begins after the previous feature has fully closed.
+- A generic phase, mode, feature, summary, or next-action change must name the
+  selected default or lane record's valid phase from immediately before the
+  change. That pre-change phase is the routing owner for this mutation only.
 
 ## Data Dictionary
 
 | Element | Meaning |
 |---|---|
 | phase | Where the active feature stands. Closed vocabulary: idle, exploring, planning, validating, swarming, reviewing, scribing, compounding, grooming, and the terminal alias compounding-complete. Any other value is rejected — including plausible-sounding stage-completion names, which are not phases: completion is carried by the granted gate, never by a phase name. |
+| active routing owner | The selected default or lane record's valid phase immediately before a generic routing change. It is supplied for that change only, is never stored as a separate field, and rolls forward automatically when the phase changes. |
 | tail of the chain | The final stretch a feature must pass through to be closed: execution → a recorded knowledge sync → learning capture → the terminal state. Its three steps are the only route to a closed feature; each demands proof that the step before it actually happened, so a feature cannot be declared closed by asserting the closure. |
 | knowledge sync record | The durable stamp that the settled behavior of the current feature has been merged into its area specs. It carries the feature, the areas synced, and a precise timestamp. Recording it is the ONLY way to enter the learning-capture phase — that phase can never be asserted directly. |
 | spec debt | Every completed unit of work that changed observable behavior and was completed *after* the last knowledge sync for this feature. Zero while idle. It is advisory wherever it is displayed (status, session preamble, worker-return nudge — none of them block), and binding at exactly one moment: the close. |
@@ -64,6 +70,10 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | computed schedule | The mechanically derived dispatch plan for a feature's units of work: numbered waves plus diagnostics (dependency cycles, unsatisfiable dependencies, units declaring no touched paths). Derived on demand from each unit's declared dependencies and declared touched paths; never stored, so it can never go stale. Advisory-but-default: orchestration follows it unless a reason for deviating is stated. |
 | wave | One numbered set of units safe to work concurrently: every dependency of every member is either satisfied or in an earlier wave, and no two members' declared touched paths overlap. Waves contain only units that are open or actively claimed. |
 | declared-path overlap | Two units collide when any pair of their declared touched paths overlaps, judged by the SAME path-overlap meaning the runtime write refusal uses — one semantics for prediction and enforcement, so the schedule can never call parallel-safe what the guard would deny. A unit declaring no paths overlaps nothing. |
+| worktree resolution | `ordinary` — no accepted linked relationship, so existing single-checkout behavior applies. `linked-valid` — both Git pointers agree, so the physical checkout remains the work root while the validated main checkout supplies the shared store. `linked-invalid` — linked-shaped metadata fails validation, so coordination and writes refuse rather than use a local store. |
+| work root / store root / logical path | The work root is the canonical physical checkout containing the target. The store root is the validated main checkout containing the single coordination store. The logical path is the repository-relative reservation key shared across physical worktrees. |
+| control-plane attestation | The orchestrator-owned pre-dispatch record of canonical common Git location, worktree path and identity, initial symbolic ref, base revision, declared paths, and reserved paths. Worker output cannot supply or amend it. |
+| merge-back | The orchestrator-owned transaction that integrates an attested worker revision into main, verifies committed main with provenance, and disposes of clean reachable worker state or preserves its recovery identity. |
 | auto-serialize | The scheduler's answer to a legal collision: the colliding unit moves to a later wave. Overlap is never refused and never dispatched concurrently "carefully". |
 | unsatisfiable dependency | A declared dependency that can never be satisfied as things stand: it names a unit that does not exist (`missing`), or one that is `blocked` or `dropped`. The dependent unit is excluded from every wave and reported in diagnostics with its reason — never a crash, never silently scheduled. |
 
@@ -326,6 +336,46 @@ plan is impossible to record; pre-existing records are never mutated by the
 check — a legacy store with a cycle is reported by the schedule query's
 diagnostics instead (parallel-scheduler D2).
 
+**B19 — A generic routing mutation is phase-owned.** Trigger: a caller changes
+phase, mode, feature, summary, or next action through the generic state command.
+The command first reads the selected default or lane record strictly. A missing,
+invalid, or mismatched pre-change owner refuses the operation with the record
+byte-identical. A matching owner changes only that selected record; the owner is
+not persisted, and a phase change makes the new phase the owner of the next
+change. Gate writes remain separate and require no owner. Independent review
+keeps its findings and decision inside its review-session record and never uses
+generic routing mutation to change execution readiness.
+
+**B20 — Eligible workers may execute in isolated linked worktrees.** Trigger: an
+enabled Claude multi-worker wave has at least two workers and the orchestrator
+opts into isolation; shared checkout remains the default, with one explicitly
+defined single-worker validation run as the sole acceptance exception. Before
+dispatch, the orchestrator validates both Git pointers and captures the
+control-plane attestation. A valid link keeps the physical work root and routes
+all state, claims, and reservations to one main store. Missing or inconsistent
+attestation makes the mode ineligible; linked-shaped invalid metadata produces
+a typed refusal and never falls back to a local coordination store.
+
+Every write-capable operation proves canonical physical containment before
+logical normalization and reservation lookup. Existing targets use their
+canonical location; new targets use the nearest existing ancestor. Traversal,
+outside absolute paths, symlink escapes, and unresolvable targets are refused
+before mutation, while owner and foreign-reservation semantics stay unchanged.
+
+On completion, the orchestrator independently rechecks identity, symbolic ref,
+common Git location, base ancestry, and that every changed path is reserved.
+Only then may it begin merge-back without finalizing a commit. A conflict or
+targeted red check aborts with main history unchanged. Targeted green permits
+the merge commit, followed by exact full verification on committed main with
+working directory, pre/post revisions, ancestry, command, and output recorded.
+Unexpected post-commit red creates a non-destructive revert before any later
+work and preserves worker state. Automatic cleanup requires a clean worker
+checkout, green committed-main verification, and a worker revision reachable
+from main; removal and branch deletion are non-force. Every other outcome
+preserves recovery identity. Destructive disposal requires explicit operator
+authorization plus captured status, diff, revision, reachability, and a
+recovery reference or patch.
+
 ### Closing a feature — the tail of the chain
 
 Closing is the one stretch of the pipeline where each step must *prove* the step
@@ -380,6 +430,9 @@ its knowledge actually landed — the state and the specs can no longer disagree
   commands. The human's actions are gate approvals and decision answers.
 - **Workers** touch only cell claim/verify/cap and reservations — never phase,
   gates, or feature identity.
+- **Independent reviewers** write only their review-session record. They cannot
+  change active routing state or execution readiness; validation owns that
+  decision.
 
 ## Business Rules
 
@@ -545,6 +598,30 @@ its knowledge actually landed — the state and the specs can no longer disagree
   stated reason, and execution of a multi-unit slice is not validated while
   the schedule's diagnostics report cycles (parallel-scheduler D1/D2/D3,
   decisions a648ea2a/ecc8862d).
+- R28 — When review status is derived from change history, a conclusive
+  repository answer remains authoritative even if the execution environment
+  also attaches an auxiliary launch warning. Only an inconclusive answer
+  degrades the result to `review stale` with an unresolvable-range note
+  (codex-sandbox-baseline-6; decision a83a3613).
+- R29 — Every generic routing mutation is authorized by the selected record's
+  valid pre-change phase. Default and lane records follow the same rule.
+- R30 — Routing ownership is derived, never persisted. A successful phase
+  change transfers authority to the new phase for the next mutation.
+- R31 — Gate mutation is a dedicated operation; review owns no active pipeline
+  state, and validation alone decides execution readiness.
+- R32 — Worktree isolation removes Git index contention only; reservations
+  remain the ownership primitive. Isolation is opt-in for enabled Claude
+  multi-worker waves, never a new default (worktree-isolation D1).
+- R33 — All linked worktrees share exactly one validated main coordination
+  store. Onboarding markers are neither consent nor proof, and invalid linked
+  metadata always fails closed (worktree-isolation D2).
+- R34 — Same-user workers are cooperative and fallible, not security
+  principals. Git metadata is consistency evidence; authoritative attestation,
+  integration, verification, and cleanup remain orchestrator-owned goal checks
+  (worktree-isolation D3).
+- R35 — Canonical physical containment always precedes logical path
+  normalization and authorization. When safe resolution is impossible,
+  worktree mode is refused rather than run unguarded (worktree-isolation D4).
 
 ## Edge Cases Settled
 
@@ -582,6 +659,20 @@ its knowledge actually landed — the state and the specs can no longer disagree
   worker instructions to before the adviser existed.
 - One invalid unit in a batch slice-creation request → zero units written; a
   duplicate identifier inside the batch is refused the same way.
+- Linked pointers may be absolute or relative and may use supported Windows
+  path forms. Corrupt, forged, outside-namespace, missing-reverse, or backlink-
+  mismatched metadata fails closed. Ordinary repositories, submodules, and
+  legitimate separate-Git-directory layouts keep ordinary behavior.
+- Traversal, outside-main absolute paths, symlink escapes, and separator/case
+  escapes are denied across every write-capable operation. A new contained
+  target is authorized only through a contained existing ancestor.
+- Detached/ref/identity/common-location mismatch, non-descendant revisions,
+  and out-of-reservation diffs halt integration. Conflict or pre-commit red
+  aborts; post-commit red reverts. Blocked, handed-off, abandoned, mismatched,
+  conflicted, or red worktree state is preserved and never auto-cleaned.
+- Transaction behavior is proven in deterministic temporary Git repositories
+  because the live checkout's Git metadata is read-only; no live-checkout
+  commit is claimed by that acceptance evidence.
 
 - Project directories on network file systems are declared unsupported for
   session coordination: exclusive creation is not reliable there. The
@@ -615,10 +706,26 @@ its knowledge actually landed — the state and the specs can no longer disagree
 
 ## Pointers (implementation)
 
+- Worktree isolation (B20/R32-R35): root resolution in
+  `skills/bee-hive/templates/lib/state.mjs`; hook transport and containment in
+  `hooks/adapter.mjs` and `hooks/bee-write-guard.mjs`; dispatch, attestation,
+  merge-back, recovery, and disposal contracts in `skills/bee-swarming/SKILL.md`,
+  `skills/bee-swarming/references/swarming-reference.md`, and
+  `skills/bee-executing/references/worker-details.md`. Evidence: capped cells
+  `.bee/cells/worktree-isolation-{1..4}.json`, reports
+  `docs/history/worktree-isolation/reports/`, 333 passing library checks, and
+  the green configured repository verify on 2026-07-16.
+
 - Record: `.bee/state.json` (CLI-owned). Verbs: `bee.mjs state`
   (`start-feature` — new; set/gate/worker/scribing-run — existing);
   `startFeature()` + `isKnownPhase` in `skills/bee-hive/templates/lib/state.mjs`
   (byte-mirrored to `.bee/bin/lib/state.mjs`).
+- Phase-owned routing: generic `state set --owner <pre-phase>` in
+  `skills/bee-hive/templates/bee.mjs` and `.bee/bin/bee.mjs`; required-owner
+  metadata in both command registries; phase-aware callers in exploring,
+  planning, validating, and compounding. Review stays local to its review
+  record. Proof: state/CLI suites, `.bee/cells/codex-hook-state-parity-1.json`,
+  and `docs/history/codex-hook-state-parity/reports/codex-hook-state-parity-1.md`.
 - Tests: 15 start-feature rows in `skills/bee-hive/templates/tests/test_lib.mjs`.
 - Evidence: commit `928abf1`; trace `.bee/cells/codex-parity-5.json`.
 - Unified dispatcher and catalog: `skills/bee-hive/templates/bee.mjs`,
@@ -662,8 +769,9 @@ its knowledge actually landed — the state and the specs can no longer disagree
 - Session coordination (B11/R17/R18): `skills/bee-hive/templates/lib/claims.mjs`
   (byte-mirrored to `.bee/bin/lib/`) — sessions under `.bee/sessions/`, claims
   under `.bee/claims/`, per-claim gate `<cell>.adopting`; race orchestrator
-  `skills/bee-hive/templates/tests/race_claims_child.mjs` (3 scenarios, spawnSync
-  rows in test_lib.mjs). Evidence: traces `.bee/cells/fsh-{1,2}.json` (win32 +
+  `skills/bee-hive/templates/tests/race_claims_child.mjs` (3 scenarios using
+  barrier-synchronized isolated Worker racers in `test_lib.mjs`). Evidence:
+  traces `.bee/cells/fsh-{1,2}.json` (win32 +
   linux probe PASS lines), commits 0224f6c, edfac87; validation
   `docs/history/fresh-session-handoff/reports/validation-s1.md`.
 - Lanes (B12): lane store + `resolvePipeline` + lane-mode `startFeature` in
@@ -695,9 +803,12 @@ its knowledge actually landed — the state and the specs can no longer disagree
   candidates/status), lib `skills/bee-hive/templates/lib/reviews.mjs`
   (`deriveCandidateStatus`, `readReviewStrict`; byte-mirrored to `.bee/bin/`).
   Status surface: `review` block in `skills/bee-hive/templates/bee.mjs` (`status` group).
-  Coverage derivation uses `git merge-base --is-ancestor` + `git rev-list --count`.
+  Coverage derivation uses status-first `git merge-base --is-ancestor` +
+  `git rev-list --count`: a concrete Git answer wins over an attached auxiliary
+  launch warning, while missing/inconclusive output yields `review stale`.
   Tests: review-od checks in `skills/bee-hive/templates/tests/test_lib.mjs`
-  (208 passing). Evidence: commits cc1c34d, e4f51a2, da2e165; traces
+  (including codex-sandbox-baseline-6 coverage). Evidence: commits cc1c34d,
+  e4f51a2, da2e165; traces
   `.bee/cells/review-od-{1,2,3}.json`; acceptance map
   `docs/history/review-on-demand/reports/uat-scenarios.md`.
 - Computed schedule (B17/B18, R26/R27): `skills/bee-hive/templates/lib/schedule.mjs`

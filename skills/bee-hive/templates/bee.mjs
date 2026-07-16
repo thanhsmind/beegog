@@ -910,6 +910,23 @@ function handleStateSet(root, flags) {
       waived = closeGuardScribingDebt(root, flags);
     }
   }
+  const selectedRecord = laneFeature ? `lane "${laneFeature}"` : 'default state';
+  if (!isKnownPhase(state.phase)) {
+    throw new Error(
+      `set: refused — selected ${selectedRecord} has missing or invalid pre-mutation phase "${state.phase ?? ''}". Ownership cannot be derived from a corrupt routing record, so nothing was written. FIX: restore a valid phase before retrying.`,
+    );
+  }
+  if (flags.owner === undefined || flags.owner === true || flags.owner === '') {
+    throw new Error(
+      `set: missing --owner — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}". FIX: retry with --owner ${state.phase}.`,
+    );
+  }
+  const owner = String(flags.owner);
+  if (owner !== state.phase) {
+    throw new Error(
+      `set: owner mismatch — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}", not "${owner}". FIX: retry with --owner ${state.phase}.`,
+    );
+  }
   const changed = [];
   if (flags.phase !== undefined) {
     state.phase = String(flags.phase);
@@ -971,6 +988,11 @@ function closeGuardScribingDebt(root, flags) {
 
 function handleStateGate(root, flags) {
   rejectDryRun(flags);
+  if (flags.owner !== undefined) {
+    throw new Error(
+      'gate: --owner is not accepted — routing ownership protects generic `state set` fields only. FIX: omit --owner and use the dedicated gate command.',
+    );
+  }
   const name = requireFlag(flags, 'name');
   if (!GATE_NAMES.includes(name)) {
     throw new Error(
