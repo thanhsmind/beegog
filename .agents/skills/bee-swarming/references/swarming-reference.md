@@ -10,18 +10,136 @@ Load after Gate 3 approval, before spawning the first wave.
 4. Assign one cell per worker, build each prompt from the template below, pick and state the model tier.
 5. Record workers in `.bee/state.json`, spawn the wave, tend, repeat.
 
+## Native Worktree Integration Transaction
+
+This is the orchestrator-owned goal-check for an eligible Claude Code native
+worktree wave. It is a consistency and recovery protocol, not a security
+boundary: a same-UID worker is cooperative but fallible, worker-reported Git
+identity is informational, and Git metadata is evidence rather than authority.
+Normal eligibility remains an opted-in wave of at least two workers. The sole
+one-worker exception is the post-enablement `worktree-isolation-4` acceptance,
+and its serialized prerequisites (`worktree-isolation-1` →
+`worktree-isolation-2` → `worktree-isolation-3`) must already be capped.
+
+### Protected pre-dispatch record
+
+Before dispatch — before worker output or a worker result can exist — record the
+main checkout's pre-main SHA and a control-plane attestation outside the worker's
+editable worktree:
+
+- canonical `commonDir`, canonical `worktreePath`, and metadata-derived
+  `worktreeId`;
+- the initial symbolic `headRef` (detached HEAD is ineligible) and `baseCommit`;
+- normalized cell `declaredPaths` and the actually held `reservedPaths`.
+
+If the runtime cannot capture and retain this record, halt with
+`WORKTREE_ATTESTATION_UNAVAILABLE`; it is ineligible for worktree mode. Never
+accept a branch, base, path, id, or candidate supplied only by worker text.
+
+### Re-attest before integration
+
+After `[DONE]`, derive the candidate from the protected worktree id and fresh Git
+metadata. Re-resolve the canonical common dir and worktree path, validate the
+metadata backlink, require the same symbolic ref, and reject detached HEAD. Any
+identity or backlink mismatch halts as `WORKTREE_IDENTITY_MISMATCH`. Then run
+`git merge-base --is-ancestor <baseCommit> <candidate>`; failure is
+`WORKTREE_BASE_ANCESTRY_MISMATCH`. Finally obtain
+`git diff --name-only <baseCommit>..<candidate>`, apply the same logical path
+normalization used by reservations, and require the result to be a subset of
+the attested `reservedPaths`; an extra path is
+`WORKTREE_RESERVED_DIFF_MISMATCH`.
+
+Every typed halt preserves the worktree, branch/ref, candidate commit, and
+attestation. The orchestrator does not reinterpret a worker's result wording to
+continue.
+
+### Merge, verify, and provenance
+
+From the attested main checkout, capture `pwd` and pre-main HEAD, then run exactly
+`git merge --no-ff --no-commit <candidate>`. On a merge conflict, run
+`git merge --abort`, prove HEAD still equals pre-main HEAD, and preserve the
+worker recovery state. Run the cell's targeted checks while the merge is
+uncommitted; on targeted red, run `git merge --abort` and again prove main
+history still equals pre-main HEAD. Only green targeted checks permit the merge
+commit.
+
+On committed main, capture this provenance as one attributable record:
+
+- `pwd`;
+- pre-main HEAD and post-main HEAD;
+- merged-commit ancestry (`git merge-base --is-ancestor <candidate> <post-main>`);
+- the exact full repository verify command;
+- full verify output and exit status.
+
+Run that exact full repository verification only from the committed main
+checkout. An unexpected post-commit red immediately runs
+`git revert -m 1 --no-edit <post-main>` before any later work. Record the new
+revert commit, confirm main is no longer carrying the merge's changes, and
+preserve the worker worktree/ref. Revert is non-destructive: never reset or
+rewrite main history to hide the failed merge.
+
+### Conservative disposition and cleanup
+
+Automatic cleanup is a conjunction, not a best-effort tail. Immediately before
+cleanup, require worker `git status --porcelain` to be empty, the recorded
+committed-main full verify to be green, and
+`git merge-base --is-ancestor <candidate> <main-head>` to prove the candidate is
+reachable. Only then use the non-force commands
+`git worktree remove <worktreePath>` followed by `git branch -d <headRef>`.
+Failure of either command preserves whatever recovery identity remains and is
+reported; it never falls through to a force variant.
+
+`[BLOCKED]`, `[HANDOFF]`, abandonment, identity mismatch, merge conflict,
+targeted or full red verification, post-commit revert, and any incomplete or
+unknown outcome all suppress automatic cleanup. They preserve the worktree,
+symbolic ref/branch, HEAD, candidate, attestation, and the reason integration
+stopped. A feature close, capped cell, worker log, timeout, or absent process is
+not cleanup authorization.
+
+### Explicit destructive drop
+
+A destructive drop is a separate operator action, never an automatic recovery
+step. Before asking for explicit operator authorization, record the current
+status, dirty/untracked diff, HEAD, candidate reachability from main, and a
+recovery ref or patch stored outside the worktree being dropped. The approval
+must identify that captured recovery artifact and the exact worktree/ref to
+destroy. Without both explicit operator authorization and successful recovery
+capture, preserve everything. Even with approval, report the resulting recovery
+identity; a force removal or branch deletion must never appear in the automatic
+cleanup path above.
+
+Acceptance tests use deterministic temporary Git repositories to inject identity
+mismatch, out-of-scope diff, merge conflict, targeted red, post-commit full red,
+`[BLOCKED]`, `[HANDOFF]`, abandonment, cleanup suppression, and revert behavior.
+No live checkout is used as a fault-injection target.
+
 ## Runtime Spawn Mechanics (side by side)
 
 | | Claude Code | Codex |
 |---|---|---|
-| Spawn | `Agent` tool, one call per worker; put the worker prompt in `prompt`; set `run_in_background: true` so the whole wave runs in parallel (send all spawns of a wave in one message) | `spawn_agent(agent_type="worker", message="<WORKER_PROMPT>", fork_context=false)` |
+| Spawn | `Agent` tool, one call per worker; put the worker prompt in `prompt`; set `run_in_background: true` so the whole wave runs in parallel (send all spawns of a wave in one message) | `spawn_agent({task_name: "<stable-name>", message: "<WORKER_PROMPT>", fork_turns: "none"})` (ORCH-01) |
 | Model tier | `model` parameter per Agent call = `config.models.claude[tier]` (default `haiku`/`sonnet`/`fable`; ceiling = the orchestrator's model, kept scarce) | `config.models.codex[tier]` if set; today Codex cannot select a per-agent model → tier is enforced as a read budget + output cap in the prompt |
 | Result collection | You are notified when each background agent completes; its final message is the worker report — parse the leading status token | Status tokens arrive in the parent thread; use `wait_agent(..., timeout_ms=60000)` only when a specific result is needed |
-| Follow-up / rescue | `SendMessage` to the same agent id continues it with context intact; a new `Agent` call starts fresh | Re-`spawn_agent` with enriched context; do not send routine `send_input(...)` mid-flight |
+| Follow-up / rescue | `SendMessage` to the same agent id continues it with context intact; a new `Agent` call starts fresh | `followup_task({target: "<agent id or task name>", message: "..."})` to continue the same agent; a fresh `spawn_agent` only for a genuinely new task — no routine `send_input(...)` mid-flight |
 | Harness assist | `bee-chain-nudge` hook fires on SubagentStop: collect the status, update the cell, check reservations | None — the tend loop in this skill is the nudge |
-| Isolation guarantee | Fresh context per Agent call; include only the contract fields | `fork_context=false`; never fork the parent context for routine cells |
+| Isolation guarantee | Fresh context per Agent call; include only the contract fields | `fork_turns: "none"`; never fork the parent history for routine cells (ORCH-02) |
 
 On both runtimes the integrity rails are identical because they live in the helpers: `bee.mjs cells cap` refuses without a verify pass, and `bee.mjs reservations reserve` reports conflicts the worker must turn into `[BLOCKED]`.
+
+### Native Codex timeout interval
+
+A `wait_agent` result with no completion is an **empty wait**, not a worker
+failure. Never follow an empty wait directly with `wait_agent`; authority,
+urgency, and no-chatter instructions create no exception. Before a later bounded
+wait, continue material task-local work when any remains; otherwise take exactly
+one `list_agents` snapshot. Then send one concise commentary update naming both
+the live agent state and the next action; only then may a later bounded wait run.
+No-op work, repeated state reads, hidden reasoning, generic commentary, or
+commentary alone do not qualify. The timeout never licenses interrupt, duplicate
+dispatch, claim release, or reservation release: every running agent, claim, and
+reservation stays owned. Do not poll files or scratchpads for harness-managed
+native agents. External process and artifact polling stays governed by External
+Executors below and is outside this native-agent rule.
 
 ## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
 
