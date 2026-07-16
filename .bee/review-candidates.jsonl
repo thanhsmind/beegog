@@ -20,3 +20,4 @@
 {"id":"47f2b4db-eed7-4dab-97a4-dbe66b4fd752","type":"candidate","date":"2026-07-15T13:39:40.449Z","feature":"parallel-scheduler","head":"79217ae8eaa2aa902fd87e41e7969e2c95ae258b","mode":"standard","baseline":null,"cells":[]}
 {"id":"5a4cdc1c-57bd-48b2-9593-e77202aa4caf","type":"candidate","date":"2026-07-15T13:47:38.690Z","feature":"release-1-3-0","head":"beb75c933f9d7076b642c16590cfd0373402d6be","mode":"small","baseline":null,"cells":[]}
 {"id":"a68e7f33-07f3-4b55-83f2-8a48c249b2d7","type":"candidate","date":"2026-07-16T09:10:28.907Z","feature":"perf-log","head":"de800d7b426602f070e45395eb84cca51758eb8c","mode":"standard","baseline":null,"cells":[]}
+{"id":"09f736bf-bc60-447c-9d20-db44daccf0f6","type":"candidate","date":"2026-07-16T09:38:12.038Z","feature":"perf-report","head":"a3f0de42ff893ed8415274843e5391390d5bdd41","mode":"standard","baseline":null,"cells":[]}
