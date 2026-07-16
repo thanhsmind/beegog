@@ -3,7 +3,7 @@ area: workflow-state
 updated: 2026-07-16
 parity_sources: [codex-hook-state-parity cell codex-hook-state-parity-1 (pre-phase routing ownership and review isolation; report and capped trace, 2026-07-16)]
 parity_decisions: [codex-hook-state-parity D4-D6]
-sources: [worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..4 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15 — computed schedule, cycle refusal, schedule query verb, orchestration prose), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
+sources: [worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..5 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15/16 — computed schedule, cycle refusal, schedule query verb, orchestration prose; -5: review fix scoping refusal to introduced/participating cycles), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)]
 decisions: [worktree-isolation D1-D4 (docs/history/worktree-isolation/CONTEXT.md; logged 58c56bb6/5de1fd36/8cc1bde1/b24a2efc); a83a3613 (shared isolated runner plus real external command status/output grading); parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable)]
 coverage: partial
 ---
@@ -327,14 +327,19 @@ the schedule predicts it; it never replaces it (parallel-scheduler D1/D2/D4).
 **B18 — A dependency cycle is refused at the door.** Trigger: any write that
 creates or changes a unit's declared dependencies — adding one unit, adding a
 batch, or updating an existing unit's dependencies. What happens: the write is
-checked against the union of the existing record and the incoming change; if
-any cycle would result (self-dependency included), the entire write is refused
-before anything lands — a batch is all-or-nothing — and the refusal names the
-cycle's member ids. The structural check spans units of every status. What the
-caller observes: an immediate, specific "no" at write time, so an impossible
-plan is impossible to record; pre-existing records are never mutated by the
-check — a legacy store with a cycle is reported by the schedule query's
-diagnostics instead (parallel-scheduler D2).
+checked against the union of the existing record and the incoming change; the
+refusal is scoped to cycles the write itself introduces or participates in
+(self-dependency included) — if any member of a resulting cycle is part of the
+incoming change, the entire write is refused before anything lands — a batch
+is all-or-nothing — and the refusal names the cycle's member ids. The
+structural check spans units of every status. A cycle that exists only among
+untouched pre-existing records never blocks an unrelated write: a legacy store
+with a cycle is reported by the schedule query's diagnostics, and the only
+writes it refuses are ones that would keep one of its own members inside the
+cycle — a change that breaks the cycle is always allowed. What the caller
+observes: an immediate, specific "no" at write time, so an impossible plan is
+impossible to record; pre-existing records are never mutated by the check
+(parallel-scheduler D2; scope sharpened by review fix parallel-scheduler-5).
 
 **B19 — A generic routing mutation is phase-owned.** Trigger: a caller changes
 phase, mode, feature, summary, or next action through the generic state command.
