@@ -3,7 +3,7 @@
   "feature": "installer-version-parity-1-3-1",
   "title": "Fence project cleanup to the managed release set",
   "lane": "high-risk",
-  "status": "open",
+  "status": "capped",
   "deps": [
     "installer-version-parity-1-3-1-4"
   ],
@@ -53,15 +53,21 @@
   "verify": "node skills/bee-hive/scripts/test_plugin_distribution.mjs",
   "behavior_change": true,
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "ivp-worker-2",
+    "outcome": "Fence project fallback cleanup to exact managed plugin_skill names from the validated release inventory; bee-custom and foreign dirs survive; malformed/inconsistent inventory refuses before mutation.",
+    "files_changed": [
+      "skills/bee-hive/scripts/plugin_distribution.mjs",
+      "skills/bee-hive/scripts/test_plugin_distribution.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null
+    "capped_at": "2026-07-16T05:27:08.887Z",
+    "behavior_change": true,
+    "verification_evidence": "BEFORE: project cleanup quarantined ANY .{claude,agents,codex}/skills/bee-* directory by name prefix — bee-custom (project-owned) would have been deleted. AFTER: cleanup candidates are the exact directory names derived from plugin_skill records in the validated release inventory (managedSkillNames); an inventory that names zero managed skills or a non-bee managed skill refuses before any mutation; symlink/alias/hook-shape/snapshot-drift refusals preserved. Suite: 28 passed, 0 failed; onboard regression 0 failures.",
+    "verify_output": "plugin_distribution: 28 passed, 0 failed (exit 0). New: exact plugin_skill name derivation, bee-custom survival, no-managed-skill refusal, non-bee managed-name refusal, post-plan managed drift refusal, byte-idempotent repeat keeping bee-custom. onboard regression: PASS - failures: 0, skipped: 1",
+    "verify_passed": true,
+    "claimed_at": "2026-07-16T05:22:16.622Z",
+    "verify_command": "node skills/bee-hive/scripts/test_plugin_distribution.mjs",
+    "verified_at": "2026-07-16T05:26:44.952Z"
   }
 }

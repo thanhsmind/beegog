@@ -104,6 +104,21 @@ export function loadPackageInventory(manifestPath) {
   return inventory;
 }
 
+export function managedSkillNames(inventory) {
+  if (!Array.isArray(inventory)) fail("release inventory is not an array");
+  const names = new Set();
+  for (const record of inventory) {
+    if (record?.role !== "plugin_skill") continue;
+    if (typeof record.path !== "string") fail(`release inventory has a malformed plugin skill record`);
+    const segments = record.path.split("/");
+    if (segments[0] !== "skills" || !segments[1]) fail(`release inventory has an unexpected plugin skill path: ${record.path}`);
+    if (!/^bee-[a-z0-9-]+$/.test(segments[1])) fail(`release inventory names an unsafe managed skill: ${segments[1]}`);
+    names.add(segments[1]);
+  }
+  if (names.size === 0) fail("release inventory names no managed plugin skills");
+  return names;
+}
+
 function normalizePluginList(payload) {
   if (Array.isArray(payload)) return payload;
   for (const key of ["plugins", "items", "data"]) if (Array.isArray(payload?.[key])) return payload[key];
@@ -206,8 +221,9 @@ function cleanHookConfig(absPath) {
   return removed ? { path: absPath, removed, before: fs.readFileSync(absPath), after: Buffer.from(`${JSON.stringify(next, null, 2)}\n`) } : null;
 }
 
-function collectProjectCleanup(repoRoot) {
+function collectProjectCleanup(repoRoot, managedSkills) {
   assertPlainDirectory(repoRoot, "repository root");
+  if (!(managedSkills instanceof Set) || managedSkills.size === 0) fail("project cleanup requires the managed release skill set");
   const dirs = [];
   const seen = new Set();
   for (const relativeRoot of PROJECT_SKILL_ROOTS) {
@@ -217,10 +233,10 @@ function collectProjectCleanup(repoRoot) {
     assertPlainDirectory(root, "project skill root");
     if (!isInside(repoRoot, root)) fail(`project skill root escapes repository: ${root}`);
     for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-      if (!entry.name.startsWith("bee-")) continue;
+      if (!managedSkills.has(entry.name)) continue;
       const target = path.join(root, entry.name);
-      if (entry.isSymbolicLink() || !entry.isDirectory()) fail(`bee cleanup target must be a direct plain directory: ${target}`);
-      assertPlainDirectory(target, "bee cleanup target");
+      if (entry.isSymbolicLink() || !entry.isDirectory()) fail(`managed cleanup target must be a direct plain directory: ${target}`);
+      assertPlainDirectory(target, "managed cleanup target");
       const real = fs.realpathSync.native(target);
       if (seen.has(real)) fail(`duplicate cleanup target alias: ${target}`);
       seen.add(real);
@@ -306,8 +322,9 @@ export function buildDistributionPlan({ mode, runtimes, repoRoot, pluginStates, 
     provePluginInactive(selectedStates);
     return { mode, runtimes, status: "ready_for_onboarding", dirs: [], writes: [], snapshot: { dirs: [], writes: [] } };
   }
+  const managedSkills = managedSkillNames(inventory);
   const proofs = selectedStates.map((state) => proveInstalledPackage(state, inventory));
-  const project = collectProjectCleanup(path.resolve(repoRoot));
+  const project = collectProjectCleanup(path.resolve(repoRoot), managedSkills);
   const user = readOwnershipLedger(ledgerPath, userSkillRoots);
   const dirs = [...project.dirs, ...user.dirs];
   const cleanupRealpaths = dirs.map((target) => fs.realpathSync.native(target));

@@ -10,6 +10,7 @@ import {
   applyDistributionPlan,
   buildDistributionPlan,
   discoverBeePlugin,
+  managedSkillNames,
   proveInstalledPackage,
   provePluginInactive,
 } from "./plugin_distribution.mjs";
@@ -66,6 +67,7 @@ function fixture() {
   write(path.join(repo, ".claude/skills/bee-hive/SKILL.md"), "legacy\n");
   write(path.join(repo, ".agents/skills/bee-planning/SKILL.md"), "legacy\n");
   write(path.join(repo, ".codex/skills/user-skill/SKILL.md"), "user\n");
+  write(path.join(repo, ".claude/skills/bee-custom/SKILL.md"), "custom\n");
   const beeCommand = 'node "$CLAUDE_PROJECT_DIR"/.bee/bin/hooks/bee-write-guard.mjs';
   write(path.join(repo, ".claude/settings.json"), `${JSON.stringify({ permissions: { allow: ["Read"] }, hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: beeCommand }, { type: "command", command: "node user-hook.mjs" }] }] } }, null, 2)}\n`);
   write(path.join(repo, ".codex/hooks.json"), `${JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: beeCommand }] }] }, foreign: { keep: true } }, null, 2)}\n`);
@@ -117,12 +119,65 @@ check("plugin-first removes only direct bee copies and recognized hooks", () => 
   assert.equal(fs.existsSync(path.join(f.repo, ".claude/skills/bee-hive")), false);
   assert.equal(fs.existsSync(path.join(f.repo, ".agents/skills/bee-planning")), false);
   assert.equal(fs.readFileSync(path.join(f.repo, ".codex/skills/user-skill/SKILL.md"), "utf8"), "user\n");
+  assert.equal(fs.readFileSync(path.join(f.repo, ".claude/skills/bee-custom/SKILL.md"), "utf8"), "custom\n");
   const claude = JSON.parse(fs.readFileSync(path.join(f.repo, ".claude/settings.json")));
   assert.deepEqual(claude.permissions, { allow: ["Read"] });
   assert.equal(claude.hooks.PreToolUse[0].hooks.length, 1);
   assert.equal(claude.hooks.PreToolUse[0].hooks[0].command, "node user-hook.mjs");
   const codex = JSON.parse(fs.readFileSync(path.join(f.repo, ".codex/hooks.json")));
   assert.deepEqual(codex, { foreign: { keep: true } });
+  fs.rmSync(f.root, { recursive: true, force: true });
+});
+
+check("cleanup candidates derive from exact plugin_skill inventory names only", () => {
+  const f = fixture();
+  const names = managedSkillNames(f.inventory);
+  assert.deepEqual([...names].sort(), ["bee-hive", "bee-planning"]);
+  assert.equal(names.has("bee-custom"), false);
+  const plan = planFor(f);
+  assert.ok(plan.dirs.some((d) => d.endsWith(path.join(".claude", "skills", "bee-hive"))), "plan targets managed bee-hive");
+  assert.ok(plan.dirs.some((d) => d.endsWith(path.join(".agents", "skills", "bee-planning"))), "plan targets managed bee-planning");
+  assert.ok(!plan.dirs.some((d) => d.includes("bee-custom")), "plan never targets bee-custom");
+  fs.rmSync(f.root, { recursive: true, force: true });
+});
+
+check("project-owned bee-custom survives plugin-first cleanup untouched", () => {
+  const f = fixture();
+  const before = hash(path.join(f.repo, ".claude/skills/bee-custom/SKILL.md"));
+  const result = applyDistributionPlan(planFor(f));
+  assert.equal(result.status, "applied");
+  assert.equal(fs.existsSync(path.join(f.repo, ".claude/skills/bee-hive")), false);
+  assert.equal(hash(path.join(f.repo, ".claude/skills/bee-custom/SKILL.md")), before);
+  fs.rmSync(f.root, { recursive: true, force: true });
+});
+
+for (const [name, mutate] of [
+  ["release inventory with no managed plugin skills refuses before mutation", (inv) => inv.filter((r) => r.role !== "plugin_skill")],
+  ["release inventory naming a non-bee managed skill refuses before mutation", (inv) => inv.map((r) => (r.role === "plugin_skill" && r.path.startsWith("skills/bee-hive/") ? { ...r, path: r.path.replace("skills/bee-hive/", "skills/rogue-tool/") } : r))],
+]) check(name, () => {
+  const f = fixture();
+  const before = treeDigest(f.repo);
+  assert.throws(() => planFor(f, { inventory: mutate(f.inventory) }));
+  assert.equal(treeDigest(f.repo), before);
+  fs.rmSync(f.root, { recursive: true, force: true });
+});
+
+check("post-plan drift on a managed target refuses apply and spares bee-custom", () => {
+  const f = fixture(); const plan = planFor(f);
+  write(path.join(f.repo, ".agents/skills/bee-planning/extra.txt"), "drift");
+  const before = treeDigest(f.repo);
+  assert.throws(() => applyDistributionPlan(plan), /changed after preflight/);
+  assert.equal(treeDigest(f.repo), before);
+  assert.equal(fs.readFileSync(path.join(f.repo, ".claude/skills/bee-custom/SKILL.md"), "utf8"), "custom\n");
+  fs.rmSync(f.root, { recursive: true, force: true });
+});
+
+check("repeat managed cleanup is byte-idempotent and keeps bee-custom", () => {
+  const f = fixture(); applyDistributionPlan(planFor(f)); const after1 = treeDigest(f.repo);
+  const repeat = applyDistributionPlan(planFor(f));
+  assert.equal(repeat.status, "up_to_date");
+  assert.equal(treeDigest(f.repo), after1);
+  assert.equal(fs.readFileSync(path.join(f.repo, ".claude/skills/bee-custom/SKILL.md"), "utf8"), "custom\n");
   fs.rmSync(f.root, { recursive: true, force: true });
 });
 
