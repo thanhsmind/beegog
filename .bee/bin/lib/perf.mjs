@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { ensureDir, appendJsonl, readJsonl, readJson } from './fsutil.mjs';
+import { ensureDir, appendJsonl, readJsonl, readJson, writeJsonAtomic } from './fsutil.mjs';
 
 const SYNTHETIC_MODEL = '<synthetic>';
 const DEFAULT_IDLE_THRESHOLD_MS = 300000; // 5 min — a longer gap is "alive but idle"
@@ -352,4 +352,327 @@ export function readSections({ limit } = {}, env = process.env, homedir = os.hom
   const all = readJsonl(globalPerfLogPath(env, homedir));
   if (limit && limit > 0) return all.slice(-limit);
   return all;
+}
+
+// ─── cross-project scan + HTML matrix report ─────────────────────────────
+// The matrix is derived directly from every project's session transcripts, so
+// the operator never tracks anything: whatever real work happened is reflected.
+// A per-transcript mtime+size cache keeps repeat scans (and the session-close
+// hook's refresh) cheap — only changed transcripts are re-parsed.
+
+export function scanCachePath(env = process.env, homedir = os.homedir()) {
+  return path.join(globalPerfDir(env, homedir), 'cache', 'scan-cache.json');
+}
+
+export function reportHtmlPath(env = process.env, homedir = os.homedir()) {
+  return path.join(globalPerfDir(env, homedir), 'performance.html');
+}
+
+// listProjectDirs — every top-level project directory under the Claude
+// projects root (each is one encoded project path). Missing root → [].
+export function listProjectDirs(projectsRoot) {
+  let entries;
+  try {
+    entries = fs.readdirSync(projectsRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((e) => e.isDirectory())
+    .map((e) => ({ dir: path.join(projectsRoot, e.name), encoded: e.name }));
+}
+
+// rollupTranscript — parse ONE session transcript once and return its full-file
+// rollup (per-model tokens, running time, parallel, subagents, span, and the
+// real project path from the first event carrying a `cwd`). Empty file → null.
+export function rollupTranscript(transcriptFile) {
+  const events = readJsonl(transcriptFile);
+  if (!events.length) return null;
+  const usage = aggregateUsage(events);
+  const sessionDir = transcriptFile.replace(/\.jsonl$/, '');
+  const sub = walkSubagents(sessionDir, 0, Number.MAX_SAFE_INTEGER);
+  const stamps = events.map(eventMs).filter((t) => !Number.isNaN(t));
+  let cwd = null;
+  for (const e of events) {
+    if (e && typeof e.cwd === 'string' && e.cwd) {
+      cwd = e.cwd;
+      break;
+    }
+  }
+  return {
+    sessionId: path.basename(transcriptFile, '.jsonl'),
+    cwd,
+    models: usage.models,
+    subagent_models: sub.models,
+    subagent_count: sub.agents.length,
+    parallel: detectParallel(sub.agents, events),
+    running_time_ms: runningTimeMs(events),
+    event_count: events.length,
+    started_ms: stamps.length ? Math.min(...stamps) : null,
+    ended_ms: stamps.length ? Math.max(...stamps) : null,
+  };
+}
+
+function addRawModels(dst, src) {
+  for (const [m, v] of Object.entries(src || {})) {
+    const a = dst[m] || (dst[m] = zeroModel());
+    a.input += num(v.input);
+    a.output += num(v.output);
+    a.cache_write += num(v.cache_write);
+    a.cache_read += num(v.cache_read);
+  }
+}
+
+function newProjectAgg(label, encoded) {
+  return {
+    project: label,
+    encoded,
+    sessions: 0,
+    parallel_sessions: 0,
+    subagent_count: 0,
+    event_count: 0,
+    running_time_ms: 0,
+    models: {},
+    subagent_models: {},
+    first_ms: null,
+    last_ms: null,
+    total_tokens: 0,
+    new_tokens: 0,
+    cached_tokens: 0,
+  };
+}
+
+function mergeSessionIntoProject(p, r) {
+  p.sessions += 1;
+  addRawModels(p.models, r.models);
+  addRawModels(p.subagent_models, r.subagent_models);
+  p.running_time_ms += num(r.running_time_ms);
+  if (r.parallel) p.parallel_sessions += 1;
+  p.subagent_count += num(r.subagent_count);
+  p.event_count += num(r.event_count);
+  if (r.started_ms != null) p.first_ms = p.first_ms == null ? r.started_ms : Math.min(p.first_ms, r.started_ms);
+  if (r.ended_ms != null) p.last_ms = p.last_ms == null ? r.ended_ms : Math.max(p.last_ms, r.ended_ms);
+}
+
+function finalizeProjectAgg(p) {
+  for (const m of Object.values(p.models)) finalizeModel(m);
+  for (const m of Object.values(p.subagent_models)) finalizeModel(m);
+  let total = 0;
+  let fresh = 0;
+  let cached = 0;
+  for (const m of Object.values(p.models)) {
+    total += m.total;
+    fresh += m.new;
+    cached += m.cached;
+  }
+  p.total_tokens = total;
+  p.new_tokens = fresh;
+  p.cached_tokens = cached;
+}
+
+// scanProjects — roll every project's session transcripts up into per-project
+// totals. Uses an mtime+size cache (a map of transcript path → {mtime,size,
+// rollup}); a hit whose mtime AND size match is reused. `since` filters to
+// projects/sessions whose last activity is at or after that moment.
+export function scanProjects(projectsRoot, { cachePath, since } = {}) {
+  const cache = cachePath ? readJson(cachePath, {}) || {} : {};
+  const nextCache = {};
+  const sinceMs = since != null ? toMs(since) : null;
+  let hits = 0;
+  let misses = 0;
+  const byProject = new Map();
+  for (const { dir, encoded } of listProjectDirs(projectsRoot)) {
+    let files;
+    try {
+      files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+    } catch {
+      continue;
+    }
+    for (const name of files) {
+      const file = path.join(dir, name);
+      let st;
+      try {
+        st = fs.statSync(file);
+      } catch {
+        continue;
+      }
+      const cached = cache[file];
+      let rollup;
+      if (cached && cached.mtime === st.mtimeMs && cached.size === st.size) {
+        rollup = cached.rollup;
+        hits += 1;
+      } else {
+        rollup = rollupTranscript(file);
+        misses += 1;
+      }
+      nextCache[file] = { mtime: st.mtimeMs, size: st.size, rollup };
+      if (!rollup) continue;
+      if (sinceMs != null && (rollup.ended_ms == null || rollup.ended_ms < sinceMs)) continue;
+      const label = rollup.cwd || encoded;
+      const agg = byProject.get(label) || newProjectAgg(label, encoded);
+      mergeSessionIntoProject(agg, rollup);
+      byProject.set(label, agg);
+    }
+  }
+  if (cachePath) {
+    try {
+      writeJsonAtomic(cachePath, nextCache);
+    } catch {
+      // cache is an optimization; a write failure never fails the scan.
+    }
+  }
+  const projects = [...byProject.values()];
+  for (const p of projects) finalizeProjectAgg(p);
+  projects.sort((a, b) => b.total_tokens - a.total_tokens);
+  const totals = { projects: projects.length, sessions: 0, running_time_ms: 0, total_tokens: 0, new_tokens: 0, cached_tokens: 0, models: {} };
+  for (const p of projects) {
+    totals.sessions += p.sessions;
+    totals.running_time_ms += p.running_time_ms;
+    totals.total_tokens += p.total_tokens;
+    totals.new_tokens += p.new_tokens;
+    totals.cached_tokens += p.cached_tokens;
+    addRawModels(totals.models, p.models);
+  }
+  for (const m of Object.values(totals.models)) finalizeModel(m);
+  return { generated_at: new Date().toISOString(), projects, totals, cache_stats: { hits, misses } };
+}
+
+// --- HTML matrix rendering ----------------------------------------------
+
+function shortModel(model) {
+  return String(model).replace(/^claude-/, '').replace(/-\d{6,}$/, '');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function fmtTokens(n) {
+  const v = num(n);
+  if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`;
+  return String(v);
+}
+
+function cachePct(total, cached) {
+  const t = num(total);
+  return t > 0 ? `${Math.round((num(cached) / t) * 100)}%` : '—';
+}
+
+function fmtDate(ms) {
+  return ms == null ? '—' : new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
+}
+
+// renderMatrixHtml — a self-contained (inline CSS/JS, no external requests),
+// theme-aware HTML page: a totals strip and a per-project matrix with an
+// expandable per-model breakdown per project.
+export function renderMatrixHtml(scan) {
+  const s = scan || { projects: [], totals: {}, generated_at: new Date().toISOString() };
+  const t = s.totals || {};
+  const rows = (s.projects || [])
+    .map((p, i) => {
+      const models = Object.entries(p.models || {})
+        .sort((a, b) => b[1].total - a[1].total)
+        .map(([m, v]) => `<tr><td class="mdl">${esc(shortModel(m))}</td><td class="num">${fmtTokens(v.total)}</td><td class="num">${fmtTokens(v.new)}</td><td class="num">${fmtTokens(v.cached)}</td></tr>`)
+        .join('');
+      const modelNames = Object.keys(p.models || {}).map(shortModel).join(', ') || '—';
+      return `<tbody class="proj">
+  <tr class="row" data-i="${i}">
+    <td class="name" title="${esc(p.project)}">${esc(p.project)}</td>
+    <td class="num">${p.sessions}</td>
+    <td class="num">${esc(humanizeMs(p.running_time_ms))}</td>
+    <td class="num strong">${fmtTokens(p.total_tokens)}</td>
+    <td class="num">${fmtTokens(p.new_tokens)}</td>
+    <td class="num">${fmtTokens(p.cached_tokens)}</td>
+    <td class="num">${cachePct(p.total_tokens, p.cached_tokens)}</td>
+    <td class="num">${p.parallel_sessions}/${p.sessions}</td>
+    <td class="models">${esc(modelNames)}</td>
+    <td class="num">${esc(fmtDate(p.last_ms))}</td>
+  </tr>
+  <tr class="detail"><td colspan="10"><table class="mtx"><thead><tr><th>model</th><th>total</th><th>new</th><th>cached</th></tr></thead><tbody>${models}</tbody></table></td></tr>
+</tbody>`;
+    })
+    .join('\n');
+  const summary = [
+    ['projects', t.projects || 0],
+    ['sessions', t.sessions || 0],
+    ['active time', humanizeMs(t.running_time_ms)],
+    ['total tokens', fmtTokens(t.total_tokens)],
+    ['new', fmtTokens(t.new_tokens)],
+    ['cached', fmtTokens(t.cached_tokens)],
+    ['cache %', cachePct(t.total_tokens, t.cached_tokens)],
+  ]
+    .map(([k, v]) => `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`)
+    .join('');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bee performance</title>
+<style>
+:root{--bg:#f7f8fa;--fg:#1a1d23;--muted:#6b7280;--card:#fff;--line:#e5e7eb;--accent:#b45309;--rowhover:#f0f1f4;}
+@media (prefers-color-scheme: dark){:root{--bg:#0f1115;--fg:#e6e8eb;--muted:#9aa1ab;--card:#171a21;--line:#262b34;--accent:#f59e0b;--rowhover:#1c2029;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:20px}
+.cards{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:110px}
+.card .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.card .v{font-size:20px;font-weight:600;margin-top:2px}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+table.matrix{border-collapse:collapse;width:100%;min-width:820px}
+table.matrix thead th{position:sticky;top:0;background:var(--card);text-align:right;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap}
+table.matrix thead th:first-child{text-align:left}
+.row td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.row td.name{text-align:left;font-weight:600;max-width:340px;overflow:hidden;text-overflow:ellipsis}
+.row td.models{text-align:left;color:var(--muted);font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.row td.strong{font-weight:700;color:var(--accent)}
+.num{font-variant-numeric:tabular-nums}
+.row:hover{background:var(--rowhover)}
+.row{cursor:pointer}
+.detail{display:none}
+.detail.open{display:table-row}
+.detail td{padding:0 12px 12px 24px;border-bottom:1px solid var(--line)}
+table.mtx{border-collapse:collapse;margin:6px 0}
+table.mtx th,table.mtx td{padding:3px 14px 3px 0;text-align:right;font-size:12px;color:var(--muted)}
+table.mtx th:first-child,table.mtx td.mdl{text-align:left;color:var(--fg)}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<h1>bee performance</h1>
+<div class="sub">${(s.projects || []).length} project(s) · generated ${esc((s.generated_at || '').slice(0, 19).replace('T', ' '))} UTC · active time excludes idle</div>
+<div class="cards">${summary}</div>
+<div class="wrap">
+<table class="matrix">
+<thead><tr>
+<th data-sort="name">Project</th><th data-sort="num">Sessions</th><th data-sort="num">Active</th>
+<th data-sort="num">Total</th><th data-sort="num">New</th><th data-sort="num">Cached</th><th data-sort="num">Cache%</th>
+<th data-sort="num">Parallel</th><th data-sort="name">Models</th><th data-sort="num">Last active</th>
+</tr></thead>
+${rows || '<tbody><tr><td class="empty" colspan="10">No sessions found yet. Do some work, then reopen this page.</td></tr></tbody>'}
+</table>
+</div>
+<script>
+// expand a project row to show its per-model breakdown
+document.querySelectorAll('tr.row').forEach(function(r){
+  r.addEventListener('click',function(){
+    var d=r.parentNode.querySelector('tr.detail');
+    if(d) d.classList.toggle('open');
+  });
+});
+</script>
+</body>
+</html>
+`;
+}
+
+export function writeReport(scan, { env = process.env, homedir = os.homedir(), out } = {}) {
+  const file = out || reportHtmlPath(env, homedir);
+  ensureDir(path.dirname(file));
+  fs.writeFileSync(file, renderMatrixHtml(scan), 'utf8');
+  return file;
 }

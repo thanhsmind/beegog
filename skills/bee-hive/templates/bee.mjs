@@ -112,6 +112,9 @@ import {
   buildSection,
   appendSection,
   readSections,
+  scanProjects,
+  writeReport,
+  scanCachePath,
 } from './lib/perf.mjs';
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
@@ -1823,6 +1826,22 @@ function handlePerfRender(_root, flags) {
   return { result: sections, text: perfRenderMarkdown(sections) };
 }
 
+function handlePerfReport(_root, flags) {
+  const scan = scanProjects(claudeProjectsRoot(), { cachePath: scanCachePath(), since: flags.since });
+  if (flags.html || flags.out) {
+    const file = writeReport(scan, { out: flags.out });
+    return {
+      result: { path: file, projects: scan.projects.length, sessions: scan.totals.sessions },
+      text: `perf: matrix for ${scan.projects.length} project(s) written → ${file}`,
+    };
+  }
+  if (!scan.projects.length) return { result: scan, text: 'perf: no session activity found yet.' };
+  const lines = scan.projects.map(
+    (p) => `${p.project}  · ${p.sessions} sess · ${Math.round(p.running_time_ms / 1000)}s · ${p.total_tokens} tok (${p.parallel_sessions}/${p.sessions} parallel)`,
+  );
+  return { result: scan, text: lines.join('\n') };
+}
+
 // Per-group usage fallback (dispatcher-unify du-1): the shim always supplies
 // the group token, so the generic no-command path can never fire for helper
 // calls. When a leading group token resolves to no registry entry, its group's
@@ -1882,7 +1901,7 @@ function feedbackUsageFallback(leading) {
 
 function perfUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: start, stop, section, log, render.`;
+  return `Unknown command "${verb || '(missing)'}". Use: start, stop, section, log, render, report.`;
 }
 
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
@@ -1983,6 +2002,7 @@ const HANDLERS = {
   'perf.section': handlePerfSection,
   'perf.log': handlePerfLog,
   'perf.render': handlePerfRender,
+  'perf.report': handlePerfReport,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─
@@ -2001,7 +2021,7 @@ const HANDLERS = {
 // handoff fsh-4, D2/D4) is state.start-feature's lane-mode opt-in — a
 // DISTINCT flag name from the `--lane <feature>` string flag used by
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

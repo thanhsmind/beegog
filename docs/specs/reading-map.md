@@ -66,8 +66,9 @@ Where things live. Read the touched area's spec before its code.
 - `skills/bee-hive/scripts/plugin_distribution.mjs` and `test_plugin_distribution.mjs` — shared strict distribution planner/prover and transaction suite. `scripts/install.sh`, `scripts/install.ps1`, and release-inventory tests are the two platform entrypoints and package proof.
 - `docs/specs/performance-log.md` — the global cross-project performance log: sections
   summarizing a piece of work's per-model token cost (new/cached/total), parallelism, and
-  active running time, stored at `~/.config/beehive/performance.jsonl` and driven by the
-  `bee perf start|stop|section|log|render` command group. Core + schema live in
-  `templates/lib/perf.mjs`.
+  active running time, plus a cross-project HTML matrix (`~/.config/beehive/performance.html`)
+  that auto-refreshes at session close. Driven by the `bee perf start|stop|section|log|render|report`
+  command group + `maybePerfRefresh` in `hooks/bee-session-close.mjs`. Core, cross-project scan,
+  and HTML renderer live in `templates/lib/perf.mjs`.
 - `skills/bee-hive/templates/bee.mjs` + `templates/lib/command-registry.mjs` — the sole shipped CLI (`bee.mjs <group> <verb>` over all 10 command groups, the 10th being `perf`; originated as an additive dispatcher in harness-integration-adopt, decision 30606de4, `docs/decisions/0024`, then made the sole canonical *and* sole shipped surface by shim-retire, D1, decision bbc6bcea — the 9 legacy per-group shims are deleted); `command-registry.mjs` is the single source of truth for the command surface. Contract in `docs/07-contracts.md`; spec-before-code still applies — read the touched area's spec before this code.
 - `skills/bee-hive/templates/lib/schedule.mjs` — the computed work schedule (`computeSchedule`/`detectCycles`: dep layering + declared-path overlap packing into waves; consumed by `bee cells schedule`, cycle refusal in `cells.mjs` add/update, and the swarming/validating prose). Spec: `docs/specs/workflow-state.md` B17/B18, R26/R27.

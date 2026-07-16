@@ -37,9 +37,16 @@ to the same log, so their work can be compared and reviewed together over time.
 - **Read the log** — the operator lists recent sections (most recent last), optionally
   limited to the last N.
 - **Render the log** — the operator produces a human-readable report of the recorded sections.
+- **Build the matrix** — the operator asks for the full cross-project performance matrix. Every
+  project's coding sessions are scanned and rolled up into one report; with the HTML option a
+  self-contained web page is written to the shared location (a project-by-project matrix). This
+  needs no prior tracking — it reads whatever real work already happened.
+- **Automatic refresh** — at the end of every coding session the matrix report is regenerated on
+  its own, so the operator never has to run anything to keep it current.
 
-Only one section may be open at a time per project working copy; opening records the intent,
-closing produces the measurement.
+Explicit named sections (open/close/one-shot) are the manual path; the matrix and its automatic
+refresh are the primary, zero-effort path. Only one section may be open at a time per project
+working copy.
 
 ## Data Dictionary
 
@@ -94,6 +101,18 @@ nothing.
 the last N), each as a one-line summary. Rendering produces the same content as a human-readable
 report. Both tolerate an empty or missing log and report "nothing logged yet".
 
+**Building the matrix (cross-project).** Triggered on demand, or automatically when a coding
+session ends. Every project's session activity records are scanned and each session rolled up
+(per-model tokens, running time, parallelism); sessions are then aggregated per project into a
+matrix — one row per project, showing sessions, active time, per-model token totals (new/cached),
+cache ratio, parallel-session count, and last activity. The operator observes either a written
+HTML file (a self-contained page they open) or a printed per-project summary. A per-session-record
+cache keyed on each record's size and modified time makes repeat builds fast — only records that
+changed since the last build are re-read. The automatic end-of-session refresh reuses this cache,
+so it re-reads only the just-ended session and never re-scans everything; it is best-effort and
+never delays or fails a session's end. A window filter limits the matrix to sessions active since
+a given moment. Missing records or an absent cache degrade to an empty matrix, never an error.
+
 **Measurement rules.** Within the span:
 - Token counts are gathered per model from the session's activity events; repeated records of
   the same underlying request are counted once (R1).
@@ -138,6 +157,15 @@ report. Both tolerate an empty or missing log and report "nothing logged yet".
 - **R8 — A missing measurement never fails the operation.** If the activity record or open
   section is missing, the operation degrades to empty/zeroed metrics or a clear message and
   never errors out. (implementation-confirmed; supports the read-only examples staying safe)
+- **R9 — The matrix is derived, never tracked.** The cross-project matrix is computed by
+  scanning the session activity records that already exist; the operator records nothing during
+  work. Because it is derived from those records (one per session), rebuilding it is idempotent —
+  regenerating twice produces the same result, so the automatic end-of-session refresh can fire
+  repeatedly with no double counting. (implementation-confirmed)
+- **R10 — The automatic refresh is best-effort and never blocks a session's end.** The
+  end-of-session regeneration runs only when a cache already exists (so the one-time full scan is
+  never paid at session end), and any failure in it is swallowed — a session always ends cleanly
+  regardless of the matrix. (implementation-confirmed)
 
 ## Edge Cases Settled
 
@@ -150,25 +178,30 @@ report. Both tolerate an empty or missing log and report "nothing logged yet".
 
 ## Open Gaps
 
-- **Automatic sections on unit-of-work completion.** Emitting a section automatically when a
-  bee unit of work finishes (covering its own start-to-finish window) is deferred; today
-  sections are always operator-initiated. (backlog: proposed)
+- **Per-unit-of-work sections.** Emitting an explicit *section* automatically per bee unit of
+  work (its own start-to-finish window) is still deferred — the automatic path is the whole-matrix
+  refresh, not per-cell sections. Manual sections remain operator-initiated. (backlog: proposed)
 - **Cost in currency.** Only raw token counts are recorded; converting to money is left to the
   reader.
 - **One logical section spanning multiple sessions** is not merged; a section measures a single
-  session's activity record.
+  session's activity record. The matrix aggregates all of a project's sessions, but does not
+  reconstruct a single logical task that crossed sessions.
 
 ## Pointers (implementation)
 
-- Aggregation core, global-log resolver, and section schema (`bee-perf/v1`):
+- Aggregation core, cross-project scan (`scanProjects` + mtime/size cache), HTML matrix
+  (`renderMatrixHtml`/`writeReport`), global-log resolver, and section schema (`bee-perf/v1`):
   `skills/bee-hive/templates/lib/perf.mjs` (mirrored to `.bee/bin/lib/perf.mjs` and the
   `.claude`/`.agents` distribution trees).
-- CLI surface `bee perf start|stop|section|log|render`: handlers + `perfUsageFallback` in
+- CLI surface `bee perf start|stop|section|log|render|report`: handlers + `perfUsageFallback` in
   `skills/bee-hive/templates/bee.mjs`; registry entries in
   `skills/bee-hive/templates/lib/command-registry.mjs`.
+- Automatic refresh at session close: `maybePerfRefresh` in `hooks/bee-session-close.mjs`
+  (Stop + PreCompact), best-effort/fail-open, cache-only.
 - Open-section marker: `.bee/perf-open.json` in the project working copy.
-- Global store: `~/.config/beehive/performance.jsonl` (`XDG_CONFIG_HOME` honored,
-  `BEEHIVE_PERF_DIR` override for tests).
+- Global store: `~/.config/beehive/performance.jsonl` (manual sections),
+  `~/.config/beehive/performance.html` (matrix report), `~/.config/beehive/cache/scan-cache.json`
+  (per-transcript rollup cache). `XDG_CONFIG_HOME` honored, `BEEHIVE_PERF_DIR` override for tests.
 - Data source: Claude Code session transcripts at `~/.claude/projects/<encoded>/<session>.jsonl`
   plus the `<session>/subagents/agent-*.jsonl` sidecars; running time from the harness
   `system`/`turn_duration` `durationMs` events.

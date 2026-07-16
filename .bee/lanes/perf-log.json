@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "feature": "perf-log",
+  "mode": "standard",
+  "phase": "compounding-complete",
+  "approved_gates": {
+    "context": false,
+    "shape": true,
+    "execution": true,
+    "review": false
+  },
+  "summary": "learnings: docs/history/learnings/20260716-perf-log.md; promoted: 1 critical-pattern + 2 backlog mechanizations",
+  "next_action": "perf-log shipped + specced; unreviewed (no review requested). Optional follow-ups in backlog: cell-cap auto-emit, depends_on warn, '9→10 groups' prose.",
+  "created_at": "2026-07-16T08:35:36.382Z",
+  "last_scribing_run": {
+    "feature": "perf-log",
+    "date": "2026-07-16",
+    "at": "2026-07-16T09:08:49.437Z",
+    "areas_synced": [
+      "performance-log"
+    ],
+    "next_action": "Invoke bee-compounding to capture perf-log learnings; feature closes unreviewed."
+  }
+}

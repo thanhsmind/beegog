@@ -1125,6 +1125,11 @@ await check('perf.render example emits Markdown and exits 0', async () => {
   const result = await assertExampleOk('perf.render');
   assert(/bee performance log/.test(result.stdout), 'render emits the report heading');
 });
+await check('perf.report example scans (transcript-less temp env) and exits 0', async () => {
+  const result = await assertExampleOk('perf.report');
+  const scan = JSON.parse(result.stdout);
+  assert(Array.isArray(scan.projects), 'perf report --json returns a scan with a projects array');
+});
 
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {
   const allNames = new Set(COMMAND_REGISTRY.map((e) => e.name));

@@ -22,6 +22,10 @@ import {
   buildSection,
   appendSection,
   readSections,
+  rollupTranscript,
+  scanProjects,
+  renderMatrixHtml,
+  writeReport,
 } from '../lib/perf.mjs';
 
 let pass = 0;
@@ -262,6 +266,80 @@ check('buildSection + appendSection + readSections roundtrip', () => {
   const last1 = readSections({ limit: 1 }, env);
   eq(last1.length, 1, 'limit honored');
   eq(last1[0].label, 'second', 'limit returns most recent');
+});
+
+// --- cross-project scan + HTML matrix -----------------------------------
+// Build a fake projects root with two projects, each with session transcripts
+// carrying a `cwd` label, then assert per-project rollups, cache reuse, and HTML.
+const scanRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-scan-'));
+function writeSession(projCwd, sessId, model, out, cacheRead, withTurn) {
+  const enc = encodeProjectDir(projCwd);
+  const dir = path.join(scanRoot, enc);
+  fs.mkdirSync(dir, { recursive: true });
+  const evs = [
+    { type: 'user', timestamp: iso(BASE + 0), cwd: projCwd, message: { role: 'user', content: [{ type: 'text', text: 'go' }] } },
+    { type: 'assistant', timestamp: iso(BASE + 1000), requestId: `${sessId}-r`, cwd: projCwd, message: { model, usage: { input_tokens: 10, output_tokens: out, cache_creation_input_tokens: 5, cache_read_input_tokens: cacheRead } } },
+  ];
+  if (withTurn) evs.push({ type: 'system', subtype: 'turn_duration', durationMs: 5000, timestamp: iso(BASE + 2000) });
+  fs.writeFileSync(path.join(dir, `${sessId}.jsonl`), evs.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+}
+writeSession('/work/alpha', 'a1', 'claude-opus-4-8', 100, 1000, true);
+writeSession('/work/alpha', 'a2', 'claude-sonnet-5', 50, 500, true);
+writeSession('/work/beta', 'b1', 'claude-opus-4-8', 200, 2000, false);
+
+check('rollupTranscript reads the cwd label and full-file totals', () => {
+  const f = path.join(scanRoot, encodeProjectDir('/work/beta'), 'b1.jsonl');
+  const r = rollupTranscript(f);
+  eq(r.cwd, '/work/beta', 'cwd label from event');
+  eq(r.models['claude-opus-4-8'].output, 200, 'full-file output');
+});
+
+check('scanProjects rolls sessions up per project', () => {
+  const scan = scanProjects(scanRoot, { cachePath: path.join(scanRoot, 'cache.json') });
+  eq(scan.projects.length, 2, 'two projects');
+  const alpha = scan.projects.find((p) => p.project === '/work/alpha');
+  eq(alpha.sessions, 2, 'alpha has 2 sessions');
+  eq(alpha.running_time_ms, 10000, 'alpha active time = 5000+5000 from turn_duration');
+  assert(alpha.models['claude-opus-4-8'] && alpha.models['claude-sonnet-5'], 'both models present in alpha');
+  eq(scan.totals.projects, 2, 'totals project count');
+  assert(scan.totals.total_tokens > 0, 'totals token count');
+});
+
+check('scanProjects uses the mtime+size cache on a repeat scan (no re-parse)', () => {
+  const cp = path.join(scanRoot, 'cache2.json');
+  const first = scanProjects(scanRoot, { cachePath: cp });
+  assert(first.cache_stats.misses >= 3, 'first scan parses every transcript');
+  const second = scanProjects(scanRoot, { cachePath: cp });
+  eq(second.cache_stats.misses, 0, 'repeat scan re-parses nothing');
+  assert(second.cache_stats.hits >= 3, 'repeat scan is all cache hits');
+});
+
+check('scanProjects --since filters to recently-active sessions', () => {
+  const future = new Date(BASE + 10 * 86400000).toISOString();
+  const scan = scanProjects(scanRoot, { since: future });
+  eq(scan.projects.length, 0, 'nothing active after the window');
+});
+
+check('renderMatrixHtml is self-contained and lists each project', () => {
+  const scan = scanProjects(scanRoot, {});
+  const html = renderMatrixHtml(scan);
+  assert(html.startsWith('<!doctype html>'), 'is a full HTML document');
+  assert(html.includes('/work/alpha') && html.includes('/work/beta'), 'lists both projects');
+  assert(!/https?:\/\//.test(html), 'no external URLs (self-contained)');
+  assert(/prefers-color-scheme/.test(html), 'theme-aware');
+});
+
+check('writeReport writes the HTML file', () => {
+  const scan = scanProjects(scanRoot, {});
+  const out = path.join(scanRoot, 'report.html');
+  const file = writeReport(scan, { out });
+  eq(file, out, 'returns the path');
+  assert(fs.readFileSync(out, 'utf8').includes('bee performance'), 'file has the report');
+});
+
+check('scanProjects tolerates a missing root (no throw)', () => {
+  const scan = scanProjects(path.join(scanRoot, 'does-not-exist'), {});
+  eq(scan.projects.length, 0, 'missing root -> empty, no throw');
 });
 
 console.log(`\ntest_perf: ${pass} passed, ${fail} failed`);

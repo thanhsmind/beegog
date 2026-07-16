@@ -155,6 +155,33 @@ async function maybeCaptureQueueNudge(root, { force = false } = {}) {
   }
 }
 
+// maybePerfRefresh — keep the global performance matrix (~/.config/beehive/
+// performance.html) current WITHOUT the operator doing anything. The matrix is
+// derived by scanning session transcripts, so this is idempotent (Stop and
+// PreCompact both firing just redraw the same page) and cheap: the mtime+size
+// cache re-parses only the transcript that changed this session. To avoid ever
+// paying the one-time COLD full scan inside a hook, this runs only once a cache
+// already exists (the operator's first `bee perf report` builds it). Wholly
+// best-effort and fail-open: any failure is swallowed, never touching the exit
+// code (critical-patterns 20260714 — a fail-open host must never let this throw).
+async function maybePerfRefresh(root) {
+  try {
+    const perf = await import(libModuleUrl(root, "perf.mjs"));
+    const cachePath = perf.scanCachePath();
+    if (!fs.existsSync(cachePath)) {
+      return;
+    }
+    const scan = perf.scanProjects(perf.claudeProjectsRoot(), { cachePath });
+    perf.writeReport(scan);
+  } catch (error) {
+    try {
+      logCrash(root, HOOK_NAME, error, "perf-refresh");
+    } catch {
+      // swallow: perf refresh is never allowed to affect the hook outcome.
+    }
+  }
+}
+
 async function main() {
   const ctx = await readHookContext(HOOK_NAME);
   const root = ctx.root;
@@ -164,6 +191,11 @@ async function main() {
   if (!fs.existsSync(path.join(root, ".bee", "bin", "lib", "state.mjs"))) {
     return 0;
   }
+
+  // Best-effort, fail-open: refresh the performance matrix. Deliberately NOT in
+  // the advisory try/parts block — it emits nothing and must never influence the
+  // warning path or the return value.
+  await maybePerfRefresh(root);
 
   const parts = [];
   try {

@@ -1161,4 +1161,22 @@ export const COMMAND_REGISTRY = [
     examples: ['bee perf render'],
     deprecated: null,
   },
+  {
+    name: 'perf.report',
+    invoke: 'bee perf report',
+    description:
+      'Scan every project\'s session activity and build the full per-project performance matrix. With --html (or --out) writes a self-contained HTML report; otherwise prints a per-project summary. Uses a per-transcript cache so repeat runs are fast.',
+    parameters: {
+      type: 'object',
+      properties: {
+        html: { type: 'boolean', description: 'Write a self-contained HTML matrix report instead of text output.' },
+        out: { type: 'string', description: 'Path for the HTML report (implies --html); default ~/.config/beehive/performance.html.' },
+        since: { type: 'string', description: 'Only include sessions active since this moment (duration like 7d/48h, or an ISO timestamp).' },
+        json: { type: 'boolean', description: 'Emit the raw scan as JSON.' },
+      },
+      required: [],
+    },
+    examples: ['bee perf report --json'],
+    deprecated: null,
+  },
 ];
