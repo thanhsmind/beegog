@@ -103,6 +103,16 @@ import {
   REVIEW_MODES,
 } from './lib/reviews.mjs';
 import { readJson, writeJsonAtomic, appendJsonl, hashFile } from './lib/fsutil.mjs';
+// perf.mjs is imported ONLY here (never by command-registry.mjs) so it stays
+// out of the write-guard fixture's hand-listed VENDORED_LIB_MODULES.
+import {
+  claudeProjectsRoot,
+  resolveTranscript,
+  computeMetrics,
+  buildSection,
+  appendSection,
+  readSections,
+} from './lib/perf.mjs';
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
@@ -1657,6 +1667,162 @@ function handleFeedbackRank(root) {
   };
 }
 
+// ─── perf group (lib/perf.mjs) — global cross-project performance log ──────
+// Sections are computed post-hoc from the Claude Code session transcript on
+// disk. Handlers degrade gracefully: a missing transcript / open marker yields
+// zeroed metrics or a clear message, never a throw (so the read-only registry
+// examples pass under assertExampleOk in a transcript-less CI).
+
+function perfMarkerPath(root) {
+  return path.join(root, '.bee', 'perf-open.json');
+}
+
+function perfGitBranch(root) {
+  try {
+    const head = fs.readFileSync(path.join(root, '.git', 'HEAD'), 'utf8').trim();
+    const m = /ref:\s*refs\/heads\/(.+)$/.exec(head);
+    return m ? m[1] : head || null;
+  } catch {
+    return null;
+  }
+}
+
+// perfParseSince — a trailing-window start: "30m"/"2h"/"1d"/"45s" relative to
+// nowMs, or an ISO timestamp. Returns epoch-ms, or NaN when unparseable.
+function perfParseSince(since, nowMs) {
+  if (!since) return NaN;
+  const m = /^(\d+)\s*([smhd])$/.exec(String(since).trim());
+  if (m) {
+    const unit = { s: 1000, m: 60000, h: 3600000, d: 86400000 }[m[2]];
+    return nowMs - Number(m[1]) * unit;
+  }
+  const t = Date.parse(since);
+  return Number.isNaN(t) ? NaN : t;
+}
+
+function perfShortModel(model) {
+  return String(model).replace(/^claude-/, '').replace(/-\d{6,}$/, '');
+}
+
+function perfSectionLine(rec) {
+  const models = Object.entries(rec.models || {})
+    .map(([m, v]) => `${perfShortModel(m)} ${v.total}`)
+    .join(', ') || '—';
+  const flag = rec.parallel ? '∥' : 'seq';
+  const scope = rec.project ? `${rec.project}${rec.branch ? `@${rec.branch}` : ''}` : '';
+  return `${rec.started_at}  ${rec.label || '(unlabeled)'}  · ${rec.running_time_human} · ${flag} · ${models}${scope ? ` · ${scope}` : ''}`;
+}
+
+function perfRenderMarkdown(sections) {
+  if (!sections.length) return '# bee performance log\n\n_No sections logged yet._\n';
+  const lines = ['# bee performance log', ''];
+  for (const rec of sections) {
+    lines.push(`## ${rec.label || '(unlabeled)'} — ${rec.started_at}`);
+    if (rec.note) lines.push(`_${rec.note}_`);
+    lines.push('');
+    lines.push(`- Project: \`${rec.project || '?'}\`${rec.branch ? ` (branch \`${rec.branch}\`)` : ''}`);
+    lines.push(`- Running time: **${rec.running_time_human}** (${rec.running_time_ms} ms active)`);
+    lines.push(`- Parallel: ${rec.parallel ? 'yes' : 'no'}${rec.subagent_count ? ` (${rec.subagent_count} subagent${rec.subagent_count === 1 ? '' : 's'})` : ''}`);
+    const models = Object.entries(rec.models || {});
+    if (models.length) {
+      lines.push('- Models:');
+      for (const [m, v] of models) {
+        lines.push(`  - \`${perfShortModel(m)}\`: total ${v.total} (new ${v.new}, cached ${v.cached})`);
+      }
+    } else {
+      lines.push('- Models: —');
+    }
+    const sub = Object.entries(rec.subagent_models || {});
+    if (sub.length) {
+      lines.push('- Subagent tokens:');
+      for (const [m, v] of sub) lines.push(`  - \`${perfShortModel(m)}\`: total ${v.total} (new ${v.new}, cached ${v.cached})`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function handlePerfStart(root, flags) {
+  const projectPath = root;
+  const transcript = resolveTranscript(claudeProjectsRoot(), projectPath, { sessionId: flags.session });
+  const marker = {
+    label: flags.label || null,
+    transcript,
+    session_id: transcript ? path.basename(transcript, '.jsonl') : flags.session || null,
+    started_at: new Date().toISOString(),
+    project: projectPath,
+    branch: perfGitBranch(root),
+  };
+  writeJsonAtomic(perfMarkerPath(root), marker);
+  const text = transcript
+    ? `perf: section "${marker.label || '(unlabeled)'}" started — measuring session ${marker.session_id}.`
+    : `perf: section "${marker.label || '(unlabeled)'}" started, but no session transcript resolved yet — metrics will be empty at stop.`;
+  return { result: marker, text };
+}
+
+function handlePerfStop(root, flags) {
+  const markerPath = perfMarkerPath(root);
+  const marker = readJson(markerPath, null);
+  if (!marker) {
+    return { result: { ok: false, reason: 'no-open-section' }, text: 'perf: no open section — run `bee perf start` first.' };
+  }
+  const endTs = new Date().toISOString();
+  const metrics = computeMetrics(marker.transcript, Date.parse(marker.started_at), Date.parse(endTs));
+  const rec = buildSection({
+    label: marker.label,
+    note: flags.note || null,
+    projectPath: marker.project || root,
+    branch: marker.branch || perfGitBranch(root),
+    sessionId: marker.session_id,
+    startTs: marker.started_at,
+    endTs,
+    metrics,
+  });
+  const file = appendSection(rec);
+  try {
+    fs.rmSync(markerPath, { force: true });
+  } catch {
+    // marker cleanup is best-effort; the section is already logged.
+  }
+  return { result: rec, text: `${perfSectionLine(rec)}\nlogged → ${file}` };
+}
+
+function handlePerfSection(root, flags) {
+  const endTs = new Date().toISOString();
+  const endMs = Date.parse(endTs);
+  const startMs = perfParseSince(flags.since, endMs);
+  if (Number.isNaN(startMs)) {
+    return { result: { ok: false, reason: 'bad-since' }, text: 'perf: --since must be a duration (e.g. 30m, 2h, 1d) or an ISO timestamp.' };
+  }
+  const transcript = resolveTranscript(claudeProjectsRoot(), root, { sessionId: flags.session });
+  const metrics = computeMetrics(transcript, startMs, endMs);
+  const rec = buildSection({
+    label: flags.label || null,
+    note: flags.note || null,
+    projectPath: root,
+    branch: perfGitBranch(root),
+    sessionId: transcript ? path.basename(transcript, '.jsonl') : flags.session || null,
+    startTs: new Date(startMs).toISOString(),
+    endTs,
+    metrics,
+  });
+  const file = appendSection(rec);
+  return { result: rec, text: `${perfSectionLine(rec)}\nlogged → ${file}` };
+}
+
+function handlePerfLog(_root, flags) {
+  const limit = flags.limit ? Number(flags.limit) : 20;
+  const sections = readSections({ limit: Number.isFinite(limit) && limit > 0 ? limit : undefined });
+  const text = sections.length ? sections.map(perfSectionLine).join('\n') : 'perf: no sections logged yet.';
+  return { result: sections, text };
+}
+
+function handlePerfRender(_root, flags) {
+  const limit = flags.limit ? Number(flags.limit) : undefined;
+  const sections = readSections({ limit: Number.isFinite(limit) && limit > 0 ? limit : undefined });
+  return { result: sections, text: perfRenderMarkdown(sections) };
+}
+
 // Per-group usage fallback (dispatcher-unify du-1): the shim always supplies
 // the group token, so the generic no-command path can never fire for helper
 // calls. When a leading group token resolves to no registry entry, its group's
@@ -1714,6 +1880,11 @@ function feedbackUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: digest, count, collect, rank.`;
 }
 
+function perfUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: start, stop, section, log, render.`;
+}
+
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
 // bee_reservations.mjs/bee_decisions.mjs are now shims, so their own
 // default-case "Unknown command ... Use: ..." messages (previously emitted
@@ -1744,6 +1915,7 @@ const GROUP_USAGE_FALLBACKS = {
   capture: captureUsageFallback,
   reviews: reviewsUsageFallback,
   feedback: feedbackUsageFallback,
+  perf: perfUsageFallback,
 };
 
 const HANDLERS = {
@@ -1806,6 +1978,11 @@ const HANDLERS = {
   'feedback.count': handleFeedbackCount,
   'feedback.collect': handleFeedbackCollect,
   'feedback.rank': handleFeedbackRank,
+  'perf.start': handlePerfStart,
+  'perf.stop': handlePerfStop,
+  'perf.section': handlePerfSection,
+  'perf.log': handlePerfLog,
+  'perf.render': handlePerfRender,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─
