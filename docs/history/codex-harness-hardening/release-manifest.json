@@ -110,6 +110,12 @@
       "role": "runtime_lib"
     },
     {
+      "path": ".bee/bin/lib/worktree-store.mjs",
+      "sha256": "5814e59a5eacd1e268f0561b7fd7afdacba41f888c871192a094434ab9b943b0",
+      "mode": "644",
+      "role": "runtime_lib"
+    },
+    {
       "path": ".claude-plugin/marketplace.json",
       "sha256": "ead268202460bff474f09787f7dce6516d375344189c7d593a6fa8bc71a00186",
       "mode": "644",
@@ -671,6 +677,13 @@
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/validate-args.mjs"
+    },
+    {
+      "path": "skills/bee-hive/templates/lib/worktree-store.mjs",
+      "sha256": "5814e59a5eacd1e268f0561b7fd7afdacba41f888c871192a094434ab9b943b0",
+      "mode": "644",
+      "role": "plugin_skill",
+      "packagePath": "skills/bee-hive/templates/lib/worktree-store.mjs"
     },
     {
       "path": "skills/bee-hive/templates/statusline/statusline-command.sh",
