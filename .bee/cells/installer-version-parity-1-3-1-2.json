@@ -5,7 +5,7 @@
   "lane": "high-risk",
   "status": "open",
   "deps": [
-    "installer-version-parity-1-3-1-1"
+    "installer-version-parity-1-3-1-4"
   ],
   "decisions": [
     "D7"

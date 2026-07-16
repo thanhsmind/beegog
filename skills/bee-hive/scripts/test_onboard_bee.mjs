@@ -1861,6 +1861,99 @@ for (const scenario of [
   }
 }
 
+// --- 10a4. plugin-first distribution mode: release identity still gates, and
+// the distribution-applicable surface reaches the validated tuple (D1) --------
+// --plugin-source vendors the .bee runtime but intentionally skips project skill
+// projections. The strict release-identity tuple check runs BEFORE any plan that
+// can be applied, plugin-first included (see readSourceReleaseIdentity) — nothing
+// else in this suite exercises that mode, so a regression that skipped the tuple
+// gate (or the runtime parity) whenever syncSkills is off would ship green.
+{
+  // (a) greenfield plugin-first: the .bee runtime lib and onboarding marker reach
+  // the validated tuple; project projections are legitimately absent for this
+  // distribution mode; the immediate repeat is up_to_date.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-plugin-source-green-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), { version: "0.1.19" });
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    const apply = await runOnboardAt(
+      launcher, ["--repo-root", repo, "--apply", "--plugin-source", "--json"], home);
+    check(apply.status === 0 && apply.payload?.status === "applied",
+      "plugin-source: greenfield apply succeeds (release identity validated for the plugin-first mode)",
+      `exit ${apply.status} status ${apply.payload?.status}`);
+    check(apply.payload?.recheck === "up_to_date",
+      "plugin-source: immediate recheck is up_to_date",
+      JSON.stringify(apply.payload?.recheck_plan || []));
+    check(
+      fs.readFileSync(path.join(repo, ".bee", "bin", "lib", "state.mjs"), "utf8") ===
+        fakeStateSource("0.1.19"),
+      "plugin-source: vendored runtime state.mjs equals the validated release tuple");
+    check(JSON.parse(fs.readFileSync(path.join(repo, ".bee", "onboarding.json"), "utf8"))
+      .bee_version === "0.1.19",
+      "plugin-source: onboarding.json records the validated release tuple");
+    // Distribution-applicable surface: plugin-first skips project projections,
+    // so neither in-repo skill root is written and no project target is enumerated.
+    for (const relRoot of REPO_TARGET_ROOTS) {
+      check(!fs.existsSync(path.join(repo, ...relRoot.split("/"))),
+        `plugin-source: ${relRoot} project projection is not written in the plugin-first mode`);
+    }
+    check((apply.payload?.skills?.targets || []).length === 0,
+      "plugin-source: no project skill targets are enumerated in the plugin-first mode",
+      JSON.stringify(apply.payload?.skills?.targets || null));
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // (b) plugin-first mode does NOT exempt the release-identity gate: a mixed
+  // numeric tuple refuses BEFORE the .bee runtime is vendored — zero mutation,
+  // never forceable — exactly as the project-projection modes do.
+  const mixBase = fs.mkdtempSync(path.join(os.tmpdir(), "bee-plugin-source-mixed-"));
+  const mixHome = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(mixBase, "skills"), {
+      version: "0.1.19",
+      codexManifest: { name: "bee", version: "0.1.20" },
+    });
+    const repo = path.join(mixBase, "repo");
+    fs.mkdirSync(repo, { recursive: true });
+    fs.writeFileSync(path.join(repo, "owner.txt"), "must survive\n", "utf8");
+    const repoBefore = hashTree(repo);
+    const homeBefore = hashTree(mixHome);
+    const apply = await runOnboardAt(
+      launcher,
+      ["--repo-root", repo, "--apply", "--plugin-source", "--force-downgrade", "--json"],
+      mixHome);
+    check(apply.status === 1 && apply.payload?.status === "blocked_no_source",
+      "plugin-source: a mixed release tuple refuses even in the plugin-first mode",
+      `exit ${apply.status} payload ${JSON.stringify(apply.payload)}`);
+    check(typeof apply.payload?.reason === "string" &&
+      apply.payload.reason.includes("authoritative source release tuple") &&
+      apply.payload.reason.includes("tuple members disagree"),
+      "plugin-source: refusal names the strict release-identity failure",
+      String(apply.payload?.reason));
+    check(!fs.existsSync(path.join(repo, ".bee")),
+      "plugin-source: refused apply vendors no .bee runtime (zero mutation before the tuple gate)");
+    check(hashTree(repo) === repoBefore && hashTree(mixHome) === homeBefore,
+      "plugin-source: refused apply leaves repo and runtime targets byte-identical");
+    check(apply.payload?.forced_downgrade === undefined,
+      "plugin-source: a source-tuple failure is never forceable");
+  } finally {
+    try {
+      fs.rmSync(mixBase, { recursive: true, force: true });
+      fs.rmSync(mixHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
 // --- 10b. fence payload + equal-version drift + removal (D4/D5) -------------
 {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-skillsync-fence-"));

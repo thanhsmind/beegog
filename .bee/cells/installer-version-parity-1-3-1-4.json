@@ -1,14 +1,9 @@
 {
-  "id": "installer-version-parity-1-3-1-1",
+  "id": "installer-version-parity-1-3-1-4",
   "feature": "installer-version-parity-1-3-1",
   "title": "Make release identity and self-onboard projection parity fail closed",
   "lane": "high-risk",
-  "status": "dropped",
   "deps": [],
-  "decisions": [
-    "D1",
-    "D3"
-  ],
   "files": [
     "skills/bee-hive/scripts/onboard_bee.mjs",
     "skills/bee-hive/scripts/test_onboard_bee.mjs"
@@ -52,19 +47,26 @@
   },
   "verify": "node skills/bee-hive/scripts/test_onboard_bee.mjs",
   "behavior_change": true,
+  "tier": "generation",
+  "status": "capped",
+  "decisions": [],
   "trace": {
-    "worker": "Kevin",
-    "outcome": null,
-    "files_changed": [],
+    "worker": "ivp-worker-1",
+    "outcome": "Closed the one untested D1 angle: added plugin-first distribution-mode regression (section 10a4, 12 checks) proving the release-identity tuple gate and runtime-tuple parity hold under --plugin-source; engine unchanged (already correct), test-only.",
+    "files_changed": [
+      "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      ".claude/skills/bee-hive/scripts/test_onboard_bee.mjs",
+      ".agents/skills/bee-hive/scripts/test_onboard_bee.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claimed_at": "2026-07-16T00:27:34.052Z",
-    "dropped_reason": "stale orphan claim from a dead session (claimed 00:27, no owner/heartbeat, sweep cannot reclaim); content re-added verbatim as installer-version-parity-1-3-1-4"
-  },
-  "tier": "generation"
+    "capped_at": "2026-07-16T05:21:32.150Z",
+    "behavior_change": true,
+    "verification_evidence": "BEFORE: D1 (fail-closed release tuple) and D3 (self-source project projection refresh) were implemented in the onboarding engine (readSourceReleaseIdentity + computeSkillSync self noop/sync path) and covered by suite sections 10a-10z — EXCEPT the plugin-first distribution mode. No test ran --plugin-source at all, so the D1 claim that the strict release-identity tuple gate runs BEFORE any applicable plan 'including plugin-first runs' (readSourceReleaseIdentity comment) was unproven. FAILING BEHAVIOR NAMED: a regression skipping tuple validation or runtime-tuple parity whenever project-projection sync is off (syncSkills=false) would have shipped green — the distribution-applicable surface for that mode (vendored .bee runtime + onboarding marker) had zero coverage. AFTER: added section 10a4 (test-only; engine already behaves correctly, confirmed by an isolated fixture probe before writing) with 12 checks proving (a) greenfield --plugin-source reaches the validated tuple in .bee/bin/lib/state.mjs and onboarding.json, writes NO project projection and enumerates no project target, rechecks up_to_date; (b) a mixed numeric tuple refuses under --plugin-source (blocked_no_source), vendors no .bee runtime (zero mutation), never forceable. Verify node skills/bee-hive/scripts/test_onboard_bee.mjs -> PASS failures: 0, skipped: 1; regression node skills/bee-hive/templates/tests/test_lib.mjs -> 334 passed, 0 failed. Both .claude and .agents projection copies mirrored to the single edited file (not a broad tree refresh).",
+    "verify_output": "ok - plugin-source: greenfield apply succeeds (release identity validated for the plugin-first mode)\nok - plugin-source: vendored runtime state.mjs equals the validated release tuple\nok - plugin-source: onboarding.json records the validated release tuple\nok - plugin-source: .claude/skills project projection is not written in the plugin-first mode\nok - plugin-source: .agents/skills project projection is not written in the plugin-first mode\nok - plugin-source: a mixed release tuple refuses even in the plugin-first mode\nok - plugin-source: refused apply vendors no .bee runtime (zero mutation before the tuple gate)\nok - plugin-source: a source-tuple failure is never forceable\nPASS - failures: 0, skipped: 1\n(regression) node skills/bee-hive/templates/tests/test_lib.mjs -> 334 passed, 0 failed",
+    "verify_passed": true,
+    "claimed_at": "2026-07-16T05:13:49.007Z",
+    "verify_command": "node skills/bee-hive/scripts/test_onboard_bee.mjs",
+    "verified_at": "2026-07-16T05:20:53.743Z"
+  }
 }
