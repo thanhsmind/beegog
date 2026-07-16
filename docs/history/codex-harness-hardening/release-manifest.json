@@ -231,13 +231,13 @@
     },
     {
       "path": "scripts/install.ps1",
-      "sha256": "4c19a8cfa887f998ebfabe9faa731ebe2bf01c91dc673c75e32f063db07aafa9",
+      "sha256": "0c90b78d9571f8424affd845d4e46e64924558dda22876960b1962344ff170af",
       "mode": "644",
       "role": "distribution_tool"
     },
     {
       "path": "scripts/install.sh",
-      "sha256": "0081bd2ce6eaa0a408ca8c7f901e504a5870d172479f1ca1136edfe107683f17",
+      "sha256": "d8a54bfed99c78b895d541b4dbc8df9a92556ae13870238ae2b6bd94be3bad20",
       "mode": "644",
       "role": "distribution_tool"
     },

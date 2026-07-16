@@ -188,12 +188,14 @@ try {
       if ($codex) {
         if (-not $DryRun) {
           if ($Distribution -eq 'plugin-first') {
-            & codex plugin marketplace add $beeSrc --json | Out-Null
+            # Mutation verbs take NO --json (only `plugin list` does); the real
+            # CLI rejects `--json` here with `error: unknown option '--json'`.
+            & codex plugin marketplace add $beeSrc | Out-Null
             if ($LASTEXITCODE -ne 0) { Fail 'Codex marketplace registration failed' }
-            & codex plugin add 'bee@bee' --json | Out-Null
+            & codex plugin add 'bee@bee' | Out-Null
             if ($LASTEXITCODE -ne 0) { Fail 'Codex bee plugin install failed' }
           } else {
-            & codex plugin remove 'bee@bee' --json | Out-Null
+            & codex plugin remove 'bee@bee' | Out-Null
           }
         }
         $codexList = & codex plugin list --json

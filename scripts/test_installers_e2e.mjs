@@ -124,6 +124,15 @@ if (group === "plugin") {
 }
 if (logPath) fs.appendFileSync(logPath, JSON.stringify({ runtime, verb, sub: sub ?? null, mutating, argv: rest }) + "\\n");
 
+// Real-CLI fidelity: \`plugin list\` accepts --json, but the MUTATION verbs
+// (marketplace add, add/install, remove/uninstall) reject it with an
+// unknown-option error and a nonzero exit. This makes the suite fail if the
+// installer ever passes --json to a mutation again (the field regression).
+if (mutating && rest.includes("--json")) {
+  process.stderr.write("error: unknown option '--json'\\n");
+  process.exit(2);
+}
+
 if (fails.includes(runtime + ":" + verb) || fails.includes(runtime + ":" + (sub ?? ""))) {
   process.stderr.write("fake " + runtime + " " + verb + " forced failure\\n");
   process.exit(7);
@@ -140,7 +149,14 @@ if (verb === "list") {
 }
 if (verb === "marketplace-add") { process.exit(0); }
 if (verb === "install") { const s = loadState(); s[runtime] = { installed: true, root: pkgRoot, version, sourceKind: "marketplace" }; saveState(s); process.exit(0); }
-if (verb === "remove") { const s = loadState(); s[runtime] = { installed: false, root: null, version: null, sourceKind: null }; saveState(s); process.exit(0); }
+if (verb === "remove") {
+  // Real-CLI fidelity: removing a plugin that is NOT installed is an error with
+  // a nonzero exit. An honest rollback must therefore never call remove on a
+  // never-installed plugin — this is exactly the field regression it guards.
+  const s = loadState();
+  if (!(s[runtime] && s[runtime].installed)) { process.stderr.write("error: plugin bee@bee is not installed\\n"); process.exit(1); }
+  s[runtime] = { installed: false, root: null, version: null, sourceKind: null }; saveState(s); process.exit(0);
+}
 process.exit(0);
 `;
 
@@ -286,13 +302,27 @@ check("greenfield missing target: creates dir, one exact version, complete onboa
   assertVersionParity(sb);
 });
 
-// ── 2. greenfield EMPTY target ────────────────────────────────────────────────
-check("greenfield empty target: finishes on one exact version with no drift", () => {
+// The 9 hooks repo-copy vendors into <target>/.bee/bin/hooks (the manual
+// skills-copy route does not load plugin hooks, so onboarding must ship them).
+const VENDORED_HOOKS = [
+  "adapter.mjs", "bee-chain-nudge.mjs", "bee-codex-subagent-audit.mjs",
+  "bee-model-guard.mjs", "bee-prompt-context.mjs", "bee-session-close.mjs",
+  "bee-session-init.mjs", "bee-state-sync.mjs", "bee-write-guard.mjs",
+];
+
+// ── 2. greenfield EMPTY target (repo-copy) ────────────────────────────────────
+check("greenfield empty target: finishes on one exact version with no drift, vendors all 9 hooks", () => {
   const sb = sandbox({ preinstalled: true });
   fs.mkdirSync(sb.target, { recursive: true });
   const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
   assert.equal(r.code, 0, `install must succeed:\n${r.out}`);
   assertVersionParity(sb);
+  // repo-copy vendors the hook runtime: .bee/bin/hooks/ must exist with all 9 files.
+  const hooksDir = path.join(sb.target, ".bee/bin/hooks");
+  assert.ok(fs.existsSync(hooksDir) && fs.statSync(hooksDir).isDirectory(), ".bee/bin/hooks/ must be vendored by repo-copy onboarding");
+  for (const hook of VENDORED_HOOKS) {
+    assert.ok(fs.existsSync(path.join(hooksDir, hook)), `vendored hook ${hook} must exist in .bee/bin/hooks/`);
+  }
 });
 
 // ── 3. brownfield: existing repo, owner content outside markers preserved ─────
@@ -474,6 +504,35 @@ check("rollback failure is reported alongside the primary failure and never conv
   assert.notEqual(r.code, 0, "must exit nonzero");
   assert.match(r.out, /injected post-transition fault/i, "must report the primary failure");
   assert.match(r.out, /rollback failed/i, "must report the rollback failure alongside the primary");
+});
+
+// ── 15b. never-installed no-op rollback: transition dies BEFORE installing ────
+// The field regression: plugin-first on a machine with no pre-existing bee plugin,
+// the transition fails at `marketplace add`, and the old rollback blindly ran
+// `remove bee@bee` — which the real CLI rejects for a not-installed plugin (rc=1),
+// misreporting "rollback failed to fully restore the pre-run plugin state" although
+// nothing was ever installed. An honest rollback re-probes: current == pre-run for
+// every runtime, so it is a NO-OP SUCCESS that never touches a never-installed plugin.
+check("never-installed transition failure rolls back as an honest no-op (no remove-of-absent, no false rollback failure)", () => {
+  const staged = stagedSource();
+  const sb = sandbox({ preinstalled: false, version: staged.version, pkgRoot: staged.pkg });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const stateBefore = JSON.parse(fs.readFileSync(sb.statePath, "utf8"));
+  assert.equal(stateBefore.codex.installed, false, "precondition: bee NOT installed pre-run");
+  // Kill the very first mutation (`marketplace add`) so nothing is ever installed.
+  const r = run(sb, {
+    args: ["-d", sb.target, "-y", "--distribution", "plugin-first", "--source", staged.src],
+    extraEnv: { BEE_FAKE_FAIL: "codex:marketplace,claude:marketplace" },
+  });
+  assert.notEqual(r.code, 0, "a failed transition must exit nonzero");
+  assert.match(r.out, /Plugin transition failed/i, "must report the primary transition failure");
+  assert.match(r.out, /rollback: pre-run plugin state restored/i, "a never-installed rollback must be an honest no-op success");
+  assert.doesNotMatch(r.out, /rollback failed/i, "must NOT misreport a failed rollback when nothing was ever installed");
+  const calls = readLog(sb.logPath);
+  assert.equal(calls.some((c) => c.verb === "remove"), false, "rollback must not remove a never-installed plugin");
+  const stateAfter = JSON.parse(fs.readFileSync(sb.statePath, "utf8"));
+  assert.equal(stateAfter.codex.installed, false, "codex plugin must remain not-installed (unchanged)");
+  assert.equal(stateAfter.claude.installed, false, "claude plugin must remain not-installed (unchanged)");
 });
 
 // ── 15. repeat install: reports current, no timestamp-only managed rewrites ───

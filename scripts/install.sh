@@ -284,32 +284,44 @@ transition_plugin() {
     command -v "$rt" >/dev/null 2>&1 || { [ "$DISTRIBUTION_MODE" = "plugin-first" ] && fail "$rt CLI is required for plugin-first"; continue; }
     if [ "$rt" = "codex" ]; then add_verb="add"; rm_verb="remove"; else add_verb="install"; rm_verb="uninstall"; fi
     if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
-      "$rt" plugin marketplace add "$BEE_SRC" --json >/dev/null || return 1
-      "$rt" plugin "$add_verb" bee@bee --json >/dev/null || return 1
+      # Mutation verbs take NO --json (only `plugin list` does); the real CLIs
+      # reject `--json` here with `error: unknown option '--json'`.
+      "$rt" plugin marketplace add "$BEE_SRC" >/dev/null || return 1
+      "$rt" plugin "$add_verb" bee@bee >/dev/null || return 1
     else
-      "$rt" plugin "$rm_verb" bee@bee --json >/dev/null 2>&1 || true
+      "$rt" plugin "$rm_verb" bee@bee >/dev/null 2>&1 || true
     fi
   done
   return 0
 }
 
-# Restore every runtime to its exact pre-run installed/enabled state. Returns
-# nonzero if any inverse transition fails so the caller can report it.
+# Restore every runtime to its exact pre-run installed/enabled state. Rollback
+# is HONEST: it re-probes the CURRENT state and only acts where it genuinely
+# differs from the pre-run snapshot. If the failing transition never actually
+# installed or removed anything (e.g. it died at `marketplace add`), current ==
+# pre-run for every runtime and rollback is a no-op SUCCESS — it must not try to
+# remove a never-installed plugin and misreport that remove-of-absent as a
+# failed rollback. Returns nonzero only when restoring a genuinely changed
+# runtime back to its pre-run state fails.
 rollback_plugin() {
   [ -n "$PLUGIN_STATE_FILE" ] && return 0
-  local rc=0 rt was add_verb rm_verb
+  local rc=0 rt was now add_verb rm_verb
+  local now_state="$STATE_TMP/rollback-state.json"
+  probe_plugin_state "$now_state"
   for rt in codex claude; do
     runtime_active "$rt" || continue
     command -v "$rt" >/dev/null 2>&1 || continue
     if [ "$rt" = "codex" ]; then add_verb="add"; rm_verb="remove"; else add_verb="install"; rm_verb="uninstall"; fi
     was="$(plugin_was_installed "$rt" "$PRE_STATE_FILE")"
-    if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
-      if [ "$was" != "1" ]; then "$rt" plugin "$rm_verb" bee@bee --json >/dev/null 2>&1 || rc=1; fi
+    now="$(plugin_was_installed "$rt" "$now_state")"
+    [ "$was" = "$now" ] && continue   # already at the pre-run state: nothing to restore
+    if [ "$was" = "1" ]; then
+      # pre-run had the plugin, the transition removed it: re-install.
+      "$rt" plugin marketplace add "$BEE_SRC" >/dev/null 2>&1 || rc=1
+      "$rt" plugin "$add_verb" bee@bee >/dev/null 2>&1 || rc=1
     else
-      if [ "$was" = "1" ]; then
-        "$rt" plugin marketplace add "$BEE_SRC" --json >/dev/null 2>&1 || rc=1
-        "$rt" plugin "$add_verb" bee@bee --json >/dev/null 2>&1 || rc=1
-      fi
+      # pre-run lacked the plugin, the transition installed it: remove it.
+      "$rt" plugin "$rm_verb" bee@bee >/dev/null 2>&1 || rc=1
     fi
   done
   return $rc
