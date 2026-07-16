@@ -112,9 +112,11 @@ import {
   buildSection,
   appendSection,
   readSections,
-  scanProjects,
   writeReport,
   scanCachePath,
+  syncSessionsToLog,
+  readSessionRecords,
+  buildMatrixFromLog,
 } from './lib/perf.mjs';
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
@@ -1826,20 +1828,34 @@ function handlePerfRender(_root, flags) {
   return { result: sections, text: perfRenderMarkdown(sections) };
 }
 
+function handlePerfSync(_root, _flags) {
+  const res = syncSessionsToLog(claudeProjectsRoot(), { cachePath: scanCachePath() });
+  return { result: res, text: `perf: synced ${res.sessions} session(s) across ${res.projects} project(s) into the log.` };
+}
+
 function handlePerfReport(_root, flags) {
-  const scan = scanProjects(claudeProjectsRoot(), { cachePath: scanCachePath(), since: flags.since });
+  // The report READS the persistent store (performance.jsonl); it never scans
+  // transcripts at view time. If the store is empty (first run), backfill once.
+  if (readSessionRecords().length === 0) {
+    try {
+      syncSessionsToLog(claudeProjectsRoot(), { cachePath: scanCachePath() });
+    } catch {
+      // backfill is best-effort; an empty matrix is still valid output.
+    }
+  }
+  const matrix = buildMatrixFromLog(process.env, os.homedir(), { since: flags.since });
   if (flags.html || flags.out) {
-    const file = writeReport(scan, { out: flags.out });
+    const file = writeReport(matrix, { out: flags.out });
     return {
-      result: { path: file, projects: scan.projects.length, sessions: scan.totals.sessions },
-      text: `perf: matrix for ${scan.projects.length} project(s) written → ${file}`,
+      result: { path: file, projects: matrix.projects.length, sessions: matrix.totals.sessions },
+      text: `perf: matrix for ${matrix.projects.length} project(s) written → ${file}`,
     };
   }
-  if (!scan.projects.length) return { result: scan, text: 'perf: no session activity found yet.' };
-  const lines = scan.projects.map(
+  if (!matrix.projects.length) return { result: matrix, text: 'perf: no session activity found yet. Run `bee perf sync`.' };
+  const lines = matrix.projects.map(
     (p) => `${p.project}  · ${p.sessions} sess · ${Math.round(p.running_time_ms / 1000)}s · ${p.total_tokens} tok (${p.parallel_sessions}/${p.sessions} parallel)`,
   );
-  return { result: scan, text: lines.join('\n') };
+  return { result: matrix, text: lines.join('\n') };
 }
 
 // Per-group usage fallback (dispatcher-unify du-1): the shim always supplies
@@ -1901,7 +1917,7 @@ function feedbackUsageFallback(leading) {
 
 function perfUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: start, stop, section, log, render, report.`;
+  return `Unknown command "${verb || '(missing)'}". Use: start, stop, section, log, render, report, sync.`;
 }
 
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
@@ -2003,6 +2019,7 @@ const HANDLERS = {
   'perf.log': handlePerfLog,
   'perf.render': handlePerfRender,
   'perf.report': handlePerfReport,
+  'perf.sync': handlePerfSync,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─

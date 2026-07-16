@@ -155,24 +155,28 @@ async function maybeCaptureQueueNudge(root, { force = false } = {}) {
   }
 }
 
-// maybePerfRefresh — keep the global performance matrix (~/.config/beehive/
-// performance.html) current WITHOUT the operator doing anything. The matrix is
-// derived by scanning session transcripts, so this is idempotent (Stop and
-// PreCompact both firing just redraw the same page) and cheap: the mtime+size
-// cache re-parses only the transcript that changed this session. To avoid ever
-// paying the one-time COLD full scan inside a hook, this runs only once a cache
-// already exists (the operator's first `bee perf report` builds it). Wholly
-// best-effort and fail-open: any failure is swallowed, never touching the exit
-// code (critical-patterns 20260714 — a fail-open host must never let this throw).
-async function maybePerfRefresh(root) {
+// maybePerfRefresh — keep the global performance data + matrix current WITHOUT
+// the operator doing anything. Writes the just-ended session's rollup into the
+// persistent log (performance.jsonl, upsert by session id — so Stop+PreCompact
+// double-fire never duplicates), then redraws the HTML matrix by READING that
+// log. Cheap: only the one current transcript is parsed; no cross-project scan.
+// Wholly best-effort and fail-open: any failure is swallowed, never touching the
+// exit code (critical-patterns 20260714 — a fail-open host must never let this
+// throw).
+async function maybePerfRefresh(root, sessionId) {
   try {
     const perf = await import(libModuleUrl(root, "perf.mjs"));
-    const cachePath = perf.scanCachePath();
-    if (!fs.existsSync(cachePath)) {
-      return;
+    const projectsRoot = perf.claudeProjectsRoot();
+    const transcript = perf.resolveTranscript(projectsRoot, root, sessionId ? { sessionId } : {});
+    if (transcript) {
+      const rollup = perf.rollupTranscript(transcript);
+      if (rollup) {
+        perf.upsertSessionRecords([perf.sessionRecord(rollup)]);
+      }
     }
-    const scan = perf.scanProjects(perf.claudeProjectsRoot(), { cachePath });
-    perf.writeReport(scan);
+    if (perf.readSessionRecords().length > 0) {
+      perf.writeReport(perf.buildMatrixFromLog());
+    }
   } catch (error) {
     try {
       logCrash(root, HOOK_NAME, error, "perf-refresh");
@@ -192,10 +196,10 @@ async function main() {
     return 0;
   }
 
-  // Best-effort, fail-open: refresh the performance matrix. Deliberately NOT in
-  // the advisory try/parts block — it emits nothing and must never influence the
-  // warning path or the return value.
-  await maybePerfRefresh(root);
+  // Best-effort, fail-open: record this session + refresh the performance matrix.
+  // Deliberately NOT in the advisory try/parts block — it emits nothing and must
+  // never influence the warning path or the return value.
+  await maybePerfRefresh(root, getSessionId(ctx.payload));
 
   const parts = [];
   try {

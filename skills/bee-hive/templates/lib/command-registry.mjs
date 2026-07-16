@@ -1179,4 +1179,19 @@ export const COMMAND_REGISTRY = [
     examples: ['bee perf report --json'],
     deprecated: null,
   },
+  {
+    name: 'perf.sync',
+    invoke: 'bee perf sync',
+    description:
+      'Scan every project\'s session activity and write one rolled-up row per session into the performance log (performance.jsonl). Backfills history; the report then reads the log. Cache-backed, so repeat syncs are fast.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee perf sync --json'],
+    deprecated: null,
+  },
 ];

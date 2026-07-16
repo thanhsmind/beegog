@@ -101,17 +101,24 @@ nothing.
 the last N), each as a one-line summary. Rendering produces the same content as a human-readable
 report. Both tolerate an empty or missing log and report "nothing logged yet".
 
-**Building the matrix (cross-project).** Triggered on demand, or automatically when a coding
-session ends. Every project's session activity records are scanned and each session rolled up
-(per-model tokens, running time, parallelism); sessions are then aggregated per project into a
-matrix — one row per project, showing sessions, active time, per-model token totals (new/cached),
-cache ratio, parallel-session count, and last activity. The operator observes either a written
-HTML file (a self-contained page they open) or a printed per-project summary. A per-session-record
-cache keyed on each record's size and modified time makes repeat builds fast — only records that
-changed since the last build are re-read. The automatic end-of-session refresh reuses this cache,
-so it re-reads only the just-ended session and never re-scans everything; it is best-effort and
-never delays or fails a session's end. A window filter limits the matrix to sessions active since
-a given moment. Missing records or an absent cache degrade to an empty matrix, never an error.
+**Populating the store (sync).** Triggered on demand, or automatically when a coding session ends.
+Every project's session activity records are scanned, each session is rolled up (per-model tokens,
+running time, parallelism), and one row per session is written into the **persistent log** — the
+single stored file that holds all performance data. Rows are keyed by session, so re-writing a
+session replaces its row rather than duplicating it (the automatic end-of-session write and any
+re-run are safe to repeat). A size+modified-time cache makes repeat scans fast — only records that
+changed since the last scan are re-read. The automatic end-of-session write parses only the
+just-ended session (never a full re-scan); it is best-effort and never delays or fails a session's
+end. Backfilling once brings the whole history into the log.
+
+**Building the matrix (read-only view).** The matrix is **read from the persistent log**, never by
+re-scanning activity records at view time. Rows are grouped by **project name — the last folder of
+the project's path** — so different checkouts of the same-named folder collapse into one row (their
+full paths are kept and shown on hover). Each row shows sessions, active time, per-model token
+totals (new/cached), cache ratio, parallel-session count, and last activity. The operator observes
+either a self-contained HTML file they open, or a printed per-project summary. If the log is empty
+the first time, it is backfilled once. A window filter limits the matrix to sessions active since a
+given moment. An empty or missing log yields an empty matrix, never an error.
 
 **Measurement rules.** Within the span:
 - Token counts are gathered per model from the session's activity events; repeated records of
@@ -157,11 +164,16 @@ a given moment. Missing records or an absent cache degrade to an empty matrix, n
 - **R8 — A missing measurement never fails the operation.** If the activity record or open
   section is missing, the operation degrades to empty/zeroed metrics or a clear message and
   never errors out. (implementation-confirmed; supports the read-only examples staying safe)
-- **R9 — The matrix is derived, never tracked.** The cross-project matrix is computed by
-  scanning the session activity records that already exist; the operator records nothing during
-  work. Because it is derived from those records (one per session), rebuilding it is idempotent —
-  regenerating twice produces the same result, so the automatic end-of-session refresh can fire
-  repeatedly with no double counting. (implementation-confirmed)
+- **R9 — The persistent log is the source of truth; the view only reads it.** All performance data
+  is written into one persistent log (rows are derived from the activity records the operator never
+  has to track). The matrix view reads that log and never re-scans activity records at view time.
+  Session rows are keyed by session, so writing the same session again replaces its row — the
+  automatic end-of-session write can fire repeatedly with no double counting. (implementation-confirmed;
+  D `62a7c7fd`)
+- **R11 — Projects are grouped by their last folder name.** The matrix groups rows by the final
+  segment of each project's path (its folder name), so it reads at a glance; two different paths
+  that end in the same folder name merge into one row, and every underlying full path is retained
+  and shown on hover. (D `62a7c7fd`)
 - **R10 — The automatic refresh is best-effort and never blocks a session's end.** The
   end-of-session regeneration runs only when a cache already exists (so the one-time full scan is
   never paid at session end), and any failure in it is swallowed — a session always ends cleanly
@@ -189,15 +201,19 @@ a given moment. Missing records or an absent cache degrade to an empty matrix, n
 
 ## Pointers (implementation)
 
-- Aggregation core, cross-project scan (`scanProjects` + mtime/size cache), HTML matrix
-  (`renderMatrixHtml`/`writeReport`), global-log resolver, and section schema (`bee-perf/v1`):
+- Aggregation core, per-session rollup + cross-project scan (`collectSessionRollups`/`scanProjects`
+  + mtime/size cache), persistent store (`sessionRecord`/`upsertSessionRecords`/`readSessionRecords`/
+  `syncSessionsToLog`), matrix build-from-log grouped by last folder (`buildMatrixFromLog`,
+  `projectName`), HTML (`renderMatrixHtml`/`writeReport`), and section schema (`bee-perf/v1`):
   `skills/bee-hive/templates/lib/perf.mjs` (mirrored to `.bee/bin/lib/perf.mjs` and the
   `.claude`/`.agents` distribution trees).
-- CLI surface `bee perf start|stop|section|log|render|report`: handlers + `perfUsageFallback` in
-  `skills/bee-hive/templates/bee.mjs`; registry entries in
-  `skills/bee-hive/templates/lib/command-registry.mjs`.
-- Automatic refresh at session close: `maybePerfRefresh` in `hooks/bee-session-close.mjs`
-  (Stop + PreCompact), best-effort/fail-open, cache-only.
+- CLI surface `bee perf start|stop|section|log|render|report|sync`: handlers + `perfUsageFallback`
+  in `skills/bee-hive/templates/bee.mjs`; registry entries in
+  `skills/bee-hive/templates/lib/command-registry.mjs`. `perf report` reads the log (backfilling
+  once if empty); `perf sync` scans transcripts and writes session rows into the log.
+- Automatic write + refresh at session close: `maybePerfRefresh` in `hooks/bee-session-close.mjs`
+  (Stop + PreCompact) — upserts the current session row into the log then rebuilds the HTML from
+  the log; best-effort/fail-open, parses only the one current transcript.
 - Open-section marker: `.bee/perf-open.json` in the project working copy.
 - Global store: `~/.config/beehive/performance.jsonl` (manual sections),
   `~/.config/beehive/performance.html` (matrix report), `~/.config/beehive/cache/scan-cache.json`

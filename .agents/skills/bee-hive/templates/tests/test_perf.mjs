@@ -26,6 +26,12 @@ import {
   scanProjects,
   renderMatrixHtml,
   writeReport,
+  projectName,
+  syncSessionsToLog,
+  readSessionRecords,
+  upsertSessionRecords,
+  sessionRecord,
+  buildMatrixFromLog,
 } from '../lib/perf.mjs';
 
 let pass = 0;
@@ -340,6 +346,44 @@ check('writeReport writes the HTML file', () => {
 check('scanProjects tolerates a missing root (no throw)', () => {
   const scan = scanProjects(path.join(scanRoot, 'does-not-exist'), {});
   eq(scan.projects.length, 0, 'missing root -> empty, no throw');
+});
+
+// --- persistent store (performance.jsonl) + basename grouping ------------
+check('projectName returns the last folder segment', () => {
+  eq(projectName('/home/u/projects/goglbe/beegog'), 'beegog', 'basename');
+  eq(projectName('/work/alpha/'), 'alpha', 'trailing slash ignored');
+});
+
+// a second project sharing beta's basename under a different path
+writeSession('/other/beta', 'b2', 'claude-opus-4-8', 30, 300, true);
+const storeEnv = { BEEHIVE_PERF_DIR: path.join(scanRoot, 'store') };
+
+check('syncSessionsToLog writes session rows; report reads them grouped by basename', () => {
+  const res = syncSessionsToLog(scanRoot, { cachePath: path.join(scanRoot, 'sync-cache.json'), env: storeEnv });
+  assert(res.sessions >= 4, 'all sessions written to the log');
+  const recs = readSessionRecords(storeEnv);
+  assert(recs.every((r) => r.kind === 'session' && r.project_name), 'records are session rows with a basename');
+  const matrix = buildMatrixFromLog(storeEnv);
+  // /work/beta and /other/beta collapse into one "beta" row (basename grouping)
+  const beta = matrix.projects.find((p) => p.project === 'beta');
+  assert(beta, 'a basename-grouped "beta" project exists');
+  eq(beta.sessions, 2, 'both beta paths merged under one basename');
+  assert(beta.paths.includes('/work/beta') && beta.paths.includes('/other/beta'), 'full paths retained for the tooltip');
+  const alpha = matrix.projects.find((p) => p.project === 'alpha');
+  eq(alpha.sessions, 2, 'alpha keeps its 2 sessions');
+});
+
+check('upsertSessionRecords dedups by session_id (rewrite, not append)', () => {
+  const env = { BEEHIVE_PERF_DIR: path.join(scanRoot, 'store2') };
+  const rec = sessionRecord(rollupTranscript(path.join(scanRoot, encodeProjectDir('/work/beta'), 'b1.jsonl')));
+  upsertSessionRecords([rec], env);
+  upsertSessionRecords([rec], env); // second write must REPLACE, not duplicate
+  eq(readSessionRecords(env).length, 1, 'session recorded exactly once after two upserts');
+});
+
+check('buildMatrixFromLog is a pure read of the log (empty when nothing synced)', () => {
+  const env = { BEEHIVE_PERF_DIR: path.join(scanRoot, 'store3') };
+  eq(buildMatrixFromLog(env).projects.length, 0, 'no log -> empty matrix, no scan');
 });
 
 console.log(`\ntest_perf: ${pass} passed, ${fail} failed`);

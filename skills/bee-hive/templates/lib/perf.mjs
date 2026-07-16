@@ -470,17 +470,28 @@ function finalizeProjectAgg(p) {
   p.cached_tokens = cached;
 }
 
-// scanProjects — roll every project's session transcripts up into per-project
-// totals. Uses an mtime+size cache (a map of transcript path → {mtime,size,
-// rollup}); a hit whose mtime AND size match is reused. `since` filters to
-// projects/sessions whose last activity is at or after that moment.
-export function scanProjects(projectsRoot, { cachePath, since } = {}) {
+function totalsFor(projects) {
+  const totals = { projects: projects.length, sessions: 0, running_time_ms: 0, total_tokens: 0, new_tokens: 0, cached_tokens: 0, models: {} };
+  for (const p of projects) {
+    totals.sessions += p.sessions;
+    totals.running_time_ms += p.running_time_ms;
+    totals.total_tokens += p.total_tokens;
+    totals.new_tokens += p.new_tokens;
+    totals.cached_tokens += p.cached_tokens;
+    addRawModels(totals.models, p.models);
+  }
+  for (const m of Object.values(totals.models)) finalizeModel(m);
+  return totals;
+}
+
+// collectSessionRollups — every session's full-file rollup across all project
+// dirs, using the mtime+size cache (a hit whose mtime AND size match is reused).
+export function collectSessionRollups(projectsRoot, { cachePath } = {}) {
   const cache = cachePath ? readJson(cachePath, {}) || {} : {};
   const nextCache = {};
-  const sinceMs = since != null ? toMs(since) : null;
   let hits = 0;
   let misses = 0;
-  const byProject = new Map();
+  const rollups = [];
   for (const { dir, encoded } of listProjectDirs(projectsRoot)) {
     let files;
     try {
@@ -506,12 +517,7 @@ export function scanProjects(projectsRoot, { cachePath, since } = {}) {
         misses += 1;
       }
       nextCache[file] = { mtime: st.mtimeMs, size: st.size, rollup };
-      if (!rollup) continue;
-      if (sinceMs != null && (rollup.ended_ms == null || rollup.ended_ms < sinceMs)) continue;
-      const label = rollup.cwd || encoded;
-      const agg = byProject.get(label) || newProjectAgg(label, encoded);
-      mergeSessionIntoProject(agg, rollup);
-      byProject.set(label, agg);
+      if (rollup) rollups.push({ ...rollup, encoded });
     }
   }
   if (cachePath) {
@@ -521,20 +527,126 @@ export function scanProjects(projectsRoot, { cachePath, since } = {}) {
       // cache is an optimization; a write failure never fails the scan.
     }
   }
+  return { rollups, cache_stats: { hits, misses } };
+}
+
+// scanProjects — transcript-derived per-project matrix grouped by FULL path.
+// The persistent store + report use buildMatrixFromLog (grouped by last folder);
+// scanProjects stays as the raw derive-and-group view and the sync engine's core.
+export function scanProjects(projectsRoot, { cachePath, since } = {}) {
+  const { rollups, cache_stats } = collectSessionRollups(projectsRoot, { cachePath });
+  const sinceMs = since != null ? toMs(since) : null;
+  const byProject = new Map();
+  for (const r of rollups) {
+    if (sinceMs != null && (r.ended_ms == null || r.ended_ms < sinceMs)) continue;
+    const label = r.cwd || r.encoded;
+    let agg = byProject.get(label);
+    if (!agg) {
+      agg = newProjectAgg(label, r.encoded);
+      agg.paths = [label];
+      byProject.set(label, agg);
+    }
+    mergeSessionIntoProject(agg, r);
+  }
   const projects = [...byProject.values()];
   for (const p of projects) finalizeProjectAgg(p);
   projects.sort((a, b) => b.total_tokens - a.total_tokens);
-  const totals = { projects: projects.length, sessions: 0, running_time_ms: 0, total_tokens: 0, new_tokens: 0, cached_tokens: 0, models: {} };
-  for (const p of projects) {
-    totals.sessions += p.sessions;
-    totals.running_time_ms += p.running_time_ms;
-    totals.total_tokens += p.total_tokens;
-    totals.new_tokens += p.new_tokens;
-    totals.cached_tokens += p.cached_tokens;
-    addRawModels(totals.models, p.models);
+  return { generated_at: new Date().toISOString(), projects, totals: totalsFor(projects), cache_stats };
+}
+
+// ─── persistent store (performance.jsonl) + read/upsert/sync/matrix ──────
+// The store is the source of truth for the report: session rollups are written
+// here (by the session-close hook and by `perf sync`), and the HTML matrix is
+// READ from here — never scanned live at view time. Records carry `kind:
+// "session"` and are deduped by session_id.
+
+// projectName — the last path segment (the folder the project lives in), used
+// as the human-facing project label and grouping key.
+export function projectName(p) {
+  if (!p) return '(unknown)';
+  const parts = String(p).replace(/[\\/]+$/, '').split(/[\\/]/);
+  return parts[parts.length - 1] || String(p);
+}
+
+// sessionRecord — a performance.jsonl row (kind:"session") for one rollup.
+export function sessionRecord(rollup, { branch = null } = {}) {
+  const project = rollup.cwd || rollup.encoded || null;
+  return {
+    schema: 'bee-perf/v1',
+    kind: 'session',
+    session_id: rollup.sessionId,
+    project,
+    project_name: projectName(project),
+    branch,
+    started_at: rollup.started_ms != null ? new Date(rollup.started_ms).toISOString() : null,
+    ended_at: rollup.ended_ms != null ? new Date(rollup.ended_ms).toISOString() : null,
+    running_time_ms: num(rollup.running_time_ms),
+    parallel: Boolean(rollup.parallel),
+    subagent_count: num(rollup.subagent_count),
+    models: rollup.models || {},
+    subagent_models: rollup.subagent_models || {},
+    event_count: num(rollup.event_count),
+    started_ms: rollup.started_ms,
+    ended_ms: rollup.ended_ms,
+    logged_at: new Date().toISOString(),
+  };
+}
+
+// readSessionRecords — session rows from performance.jsonl, deduped by
+// session_id (keep the latest by logged_at). Other record kinds are ignored.
+export function readSessionRecords(env = process.env, homedir = os.homedir()) {
+  const bySession = new Map();
+  for (const r of readJsonl(globalPerfLogPath(env, homedir))) {
+    if (!r || r.kind !== 'session' || !r.session_id) continue;
+    const prev = bySession.get(r.session_id);
+    if (!prev || String(r.logged_at || '') >= String(prev.logged_at || '')) bySession.set(r.session_id, r);
   }
-  for (const m of Object.values(totals.models)) finalizeModel(m);
-  return { generated_at: new Date().toISOString(), projects, totals, cache_stats: { hits, misses } };
+  return [...bySession.values()];
+}
+
+// upsertSessionRecords — write session rows into performance.jsonl, replacing
+// any existing session row with the same session_id. Non-session records
+// (manual spans) are preserved untouched.
+export function upsertSessionRecords(records, env = process.env, homedir = os.homedir()) {
+  const file = globalPerfLogPath(env, homedir);
+  const ids = new Set(records.map((r) => r.session_id));
+  const kept = readJsonl(file).filter((r) => !(r && r.kind === 'session' && ids.has(r.session_id)));
+  const merged = kept.concat(records);
+  ensureDir(path.dirname(file));
+  fs.writeFileSync(file, merged.length ? merged.map((r) => JSON.stringify(r)).join('\n') + '\n' : '', 'utf8');
+  return file;
+}
+
+// syncSessionsToLog — scan every transcript and upsert one session row each into
+// performance.jsonl (backfill + refresh). Cache-backed.
+export function syncSessionsToLog(projectsRoot, { cachePath, env = process.env, homedir = os.homedir() } = {}) {
+  const { rollups, cache_stats } = collectSessionRollups(projectsRoot, { cachePath });
+  const records = rollups.map((r) => sessionRecord(r));
+  upsertSessionRecords(records, env, homedir);
+  return { sessions: records.length, projects: new Set(records.map((r) => r.project_name)).size, cache_stats };
+}
+
+// buildMatrixFromLog — the per-project matrix READ from performance.jsonl,
+// grouped by project_name (the last folder). No transcript scan happens here.
+export function buildMatrixFromLog(env = process.env, homedir = os.homedir(), { since } = {}) {
+  const sinceMs = since != null ? toMs(since) : null;
+  const byName = new Map();
+  for (const r of readSessionRecords(env, homedir)) {
+    if (sinceMs != null && (r.ended_ms == null || r.ended_ms < sinceMs)) continue;
+    const name = r.project_name || projectName(r.project);
+    let agg = byName.get(name);
+    if (!agg) {
+      agg = newProjectAgg(name, null);
+      agg.paths = [];
+      byName.set(name, agg);
+    }
+    if (r.project && !agg.paths.includes(r.project)) agg.paths.push(r.project);
+    mergeSessionIntoProject(agg, r);
+  }
+  const projects = [...byName.values()];
+  for (const p of projects) finalizeProjectAgg(p);
+  projects.sort((a, b) => b.total_tokens - a.total_tokens);
+  return { generated_at: new Date().toISOString(), projects, totals: totalsFor(projects) };
 }
 
 // --- HTML matrix rendering ----------------------------------------------
@@ -579,7 +691,7 @@ export function renderMatrixHtml(scan) {
       const modelNames = Object.keys(p.models || {}).map(shortModel).join(', ') || '—';
       return `<tbody class="proj">
   <tr class="row" data-i="${i}">
-    <td class="name" title="${esc(p.project)}">${esc(p.project)}</td>
+    <td class="name" title="${esc((p.paths && p.paths.length ? p.paths.join(', ') : p.project))}">${esc(p.project)}</td>
     <td class="num">${p.sessions}</td>
     <td class="num">${esc(humanizeMs(p.running_time_ms))}</td>
     <td class="num strong">${fmtTokens(p.total_tokens)}</td>
