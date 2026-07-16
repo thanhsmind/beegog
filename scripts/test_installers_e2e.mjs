@@ -1,0 +1,501 @@
+#!/usr/bin/env node
+// End-to-end proof for the top-level installers (cell installer-version-parity-1-3-1-3,
+// decisions D2 + D8). This runs scripts/install.sh as a real child process inside a
+// fully isolated fixture and asserts the WRAPPER contract — not merely its helpers:
+//
+//   * pre-confirmation / dry-run paths perform ZERO mutating plugin calls and ZERO
+//     target/home writes (only read-only `plugin list` status probes are allowed);
+//   * the plugin transition happens ONLY after confirmation, proven by PATH-isolated
+//     fake Codex/Claude CLIs that log every call and classify read-only vs mutating;
+//   * greenfield (missing + empty) and brownfield runs finish on ONE exact release
+//     version with complete onboarding, no drift, and an immediate up_to_date recheck;
+//   * refusals (noninteractive, missing CLI for plugin-first, unavailable source,
+//     package-list shape drift, mixed source tuple) fail loudly with no unauthorized
+//     mutation;
+//   * an injected post-transition/pre-onboarding failure restores the exact pre-run
+//     plugin state, leaves the target unchanged, and reports both the primary failure
+//     and any rollback failure without ever reporting success;
+//   * a repeat install reports "current" without timestamp-only managed rewrites.
+//
+// Isolation guarantees (deny sentinels): HOME / USERPROFILE / CLAUDE_HOME / CODEX_HOME
+// point inside the temp sandbox, PATH excludes the real ~/.local/bin so the real codex
+// / claude binaries can never be reached, and a canary tree outside the sandbox is
+// asserted untouched. Nothing in this test writes to a real user home or real plugin.
+//
+// Usage: node scripts/test_installers_e2e.mjs --installer bash
+// Only the Bash installer is proven by this cell; PowerShell is a later release slice.
+
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, "..");
+const INSTALL_SH = path.join(REPO_ROOT, "scripts", "install.sh");
+const REAL_MANIFEST = path.join(REPO_ROOT, "docs/history/codex-harness-hardening/release-manifest.json");
+const SOURCE_VERSION = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, ".claude-plugin/plugin.json"), "utf8")).version;
+
+// A clean PATH: node's own dir plus the standard bins. It deliberately OMITS the
+// real ~/.local/bin, so the real codex/claude CLIs are unreachable. Fake CLIs are
+// prepended per-run when a fixture wants them present.
+const BASE_PATH = [path.dirname(process.execPath), "/usr/bin", "/bin", "/usr/local/bin"]
+  .filter((dir, i, all) => all.indexOf(dir) === i)
+  .join(path.delimiter);
+
+let passed = 0;
+let failed = 0;
+const cleanups = [];
+
+function check(name, fn) {
+  try {
+    fn();
+    passed += 1;
+    console.log(`PASS ${name}`);
+  } catch (error) {
+    failed += 1;
+    console.error(`FAIL ${name}: ${error.stack ?? error.message}`);
+  }
+}
+
+function sha256(buf) {
+  return createHash("sha256").update(buf).digest("hex");
+}
+
+// Byte-and-mode digest of a whole tree (missing path -> stable sentinel). Used to
+// prove "zero writes" / "byte-idempotent" postconditions.
+// Volatile bee RUNTIME caches (not managed onboarding artifacts). `bee.mjs status`
+// stamps .bee/manifest-hash.json ({ hash, checked_at }) on every read, and logs
+// churn; excluding these lets an idempotency check target the MANAGED files only.
+const RUNTIME_CACHE = [".bee/manifest-hash.json", ".bee/logs/hooks.jsonl", ".git"];
+
+function treeDigest(root, ignore = []) {
+  if (!fs.existsSync(root)) return "ABSENT";
+  if (fs.statSync(root).isFile()) return `FILE:${sha256(fs.readFileSync(root))}`;
+  const skip = new Set(ignore);
+  const rows = [];
+  const walk = (current) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const target = path.join(current, entry.name);
+      const rel = path.relative(root, target).split(path.sep).join("/");
+      if (skip.has(rel)) continue;
+      if (entry.isSymbolicLink()) rows.push([rel, "link", fs.readlinkSync(target)]);
+      else if (entry.isDirectory()) { rows.push([rel, "dir"]); walk(target); }
+      else rows.push([rel, "file", sha256(fs.readFileSync(target)), (fs.statSync(target).mode & 0o777).toString(8)]);
+    }
+  };
+  walk(root);
+  return sha256(Buffer.from(JSON.stringify(rows)));
+}
+
+function readLog(logPath) {
+  if (!fs.existsSync(logPath)) return [];
+  return fs.readFileSync(logPath, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+// ─── PATH-isolated fake runtime CLI ──────────────────────────────────────────
+// One shared implementation, invoked as `codex <args>` / `claude <args>` through
+// tiny shims. It records every call to BEE_FAKE_CALLLOG (with a mutating flag),
+// tracks plugin install state in BEE_FAKE_STATE, and never writes anywhere else.
+const FAKE_CLI = `#!/usr/bin/env node
+const fs = require("node:fs");
+const runtime = process.argv[2];
+const rest = process.argv.slice(3);
+const statePath = process.env.BEE_FAKE_STATE;
+const logPath = process.env.BEE_FAKE_CALLLOG;
+const pkgRoot = process.env.BEE_FAKE_PKG_ROOT || null;
+const version = process.env.BEE_FAKE_VERSION || "0.0.0";
+const malformed = process.env.BEE_FAKE_MALFORMED === "1";
+const fails = (process.env.BEE_FAKE_FAIL || "").split(",").filter(Boolean);
+
+const loadState = () => { try { return JSON.parse(fs.readFileSync(statePath, "utf8")); } catch { return {}; } };
+const saveState = (s) => fs.writeFileSync(statePath, JSON.stringify(s));
+
+const [group, sub, ...args] = rest;
+let verb = "unknown";
+let mutating = false;
+if (group === "plugin") {
+  if (sub === "list") { verb = "list"; mutating = false; }
+  else if (sub === "marketplace" && args[0] === "add") { verb = "marketplace-add"; mutating = true; }
+  else if (sub === "add" || sub === "install") { verb = "install"; mutating = true; }
+  else if (sub === "remove" || sub === "uninstall") { verb = "remove"; mutating = true; }
+}
+if (logPath) fs.appendFileSync(logPath, JSON.stringify({ runtime, verb, sub: sub ?? null, mutating, argv: rest }) + "\\n");
+
+if (fails.includes(runtime + ":" + verb) || fails.includes(runtime + ":" + (sub ?? ""))) {
+  process.stderr.write("fake " + runtime + " " + verb + " forced failure\\n");
+  process.exit(7);
+}
+
+if (verb === "list") {
+  if (malformed) { process.stdout.write("<<not json at all>>\\n"); process.exit(0); }
+  const rec = loadState()[runtime] || { installed: false };
+  const plugins = rec.installed
+    ? [{ name: "bee", installed: true, enabled: true, version: rec.version || version, install_path: rec.root || pkgRoot, sourceKind: rec.sourceKind || "marketplace" }]
+    : [];
+  process.stdout.write(JSON.stringify({ plugins }) + "\\n");
+  process.exit(0);
+}
+if (verb === "marketplace-add") { process.exit(0); }
+if (verb === "install") { const s = loadState(); s[runtime] = { installed: true, root: pkgRoot, version, sourceKind: "marketplace" }; saveState(s); process.exit(0); }
+if (verb === "remove") { const s = loadState(); s[runtime] = { installed: false, root: null, version: null, sourceKind: null }; saveState(s); process.exit(0); }
+process.exit(0);
+`;
+
+// ─── self-consistent staged source (for plugin-first package proof) ──────────
+// The real working-tree manifest does not match the working tree (later cells edit
+// package files without re-manifesting). For plugin-first the installer proves the
+// installed package against the manifest byte-for-byte, so we stage a copy of the
+// tracked tree, regenerate ITS manifest, and build a fake package that matches it.
+let stagedCache = null;
+function stagedSource() {
+  if (stagedCache) return stagedCache;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ivp-src-"));
+  cleanups.push(root);
+  const src = path.join(root, "src");
+  fs.mkdirSync(src, { recursive: true });
+  // Copy tracked working-tree files (respects .gitignore, excludes .git).
+  const files = execFileSync("git", ["-C", REPO_ROOT, "ls-files", "-z"], { encoding: "buffer" })
+    .toString("utf8").split("\0").filter(Boolean);
+  for (const rel of files) {
+    const from = path.join(REPO_ROOT, rel);
+    if (!fs.existsSync(from)) continue;
+    const to = path.join(src, rel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+  }
+  // Regenerate the staged manifest so it matches the staged package files exactly.
+  execFileSync("node", [path.join(src, "scripts/release_manifest.mjs"), "--write"], { cwd: src, stdio: "ignore" });
+  // Build a fake installed package = exactly the package files named by the manifest.
+  const pkg = path.join(root, "pkg");
+  const roles = new Set(["plugin_skill", "plugin_hook", "plugin_manifest", "plugin_marketplace"]);
+  const manifest = JSON.parse(fs.readFileSync(path.join(src, "docs/history/codex-harness-hardening/release-manifest.json"), "utf8"));
+  for (const record of manifest.files) {
+    if (!roles.has(record.role)) continue;
+    const rel = record.packagePath ?? record.path;
+    const to = path.join(pkg, rel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(path.join(src, rel), to);
+  }
+  const stagedVersion = JSON.parse(fs.readFileSync(path.join(src, ".claude-plugin/plugin.json"), "utf8")).version;
+  stagedCache = { src, pkg, version: stagedVersion };
+  return stagedCache;
+}
+
+// ─── sandbox + runner ────────────────────────────────────────────────────────
+function sandbox({ targetName = "target", preinstalled = false, version = SOURCE_VERSION, pkgRoot = null } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ivp-e2e-"));
+  cleanups.push(root);
+  const home = path.join(root, "home");
+  const claudeHome = path.join(root, "claude-home");
+  const codexHome = path.join(root, "codex-home");
+  const bin = path.join(root, "bin");
+  for (const dir of [home, claudeHome, codexHome, bin]) fs.mkdirSync(dir, { recursive: true });
+  // Canary OUTSIDE every managed home — a deny sentinel: it must never be touched.
+  const canary = path.join(root, "OUTSIDE-CANARY");
+  fs.writeFileSync(canary, "do-not-touch\n");
+
+  const fakeMjs = path.join(bin, "_fake_cli.cjs");
+  fs.writeFileSync(fakeMjs, FAKE_CLI);
+  for (const rt of ["codex", "claude"]) {
+    const shim = path.join(bin, rt);
+    fs.writeFileSync(shim, `#!/usr/bin/env bash\nexec node "${fakeMjs}" ${rt} "$@"\n`);
+    fs.chmodSync(shim, 0o755);
+  }
+
+  const statePath = path.join(root, "plugins-state.json");
+  const logPath = path.join(root, "calls.log");
+  fs.writeFileSync(statePath, JSON.stringify(preinstalled
+    ? { codex: { installed: true, root: pkgRoot, version, sourceKind: "marketplace" }, claude: { installed: true, root: pkgRoot, version, sourceKind: "marketplace" } }
+    : { codex: { installed: false }, claude: { installed: false } }));
+  fs.writeFileSync(logPath, "");
+
+  const target = path.join(root, targetName);
+  return { root, home, claudeHome, codexHome, bin, canary, statePath, logPath, target, version, pkgRoot };
+}
+
+function run(sb, { args = [], withFakes = true, extraEnv = {}, input = "" } = {}) {
+  const env = {
+    PATH: withFakes ? `${sb.bin}${path.delimiter}${BASE_PATH}` : BASE_PATH,
+    HOME: sb.home,
+    USERPROFILE: sb.home,
+    CLAUDE_HOME: sb.claudeHome,
+    CODEX_HOME: sb.codexHome,
+    LANG: "C.UTF-8",
+    LC_ALL: "C.UTF-8",
+    BEE_FAKE_STATE: sb.statePath,
+    BEE_FAKE_CALLLOG: sb.logPath,
+    BEE_FAKE_PKG_ROOT: sb.pkgRoot ?? "",
+    BEE_FAKE_VERSION: sb.version,
+    ...extraEnv,
+  };
+  const result = spawnSync("bash", [INSTALL_SH, ...args], { env, input, encoding: "utf8", timeout: 240000 });
+  return { code: result.status, signal: result.signal, stdout: result.stdout ?? "", stderr: result.stderr ?? "", out: `${result.stdout ?? ""}${result.stderr ?? ""}` };
+}
+
+// Everything a run may legitimately write lives under one of the managed homes or
+// the target. This digests all of them plus the canary — for zero-write assertions.
+function managedDigest(sb) {
+  return [sb.target, sb.home, sb.claudeHome, sb.codexHome, sb.canary].map((p) => `${path.basename(p)}:${treeDigest(p)}`).join("|");
+}
+
+function mutatingCalls(sb) {
+  return readLog(sb.logPath).filter((c) => c.mutating);
+}
+
+function assertVersionParity(sb, expected = SOURCE_VERSION, { sourceRoot = REPO_ROOT, onboardFlags = [] } = {}) {
+  const statusRaw = execFileSync("node", [".bee/bin/bee.mjs", "status", "--json"], { cwd: sb.target, encoding: "utf8" });
+  const status = JSON.parse(statusRaw);
+  assert.equal(status.onboarding?.installed, true, "onboarding.installed must be true");
+  assert.equal(status.onboarding?.bee_version, expected, "bee_version must equal source");
+  assert.equal(status.onboarding?.plugin_version, expected, "plugin_version must equal source");
+  assert.equal(status.onboarding?.drift, false, "status must report no drift");
+  // Independent immediate up_to_date recheck (mirrors the flags the installer used).
+  const planRaw = execFileSync("node", [path.join(sourceRoot, "skills/bee-hive/scripts/onboard_bee.mjs"), "--repo-root", sb.target, "--json", ...onboardFlags], { encoding: "utf8" });
+  assert.equal(JSON.parse(planRaw).status, "up_to_date", "onboarding must be up_to_date immediately after apply");
+}
+
+// ─── ARGUMENT PARSING ────────────────────────────────────────────────────────
+const argv = process.argv.slice(2);
+let installer = "bash";
+for (let i = 0; i < argv.length; i += 1) {
+  if (argv[i] === "--installer") installer = argv[i + 1];
+}
+if (installer !== "bash") {
+  console.error(`test_installers_e2e: only --installer bash is implemented in this slice (got ${installer}).`);
+  console.error("PowerShell entrypoint execution is a later release slice (D5) and must run on real Windows.");
+  process.exit(2);
+}
+
+// Quick environment sanity: without bash and git there is nothing to prove.
+if (spawnSync("bash", ["-n", INSTALL_SH], { encoding: "utf8" }).status !== 0) {
+  console.error("test_installers_e2e: install.sh failed to parse");
+  process.exit(1);
+}
+
+console.log(`test_installers_e2e --installer bash (source version ${SOURCE_VERSION})\n`);
+
+// ── 1. greenfield MISSING target: dir created, one exact version, up_to_date ──
+check("greenfield missing target: creates dir, one exact version, complete onboarding, no drift", () => {
+  const sb = sandbox({ targetName: "does-not-exist-yet", preinstalled: true, pkgRoot: null });
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(r.code, 0, `install must succeed:\n${r.out}`);
+  assert.ok(fs.existsSync(sb.target), "greenfield target directory must be created");
+  assertVersionParity(sb);
+});
+
+// ── 2. greenfield EMPTY target ────────────────────────────────────────────────
+check("greenfield empty target: finishes on one exact version with no drift", () => {
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(r.code, 0, `install must succeed:\n${r.out}`);
+  assertVersionParity(sb);
+});
+
+// ── 3. brownfield: existing repo, owner content outside markers preserved ─────
+check("brownfield: existing repo onboarded, owner content outside BEE markers preserved byte-for-byte", () => {
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  execFileSync("git", ["init", "-q"], { cwd: sb.target });
+  const ownerAgents = "# My Project\n\nHand-written notes that must survive.\n";
+  fs.writeFileSync(path.join(sb.target, "AGENTS.md"), ownerAgents);
+  fs.writeFileSync(path.join(sb.target, "README.md"), "owner readme\n");
+  const readmeBefore = sha256(fs.readFileSync(path.join(sb.target, "README.md")));
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(r.code, 0, `install must succeed:\n${r.out}`);
+  assertVersionParity(sb);
+  assert.equal(sha256(fs.readFileSync(path.join(sb.target, "README.md"))), readmeBefore, "owner README must be untouched");
+  const agentsAfter = fs.readFileSync(path.join(sb.target, "AGENTS.md"), "utf8");
+  assert.ok(agentsAfter.includes("Hand-written notes that must survive."), "owner AGENTS.md prose must survive");
+  assert.ok(agentsAfter.includes("BEE:START"), "BEE block must be merged into AGENTS.md");
+});
+
+// ── 4. dry-run: ZERO target/home writes AND ZERO mutating plugin calls ────────
+check("dry-run performs zero target/home writes and zero mutating plugin calls (read-only probe only)", () => {
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const before = managedDigest(sb);
+  const stateBefore = fs.readFileSync(sb.statePath, "utf8");
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--dry-run", "--source", REPO_ROOT] });
+  assert.equal(r.code, 0, `dry-run must succeed:\n${r.out}`);
+  assert.equal(managedDigest(sb), before, "dry-run must not write to target or any home");
+  assert.equal(fs.readFileSync(sb.statePath, "utf8"), stateBefore, "dry-run must not mutate plugin state");
+  assert.equal(mutatingCalls(sb).length, 0, "dry-run must issue zero mutating plugin calls");
+  const probes = readLog(sb.logPath);
+  assert.ok(probes.length > 0 && probes.every((c) => c.verb === "list"), "dry-run may only issue read-only `plugin list` probes");
+});
+
+// ── 5. ordering: transition (mutating calls) happens ONLY after confirmation ──
+check("plugin transition occurs only after confirmation: mutating calls absent in preview, present after -y", () => {
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  // Preview (dry-run) = everything before the confirmation gate.
+  run(sb, { args: ["-d", sb.target, "-y", "--dry-run", "--source", REPO_ROOT] });
+  const previewCalls = readLog(sb.logPath);
+  assert.ok(previewCalls.length > 0, "preview must probe plugin state");
+  assert.equal(previewCalls.filter((c) => c.mutating).length, 0, "preview must contain no mutating plugin calls");
+  // Confirmed run appends transition calls after the probe.
+  fs.writeFileSync(sb.logPath, "");
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(r.code, 0, `install must succeed:\n${r.out}`);
+  const calls = readLog(sb.logPath);
+  const firstMutation = calls.findIndex((c) => c.mutating);
+  assert.ok(firstMutation > 0, "a mutating transition must appear after at least one read-only probe");
+  assert.ok(calls.slice(0, firstMutation).every((c) => c.verb === "list"), "every call before the first mutation must be a read-only probe");
+  // repo-copy transition is a removal.
+  assert.ok(calls.some((c) => c.verb === "remove"), "repo-copy must remove the plugin as its transition");
+});
+
+// ── 6. noninteractive without --yes: refuses at the confirm gate, zero mutation ─
+check("noninteractive without --yes refuses at confirmation with zero plugin mutation and zero target write", () => {
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const before = managedDigest(sb);
+  const r = run(sb, { args: ["-d", sb.target, "--source", REPO_ROOT], input: "" });
+  assert.notEqual(r.code, 0, "must refuse without --yes and without a TTY");
+  assert.equal(mutatingCalls(sb).length, 0, "a refused confirmation must not mutate any plugin");
+  assert.equal(managedDigest(sb), before, "a refused confirmation must not write to target or home");
+});
+
+// ── 7. paths with spaces and Unicode ──────────────────────────────────────────
+check("target path with spaces and Unicode onboards to one exact version", () => {
+  const sb = sandbox({ targetName: "my proj ✓ дир", preinstalled: true });
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(r.code, 0, `install must succeed for a spaced/unicode path:\n${r.out}`);
+  assertVersionParity(sb);
+});
+
+// ── 8. missing runtime CLI: repo-copy tolerates, still finishes ───────────────
+check("missing runtime CLIs: repo-copy still finishes on one exact version", () => {
+  const sb = sandbox();
+  fs.mkdirSync(sb.target, { recursive: true });
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT], withFakes: false });
+  assert.equal(r.code, 0, `repo-copy must tolerate absent runtime CLIs:\n${r.out}`);
+  assertVersionParity(sb);
+  assert.equal(mutatingCalls(sb).length, 0, "no fake CLI present, so no plugin calls should be logged");
+});
+
+// ── 9. unavailable source: fails loudly, nothing mutated ──────────────────────
+check("unavailable --source fails loudly without mutation", () => {
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const before = managedDigest(sb);
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", path.join(sb.root, "no-such-bee-checkout")] });
+  assert.notEqual(r.code, 0, "must fail when the source path does not exist");
+  assert.match(r.out, /source path not found/i, "must name the unavailable source");
+  assert.equal(mutatingCalls(sb).length, 0, "an unavailable source must not mutate any plugin");
+  assert.equal(managedDigest(sb), before, "an unavailable source must not write to target or home");
+});
+
+// ── 10. package-list shape drift: plugin-first probe returns non-JSON ─────────
+check("package-list shape drift (malformed plugin list) fails loudly pre-confirmation with zero mutation", () => {
+  const sb = sandbox();
+  fs.mkdirSync(sb.target, { recursive: true });
+  const before = managedDigest(sb);
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--no-git-init", "--distribution", "plugin-first", "--source", REPO_ROOT], extraEnv: { BEE_FAKE_MALFORMED: "1" } });
+  assert.notEqual(r.code, 0, "malformed plugin-list output must fail the install");
+  assert.match(r.out, /shape drift|probe/i, "must report the probe/shape failure");
+  assert.equal(mutatingCalls(sb).length, 0, "shape drift is detected during the read-only probe, before any mutation");
+  assert.equal(managedDigest(sb), before, "shape drift must not write to target or home");
+});
+
+// ── 11. mixed source tuple: refused before any confirmation/mutation ──────────
+check("mixed source release tuple is refused before any confirmation, transition, or target write", () => {
+  const staged = stagedSource();
+  const mixedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ivp-mixed-"));
+  cleanups.push(mixedRoot);
+  const mixedSrc = path.join(mixedRoot, "src");
+  execFileSync("bash", ["-c", `cp -a "${staged.src}/." "${mixedSrc}/"`]);
+  const codexManifest = path.join(mixedSrc, ".codex-plugin/plugin.json");
+  const j = JSON.parse(fs.readFileSync(codexManifest, "utf8"));
+  j.version = "9.9.9";
+  fs.writeFileSync(codexManifest, `${JSON.stringify(j, null, 2)}\n`);
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const before = managedDigest(sb);
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--no-git-init", "--source", mixedSrc] });
+  assert.notEqual(r.code, 0, "a mixed source tuple must be refused");
+  assert.match(r.out, /refused before any change|tuple/i, "must report a pre-mutation refusal");
+  assert.equal(mutatingCalls(sb).length, 0, "a mixed tuple must be refused before any plugin transition");
+  assert.equal(managedDigest(sb), before, "a mixed tuple must not write to target or home");
+});
+
+// ── 12. plugin-first: transition after confirm, package proven, up_to_date ────
+check("plugin-first: installs package after confirmation, proves it, finishes up_to_date and cleans project fallbacks", () => {
+  const staged = stagedSource();
+  const sb = sandbox({ preinstalled: false, version: staged.version, pkgRoot: staged.pkg });
+  fs.mkdirSync(sb.target, { recursive: true });
+  // Seed a managed project fallback skill + a project-owned bee-custom that must survive.
+  fs.mkdirSync(path.join(sb.target, ".claude/skills/bee-hive"), { recursive: true });
+  fs.writeFileSync(path.join(sb.target, ".claude/skills/bee-hive/SKILL.md"), "stale legacy\n");
+  fs.mkdirSync(path.join(sb.target, ".claude/skills/bee-custom"), { recursive: true });
+  fs.writeFileSync(path.join(sb.target, ".claude/skills/bee-custom/SKILL.md"), "custom owned\n");
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--distribution", "plugin-first", "--source", staged.src] });
+  assert.equal(r.code, 0, `plugin-first install must succeed:\n${r.out}`);
+  // The transition installed the plugin only after a mutation-free preview.
+  const calls = readLog(sb.logPath);
+  const firstMutation = calls.findIndex((c) => c.mutating);
+  assert.ok(firstMutation > 0, "plugin-first transition must follow a read-only probe");
+  assert.ok(calls.some((c) => c.verb === "install"), "plugin-first transition must install the plugin");
+  assert.ok(calls.some((c) => c.verb === "marketplace-add"), "plugin-first must register the marketplace before install");
+  // Version parity against the STAGED source version.
+  assertVersionParity(sb, staged.version, { sourceRoot: staged.src, onboardFlags: ["--plugin-source"] });
+  // Managed fallback removed; project-owned bee-custom preserved.
+  assert.equal(fs.existsSync(path.join(sb.target, ".claude/skills/bee-hive")), false, "managed project fallback must be cleaned");
+  assert.equal(fs.readFileSync(path.join(sb.target, ".claude/skills/bee-custom/SKILL.md"), "utf8"), "custom owned\n", "project-owned bee-custom must survive");
+});
+
+// ── 13. injected post-transition/pre-onboarding failure: rollback + report ────
+check("injected post-transition failure restores pre-run plugin state, leaves target unchanged, exits nonzero", () => {
+  const sb = sandbox({ preinstalled: true }); // repo-copy pre-run state: bee INSTALLED
+  fs.mkdirSync(sb.target, { recursive: true });
+  const targetBefore = treeDigest(sb.target);
+  const stateBefore = JSON.parse(fs.readFileSync(sb.statePath, "utf8"));
+  assert.equal(stateBefore.codex.installed, true, "precondition: bee installed pre-run");
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--no-git-init", "--source", REPO_ROOT], extraEnv: { BEE_INSTALL_FAULT_AFTER_TRANSITION: "1" } });
+  assert.notEqual(r.code, 0, "an injected post-transition failure must exit nonzero (never success)");
+  assert.match(r.out, /injected post-transition fault/i, "must report the primary failure");
+  assert.match(r.out, /rollback: pre-run plugin state restored/i, "must report a successful rollback");
+  const stateAfter = JSON.parse(fs.readFileSync(sb.statePath, "utf8"));
+  assert.equal(stateAfter.codex.installed, true, "codex plugin must be restored to its pre-run installed state");
+  assert.equal(stateAfter.claude.installed, true, "claude plugin must be restored to its pre-run installed state");
+  assert.equal(treeDigest(sb.target), targetBefore, "an injected pre-onboarding failure must leave the target unchanged");
+});
+
+// ── 14. rollback failure is reported alongside the primary, never swallowed ───
+check("rollback failure is reported alongside the primary failure and never converted to success", () => {
+  const sb = sandbox({ preinstalled: true }); // repo-copy: transition removes; rollback re-adds
+  fs.mkdirSync(sb.target, { recursive: true });
+  // Force the re-add path of rollback to fail (install/add verbs).
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT], extraEnv: { BEE_INSTALL_FAULT_AFTER_TRANSITION: "1", BEE_FAKE_FAIL: "codex:install,codex:add,claude:install,claude:add,codex:marketplace,claude:marketplace" } });
+  assert.notEqual(r.code, 0, "must exit nonzero");
+  assert.match(r.out, /injected post-transition fault/i, "must report the primary failure");
+  assert.match(r.out, /rollback failed/i, "must report the rollback failure alongside the primary");
+});
+
+// ── 15. repeat install: reports current, no timestamp-only managed rewrites ───
+check("repeat install reports current without timestamp-only managed rewrites (byte-idempotent target)", () => {
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const first = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(first.code, 0, `first install must succeed:\n${first.out}`);
+  // Managed-file digest excludes bee's own runtime caches (.bee/manifest-hash.json
+  // carries a checked_at timestamp refreshed on every status read).
+  const afterFirst = treeDigest(sb.target, RUNTIME_CACHE);
+  const onboardingBefore = sha256(fs.readFileSync(path.join(sb.target, ".bee/onboarding.json")));
+  const second = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(second.code, 0, `repeat install must succeed:\n${second.out}`);
+  assert.match(second.out, /already current|up_to_date/i, "repeat install must report already current");
+  assert.equal(treeDigest(sb.target, RUNTIME_CACHE), afterFirst, "repeat install must not rewrite any managed file (no timestamp churn)");
+  assert.equal(sha256(fs.readFileSync(path.join(sb.target, ".bee/onboarding.json"))), onboardingBefore, "onboarding.json must not be rewritten on a repeat install");
+});
+
+// ─── SUMMARY ───────────────────────────────────────────────────────────────────
+for (const dir of cleanups) fs.rmSync(dir, { recursive: true, force: true });
+
+console.log(`\ntest_installers_e2e (bash): ${passed} passed, ${failed} failed`);
+if (failed) process.exit(1);

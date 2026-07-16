@@ -230,47 +230,112 @@ if [ "$GLOBAL_SKILLS" -eq 1 ]; then
   ONBOARD_FLAGS+=("--global-skills")
 fi
 
-collect_plugin_state() {
+runtime_active() { case "$RUNTIME" in "$1"|both) return 0 ;; *) return 1 ;; esac; }
+
+# D8: pre-confirmation is READ-ONLY. probe_plugin_state runs only `plugin list`
+# status probes (never install/remove/marketplace), records the current runtime
+# plugin state into $1, and never mutates a runtime plugin, target, or home.
+probe_plugin_state() {
+  local dest="$1"
   if [ -n "$PLUGIN_STATE_FILE" ]; then
     [ -f "$PLUGIN_STATE_FILE" ] || fail "--plugin-state-file not found: $PLUGIN_STATE_FILE"
     STATE_FILE="$PLUGIN_STATE_FILE"
     return
   fi
-  STATE_TMP="$(mktemp -d)"
   local claude_json="$STATE_TMP/claude.json" codex_json="$STATE_TMP/codex.json"
   printf '[]\n' > "$claude_json"; printf '[]\n' > "$codex_json"
-  if [ "$RUNTIME" = "codex" ] || [ "$RUNTIME" = "both" ]; then
+  if runtime_active codex; then
     if command -v codex >/dev/null 2>&1; then
-      if [ "$DRY_RUN" -eq 0 ]; then
-        if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
-          codex plugin marketplace add "$BEE_SRC" --json >/dev/null || fail "Codex marketplace registration failed"
-          codex plugin add bee@bee --json >/dev/null || fail "Codex bee plugin install failed"
-        else
-          codex plugin remove bee@bee --json >/dev/null 2>&1 || true
-        fi
-      fi
       codex plugin list --json > "$codex_json" || fail "Codex plugin status probe failed"
     elif [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then fail "Codex CLI is required for plugin-first"; fi
   fi
-  if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then
+  if runtime_active claude; then
     if command -v claude >/dev/null 2>&1; then
-      if [ "$DRY_RUN" -eq 0 ]; then
-        if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
-          claude plugin marketplace add "$BEE_SRC" >/dev/null || fail "Claude marketplace registration failed"
-          claude plugin install bee@bee >/dev/null || fail "Claude bee plugin install failed"
-        else
-          claude plugin uninstall bee@bee >/dev/null 2>&1 || true
-        fi
-      fi
       claude plugin list --json > "$claude_json" || fail "Claude plugin status probe failed"
     elif [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then fail "Claude CLI is required for plugin-first"; fi
   fi
-  node -e 'const fs=require("fs"); const read=p=>JSON.parse(fs.readFileSync(p,"utf8")); fs.writeFileSync(process.argv[3], JSON.stringify({claude:read(process.argv[1]),codex:read(process.argv[2])}));' "$claude_json" "$codex_json" "$STATE_TMP/state.json"
-  STATE_FILE="$STATE_TMP/state.json"
+  node -e 'const fs=require("fs"); const read=p=>JSON.parse(fs.readFileSync(p,"utf8")); fs.writeFileSync(process.argv[3], JSON.stringify({claude:read(process.argv[1]),codex:read(process.argv[2])}));' "$claude_json" "$codex_json" "$dest" \
+    || fail "Plugin status probe returned unreadable data (package-list shape drift)"
 }
 
-STATE_FILE=""
-collect_plugin_state
+# Whether the bee plugin was installed for <runtime> in the pre-run snapshot.
+# Prints 1/0; used to decide the inverse transition during rollback.
+plugin_was_installed() {
+  local rt="$1" src="$2"
+  node -e '
+    const fs=require("fs");
+    const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+    const list=s[process.argv[2]];
+    const arr=Array.isArray(list)?list:((list&&(list.plugins||list.items||list.data))||(list&&typeof list==="object"?[list]:[]));
+    const p=arr.find(x=>{const n=x&&(x.name||x.id||(x.plugin&&x.plugin.name));return n==="bee"||String(n||"").startsWith("bee@")});
+    let out="0";
+    if(p){const st=String(p.status||p.state||"").toLowerCase();out=(p.installed===true||!["removed","not_installed"].includes(st))?"1":"0";}
+    process.stdout.write(out);
+  ' "$src" "$rt" 2>/dev/null || printf '0'
+}
+
+# POST-confirmation transition: plugin-first installs the plugin package; repo-copy
+# removes it. Returns nonzero if a required plugin-first transition fails.
+transition_plugin() {
+  [ -n "$PLUGIN_STATE_FILE" ] && return 0
+  local rt add_verb rm_verb
+  for rt in codex claude; do
+    runtime_active "$rt" || continue
+    command -v "$rt" >/dev/null 2>&1 || { [ "$DISTRIBUTION_MODE" = "plugin-first" ] && fail "$rt CLI is required for plugin-first"; continue; }
+    if [ "$rt" = "codex" ]; then add_verb="add"; rm_verb="remove"; else add_verb="install"; rm_verb="uninstall"; fi
+    if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
+      "$rt" plugin marketplace add "$BEE_SRC" --json >/dev/null || return 1
+      "$rt" plugin "$add_verb" bee@bee --json >/dev/null || return 1
+    else
+      "$rt" plugin "$rm_verb" bee@bee --json >/dev/null 2>&1 || true
+    fi
+  done
+  return 0
+}
+
+# Restore every runtime to its exact pre-run installed/enabled state. Returns
+# nonzero if any inverse transition fails so the caller can report it.
+rollback_plugin() {
+  [ -n "$PLUGIN_STATE_FILE" ] && return 0
+  local rc=0 rt was add_verb rm_verb
+  for rt in codex claude; do
+    runtime_active "$rt" || continue
+    command -v "$rt" >/dev/null 2>&1 || continue
+    if [ "$rt" = "codex" ]; then add_verb="add"; rm_verb="remove"; else add_verb="install"; rm_verb="uninstall"; fi
+    was="$(plugin_was_installed "$rt" "$PRE_STATE_FILE")"
+    if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
+      if [ "$was" != "1" ]; then "$rt" plugin "$rm_verb" bee@bee --json >/dev/null 2>&1 || rc=1; fi
+    else
+      if [ "$was" = "1" ]; then
+        "$rt" plugin marketplace add "$BEE_SRC" --json >/dev/null 2>&1 || rc=1
+        "$rt" plugin "$add_verb" bee@bee --json >/dev/null 2>&1 || rc=1
+      fi
+    fi
+  done
+  return $rc
+}
+
+# A post-transition failure: roll the plugin state back to the pre-run snapshot,
+# leave the target untouched, report BOTH the primary and any rollback failure,
+# and exit nonzero (never convert a failed install into success).
+handle_transition_failure() {
+  printf 'Error: %s\n' "$1" >&2
+  if rollback_plugin; then
+    printf 'rollback: pre-run plugin state restored; target left unchanged\n' >&2
+  else
+    printf 'Error: rollback failed to fully restore the pre-run plugin state\n' >&2
+  fi
+  exit 1
+}
+
+STATE_TMP="$(mktemp -d)"
+STATE_FILE="$STATE_TMP/state.json"
+PRE_STATE_FILE="$STATE_TMP/pre-state.json"
+
+# 1. read-only probe of the CURRENT plugin state (pre-confirmation, no mutation).
+probe_plugin_state "$STATE_FILE"
+cp "$STATE_FILE" "$PRE_STATE_FILE"
+
 DIST_ARGS=(--mode "$DISTRIBUTION_MODE" --runtime "$RUNTIME" --repo-root "$TARGET_DIR" --release-manifest "$RELEASE_MANIFEST" --plugin-state-file "$STATE_FILE")
 if [ -n "$OWNERSHIP_LEDGER" ]; then DIST_ARGS+=(--ledger "$OWNERSHIP_LEDGER"); fi
 if [ "$GLOBAL_SKILLS" -eq 1 ]; then
@@ -278,26 +343,65 @@ if [ "$GLOBAL_SKILLS" -eq 1 ]; then
   if [ "$RUNTIME" = "codex" ] || [ "$RUNTIME" = "both" ]; then DIST_ARGS+=(--user-skill-root "${CODEX_HOME:-$HOME/.codex}/skills"); fi
 fi
 
-# The first helper call proves every destructive precondition before onboarding.
-node "$DIST_HELPER" "${DIST_ARGS[@]}" || fail "Distribution preflight refused"
+# onboard_plan_json prints the onboarding plan as JSON (plan mode, writes nothing).
+onboard_plan_json() {
+  node "$ONBOARD" --repo-root "$TARGET_DIR" --json ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} 2>/dev/null
+}
+# plan_field <json> <field> — extract one string field, or "parse_error" on bad JSON.
+plan_field() {
+  printf '%s' "$1" | node -e 'let d="";process.stdin.on("data",c=>{d+=c}).on("end",()=>{try{const s=JSON.parse(d);process.stdout.write(String(s[process.argv[1]]??""));}catch{process.stdout.write("parse_error");}})' "$2"
+}
 
-log "plan     onboard_bee.mjs ${ONBOARD_FLAGS[*]:-} (dry-run first)"
-node "$ONBOARD" --repo-root "$TARGET_DIR" ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} || fail "Onboarding plan failed."
+# 2. mutation-free preview: onboarding plan (writes nothing). A blocked/refused
+#    plan (invalid or mixed source tuple, refused downgrade) must fail loudly HERE,
+#    before any confirmation, transition, or target/home write. onboard_bee reports
+#    a refusal as a non-`changes_needed`/`up_to_date` status (and may still exit 0),
+#    so status — not exit code alone — is the gate.
+log "plan     onboard_bee.mjs ${ONBOARD_FLAGS[*]:-} (preview, writes nothing)"
+PREVIEW_JSON="$(onboard_plan_json)" || fail "Onboarding plan failed."
+PREVIEW_STATUS="$(plan_field "$PREVIEW_JSON" status)"
+case "$PREVIEW_STATUS" in
+  up_to_date|changes_needed) log "plan     status: $PREVIEW_STATUS" ;;
+  *) fail "Onboarding refused before any change [$PREVIEW_STATUS]: $(plan_field "$PREVIEW_JSON" reason)" ;;
+esac
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  log "dry-run  nothing written. Re-run without --dry-run to apply."
+  log "dry-run  nothing written, no plugin changes. Re-run without --dry-run to apply."
   exit 0
 fi
 
+# 3. confirmation gate. Nothing above this line mutates a plugin, target, or home.
 confirm "Apply this onboarding plan to $TARGET_DIR?" || fail "Aborted — nothing applied."
-node "$ONBOARD" --repo-root "$TARGET_DIR" --apply ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} >/dev/null \
-  || fail "Onboarding apply failed."
+
+# 4. transition the selected plugin, then re-probe and revalidate before onboarding.
+transition_plugin || handle_transition_failure "Plugin transition failed"
+
+# Test-only fault seam: simulate a failure immediately after the transition and
+# before onboarding, to prove the rollback contract (never set in real installs).
+[ -n "${BEE_INSTALL_FAULT_AFTER_TRANSITION:-}" ] && handle_transition_failure "injected post-transition fault (BEE_INSTALL_FAULT_AFTER_TRANSITION)"
+
+probe_plugin_state "$STATE_FILE"
+node "$DIST_HELPER" "${DIST_ARGS[@]}" || handle_transition_failure "Distribution preflight refused after transition"
+
+# 5. apply onboarding, but ONLY when the plan has work. A repeat install that is
+#    already current must not rewrite managed files (no timestamp-only churn).
+APPLY_JSON="$(onboard_plan_json)" || handle_transition_failure "Onboarding plan failed after transition"
+APPLY_STATUS="$(plan_field "$APPLY_JSON" status)"
+case "$APPLY_STATUS" in
+  up_to_date) log "onboard  already current — no managed files rewritten" ;;
+  changes_needed)
+    node "$ONBOARD" --repo-root "$TARGET_DIR" --apply ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} >/dev/null \
+      || handle_transition_failure "Onboarding apply failed" ;;
+  *) handle_transition_failure "Onboarding refused after transition [$APPLY_STATUS]" ;;
+esac
 
 if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
-  node "$DIST_HELPER" "${DIST_ARGS[@]}" --apply || fail "Plugin-first cleanup refused; repository fallbacks were preserved"
+  node "$DIST_HELPER" "${DIST_ARGS[@]}" --apply || handle_transition_failure "Plugin-first cleanup refused; repository fallbacks were preserved"
 fi
 
-# ---------- verify ----------
+# ---------- verify: strict final postconditions (D2) ----------
+# Success requires exact source/onboarding/runtime/projection version equality,
+# no drift, and an immediate up_to_date recheck — not merely an "installed" flag.
 
 STATUS="$(cd "$TARGET_DIR" && node .bee/bin/bee.mjs status --json 2>/dev/null)" \
   || fail "Verification failed: bee.mjs status did not run."
@@ -311,6 +415,25 @@ printf '%s' "$STATUS" | node -e '
   }
   console.log(`verify   onboarding ok (bee ${s.onboarding.bee_version}), phase: ${s.phase}`);
 ' "$BEE_SRC/.claude-plugin/plugin.json" || fail "Verification failed: unexpected bee.mjs status output."
+
+# Immediate up_to_date recheck: a fresh onboarding plan must find nothing to do.
+# This proves onboarding/runtime/project-projection surfaces all equal the source
+# tuple (any drift would re-plan work here).
+RECHECK="$(node "$ONBOARD" --repo-root "$TARGET_DIR" --json ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} 2>/dev/null)" \
+  || fail "Verification failed: onboarding recheck did not run."
+printf '%s' "$RECHECK" | node -e '
+  const s = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  if (s.status !== "up_to_date") {
+    console.error(`onboarding recheck expected up_to_date, got ${s.status}`);
+    process.exit(1);
+  }
+' || fail "Verification failed: onboarding is not up_to_date immediately after apply."
+
+# Plugin-first: the distribution recheck must also report nothing left to clean.
+if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
+  probe_plugin_state "$STATE_FILE"
+  node "$DIST_HELPER" "${DIST_ARGS[@]}" >/dev/null || fail "Verification failed: distribution recheck refused."
+fi
 
 log ""
 log "bee installed."

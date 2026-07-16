@@ -3,7 +3,7 @@
   "feature": "installer-version-parity-1-3-1",
   "title": "Prove the Bash installer transaction end to end",
   "lane": "high-risk",
-  "status": "claimed",
+  "status": "capped",
   "deps": [
     "installer-version-parity-1-3-1-4",
     "installer-version-parity-1-3-1-2"
@@ -63,15 +63,22 @@
   "behavior_change": true,
   "trace": {
     "worker": "ivp-worker-3",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "install.sh proven E2E: mutation-free pre-confirmation (D8), strict version-parity/rollback postconditions (D2); new Bash E2E harness 15/15, wired into verify.",
+    "files_changed": [
+      "scripts/install.sh",
+      "scripts/test_installers_e2e.mjs",
+      "scripts/test_verify_manifest.mjs",
+      ".bee/config.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claimed_at": "2026-07-16T05:27:41.364Z"
+    "capped_at": "2026-07-16T05:57:15.502Z",
+    "behavior_change": true,
+    "verification_evidence": "{\"summary\":\"Bash installer proven end-to-end; pre-confirmation made mutation-free (D8); strict postconditions + rollback (D2).\",\"verify_command\":\"node scripts/test_installers_e2e.mjs --installer bash && node scripts/test_verify_manifest.mjs\",\"verify_output\":\"test_installers_e2e (bash): 15 passed, 0 failed | PASS test_verify_manifest: all 9 mandatory suites present | regression test_onboard_bee failures:0 skipped:1; test_plugin_distribution 28 passed 0 failed\",\"red_failure_evidence\":\"PRIOR (git HEAD:scripts/install.sh) collect_plugin_state() ran, when DRY_RUN=0 and BEFORE the confirm gate: `codex plugin marketplace add`/`codex plugin add bee@bee` (plugin-first) or `codex plugin remove bee@bee` (repo-copy) — a runtime-plugin mutation before confirmation, violating D8. Separately, onboard_bee refuses a mixed source tuple with status blocked_no_source but EXIT 0 (verified: `node onboard_bee.mjs --repo-root T` on a source with .codex-plugin version=9.9.9 prints status blocked_no_source, exit 0), so the old `|| fail` gate would NOT catch it and the install would proceed to a plugin transition. And repeat `--apply` rewrote .bee/onboarding.json updated_at every run (verified: two applies produced different onboarding.json sha256 = timestamp churn). No automated test executed either wrapper end-to-end (scripts/test_installers_e2e.mjs did not exist).\",\"after\":\"read-only probe pre-confirm; transition only post-confirm; re-probe+revalidate via plugin_distribution; plan-STATUS gate refuses blocked/mixed tuple pre-mutation; skip re-apply when up_to_date (no churn); enforce source/onboarding version parity + drift-false + immediate up_to_date recheck; rollback restores exact pre-run plugin state on post-transition/pre-onboarding failure and reports primary+rollback. New PATH-isolated Bash E2E (fake CLIs w/ call logs, deny sentinels, staged self-consistent source for plugin-first package proof) = 15/15, wired into commands.verify + enforced by test_verify_manifest.\"}",
+    "verify_output": "test_installers_e2e (bash): 15 passed, 0 failed | PASS test_verify_manifest: commands.verify contains all 9 mandatory suites (test_lib, test_onboard_bee, test_plugin_distribution, test_portable_paths, test_model_guard, test_write_guard, test_hook_contracts, test_bee_cli, test_installers_e2e) | regression: test_onboard_bee failures:0 skipped:1; test_plugin_distribution 28 passed, 0 failed",
+    "verify_passed": true,
+    "claimed_at": "2026-07-16T05:27:41.364Z",
+    "verify_command": "node scripts/test_installers_e2e.mjs --installer bash && node scripts/test_verify_manifest.mjs",
+    "verified_at": "2026-07-16T05:56:20.900Z"
   }
 }

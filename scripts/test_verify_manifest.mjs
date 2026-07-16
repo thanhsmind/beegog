@@ -23,6 +23,7 @@ const MANDATORY_SUITES = [
   "test_write_guard",
   "test_hook_contracts",
   "test_bee_cli",
+  "test_installers_e2e",
 ];
 
 /**
