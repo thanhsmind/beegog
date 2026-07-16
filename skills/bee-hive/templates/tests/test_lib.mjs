@@ -492,6 +492,39 @@ await check('addCell over a store with pre-existing unsatisfiable deps (missing/
   }
 });
 
+await check('a pre-existing on-disk cycle (legacy store) never blocks unrelated writes; a write participating in it is still refused (parallel-scheduler-5)', async () => {
+  const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-legacy-'));
+  try {
+    // Simulate a legacy (pre-guard, ≤0.1.42) store: hand-write a cyclic pair
+    // directly on disk, bypassing addCell — the shape an upgraded host can
+    // legitimately carry. D2 scopes the WRITE refusal to cycles the write
+    // introduces or participates in; pre-existing cycles are `cells schedule`
+    // diagnostics, never a store-wide write freeze.
+    const dir = path.join(cRoot, '.bee', 'cells');
+    fs.mkdirSync(dir, { recursive: true });
+    for (const [id, dep] of [['cyc-legacy-a', 'cyc-legacy-b'], ['cyc-legacy-b', 'cyc-legacy-a']]) {
+      fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(cycMakeCell(id, { deps: [dep] })));
+    }
+    // Unrelated acyclic add in another feature succeeds despite the legacy cycle.
+    addCell(cRoot, makeCell('cyc-legacy-new', { feature: 'other-feature' }));
+    assert(readCell(cRoot, 'cyc-legacy-new') !== null, 'unrelated add must succeed despite a legacy cycle elsewhere');
+    // Unrelated deps patch succeeds too.
+    const upd = updateCell(cRoot, 'cyc-legacy-new', { deps: ['cyc-legacy-missing'] });
+    assert(upd.deps.length === 1, 'unrelated deps patch must apply despite a legacy cycle elsewhere');
+    // A patch on a cycle MEMBER that keeps the cycle closed is still refused…
+    assertThrows(
+      () => updateCell(cRoot, 'cyc-legacy-a', { deps: ['cyc-legacy-b', 'cyc-legacy-missing'] }),
+      'cycle',
+      'a deps patch that keeps the cell inside the cycle is refused',
+    );
+    // …while a patch that BREAKS the cycle applies cleanly (the fix path).
+    const healed = updateCell(cRoot, 'cyc-legacy-a', { deps: [] });
+    assert(healed.deps.length === 0, 'a deps patch that breaks the legacy cycle must be allowed');
+  } finally {
+    fs.rmSync(cRoot, { recursive: true, force: true });
+  }
+});
+
 await check('addCells: file overlap between two batch cells is NOT refused (D2 — only cycles are illegal)', async () => {
   const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-overlap-'));
   try {

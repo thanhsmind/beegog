@@ -160,15 +160,25 @@ function normalizeNewCell(cell) {
 // sees its OWN version, not the stale disk copy. Must run BEFORE any
 // writeCell — a refusal here must never leave partial state behind (addCells
 // stays all-or-nothing; addCell/updateCell touch nothing on a refusal).
+// Refusal is scoped to cycles the WRITE introduces or participates in: a
+// pre-existing cycle among untouched on-disk cells never blocks unrelated
+// writes — per D2 those are reported by `cells schedule` diagnostics, not
+// enforced here.
 function assertNoCycle(root, verb, incomingCells) {
   const byId = new Map();
   for (const cell of listCells(root)) {
     if (cell && typeof cell.id === 'string' && cell.id) byId.set(cell.id, cell);
   }
+  const incomingIds = new Set();
   for (const cell of incomingCells) {
-    if (cell && typeof cell.id === 'string' && cell.id) byId.set(cell.id, cell);
+    if (cell && typeof cell.id === 'string' && cell.id) {
+      byId.set(cell.id, cell);
+      incomingIds.add(cell.id);
+    }
   }
-  const cycles = detectCycles([...byId.values()]);
+  const cycles = detectCycles([...byId.values()]).filter((cycle) =>
+    cycle.some((id) => incomingIds.has(id)),
+  );
   if (cycles.length > 0) {
     const named = cycles.map((cycle) => cycle.join(' -> ')).join('; ');
     throw new Error(

@@ -15,7 +15,7 @@
     },
     {
       "path": ".bee/bin/lib/cells.mjs",
-      "sha256": "b4f0464318fea203fdb9d0bd3c268487e61d2c51f956efba5d475f430957a92e",
+      "sha256": "8a49dbf84450a6109758e1abe81ae4f756fc074d21b00e78209b8d495102105f",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -556,7 +556,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/cells.mjs",
-      "sha256": "b4f0464318fea203fdb9d0bd3c268487e61d2c51f956efba5d475f430957a92e",
+      "sha256": "8a49dbf84450a6109758e1abe81ae4f756fc074d21b00e78209b8d495102105f",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/cells.mjs"
@@ -696,7 +696,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_lib.mjs",
-      "sha256": "2c09799f7a74516c1b4579b01497ee12495f63e1cfc90a93a5f52d6780776cdc",
+      "sha256": "ff3aa7f9b2c2d3fcdb66ad83f90131f7e539a86e7c132fd690fd0a461da9b963",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_lib.mjs"
@@ -808,7 +808,7 @@
     },
     {
       "path": "skills/bee-swarming/references/swarming-reference.md",
-      "sha256": "2f17b32759590e520a8f8bf5aba4489432dd23f527c45b679e435a01939269d5",
+      "sha256": "cc4c968e58eff1b972a82d25996f40ea738e19a5b02e405bd6ca587fbaab1509",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-swarming/references/swarming-reference.md"
