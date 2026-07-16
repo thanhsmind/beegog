@@ -3,7 +3,7 @@ area: onboarding
 updated: 2026-07-16
 coverage: partial
 sources:
-  - installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; implementation pending, 2026-07-16)
+  - installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; D1/D3 verified in-engine with plugin-first coverage, D7 managed-set cleanup fencing shipped — cells -4/-2, 2026-07-16)
   - codex-sandbox-baseline cells codex-sandbox-baseline-1/codex-sandbox-baseline-2 (real onboarding entrypoint through the shared isolated test runner; full onboarding suite green, 2026-07-16)
   - codex-hook-state-parity cells 2, 3, 5 (paired Codex lifecycle audit, exclusive plugin-first/repo-copy distribution, and fresh-host handler delivery; capped traces and reports, 2026-07-16)
   - codex-harness-hardening-1d cells 1d-1/1d-2 (SRC-01..06 source-identity classifier R17 + status source field; 8 classifier/status tests, 2026-07-15)
@@ -436,12 +436,19 @@ landing page from day one in every onboarded project.
 - **R18** — Plugin-first migration
   cleans duplicate skills and bee hook entries only after the installed package is
   reported enabled and its installed skills/hooks match the release inventory;
-  command success alone is not proof. Skill cleanup is fenced to plain `bee-*`
-  directories in the selected repository's Claude, shared-agent, and Codex skill
-  roots. Hook cleanup removes only catalog-recognized bee entries and preserves
+  command success alone is not proof. Skill cleanup candidates are derived by
+  exact name from the `plugin_skill` records of the validated release inventory —
+  never by name prefix — within the selected repository's Claude, shared-agent,
+  and Codex skill roots; a directory whose name is not in that managed set (a
+  project-owned `bee-custom` included) is skipped before any check. A missing,
+  malformed, duplicate, or inconsistent inventory (zero managed skills, a
+  non-`bee-` managed name, a bad path) refuses the whole cleanup before any
+  mutation. Hook cleanup removes only catalog-recognized bee entries and preserves
   user entries and their container files. Non-bee entries, files, symlinks,
   aliases, unknown targets, and paths outside those roots make the whole cleanup
-  refuse before mutation (codex-hook-state-parity D10/D11/D13; decision cf511ff3).
+  refuse before mutation (codex-hook-state-parity D10/D11/D13; decision cf511ff3;
+  managed-set fencing: installer-version-parity-1-3-1 D7, cell
+  installer-version-parity-1-3-1-2, 2026-07-16).
 - **R19** — Repo-copy fallback is
   the reverse exclusive transition: the installer first disables or uninstalls the
   bee plugin and verifies it inactive, then creates managed repository copies. If

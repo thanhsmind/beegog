@@ -3,7 +3,7 @@
   "feature": "installer-version-parity-1-3-1",
   "title": "Prove the Bash installer transaction end to end",
   "lane": "high-risk",
-  "status": "open",
+  "status": "claimed",
   "deps": [
     "installer-version-parity-1-3-1-4",
     "installer-version-parity-1-3-1-2"
@@ -62,7 +62,7 @@
   "verify": "node scripts/test_installers_e2e.mjs --installer bash && node scripts/test_verify_manifest.mjs",
   "behavior_change": true,
   "trace": {
-    "worker": null,
+    "worker": "ivp-worker-3",
     "outcome": null,
     "files_changed": [],
     "deviations": [],
@@ -71,6 +71,7 @@
     "behavior_change": false,
     "verification_evidence": null,
     "verify_output": null,
-    "verify_passed": null
+    "verify_passed": null,
+    "claimed_at": "2026-07-16T05:27:41.364Z"
   }
 }
