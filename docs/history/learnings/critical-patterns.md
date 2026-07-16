@@ -488,3 +488,16 @@ stored manifest — so the regen is part of the FEATURE, owned by its last cell 
 never discovered at the close verify. Same rule generalized: before capping a slice, ask which
 standing repo-wide guards (manifest, mirror, census) hash the files you touched, and run their
 regen/check inside the slice. (Filed friction to mechanize the hint.)
+
+## [20260716] A cell dependency in the wrong field name is silently ignored — verify the wave, not the write
+**Category:** failure
+**Feature:** perf-log
+**Tags:** [cells, deps, scheduler, silent-accept]
+`cells add` accepted `"depends_on": [...]` without error (unknown keys are preserved), but the
+scheduler and the claim gate read `cell.deps` — so a 1→2→3 chain collapsed into ONE wave with
+`cycles: []`, looking healthy while enforcing no ordering. The field is `deps`. **Rule:** after
+any `cells add` that declares dependencies, run `bee cells schedule --feature <f> --json` and
+confirm the wave shape matches the intended order — a clean `cycles: []` is not proof the deps
+were honored, only that nothing cycled. Generalizes: an optional-field writer that silently
+keeps unknown keys turns every field-name typo into a silent no-op; confirm the *effect*
+(the computed schedule), never the write.
