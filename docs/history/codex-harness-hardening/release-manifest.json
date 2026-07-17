@@ -99,7 +99,7 @@
     },
     {
       "path": ".bee/bin/lib/state.mjs",
-      "sha256": "ded7800ebbd63bae4fd0e6692df5d86eedb2cf941f144364f066872ad03c5844",
+      "sha256": "4e5a2d8675428542aa58ec19e08a75836f98421c734937d93ff1c296e97a6c74",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -124,14 +124,14 @@
     },
     {
       "path": ".claude-plugin/plugin.json",
-      "sha256": "042ffb7db9b8ebeeab1a9401546b3153102c6ded63fd4dffe8e2b13dd4ae2643",
+      "sha256": "e7318f6d81e4f24e073ba178301f96cbe3971a0c9e3309d3d4fc92e5a6fa674a",
       "mode": "644",
       "role": "plugin_manifest",
       "packagePath": ".claude-plugin/plugin.json"
     },
     {
       "path": ".codex-plugin/plugin.json",
-      "sha256": "f7a952f6a192d2037ae7b21276fed41f27753188a30c6f0d1c15b18edb4f49fd",
+      "sha256": "3a32781a88b18938379a1208741643fcbf0c6e376a7412a41d408bc35a7ac919",
       "mode": "644",
       "role": "plugin_manifest",
       "packagePath": ".codex-plugin/plugin.json"
@@ -435,7 +435,7 @@
     },
     {
       "path": "skills/bee-exploring/SKILL.md",
-      "sha256": "69d48da7c7d66ccfd53e0949e122bbeb938961746da42f0aacbe273a0287e153",
+      "sha256": "68f4326c161f148e2e87d8dd9eafe44b0d16cc6d53ab02bd56d14b166655e3f3",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-exploring/SKILL.md"
@@ -491,7 +491,7 @@
     },
     {
       "path": "skills/bee-hive/references/routing-and-contracts.md",
-      "sha256": "8f7f9a3417d8fda23c6dd1814fd2f79b51d426ac36026982764383e0174acfc3",
+      "sha256": "979a6f47bca44c7355f65ddc04533aceb5d570efa0a14b1d9832cbf6abc72abd",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/references/routing-and-contracts.md"
@@ -666,7 +666,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/state.mjs",
-      "sha256": "ded7800ebbd63bae4fd0e6692df5d86eedb2cf941f144364f066872ad03c5844",
+      "sha256": "4e5a2d8675428542aa58ec19e08a75836f98421c734937d93ff1c296e97a6c74",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/state.mjs"

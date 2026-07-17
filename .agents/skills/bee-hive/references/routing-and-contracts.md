@@ -175,6 +175,17 @@ Litmus test: **the user must be able to restate what they are approving in their
 
 This contract applies to all four gates, in every mode, including go mode.
 
+### AskUserQuestion — honor the tool's schema (a valid call, every time)
+
+Gates, decisions, and confirm-before-doing prompts are presented with the `AskUserQuestion` tool. If the call violates the tool's schema the harness rejects the **whole** call with **"Invalid tool parameters"** — a recurring, silent waste (the model then retries a valid one). Build the call inside these limits:
+
+- **`header` ≤ 12 characters** — it is a short chip label, NOT the question. Vietnamese/English descriptive headers ("Xử lý external", "Cách hiển thị") overflow instantly — use "Approach", "Scope", "External". **This is the #1 cause of the error.**
+- **2–4 options per question** — never 1, never 5+. An "Other" free-text choice is added automatically, so fold overflow there or into a follow-up question.
+- **1–4 questions per call** — batch independent questions (up to 4), serialize dependent ones.
+- Every option needs both a **`label`** and a **`description`**; put the recommended option first with "(Recommended)" in its label.
+
+A question that "needs" a long header or >4 options is a signal to reshape it — split it, or push detail into the option descriptions — never to exceed the schema.
+
 ### Gate bypass mode (opt-in autopilot, decisions 0010 / dcf01d7b)
 
 Off by default. Turned on with the `bee-bypass-gate` skill, which sets `.bee/config.json` `gate_bypass` (persistent per-repo). When on at any level, the agent does **not** stop at a bypassed gate — it takes the RECOMMENDATION option itself and continues. This is the one deliberate exception to "gates are never self-approved"; **headless mode is not** — headless still stops at every gate.

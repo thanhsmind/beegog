@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.3.12",
+  "bee_version": "1.3.13",
   "managed": {
     "agents_block": "c3b9ccfa37fe058f3cfe1096f667b55d164194e7d84d4591543aa5631985a9da",
     "gitignore_block": "b39fe93c0e919a6bc424f80fcc4a9f791579fbc75bb11956f0cb037848f6a0b8",
@@ -24,7 +24,7 @@
       "reviews.mjs": "6008cb1de50fb223c84638abaa4bdcd2521743c858ffd3e6b95bbcc6cce97502",
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "source-identity.mjs": "93c2f9669f0103af26c48bd723873bf1bebc4d3fe2d8f51013f4be529095c81b",
-      "state.mjs": "ded7800ebbd63bae4fd0e6692df5d86eedb2cf941f144364f066872ad03c5844",
+      "state.mjs": "4e5a2d8675428542aa58ec19e08a75836f98421c734937d93ff1c296e97a6c74",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
       "worktree-store.mjs": "9b7370e16a317f156a868d9311371b7497cb25603e51e13856af5f47bfabbd18"
     },
@@ -46,5 +46,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-17T08:49:33.387Z"
+  "updated_at": "2026-07-17T09:19:27.954Z"
 }
