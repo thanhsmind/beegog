@@ -54,6 +54,8 @@ Existing implementation, file/API/type inspection, command output, build/typeche
 - **YES** → record the discovered constraints for planning and execution.
 - Spike code never silently becomes production code.
 
+**Verify scripts and any executable code NEVER go in `docs/history/`** (GitHub #17). `docs/history/` is the tech-agnostic knowledge layer — `.md` only (CONTEXT.md, plan.md, reports, walkthrough). A cell's `verify` is a runnable command; when it needs a multi-line harness, that script lives in **the project's own scripts** (committed with the product, so `verify` points at it) or, if disposable, in **`.bee/spikes/<feature>/`**. The write-guard denies a code-extension file (`.sh`, `.mjs`, `.py`, …) written under `docs/history/`.
+
 ## Plan Checker (adversarial)
 
 Dispatch a subagent on the **`review` slot** (decision 0021 — `resolveTier(root, 'review', runtime)`, default opus on Claude, generation fallback; state the model explicitly; if the runtime cannot select per-agent models, cap its reads and output instead) — **in the background where the runtime supports it** (decision 0017): continue the spike/matrix/cell-review work while it runs; its findings block nothing until the Gate 3 presentation, which never happens with the checker still outstanding. It assumes the plan is flawed and verifies 5 dimensions: requirement/decision coverage, cell completeness, dependency correctness, key links, scope sanity. Every finding carries **BLOCKER** or **WARNING**. Maximum 3 structural-verification iterations; a BLOCKER still open after iteration 3 escalates to the user. Never attempt iteration 4.

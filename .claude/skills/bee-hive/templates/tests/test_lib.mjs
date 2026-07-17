@@ -1169,6 +1169,22 @@ await check('checkWrite blocks source writes while idle (intake gate); config ca
   writeJsonAtomic(configPath, before || {});
 });
 
+await check('checkWrite denies executable/code files under docs/history/ (the .md-only knowledge layer) in every phase (GitHub #17)', async () => {
+  // Active work (execution approved) — the intake gate is NOT the reason here.
+  const active = { ...defaultState(), phase: 'validating', approved_gates: { context: true, shape: true, execution: true, review: false } };
+  const shDeny = checkWrite(root, active, 'docs/history/industry-count-company-registered/verify.sh');
+  assert(shDeny.allow === false && shDeny.kind === 'docs-history-code', `a .sh under docs/history/ must be denied, got ${JSON.stringify(shDeny)}`);
+  assert(/spikes|project|\.md/.test(shDeny.reason), 'the reason should point at .bee/spikes/ or the project scripts');
+  // Other code extensions too.
+  for (const p of ['docs/history/f/helper.mjs', 'docs/history/f/tool.py', 'docs/history/f/x.js']) {
+    assert(checkWrite(root, active, p).allow === false, `${p} should be denied`);
+  }
+  // But .md knowledge under docs/history/ stays allowed, and code elsewhere is unaffected by THIS rule.
+  assert(checkWrite(root, active, 'docs/history/f/report.md').allow === true, 'a .md under docs/history/ stays allowed');
+  assert(checkWrite(root, active, 'docs/history/f/evidence.json').allow === true, 'a .json under docs/history/ stays allowed');
+  assert(checkWrite(root, active, 'scripts/verify.sh').allow === true, 'a .sh outside docs/history/ is not this rule\'s concern');
+});
+
 await check('checkWrite blocks source writes at compounding-complete — a closed feature is not an open door (c2c46488)', async () => {
   // The killer case: the feature closed, so phase is the terminal alias and the
   // gates are STILL approved from that closed feature. Before the fix, the idle

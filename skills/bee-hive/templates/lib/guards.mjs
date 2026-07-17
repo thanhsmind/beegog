@@ -32,6 +32,24 @@ export const SCOUT_DIRS = [
 /** Paths writable in gated phases even before execution approval. */
 export const GATE_ALLOWED_PREFIXES = ['.bee/', 'docs/', 'plans/', 'AGENTS.md'];
 
+// docs/history/ is the tech-agnostic KNOWLEDGE layer (.md only: CONTEXT.md,
+// plan.md, reports, walkthrough). Executable/code files (a verify.sh, a helper
+// script) never belong there — a persistent verify script lives in the project's
+// own scripts (committed with the product), a disposable proof in .bee/spikes/.
+// GitHub #17: agents were dropping verify.sh scripts into docs/history/<feature>/.
+const HISTORY_CODE_EXTENSIONS = new Set([
+  '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+  '.mjs', '.cjs', '.js', '.jsx', '.ts', '.tsx',
+  '.py', '.rb', '.go', '.rs', '.java', '.php', '.pl', '.lua', '.r',
+]);
+function docsHistoryCodeDeny(normalized) {
+  if (!normalized.startsWith('docs/history/')) return null;
+  const dot = normalized.lastIndexOf('.');
+  if (dot === -1) return null;
+  const ext = normalized.slice(dot).toLowerCase();
+  return HISTORY_CODE_EXTENSIONS.has(ext) ? ext : null;
+}
+
 const GATED_PHASES = new Set(['exploring', 'planning', 'validating']);
 
 // Phases where no bee work is active: never started ('idle') and finished
@@ -154,6 +172,19 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
         `bee direct-edit guard: "${normalized}" is CLI-owned — direct edits are blocked in every phase. ` +
         'Hand-edited state files reintroduce schema drift (the exact class the CLI validates away). ' +
         `FIX: use ${directEditVerb} instead of editing this file directly.`,
+    };
+  }
+
+  const historyCodeExt = docsHistoryCodeDeny(normalized);
+  if (historyCodeExt) {
+    return {
+      allow: false,
+      kind: 'docs-history-code',
+      reason:
+        `bee docs-history guard: "${normalized}" writes a "${historyCodeExt}" code file into docs/history/, which is ` +
+        'the tech-agnostic KNOWLEDGE layer (.md only — CONTEXT.md, plan.md, reports, walkthrough). Code never lives there. ' +
+        "FIX: put a persistent verify/helper script in the project's own scripts (committed with the product) and point " +
+        'the cell\'s verify command at it; put a disposable proof in .bee/spikes/<feature>/. Never docs/history.',
     };
   }
 
