@@ -29,6 +29,8 @@ caught it earlier. Return findings only; write no files.
 
 Tiers: pattern extractor = extraction; decision and failure analysts = generation; synthesis = ceiling (the orchestrator itself).
 
+**Spawn type & waiting (SKILL.md §2).** Dispatch each analyst as the runtime's **read-only** agent type (Claude Code: `Explore`), never `general-purpose` — the analysts only read evidence and return text, and "write no files" in the prompt is not a tool restriction (D1). Waiting is event-driven: launch all three, end the turn, let completions notify you; never poll liveness. A dispatch denied/errored at creation (e.g. model-guard on a missing `[bee-tier: …]` marker) created no subagent — surface it, fix the cause, re-dispatch that one **once**, then synthesize from whatever returned. Synthesis never requires three-of-three; never loop a failing dispatch or wait on a subagent that was never created (D2).
+
 ## Learnings File Template
 
 Path: `docs/history/learnings/YYYYMMDD-<slug>.md`. Slug: `YYYYMMDD-<primary-topic>-<secondary-topic>`, lowercase hyphens only.
@@ -142,5 +144,6 @@ Merge these fields into `.bee/state.json`; do not drop `approved_gates` or other
 - writing vague advice such as "test more carefully"
 - inventing findings when evidence is thin
 - an analysis subagent writing durable files directly
+- an analyst spawned with a write-capable agent type, or a failing/denied dispatch looped or waited-on forever instead of synthesizing from what returned (§2 spawn/wait contract)
 - unredacted secrets or PII in any durable record
 - compounding writing `docs/specs/` itself instead of invoking bee-scribing

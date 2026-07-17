@@ -337,21 +337,21 @@
     },
     {
       "path": "skills/bee-compounding/CREATION-LOG.md",
-      "sha256": "2e0a841d124c3d4e37c4855b801a0abcc50bfd84c79641cb85e562d6b296b963",
+      "sha256": "ebae092da74ae20a7d31edf6b5da7fde87f11a7950b5db6b5639193c85861c42",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-compounding/CREATION-LOG.md"
     },
     {
       "path": "skills/bee-compounding/references/compounding-reference.md",
-      "sha256": "e58c553ba8deabbe10ddaec4bf7bc759f468ec2223cdaf906f3664ea40e99ce6",
+      "sha256": "f776280f3ecf365ff1c1b76633c8811718e026a5bd9a767690abb5172c594a86",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-compounding/references/compounding-reference.md"
     },
     {
       "path": "skills/bee-compounding/SKILL.md",
-      "sha256": "31dbbbaff63dbb8d63783b2a911d44181869a6b113555ae97017fa7ed59d7545",
+      "sha256": "9f69032d96cc28490b099a00ea392468a0d2b8fea7e56183b796767fc44dd308",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-compounding/SKILL.md"

@@ -40,6 +40,10 @@ Launch three temp-finding subagents in parallel (prompts in `references/compound
 
 Subagents return temporary findings only — they NEVER write durable files. The orchestrator synthesizes.
 
+**Spawn read-only (D1).** Spawn each analyst with the runtime's **read-only** agent type (Claude Code: `Explore`), NEVER `general-purpose`. "Write no files" in the prompt is not a safeguard while the subagent holds `Edit`/`Write`/`Bash` — a full-tools analyst has committed unrequested source (the leak this closes). The read-only type is a runtime built-in, not a plugin agent type, so `bee-reviewing`'s "never a plugin agent type" rule still holds; its "default/general subagent type" line is reviewer-specific (reviewers may run commands) and does NOT extend to these read-only analysts.
+
+**Wait, don't hang (D2).** Launch all three, END THE TURN, and let each completion notify you — never poll liveness. If a dispatch is denied or errors at creation (e.g. the model-guard hook denies a missing `[bee-tier: …]` marker) then NO subagent exists: surface it, fix the cause, and re-dispatch that one analyst **once**. Synthesis does NOT require three-of-three — if an analyst still fails after one retry, or never returns, synthesize from the analysts that DID return and record the missing one as a gap in the run summary. NEVER loop the same failing dispatch and NEVER wait forever: a denial that repeats identically on retry is the phantom-wait this rule exists to break.
+
 ## 3. Synthesize — One Learnings File
 
 Write one dated file: `docs/history/learnings/YYYYMMDD-<slug>.md` with frontmatter (`date`, `feature`, `categories`, `severity`, `tags`) and sections **What Happened** / **Root Cause** / **Recommendation**. Recommendations are imperative future rules: "When X, do Y" — specific enough to act on. Template in the reference.
@@ -108,6 +112,7 @@ Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner c
 - Do NOT promote everything as critical — apply all three criteria.
 - Do NOT write generic lessons ("test more carefully" is banned-grade advice). Concrete situation, root cause, imperative rule.
 - Do NOT let subagents write durable files; the orchestrator synthesizes.
+- Do NOT spawn analysts with a write-capable agent type — read-only only (D1). Do NOT wait on, or re-loop, an analyst dispatch that was denied/errored at creation; synthesize from what returned after one retry (D2).
 - Do NOT close out while `behavior_change` cells were capped but scribing never ran — invoke bee-scribing; never sync specs inline. A spec older than the behavior it describes is measured entropy, not a detail.
 - Secrets and PII never appear in learnings, decisions, or backlog entries.
 
@@ -122,6 +127,8 @@ Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner c
 - vague advice with no situation or root cause
 - inventing findings when artifacts are missing
 - an analyst subagent writing to `docs/history/learnings/` directly
+- an analyst spawned as `general-purpose` (or any write-capable type) instead of the runtime read-only type — "write no files" is a prompt string, not a tool restriction (D1 §2)
+- waiting past a denied/errored analyst dispatch, or re-looping the same failing call, instead of synthesizing from what returned after one retry (D2 §2)
 - an API key, token, or credential in an evidence snippet
 - `behavior_change` cells capped but no scribing record — and compounding "fixing" it by editing `docs/specs/` itself
 - closing without running the digest refresh because "the skill/teammate didn't ask for it" — it is a step, not an optional extra (Scenario 1)
