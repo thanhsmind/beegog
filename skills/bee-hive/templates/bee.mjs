@@ -56,6 +56,7 @@ import {
   startFeature,
   hasStaleAdvisorKey,
   STALE_ADVISOR_KEY_WARNING,
+  validateModelsConfig,
   readLaneStrict,
   writeLane,
   listLanes,
@@ -316,6 +317,19 @@ function findRepoHive(root) {
   return null;
 }
 
+// config-validate (ao-2ai-1) — readJson(file, undefined) does NOT do what it
+// looks like: a default parameter (`fallback = null` in fsutil.mjs) fires on
+// an explicitly-passed `undefined` argument too, so that call silently
+// returns `null` regardless of whether the file is missing or malformed.
+// validateModelsConfig needs to tell those two cases apart (undefined = no
+// config file at all, the common/harmless case; null = something WAS read
+// and is unusable) — so check existence ourselves rather than leaning on a
+// readJson fallback value that JS itself collapses back to the default.
+function readRawConfigForValidation(root) {
+  const file = path.join(root, '.bee', 'config.json');
+  return fs.existsSync(file) ? readJson(file, null) : undefined;
+}
+
 function buildStatus(root) {
   const state = readState(root);
   const onboardingRaw = readOnboarding(root);
@@ -358,6 +372,13 @@ function buildStatus(root) {
   }
   if (hasStaleAdvisorKey(root)) {
     staleness.push(STALE_ADVISOR_KEY_WARNING);
+  }
+  // config-validate (ao-2ai-1): the same validator `bee config validate` runs
+  // explicitly is also read here so a malformed/prompt-less/unsafe cli-tier
+  // config surfaces on every `bee status` — joined onto staleness_warnings,
+  // never replacing anything already collected above.
+  for (const problem of validateModelsConfig(readRawConfigForValidation(root))) {
+    staleness.push(`config validate [${problem.code}]${problem.runtime ? ` models.${problem.runtime}.${problem.slot}:` : ''} ${problem.message}`);
   }
   if (!isKnownPhase(state.phase)) {
     staleness.push(
@@ -1950,6 +1971,29 @@ function handleWorktreeUnregister(root, flags) {
   return { result: { ok: true, id, main_root: mainRoot }, text: `Removed worktree grant for id ${id}.` };
 }
 
+// config (ao-2ai-1) — reads the RAW .bee/config.json (readJson fallback
+// `undefined`, never `null`: a missing file is the normal, silent "no config
+// yet" state every other config reader tolerates — only content that was
+// actually read and is unusable counts as a problem, per validateModelsConfig's
+// own undefined-vs-null contract) and runs the shared validator so a
+// malformed/prompt-less/unsafe cli-tier value gets a LOUD, non-zero-exit
+// refusal instead of today's silent revert to the seeded default.
+function handleConfigValidate(root, _flags) {
+  const raw = readRawConfigForValidation(root);
+  const problems = validateModelsConfig(raw);
+  const result = { ok: problems.length === 0, problem_count: problems.length, problems };
+  const text =
+    problems.length === 0
+      ? 'config validate: OK — no malformed/prompt-less/unsafe cli-tier config found.'
+      : problems
+          .map(
+            (p) =>
+              `[${p.code}]${p.runtime ? ` models.${p.runtime}.${p.slot}:` : ''} ${p.message}`,
+          )
+          .join('\n');
+  return { result, text, exitCode: problems.length === 0 ? 0 : 1 };
+}
+
 // Per-group usage fallback (dispatcher-unify du-1): the shim always supplies
 // the group token, so the generic no-command path can never fire for helper
 // calls. When a leading group token resolves to no registry entry, its group's
@@ -2012,6 +2056,11 @@ function perfUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: start, stop, section, log, render, report, sync.`;
 }
 
+function configUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: validate.`;
+}
+
 function worktreeUsageFallback(leading) {
   const verb = leading[1];
   return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister.`;
@@ -2049,6 +2098,7 @@ const GROUP_USAGE_FALLBACKS = {
   feedback: feedbackUsageFallback,
   perf: perfUsageFallback,
   worktree: worktreeUsageFallback,
+  config: configUsageFallback,
 };
 
 const HANDLERS = {
@@ -2121,6 +2171,7 @@ const HANDLERS = {
   'worktree.register': handleWorktreeRegister,
   'worktree.list': handleWorktreeList,
   'worktree.unregister': handleWorktreeUnregister,
+  'config.validate': handleConfigValidate,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─

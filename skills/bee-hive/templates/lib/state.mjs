@@ -232,6 +232,155 @@ function normalizeModels(raw) {
   return out;
 }
 
+// config-validate (ao-2ai-1) — a BLOCKLIST OF KNOWN-BAD auto-approve /
+// sandbox-bypass flags, NOT a positive read-only guarantee: a command string
+// free of every alias below is not proven safe (env-var injection, shell
+// wrappers, and provider-specific aliases not yet enumerated here are all out
+// of string-inspection reach). This closure only ever grows.
+export const UNSAFE_CLI_FLAGS = [
+  '--yolo',
+  '--dangerously-skip-permissions',
+  '--dangerously-bypass-approvals-and-sandbox',
+  '--full-auto',
+  '-s danger-full-access',
+  '--sandbox danger-full-access', // long-form equivalent of `-s danger-full-access`
+];
+
+// The slots a models.<runtime>.* value may occupy, validated (mirrors
+// MODEL_NORMALIZE_SLOTS above — kept as a separate literal so this validator
+// has no dependency on normalizeModels' internal constant name).
+const MODEL_VALIDATE_SLOTS = [...CONFIGURABLE_SLOTS, 'advisor'];
+
+/**
+ * validateModelsConfig (ao-2ai-1) — loudly flags malformed / prompt-less /
+ * unsafe cli-tier config that normalizeTierValue today silently reverts to
+ * the seeded default for (a malformed cli value -> normalizeTierValue
+ * returns undefined -> normalizeModels never overwrites -> the seeded
+ * 'sonnet' stays, no error). Reads the RAW parsed .bee/config.json (never the
+ * normalized readConfig() output — normalizeTierValue strips any field this
+ * validator needs to inspect, like a declared prompt-transport indicator) so
+ * it can see exactly what a human or an agent actually wrote. NEVER throws —
+ * a null/wrong-type config, or a malformed models/runtime/slot shape, is
+ * itself reported as a problem row, never an exception; this is also read
+ * from `bee status` on every session, so it must degrade to a warning, not a
+ * crash. Returns an array of { code, runtime, slot, message } rows, empty
+ * when nothing is wrong.
+ *
+ * Checks, per runtime/slot:
+ *   (a) a value that looks like a cli executor (carries `kind` and/or
+ *       `command`) but is missing `kind:'cli'` or a non-empty `command`
+ *       string — today this silently reverts to the seeded default (W-e).
+ *   (b) a valid cli value with no explicit prompt-transport indicator
+ *       (`promptVia`, a non-empty string) — a prompt-less cli worker starts
+ *       with no task (B2). Deliberately does NOT sniff the command string
+ *       (e.g. a trailing "-") for a stdin convention: the config must
+ *       DECLARE its transport, never leave it inferred.
+ *   (c) a cli `command` containing any UNSAFE_CLI_FLAGS alias (B6/B7).
+ */
+export function validateModelsConfig(config) {
+  const problems = [];
+  // `undefined` means "no config was read at all" (e.g. .bee/config.json
+  // does not exist yet) — every other config reader in this file treats a
+  // missing file as silently "use defaults", never a warning; callers reading
+  // from disk should pass `undefined` as their readJson fallback so a fresh
+  // repo with no config.json produces zero problems here. `null` (or any
+  // other non-object) is different: something WAS read/passed and it is not
+  // usable — that is the malformed-input case this validator must never
+  // throw on but must still report.
+  if (config === undefined) return problems;
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+    problems.push({
+      code: 'config-malformed',
+      runtime: null,
+      slot: null,
+      message: '.bee/config.json content is null or not an object — models config cannot be validated; defaults apply.',
+    });
+    return problems;
+  }
+  const models = config.models;
+  if (models === undefined) return problems; // no models key at all — nothing configured, not an error
+  if (models === null || typeof models !== 'object' || Array.isArray(models)) {
+    problems.push({
+      code: 'config-malformed',
+      runtime: null,
+      slot: null,
+      message: '`models` in .bee/config.json is present but not an object — ignored; defaults apply.',
+    });
+    return problems;
+  }
+  for (const rt of RUNTIMES) {
+    const src = models[rt];
+    if (src === undefined) continue;
+    if (src === null || typeof src !== 'object' || Array.isArray(src)) {
+      problems.push({
+        code: 'runtime-malformed',
+        runtime: rt,
+        slot: null,
+        message: `models.${rt} is present but not an object — ignored; defaults apply.`,
+      });
+      continue;
+    }
+    for (const slot of MODEL_VALIDATE_SLOTS) {
+      const value = src[slot];
+      if (value === undefined || value === null) continue; // unset is fine
+      if (typeof value === 'string') continue; // plain model name
+      if (typeof value !== 'object' || Array.isArray(value)) {
+        problems.push({
+          code: 'slot-value-malformed',
+          runtime: rt,
+          slot,
+          message: `models.${rt}.${slot} is not a string, object, or null — ignored; defaults apply.`,
+        });
+        continue;
+      }
+      const looksLikeCli = 'kind' in value || 'command' in value;
+      if (looksLikeCli) {
+        const kindOk = value.kind === 'cli';
+        const commandOk = typeof value.command === 'string' && value.command.trim().length > 0;
+        if (!kindOk || !commandOk) {
+          problems.push({
+            code: 'cli-malformed',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} looks like a cli executor but is missing kind:"cli" or a non-empty command — today this silently reverts to the seeded default; fix or remove it (W-e).`,
+          });
+          continue; // malformed shape: nothing further to check on it
+        }
+        const transportOk = typeof value.promptVia === 'string' && value.promptVia.trim().length > 0;
+        if (!transportOk) {
+          problems.push({
+            code: 'cli-prompt-transport-missing',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} is a cli executor with no declared prompt transport — set promptVia (e.g. "stdin") so the prompt reliably reaches it; never inferred from the command string (B2).`,
+          });
+        }
+        for (const flag of UNSAFE_CLI_FLAGS) {
+          if (value.command.includes(flag)) {
+            problems.push({
+              code: 'cli-unsafe-flag',
+              runtime: rt,
+              slot,
+              flag,
+              message: `models.${rt}.${slot} command contains "${flag}" — a known auto-approve/sandbox-bypass flag; remove it (B6/B7). This is a blocklist of KNOWN-BAD flags, not a positive read-only guarantee.`,
+            });
+          }
+        }
+        continue;
+      }
+      if (typeof value.model !== 'string' || !value.model.trim()) {
+        problems.push({
+          code: 'model-shape-malformed',
+          runtime: rt,
+          slot,
+          message: `models.${rt}.${slot} is an object but neither a valid cli executor nor a valid {model} shape — ignored; today this silently reverts to the seeded default.`,
+        });
+      }
+    }
+  }
+  return problems;
+}
+
 /**
  * Walk up from startDir looking for `.bee/onboarding.json`; if none found
  * anywhere up the tree, walk up again for the first `.git`; else null.

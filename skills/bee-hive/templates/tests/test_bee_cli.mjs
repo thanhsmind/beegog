@@ -173,7 +173,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -275,11 +275,11 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
   }
 });
 
-await check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree', async () => {
-  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree']);
+await check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
+  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
-    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree`);
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config`);
     if (!entry.name.includes('.')) {
       assert(entry.name === 'status', `dot-free registry entry "${entry.name}" is not "status" — only "status" may be dot-free`);
     }
@@ -1197,6 +1197,43 @@ await check('worktree.register/list/unregister examples run through the real dis
     assert(!(realId in finalGrants), `real unregister (no --id) should remove the current worktree's own grant, got ${JSON.stringify(finalGrants)}`);
   } finally {
     fs.rmSync(wtTmp, { recursive: true, force: true });
+  }
+});
+
+await check('config.validate example runs through the real dispatcher: clean config exits 0, a malformed/prompt-less/unsafe cli-tier config exits 1 with named problems', async () => {
+  // registry example: 'bee config validate --json' — the shared fixture repo
+  // (`root`) has no .bee/config.json at all, the common "fresh repo" case
+  // this validator must treat as clean, never a problem.
+  const cleanResult = await assertExampleOk('config.validate', { cwd: root });
+  const cleanParsed = JSON.parse(cleanResult.stdout);
+  assert(cleanParsed.ok === true && cleanParsed.problem_count === 0, `expected a clean config to report ok, got ${cleanResult.stdout}`);
+
+  // A second, isolated repo whose config.json carries every kind of models
+  // problem this cell exists to catch — proves the real dispatcher path
+  // (not just the unit-level validateModelsConfig calls in
+  // test_config_validate.mjs) surfaces them and exits non-zero.
+  const cfgTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-config-validate-'));
+  try {
+    fs.mkdirSync(path.join(cfgTmp, '.bee'), { recursive: true });
+    writeJsonAtomic(path.join(cfgTmp, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+    writeJsonAtomic(path.join(cfgTmp, '.bee', 'config.json'), {
+      models: {
+        claude: {
+          generation: { kind: 'cli', command: 'some-cli exec --yolo' }, // no promptVia AND an unsafe flag
+          review: { command: 'missing-kind-cli' }, // (a) malformed: no kind:'cli'
+        },
+      },
+    });
+    const badResult = await runModuleWorker(BEE_MJS, { args: ['config', 'validate', '--json'], cwd: cfgTmp });
+    assert(badResult.status === 1, `expected exit 1 on a problem config, got ${badResult.status}: ${badResult.stdout}`);
+    const badParsed = JSON.parse(badResult.stdout);
+    assert(badParsed.ok === false && badParsed.problem_count >= 3, `expected ok:false with >= 3 problems, got ${badResult.stdout}`);
+    const codes = badParsed.problems.map((p) => p.code);
+    assert(codes.includes('cli-prompt-transport-missing'), `expected cli-prompt-transport-missing, got ${JSON.stringify(codes)}`);
+    assert(codes.includes('cli-unsafe-flag'), `expected cli-unsafe-flag, got ${JSON.stringify(codes)}`);
+    assert(codes.includes('cli-malformed'), `expected cli-malformed, got ${JSON.stringify(codes)}`);
+  } finally {
+    fs.rmSync(cfgTmp, { recursive: true, force: true });
   }
 });
 
