@@ -1,8 +1,8 @@
 ---
 area: doctrine-layer
-updated: 2026-07-15
-sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15)]
-decisions: [ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface)]
+updated: 2026-07-17
+sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2)]
+decisions: [ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface); 040f8ef0 (read-only analyst spawn + partial-return fan-out, B7/R11)]
 coverage: partial
 ---
 
@@ -136,6 +136,22 @@ External CLI processes and artifact polling keep their separate executor
 contract. Authority, urgency, or a no-chatter request creates no exception
 (codex-agent-wait-loop D1-D7).
 
+**B7 — A gathering helper is spawned without write ability, and a fan-out
+synthesizes from what returned rather than waiting for a full set.** Trigger:
+one or more helpers are dispatched to read and analyze — the settled case is the
+closing stage's parallel analyst fan-out. What happens: each such helper runs
+with a read-only capability surface — the prohibition on writing is carried by
+what the helper *can do*, never by a sentence in its prompt, because a prompt
+sentence is advice and a capability boundary is a wall (observed: an analyst
+told "write no files" in prose implemented and committed source unrequested). A
+dispatch that fails at creation is surfaced and re-dispatched exactly once; an
+identical second failure ends retrying, and synthesis proceeds from whichever
+helpers did return. Synthesis never requires all-of-N returns. What each actor
+observes: the orchestrator never hangs waiting on a fixed helper count
+(observed: a session stuck indefinitely "waiting for 3 background agents" when
+one dispatch had died at creation), and no gathering helper can modify the
+project no matter what its instructions say (decision 040f8ef0).
+
 ## Actors & Access
 
 - **The orchestrating assistant** — reads the standing sheet every session and
@@ -143,7 +159,8 @@ contract. Authority, urgency, or a no-chatter request creates no exception
   decide-altitude work.
 - **A delegated helper** — receives one bounded mechanical task and returns a
   summary. Never receives decide-altitude work, and never inherits the
-  orchestrator's conversation.
+  orchestrator's conversation. When its task is purely to read and analyze, it
+  is spawned read-only (B7).
 - **The human owner** — authors and amends doctrine; approves the gates doctrine
   reserves for them. Never asked to run the workflow's own machinery.
 - **A governed project** — receives doctrine by copy at onboarding; may carry its
@@ -181,6 +198,11 @@ contract. Authority, urgency, or a no-chatter request creates no exception
 - **R10** — A native wait timeout never changes worker or ownership state. It
   never licenses interrupt, duplicate dispatch, claim release, or reservation
   release; external process and artifact polling remains a separate contract.
+- **R11** — A read-and-analyze helper is dispatched with a read-only capability
+  surface, never merely a read-only instruction; and a parallel fan-out's
+  synthesis proceeds from partial returns — one re-dispatch per failed creation,
+  then synthesize from what came back, never an unbounded wait for all-of-N
+  (040f8ef0).
 
 ## Edge Cases Settled
 
@@ -239,3 +261,7 @@ contract. Authority, urgency, or a no-chatter request creates no exception
   root, canonical procedure, and writable `.claude` surfaces.
 - Model tiers behind R3: `.bee/config.json` `models` (extraction / generation /
   review / advisor slots), resolved per dispatch by `bee-swarming`.
+- B7/R11's settled case: `skills/bee-compounding/SKILL.md` §2 (analysts pinned
+  to the runtime's read-only agent type — Claude Code `Explore` — with
+  event-driven wait, one re-dispatch, partial-return synthesis); RED→GREEN
+  record in `skills/bee-compounding/CREATION-LOG.md` amendment 2026-07-17.
