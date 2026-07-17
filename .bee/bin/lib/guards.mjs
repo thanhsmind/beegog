@@ -119,7 +119,7 @@ function holdExpiry(reservation) {
  *   source writes are blocked until the request is routed through bee-hive.
  *   Repository-harness lesson: a default-open first move is the hole every
  *   ad-hoc edit slips through — and "the feature just closed" is a first move.
- *   Disable per repo with {"guards":{"idle_gate":false}} in .bee/config.json.
+ *   Disable per repo with: bee config set --key guards.idle_gate --value false
  * - Gated phases (exploring/planning/validating): block writes outside
  *   GATE_ALLOWED_PREFIXES while approved_gates.execution is false.
  * - Swarming: deny writes that conflict with another agent's reservation
@@ -210,7 +210,8 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
           'Route the request through bee-hive first: classify the mode (tiny fixes stay tiny — one cell, ' +
           'a 2-minute reality check, Gate 3, go), then execute. ' +
           `Writable without routing: ${GATE_ALLOWED_PREFIXES.join(', ')}. ` +
-          'To disable this gate for the repo: set {"guards":{"idle_gate":false}} in .bee/config.json.',
+          'To disable this gate for the repo, run: bee config set --key guards.idle_gate --value false ' +
+          '(re-enable with: bee config unset --key guards.idle_gate).',
       };
     }
     return { allow: true };

@@ -2012,6 +2012,141 @@ function handleConfigValidate(root, _flags) {
   return { result, text, exitCode: problems.length === 0 ? 0 : 1 };
 }
 
+// ─── config get/set/unset (GitHub #15) ────────────────────────────────────
+// So a config value (product_root, guards.idle_gate, gate_bypass, …) is changed
+// through a validated CLI instead of hand-editing .bee/config.json — the same
+// "everything through the CLI" contract every other .bee file already has.
+
+function configFilePath(root) {
+  return path.join(root, '.bee', 'config.json');
+}
+
+// Read the RAW config object for editing (not readConfig — that normalizes and
+// fills defaults, which would balloon the file). Refuses on a present-but-broken
+// file so a set/unset never silently clobbers an unparseable config and loses it.
+function readRawConfigForEdit(root) {
+  const file = configFilePath(root);
+  if (!fs.existsSync(file)) return {};
+  const raw = readJson(file, undefined);
+  if (raw === undefined || raw === null) {
+    throw new Error(
+      `config: .bee/config.json exists but is not valid JSON — fix it before "config set"/"config unset" (refusing to overwrite and lose your config).`,
+    );
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('config: .bee/config.json is not a JSON object.');
+  }
+  return raw;
+}
+
+// Coerce a CLI value string: JSON when it parses (true/false/numbers/objects),
+// else the literal string. So `set guards.idle_gate false` stores boolean false
+// and `set product_root repo` stores the string "repo". --string forces a string.
+function coerceConfigValue(raw, asString) {
+  if (asString) return String(raw);
+  try {
+    return JSON.parse(String(raw));
+  } catch {
+    return String(raw);
+  }
+}
+
+function getConfigAtPath(obj, keyPath) {
+  let cur = obj;
+  for (const part of keyPath.split('.')) {
+    if (cur == null || typeof cur !== 'object') return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+
+function setConfigAtPath(obj, keyPath, value) {
+  const parts = keyPath.split('.');
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i];
+    if (cur[p] == null || typeof cur[p] !== 'object' || Array.isArray(cur[p])) cur[p] = {};
+    cur = cur[p];
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+function unsetConfigAtPath(obj, keyPath) {
+  const parts = keyPath.split('.');
+  const chain = []; // [container, key] pairs, so empty parents can be pruned
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i];
+    if (cur[p] == null || typeof cur[p] !== 'object' || Array.isArray(cur[p])) return false;
+    chain.push([cur, p]);
+    cur = cur[p];
+  }
+  const leaf = parts[parts.length - 1];
+  if (!Object.prototype.hasOwnProperty.call(cur, leaf)) return false;
+  delete cur[leaf];
+  // Prune ancestors left empty by the delete (removing guards.idle_gate must not
+  // leave a stray "guards": {} — that is the config clutter #15 is about).
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const [parent, key] = chain[i];
+    const child = parent[key];
+    if (child && typeof child === 'object' && !Array.isArray(child) && Object.keys(child).length === 0) {
+      delete parent[key];
+    } else {
+      break;
+    }
+  }
+  return true;
+}
+
+// Refuse a write that INTRODUCES a new models/cli-safety problem (the same check
+// `config validate` runs). Pre-existing, unrelated problems never block an
+// unrelated set — only newly-introduced ones do.
+function refuseIfNewConfigProblem(verb, before, after) {
+  const key = (p) => `${p.code}|${p.runtime || ''}|${p.slot || ''}`;
+  const had = new Set(before.map(key));
+  const introduced = after.filter((p) => !had.has(key(p)));
+  if (introduced.length > 0) {
+    throw new Error(
+      `config ${verb}: refusing to write — this would make the config invalid:\n` +
+        introduced.map((p) => `[${p.code}] ${p.message}`).join('\n'),
+    );
+  }
+}
+
+function handleConfigGet(root, flags) {
+  const key = requireFlag(flags, 'key');
+  const value = getConfigAtPath(readRawConfigForEdit(root), key);
+  const present = value !== undefined;
+  return {
+    result: { key, present, value: present ? value : null },
+    text: present ? `${key} = ${JSON.stringify(value)}` : `config get: "${key}" is not set.`,
+  };
+}
+
+function handleConfigSet(root, flags) {
+  const key = requireFlag(flags, 'key');
+  const value = coerceConfigValue(requireFlag(flags, 'value'), flags.string === true);
+  const before = validateModelsConfig(readRawConfigForValidation(root));
+  const config = readRawConfigForEdit(root);
+  setConfigAtPath(config, key, value);
+  refuseIfNewConfigProblem('set', before, validateModelsConfig(config));
+  writeJsonAtomic(configFilePath(root), config);
+  return { result: { key, value }, text: `config set: ${key} = ${JSON.stringify(value)}` };
+}
+
+function handleConfigUnset(root, flags) {
+  const key = requireFlag(flags, 'key');
+  const before = validateModelsConfig(readRawConfigForValidation(root));
+  const config = readRawConfigForEdit(root);
+  const removed = unsetConfigAtPath(config, key);
+  if (!removed) {
+    return { result: { key, removed: false }, text: `config unset: "${key}" was not set (no change).` };
+  }
+  refuseIfNewConfigProblem('unset', before, validateModelsConfig(config));
+  writeJsonAtomic(configFilePath(root), config);
+  return { result: { key, removed: true }, text: `config unset: removed "${key}".` };
+}
+
 // Per-group usage fallback (dispatcher-unify du-1): the shim always supplies
 // the group token, so the generic no-command path can never fire for helper
 // calls. When a leading group token resolves to no registry entry, its group's
@@ -2076,7 +2211,7 @@ function perfUsageFallback(leading) {
 
 function configUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: validate.`;
+  return `Unknown command "${verb || '(missing)'}". Use: get, set, unset, validate.`;
 }
 
 function worktreeUsageFallback(leading) {
@@ -2191,6 +2326,9 @@ const HANDLERS = {
   'worktree.register': handleWorktreeRegister,
   'worktree.list': handleWorktreeList,
   'worktree.unregister': handleWorktreeUnregister,
+  'config.get': handleConfigGet,
+  'config.set': handleConfigSet,
+  'config.unset': handleConfigUnset,
   'config.validate': handleConfigValidate,
 };
 
@@ -2210,7 +2348,7 @@ const HANDLERS = {
 // handoff fsh-4, D2/D4) is state.start-feature's lane-mode opt-in — a
 // DISTINCT flag name from the `--lane <feature>` string flag used by
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

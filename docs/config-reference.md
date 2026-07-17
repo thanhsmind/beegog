@@ -2,6 +2,20 @@
 
 Every onboarded repo has a `.bee/config.json`. Any key you leave out uses a built-in default, so the file can be short — but the values below are the ones worth setting per repo. **`.bee/config.json` is strict JSON: no comments, no trailing commas.** The annotated block here is for reading; copy the clean block at the bottom into the real file.
 
+## Setting values — use the CLI, not a hand-edit
+
+You do not have to hand-edit the JSON. Set/read/remove any key through the CLI (validated on write, dot-notation for nested keys):
+
+```bash
+node .bee/bin/bee.mjs config get   --key product_root
+node .bee/bin/bee.mjs config set   --key product_root --value repo
+node .bee/bin/bee.mjs config set   --key guards.idle_gate --value false   # nested key
+node .bee/bin/bee.mjs config unset --key guards.idle_gate                 # remove (prunes the empty parent)
+node .bee/bin/bee.mjs config validate                                     # check models/cli-tier config
+```
+
+The value is parsed as JSON when it parses (`false` → boolean, `12` → number, `{...}` → object), otherwise kept as a string (`repo` → `"repo"`); pass `--string` to force a string. `set`/`unset` refuse to write if the change would make the models/cli-tier config invalid, or if the existing file is unparseable (it is never silently clobbered).
+
 ## Which model each tier uses
 
 There are three tiers, but **you only configure the two cheaper ones.** The **ceiling** (strongest) tier is **never configured — it is always the model you are running the session on** (decision 0015). So if you run the session on Fable, ceiling work runs on Fable; run it on Opus, ceiling is Opus. bee doesn't pick it; it inherits your session model.
