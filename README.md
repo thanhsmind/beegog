@@ -345,6 +345,25 @@ Useful flags: `--global-skills`/`-GlobalSkills` (also install the legacy global 
 
 ---
 
+## For LLM Agents
+
+If you are an AI/LLM agent (Claude Code, Codex, Cursor, Aider, …) setting bee up or working in a bee repo, read **[LLM.md](LLM.md)** first — it is a short, binding front door: the non-negotiable laws (route through `bee-hive` before touching source, gates, evidence-before-cap, read the spec before the code), the correct install/onboard bootstrap, and a compliance checklist. On any conflict it defers to [AGENTS.md](AGENTS.md), the full operating law that onboarding installs into every repo.
+
+> **Fetch these files with `curl`, not a summarizing web fetch** — the flags and exact commands are load-bearing and must not be paraphrased away:
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/LLM.md
+> curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/INSTALL.md
+> ```
+
+One-liner install (the agent should `cd` into the target repo first, then run):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thanhsmind/beegog/main/scripts/install.sh | bash -s -- -y
+```
+
+---
+
 ## Usage examples
 
 bee is driven conversationally — you talk, the skills and helpers do the bookkeeping. In an onboarded repo:

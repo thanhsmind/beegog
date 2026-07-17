@@ -554,6 +554,65 @@ export function dropCell(root, id, reason) {
   return writeCell(root, cell);
 }
 
+// Clear the claim and any recorded verify from a trace, so a cell returned to
+// "open" must be re-claimed and re-verified before it can cap again — a stale
+// verify_passed must never let a later re-cap skip its proof (capCell gates on
+// trace.verify_passed === true). Keeps the rest of the trace for audit.
+function releaseTrace(existing) {
+  const trace = { ...defaultTrace(), ...(existing || {}) };
+  trace.worker = null;
+  trace.claimed_at = null;
+  trace.verify_command = null;
+  trace.verify_output = null;
+  trace.verify_passed = null;
+  trace.verified_at = null;
+  return trace;
+}
+
+// unclaimCell — the inverse of claim: a mis-claimed or abandoned "claimed" cell
+// goes back to "open" so another worker can pick it up. Refuses on any other
+// status (GitHub #12). Mirrors claimCell's own-status assertion shape.
+export function unclaimCell(root, id) {
+  const cell = readCell(root, id);
+  if (!cell) throw new Error(`unclaimCell: cell "${id}" not found.`);
+  if (cell.status !== 'claimed') {
+    throw new Error(
+      `unclaimCell: cell "${id}" is "${cell.status}", not "claimed" — only a claimed cell can be unclaimed (returned to open). For a capped/blocked/dropped cell use bee.mjs cells reopen.`,
+    );
+  }
+  cell.status = 'open';
+  cell.trace = releaseTrace(cell.trace);
+  return writeCell(root, cell);
+}
+
+// reopenCell — bring a terminal cell (capped / blocked / dropped) back to "open"
+// for rework, recording why. Refuses on "open" (already there) and on "claimed"
+// (that is unclaim's job). Clears the recorded verify so the reopened cell must
+// prove itself again before capping (GitHub #12).
+export function reopenCell(root, id, reason) {
+  if (typeof reason !== 'string' || !reason.trim()) {
+    throw new Error('reopenCell: a reason is required.');
+  }
+  const cell = readCell(root, id);
+  if (!cell) throw new Error(`reopenCell: cell "${id}" not found.`);
+  if (cell.status === 'open') {
+    throw new Error(`reopenCell: cell "${id}" is already "open".`);
+  }
+  if (cell.status === 'claimed') {
+    throw new Error(
+      `reopenCell: cell "${id}" is "claimed" — use bee.mjs cells unclaim to release the claim back to open.`,
+    );
+  }
+  cell.status = 'open';
+  const trace = releaseTrace(cell.trace);
+  trace.blocked_reason = null;
+  trace.dropped_reason = null;
+  trace.reopened_at = utcNow();
+  trace.reopened_reason = reason;
+  cell.trace = trace;
+  return writeCell(root, cell);
+}
+
 // Decision 0016 — the orchestrator assesses a cell's difficulty at dispatch and
 // records the tier it chose (extraction/generation/ceiling), rather than a fixed
 // planning-time label. Keeps tierMix/scarcity accurate against real dispatch

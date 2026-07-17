@@ -207,6 +207,35 @@ function makeCell(id, extra = {}) {
 
 // ─── state ──────────────────────────────────────────────────────────────────
 
+await check('readJson strips a leading UTF-8 BOM (GitHub #9) and warns instead of silently swallowing malformed JSON (GitHub #13)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-readjson-bom-'));
+  // 1. A BOM-prefixed file (what PowerShell `Set-Content -Encoding UTF8` writes)
+  //    must parse cleanly rather than throwing "Unexpected token '﻿'".
+  const bomFile = path.join(dir, 'bom.json');
+  fs.writeFileSync(bomFile, `\uFEFF${JSON.stringify({ a: 1 })}`, 'utf8');
+  const parsed = readJson(bomFile, null);
+  assert(parsed && parsed.a === 1, `BOM-prefixed JSON should parse, got ${JSON.stringify(parsed)}`);
+  // 2. Malformed JSON returns the fallback AND emits a stderr warning naming the
+  //    file — a corrupt config must never be silently indistinguishable from an
+  //    absent one.
+  const badFile = path.join(dir, 'bad.json');
+  fs.writeFileSync(badFile, '{ not valid', 'utf8');
+  const warnings = [];
+  const origWarn = console.warn;
+  console.warn = (...a) => warnings.push(a.join(' '));
+  try {
+    const fallback = readJson(badFile, { def: true });
+    assert(fallback && fallback.def === true, 'malformed JSON should return the fallback');
+  } finally {
+    console.warn = origWarn;
+  }
+  assert(
+    warnings.some((w) => w.includes('could not parse JSON') && w.includes(badFile)),
+    `expected a warning naming the malformed file, got ${JSON.stringify(warnings)}`,
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 await check('findRepoRoot walks up from a nested dir', async () => {
   const found = findRepoRoot(path.join(root, 'src', 'deep', 'nested'));
   assert(found === root, `expected ${root}, got ${found}`);

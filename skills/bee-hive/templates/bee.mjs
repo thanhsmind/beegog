@@ -81,6 +81,8 @@ import {
   capCell,
   blockCell,
   dropCell,
+  unclaimCell,
+  reopenCell,
   setTier,
   judgeCell,
   scribingDebt,
@@ -675,6 +677,16 @@ function handleCellsBlock(root, flags) {
 function handleCellsDrop(root, flags) {
   const cell = dropCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
   return { result: cell, text: `Dropped ${cell.id}.` };
+}
+
+function handleCellsUnclaim(root, flags) {
+  const cell = unclaimCell(root, requireFlag(flags, 'id'));
+  return { result: cell, text: `Unclaimed ${cell.id} — back to open.` };
+}
+
+function handleCellsReopen(root, flags) {
+  const cell = reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
+  return { result: cell, text: `Reopened ${cell.id} — back to open.` };
 }
 
 function handleCellsTier(root, flags) {
@@ -2074,7 +2086,7 @@ function worktreeUsageFallback(leading) {
 // directly and parses this exact stderr line.
 function cellsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, tier, judge, claim-next, schedule.`;
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, schedule.`;
 }
 
 function reservationsUsageFallback(leading) {
@@ -2113,6 +2125,8 @@ const HANDLERS = {
   'cells.cap': handleCellsCap,
   'cells.block': handleCellsBlock,
   'cells.drop': handleCellsDrop,
+  'cells.unclaim': handleCellsUnclaim,
+  'cells.reopen': handleCellsReopen,
   'cells.tier': handleCellsTier,
   'cells.judge': handleCellsJudge,
   'cells.claim-next': handleCellsClaimNext,

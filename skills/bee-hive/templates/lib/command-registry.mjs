@@ -222,6 +222,37 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
   {
+    name: 'cells.unclaim',
+    invoke: 'bee cells unclaim',
+    description: 'Release a claimed cell back to open (the inverse of claim) so another worker can pick it up. Refuses on any non-claimed status.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Cell id to unclaim.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['id'],
+    },
+    examples: ['bee cells unclaim --id demo-1 --json'],
+    deprecated: null,
+  },
+  {
+    name: 'cells.reopen',
+    invoke: 'bee cells reopen',
+    description: 'Return a capped, blocked, or dropped cell to open for rework, with a reason. Clears the recorded verify so the reopened cell must re-verify before it can cap again. Use unclaim (not reopen) for a claimed cell.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Cell id to reopen.' },
+        reason: { type: 'string', description: 'Why the cell is being reopened for rework.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['id', 'reason'],
+    },
+    examples: ['bee cells reopen --id demo-1 --reason "needs rework" --json'],
+    deprecated: null,
+  },
+  {
     name: 'cells.tier',
     invoke: 'bee cells tier',
     description: "Record the orchestrator's dispatch-time model-tier judgment for a cell.",

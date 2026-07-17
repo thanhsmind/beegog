@@ -469,6 +469,24 @@ await check('cells.schedule on an empty/zero-cell store exits 0 with empty waves
   assert(Array.isArray(parsed.waves) && parsed.waves.length === 0, `expected empty waves, got ${result.stdout}`);
 });
 
+// cells.reopen / cells.unclaim (GitHub #12) run LAST in the demo-1 chain: demo-1
+// is "dropped" by this point (excluded from the schedule assertions above), so
+// reopening it here does not disturb them.
+await check('cells.reopen example runs through the real dispatcher (dropped -> open)', async () => {
+  const result = await assertExampleOk('cells.reopen');
+  const cell = JSON.parse(result.stdout);
+  assert(cell.status === 'open', `demo-1 should be open after reopen, got ${cell.status}`);
+  assert(cell.trace.verify_passed !== true, 'reopen must clear a stale passing verify');
+});
+
+await check('cells.unclaim example runs through the real dispatcher (claimed -> open)', async () => {
+  await assertExampleOk('cells.claim'); // demo-1 is open after reopen; re-claim it
+  const result = await assertExampleOk('cells.unclaim');
+  const cell = JSON.parse(result.stdout);
+  assert(cell.status === 'open', `demo-1 should be open after unclaim, got ${cell.status}`);
+  assert(!cell.trace.worker, 'unclaim must release the worker');
+});
+
 await check('reservations.reserve example runs through the real dispatcher', async () => {
   const result = await assertExampleOk('reservations.reserve');
   assert(JSON.parse(result.stdout).ok === true, 'reserve should succeed on a fresh path');

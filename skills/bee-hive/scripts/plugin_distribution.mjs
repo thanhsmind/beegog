@@ -393,7 +393,11 @@ function runCli() {
   const args = parseArgs(process.argv.slice(2));
   const runtimes = parseRuntime(args.runtime);
   if (!args.mode || !args.repo_root || !args.release_manifest || !args.plugin_state_file) fail("--mode, --runtime, --repo-root, --release-manifest, and --plugin-state-file are required");
-  const payload = JSON.parse(fs.readFileSync(args.plugin_state_file, "utf8"));
+  // Strip a leading UTF-8 BOM (U+FEFF) before parsing: install.ps1 writes this
+  // state file via PowerShell `Set-Content -Encoding UTF8`, which on PS 5.1
+  // prepends a BOM, and a bare JSON.parse then throws "Unexpected token" on it —
+  // surfaced as "Distribution preflight refused" and a broken Windows install (#9).
+  const payload = JSON.parse(fs.readFileSync(args.plugin_state_file, "utf8").replace(/^\uFEFF/, ""));
   const pluginStates = runtimes.map((runtime) => discoverBeePlugin(payload?.[runtime] ?? payload, runtime));
   const inventory = loadPackageInventory(args.release_manifest);
   const plan = buildDistributionPlan({ mode: args.mode, runtimes, repoRoot: args.repo_root, pluginStates, inventory, ledgerPath: args.ledger, userSkillRoots: args.userSkillRoots });

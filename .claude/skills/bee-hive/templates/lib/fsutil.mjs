@@ -25,9 +25,21 @@ export function readJson(file, fallback = null) {
   } catch {
     return fallback;
   }
+  // Strip a leading UTF-8 BOM (U+FEFF) before parsing. Windows tooling adds one
+  // by default — e.g. PowerShell 5.1's `Set-Content -Encoding UTF8` writes a BOM
+  // (it is NOT BOM-less) — and JSON.parse then throws "Unexpected token '﻿'".
+  // Stripping it here fixes every reader (config, state, onboarding, the Windows
+  // install distribution preflight, …) in one place. See GitHub #9.
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   try {
     return JSON.parse(text);
-  } catch {
+  } catch (err) {
+    // Fail open (return the fallback) so a malformed JSON never crashes bee — but
+    // NEVER silently. Swallowing the parse error made a corrupt file look
+    // identical to an absent one, so a broken .bee/config.json was silently
+    // replaced by defaults and the user got misleading behavior with no clue why
+    // (GitHub #13). Warn to STDERR (stdout is reserved for --json output).
+    console.warn(`bee: could not parse JSON at ${file} — ${err.message}. Using fallback; fix the file.`);
     return fallback;
   }
 }
