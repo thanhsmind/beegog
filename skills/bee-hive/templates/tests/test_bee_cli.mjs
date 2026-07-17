@@ -1083,6 +1083,26 @@ await check('reviews.candidate.add example runs through the real dispatcher (nes
   assert(entry.feature === 'demo3' && entry.mode === 'standard', `expected the example candidate, got ${result.stdout}`);
 });
 
+await check('reviews candidate add auto-fills cells from the feature capped cells when --cells is omitted (GitHub #16)', async () => {
+  const rr = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-cand-cells-'));
+  try {
+    fs.mkdirSync(path.join(rr, '.bee', 'cells'), { recursive: true });
+    writeJsonAtomic(path.join(rr, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+    writeJsonAtomic(path.join(rr, '.bee', 'cells', 'revfeat-1.json'), { id: 'revfeat-1', feature: 'revfeat', title: 't', lane: 'small', action: 'a', status: 'capped' });
+    writeJsonAtomic(path.join(rr, '.bee', 'cells', 'revfeat-2.json'), { id: 'revfeat-2', feature: 'revfeat', title: 't2', lane: 'small', action: 'a', status: 'open' });
+    writeJsonAtomic(path.join(rr, '.bee', 'cells', 'other-1.json'), { id: 'other-1', feature: 'other', title: 't3', lane: 'small', action: 'a', status: 'capped' });
+    const res = await runModuleWorker(BEE_MJS, { args: ['reviews', 'candidate', 'add', '--feature', 'revfeat', '--head', 'abc123', '--mode', 'small', '--json'], cwd: rr });
+    assert(res.status === 0, `candidate add exit ${res.status}: ${res.stderr}`);
+    const entry = JSON.parse(res.stdout);
+    assert(
+      Array.isArray(entry.cells) && entry.cells.length === 1 && entry.cells[0] === 'revfeat-1',
+      `cells should auto-fill to the feature's CAPPED cell only (not open/other-feature), got ${JSON.stringify(entry.cells)}`,
+    );
+  } finally {
+    fs.rmSync(rr, { recursive: true, force: true });
+  }
+});
+
 await check('reviews.candidates example runs through the real dispatcher (flat 2-token verb, distinct from candidate add)', async () => {
   const result = await assertExampleOk('reviews.candidates', { cwd: rootReviewsFeedback });
   const entries = JSON.parse(result.stdout);

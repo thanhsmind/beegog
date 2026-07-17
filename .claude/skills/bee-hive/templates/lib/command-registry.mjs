@@ -995,7 +995,7 @@ export const COMMAND_REGISTRY = [
     name: 'reviews.candidate.add',
     invoke: 'bee reviews candidate add',
     description:
-      "Append one entry to .bee/review-candidates.jsonl for a closing feature. --mode is required and must be the closing feature's lane.",
+      "Append one entry to .bee/review-candidates.jsonl for a closing feature. --mode is required and must be the closing feature's lane. When --cells is omitted, it auto-fills from the feature's capped cells so review coverage can match the candidate (GitHub #16).",
     parameters: {
       type: 'object',
       properties: {

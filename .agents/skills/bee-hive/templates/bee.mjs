@@ -1614,14 +1614,29 @@ function handleReviewsRecord(root, flags) {
 }
 
 function handleReviewsCandidateAdd(root, flags) {
+  const feature = requireFlag(flags, 'feature');
+  // GitHub #16: when --cells is omitted, auto-fill from the feature's capped
+  // cells. A cells-less candidate can never cell-match a review session that
+  // included the work by CELL, so it stayed stuck "unreviewed" even after the
+  // session approved it. Deriving the cells here closes that coverage gap.
+  const cells = flags.cells
+    ? splitList(flags.cells)
+    : listCells(root)
+        .filter((c) => c.feature === feature && c.status === 'capped')
+        .map((c) => c.id);
   const entry = addCandidate(root, {
-    feature: requireFlag(flags, 'feature'),
+    feature,
     head: requireFlag(flags, 'head'),
     mode: requireFlag(flags, 'mode'),
     baseline: flags.baseline ? String(flags.baseline) : null,
-    cells: flags.cells ? splitList(flags.cells) : [],
+    cells,
   });
-  return { result: entry, text: `Added candidate ${entry.id} for feature "${entry.feature}" (mode ${entry.mode}).` };
+  return {
+    result: entry,
+    text: `Added candidate ${entry.id} for feature "${entry.feature}" (mode ${entry.mode}${
+      entry.cells.length ? `, ${entry.cells.length} cell(s)` : ''
+    }).`,
+  };
 }
 
 function handleReviewsCandidates(root) {
