@@ -14,9 +14,27 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { readHookContext, logCrash, libModuleUrl, emitHookOutput } from "./adapter.mjs";
+import { readHookContext, logCrash, libModuleUrl, emitHookOutput, encodeBlock } from "./adapter.mjs";
 
 const HOOK_NAME = "session-close";
+
+// The one phase → pending-gate mapping the mechanical bypass net acts on. Gate 1
+// (exploring) is DELIBERATELY absent: under `total`, genuine information questions
+// still stop for the human (routing-and-contracts.md, decision a93994d3) — only
+// approval gates are mechanized. planning → Gate 2 (shape); validating → Gate 3
+// (execution).
+const PHASE_GATE = Object.freeze({ planning: "shape", validating: "execution" });
+
+// Which bypass levels cover a pending gate for a given lane/mode. `full`/`total`
+// lifted the high-risk floor, so they cover every lane; `normal` covers only the
+// non-hard-gate lanes (mode already encodes the hard-gate floor — a hard-gate
+// change is classified high-risk, never tiny/small/standard).
+const NORMAL_COVERED_MODES = Object.freeze(["tiny", "small", "standard"]);
+function levelCoversGate(level, mode) {
+  if (level === "total" || level === "full") return true;
+  if (level === "normal") return NORMAL_COVERED_MODES.includes(mode);
+  return false; // off
+}
 
 // Repository-harness lesson: review the session for an unrecorded decision
 // before it ends. When source files changed with no bee flow active and no
@@ -190,6 +208,80 @@ async function maybePerfRefresh(root, sessionId) {
   }
 }
 
+// GitHub #18 — the mechanical gate-bypass net. Honoring `gate_bypass` was
+// 100% prose-dependent: the level-aware rule lives in the planning/validating
+// skills and is machine-guarded green by test_gate_bypass_doctrine.mjs, but
+// NOTHING caught the model when it skipped the "check gate_bypass_level first"
+// step and stopped at Gate 2/3 anyway. This IS crit-pattern 20260714 — "the
+// invariant you leave in prose WILL be bypassed; mechanize it": the doctrine
+// test mechanized the prose, this mechanizes the runtime.
+//
+// When the session tries to STOP mid-planning/validating with a gate the active
+// bypass level should have auto-approved, return decision:"block" (via
+// encodeBlock) so the turn CONTINUES, carrying an instruction to auto-approve
+// and proceed. Deliberately narrow so it can only convert an illegitimate
+// gate-stop into a continue, never trap a session:
+//   - Stop event ONLY (ctx.event==="Stop" exactly; never PreCompact, never an
+//     empty/missing event — those must stay advisory).
+//   - phase ∈ {planning, validating} with that phase's gate still pending.
+//   - the active level covers that gate for the lane (levelCoversGate).
+//   - loop-guard: block ONCE per sessionId:phase:gate:level (inject dedup); an
+//     immediate re-stop at the same gate degrades to advisory — never loops.
+// Returns the block reason string when it fires, else null. Fail-open: any throw
+// is swallowed by the caller's try/catch → advisory path / exit 0.
+async function maybeBypassBlock(root, ctx) {
+  // Stop-event only. An empty/missing event (wrapper also serves PreCompact)
+  // must never block — we cannot prove it is a Stop, so fail safe to advisory.
+  if (!ctx || ctx.event !== "Stop") {
+    return null;
+  }
+  const stateLib = await import(libModuleUrl(root, "state.mjs"));
+  const level = stateLib.bypassLevel(root);
+  if (level === "off") {
+    return null;
+  }
+  const sessionId = getSessionId(ctx.payload);
+  const pipeline = stateLib.resolvePipeline(root, sessionId ? { sessionId } : {});
+  const record = pipeline.ok ? pipeline.record : stateLib.readState(root);
+  const phase = record.phase || "idle";
+  const gate = PHASE_GATE[phase];
+  if (!gate) {
+    return null; // not a mechanized-gate phase (exploring/Gate 1 excluded on purpose)
+  }
+  const mode = record.mode || null;
+  if (!levelCoversGate(level, mode)) {
+    return null; // e.g. normal + high-risk lane still stops for the human
+  }
+  const approved = record.approved_gates && record.approved_gates[gate] === true;
+  if (approved) {
+    return null; // gate already passed — nothing to force
+  }
+
+  // Loop-guard: one forced block per (session, phase, gate, level). A same-key
+  // re-stop is deduped → null → the advisory path runs instead of looping.
+  const injectLib = await import(libModuleUrl(root, "inject.mjs"));
+  const key = "bypass-stop-net";
+  const hash = `${sessionId || "nosession"}:${phase}:${gate}:${level}`;
+  if (!injectLib.shouldInject(root, key, hash)) {
+    return null;
+  }
+  injectLib.markInjected(root, key, hash);
+
+  const gateNo = gate === "shape" ? "2" : "3";
+  return (
+    `⚡ GATE BYPASS (${level}): you are stopping mid-${phase} with Gate ${gateNo} ` +
+    `(${gate}) still pending, but bypass level "${level}" requires auto-approval at ` +
+    `this lane — do NOT ask the human. Set the gate yourself now: ` +
+    `node .bee/bin/bee.mjs state gate --name ${gate} --approved true ; log a one-line ` +
+    `audit decision (node .bee/bin/bee.mjs decisions log --decision "auto-approved Gate ` +
+    `${gateNo} (bypass): <choice>" --rationale "<why>"); post the short "⚡ auto-approved ` +
+    `Gate ${gateNo} (bypass)" line; then CONTINUE to the next phase. Do not re-emit the ` +
+    `gate question. (If you genuinely need information only the human holds — not a ` +
+    `rubber-stamp — ask that specific question instead; this net blocks once, then steps ` +
+    `aside.)`
+  );
+}
+
 async function main() {
   const ctx = await readHookContext(HOOK_NAME);
   const root = ctx.root;
@@ -209,6 +301,14 @@ async function main() {
   try {
     const stateLib = await import(libModuleUrl(root, "state.mjs"));
     if (!stateLib.hookEnabled(root, HOOK_NAME)) {
+      return 0;
+    }
+    // GitHub #18: the mechanical bypass net takes precedence over every advisory.
+    // When it fires we FORCE the turn to continue (auto-approve + proceed), so the
+    // "hive door open" warning is moot — emit only the block and return.
+    const blockReason = await maybeBypassBlock(root, ctx);
+    if (blockReason) {
+      process.stdout.write(encodeBlock(blockReason));
       return 0;
     }
     const queueMsg = await maybeCaptureQueueNudge(root, {

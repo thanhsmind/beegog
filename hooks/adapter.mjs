@@ -346,6 +346,16 @@ export function encodeAdvisory(text) {
   return JSON.stringify({ systemMessage: String(text) });
 }
 
+// Encode a Stop-event BLOCK. This is the deliberate inverse of encodeAdvisory:
+// `decision:"block"` on a Stop event CONTINUES the turn (Claude blocks the stop
+// and feeds `reason` back to the model; Codex loops the main turn) — exactly the
+// behavior the gate-bypass net wants (GitHub #18). Callers must restrict this to
+// ctx.event==="Stop" ONLY: on SubagentStop it would continue a child, and on
+// PreCompact it is meaningless. Never use it for an advisory.
+export function encodeBlock(reason) {
+  return JSON.stringify({ decision: "block", reason: String(reason) });
+}
+
 // Write hook output encoded for the event: advisory events (PreCompact,
 // SubagentStop, Stop) get JSON systemMessage; context events (SessionStart,
 // UserPromptSubmit) stay plain stdout. `defaultEvent` covers hosts/payloads

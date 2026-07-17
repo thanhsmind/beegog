@@ -68,7 +68,10 @@ ending the turn.
 **B2 — Advisories never steer the conversation.** Close-time, compaction, and
 child-stop checkpoints only inform: their output is a structured message the
 runtime displays/parses. They never emit a turn-control verdict, because on
-those events a verdict would resume a stopped child or loop the main turn.
+those events a verdict would resume a stopped child or loop the main turn. The
+**one** deliberate exception is the gate-bypass net (B15), which is turn-control
+by design on the close-time checkpoint only — there, looping the main turn is
+exactly the intended continuation.
 
 **B3 — Batch file-change requests are guarded per target.** When the runtime
 announces a batch file-change request (the patch-style tool), the write guard
@@ -198,6 +201,29 @@ package projection or the project fallback. Package activation is proved before
 recognized fallback entries are removed; fallback activation is proved only
 after the package is known inactive. User and foreign hook entries survive.
 
+**B15 — The gate-bypass net mechanizes "zero stops" at the close-time
+checkpoint (GitHub #18).** Honoring the gate-bypass autopilot was previously
+prose-only: the level-aware auto-approval rule lived in the planning/validating
+skills (and is machine-checked green there), but nothing caught the assistant
+when it skipped that rule and stopped at an approval gate anyway — the close-time
+checkpoint only warned. This is the "an invariant left in prose WILL be bypassed;
+mechanize it" pattern. The close-time checkpoint now emits a **turn-control block
+verdict** (the deliberate exception to B2) — forcing the turn to continue — when
+ALL hold: the event is the session-stop event itself (never compaction, never a
+child-stop, never a missing/ambiguous event); the active phase is one whose
+stop is an *approval* gate (plan-shaping → Gate 2, feasibility → Gate 3) with
+that gate still pending; and the active bypass level covers that gate for the
+lane (`full`/`total` cover every lane; `normal` covers only the non-hard-gate
+lanes — a `normal`-lane high-risk change still stops; `off` never fires). The
+exploring/Gate-1 phase is **excluded on purpose**: under the highest level a
+genuine *information* question still stops for the human — only rubber-stamp
+approval gates are mechanized. The block carries an instruction to record the
+approval, log the audit decision, and proceed. **Loop-guard:** it blocks at most
+once per (session, phase, gate, level); an immediate re-stop at the same gate is
+deduped and degrades to the ordinary advisory, so a turn that genuinely cannot
+proceed is never trapped in a loop. Fail-open is unchanged: any internal failure
+falls through to the advisory path with a visible log, never a crash.
+
 ## Actors & Access
 
 - **The assistant** (either runtime) — subject of every checkpoint; observes
@@ -217,7 +243,9 @@ after the package is known inactive. User and foreign hook entries survive.
   visible, never silent (codex-runtime-parity D2).
 - R3 — An intercepted batch change with unprovable targets is denied, not
   fail-opened (codex-runtime-parity D2, strengthening).
-- R4 — Advisory events never emit turn-control verdicts (codex-runtime-parity D2).
+- R4 — Advisory events never emit turn-control verdicts (codex-runtime-parity D2),
+  with the single scoped exception of the gate-bypass net on the session-stop
+  event (B15, R14) — turn-control there is the intended, loop-guarded behavior.
 - R5 — Every dispatch of a subagent carries an explicit model-tier transport
   and is audit-logged (decision 0023; the audit checkpoint is an allowed
   difference — it exists only where the runtime exposes dispatch).
@@ -241,8 +269,14 @@ after the package is known inactive. User and foreign hook entries survive.
   (codex-runtime-parity cell 6a; under revision for deny-capable checkpoints,
   see Open Gaps).
 - R10 — Every session-stop handler exits success; any non-empty output from
-  it parses as a single JSON object carrying a summary field and never a
-  block verdict (codex-runtime-parity cell 6b).
+  it parses as a single JSON object carrying a summary field and — except for
+  the gate-bypass net (R14) — never a block verdict (codex-runtime-parity cell 6b).
+- R14 — The session-stop handler emits a block verdict ONLY for the gate-bypass
+  net (B15): only on the session-stop event, only in an approval-gate phase whose
+  gate the active bypass level covers and is still pending, and at most once per
+  (session, phase, gate, level) — an immediate same-key re-stop degrades to the
+  ordinary advisory. It never fires on compaction, child-stop, a missing event,
+  the exploring/Gate-1 phase, or a `normal`-lane hard-gate change (GitHub #18).
 - R11 — The write guard's always-writable set no longer includes the
   repo-root disposable-experiment location; that work now lives inside the
   workflow's own already-writable directory, under a dedicated subfolder. The
@@ -361,9 +395,15 @@ after the package is known inactive. User and foreign hook entries survive.
   so both rendering targets share one function, never forked logic.
   Projections: `hooks/hooks.json` (Codex, plugin target), `hooks/claude-hooks.json`
   (Claude, plugin target; `.claude-plugin/plugin.json` points here).
-- Shared adapter: `hooks/adapter.mjs`; the eight handlers `hooks/bee-*.mjs`,
-  including the paired Codex native-subagent audit handler and its vendored
-  mirror.
+- Shared adapter: `hooks/adapter.mjs` (`encodeAdvisory`; `encodeBlock` — the
+  deliberate turn-control inverse used ONLY by the gate-bypass net); the eight
+  handlers `hooks/bee-*.mjs`, including the paired Codex native-subagent audit
+  handler and its vendored mirror.
+- Gate-bypass net (B15, R14): `maybeBypassBlock` in `hooks/bee-session-close.mjs`
+  (fire matrix `PHASE_GATE` + `levelCoversGate`; loop-guard via
+  `shouldInject`/`markInjected` in `skills/bee-hive/templates/lib/inject.mjs`
+  keyed `sessionId:phase:gate:level`; level via `bypassLevel` in
+  `.../lib/state.mjs`). Suite: `hooks/test_bypass_stop_net.mjs`.
 - Batch guard: `hooks/bee-write-guard.mjs` (`extractApplyPatchTargets`).
 - CLI-shape guard incl. 3-token verb resolution: `hooks/bee-write-guard.mjs`
   against the `command-registry.mjs` catalog. Evidence: `.bee/cells/du-2.json`,

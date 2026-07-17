@@ -138,7 +138,7 @@
     },
     {
       "path": "hooks/adapter.mjs",
-      "sha256": "e71be1d018da1c268711a1786ae7e3c1e607316b83dd3f740a824d13bd4d73fa",
+      "sha256": "773afef754c385a0a570cdfce6f4545f256bfc904c412b784561a10a3f05ba5f",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/adapter.mjs"
@@ -173,7 +173,7 @@
     },
     {
       "path": "hooks/bee-session-close.mjs",
-      "sha256": "4a9611d0ba8fa6a71778426759aae164cc8c8034e03cf72750cb1aa3f39f721b",
+      "sha256": "370260bf6f50d33ddc8eda31d422ef859342c076194ace486a6d6447f982c42d",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/bee-session-close.mjs"
@@ -219,6 +219,13 @@
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/hooks.json"
+    },
+    {
+      "path": "hooks/test_bypass_stop_net.mjs",
+      "sha256": "5efe91cb51842f45a2b0073f0c81f810dbf7ea73f4b1902adea33368787a78b4",
+      "mode": "644",
+      "role": "plugin_hook",
+      "packagePath": "hooks/test_bypass_stop_net.mjs"
     },
     {
       "path": "hooks/test_hook_contracts.mjs",
@@ -491,7 +498,7 @@
     },
     {
       "path": "skills/bee-hive/references/routing-and-contracts.md",
-      "sha256": "979a6f47bca44c7355f65ddc04533aceb5d570efa0a14b1d9832cbf6abc72abd",
+      "sha256": "b99c44bc641326b282befe4199d7701ed5c182decb257c230c536f7908c8c283",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/references/routing-and-contracts.md"
