@@ -2,12 +2,16 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 // Leaf-module imports only — no cycle: claims.mjs and reservations.mjs import
 // nothing but fsutil/node builtins (unlike cells.mjs, which imports THIS file).
 import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './claims.mjs';
 import { pathsOverlap } from './reservations.mjs';
 import { readGrants } from './worktree-store.mjs';
+// decisions.mjs imports only node builtins + fsutil (no cycle back to this file);
+// advisorRefAnchors reads the newest active decision id through it (AO13).
+import { activeDecisions } from './decisions.mjs';
 
 export const BEE_VERSION = '1.4.0';
 
@@ -1296,6 +1300,76 @@ export function resolveAdvisor(root, runtime = 'claude') {
       : { type: 'model', model: value.model };
   }
   return null;
+}
+
+// ─── advisor_ref staleness anchors + check (AO3/AO13, Slice 4) ──────────────
+// Zero precedent: no gate anywhere checked a precondition before this. The
+// advisor_ref field records that a real advisor consult happened for the
+// SELECTED (default or lane) record; Gate 3 refuses high-risk execution
+// approval when the ref is missing or stale. Staleness is NEVER a TTL — AO13
+// bans invented time numbers. Both helpers are pure reads and never throw on a
+// missing artifact: a missing plan.md hashes to the absent sentinel, so the
+// only failure mode is "stale", never a crash on the gate's hot path.
+
+export const ADVISOR_PLAN_ABSENT_SENTINEL = 'absent';
+
+function advisorPlanPath(root, feature) {
+  return path.join(root, 'docs', 'history', String(feature ?? ''), 'plan.md');
+}
+
+// The verb stamps these itself at record time; the caller never supplies them.
+// `feature` is the SELECTED record's feature (a lane's own feature, not the
+// default record's — checker M1), so the plan.md hashed is THAT feature's plan.
+export function advisorRefAnchors(root, feature) {
+  let newest_decision_id = null;
+  try {
+    const active = activeDecisions(root, { recent: 1 });
+    newest_decision_id = active.length ? active[0].id : null;
+  } catch {
+    newest_decision_id = null;
+  }
+  let plan_sha256 = ADVISOR_PLAN_ABSENT_SENTINEL;
+  try {
+    const planFile = advisorPlanPath(root, feature);
+    if (fs.existsSync(planFile)) {
+      plan_sha256 = crypto.createHash('sha256').update(fs.readFileSync(planFile)).digest('hex');
+    }
+  } catch {
+    plan_sha256 = ADVISOR_PLAN_ABSENT_SENTINEL;
+  }
+  return { feature: feature ?? null, newest_decision_id, plan_sha256 };
+}
+
+// AO13 verbatim: an advisor_ref is stale if ANY of — its feature differs from
+// state.feature; the newest active decision id changed since the consult;
+// sha256(plan.md) changed; or the ref predates the most recent revocation of
+// the execution gate. A malformed/missing ref (non-object, array, or null)
+// reads as missing — stale, never a throw.
+export function advisorRefStale(root, ref, state) {
+  if (!ref || typeof ref !== 'object' || Array.isArray(ref)) {
+    return { stale: true, reasons: ['no advisor_ref recorded'] };
+  }
+  const reasons = [];
+  const feature = state && state.feature != null ? state.feature : null;
+  const anchors = advisorRefAnchors(root, feature);
+  if (ref.feature !== anchors.feature) {
+    reasons.push(`feature changed since the consult (ref "${ref.feature}" ≠ current "${anchors.feature}")`);
+  }
+  if (ref.newest_decision_id !== anchors.newest_decision_id) {
+    reasons.push(
+      `a new decision was logged since the consult (ref "${ref.newest_decision_id}" ≠ current "${anchors.newest_decision_id}")`,
+    );
+  }
+  if (ref.plan_sha256 !== anchors.plan_sha256) {
+    reasons.push('plan.md changed since the consult (sha256 mismatch)');
+  }
+  const revokedAt = state && state.gate_revoked_at ? state.gate_revoked_at.execution : undefined;
+  if (revokedAt && (!ref.consulted_at || String(ref.consulted_at) < String(revokedAt))) {
+    reasons.push(
+      `the consult predates the most recent execution-gate revocation (consulted ${ref.consulted_at ?? 'never'}, revoked ${revokedAt})`,
+    );
+  }
+  return { stale: reasons.length > 0, reasons };
 }
 
 // ─── startFeature: guarded atomic feature start (decision D2, plan.md test ──

@@ -775,6 +775,38 @@ export const COMMAND_REGISTRY = [
     examples: ['bee state handoff show --json'],
     deprecated: null,
   },
+  {
+    name: 'state.advisor-ref.record',
+    invoke: 'bee state advisor-ref record',
+    description: "Record an AO3/AO13 advisor consult onto the selected record's advisor_ref (hive law 12: the Gate 3 high-risk precondition needs a state field AND a verb). The verb stamps the staleness anchors ITSELF — current feature, newest active decision id, and sha256 of that feature's plan.md — so anchors are never caller-supplied; the caller passes only --advisor (identity) and --digest-file (its first 500 chars are stored as digest_head for audit). Refuses when no feature is active (phase idle/compounding-complete or no feature). Optional --lane <feature> records onto that lane record with anchors bound to the lane's own feature and plan.md, leaving the default state.json untouched. There is no clear verb — staleness makes an old ref inert.",
+    parameters: {
+      type: 'object',
+      properties: {
+        advisor: { type: 'string', description: 'Advisor identity that was consulted (e.g. the configured advisor model or cli command label).' },
+        'digest-file': { type: 'string', description: 'Path to the captured advisor consult digest; its first 500 chars are stored as digest_head for audit.' },
+        lane: { type: 'string', description: 'Route the record to this lane instead of the default state.json. Refuses if the lane is missing or corrupt.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['advisor', 'digest-file'],
+    },
+    examples: ['bee state advisor-ref record --advisor gpt-5.6-sol --digest-file consult.txt --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.advisor-ref.show',
+    invoke: 'bee state advisor-ref show',
+    description: 'Show the selected record\'s advisor_ref, if any, with its live AO13 staleness verdict (stale + reason list) computed against the current feature, newest active decision id, plan.md sha256, and the last execution-gate revocation. A missing or malformed advisor_ref reads as "no advisor_ref recorded", never a crash. Optional --lane <feature> shows the lane record instead of the default state.json.',
+    parameters: {
+      type: 'object',
+      properties: {
+        lane: { type: 'string', description: 'Show this lane record instead of the default state.json.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee state advisor-ref show --json'],
+    deprecated: null,
+  },
 
   // ─── backlog (bee_backlog.mjs — docs/backlog.md mechanical passes + the
   // .bee/backlog.jsonl `add` verb). `required: []` on `backlog.add` is

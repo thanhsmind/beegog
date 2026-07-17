@@ -1330,6 +1330,17 @@ await check('config set: nested dot-key, string coercion, refuse-on-invalid, no-
   }
 });
 
+await check('state.advisor-ref examples run through the real dispatcher', async () => {
+  // makeAdvisorRoot is a hoisted function declaration (defined in the advisor
+  // block below); an active feature + a present digest file let the record
+  // example succeed, and show round-trips it.
+  const dir = makeAdvisorRoot({ mode: 'standard' });
+  fs.writeFileSync(path.join(dir, 'consult.txt'), 'example consult digest body');
+  await assertExampleOk('state.advisor-ref.record', { cwd: dir });
+  const show = await assertExampleOk('state.advisor-ref.show', { cwd: dir });
+  assert(JSON.parse(show.stdout).advisor_ref.advisor === 'gpt-5.6-sol', `show example returns the recorded advisor, got ${show.stdout}`);
+});
+
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {
   const allNames = new Set(COMMAND_REGISTRY.map((e) => e.name));
   const missing = [...allNames].filter((name) => !executedNames.has(name));
@@ -1761,6 +1772,191 @@ await check('status: surfaces a report-only source field classifying the repo be
   const j = JSON.parse(r.stdout);
   assert(j.source && j.source.kind === 'project_projection', `expected source.kind project_projection, got ${JSON.stringify(j.source)}`);
   assert(typeof j.onboarding.drift === 'boolean', 'existing onboarding.drift field must remain (additive change)');
+});
+
+// ─── state advisor-ref + Gate 3 precondition (ao-4-1 / AO3 / AO13) ───────────
+
+function readStateFile(dir) {
+  return JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8'));
+}
+
+// Build an isolated repo with a state record, an active decision, and a plan.md
+// so the advisor_ref staleness anchors have something real to bind to.
+function makeAdvisorRoot({ mode = 'high-risk', feature = 'advtest', phase = 'swarming', decisionId = 'dec-1', planBody = '# plan\ncontent\n' } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-advisor-ref-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(dir, {
+    ...defaultState(),
+    phase,
+    feature,
+    mode,
+    approved_gates: { context: true, shape: true, execution: false, review: false },
+  });
+  if (decisionId) {
+    fs.writeFileSync(
+      path.join(dir, '.bee', 'decisions.jsonl'),
+      `${JSON.stringify({ id: decisionId, type: 'decide', date: '2026-07-17T00:00:00.000Z', decision: 'seed', scope: 'repo' })}\n`,
+    );
+  }
+  if (planBody != null) {
+    fs.mkdirSync(path.join(dir, 'docs', 'history', feature), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'docs', 'history', feature, 'plan.md'), planBody);
+  }
+  return dir;
+}
+
+function writeDigest(dir, body) {
+  const p = path.join(dir, 'consult-digest.txt');
+  fs.writeFileSync(p, body);
+  return p;
+}
+
+// A fresh recorded ref that leaves the record non-stale (records + returns dir).
+async function recordFreshRef(dir, { advisor = 'gpt-5.6-sol', body = 'DIGEST-BODY' } = {}) {
+  const digest = writeDigest(dir, body);
+  const r = await runBee(['state', 'advisor-ref', 'record', '--advisor', advisor, '--digest-file', digest, '--json'], dir);
+  assert(r.status === 0, `recording a fresh advisor_ref should succeed: ${r.stderr}`);
+  return r;
+}
+
+await check('advisor-ref record refuses when no feature is active (idle repo), zero write', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-advisor-noref-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(dir, defaultState()); // phase idle, feature null
+  const digest = writeDigest(dir, 'x');
+  const r = await runBee(['state', 'advisor-ref', 'record', '--advisor', 'a', '--digest-file', digest], dir);
+  assert(r.status !== 0, `expected non-zero exit, got ${r.status}`);
+  assert(/no active feature/.test(r.stderr), `expected a no-active-feature refusal, got stderr=${r.stderr}`);
+  assert(readStateFile(dir).advisor_ref === undefined, 'a refused record must not write advisor_ref');
+});
+
+await check('advisor-ref record stamps consulted_at + verb-computed anchors + digest_head (anchors never caller-supplied)', async () => {
+  const dir = makeAdvisorRoot({});
+  const digest = writeDigest(dir, 'D'.repeat(600));
+  const r = await runBee(['state', 'advisor-ref', 'record', '--advisor', 'gpt-5.6-sol', '--digest-file', digest, '--json'], dir);
+  assert(r.status === 0, `record should succeed: ${r.stderr}`);
+  const ref = readStateFile(dir).advisor_ref;
+  assert(ref && typeof ref === 'object', 'advisor_ref must be written');
+  assert(typeof ref.consulted_at === 'string' && ref.consulted_at.length > 0, 'consulted_at stamped');
+  assert(ref.feature === 'advtest', `anchor feature should be the record's feature, got ${ref.feature}`);
+  assert(ref.newest_decision_id === 'dec-1', `newest_decision_id anchor should be the active decision, got ${ref.newest_decision_id}`);
+  assert(/^[0-9a-f]{64}$/.test(ref.plan_sha256), `plan_sha256 should be a real hash, got ${ref.plan_sha256}`);
+  assert(ref.advisor === 'gpt-5.6-sol', `advisor identity round-trips, got ${ref.advisor}`);
+  assert(ref.digest_head === 'D'.repeat(500), 'digest_head is the first 500 chars of the digest');
+  // The record verb exposes no anchor flags — anchors are computed, not passed.
+  const entry = COMMAND_REGISTRY.find((e) => e.name === 'state.advisor-ref.record');
+  const props = Object.keys(entry.parameters.properties);
+  assert(!props.includes('feature') && !props.includes('newest-decision-id') && !props.includes('plan-sha256'), `record must not accept anchor flags, got ${props.join(',')}`);
+});
+
+await check('advisor-ref show round-trips a recorded ref and reports it non-stale', async () => {
+  const dir = makeAdvisorRoot({});
+  await recordFreshRef(dir);
+  const r = await runBee(['state', 'advisor-ref', 'show', '--json'], dir);
+  assert(r.status === 0, `show should succeed: ${r.stderr}`);
+  const out = JSON.parse(r.stdout);
+  assert(out.advisor_ref.advisor === 'gpt-5.6-sol', `show returns the recorded advisor, got ${JSON.stringify(out)}`);
+  assert(out.stale === false, `a fresh ref must read non-stale, got ${JSON.stringify(out)}`);
+});
+
+await check('Gate 3: high-risk execution approval THROWS without an advisor_ref, naming AO3/AO13, zero write', async () => {
+  const dir = makeAdvisorRoot({});
+  const r = await runBee(['state', 'gate', '--name', 'execution', '--approved', 'true'], dir);
+  assert(r.status !== 0, `expected non-zero exit, got ${r.status}`);
+  assert(/AO3\/AO13/.test(r.stderr) && /missing or stale/.test(r.stderr), `expected the AO3/AO13 refusal, got stderr=${r.stderr}`);
+  assert(/advisor-ref record/.test(r.stderr), `refusal must spell the FIX consult flow, got stderr=${r.stderr}`);
+  assert(readStateFile(dir).approved_gates.execution === false, 'a refused execution approval must not flip the gate');
+});
+
+await check('Gate 3: high-risk execution approval PASSES with a fresh advisor_ref', async () => {
+  const dir = makeAdvisorRoot({});
+  await recordFreshRef(dir);
+  const r = await runBee(['state', 'gate', '--name', 'execution', '--approved', 'true', '--json'], dir);
+  assert(r.status === 0, `fresh ref should let execution approve: ${r.stderr}`);
+  assert(JSON.parse(r.stdout).approved_gates.execution === true, 'execution gate approved with a fresh ref');
+});
+
+await check('AO13 staleness (1/4): a feature change alone flips the ref stale', async () => {
+  const dir = makeAdvisorRoot({});
+  await recordFreshRef(dir);
+  // Change the record's feature to one whose plan.md has IDENTICAL bytes, so
+  // ONLY the feature anchor differs (decision + plan hash unchanged).
+  const st = readStateFile(dir);
+  fs.mkdirSync(path.join(dir, 'docs', 'history', 'advtest2'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'history', 'advtest2', 'plan.md'), '# plan\ncontent\n');
+  st.feature = 'advtest2';
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), st);
+  const show = JSON.parse((await runBee(['state', 'advisor-ref', 'show', '--json'], dir)).stdout);
+  assert(show.stale === true, `feature change must flip stale, got ${JSON.stringify(show)}`);
+  assert(show.reasons.length === 1 && /feature changed/.test(show.reasons[0]), `only the feature reason should fire, got ${JSON.stringify(show.reasons)}`);
+  const gate = await runBee(['state', 'gate', '--name', 'execution', '--approved', 'true'], dir);
+  assert(gate.status !== 0 && /feature changed/.test(gate.stderr), `gate must refuse on feature change, got stderr=${gate.stderr}`);
+});
+
+await check('AO13 staleness (2/4): a newly logged decision alone flips the ref stale', async () => {
+  const dir = makeAdvisorRoot({});
+  await recordFreshRef(dir);
+  fs.appendFileSync(
+    path.join(dir, '.bee', 'decisions.jsonl'),
+    `${JSON.stringify({ id: 'dec-2', type: 'decide', date: '2026-07-17T01:00:00.000Z', decision: 'later', scope: 'repo' })}\n`,
+  );
+  const show = JSON.parse((await runBee(['state', 'advisor-ref', 'show', '--json'], dir)).stdout);
+  assert(show.stale === true, `a new decision must flip stale, got ${JSON.stringify(show)}`);
+  assert(show.reasons.length === 1 && /new decision was logged/.test(show.reasons[0]), `only the decision reason should fire, got ${JSON.stringify(show.reasons)}`);
+});
+
+await check('AO13 staleness (3/4): a plan.md edit alone flips the ref stale', async () => {
+  const dir = makeAdvisorRoot({});
+  await recordFreshRef(dir);
+  fs.writeFileSync(path.join(dir, 'docs', 'history', 'advtest', 'plan.md'), '# plan\nEDITED content\n');
+  const show = JSON.parse((await runBee(['state', 'advisor-ref', 'show', '--json'], dir)).stdout);
+  assert(show.stale === true, `a plan edit must flip stale, got ${JSON.stringify(show)}`);
+  assert(show.reasons.length === 1 && /plan\.md changed/.test(show.reasons[0]), `only the plan reason should fire, got ${JSON.stringify(show.reasons)}`);
+});
+
+await check('AO13 staleness (4/4): a ref predating an execution-gate revocation flips stale', async () => {
+  const dir = makeAdvisorRoot({});
+  await recordFreshRef(dir);
+  // Revoke execution (approved=false stamps gate_revoked_at.execution = now,
+  // strictly after the consult) — the ref now predates the revocation.
+  const revoke = await runBee(['state', 'gate', '--name', 'execution', '--approved', 'false', '--json'], dir);
+  assert(revoke.status === 0, `revoking execution should succeed: ${revoke.stderr}`);
+  assert(typeof JSON.parse(revoke.stdout).gate_revoked_at.execution === 'string', 'execution revocation must be stamped');
+  const show = JSON.parse((await runBee(['state', 'advisor-ref', 'show', '--json'], dir)).stdout);
+  assert(show.stale === true, `a ref older than the revocation must be stale, got ${JSON.stringify(show)}`);
+  assert(show.reasons.length === 1 && /predates the most recent execution-gate revocation/.test(show.reasons[0]), `only the revocation reason should fire, got ${JSON.stringify(show.reasons)}`);
+  const gate = await runBee(['state', 'gate', '--name', 'execution', '--approved', 'true'], dir);
+  assert(gate.status !== 0 && /predates the most recent execution-gate revocation/.test(gate.stderr), `gate must refuse a revocation-stale ref, got stderr=${gate.stderr}`);
+});
+
+await check('non-high-risk mode: execution approval never requires an advisor_ref', async () => {
+  const dir = makeAdvisorRoot({ mode: 'standard' });
+  const r = await runBee(['state', 'gate', '--name', 'execution', '--approved', 'true', '--json'], dir);
+  assert(r.status === 0, `standard mode must approve execution with no ref: ${r.stderr}`);
+  assert(JSON.parse(r.stdout).approved_gates.execution === true, 'standard-mode execution approved');
+});
+
+await check('other gates on high-risk are untouched: context approval needs no advisor_ref', async () => {
+  const dir = makeAdvisorRoot({});
+  const r = await runBee(['state', 'gate', '--name', 'context', '--approved', 'true', '--json'], dir);
+  assert(r.status === 0, `context gate must approve with no ref on high-risk: ${r.stderr}`);
+  assert(JSON.parse(r.stdout).approved_gates.context === true, 'context gate approved');
+  assert(readStateFile(dir).advisor_ref === undefined, 'context approval writes no advisor_ref');
+});
+
+await check('malformed advisor_ref reads as missing — the gate verb refuses cleanly, never crashes', async () => {
+  const dir = makeAdvisorRoot({});
+  const st = readStateFile(dir);
+  st.advisor_ref = 'not-an-object'; // hand-corrupted fixture
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), st);
+  const gate = await runBee(['state', 'gate', '--name', 'execution', '--approved', 'true'], dir);
+  assert(gate.status !== 0, `a corrupt ref must refuse execution, got ${gate.status}`);
+  assert(/missing or stale/.test(gate.stderr), `corrupt ref reads as missing, got stderr=${gate.stderr}`);
+  assert(!/TypeError|Cannot read|is not a function/.test(gate.stderr), `must not crash on a corrupt ref, got stderr=${gate.stderr}`);
+  const show = await runBee(['state', 'advisor-ref', 'show', '--json'], dir);
+  assert(show.status === 0 && JSON.parse(show.stdout) === null, `show reads a corrupt ref as missing, got ${show.stdout}`);
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

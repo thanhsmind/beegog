@@ -1967,6 +1967,11 @@ const EXPECTED_STATE_EXPORTS = [
   'modelForTier',
   'resolveTier',
   'resolveAdvisor',
+  // ao-4-1/AO3/AO13: the advisor_ref staleness anchors + check, read by the
+  // `state advisor-ref` verbs and the Gate 3 high-risk precondition.
+  'ADVISOR_PLAN_ABSENT_SENTINEL',
+  'advisorRefAnchors',
+  'advisorRefStale',
   'startFeature',
   // chain-integrity (D1-REVISED/D3): the tail guard. Pure and cells-free by
   // necessity — cells.mjs imports state.mjs, so the scribing-debt half of the
