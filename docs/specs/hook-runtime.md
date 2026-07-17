@@ -1,7 +1,7 @@
 ---
 area: hook-runtime
 updated: 2026-07-17
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17)]
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17)]
 decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated)]
 coverage: partial
 ---
@@ -255,6 +255,26 @@ dispatch whose transport label states *why* a refusal happened (tier/choice
 disagreement, unconfigured choice, external-command tier, bare) — a refused or
 misdeclared dispatch can no longer appear in the audit trail as a legitimate
 one. Every internal failure of the guard itself fails open.
+
+**B18 — Work-tier dispatches ride pinned helper types, not the catch-all.**
+Three pinned helper definitions — a gather worker, an extraction worker, and a
+review worker — are rendered into the project at onboarding **from the
+configured tier models** (never hand-pinned: configuration stays the sole
+authority, so re-rendering follows a config change). They are delivered by a
+flat managed-file step with its own version marker, deliberately outside the
+skill-root sync (a skills-root entry would break onboarding's version preflight
+permanently). A tier slot backed by an external command or left empty renders
+no file (a helper type must name a real model), and the second runtime gets
+none at all — it has no per-helper model selection, a documented asymmetry.
+The dispatch guard enforces the pairing: a dispatch declaring a work tier
+(gather/extraction/review) while naming the **catch-all generic helper type**
+is refused, and the corrective message names that tier's pinned type (or the
+runtime's read-only explorer type for read-only gathers). The session-model
+tier is exempt — it has no pinned type by definition. Drift between a rendered
+helper file's model and the configured slot is surfaced as an **advisory** by
+the status snapshot and the configuration check (never a refusal — the
+dispatch-time agreement rules already protect the dispatch itself). No claim
+is made that any of this reduces cost; it makes the tier decision auditable.
 
 **B17 — A passive usage log records every tool call, and enforces nothing.**
 After every tool the assistant runs — any tool, both runtimes — a checkpoint
