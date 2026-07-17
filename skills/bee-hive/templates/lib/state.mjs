@@ -1061,8 +1061,14 @@ export function modelForTier(root, tier, runtime = 'claude') {
 }
 
 /**
- * Typed slot resolution (decisions 0019/0021). `slot` is a tier
- * (extraction/generation/ceiling) or the `review` role. Returns one of:
+ * Typed slot resolution (decisions 0019/0021), purpose-scoped (AO12/B1,
+ * plan.md 2A-ii). `slot` is a tier (extraction/generation/ceiling) or the
+ * `review` role. `purpose` is an OPTIONAL 4th param shaped `{for:'gather'|
+ * 'cell'}`, DEFAULT `'cell'` — the fail-safe side: every existing 3-arg
+ * call, a missing/null `purpose`, and ANY malformed/unknown `purpose` value
+ * (a string, a number, an array, `{for:'banana'}`, etc.) all resolve as
+ * cell-execution. Only an explicit `{for:'gather'}` is treated as a
+ * read-only gather. Returns one of:
  *   { type: 'inherit' }                — ceiling: omit the model param, the
  *     worker inherits the session model (decision 0015)
  *   { type: 'model', model, effort? }  — spawn a subagent with this model
@@ -1070,10 +1076,29 @@ export function modelForTier(root, tier, runtime = 'claude') {
  *   { type: 'budget' }                 — no per-agent switch: enforce the tier
  *     as a read budget + output cap in the worker prompt
  *   { type: 'cli', command }           — dispatch an EXTERNAL executor process
- *     (protocol: bee-swarming reference, External Executors section)
- * A null `review` slot falls back to the generation tier (decision 0021).
+ *     (protocol: bee-swarming reference, External Executors section) — ONLY
+ *     when the resolved slot value is cli-shaped AND purpose is explicitly
+ *     `{for:'gather'}`.
+ *   { type: 'refused', reason: 'cli_tier_gather_only', slot, fix } — the
+ *     resolved slot value is cli-shaped but purpose is 'cell' (default,
+ *     explicit, or malformed). This is a RETURNED TYPE, never a throw — a
+ *     cli tier resolving for cell execution is not yet proven safe (Discovery-2:
+ *     an external CLI's cwd is not the repo root, so the execute contract's
+ *     reserve/verify/cap helpers would misfire silently); it stays refused
+ *     until a cell-execution dogfood is green (plan 2A/W9). `modelForTier`
+ *     (bee-model-guard's fail-open hot path, :133) calls resolveTier with no
+ *     purpose and keeps returning `null` for cli exactly as before this
+ *     change — a refused type is not a 'model' type, so its `resolved.type
+ *     === 'model'` check still falls through to null, zero behavior change.
+ * The refusal applies to EVERY slot including 'review' — a bare 3-arg
+ * resolve of a cli-shaped review slot refuses too; the external-reviewer
+ * dispatch stays reachable via `{for:'gather'}` (the routing prose that
+ * teaches callers the 4-arg form moves to 2A-iii). Non-cli slot values
+ * (inherit/model/budget) ignore purpose entirely — byte-identical results
+ * with or without it. A null `review` slot still falls back to the
+ * generation tier (decision 0021) BEFORE the cli/purpose check.
  */
-export function resolveTier(root, slot, runtime = 'claude') {
+export function resolveTier(root, slot, runtime = 'claude', purpose) {
   if (slot === 'ceiling') return { type: 'inherit' };
   const { models } = readConfig(root);
   const rt = RUNTIMES.includes(runtime) ? runtime : 'claude';
@@ -1084,7 +1109,22 @@ export function resolveTier(root, slot, runtime = 'claude') {
   }
   if (value == null) return { type: 'budget' };
   if (typeof value === 'string') return { type: 'model', model: value };
-  if (value.kind === 'cli') return { type: 'cli', command: value.command };
+  if (value.kind === 'cli') {
+    const forGather =
+      purpose != null &&
+      typeof purpose === 'object' &&
+      !Array.isArray(purpose) &&
+      purpose.for === 'gather';
+    if (!forGather) {
+      return {
+        type: 'refused',
+        reason: 'cli_tier_gather_only',
+        slot: s,
+        fix: 'declare {for:"gather"} for a read-only gather; cli cell execution stays refused until a cell-execution dogfood is green (plan 2A/W9)',
+      };
+    }
+    return { type: 'cli', command: value.command };
+  }
   if (typeof value.model === 'string') {
     return value.effort
       ? { type: 'model', model: value.model, effort: value.effort }
