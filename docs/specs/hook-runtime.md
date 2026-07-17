@@ -1,8 +1,8 @@
 ---
 area: hook-runtime
 updated: 2026-07-17
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17)]
-decisions: [codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated)]
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17)]
+decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated)]
 coverage: partial
 ---
 
@@ -255,6 +255,23 @@ dispatch whose transport label states *why* a refusal happened (tier/choice
 disagreement, unconfigured choice, external-command tier, bare) — a refused or
 misdeclared dispatch can no longer appear in the audit trail as a legitimate
 one. Every internal failure of the guard itself fails open.
+
+**B17 — A passive usage log records every tool call, and enforces nothing.**
+After every tool the assistant runs — any tool, both runtimes — a checkpoint
+appends one line to a machine-local usage log: timestamp, the tool's name, and
+who ran it (the orchestrating assistant, recorded as no-attribution, or a child
+helper, recorded with its identity and helper type — the two are mechanically
+distinguishable because a child's calls carry identity fields the
+orchestrator's never do). The line **never** contains the tool's input or
+output content: names and attribution only, so the log can answer "what ran,
+how often, by whom" without ever holding secrets, personal data, or work
+content. The checkpoint is pure observation: it cannot block a tool, emits no
+messages, and every internal failure fails open with a visible crash line in
+the gap log — a broken logger goes loud, never silently green (its own
+verification fails when lines stop appearing). It can be switched off per
+workspace by its toggle. The log grows without rotation, like every other
+machine-local audit log here. This log exists to measure; no claim is made
+that it reduces anything.
 
 ## Actors & Access
 
