@@ -101,6 +101,58 @@ function buildThrowingStateFixture() {
   return root;
 }
 
+// A fixture staging an EXPLICIT models block (never the repo's real config), so
+// the row that reads it does not depend on whatever this project happens to
+// configure. `models` is written verbatim under models.claude. Same shape as
+// buildDisabledFixture: mkdir .bee, onboarding.json, copyLib, write config.json.
+function buildModelsFixture(prefix, models) {
+  const root = mkFixture(prefix);
+  fs.mkdirSync(path.join(root, ".bee"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".bee", "onboarding.json"), "{}\n");
+  copyLib(root);
+  fs.writeFileSync(
+    path.join(root, ".bee", "config.json"),
+    `${JSON.stringify({ models: { claude: models } }, null, 2)}\n`,
+  );
+  return root;
+}
+
+// A generation slot shaped as a cli executor: [bee-tier: generation] must then
+// route to the external-executor path, never a spawned in-family subagent.
+function buildCliSlotFixture() {
+  return buildModelsFixture("bee-model-guard-clislot-", {
+    extraction: "haiku",
+    generation: { kind: "cli", command: "codex exec -m gpt-5.5 -s read-only -" },
+    review: "opus",
+  });
+}
+
+// A claude runtime that configures NO model names — every slot is null (the
+// review slot then falls back to a null generation → budget). modelForTier
+// returns null for every slot, so the membership set is empty. This is the
+// "unconfigured repo" of plan part 2: an empty member set → fail-open allow,
+// exactly today's behavior (config is the authority; it names no model to
+// check a bare param against).
+function buildEmptyModelSetFixture() {
+  return buildModelsFixture("bee-model-guard-emptyset-", {
+    extraction: null,
+    generation: null,
+    review: null,
+  });
+}
+
+// A malformed models block: junk slot shapes (no `kind:'cli'`, no string
+// `model`). normalizeModels ignores each invalid value and keeps the seeded
+// default, so resolution falls back gracefully to the defaults and NEVER throws
+// on the hook hot path — the fail-open contract for malformed config.
+function buildMalformedModelsFixture() {
+  return buildModelsFixture("bee-model-guard-malformed-", {
+    extraction: { nonsense: true },
+    generation: { foo: "bar" },
+    review: 42,
+  });
+}
+
 // --- hook invocation -----------------------------------------------------
 
 async function runHookPayload(payload, cwd) {
@@ -147,10 +199,16 @@ async function main() {
   const disabledRoot = buildDisabledFixture();
   const noRepoRoot = buildNoRepoFixture();
   const throwStateRoot = buildThrowingStateFixture();
+  const cliSlotRoot = buildCliSlotFixture();
+  const emptySetRoot = buildEmptyModelSetFixture();
+  const malformedRoot = buildMalformedModelsFixture();
   process.stdout.write(`enabled fixture:      ${enabledRoot}\n`);
   process.stdout.write(`disabled fixture:     ${disabledRoot}\n`);
   process.stdout.write(`no-repo fixture:      ${noRepoRoot}\n`);
   process.stdout.write(`throw-state fixture:  ${throwStateRoot}\n`);
+  process.stdout.write(`cli-slot fixture:     ${cliSlotRoot}\n`);
+  process.stdout.write(`empty-set fixture:    ${emptySetRoot}\n`);
+  process.stdout.write(`malformed fixture:    ${malformedRoot}\n`);
 
   const expectedGenerationModel = await computeExpectedGenerationModel(enabledRoot);
   process.stdout.write(`expected generation model: ${expectedGenerationModel}\n`);
@@ -440,6 +498,144 @@ async function main() {
     !fs.existsSync(disabledDispatchLog),
     "row20e: disabled guard writes no dispatch log",
     disabledDispatchLog,
+  );
+
+  // === 2A-iii rows: tier-first decision order (B4/B5/AO5) ==================
+  // The enabled fixture carries the real config: extraction=haiku,
+  // generation=sonnet, review=opus → member set {haiku, opus, sonnet}.
+
+  // --- 21. bare param NOT in the configured set (banana) -> deny -----------
+  const r21 = await runHookPayload({ tool_name: "Agent", tool_input: { model: "banana" } }, enabledRoot);
+  check(r21.status === 2, "row21: model:'banana' (non-member) is denied",
+    `status=${r21.status} stderr=${r21.stderr}`);
+  check(
+    r21.stderr.includes("sonnet") && r21.stderr.includes("haiku") && r21.stderr.includes("opus"),
+    "row21: banana FIX lists the configured models",
+    r21.stderr,
+  );
+  check(r21.stderr.includes("[bee-tier: ceiling]"), "row21: banana FIX teaches the ceiling marker route", r21.stderr);
+  // The denied bare-param dispatch is no longer logged as a legitimate transport.
+  const d21 = readLastJsonl(path.join(enabledRoot, ".bee", "logs", "dispatch.jsonl"));
+  check(
+    d21 && d21.transport === "param-not-configured" && d21.model === "banana",
+    "row21: banana dispatch logged as param-not-configured, not model-param",
+    JSON.stringify(d21),
+  );
+
+  // --- 22. bare param model:'fable' with no configured fable slot -> deny --
+  // (panel BLOCKER-1, accepted by design: the ceiling marker is the route.)
+  const r22 = await runHookPayload({ tool_name: "Agent", tool_input: { model: "fable" } }, enabledRoot);
+  check(r22.status === 2, "row22: model:'fable' with no fable slot is denied (BLOCKER-1)",
+    `status=${r22.status} stderr=${r22.stderr}`);
+  check(
+    r22.stderr.includes("[bee-tier: ceiling]"),
+    "row22: fable FIX teaches [bee-tier: ceiling] as the session-model route",
+    r22.stderr,
+  );
+
+  // --- 23. bare param IS a configured member (haiku) -> allow -------------
+  const r23 = await runHookPayload({ tool_name: "Agent", tool_input: { model: "haiku" } }, enabledRoot);
+  check(r23.status === 0, "row23: model:'haiku' (member) is allowed", `status=${r23.status} stderr=${r23.stderr}`);
+
+  // --- 24. marker + param AGREE (generation + sonnet) -> allow -------------
+  const r24 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: generation] do the thing", model: "sonnet" } },
+    enabledRoot,
+  );
+  check(r24.status === 0, "row24: marker+param equality match (generation+sonnet) is allowed",
+    `status=${r24.status} stderr=${r24.stderr}`);
+
+  // --- 25. marker + param DISAGREE (generation + opus) -> deny, FIX names sonnet
+  const r25 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: generation] do the thing", model: "opus" } },
+    enabledRoot,
+  );
+  check(r25.status === 2, "row25: marker+param mismatch (generation+opus) is denied",
+    `status=${r25.status} stderr=${r25.stderr}`);
+  check(r25.stderr.includes("sonnet"), "row25: mismatch FIX names the tier's configured model (sonnet)", r25.stderr);
+
+  // --- 26. ceiling marker + param -> deny (ceiling carries no model name) --
+  const r26 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: ceiling] do the thing", model: "sonnet" } },
+    enabledRoot,
+  );
+  check(r26.status === 2, "row26: [bee-tier: ceiling] + model param is denied",
+    `status=${r26.status} stderr=${r26.stderr}`);
+  check(r26.stderr.includes("drop the model param"), "row26: ceiling+param FIX says drop the param", r26.stderr);
+
+  // --- 27. WARNING-2 pin: review marker + param opus (review is model-shaped) -> allow
+  const r27 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: review] check the diff", model: "opus" } },
+    enabledRoot,
+  );
+  check(r27.status === 0, "row27: [bee-tier: review] + opus stays allowed while review is model-shaped (WARNING-2)",
+    `status=${r27.status} stderr=${r27.stderr}`);
+
+  // --- 28. marker-only on a model tier (generation) -> allow --------------
+  const r28 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: generation] do the thing" } },
+    enabledRoot,
+  );
+  check(r28.status === 0, "row28: generation marker with no param is allowed",
+    `status=${r28.status} stderr=${r28.stderr}`);
+
+  // --- 29. cli-shaped declared tier -> deny with external-executor FIX -----
+  // (the cli-slot fixture makes generation a {kind:'cli'} slot.)
+  const r29 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: generation] gather the callers" } },
+    cliSlotRoot,
+  );
+  check(r29.status === 2, "row29: cli-shaped declared tier denies the Agent dispatch",
+    `status=${r29.status} stderr=${r29.stderr}`);
+  check(
+    r29.stderr.includes("{for:'gather'}") && r29.stderr.includes("stdin"),
+    "row29: cli-tier FIX points at the external-executor gather path",
+    r29.stderr,
+  );
+  check(
+    !r29.stderr.includes('model: "') && !r29.stderr.includes("gpt-5.5"),
+    "row29: cli-tier FIX names no phantom model",
+    r29.stderr,
+  );
+
+  // --- 30. bare deny under a cli-shaped generation slot names no model -----
+  const r30 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "implement the widget with no tier given" } },
+    cliSlotRoot,
+  );
+  check(r30.status === 2, "row30: bare dispatch under cli-shaped generation is denied",
+    `status=${r30.status} stderr=${r30.stderr}`);
+  check(r30.stderr.includes("bee-tier") && r30.stderr.includes("FIX"), "row30: bare-cli deny has bee-tier + FIX", r30.stderr);
+  check(
+    !r30.stderr.includes('model: "'),
+    "row30: bare-cli-generation FIX names no nonexistent model",
+    r30.stderr,
+  );
+
+  // --- 31. empty member set (no model tiers configured) + bare param -> allow
+  // (plan part 2: an unconfigured repo fail-opens, exactly today's behavior.)
+  const r31 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { model: "anything-at-all" } },
+    emptySetRoot,
+  );
+  check(r31.status === 0, "row31: empty member set fail-opens on a bare param (unconfigured repo)",
+    `status=${r31.status} stderr=${r31.stderr}`);
+  check(r31.stderr === "", "row31: empty-member-set allow produces empty stderr", JSON.stringify(r31.stderr));
+
+  // --- 32. malformed models config never throws on the hot path -----------
+  // Junk slot shapes fall back to seeded defaults; a marker dispatch resolves
+  // against those defaults and is allowed — exit is sane (0/2), never a crash.
+  const r32 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: generation] do the thing" } },
+    malformedRoot,
+  );
+  check(r32.status === 0, "row32: malformed models config resolves via seeded defaults (no throw)",
+    `status=${r32.status} stderr=${r32.stderr}`);
+  const malformedCrash = readLastJsonl(path.join(malformedRoot, ".bee", "logs", "hooks.jsonl"));
+  check(
+    !malformedCrash || malformedCrash.event !== "crash",
+    "row32: malformed config left no crash line on the hot path",
+    JSON.stringify(malformedCrash),
   );
 
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);

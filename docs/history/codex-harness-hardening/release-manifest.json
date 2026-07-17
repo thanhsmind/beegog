@@ -159,7 +159,7 @@
     },
     {
       "path": "hooks/bee-model-guard.mjs",
-      "sha256": "229d7abe02ddb71a26a45df2b3f1173797d4348e264d903e52b8e3c95eab075d",
+      "sha256": "8c2544f5945ee53d396631d9781d777762b4828d1ef5da2103c1ddc0625391a4",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/bee-model-guard.mjs"
@@ -236,7 +236,7 @@
     },
     {
       "path": "hooks/test_model_guard.mjs",
-      "sha256": "11cb9ae7bf71663bffdf8eafac66f249b49f100a1cb742fdb0c8e7586742fe4e",
+      "sha256": "ec6462bf670f74a0a5050b6d3db6650fee888be509eb8df9d83454153268ee23",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/test_model_guard.mjs"
