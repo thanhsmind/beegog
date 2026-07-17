@@ -529,7 +529,7 @@ try {
   const writeGuardEntries = preToolUse.filter((e) =>
     (e.hooks || []).some((h) => String(h.command || "").includes("bee-write-guard.mjs")));
   check(writeGuardEntries.length === 1 &&
-    writeGuardEntries[0].matcher === "Edit|Write|MultiEdit|Bash|Read|Glob|Grep",
+    writeGuardEntries[0].matcher === "Edit|Write|MultiEdit|Bash|Read|Glob|Grep|AskUserQuestion",
     "exactly one PreToolUse entry wires bee-write-guard.mjs, matcher is byte-identical to the write-guard matcher",
     JSON.stringify(writeGuardEntries));
 

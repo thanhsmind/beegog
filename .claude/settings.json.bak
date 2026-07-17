@@ -1,5 +1,5 @@
 {
-    "statusLine": {
+  "statusLine": {
     "type": "command",
     "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/statusline-command.sh\""
   },
@@ -9,7 +9,6 @@
   "enabledPlugins": {
     "compound-engineering@compound-engineering-plugin": false
   },
-
   "hooks": {
     "SessionStart": [
       {
@@ -39,6 +38,15 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.bee/bin/hooks/bee-write-guard.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.bee/bin/hooks/bee-model-guard.mjs"
           }
         ]
       }

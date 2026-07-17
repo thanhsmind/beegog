@@ -94,7 +94,7 @@ import {
 // graph at import time — the RED-first evidence stays per-row.
 import * as laneStore from '../lib/state.mjs';
 import * as laneBinding from '../lib/claims.mjs';
-import { checkWrite, checkRead, extractBashTargets } from '../lib/guards.mjs';
+import { checkWrite, checkRead, extractBashTargets, checkAskUserQuestion } from '../lib/guards.mjs';
 import { buildPromptReminder, shouldInject, markInjected, buildSessionPreamble } from '../lib/inject.mjs';
 import { logDecision, supersedeDecision, activeDecisions, datamark } from '../lib/decisions.mjs';
 import {
@@ -1167,6 +1167,27 @@ await check('checkWrite blocks source writes while idle (intake gate); config ca
   const off = checkWrite(root, state, 'src/app.ts');
   assert(off.allow === true, 'idle gate must be disableable via guards.idle_gate=false');
   writeJsonAtomic(configPath, before || {});
+});
+
+await check('checkAskUserQuestion turns opaque "Invalid tool parameters" into a clear, specific deny; fail-open on odd shapes', async () => {
+  // Valid question is allowed.
+  const ok = { questions: [{ question: 'Which approach?', header: 'Approach', multiSelect: false, options: [{ label: 'A', description: 'do A' }, { label: 'B', description: 'do B' }] }] };
+  assert(checkAskUserQuestion(ok).allow === true, 'a valid AskUserQuestion must be allowed');
+  // header > 12 chars — the #1 cause — denied with the count named.
+  const longHeader = checkAskUserQuestion({ questions: [{ question: 'q', header: 'Xử lý external', options: [{ label: 'A', description: 'x' }, { label: 'B', description: 'y' }] }] });
+  assert(longHeader.allow === false && longHeader.kind === 'ask-schema' && /14 chars|max 12|header/.test(longHeader.reason), `long header must deny with a clear reason, got ${JSON.stringify(longHeader)}`);
+  // >4 options denied; <2 options denied.
+  assert(checkAskUserQuestion({ questions: [{ question: 'q', header: 'h', options: [1, 2, 3, 4, 5].map((n) => ({ label: `L${n}`, description: 'd' })) }] }).allow === false, '5 options must deny');
+  assert(checkAskUserQuestion({ questions: [{ question: 'q', header: 'h', options: [{ label: 'only', description: 'd' }] }] }).allow === false, '1 option must deny');
+  // >4 questions denied.
+  assert(checkAskUserQuestion({ questions: [1, 2, 3, 4, 5].map(() => ({ question: 'q', header: 'h', options: [{ label: 'A', description: 'd' }, { label: 'B', description: 'd' }] })) }).allow === false, '5 questions must deny');
+  // missing label / description denied.
+  assert(checkAskUserQuestion({ questions: [{ question: 'q', header: 'h', options: [{ description: 'no label' }, { label: 'B', description: 'd' }] }] }).allow === false, 'missing label must deny');
+  assert(checkAskUserQuestion({ questions: [{ question: 'q', header: 'h', options: [{ label: 'A' }, { label: 'B', description: 'd' }] }] }).allow === false, 'missing description must deny');
+  // Fail-open: unrecognized / absent shapes are never blocked.
+  assert(checkAskUserQuestion({}).allow === true, 'no questions key -> allow (fail-open)');
+  assert(checkAskUserQuestion(null).allow === true, 'null input -> allow (fail-open)');
+  assert(checkAskUserQuestion({ questions: 'weird' }).allow === true, 'non-array questions -> allow (fail-open)');
 });
 
 await check('checkWrite denies executable/code files under docs/history/ (the .md-only knowledge layer) in every phase (GitHub #17)', async () => {

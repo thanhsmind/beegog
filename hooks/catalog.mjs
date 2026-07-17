@@ -119,7 +119,7 @@ const CATALOG = Object.freeze([
     groups: [
       {
         runtimes: BOTH,
-        matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep",
+        matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep|AskUserQuestion",
         hooks: [cmd("bee-write-guard.mjs", "bee: write guard")],
       },
       {

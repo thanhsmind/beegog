@@ -375,7 +375,17 @@ async function main() {
       payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
     const cwd = ctx.cwd;
 
-    if (READ_TOOLS.has(toolName)) {
+    if (toolName === "AskUserQuestion") {
+      // Pre-validate the AskUserQuestion schema so a violation surfaces as a
+      // clear, specific message instead of the harness's opaque "Invalid tool
+      // parameters" (which names neither the tool nor the bad field).
+      const verdict = guards.checkAskUserQuestion
+        ? guards.checkAskUserQuestion(toolInput)
+        : { allow: true };
+      if (verdict && verdict.allow === false) {
+        denial = { reason: verdict.reason };
+      }
+    } else if (READ_TOOLS.has(toolName)) {
       const rel = lexicalRelPath(root, cwd, toolInput.file_path || toolInput.path || "");
       if (rel) {
         const verdict = guards.checkRead(rel);

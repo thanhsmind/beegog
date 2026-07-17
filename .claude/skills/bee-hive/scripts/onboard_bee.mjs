@@ -1537,7 +1537,7 @@ function renderRepoHookEntries() {
     ],
     UserPromptSubmit: [{ hooks: [entry("bee-prompt-context.mjs")] }],
     PreToolUse: [
-      { matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep", hooks: [entry("bee-write-guard.mjs")] },
+      { matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep|AskUserQuestion", hooks: [entry("bee-write-guard.mjs")] },
       { matcher: "Agent|Task", hooks: [entry("bee-model-guard.mjs")] },
     ],
     PostToolUse: [
@@ -1632,7 +1632,7 @@ function renderCodexHookEntries() {
     UserPromptSubmit: [{ hooks: [entry("bee-prompt-context.mjs", "bee: phase reminder")] }],
     PreToolUse: [
       {
-        matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep",
+        matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep|AskUserQuestion",
         hooks: [entry("bee-write-guard.mjs", "bee: write guard")],
       },
     ],

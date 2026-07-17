@@ -196,6 +196,20 @@ async function main() {
     root,
   );
   check(r1.status === 2, "row1: Edit .bee/state.json is denied (exit 2)", `status=${r1.status} stderr=${r1.stderr}`);
+
+  // --- AskUserQuestion schema pre-validation: an over-long header is a clear,
+  // specific deny (exit 2) instead of the harness's opaque "Invalid tool parameters".
+  const rAskBad = await runHookPayload(
+    { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "q", header: "Xử lý external", options: [{ label: "A", description: "x" }, { label: "B", description: "y" }] }] } },
+    root,
+  );
+  check(rAskBad.status === 2, "AskUserQuestion with a 14-char header is denied (exit 2)", `status=${rAskBad.status} stderr=${rAskBad.stderr}`);
+  check(/AskUserQuestion/.test(rAskBad.stderr) && /header|max 12/.test(rAskBad.stderr), "the deny message names the AskUserQuestion header violation", rAskBad.stderr);
+  const rAskOk = await runHookPayload(
+    { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "q", header: "Approach", options: [{ label: "A", description: "x" }, { label: "B", description: "y" }] }] } },
+    root,
+  );
+  check(rAskOk.status === 0, "a valid AskUserQuestion is allowed (exit 0)", `status=${rAskOk.status} stderr=${rAskOk.stderr}`);
   check(r1.stderr.includes("bee.mjs state"), "row1: stderr names bee.mjs state", r1.stderr);
   check(r1.stderr.includes("FIX"), "row1: stderr has a FIX element", r1.stderr);
   check(r1.stderr.includes("direct-edit"), "row1: stderr identifies the direct-edit guard", r1.stderr);

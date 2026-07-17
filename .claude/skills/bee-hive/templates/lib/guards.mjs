@@ -290,6 +290,68 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
  * Privacy/scout read check. Privacy denials carry a marker the hook prints
  * so the runtime can surface the question to the human.
  */
+// checkAskUserQuestion — turn the harness's opaque "Invalid tool parameters"
+// rejection of an AskUserQuestion call into a CLEAR, self-documenting deny that
+// names the exact schema violation, so the agent fixes it (and a screenshot
+// shows the real cause). Fail-open on any shape we cannot confidently call
+// invalid — never block a question we are unsure about.
+export function checkAskUserQuestion(toolInput) {
+  try {
+    const questions =
+      toolInput && Array.isArray(toolInput.questions) ? toolInput.questions : null;
+    if (!questions) return { allow: true };
+    if (questions.length < 1 || questions.length > 4) {
+      return {
+        allow: false,
+        kind: 'ask-schema',
+        reason: `bee AskUserQuestion guard: ${questions.length} question(s) — the tool takes 1–4 per call. Split into separate calls.`,
+      };
+    }
+    for (let i = 0; i < questions.length; i += 1) {
+      const q = questions[i];
+      if (!q || typeof q !== 'object') continue; // odd shape — fail open
+      const where = questions.length > 1 ? ` (question ${i + 1})` : '';
+      if (typeof q.header === 'string' && q.header.length > 12) {
+        return {
+          allow: false,
+          kind: 'ask-schema',
+          reason: `bee AskUserQuestion guard: header "${q.header}" is ${q.header.length} chars${where} — max 12 (it is a short chip label, not the question). Shorten the header.`,
+        };
+      }
+      if (Array.isArray(q.options)) {
+        if (q.options.length < 2 || q.options.length > 4) {
+          return {
+            allow: false,
+            kind: 'ask-schema',
+            reason: `bee AskUserQuestion guard: ${q.options.length} option(s)${where} — each question needs 2–4 options (an "Other" free-text choice is added automatically). Fold overflow into a follow-up question.`,
+          };
+        }
+        for (let j = 0; j < q.options.length; j += 1) {
+          const o = q.options[j];
+          if (!o || typeof o !== 'object') continue;
+          if (typeof o.label !== 'string' || !o.label.trim()) {
+            return {
+              allow: false,
+              kind: 'ask-schema',
+              reason: `bee AskUserQuestion guard: option ${j + 1}${where} is missing a non-empty "label". Every option needs a label and a description.`,
+            };
+          }
+          if (typeof o.description !== 'string' || !o.description.trim()) {
+            return {
+              allow: false,
+              kind: 'ask-schema',
+              reason: `bee AskUserQuestion guard: option "${o.label}"${where} is missing a non-empty "description". Every option needs a label and a description.`,
+            };
+          }
+        }
+      }
+    }
+    return { allow: true };
+  } catch {
+    return { allow: true }; // fail-open: never block on an unexpected shape
+  }
+}
+
 export function checkRead(relPath) {
   const normalized = normalizeRel(relPath);
 

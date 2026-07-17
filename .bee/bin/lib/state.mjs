@@ -9,7 +9,7 @@ import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './
 import { pathsOverlap } from './reservations.mjs';
 import { readGrants } from './worktree-store.mjs';
 
-export const BEE_VERSION = '1.3.13';
+export const BEE_VERSION = '1.3.14';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
