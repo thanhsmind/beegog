@@ -210,9 +210,22 @@ The user's core ask; `bee-executing/SKILL.md:74` explicitly rules it out today. 
   | `ao-4-1` | standard (ceiling-judged at dispatch) | `skills/bee-hive/templates/lib/state.mjs` + `.bee/bin/lib/state.mjs`, `skills/bee-hive/templates/bee.mjs` + `.bee/bin/bee.mjs`, `skills/bee-hive/templates/tests/test_bee_cli.mjs`, `skills/bee-hive/templates/tests/test_lib.mjs` + `.claude`/`.agents` test_lib mirrors, release manifest | `node skills/bee-hive/templates/tests/test_bee_cli.mjs && node skills/bee-hive/templates/tests/test_lib.mjs && node scripts/test_lib_mirror.mjs && node skills/bee-hive/scripts/test_split_brain_regression.mjs && node scripts/release_manifest.mjs --check` |
   | `ao-4-2` | standard | `skills/bee-validating/SKILL.md` (+`.claude`/`.agents` mirrors), release manifest — deps `ao-4-1` | `node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/release_manifest.mjs --check` |
 
-### Slice 5 — Worker-ise cell execution (AO1) — BLOCKED ON S1
+### Slice 5 — Worker-ise cell execution (AO1/AO14) — CURRENT slice (S1 answered: lane table gives way)
 
-The only part with leverage on the bill. Orchestrator's window becomes a control plane: cells, digests, cap results — never file bodies. Discretion: full `bee-swarming` dispatch vs a lighter direct Agent dispatch under the same execution contract.
+The only part with leverage on the bill. Orchestrator's window becomes a control plane: cells, digests, cap results — never file bodies.
+
+**Design settled at planning (2026-07-17), per AO14 verbatim:**
+1. **Lane table amendment:** `bee-hive/SKILL.md:116`'s tiny-lane (and small-lane) Execute column changes from *"direct, in-session (solo)"* to **a dispatched execution worker**; `bee-swarming/SKILL.md`'s "Solo execution (tiny/small lanes)" section is amended in the same slice: the merged gate stays, but implementation happens in ONE dispatched worker under the standard worker prompt template — no wave ceremony, no reviewers, no panels. Discretion resolved: the **lighter direct Agent dispatch under the same execution contract** (a single worker, same template, same status tokens), not a full bee-swarming wave.
+2. **Delegation contract gains the second named class (AO14):** an **execution worker** — unlike an I/O-offload worker it DOES register in the swarm registry (`state worker add`) and DOES take reservations; it implements exactly one assigned cell and returns a status token. Text lands in `bee-hive/references/routing-and-contracts.md` beside the I/O-worker definition, and critical rule 13's parenthetical in `AGENTS.block.md` gains the class ("zero *ceremony* subagents — never zero I/O workers, and from AO14 never zero *execution* workers either: tiny implementation itself rides a dispatched worker").
+3. **Done-report authorship (AO14):** the orchestrator authors the tiny/small done-report; its evidence is the worker's verbatim diff **plus the orchestrator's own independent verify re-run** — never the worker's word (this is decision 0018's goal-check restated as authorship, no new mechanics).
+4. **No cost claim** is attached to the lane-table change itself; AO1's leverage lives in the orchestrator window staying a control plane — reports may state that framing only.
+5. Root `AGENTS.md` re-renders via self-onboard (rule-13 rider), census anchors in `test_lib.mjs` updated where they pin the amended sentences — declared in files up front (learning Addendum 3 discipline).
+
+  ##### Slice 5 cells (current slice)
+
+  | Cell | Lane | Files bounded to | Verify command |
+  |---|---|---|---|
+  | `ao-5-1` | standard | `skills/bee-hive/SKILL.md`, `skills/bee-swarming/SKILL.md`, `skills/bee-hive/references/routing-and-contracts.md`, `skills/bee-hive/templates/AGENTS.block.md`, root `AGENTS.md` (re-rendered), `skills/bee-hive/templates/tests/test_lib.mjs` (census anchors), all `.claude`/`.agents` mirrors of the above, release manifest | `node skills/bee-hive/templates/tests/test_lib.mjs && node scripts/test_gate_bypass_doctrine.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/release_manifest.mjs --check` |
 
 ### Slice 6 — The spec the user asked for (AO-deliverable)
 

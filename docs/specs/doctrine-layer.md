@@ -1,7 +1,7 @@
 ---
 area: doctrine-layer
 updated: 2026-07-17
-sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17); advisor-and-orchestration Slice 2A-iii (cells ao-2aiii-1/ao-2aiii-2 — dispatch-boundary enforcement + gather-purpose routing prose, 2026-07-17)]
+sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17); advisor-and-orchestration Slice 2A-iii (cells ao-2aiii-1/ao-2aiii-2 — dispatch-boundary enforcement + gather-purpose routing prose, 2026-07-17); advisor-and-orchestration Slice 5 (cell ao-5-1 — execution-worker class, tiny/small single-worker execution, AO14, 2026-07-17)]
 decisions: [ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface); 040f8ef0 (read-only analyst spawn + partial-return fan-out, B7/R11)]
 coverage: partial
 ---
@@ -151,6 +151,22 @@ observes: the orchestrator never hangs waiting on a fixed helper count
 (observed: a session stuck indefinitely "waiting for 3 background agents" when
 one dispatch had died at creation), and no gathering helper can modify the
 project no matter what its instructions say (decision 040f8ef0).
+
+**B7a — Two helper classes, distinguished by authority and state effects.** The
+delegation layer names exactly two worker classes. An **I/O-offload helper**
+(gather/extract/review) holds no authority and mutates no workflow state: it
+never registers, never reserves, never caps — it returns a digest and vanishes.
+An **execution worker** implements exactly one assigned unit of work: it
+registers in the worker registry, reserves the files it will touch, and its
+result feeds a cap — and since the smallest lanes also execute through one such
+dispatched worker, "zero subagents" for a small piece of work means zero
+*ceremony* helpers (reviewers, panels), never zero I/O helpers and never zero
+execution workers. Independent reviewers and checkers are neither class: they
+are review-class dispatches with no execution authority. The class is defined
+by what the dispatch may *do*, never by which mechanism launched it. The
+orchestrator authors the smallest lanes' completion report itself, from the
+worker's verbatim diff plus the orchestrator's own fresh verification re-run
+(AO14; ao-5-1, 2026-07-17).
 
 **B8 — A helper tier backed by an external command serves gathers only, and its
 output is accepted only between declared markers.** Trigger: a helper tier is

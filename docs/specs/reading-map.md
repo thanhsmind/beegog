@@ -21,6 +21,10 @@ Where things live. Read the touched area's spec before its code.
   reference), how doctrine reaches every project by copy, the delegation threshold
   (gather delegates, deciding never does), and the anchor tests that keep a rule from
   drifting back out of the layer (`coverage: partial`).
+- [`advisor-protocol.md`](./advisor-protocol.md) — second opinions for workers and the
+  orchestrator: who may consult the configured adviser, the mandatory pre-approval consult
+  for high-risk work with event-based staleness, the read-only rule, and what advice may
+  never do (approve, override, write).
 - [`workflow-state.md`](./workflow-state.md) — the durable workflow record: closed phase
   vocabulary, four gates, the guarded feature-start that can never inherit approvals or
   bury unfinished work, and the review records — user-invoked review sessions with frozen
