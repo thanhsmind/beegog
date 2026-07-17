@@ -526,7 +526,7 @@
     },
     {
       "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
-      "sha256": "b30f8f684b47d98847d9044ae22240d47a1ecdae708b9bb164b5491e3b874231",
+      "sha256": "ae48080b700a2a420fd8848055e763a3050a87bfd2745e9242280fd436b078d3",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/scripts/test_onboard_bee.mjs"

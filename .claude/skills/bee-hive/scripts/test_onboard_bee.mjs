@@ -3834,6 +3834,97 @@ const RETIRED_HELPER_NAMES = [
   }
 }
 
+// --- 14. onboarding-generator drift check (H1) ------------------------------
+// hooks/catalog.mjs is the single logical source of truth for bee's hook set
+// (its own header). Three onboarding generators mirror it by hand: the
+// vendored-hook list (HOOK_FILENAMES, copied into .bee/bin/hooks/), the
+// Claude settings template (renderRepoHookEntries) and the Codex
+// repo-projection template (renderCodexHookEntries). A hook added to the
+// catalog without teaching all three generators is exactly the clobber class
+// from learnings/20260717-guard-membership-escape-routes.md Addendum 2 (P2
+// friction): the checked-in plugin projections self-correct via the
+// hooks/test_hook_contracts.mjs drift row, but these hand-authored generator
+// templates silently lagged and a live settings edit was clobbered by
+// self-onboard. This row fails RED naming the missing hook and the lagging
+// inventory, the moment a generator falls behind the catalog.
+//
+// Every side is read from what onboarding actually RENDERS into a fresh
+// fixture (never parsed from source text), so this row survives refactors of
+// the generator functions' internal shape. Per-runtime catalog sets come
+// straight from hooks/catalog.mjs renderProjection(), which already filters
+// per runtime (catalog.mjs:224) — no ALLOWED_DIFFERENCES arithmetic needed.
+{
+  function scriptNameFromCommand(command) {
+    const m = String(command || "").match(/([A-Za-z0-9_.-]+\.mjs)/);
+    return m ? m[1] : null;
+  }
+  function scriptNamesFromHooksObject(hooksObj) {
+    const names = new Set();
+    for (const entries of Object.values(hooksObj || {})) {
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        for (const hook of entry.hooks || []) {
+          const name = scriptNameFromCommand(hook.command);
+          if (name) names.add(name);
+        }
+      }
+    }
+    return names;
+  }
+
+  const catalogModulePath = path.join(REPO_ROOT, "hooks", "catalog.mjs");
+  const { renderProjection, RUNTIMES } = await import(pathToFileURL(catalogModulePath).href);
+  const claudeCatalogNames = scriptNamesFromHooksObject(renderProjection(RUNTIMES.CLAUDE).hooks);
+  const codexCatalogNames = scriptNamesFromHooksObject(renderProjection(RUNTIMES.CODEX).hooks);
+  const allCatalogNames = new Set([...claudeCatalogNames, ...codexCatalogNames]);
+
+  const driftTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-onboard-drift-"));
+  const driftHome = makeFakeHome();
+  try {
+    await runOnboard(["--repo-root", driftTmp, "--apply", "--repo-hooks", "--json"], driftHome);
+
+    // generator 1: HOOK_FILENAMES (vendored-hook list) must cover every
+    // catalog script, either runtime — it is the single dir both runtime
+    // projections' commands resolve against on a host repo.
+    const hooksDir = path.join(driftTmp, ".bee", "bin", "hooks");
+    const vendoredNames = new Set(fs.existsSync(hooksDir) ? fs.readdirSync(hooksDir) : []);
+    const missingFromVendored = [...allCatalogNames].filter((n) => !vendoredNames.has(n));
+    check(missingFromVendored.length === 0,
+      "vendored-hook list (HOOK_FILENAMES) covers every hooks/catalog.mjs script",
+      JSON.stringify({ missingFromVendored }));
+
+    // generator 2: renderRepoHookEntries (Claude settings template).
+    const driftSettingsPath = path.join(driftTmp, ".claude", "settings.json");
+    const driftSettings = fs.existsSync(driftSettingsPath)
+      ? JSON.parse(fs.readFileSync(driftSettingsPath, "utf8"))
+      : { hooks: {} };
+    const claudeGeneratorNames = scriptNamesFromHooksObject(driftSettings.hooks);
+    const missingFromClaudeGenerator =
+      [...claudeCatalogNames].filter((n) => !claudeGeneratorNames.has(n));
+    check(missingFromClaudeGenerator.length === 0,
+      "Claude settings template (renderRepoHookEntries) covers every hooks/catalog.mjs claude-runtime script",
+      JSON.stringify({ missingFromClaudeGenerator }));
+
+    // generator 3: renderCodexHookEntries (Codex repo-projection template).
+    const driftCodexPath = path.join(driftTmp, ".codex", "hooks.json");
+    const driftCodex = fs.existsSync(driftCodexPath)
+      ? JSON.parse(fs.readFileSync(driftCodexPath, "utf8"))
+      : { hooks: {} };
+    const codexGeneratorNames = scriptNamesFromHooksObject(driftCodex.hooks);
+    const missingFromCodexGenerator =
+      [...codexCatalogNames].filter((n) => !codexGeneratorNames.has(n));
+    check(missingFromCodexGenerator.length === 0,
+      "Codex repo-projection template (renderCodexHookEntries) covers every hooks/catalog.mjs codex-runtime script",
+      JSON.stringify({ missingFromCodexGenerator }));
+  } finally {
+    try {
+      fs.rmSync(driftTmp, { recursive: true, force: true });
+      fs.rmSync(driftHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
 // --- suite-wide isolation invariant -----------------------------------------
 // Helper-level check: not a single spawn across the whole suite inherited the
 // real HOME/USERPROFILE unmodified. launchedHomes is populated by runOnboard
