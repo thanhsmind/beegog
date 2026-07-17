@@ -1,7 +1,7 @@
 ---
 area: doctrine-layer
 updated: 2026-07-17
-sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17)]
+sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17); advisor-and-orchestration Slice 2A-iii (cells ao-2aiii-1/ao-2aiii-2 — dispatch-boundary enforcement + gather-purpose routing prose, 2026-07-17)]
 decisions: [ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface); 040f8ef0 (read-only analyst spawn + partial-return fan-out, B7/R11)]
 coverage: partial
 ---
@@ -230,7 +230,12 @@ unit execution can never route to the external path until it earns its own proof
   execution, and a caller must explicitly declare the gather purpose to receive
   the command. Purpose defaults to the refused side; malformed purpose values
   fail safe to refusal, and the refusal is a returned value, never a crash — the
-  resolution sits under a fail-open guard path (34398e69, 4ec5be1a).
+  resolution sits under a fail-open guard path (34398e69, 4ec5be1a). The
+  boundary is also enforced at the dispatch checkpoint: an in-family helper
+  dispatch declaring an external-command tier is refused with a corrective
+  message routing to the gather path, and the routing procedures teach the
+  explicit gather-purpose form as the documented way to reach the command
+  (2A-iii, 6b155218).
 
 ## Edge Cases Settled
 
@@ -281,8 +286,9 @@ unit execution can never route to the external path until it earns its own proof
   `skills/bee-hive/references/routing-and-contracts.md` § Delegation contract —
   the *detail* legitimately lives there; the rule itself, and the transport it
   requires (a `model` param or an anchored `[bee-tier:]` marker, B3a), are
-  critical rule 13 on the standing sheet. The guard that rejects a bare dispatch:
-  `hooks/bee-model-guard.mjs`.
+  critical rule 13 on the standing sheet. The guard that rejects a bare,
+  config-disagreeing, or cli-tier-declared dispatch (declared tier read before
+  the model param, 2A-iii): `hooks/bee-model-guard.mjs`.
 - Anchor tests (B4/R2): `skills/bee-hive/templates/tests/test_lib.mjs` — the
   `census:` checks, including the delegation-layer anchor and the on-demand
   review anchors, plus the native Codex empty-wait anchor across the master,

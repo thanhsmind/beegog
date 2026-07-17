@@ -37,7 +37,7 @@
       "bee-state-sync.mjs": "2a0748bbd02884dbca87a494b825b350e0fcf149bb12a83c638a248d8619cbc4",
       "bee-chain-nudge.mjs": "0520c71fad2513d93666ad4c3353b7196faeeac382430b1e1395fabd0febd9cb",
       "bee-session-close.mjs": "370260bf6f50d33ddc8eda31d422ef859342c076194ace486a6d6447f982c42d",
-      "bee-model-guard.mjs": "229d7abe02ddb71a26a45df2b3f1173797d4348e264d903e52b8e3c95eab075d",
+      "bee-model-guard.mjs": "8c2544f5945ee53d396631d9781d777762b4828d1ef5da2103c1ddc0625391a4",
       ".codex/hooks.json": "7f338fcbdbfbe522b49a52f8a13ca79038120a8b38031f70ab0d1f11183a91db"
     },
     "statusline": {
@@ -46,5 +46,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-17T11:39:25.597Z"
+  "updated_at": "2026-07-17T13:35:45.150Z"
 }

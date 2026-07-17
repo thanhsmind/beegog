@@ -1,8 +1,8 @@
 ---
 area: hook-runtime
-updated: 2026-07-16
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14)]
-decisions: [codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated)]
+updated: 2026-07-17
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17)]
+decisions: [codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated)]
 coverage: partial
 ---
 
@@ -224,6 +224,38 @@ deduped and degrades to the ordinary advisory, so a turn that genuinely cannot
 proceed is never trapped in a loop. Fail-open is unchanged: any internal failure
 falls through to the advisory path with a visible log, never a crash.
 
+**B16 — The pre-spawn dispatch guard reads the declared tier before judging the
+explicit model choice.** A helper dispatch may carry a declared tier, an
+explicit model choice, both, or neither; the guard judges them together, in
+this order, and configuration is the sole authority throughout — there is no
+built-in list of acceptable models.
+- *Both present:* they must agree. A tier configured to a model requires the
+  explicit choice to equal exactly that model; disagreement is refused with the
+  configured model named in the corrective message. A tier that names no model
+  (the session-inherit tier, a budget tier, an external-command tier) must not
+  carry an explicit model choice at all — the label would enter the audit
+  record while the dispatch actually ran on the choice.
+- *Choice only:* the model must be one of the models configured across the
+  runtime's tier slots. An unconfigured name is refused, and the corrective
+  message teaches every legitimate route: the configured models, the
+  session-model marker for a dispatch meant to run at the session's own model,
+  and adding the model to a configured tier slot. A workspace with no
+  configured tiers is not checked (fail-open, unchanged behavior).
+- *Tier only:* tiers resolving to a model, a budget, or session-inherit are
+  permitted as before. A tier backed by an external command is refused — an
+  in-family helper cannot *be* the external command — and the corrective
+  message routes to the external-executor gather path without ever naming a
+  model that does not exist.
+- *Neither:* refused, as always; the corrective message now checks how the
+  default tier is configured first, so it never instructs the actor to pass a
+  nonexistent model.
+What each actor observes: the assistant receives the corrective message and can
+self-correct on the next attempt; the audit log gains one line per evaluated
+dispatch whose transport label states *why* a refusal happened (tier/choice
+disagreement, unconfigured choice, external-command tier, bare) — a refused or
+misdeclared dispatch can no longer appear in the audit trail as a legitimate
+one. Every internal failure of the guard itself fails open.
+
 ## Actors & Access
 
 - **The assistant** (either runtime) — subject of every checkpoint; observes
@@ -247,8 +279,12 @@ falls through to the advisory path with a visible log, never a crash.
   with the single scoped exception of the gate-bypass net on the session-stop
   event (B15, R14) — turn-control there is the intended, loop-guarded behavior.
 - R5 — Every dispatch of a subagent carries an explicit model-tier transport
-  and is audit-logged (decision 0023; the audit checkpoint is an allowed
-  difference — it exists only where the runtime exposes dispatch).
+  that **agrees with configuration**, and every evaluated dispatch — allowed or
+  refused — is audit-logged with an honest transport label (decision 0023;
+  strengthened per 72f3d6dd/AO5 "config is the authority": a declared tier is
+  read before the explicit model choice is judged, per B16; the audit
+  checkpoint is an allowed difference — it exists only where the runtime
+  exposes dispatch).
 - R6 — Project checkpoints are enabled by default, resolve project-local
   handlers from the project root even when a session starts below it, and any
   changed non-managed definition requires fresh human review before execution
