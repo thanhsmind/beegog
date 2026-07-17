@@ -73,7 +73,7 @@ Package installs **always** checkpoint: stop and return `[BLOCKED]` with the pac
 
 D1 amends the two-attempts rule above with a worker-level, on-failure-only step. This is **not** a gate-time or orchestrator-level consult — de967733 ("Bee runs ONE cost pattern") stays amended, not reversed: fan-out orchestration remains the default for every phase, and the human gates are untouched.
 
-**Trigger** — consult only when both are true: the dispatch prompt carries an `Advisor` line (the orchestrator already ran the degenerate check per D2/decision 0016 before adding one — the worker never self-assesses this), and the worker has just hit its **first serious failed verify attempt**. No `Advisor` line → proceed exactly as the unchanged rule in Verify.
+**Trigger** — consult only when both are true: the dispatch prompt carries an `Advisor` line (the orchestrator already ran the same-model no-op check per AO4/AO5 before adding one — the worker never self-assesses this), and the worker has just hit its **first serious failed verify attempt**. No `Advisor` line → proceed exactly as the unchanged rule in Verify.
 
 **Canonical loop (D3), max 2 consults per claim:**
 

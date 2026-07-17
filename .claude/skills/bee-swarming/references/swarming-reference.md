@@ -225,7 +225,7 @@ Identity:
 - Assigned cell id: <CELL_ID>
 - Feature: <FEATURE>
 - Model tier: <extraction|generation|ceiling> (model: <MODEL_NAME>)
-- Advisor (optional — present only when the dispatch-time degenerate check passes, D2/decision 0016): <ADVISOR_MODEL_OR_CLI_COMMAND> — consult via <TRANSPORT>
+- Advisor (optional — present only when the advisor resolves and is not the worker's own model, the same-model no-op, AO4/AO5): <ADVISOR_MODEL_OR_CLI_COMMAND> — consult via <TRANSPORT>
 
 Inputs — read these; nothing else will be provided:
 - docs/history/<FEATURE>/CONTEXT.md
@@ -247,7 +247,7 @@ Startup:
 4. Reserve, implement, verify, cap, release, report.
 ```
 
-The `Advisor` line is omitted entirely — a session whose config has no advisor slot dispatches byte-identical prompts to today — whenever no advisor resolves, the advisor's model name matches the worker's own resolved model, or the worker is dispatched at ceiling tier (always skip); the degenerate check is the orchestrator's, run at dispatch, never left to the worker (D2 + decision 0016). When present, `<TRANSPORT>` states the proven transport verbatim, matching what bee-executing's Advisor Consult section tells the worker to run: for a **model-shaped** advisor, `your own Agent tool, model param <advisor-model>, description starting exactly "advisor-consult <CELL_ID>: <advisor-model>"` (fallback: headless `claude -p --model <advisor-model>`); for a **cli-shaped** advisor, `<the configured command>, evidence bundle on stdin` (External Executors output-capture discipline, above).
+The `Advisor` line is omitted entirely — a session whose config has no advisor slot dispatches byte-identical prompts to today — whenever no advisor resolves, or the advisor's model name literally matches the worker's own resolved model (the one honest no-op). Ceiling-tier workers are no longer a skip condition — config is the authority and the orchestrator does not second-guess it with a strength ladder (AO5). The same-model no-op is the orchestrator's, run at dispatch, never left to the worker (AO4 + AO5). When present, `<TRANSPORT>` states the proven transport verbatim, matching what bee-executing's Advisor Consult section tells the worker to run: for a **model-shaped** advisor, `your own Agent tool, model param <advisor-model>, description starting exactly "advisor-consult <CELL_ID>: <advisor-model>"` (fallback: headless `claude -p --model <advisor-model>`); for a **cli-shaped** advisor, `<the configured command>, evidence bundle on stdin` (External Executors output-capture discipline, above).
 
 Never include session history, other cells, or the orchestrator's reasoning. If a worker needs more than this contract, the cell failed cold-pickup review — route the gap back, do not widen the prompt with transcript.
 
