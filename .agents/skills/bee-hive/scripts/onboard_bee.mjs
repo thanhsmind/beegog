@@ -120,6 +120,7 @@ const HOOK_FILENAMES = [
   "bee-chain-nudge.mjs",
   "bee-session-close.mjs",
   "bee-model-guard.mjs",
+  "bee-tools-logger.mjs",
 ];
 
 const DEFAULT_STATE = {
@@ -1542,6 +1543,7 @@ function renderRepoHookEntries() {
     ],
     PostToolUse: [
       { matcher: "TaskCreate|TaskUpdate|TodoWrite", hooks: [entry("bee-state-sync.mjs")] },
+      { hooks: [entry("bee-tools-logger.mjs")] },
     ],
     SubagentStop: [{ hooks: [entry("bee-state-sync.mjs"), entry("bee-chain-nudge.mjs")] }],
     // PreCompact mirrors the plugin hooks.json (decision 0017): an unflushed
@@ -1640,6 +1642,9 @@ function renderCodexHookEntries() {
       {
         matcher: "TaskCreate|TaskUpdate|TodoWrite",
         hooks: [entry("bee-state-sync.mjs", "bee: state sync")],
+      },
+      {
+        hooks: [entry("bee-tools-logger.mjs", "bee: tools logger")],
       },
     ],
     SubagentStart: [

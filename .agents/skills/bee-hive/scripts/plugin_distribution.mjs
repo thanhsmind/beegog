@@ -11,7 +11,7 @@ const PACKAGE_ROLES = new Set(["plugin_skill", "plugin_hook", "plugin_manifest",
 const BEE_HOOK_HANDLERS = new Set([
   "bee-session-init.mjs", "bee-prompt-context.mjs", "bee-write-guard.mjs",
   "bee-model-guard.mjs", "bee-state-sync.mjs", "bee-chain-nudge.mjs",
-  "bee-session-close.mjs", "bee-codex-subagent-audit.mjs",
+  "bee-session-close.mjs", "bee-codex-subagent-audit.mjs", "bee-tools-logger.mjs",
 ]);
 
 function sha256(data) {

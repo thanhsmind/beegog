@@ -303,22 +303,23 @@ check("greenfield missing target: creates dir, one exact version, complete onboa
   assertVersionParity(sb);
 });
 
-// The 9 hooks repo-copy vendors into <target>/.bee/bin/hooks (the manual
+// The 10 hooks repo-copy vendors into <target>/.bee/bin/hooks (the manual
 // skills-copy route does not load plugin hooks, so onboarding must ship them).
 const VENDORED_HOOKS = [
   "adapter.mjs", "bee-chain-nudge.mjs", "bee-codex-subagent-audit.mjs",
   "bee-model-guard.mjs", "bee-prompt-context.mjs", "bee-session-close.mjs",
-  "bee-session-init.mjs", "bee-state-sync.mjs", "bee-write-guard.mjs",
+  "bee-session-init.mjs", "bee-state-sync.mjs", "bee-tools-logger.mjs",
+  "bee-write-guard.mjs",
 ];
 
 // ── 2. greenfield EMPTY target (repo-copy) ────────────────────────────────────
-check("greenfield empty target: finishes on one exact version with no drift, vendors all 9 hooks", () => {
+check("greenfield empty target: finishes on one exact version with no drift, vendors all 10 hooks", () => {
   const sb = sandbox({ preinstalled: true });
   fs.mkdirSync(sb.target, { recursive: true });
   const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
   assert.equal(r.code, 0, `install must succeed:\n${r.out}`);
   assertVersionParity(sb);
-  // repo-copy vendors the hook runtime: .bee/bin/hooks/ must exist with all 9 files.
+  // repo-copy vendors the hook runtime: .bee/bin/hooks/ must exist with all 10 files.
   const hooksDir = path.join(sb.target, ".bee/bin/hooks");
   assert.ok(fs.existsSync(hooksDir) && fs.statSync(hooksDir).isDirectory(), ".bee/bin/hooks/ must be vendored by repo-copy onboarding");
   for (const hook of VENDORED_HOOKS) {

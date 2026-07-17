@@ -666,7 +666,7 @@ try {
       }
     }
   }
-  check(codexCommandCount === 11, ".codex/hooks.json wires exactly 11 hook commands",
+  check(codexCommandCount === 12, ".codex/hooks.json wires exactly 12 hook commands",
     `count: ${codexCommandCount}`);
   check(codexTransportOk,
     "every .codex/hooks.json command uses the git-root transport with the pinned fail-open diagnostic");

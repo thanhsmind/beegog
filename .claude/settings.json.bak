@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "statusLine": {
     "type": "command",
     "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/statusline-command.sh\""
@@ -33,7 +36,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|Bash|Read|Glob|Grep",
+        "matcher": "Edit|Write|MultiEdit|Bash|Read|Glob|Grep|AskUserQuestion",
         "hooks": [
           {
             "type": "command",
