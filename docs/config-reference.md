@@ -37,7 +37,7 @@ You configure only `generation` and `extraction`, under **`models`**, keyed by r
   |---|---|
   | `"sonnet"` | the runtime's per-agent model switch |
   | `{ "model": "sonnet", "effort": "medium" }` | model + reasoning effort (`low` · `medium` · `high` · `xhigh` · `max`); the effort is applied where the runtime has a per-agent effort switch, recorded and ignored where it does not |
-  | `{ "kind": "cli", "command": "codex exec -m … --yolo" }` | an **external executor** — a separate CLI process dispatched under the same worker contract (effort rides inside the command) |
+  | `{ "kind": "cli", "command": "codex exec -m … -s read-only -", "promptVia": "stdin" }` | an **external executor** — a separate CLI process dispatched under the same worker contract (effort rides inside the command); `promptVia` declares how the prompt reaches it, never sniffed from the command string |
   | `null` | no per-agent switch: the tier is enforced via read budget + output cap in the prompt (for `review`: fall back to generation; for `advisor`: no advisor) |
 
   Invalid shapes are ignored — the slot's default stands, nothing throws.

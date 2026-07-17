@@ -102,6 +102,27 @@ Slice 2 as originally shaped (W1 + W2 + W6) is **split**, per the Scope-Reductio
 
 **Still open, still owed to validating (unchanged):** AO5 says "enforced at config-validate time" — **there is no config-validate stage.** `normalizeModels`/`normalizeTierValue` (`state.mjs:108-124`) silently ignore invalid shapes; `bee.mjs` has no `config validate` verb; the only precedent is the passive `STALE_ADVISOR_NOTICE` (`state.mjs:679-689`), a warning not a refusal. The host must be **named**, and it is net-new plumbing.
 
+#### Slice 2A — RE-PLAN (2026-07-17, after validation-slice-2a.md NOT-READY)
+
+The prior 2A failed Gate 3 (7 blockers B1–B7 + W-e; 3 invalidate the premise, 1 is a live shipped defect). The four cells `ao-2a…2d` are dropped. Per Scope-Reduction Prohibition, 2A is **SPLIT into four ordered sub-slices** — nothing dropped, the safety-relevant work moves first so an unsafe/misconfigured cli can neither do damage nor silently degrade before the path that routes to it exists.
+
+**Ordering (non-negotiable within 2A):** safety floor → structural boundary → guard integrity → dogfood. Cells are cut one sub-slice at a time; only the current sub-slice gets cells.
+
+- **2A-i — Safety floor (CURRENT sub-slice).** Make the cli path safe and non-silent *before* anything routes to it.
+  - **W-e / AO12 (B-config):** add a `bee config validate` verb backed by a shared validator in `state.mjs`, hosted in `bee status` (AO12 — never in `resolveTier`, which is on the fail-open hook hot path). It **loudly refuses** what today silently reverts to sonnet (`normalizeTierValue` → `undefined` → seeded default, `state.mjs:158-174,228`).
+  - **B2 (validation half):** the validator refuses a cli tier whose command **cannot receive a prompt** — prompt transport becomes config's explicit declared job, not an appended `-`.
+  - **B6 + B7:** the validator refuses a cli command carrying an auto-approve / `--dangerously-skip-permissions` / `--yolo`-style flag (today enforced by **zero lines**). Re-scope AO18; fix the shipped sample + `docs/model-presets.md` to read-only sandboxed presets.
+  - **B3:** fix the broken shipped command — `workspace-write` is a **bare positional = the prompt**; it must be `-s workspace-write` and the stdin `-` must be present, or the executor never reads its prompt.
+- **2A-ii — Structural boundary.** **B1:** purpose-scope `resolveTier` so a cli tier resolves for a **gather only**; a cli tier resolving for **cell execution** returns a typed refusal, not `{type:'cli'}` (prose is not a boundary). Add the Delegation-contract cli gather branch (ao-2b intent), now safe: read-only, stdout **IS** the digest, framed by a delimiter contract (`<<<BEE_DIGEST … BEE_DIGEST>>>`, W-a). Verbatim command, prompt on stdin, absolute paths (W7/W9).
+- **2A-iii — Guard integrity.** **B4(2)/B5:** close the model-param short-circuit — read the declared tier **before** the model-param allow (`bee-model-guard.mjs:123-126`), and validate the param **equals** the model configured for that tier (reject `model:"banana"`). **B4(1):** a cli-shaped `review` slot **routes to the external-executor path**, it does not blanket-deny every `[bee-tier: review]` dispatch (plan-checker, panels, bee-reviewing).
+- **2A-iv — Dogfood.** **W11 / W-f:** run one real gather **through `.bee/config.json`** (not a hand-typed `bash -lc`), closing decision 0019's pending first dogfood. GO/NO-GO recorded verbatim.
+
+**Blast radius / test owed (high-risk):** every new refusal needs a malformed-input row (null/wrong-type config); the config-validate host must not throw on the hook hot path; a Bash-launched gather emits **zero** `dispatch.jsonl` rows (W-d) — measurement of the cli path is a known gap handed to Slice 3, not solved here.
+
+##### Slice 2A-i cells (current sub-slice)
+
+Created after Gate 2. Verify command per cell is the recorded suite subset it touches (`node hooks/test_model_guard.mjs` is untouched here; new tests are `node scripts/test_config_validate.mjs` + the sample-safety grep test).
+
 ### Slice 3 — Visibility + measurement (AO1-logger, AO3-agents)
 
 - **W3** — pinned agent types: `.claude/agents/bee-*.md` with `model:` in frontmatter (`bee-gather`=sonnet, `bee-extract`=haiku, `bee-review`=opus); guard rejects catch-all `general-purpose` for bee dispatches. **This explicitly does not reduce cost** (CONTEXT.md) — no cell or report may claim it does. **Sync (AO10, binding):** `.claude/agents/` **must not** become a third `REPO_SKILL_TARGETS` entry — the three-version preflight would resolve it as `unknown` (no `bee-hive` *directory* under an agents root) and **refuse onboarding permanently and non-forceably on every host**. It ships through a separate flat managed-file sync with its own version marker. **Codex (AO11):** documented asymmetry, not parity — Codex has no per-agent model selection, so a pinned `model:` is a no-op file there.
