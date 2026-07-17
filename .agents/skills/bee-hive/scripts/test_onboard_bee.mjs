@@ -160,6 +160,120 @@ try {
     "per-project skill trees are never gitignored (D4: committed to the host repo)",
     gitignoreAfterApply);
 
+  // --- 2c. bee agent files (config-rendered pinned agent types, Slice 3B) ---
+  // Fresh repo, default config.json (extraction: haiku, generation: sonnet,
+  // review unset -> AGENT_TIER_DEFAULTS_CLAUDE fallback opus). must_haves:
+  // "three agent files render into .claude/agents/ with model values taken
+  // from live config, never hardcoded in the template output path".
+  const agentFilePath = (name) => path.join(tmp, ".claude", "agents", `${name}.md`);
+  for (const [name, tier, model] of [
+    ["bee-gather", "generation", "sonnet"],
+    ["bee-extract", "extraction", "haiku"],
+    ["bee-review", "review", "opus"],
+  ]) {
+    check(fs.existsSync(agentFilePath(name)), `${name}.md is rendered on fresh apply`);
+    const text = fs.existsSync(agentFilePath(name)) ? fs.readFileSync(agentFilePath(name), "utf8") : "";
+    check(text.includes(`name: ${name}`), `${name}.md frontmatter carries its own name`, text);
+    check(text.includes(`model: ${model}`),
+      `${name}.md frontmatter model comes from the configured ${tier} tier (${model}), not a hardcoded pin`,
+      text);
+    check(!text.includes("{{TIER_MODEL}}"), `${name}.md has no unrendered {{TIER_MODEL}} placeholder`, text);
+    check(!/\bcost[- ]?reduc/i.test(text), `${name}.md makes no cost-reduction claim`, text);
+  }
+
+  // AO10: agents root is never joined to REPO_SKILL_TARGETS (regression guard
+  // against the exact change plan.md flagged as forbidden).
+  const onboardSourceForRegressionGuard = fs.readFileSync(path.join(SCRIPTS_DIR, "onboard_bee.mjs"), "utf8");
+  const repoSkillTargetsMatch = onboardSourceForRegressionGuard.match(/REPO_SKILL_TARGETS = \[([\s\S]*?)\];/);
+  // "repo-agents" (the existing .agents/skills target's `kind`) legitimately
+  // contains the substring "agents" - the forbidden shape is a `segments`
+  // array naming a plain "agents" directory (an agents ROOT, e.g. `[".claude",
+  // "agents"]`), not the `kind` label. Match on `segments` arrays only.
+  const repoSkillTargetsSegments = [...(repoSkillTargetsMatch?.[1] || "").matchAll(/segments:\s*\[([^\]]*)\]/g)]
+    .map((m) => m[1]);
+  check(Boolean(repoSkillTargetsMatch) && repoSkillTargetsSegments.length === 2 &&
+    repoSkillTargetsSegments.every((s) => !/"agents"/.test(s)),
+    "REPO_SKILL_TARGETS is untouched - no agents-root segments entry (AO10)",
+    JSON.stringify(repoSkillTargetsSegments));
+
+  // AO11: Codex gets no agent files at all - the asymmetry is recorded, not
+  // silently absent.
+  check(!fs.existsSync(path.join(tmp, ".agents", "agents")),
+    ".agents/ receives no agent files (AO11 - no .agents/agents root at all)");
+  const onboardingAfterApply1 = JSON.parse(fs.readFileSync(path.join(tmp, ".bee", "onboarding.json"), "utf8"));
+  check(onboardingAfterApply1.agents_sync?.bee_version === apply1.payload?.bee_version,
+    "onboarding.json agents_sync carries the sync's own bee_version marker",
+    JSON.stringify(onboardingAfterApply1.agents_sync));
+  check(JSON.stringify((onboardingAfterApply1.agents_sync?.files || []).slice().sort()) ===
+    JSON.stringify([".claude/agents/bee-extract.md", ".claude/agents/bee-gather.md", ".claude/agents/bee-review.md"]),
+    "onboarding.json agents_sync.files names all three rendered agent files",
+    JSON.stringify(onboardingAfterApply1.agents_sync?.files));
+  const sortedEntries = (o) => JSON.stringify(Object.entries(o || {}).sort());
+  check(sortedEntries(onboardingAfterApply1.agents_sync?.rendered_from) ===
+    sortedEntries({ generation: "sonnet", extraction: "haiku", review: "opus" }),
+    "onboarding.json agents_sync.rendered_from records {tier: model} from live config",
+    JSON.stringify(onboardingAfterApply1.agents_sync?.rendered_from));
+  check(Array.isArray(onboardingAfterApply1.agents_sync?.codex?.agents) &&
+    onboardingAfterApply1.agents_sync.codex.agents.length === 0 &&
+    /AO11/.test(onboardingAfterApply1.agents_sync.codex.note || ""),
+    "onboarding.json agents_sync records the Codex asymmetry (AO11) inline, no separate file",
+    JSON.stringify(onboardingAfterApply1.agents_sync?.codex));
+
+  // Idempotency: must_haves "re-running self-onboard is idempotent (same
+  // bytes, marker refreshed)". Snapshot bytes, re-apply, compare.
+  const agentBytesBefore = {
+    "bee-gather": fs.readFileSync(agentFilePath("bee-gather")),
+    "bee-extract": fs.readFileSync(agentFilePath("bee-extract")),
+    "bee-review": fs.readFileSync(agentFilePath("bee-review")),
+  };
+  const reapplyForIdempotency = await runOnboard(["--repo-root", tmp, "--apply", "--json"], tmpHome);
+  check(reapplyForIdempotency.payload?.status === "applied", "idempotency re-apply succeeds");
+  const reapplyActions = (reapplyForIdempotency.payload?.applied || []).map((i) => i.action);
+  check(!reapplyActions.includes("sync_agent_file") && !reapplyActions.includes("remove_agent_file"),
+    "a no-drift re-apply plans zero agent-file actions (already current)",
+    JSON.stringify(reapplyActions));
+  for (const name of ["bee-gather", "bee-extract", "bee-review"]) {
+    check(fs.readFileSync(agentFilePath(name)).equals(agentBytesBefore[name]),
+      `${name}.md is byte-identical after a no-drift re-apply`);
+  }
+  const onboardingAfterReapply = JSON.parse(fs.readFileSync(path.join(tmp, ".bee", "onboarding.json"), "utf8"));
+  check(onboardingAfterReapply.updated_at !== onboardingAfterApply1.updated_at,
+    "onboarding.json marker (updated_at) refreshes on every apply, even a byte-idempotent one");
+
+  // --- 2d. cli-shaped / explicit-null tier: skip render, remove stale copy --
+  // must_haves: "a cli-shaped or null tier slot skips (and removes) its
+  // agent file, recorded in the sync record".
+  const cliTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-agentfiles-cli-"));
+  const cliHome = makeFakeHome();
+  await runOnboard(["--repo-root", cliTmp, "--apply", "--json"], cliHome);
+  check(fs.existsSync(path.join(cliTmp, ".claude", "agents", "bee-review.md")),
+    "precondition: bee-review.md renders under the default (opus) review tier");
+  const cliCfgPath = path.join(cliTmp, ".bee", "config.json");
+  const cliCfg = JSON.parse(fs.readFileSync(cliCfgPath, "utf8"));
+  cliCfg.models.claude.review = { kind: "cli", command: "true" };
+  fs.writeFileSync(cliCfgPath, `${JSON.stringify(cliCfg, null, 2)}\n`, "utf8");
+  const cliPlan = await runOnboard(["--repo-root", cliTmp, "--json"], cliHome);
+  const cliPlanActions = (cliPlan.payload?.plan || []).filter((i) => i.agent === "bee-review");
+  check(cliPlanActions.length === 1 && cliPlanActions[0].action === "remove_agent_file",
+    "a cli-shaped review tier plans remove_agent_file for bee-review.md",
+    JSON.stringify(cliPlanActions));
+  const cliApply = await runOnboard(["--repo-root", cliTmp, "--apply", "--json"], cliHome);
+  check(cliApply.payload?.status === "applied", "cli-tier apply succeeds", JSON.stringify(cliApply.payload));
+  check(!fs.existsSync(path.join(cliTmp, ".claude", "agents", "bee-review.md")),
+    "bee-review.md is removed once its tier becomes cli-shaped");
+  check(fs.existsSync(path.join(cliTmp, ".claude", "agents", "bee-gather.md")) &&
+    fs.existsSync(path.join(cliTmp, ".claude", "agents", "bee-extract.md")),
+    "the other two agent files are untouched by the cli-tier removal");
+  const cliOnboarding = JSON.parse(fs.readFileSync(path.join(cliTmp, ".bee", "onboarding.json"), "utf8"));
+  check(!("review" in (cliOnboarding.agents_sync?.rendered_from || {})) &&
+    !(cliOnboarding.agents_sync?.files || []).includes(".claude/agents/bee-review.md"),
+    "agents_sync record drops the cli-shaped review tier from files/rendered_from",
+    JSON.stringify(cliOnboarding.agents_sync));
+  const cliRecheck = await runOnboard(["--repo-root", cliTmp, "--json"], cliHome);
+  check(cliRecheck.payload?.status === "up_to_date",
+    "cli-tier repo settles to up_to_date after the removal apply",
+    JSON.stringify(cliRecheck.payload?.plan));
+
   // --- 3. verify AGENTS.md markers ------------------------------------------
   const agentsText = fs.existsSync(path.join(tmp, "AGENTS.md"))
     ? fs.readFileSync(path.join(tmp, "AGENTS.md"), "utf8")
@@ -227,6 +341,18 @@ try {
   check(stateWarning.length > 0 && stateWarning === onboardWarning,
     "onboard_bee.mjs STALE_ADVISOR_KEY_WARNING text matches lib/state.mjs (no drift)",
     `state: "${stateWarning}" vs onboard: "${onboardWarning}"`);
+
+  // --- 3b-drift2. AGENT_TIER_DEFAULTS_CLAUDE must not drift from state.mjs
+  // DEFAULT_MODELS.claude (same discipline as the two checks just above -
+  // onboard_bee.mjs never import-depends on state.mjs's exports, so the
+  // claude-runtime tier defaults are duplicated, and pinned here instead).
+  const stateDefaultsMatch = stateSource.match(/DEFAULT_MODELS = \{[\s\S]*?claude:\s*\{([^}]+)\}/);
+  const onboardDefaultsMatch = onboardSource.match(/AGENT_TIER_DEFAULTS_CLAUDE = \{([^}]+)\}/);
+  const normDefaults = (s) => (s || "").replace(/["'\s]/g, "");
+  check(Boolean(stateDefaultsMatch) && Boolean(onboardDefaultsMatch) &&
+    normDefaults(stateDefaultsMatch[1]) === normDefaults(onboardDefaultsMatch[1]),
+    "onboard_bee.mjs AGENT_TIER_DEFAULTS_CLAUDE matches lib/state.mjs DEFAULT_MODELS.claude (no drift)",
+    `state: "${stateDefaultsMatch?.[1]}" vs onboard: "${onboardDefaultsMatch?.[1]}"`);
 
   // --- 3b-advisor. a host fixture with a stale advisor key surfaces the
   // stale-key notice (P1, fanout-4 review fix); the notice disappears once the

@@ -57,6 +57,7 @@ const HIVE_DIR = path.dirname(SCRIPTS_DIR);
 const TEMPLATES_DIR = path.join(HIVE_DIR, "templates");
 const TEMPLATES_LIB_DIR = path.join(TEMPLATES_DIR, "lib");
 const TEMPLATES_STATUSLINE_DIR = path.join(TEMPLATES_DIR, "statusline");
+const TEMPLATES_AGENTS_DIR = path.join(TEMPLATES_DIR, "agents");
 const AGENTS_BLOCK_TEMPLATE = path.join(TEMPLATES_DIR, "AGENTS.block.md");
 const PLUGIN_ROOT = path.dirname(path.dirname(HIVE_DIR));
 const PLUGIN_HOOKS_DIR = path.join(PLUGIN_ROOT, "hooks");
@@ -1359,6 +1360,172 @@ function statuslineOptIn(repoRoot) {
   );
 }
 
+// ---------- bee agent files (config-rendered, AO10-safe flat sync) ----------
+// Pinned agent types (advisor-and-orchestration, Slice 3B, AO5/AO10/AO11):
+// each type's frontmatter `model:` is rendered from the HOST repo's own
+// models.claude tier config at sync time, never hand-pinned - a static
+// `model: sonnet` in the template output would drift the moment an owner
+// reconfigures a tier (AO5: config is the authority). Sync target is
+// <repo>/.claude/agents/bee-*.md, a flat managed-file step of the SAME CLASS
+// as the AGENTS.md block / settings.json hook merge above - deliberately NOT
+// added to REPO_SKILL_TARGETS (AO10): an agents root has no bee-hive
+// directory for the three-version onboarding preflight to resolve a version
+// from, so joining it there would resolve "unknown" and brick onboarding
+// non-forceably on every host. Codex gets no agent files at all (AO11): Codex
+// has no per-agent model selection (DEFAULT_MODELS.codex is all-null by
+// design, templates/lib/state.mjs), so a `model:` pin would be a no-op file
+// implying an enforcement that does not exist for that runtime.
+function listTemplateAgents() {
+  if (!fs.existsSync(TEMPLATES_AGENTS_DIR)) {
+    return [];
+  }
+  return fs
+    .readdirSync(TEMPLATES_AGENTS_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md.tmpl"))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+// gather <- generation, extract <- extraction, review <- review (plan.md
+// Slice 3B item 1). Every template basename here must have an entry; a
+// template with no mapping is a planning defect, not a silent skip.
+const AGENT_TIER_BY_NAME = {
+  "bee-gather": "generation",
+  "bee-extract": "extraction",
+  "bee-review": "review",
+};
+
+// Deliberately duplicated, not imported: this script never import-depends on
+// templates/lib/state.mjs's exports (see the STALE_ADVISOR_KEY_WARNING
+// comment below, same discipline) - the skill-sync test fixture's fake
+// state.mjs is minimal by design, and importing modelForTier/resolveTier here
+// would break against it. AGENT_TIER_DEFAULTS_CLAUDE is text-pinned against
+// state.mjs's DEFAULT_MODELS.claude by test_onboard_bee.mjs's no-drift check
+// (same pattern as the COMMAND_KEYS / STALE_ADVISOR_KEY_WARNING checks).
+const AGENT_TIER_DEFAULTS_CLAUDE = { extraction: "haiku", generation: "sonnet", review: "opus" };
+
+// Mirrors templates/lib/state.mjs normalizeTierValue (state.mjs:159-175),
+// narrowed to what agent-file rendering needs: a resolved model NAME string,
+// `undefined` for "no override" (default stands, same as normalizeTierValue),
+// `null` for an EXPLICIT null override, or the CLI_TIER_SENTINEL for a
+// cli-shaped override. The three non-string outcomes are kept distinct
+// (rather than all collapsing to null) because resolveAgentTierModel's
+// review->generation fallback fires ONLY on an explicit null, exactly like
+// resolveTier (state.mjs:1146-1148) - a cli-shaped review must resolve to
+// "no model" WITHOUT falling back to generation's model.
+const CLI_TIER_SENTINEL = Symbol("cli-tier");
+function normalizeAgentTierValueLocal(value) {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (value === null) return null;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (value.kind === "cli") return CLI_TIER_SENTINEL; // no model name to pin
+    if (value.kind === undefined && typeof value.model === "string" && value.model.trim()) {
+      return value.model.trim();
+    }
+  }
+  return undefined; // invalid shape - default for that slot stands
+}
+
+// Resolve one tier -> model name for a TARGET repo's own .bee/config.json,
+// claude runtime only (Codex gets no agent files - AO11). Mirrors
+// resolveTier's tier-only contract (state.mjs:1140-1173): a string or
+// {model,...} override resolves to that name; an explicit null or cli-shaped
+// value resolves to null (no agent file - AO5: a slot naming no real model
+// has nothing honest to pin); an unset slot falls back to
+// AGENT_TIER_DEFAULTS_CLAUDE, and an unset `review` additionally falls back
+// to the resolved `generation` value (decision 0021) exactly as resolveTier
+// does - but only when config is silent; an EXPLICIT `review: null` is
+// honored as "no agent file", never coerced back to generation.
+function resolveAgentTierModel(repoRoot, tier) {
+  const config = readJsonIfExists(path.join(repoRoot, ".bee", "config.json"));
+  const rawClaude =
+    config &&
+    typeof config === "object" &&
+    !Array.isArray(config) &&
+    config.models &&
+    typeof config.models === "object" &&
+    !Array.isArray(config.models)
+      ? config.models.claude
+      : null;
+  const resolved = { ...AGENT_TIER_DEFAULTS_CLAUDE };
+  if (rawClaude && typeof rawClaude === "object" && !Array.isArray(rawClaude)) {
+    for (const slot of Object.keys(AGENT_TIER_DEFAULTS_CLAUDE)) {
+      const value = normalizeAgentTierValueLocal(rawClaude[slot]);
+      if (value !== undefined) {
+        resolved[slot] = value;
+      }
+    }
+  }
+  let value = resolved[tier];
+  if (value === null && tier === "review") {
+    value = resolved.generation; // explicit null only, exactly like resolveTier
+  }
+  return typeof value === "string" ? value : null;
+}
+
+function renderAgentTemplate(agentName, model) {
+  const source = fs.readFileSync(path.join(TEMPLATES_AGENTS_DIR, `${agentName}.md.tmpl`), "utf8");
+  return source.split("{{TIER_MODEL}}").join(model);
+}
+
+// Plan the flat .claude/agents/bee-*.md sync for one repo: byte-compare each
+// rendered template against the target, same discipline as copy_helper /
+// copy_lib above. A tier that resolves to null (cli-shaped or explicitly
+// unset) skips the render and, if a stale copy exists from a prior config,
+// removes it - an agent type must name a real model (must_haves: "a
+// cli-shaped or null tier slot skips (and removes) its agent file").
+function computeAgentFilePlan(repoRoot) {
+  const items = [];
+  for (const tmplName of listTemplateAgents()) {
+    const agentName = tmplName.replace(/\.md\.tmpl$/, "");
+    const tier = AGENT_TIER_BY_NAME[agentName];
+    const relPath = `.claude/agents/${agentName}.md`;
+    const target = path.join(repoRoot, ".claude", "agents", `${agentName}.md`);
+    const model = tier ? resolveAgentTierModel(repoRoot, tier) : null;
+    if (model) {
+      const rendered = renderAgentTemplate(agentName, model);
+      if (readTextIfExists(target) !== rendered) {
+        items.push({ action: "sync_agent_file", path: relPath, agent: agentName });
+      }
+    } else if (fs.existsSync(target)) {
+      items.push({ action: "remove_agent_file", path: relPath, agent: agentName });
+    }
+  }
+  return items;
+}
+
+// The sync's own version marker (same class as the settings.json hook merge
+// marker), recorded in .bee/onboarding.json as a sibling of `managed`:
+// {bee_version, files, rendered_from: {tier: model}}. Computed post-apply
+// (called after the apply loop, once .claude/agents/ reflects the new
+// state) so `files` names what is ACTUALLY present, not merely planned.
+// Codex asymmetry (AO11) is recorded inline, never a separate file.
+function computeAgentsSyncRecord(repoRoot, beeVersion) {
+  const files = [];
+  const renderedFrom = {};
+  for (const tmplName of listTemplateAgents()) {
+    const agentName = tmplName.replace(/\.md\.tmpl$/, "");
+    const tier = AGENT_TIER_BY_NAME[agentName];
+    const model = tier ? resolveAgentTierModel(repoRoot, tier) : null;
+    if (model) {
+      files.push(`.claude/agents/${agentName}.md`);
+      renderedFrom[tier] = model;
+    }
+  }
+  return {
+    bee_version: beeVersion,
+    files,
+    rendered_from: renderedFrom,
+    codex: {
+      agents: [],
+      note:
+        "Codex has no per-agent model selection (DEFAULT_MODELS.codex is all-null by design, " +
+        "templates/lib/state.mjs) - tiers are enforced as a read budget + output cap in the " +
+        "worker prompt instead. No agent files are rendered under .agents/ (AO11).",
+    },
+  };
+}
+
 function listPluginHooks() {
   if (!fs.existsSync(PLUGIN_HOOKS_DIR)) {
     return [];
@@ -2053,6 +2220,12 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
     }
   }
 
+  // 5d. bee agent files (config-rendered, AO10-safe flat sync - see the
+  // block comment above computeAgentFilePlan): NOT part of REPO_SKILL_TARGETS
+  // and not gated by any opt-in - every repo with a configured tier gets its
+  // agent files, exactly like the AGENTS.md block above.
+  plan.push(...computeAgentFilePlan(repoRoot));
+
   // 6. onboarding.json drift (managed versions)
   const statusline = statuslineOptIn(repoRoot);
   const desiredManaged = buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, statusline);
@@ -2383,6 +2556,17 @@ function applyPlan(
         writeFileAtomic(configPath, next);
         break;
       }
+      case "sync_agent_file": {
+        const model = resolveAgentTierModel(repoRoot, AGENT_TIER_BY_NAME[item.agent]);
+        if (model) {
+          writeFileAtomic(target, renderAgentTemplate(item.agent, model));
+        }
+        break;
+      }
+      case "remove_agent_file": {
+        fs.rmSync(target, { force: true });
+        break;
+      }
       case "write_onboarding": {
         // handled after the loop so managed versions reflect the final state
         break;
@@ -2454,6 +2638,7 @@ function applyPlan(
     schema_version: ONBOARDING_SCHEMA_VERSION,
     bee_version: beeVersion,
     managed,
+    agents_sync: computeAgentsSyncRecord(repoRoot, beeVersion),
     created_at: previous.created_at || utcNow(),
     updated_at: utcNow(),
   };

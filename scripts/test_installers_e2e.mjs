@@ -301,6 +301,17 @@ check("greenfield missing target: creates dir, one exact version, complete onboa
   assert.equal(r.code, 0, `install must succeed:\n${r.out}`);
   assert.ok(fs.existsSync(sb.target), "greenfield target directory must be created");
   assertVersionParity(sb);
+  // advisor-and-orchestration Slice 3B: the real install.sh path (not just
+  // onboard_bee.mjs's own unit tests) must render the three config-tiered
+  // agent files (AO5) and must never create an .agents/ agents root (AO11).
+  for (const name of ["bee-gather", "bee-extract", "bee-review"]) {
+    const agentFile = path.join(sb.target, ".claude", "agents", `${name}.md`);
+    assert.ok(fs.existsSync(agentFile), `installer must render ${name}.md under .claude/agents/`);
+    const text = fs.readFileSync(agentFile, "utf8");
+    assert.ok(!text.includes("{{TIER_MODEL}}"), `${name}.md must have its {{TIER_MODEL}} placeholder rendered`);
+  }
+  assert.ok(!fs.existsSync(path.join(sb.target, ".agents", "agents")),
+    "installer must never create an .agents/agents root (AO11 - Codex gets no agent files)");
 });
 
 // The 10 hooks repo-copy vendors into <target>/.bee/bin/hooks (the manual
