@@ -251,6 +251,25 @@ export const UNSAFE_CLI_FLAGS = [
 // has no dependency on normalizeModels' internal constant name).
 const MODEL_VALIDATE_SLOTS = [...CONFIGURABLE_SLOTS, 'advisor'];
 
+// ao-2b-2/AO8 — ADVICE-CLASS slots (advisor, review — every runtime) must
+// run read-only: their output is data consulted by a worker or gate, never
+// code that edits the repo. This is a SECOND, NARROWER blocklist layered on
+// top of UNSAFE_CLI_FLAGS above (which already denies auto-approve flags on
+// every cli slot, generation/extraction included) — the same honest framing
+// applies: a command string free of every token below is not proven
+// read-only, only free of these known write-granting sandbox aliases.
+// 'danger-full-access' is deliberately bare (no leading '-s '/'--sandbox ')
+// so it also catches the '=' spelling and any future flag-name prefix;
+// UNSAFE_CLI_FLAGS' '-s danger-full-access' row still fires alongside it on
+// an advice-class slot — both codes are expected together (B6/B7 + this).
+export const ADVICE_CLASS_SLOTS = ['advisor', 'review'];
+export const ADVICE_CLASS_WRITABLE_TOKENS = [
+  '-s workspace-write',
+  '--sandbox workspace-write',
+  '--sandbox=workspace-write',
+  'danger-full-access',
+];
+
 /**
  * validateModelsConfig (ao-2ai-1) — loudly flags malformed / prompt-less /
  * unsafe cli-tier config that normalizeTierValue today silently reverts to
@@ -276,6 +295,12 @@ const MODEL_VALIDATE_SLOTS = [...CONFIGURABLE_SLOTS, 'advisor'];
  *       (e.g. a trailing "-") for a stdin convention: the config must
  *       DECLARE its transport, never leave it inferred.
  *   (c) a cli `command` containing any UNSAFE_CLI_FLAGS alias (B6/B7).
+ *   (d) an ADVICE-CLASS slot (advisor, review — every runtime; AO8) whose
+ *       `command` contains any ADVICE_CLASS_WRITABLE_TOKENS alias — advice
+ *       slots must run read-only, so a write-granting sandbox mode is
+ *       refused here even when it is not on the universal UNSAFE_CLI_FLAGS
+ *       list. generation/extraction cli slots are NOT advice-class and are
+ *       untouched by this check.
  */
 export function validateModelsConfig(config) {
   const problems = [];
@@ -364,6 +389,19 @@ export function validateModelsConfig(config) {
               flag,
               message: `models.${rt}.${slot} command contains "${flag}" — a known auto-approve/sandbox-bypass flag; remove it (B6/B7). This is a blocklist of KNOWN-BAD flags, not a positive read-only guarantee.`,
             });
+          }
+        }
+        if (ADVICE_CLASS_SLOTS.includes(slot)) {
+          for (const token of ADVICE_CLASS_WRITABLE_TOKENS) {
+            if (value.command.includes(token)) {
+              problems.push({
+                code: 'cli-advice-slot-writable',
+                runtime: rt,
+                slot,
+                flag: token,
+                message: `models.${rt}.${slot} is an advice-class cli slot (advisor/review must run read-only, AO8) and its command contains "${token}" — a known write-granting sandbox token; remove it. This is a blocklist of KNOWN write-granting tokens, not a positive read-only guarantee.`,
+              });
+            }
           }
         }
         continue;

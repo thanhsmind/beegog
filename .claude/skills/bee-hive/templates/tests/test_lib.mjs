@@ -1937,6 +1937,10 @@ const EXPECTED_STATE_EXPORTS = [
   // config-validate (ao-2ai-1): the shared validator + its unsafe-flag
   // blocklist, read by both `bee config validate` and `bee status`.
   'UNSAFE_CLI_FLAGS',
+  // ao-2b-2/AO8: the narrower advice-class (advisor/review) write-granting
+  // sandbox blocklist layered on top of UNSAFE_CLI_FLAGS above.
+  'ADVICE_CLASS_SLOTS',
+  'ADVICE_CLASS_WRITABLE_TOKENS',
   'validateModelsConfig',
   'findRepoRoot',
   'resolveRoots',

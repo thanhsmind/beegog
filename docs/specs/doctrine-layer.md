@@ -169,10 +169,14 @@ output missing its markers, or an empty digest, is a **failed run surfaced
 loudly** — never accepted as silent success. Such a gather creates no work unit,
 no reservation, and no worker registration. Known gap, assigned not omitted:
 these runs do not yet appear in the dispatch audit log. What each actor observes:
-the human's configured command is the whole invocation contract; a
-misconfigured or write-capable command is refused at configuration checking, and
-unit execution can never route to the external path until it earns its own proof
-(decisions 34398e69, 4ec5be1a).
+the human's configured command is the whole invocation contract; configuration
+checking refuses a command with no declared prompt transport, any command
+carrying a known auto-approve/bypass token, and — on **advice-class** slots
+(adviser, reviewer), which are read-only by rule — a command carrying a known
+write-granting sandbox token (a blocklist of known-bad tokens, stated honestly
+as such, never a positive read-only guarantee); and unit execution can never
+route to the external path until it earns its own proof (decisions 34398e69,
+4ec5be1a; advice-class refusal per AO8, cell ao-2b-2).
 
 ## Actors & Access
 
