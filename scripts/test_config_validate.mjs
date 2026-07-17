@@ -6,7 +6,7 @@
 // 'sonnet' stays, no error). Plain node asserts, no framework, matching the
 // style of the other scripts/test_*.mjs checks.
 
-import { validateModelsConfig, UNSAFE_CLI_FLAGS } from '../.bee/bin/lib/state.mjs';
+import { validateModelsConfig, UNSAFE_CLI_FLAGS, ADVICE_CLASS_WRITABLE_TOKENS } from '../.bee/bin/lib/state.mjs';
 
 const results = [];
 function record(desc, passed, detail) {
@@ -139,6 +139,90 @@ for (const flag of UNSAFE_CLI_FLAGS) {
     unsafe.length === 2 && twoFlags.every((f) => unsafe.some((p) => p.flag === f)),
     JSON.stringify(problems),
   );
+}
+
+// ── advice-class (advisor/review) write-granting sandbox tokens (ao-2b-2/AO8) ──
+// A second, narrower blocklist layered on top of UNSAFE_CLI_FLAGS above:
+// advisor/review must run read-only; generation/extraction are untouched.
+
+for (const token of ADVICE_CLASS_WRITABLE_TOKENS) {
+  const problems = validateModelsConfig({
+    models: {
+      claude: {
+        advisor: { kind: 'cli', command: `codex exec -m gpt-5 ${token} -`, promptVia: 'stdin' },
+      },
+    },
+  });
+  record(
+    `advice-class token "${token}" on advisor is flagged cli-advice-slot-writable`,
+    problems.some((p) => p.code === 'cli-advice-slot-writable' && p.flag === token),
+    JSON.stringify(problems),
+  );
+}
+
+{
+  // review slot (codex runtime), bare "-s workspace-write" form.
+  const problems = validateModelsConfig({
+    models: {
+      codex: {
+        review: { kind: 'cli', command: 'codex exec -m gpt-5.5 -s workspace-write -', promptVia: 'stdin' },
+      },
+    },
+  });
+  record(
+    'advice-class token "-s workspace-write" on review is flagged cli-advice-slot-writable',
+    problems.some((p) => p.code === 'cli-advice-slot-writable' && p.flag === '-s workspace-write'),
+    JSON.stringify(problems),
+  );
+}
+
+{
+  // generation is NOT advice-class — the unique discriminator (W3): the same
+  // token untouched by the new code, since workspace-write is not on
+  // UNSAFE_CLI_FLAGS either, so a clean pass here proves the slot-scoping,
+  // not just the absence of one code among several already firing.
+  const problems = validateModelsConfig({
+    models: {
+      claude: {
+        generation: { kind: 'cli', command: 'codex exec -m gpt-5 -s workspace-write -', promptVia: 'stdin' },
+      },
+    },
+  });
+  record(
+    'generation with "-s workspace-write" is NOT flagged cli-advice-slot-writable (not advice-class)',
+    !hasCode(problems, 'cli-advice-slot-writable'),
+    JSON.stringify(problems),
+  );
+}
+
+{
+  // danger-full-access on an advice slot reports BOTH the universal
+  // unsafe-flag code (UNSAFE_CLI_FLAGS' "-s danger-full-access") and the new
+  // advice-class code (bare "danger-full-access" token).
+  const problems = validateModelsConfig({
+    models: {
+      claude: {
+        advisor: { kind: 'cli', command: 'codex exec -m gpt-5 -s danger-full-access -', promptVia: 'stdin' },
+      },
+    },
+  });
+  record(
+    'advisor with "-s danger-full-access" reports both cli-unsafe-flag AND cli-advice-slot-writable',
+    hasCode(problems, 'cli-unsafe-flag') && hasCode(problems, 'cli-advice-slot-writable'),
+    JSON.stringify(problems),
+  );
+}
+
+{
+  // clean read-only advisor passes with zero problems.
+  const problems = validateModelsConfig({
+    models: {
+      claude: {
+        advisor: { kind: 'cli', command: 'codex exec -m gpt-5.6-sol -s read-only -', promptVia: 'stdin' },
+      },
+    },
+  });
+  record('clean "-s read-only" advisor passes (no problems)', problems.length === 0, JSON.stringify(problems));
 }
 
 // ── malformed / null / wrong-type input never throws ───────────────────────
