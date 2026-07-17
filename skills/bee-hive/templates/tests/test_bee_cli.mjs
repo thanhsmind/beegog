@@ -1120,7 +1120,7 @@ await check('feedback.rank example runs through the real dispatcher', async () =
 // against a transcript-less window (fake CLAUDE_CONFIG_DIR) and must still exit 0.
 await check('perf.start example writes an open-section marker and exits 0', async () => {
   const result = await assertExampleOk('perf.start');
-  const marker = JSON.parse(fs.readFileSync(path.join(root, '.bee', 'perf-open.json'), 'utf8'));
+  const marker = JSON.parse(fs.readFileSync(path.join(root, '.bee', 'cache', 'perf-open.json'), 'utf8'));
   assert(marker.started_at, 'marker records a start time');
   assert(result.status === 0, 'perf start exits 0');
 });
@@ -1128,7 +1128,7 @@ await check('perf.stop example closes the section, appends to the global log, cl
   const result = await assertExampleOk('perf.stop');
   const rec = JSON.parse(result.stdout);
   assert(rec.schema === 'bee-perf/v1', `section schema tag, got ${result.stdout}`);
-  assert(!fs.existsSync(path.join(root, '.bee', 'perf-open.json')), 'marker cleared after stop');
+  assert(!fs.existsSync(path.join(root, '.bee', 'cache', 'perf-open.json')), 'marker cleared after stop');
   const log = fs.readFileSync(path.join(root, 'perf-global', 'performance.jsonl'), 'utf8').trim();
   assert(log.split('\n').length >= 1, 'section appended to the global log');
 });
@@ -1546,7 +1546,7 @@ await check('a registry content change surfaces manifest_changed on stderr, neve
 
   // Simulate drift by corrupting the persisted hash directly — this cell
   // never edits the real command-registry.mjs (out of its file scope).
-  const hashFile = path.join(root2, '.bee', 'manifest-hash.json');
+  const hashFile = path.join(root2, '.bee', 'cache', 'manifest-hash.json');
   writeJsonAtomic(hashFile, { hash: 'deadbeef', checked_at: new Date().toISOString() });
 
   const drifted = await runBee(['status', '--json']);

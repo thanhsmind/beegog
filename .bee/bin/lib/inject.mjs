@@ -4,13 +4,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { readJson, writeJsonAtomic } from './fsutil.mjs';
+import { readJson, writeJsonAtomic, removeFileIfExists } from './fsutil.mjs';
 import {
   BEE_VERSION,
   COMMAND_KEYS,
   GATE_NAMES,
   readConfig,
   resolveProductRoot,
+  cacheFilePath,
   bypassLevel,
   bypassBanner,
   readState,
@@ -27,6 +28,11 @@ import { captureQueue } from './capture.mjs';
 const INJECT_INTERVAL_MS = 30 * 60 * 1000;
 
 function injectCachePath(root) {
+  return cacheFilePath(root, 'inject-cache.json');
+}
+
+// Legacy location (pre-#11): the dedup cache used to sit directly in `.bee/` root.
+function legacyInjectCachePath(root) {
   return path.join(root, '.bee', '.inject-cache.json');
 }
 
@@ -310,7 +316,8 @@ export function buildPromptReminder(root, { sessionId = null } = {}) {
 
 /** Inject when the hash differs from the last injection or >30 min elapsed. */
 export function shouldInject(root, key, hash) {
-  const cache = readJson(injectCachePath(root), {}) || {};
+  const cache =
+    readJson(injectCachePath(root), null) || readJson(legacyInjectCachePath(root), {}) || {};
   const entry = cache[key];
   if (!entry) return true;
   if (entry.hash !== hash) return true;
@@ -320,7 +327,11 @@ export function shouldInject(root, key, hash) {
 }
 
 export function markInjected(root, key, hash) {
-  const cache = readJson(injectCachePath(root), {}) || {};
+  // Migrate transparently: prefer the new .bee/cache/ location, fall back to the
+  // legacy root file once so dedup history survives the move (GitHub #11).
+  const cache =
+    readJson(injectCachePath(root), null) || readJson(legacyInjectCachePath(root), {}) || {};
   cache[key] = { hash, at: new Date().toISOString() };
   writeJsonAtomic(injectCachePath(root), cache);
+  removeFileIfExists(legacyInjectCachePath(root));
 }

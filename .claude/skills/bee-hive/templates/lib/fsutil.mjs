@@ -56,6 +56,17 @@ export function readText(file, fallback = '') {
   }
 }
 
+// removeFileIfExists — best-effort unlink, never throws. Used to prune a cache
+// file from its legacy `.bee/` root location after it has been re-homed under
+// `.bee/cache/` (GitHub #11), so the old scratch file does not linger.
+export function removeFileIfExists(file) {
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    /* best-effort cleanup — a leftover legacy cache file is harmless */
+  }
+}
+
 export function writeJsonAtomic(file, obj) {
   ensureDir(path.dirname(file));
   const tmp = `${file}.tmp`;

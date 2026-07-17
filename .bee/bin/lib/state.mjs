@@ -9,7 +9,7 @@ import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './
 import { pathsOverlap } from './reservations.mjs';
 import { readGrants } from './worktree-store.mjs';
 
-export const BEE_VERSION = '1.3.8';
+export const BEE_VERSION = '1.3.9';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -518,6 +518,14 @@ export function resolveProductRoot(root) {
     );
   }
   return resolved;
+}
+
+// cacheFilePath — the home for bee's DERIVED / rebuildable scratch files (inject
+// dedup cache, the perf-open session marker, the manifest-hash drift cache). They
+// live under `.bee/cache/` (already gitignored + excluded from managed hashing)
+// instead of cluttering the `.bee/` root beside durable state (GitHub #11).
+export function cacheFilePath(root, name) {
+  return path.join(root, '.bee', 'cache', name);
 }
 
 export function defaultState() {

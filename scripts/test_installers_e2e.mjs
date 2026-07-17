@@ -67,9 +67,10 @@ function sha256(buf) {
 // Byte-and-mode digest of a whole tree (missing path -> stable sentinel). Used to
 // prove "zero writes" / "byte-idempotent" postconditions.
 // Volatile bee RUNTIME caches (not managed onboarding artifacts). `bee.mjs status`
-// stamps .bee/manifest-hash.json ({ hash, checked_at }) on every read, and logs
-// churn; excluding these lets an idempotency check target the MANAGED files only.
-const RUNTIME_CACHE = [".bee/manifest-hash.json", ".bee/logs/hooks.jsonl", ".git"];
+// stamps .bee/cache/manifest-hash.json ({ hash, checked_at }) on every read, and
+// logs churn; excluding these lets an idempotency check target the MANAGED files
+// only. `.bee/cache` is bee's derived/scratch dir (GitHub #11) — skip it wholesale.
+const RUNTIME_CACHE = [".bee/cache", ".bee/logs/hooks.jsonl", ".git"];
 
 function treeDigest(root, ignore = []) {
   if (!fs.existsSync(root)) return "ABSENT";

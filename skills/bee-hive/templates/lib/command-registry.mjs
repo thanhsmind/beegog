@@ -1114,7 +1114,7 @@ export const COMMAND_REGISTRY = [
     name: 'perf.start',
     invoke: 'bee perf start',
     description:
-      'Open a named performance section: record the resolved session transcript + start time in .bee/perf-open.json so `perf stop` measures the same window.',
+      'Open a named performance section: record the resolved session transcript + start time in .bee/cache/perf-open.json so `perf stop` measures the same window.',
     parameters: {
       type: 'object',
       properties: {

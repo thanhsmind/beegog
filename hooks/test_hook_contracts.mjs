@@ -2519,7 +2519,7 @@ function expectTransportFailOpen(result) {
 function liveStateFingerprint() {
   const beeDir = path.join(REPO_ROOT, ".bee");
   const fingerprint = {};
-  for (const rel of ["state.json", ".inject-cache.json", path.join("logs", "hooks.jsonl")]) {
+  for (const rel of ["state.json", path.join("cache", "inject-cache.json"), path.join("logs", "hooks.jsonl")]) {
     const file = path.join(beeDir, rel);
     if (!fs.existsSync(file)) {
       fingerprint[rel] = "ABSENT";
@@ -2888,7 +2888,7 @@ function runRepoRouteRows({ configRef = null } = {}) {
         "route-live-state-untouched",
         drifted.length === 0,
         drifted.length === 0
-          ? "live .bee/state.json hash and the presence/bytes of .bee/.inject-cache.json and .bee/logs/hooks.jsonl are " +
+          ? "live .bee/state.json hash and the presence/bytes of .bee/cache/inject-cache.json and .bee/logs/hooks.jsonl are " +
               "IDENTICAL before and after — these rows drove real state-mutating hooks entirely inside the fixture"
           : `LIVE STATE MUTATED by the route rows: ${drifted
               .map((k) => `${k} (${before[k]} -> ${after[k]})`)

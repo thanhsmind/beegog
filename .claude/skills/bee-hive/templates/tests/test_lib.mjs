@@ -298,6 +298,22 @@ await check('backlog reads resolve against product_root when set — the repo-di
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+await check('inject cache re-homes to .bee/cache/ and migrates from the legacy .bee/ root file (GitHub #11)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cache-migrate-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  const legacy = path.join(dir, '.bee', '.inject-cache.json');
+  const fresh = path.join(dir, '.bee', 'cache', 'inject-cache.json');
+  // Seed the legacy-location cache with a prior injection record.
+  fs.writeFileSync(legacy, JSON.stringify({ preamble: { hash: 'h1', at: new Date().toISOString() } }), 'utf8');
+  // shouldInject honors the legacy history via fallback read: same hash -> no re-inject.
+  assert(shouldInject(dir, 'preamble', 'h1') === false, 'legacy dedup history honored via fallback');
+  // markInjected writes to the NEW location and removes the legacy file.
+  markInjected(dir, 'preamble', 'h2');
+  assert(fs.existsSync(fresh), 'inject cache now lives under .bee/cache/');
+  assert(!fs.existsSync(legacy), 'legacy .bee/.inject-cache.json is cleaned up');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 await check('findRepoRoot walks up from a nested dir', async () => {
   const found = findRepoRoot(path.join(root, 'src', 'deep', 'nested'));
   assert(found === root, `expected ${root}, got ${found}`);
@@ -1925,6 +1941,8 @@ const EXPECTED_STATE_EXPORTS = [
   'resolvePipeline',
   // GitHub #14: product-doc root resolution (repo-divorce topology).
   'resolveProductRoot',
+  // GitHub #11: home for derived/scratch cache files (.bee/cache/).
+  'cacheFilePath',
   // fsh-9 (fresh-session-handoff S4, D1): the two-kind handoff lifecycle.
   'HANDOFF_KINDS',
   'handoffPath',

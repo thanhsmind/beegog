@@ -63,6 +63,7 @@ import {
   writeHandoff,
   adoptHandoff,
   resolveRoots,
+  cacheFilePath,
 } from './lib/state.mjs';
 // Lane + session CLI surface (fresh-session-handoff fsh-4, D2/D4): claims.mjs
 // stays out of this cell's file scope — these are already-exported read/
@@ -107,7 +108,7 @@ import {
   CANDIDATE_STATUSES,
   REVIEW_MODES,
 } from './lib/reviews.mjs';
-import { readJson, writeJsonAtomic, appendJsonl, hashFile } from './lib/fsutil.mjs';
+import { readJson, writeJsonAtomic, appendJsonl, hashFile, removeFileIfExists } from './lib/fsutil.mjs';
 // perf.mjs is imported ONLY here (never by command-registry.mjs) so it stays
 // out of the write-guard fixture's hand-listed VENDORED_LIB_MODULES.
 import {
@@ -1714,6 +1715,10 @@ function handleFeedbackRank(root) {
 // examples pass under assertExampleOk in a transcript-less CI).
 
 function perfMarkerPath(root) {
+  return cacheFilePath(root, 'perf-open.json');
+}
+// Legacy location (pre-#11): the marker used to sit directly in .bee/ root.
+function legacyPerfMarkerPath(root) {
   return path.join(root, '.bee', 'perf-open.json');
 }
 
@@ -1794,6 +1799,7 @@ function handlePerfStart(root, flags) {
     branch: perfGitBranch(root),
   };
   writeJsonAtomic(perfMarkerPath(root), marker);
+  removeFileIfExists(legacyPerfMarkerPath(root));
   const text = transcript
     ? `perf: section "${marker.label || '(unlabeled)'}" started — measuring session ${marker.session_id}.`
     : `perf: section "${marker.label || '(unlabeled)'}" started, but no session transcript resolved yet — metrics will be empty at stop.`;
@@ -1802,7 +1808,9 @@ function handlePerfStart(root, flags) {
 
 function handlePerfStop(root, flags) {
   const markerPath = perfMarkerPath(root);
-  const marker = readJson(markerPath, null);
+  // Prefer the new .bee/cache/ marker; fall back to a legacy root marker opened
+  // before the #11 migration so an in-flight section can still be stopped.
+  const marker = readJson(markerPath, null) || readJson(legacyPerfMarkerPath(root), null);
   if (!marker) {
     return { result: { ok: false, reason: 'no-open-section' }, text: 'perf: no open section — run `bee perf start` first.' };
   }
@@ -1819,11 +1827,9 @@ function handlePerfStop(root, flags) {
     metrics,
   });
   const file = appendSection(rec);
-  try {
-    fs.rmSync(markerPath, { force: true });
-  } catch {
-    // marker cleanup is best-effort; the section is already logged.
-  }
+  // Clear both the new and any legacy marker (best-effort; the section is logged).
+  removeFileIfExists(markerPath);
+  removeFileIfExists(legacyPerfMarkerPath(root));
   return { result: rec, text: `${perfSectionLine(rec)}\nlogged → ${file}` };
 }
 
@@ -2332,6 +2338,10 @@ export function computeManifestHash(registry = COMMAND_REGISTRY, schemaVersion =
 }
 
 function manifestHashStatePath(root) {
+  return cacheFilePath(root, 'manifest-hash.json');
+}
+// Legacy location (pre-#11): the drift cache used to sit directly in .bee/ root.
+function legacyManifestHashStatePath(root) {
   return path.join(root, '.bee', 'manifest-hash.json');
 }
 
@@ -2341,9 +2351,12 @@ function manifestHashStatePath(root) {
 function checkManifestDrift(root) {
   const current = computeManifestHash();
   const stateFile = manifestHashStatePath(root);
-  const prior = readJson(stateFile, null);
+  // Prefer the new .bee/cache/ hash; fall back to a legacy root file once so the
+  // first post-#11 call doesn't spuriously report "manifest changed".
+  const prior = readJson(stateFile, null) || readJson(legacyManifestHashStatePath(root), null);
   const priorHash = prior && typeof prior.hash === 'string' ? prior.hash : null;
   writeJsonAtomic(stateFile, { hash: current, checked_at: new Date().toISOString() });
+  removeFileIfExists(legacyManifestHashStatePath(root));
   if (priorHash && priorHash !== current) {
     return {
       manifest_changed: true,
