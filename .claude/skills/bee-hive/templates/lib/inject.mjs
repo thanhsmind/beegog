@@ -10,6 +10,7 @@ import {
   COMMAND_KEYS,
   GATE_NAMES,
   readConfig,
+  resolveProductRoot,
   bypassLevel,
   bypassBanner,
   readState,
@@ -58,7 +59,9 @@ const PROJECT_MAP_FILES = [
 // D10: one PBI line rides the section (in either branch) when docs/backlog.md
 // exists, so the cap is 2–5 lines including the heading.
 function projectMapLines(root) {
-  const specsDir = path.join(root, 'docs', 'specs');
+  // docs/specs/ is a PRODUCT doc tree — resolves against the product root (= bee
+  // root for ordinary repos; the nested product repo under repo-divorce, #14).
+  const specsDir = path.join(resolveProductRoot(root), 'docs', 'specs');
   const present = PROJECT_MAP_FILES.filter(([file]) =>
     fs.existsSync(path.join(specsDir, file)),
   );

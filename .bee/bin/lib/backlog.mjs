@@ -6,13 +6,17 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveProductRoot } from './state.mjs';
 
 // D6: the fixed status enum, priority-ordered. Exported so bee_status, the
 // preamble, and the drift guard all read one source of truth.
 export const BACKLOG_STATUSES = ['proposed', 'in-flight', 'done'];
 
+// docs/backlog.md is a PRODUCT doc — it resolves against the product root, which
+// equals the bee root for every ordinary repo but points at the nested product
+// repo under the repo-divorce topology (GitHub #14).
 function backlogPath(root) {
-  return path.join(root, 'docs', 'backlog.md');
+  return path.join(resolveProductRoot(root), 'docs', 'backlog.md');
 }
 
 // 'in-flight' -> 'inFlight'; the count-object key is derived from the token so
@@ -258,7 +262,8 @@ export function renderBacklogBadges(root) {
 export function updateReadmeBadges(root, { write = false } = {}) {
   const badges = renderBacklogBadges(root);
   if (badges == null) return null;
-  const file = path.join(root, 'README.md');
+  // The backlog badges belong in the PRODUCT README (same root as docs/backlog.md).
+  const file = path.join(resolveProductRoot(root), 'README.md');
   let text;
   try {
     text = fs.readFileSync(file, 'utf8');

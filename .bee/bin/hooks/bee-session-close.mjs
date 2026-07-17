@@ -83,7 +83,11 @@ async function maybeDecisionNudge(root) {
 // never captured — invoke bee-scribing capture before closing. Never blocks.
 async function maybeCaptureNudge(root) {
   try {
-    const specsDir = path.join(root, "docs", "specs");
+    // docs/specs/ is a PRODUCT doc tree — resolve against the product root so the
+    // nudge reads the real specs under the repo-divorce topology, not the empty
+    // workshop-side docs/specs/ (GitHub #14).
+    const stateLib = await import(libModuleUrl(root, "state.mjs"));
+    const specsDir = path.join(stateLib.resolveProductRoot(root), "docs", "specs");
     if (!fs.existsSync(specsDir)) {
       return null;
     }

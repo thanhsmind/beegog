@@ -9,7 +9,7 @@ import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './
 import { pathsOverlap } from './reservations.mjs';
 import { readGrants } from './worktree-store.mjs';
 
-export const BEE_VERSION = '1.3.7';
+export const BEE_VERSION = '1.3.8';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -479,6 +479,45 @@ export function resolveRoots(startDir) {
 export function findRepoRoot(startDir) {
   const roots = resolveRoots(startDir);
   return roots.storeRoot;
+}
+
+// resolveProductRoot — where the host project's PRODUCT docs live: docs/backlog.md,
+// docs/specs/, the product README. This is normally the bee root, but can differ
+// when `.bee/` sits in a "workshop" root while the product is an independent nested
+// repo one directory down (GitHub #14: the repo-divorce topology). `.bee/config.json`
+// `product_root` (a path relative to the bee root, or absolute) overrides it.
+//
+// Contract:
+//   - unset / empty  -> the bee root itself. ZERO behavior change for every ordinary
+//                        single-root repo (the freeze this whole change is built on).
+//   - set + exists   -> the resolved product directory.
+//   - set + missing  -> a LOUD stderr warning (breaking exactly the silent-null outage
+//                        #14 is about) and the resolved (non-existent) path is returned,
+//                        so product-doc reads find nothing WITH a reason, never crash.
+// Runtime state (.bee/*) and bee's own workshop docs (docs/history/*, learnings) never
+// route through this — only the product's own docs do.
+export function resolveProductRoot(root) {
+  const configured = readConfig(root).product_root;
+  if (configured === undefined || configured === null || configured === '') return root;
+  if (typeof configured !== 'string') {
+    console.warn(
+      `bee: .bee/config.json product_root must be a string path (got ${typeof configured}); ignoring it and using the bee root.`,
+    );
+    return root;
+  }
+  const resolved = path.isAbsolute(configured) ? configured : path.resolve(root, configured);
+  let isDir = false;
+  try {
+    isDir = fs.statSync(resolved).isDirectory();
+  } catch {
+    isDir = false;
+  }
+  if (!isDir) {
+    console.warn(
+      `bee: config product_root "${configured}" -> "${resolved}" is not an existing directory; product-doc reads (docs/backlog.md, docs/specs/) will find nothing until you fix .bee/config.json product_root. (GitHub #14)`,
+    );
+  }
+  return resolved;
 }
 
 export function defaultState() {
