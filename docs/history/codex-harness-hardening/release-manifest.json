@@ -582,7 +582,7 @@
     },
     {
       "path": "skills/bee-hive/templates/bee.mjs",
-      "sha256": "7d7c32ab9af2e408e4dade3a7b96253af7ab29a865c7287e99b5eee1245252f7",
+      "sha256": "163bebeb706b57d5fdcc1aa2f91470a4bbd24c27ce8b5be95c83873a009c618b",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/bee.mjs"
@@ -743,7 +743,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "sha256": "50fd96576ce68d25413c42f2ef77992ba2c8e351e444f5d5fdfc1c1200ad15b9",
+      "sha256": "435aab0df208398c2a42420beefff874672edf42454f7ff0a65d33f1c129a3cb",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_bee_cli.mjs"

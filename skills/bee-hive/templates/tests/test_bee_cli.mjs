@@ -34,6 +34,7 @@ import {
   nearestCommandName,
   deprecatedRedirect,
   computeManifestHash,
+  manifestLintWarning,
 } from '../bee.mjs';
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -1442,6 +1443,50 @@ await check('computeManifestHash is deterministic and sensitive to content', asy
   assert(h3 !== h1, 'different registry content must hash differently');
 });
 
+// ─── manifestLintWarning (H2, post-advisor-hardening): pure-logic unit tests
+// for the advisory release-manifest trap lint (add/update never refuse — see
+// the CLI-level end-to-end rows further down for the through-the-dispatcher
+// coverage). ─────────────────────────────────────────────────────────────
+
+await check('manifestLintWarning fires on the trap shape: verify mentions release_manifest, files lacks the manifest path', async () => {
+  const warning = manifestLintWarning({
+    id: 'trap-1',
+    verify: 'node scripts/release_manifest.mjs --check',
+    files: ['some/other/file.mjs'],
+  });
+  assert(warning && /trap-1/.test(warning), `expected a warning naming the cell id, got: ${warning}`);
+  assert(/release_manifest\.mjs --write/.test(warning), `expected the FIX to name --write, got: ${warning}`);
+});
+
+await check('manifestLintWarning is silent when the manifest path is already listed in files', async () => {
+  const warning = manifestLintWarning({
+    id: 'trap-2',
+    verify: 'node scripts/release_manifest.mjs --check',
+    files: ['docs/history/codex-harness-hardening/release-manifest.json'],
+  });
+  assert(warning === null, `expected no warning, got: ${warning}`);
+});
+
+await check('manifestLintWarning is silent when verify does not mention release_manifest', async () => {
+  const warning = manifestLintWarning({ id: 'trap-3', verify: 'node -e "process.exit(0)"', files: [] });
+  assert(warning === null, `expected no warning, got: ${warning}`);
+});
+
+await check('manifestLintWarning tolerates malformed cell shapes without throwing', async () => {
+  assert(manifestLintWarning(null) === null, 'null cell must not throw');
+  assert(manifestLintWarning(undefined) === null, 'undefined cell must not throw');
+  assert(manifestLintWarning({}) === null, 'empty object (no verify) must not throw');
+  assert(manifestLintWarning({ id: 'trap-4', verify: null, files: [] }) === null, 'non-string verify must not throw');
+  assert(
+    manifestLintWarning({ id: 'trap-5', verify: 'node scripts/release_manifest.mjs --check' }) !== null,
+    'missing files array defaults to [] and still fires — not treated as malformed-silent',
+  );
+  assert(
+    manifestLintWarning({ id: 'trap-6', verify: 'node scripts/release_manifest.mjs --check', files: 'not-an-array' }) !== null,
+    'non-array files also defaults to [] and still fires',
+  );
+});
+
 // ─── end-to-end: --help / --help --json (D3 tool-schema manifest) ─────────
 
 await check('bee --help --json parses as valid JSON and lists every existing subcommand', async () => {
@@ -1511,6 +1556,79 @@ await check('bee cells update refuses a frozen key (status)', async () => {
   const result = await runBee(['cells', 'update', '--id', 'demo-2', '--file', 'cell-demo-2-frozen.json']);
   assert(result.status === 1, `expected exit 1, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
   assert(/status/.test(result.stderr), `expected the frozen field named in stderr, got: ${result.stderr}`);
+});
+
+// ─── H2 manifest-lint, through the dispatcher: `cells add`/`cells update`
+// warn (stderr, both --json and text) on the trap shape but never refuse the
+// write or change the exit code — a separate fixture cell from demo-2 so this
+// block never disturbs demo-2's own claim/verify/cap lifecycle below. ──────
+
+await check('bee cells add fires the manifest lint WARNING on the trap shape and still succeeds', async () => {
+  const cellFixture = {
+    id: 'demo-2-lint-trap',
+    feature: 'demo2',
+    title: 'H2 lint fixture — trap shape',
+    lane: 'small',
+    action: 'H2 lint fixture only, never claimed/executed.',
+    verify: 'node scripts/release_manifest.mjs --check',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-lint-trap.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-lint-trap.json', '--json']);
+  assert(result.status === 0, `the write must always succeed: exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(/WARNING/.test(result.stderr) && /demo-2-lint-trap/.test(result.stderr), `expected a WARNING naming the cell in stderr, got: ${result.stderr}`);
+  assert(/release-manifest\.json/.test(result.stderr), `expected the missing manifest path named, got: ${result.stderr}`);
+});
+
+await check('bee cells add stays silent when the manifest path is already listed in files', async () => {
+  const cellFixture = {
+    id: 'demo-2-lint-listed',
+    feature: 'demo2',
+    title: 'H2 lint fixture — manifest already listed',
+    lane: 'small',
+    action: 'H2 lint fixture only, never claimed/executed.',
+    verify: 'node scripts/release_manifest.mjs --check',
+    files: ['docs/history/codex-harness-hardening/release-manifest.json'],
+  };
+  fs.writeFileSync(path.join(root2, 'cell-lint-listed.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-lint-listed.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(!/WARNING/.test(result.stderr), `expected no WARNING, got stderr=${result.stderr}`);
+});
+
+await check('bee cells add stays silent when verify does not mention release_manifest', async () => {
+  const cellFixture = {
+    id: 'demo-2-lint-unrelated',
+    feature: 'demo2',
+    title: 'H2 lint fixture — unrelated verify',
+    lane: 'small',
+    action: 'H2 lint fixture only, never claimed/executed.',
+    verify: 'node -e "process.exit(0)"',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-lint-unrelated.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-lint-unrelated.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(!/WARNING/.test(result.stderr), `expected no WARNING, got stderr=${result.stderr}`);
+});
+
+await check('bee cells update fires the manifest lint WARNING when a patch leaves the MERGED cell in the trap shape, and still succeeds', async () => {
+  // demo-2-lint-unrelated was added above with a verify that does not mention
+  // release_manifest; patching `verify` alone (files stays absent/[]) must
+  // lint the MERGED result, not the raw one-field patch.
+  const patch = { verify: 'node scripts/release_manifest.mjs --check' };
+  fs.writeFileSync(path.join(root2, 'cell-lint-update-trap.json'), JSON.stringify(patch, null, 2), 'utf8');
+  const result = await runBee(['cells', 'update', '--id', 'demo-2-lint-unrelated', '--file', 'cell-lint-update-trap.json', '--json']);
+  assert(result.status === 0, `the write must always succeed: exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(/WARNING/.test(result.stderr) && /demo-2-lint-unrelated/.test(result.stderr), `expected a WARNING naming the cell in stderr, got: ${result.stderr}`);
+});
+
+await check('bee cells update stays silent when the patched cell keeps the manifest path in files', async () => {
+  // demo-2-lint-listed already carries the manifest path in files; patching
+  // an unrelated field must keep the merged cell out of the trap shape.
+  const patch = { title: 'H2 lint fixture — manifest already listed (updated)' };
+  fs.writeFileSync(path.join(root2, 'cell-lint-update-listed.json'), JSON.stringify(patch, null, 2), 'utf8');
+  const result = await runBee(['cells', 'update', '--id', 'demo-2-lint-listed', '--file', 'cell-lint-update-listed.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(!/WARNING/.test(result.stderr), `expected no WARNING, got stderr=${result.stderr}`);
 });
 
 await check('bee cells claim --id demo-2 --worker claims it', async () => {

@@ -587,6 +587,45 @@ function handleCellsShow(root, flags) {
   return { result: cell, text: JSON.stringify(cell, null, 2) };
 }
 
+// H2 (post-advisor-hardening, learnings 20260717 "the release-manifest trap
+// recurred at cell-writing time, second sighting"): a cell whose verify chain
+// ends in `release_manifest.mjs --check` but whose `files` omits the manifest
+// itself strands a cold worker at a red verify with no sanctioned fix. This
+// lint is advisory ONLY — it never refuses the write and never changes the
+// exit code (CONTEXT.md H2); it just names the trap and the fix at authoring
+// time, the moment `cells add`/`cells update` writes the offending shape.
+const RELEASE_MANIFEST_LINT_PATH = 'docs/history/codex-harness-hardening/release-manifest.json';
+
+// Tolerates every malformed shape silently (missing/non-string verify,
+// missing/non-array files) — the lint must never throw on a bad cell; that
+// judgment belongs to validateNewCell/updateCell's own refusals, not this
+// advisory pass.
+function manifestLintWarning(cell) {
+  if (!cell || typeof cell !== 'object') return null;
+  if (typeof cell.verify !== 'string' || !cell.verify.includes('release_manifest')) return null;
+  const files = Array.isArray(cell.files) ? cell.files : [];
+  if (files.includes(RELEASE_MANIFEST_LINT_PATH)) return null;
+  const id = typeof cell.id === 'string' && cell.id ? cell.id : '(unknown id)';
+  return (
+    `WARNING: cell "${id}" verify mentions release_manifest but files is missing ` +
+    `"${RELEASE_MANIFEST_LINT_PATH}" — a cold worker will hit red verify with no ` +
+    `sanctioned fix. FIX: add the manifest path to files; regenerate it only via ` +
+    `"node scripts/release_manifest.mjs --write".`
+  );
+}
+
+// Written straight to stderr (drift-warning precedent at emit()'s
+// manifest_changed line below) rather than folded into the handler's
+// {result, text} — so the warning surfaces identically whether the caller
+// used --json or text output, and never reshapes stdout's machine-parseable
+// result (P1 discipline the same file already documents for drift).
+function emitManifestLintWarnings(cells) {
+  for (const cell of Array.isArray(cells) ? cells : [cells]) {
+    const warning = manifestLintWarning(cell);
+    if (warning) process.stderr.write(`${warning}\n`);
+  }
+}
+
 function handleCellsAdd(root, flags) {
   let text;
   if (flags.stdin === true) text = fs.readFileSync(0, 'utf8');
@@ -604,12 +643,14 @@ function handleCellsAdd(root, flags) {
   // --stdin creates the whole slice in one call" check exercises).
   if (Array.isArray(cell)) {
     const added = addCells(root, cell);
+    emitManifestLintWarnings(added);
     return {
       result: added,
       text: added.map((c) => `Added ${summarizeCell(c)}`).join('\n'),
     };
   }
   const added = addCell(root, cell);
+  emitManifestLintWarnings(added);
   return { result: added, text: `Added ${summarizeCell(added)}` };
 }
 
@@ -632,6 +673,11 @@ function handleCellsUpdate(root, flags) {
     throw new Error('update: patch input is not valid JSON.');
   }
   const updated = updateCell(root, id, patch);
+  // Lint the MERGED cell (updateCell's return), not the raw patch — a patch
+  // that only touches `title` still carries the cell's existing verify/files
+  // through the merge, and the trap is exactly as live post-update as it was
+  // pre-update if the merged shape now qualifies.
+  emitManifestLintWarnings(updated);
   return {
     result: updated,
     text: `Updated ${updated.id} (${Object.keys(patch).join(', ')}).`,
