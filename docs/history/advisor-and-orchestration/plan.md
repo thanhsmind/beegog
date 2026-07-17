@@ -196,6 +196,20 @@ The user's core ask; `bee-executing/SKILL.md:74` explicitly rules it out today. 
 
 **AO2(c) is deferred, not built (AO9).** Validating proved it has no mechanical detector against the current record shape; the `structured-decisions` feature is its prerequisite. Do not plan a proxy.
 
+**Slice 4 design settled at planning (2026-07-17):**
+1. **State field `advisor_ref`** (CLI-owned, top-level in `state.json` — lane-aware via `resolveMutationTarget` like gates): `{consulted_at, feature, newest_decision_id, plan_sha256, advisor, digest_head}`. The **verb stamps the staleness anchors itself** at record time (current `state.feature`, newest active decision id from the decision log, `sha256(docs/history/<feature>/plan.md)`) — the caller supplies only the advisor identity and a digest head (first ~500 chars of the consult digest, for audit); anchors are never caller-supplied.
+2. **CLI verb (hive law 12):** `bee state advisor-ref record --advisor "<identity>" --digest-file <path>` (+ `show`). Record refuses when no feature is active. A `clear` is not needed — staleness makes an old ref inert.
+3. **Gate 3 precondition (AO3/AO13, in `handleStateGate`):** when `--name execution --approved true` AND the **selected record's** `mode === 'high-risk'` → compute staleness; stale or missing → **throw** (never warn) with a FIX that spells the consult flow (resolve advisor per config; run it read-only with the evidence bundle on stdin; `state advisor-ref record`). Staleness = any of (AO13, verbatim): feature differs from `state.feature`; newest active decision id changed since the consult; `sha256(plan.md)` changed; ref predates the most recent revocation of the execution gate. **Revocation tracking:** `handleStateGate` stamps `gate_revoked_at.execution` whenever execution is set `approved=false` (the only revocation the rule needs; other gates untracked). Approving any **other** gate, non-high-risk modes, and `approved=false` writes are untouched.
+4. **The consult itself is orchestrator machinery, not a human stop:** under any bypass level the orchestrator still runs it — bypass lifts *human* checkpoints, never mechanical preconditions. The consult is a read-only advisor run per config (cli-shaped → verbatim command, evidence bundle on stdin, digest captured; model-shaped → a `bee-review`-class dispatch), then `advisor-ref record`. Prose home: `bee-validating` SKILL Gate 3 section (it owns Gate 3), citing AO2(b)/AO3/AO13.
+5. **Staleness helpers live in `state.mjs`** (`advisorRefAnchors(root)`, `advisorRefStale(root, ref)` — pure reads, no throw on missing artifacts: a missing plan.md hashes as absent-sentinel), exported for the verb + gate check + tests. Per learning Addendum 3: `test_lib.mjs` export census + mirrors declared up front.
+
+  ##### Slice 4 cells (current slice)
+
+  | Cell | Lane | Files bounded to | Verify command |
+  |---|---|---|---|
+  | `ao-4-1` | standard (ceiling-judged at dispatch) | `skills/bee-hive/templates/lib/state.mjs` + `.bee/bin/lib/state.mjs`, `skills/bee-hive/templates/bee.mjs` + `.bee/bin/bee.mjs`, `skills/bee-hive/templates/tests/test_bee_cli.mjs`, `skills/bee-hive/templates/tests/test_lib.mjs` + `.claude`/`.agents` test_lib mirrors, release manifest | `node skills/bee-hive/templates/tests/test_bee_cli.mjs && node skills/bee-hive/templates/tests/test_lib.mjs && node scripts/test_lib_mirror.mjs && node skills/bee-hive/scripts/test_split_brain_regression.mjs && node scripts/release_manifest.mjs --check` |
+  | `ao-4-2` | standard | `skills/bee-validating/SKILL.md` (+`.claude`/`.agents` mirrors), release manifest — deps `ao-4-1` | `node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/release_manifest.mjs --check` |
+
 ### Slice 5 — Worker-ise cell execution (AO1) — BLOCKED ON S1
 
 The only part with leverage on the bill. Orchestrator's window becomes a control plane: cells, digests, cap results — never file bodies. Discretion: full `bee-swarming` dispatch vs a lighter direct Agent dispatch under the same execution contract.

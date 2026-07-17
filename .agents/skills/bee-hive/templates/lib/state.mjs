@@ -2,12 +2,16 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 // Leaf-module imports only — no cycle: claims.mjs and reservations.mjs import
 // nothing but fsutil/node builtins (unlike cells.mjs, which imports THIS file).
 import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './claims.mjs';
 import { pathsOverlap } from './reservations.mjs';
 import { readGrants } from './worktree-store.mjs';
+// decisions.mjs imports only node builtins + fsutil (no cycle back to this file);
+// advisorRefAnchors reads the newest active decision id through it (AO13).
+import { activeDecisions } from './decisions.mjs';
 
 export const BEE_VERSION = '1.4.0';
 
@@ -415,6 +419,105 @@ export function validateModelsConfig(config) {
           message: `models.${rt}.${slot} is an object but neither a valid cli executor nor a valid {model} shape — ignored; today this silently reverts to the seeded default.`,
         });
       }
+    }
+  }
+  return problems;
+}
+
+// W3 pinned agent files (ao-3b-1) — the tier each rendered .claude/agents/
+// bee-*.md belongs to. "ceiling" is deliberately absent: it has no rendered
+// agent (it IS the session model).
+const AGENT_FILE_TIER = {
+  'bee-gather': 'generation',
+  'bee-extract': 'extraction',
+  'bee-review': 'review',
+};
+
+// Extracts the `model:` value out of an agent file's YAML frontmatter with a
+// plain regex (no YAML parser dependency — the templates only ever emit a
+// flat `key: value` block, ao-3b-1). Never throws: a read failure (missing
+// file, permission) reports {found:false}; a present-but-unparseable file
+// reports {found:true, model:undefined} so the caller can flag it as
+// malformed rather than silently skip it.
+function readAgentFileModel(file) {
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch {
+    return { found: false, model: null };
+  }
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+  const modelLine = frontmatter ? /^model:\s*(.+)$/m.exec(frontmatter[1]) : null;
+  return { found: true, model: modelLine ? modelLine[1].trim() : undefined };
+}
+
+/**
+ * validateAgentFilesDrift (ao-3b-2, AO12) — advisory-only check that each
+ * rendered `.claude/agents/bee-*.md`'s `model:` frontmatter still matches
+ * the model currently configured for its tier. Deliberately a SEPARATE,
+ * root-taking helper: validateModelsConfig above must stay PURE (no root, no
+ * fs — it is read from inside bee-model-guard's fail-open hot path, and a
+ * throw there is swallowed by the hook's catch, a refusal that refuses
+ * nothing). This helper is called only from hosts that already have root
+ * (`bee status`, `bee config validate`) — never from a hook.
+ *
+ * NEVER throws: an absent agent file is clean (nothing rendered yet, or the
+ * tier is cli-shaped/unconfigured and onboarding correctly skipped it —
+ * AO10/AO11); a present file with unparseable frontmatter is reported as its
+ * own problem code, never an exception. Advisory only — this never refuses
+ * anything; the dispatch itself is already protected by the guard's
+ * marker+param equality rule (AO5), independent of this check.
+ *
+ * `rawConfig` is the SAME raw `.bee/config.json` payload validateModelsConfig
+ * takes (the readRawConfigForValidation undefined/null/object contract) —
+ * normalized here through the same normalizeModels() readConfig itself uses,
+ * so the comparison is against the EFFECTIVE model (seeded defaults applied),
+ * never the raw shape, and never a second disk read of config.json.
+ */
+export function validateAgentFilesDrift(root, rawConfig) {
+  const problems = [];
+  const rawModels =
+    rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig) ? rawConfig.models : undefined;
+  const models = normalizeModels(rawModels);
+  for (const [agentName, slot] of Object.entries(AGENT_FILE_TIER)) {
+    const file = path.join(root, '.claude', 'agents', `${agentName}.md`);
+    const { found, model: fileModel } = readAgentFileModel(file);
+    if (!found) continue; // absent is clean — nothing rendered, or a cli/null slot correctly skipped (AO10/AO11)
+    if (fileModel === undefined) {
+      problems.push({
+        code: 'agent-file-malformed',
+        agent: agentName,
+        slot,
+        message: `.claude/agents/${agentName}.md has no readable "model:" frontmatter line — cannot check drift; re-run onboarding to re-render it.`,
+      });
+      continue;
+    }
+    let value = models.claude ? models.claude[slot] : null;
+    if (value == null && slot === 'review') {
+      value = models.claude ? models.claude.generation : null; // review falls back to generation
+    }
+    let expected = null;
+    if (typeof value === 'string') expected = value;
+    else if (value && typeof value === 'object' && typeof value.model === 'string') expected = value.model;
+    // value.kind === 'cli', or value == null (budget/unconfigured), leaves
+    // expected === null: the slot now names no model at all, so ANY model
+    // string still in the file is drift (the file should be removed at the
+    // next onboarding sync, but that is onboarding's job, not this
+    // advisory's — it still surfaces the mismatch).
+    if (expected === null) {
+      problems.push({
+        code: 'agent-file-drift',
+        agent: agentName,
+        slot,
+        message: `.claude/agents/${agentName}.md declares model: "${fileModel}" but the ${slot} slot is now cli-shaped or unconfigured (no model name) — re-run onboarding to remove the stale file.`,
+      });
+    } else if (expected !== fileModel) {
+      problems.push({
+        code: 'agent-file-drift',
+        agent: agentName,
+        slot,
+        message: `.claude/agents/${agentName}.md declares model: "${fileModel}" but the configured ${slot} model is "${expected}" — re-run onboarding to re-render it.`,
+      });
     }
   }
   return problems;
@@ -1197,6 +1300,76 @@ export function resolveAdvisor(root, runtime = 'claude') {
       : { type: 'model', model: value.model };
   }
   return null;
+}
+
+// ─── advisor_ref staleness anchors + check (AO3/AO13, Slice 4) ──────────────
+// Zero precedent: no gate anywhere checked a precondition before this. The
+// advisor_ref field records that a real advisor consult happened for the
+// SELECTED (default or lane) record; Gate 3 refuses high-risk execution
+// approval when the ref is missing or stale. Staleness is NEVER a TTL — AO13
+// bans invented time numbers. Both helpers are pure reads and never throw on a
+// missing artifact: a missing plan.md hashes to the absent sentinel, so the
+// only failure mode is "stale", never a crash on the gate's hot path.
+
+export const ADVISOR_PLAN_ABSENT_SENTINEL = 'absent';
+
+function advisorPlanPath(root, feature) {
+  return path.join(root, 'docs', 'history', String(feature ?? ''), 'plan.md');
+}
+
+// The verb stamps these itself at record time; the caller never supplies them.
+// `feature` is the SELECTED record's feature (a lane's own feature, not the
+// default record's — checker M1), so the plan.md hashed is THAT feature's plan.
+export function advisorRefAnchors(root, feature) {
+  let newest_decision_id = null;
+  try {
+    const active = activeDecisions(root, { recent: 1 });
+    newest_decision_id = active.length ? active[0].id : null;
+  } catch {
+    newest_decision_id = null;
+  }
+  let plan_sha256 = ADVISOR_PLAN_ABSENT_SENTINEL;
+  try {
+    const planFile = advisorPlanPath(root, feature);
+    if (fs.existsSync(planFile)) {
+      plan_sha256 = crypto.createHash('sha256').update(fs.readFileSync(planFile)).digest('hex');
+    }
+  } catch {
+    plan_sha256 = ADVISOR_PLAN_ABSENT_SENTINEL;
+  }
+  return { feature: feature ?? null, newest_decision_id, plan_sha256 };
+}
+
+// AO13 verbatim: an advisor_ref is stale if ANY of — its feature differs from
+// state.feature; the newest active decision id changed since the consult;
+// sha256(plan.md) changed; or the ref predates the most recent revocation of
+// the execution gate. A malformed/missing ref (non-object, array, or null)
+// reads as missing — stale, never a throw.
+export function advisorRefStale(root, ref, state) {
+  if (!ref || typeof ref !== 'object' || Array.isArray(ref)) {
+    return { stale: true, reasons: ['no advisor_ref recorded'] };
+  }
+  const reasons = [];
+  const feature = state && state.feature != null ? state.feature : null;
+  const anchors = advisorRefAnchors(root, feature);
+  if (ref.feature !== anchors.feature) {
+    reasons.push(`feature changed since the consult (ref "${ref.feature}" ≠ current "${anchors.feature}")`);
+  }
+  if (ref.newest_decision_id !== anchors.newest_decision_id) {
+    reasons.push(
+      `a new decision was logged since the consult (ref "${ref.newest_decision_id}" ≠ current "${anchors.newest_decision_id}")`,
+    );
+  }
+  if (ref.plan_sha256 !== anchors.plan_sha256) {
+    reasons.push('plan.md changed since the consult (sha256 mismatch)');
+  }
+  const revokedAt = state && state.gate_revoked_at ? state.gate_revoked_at.execution : undefined;
+  if (revokedAt && (!ref.consulted_at || String(ref.consulted_at) < String(revokedAt))) {
+    reasons.push(
+      `the consult predates the most recent execution-gate revocation (consulted ${ref.consulted_at ?? 'never'}, revoked ${revokedAt})`,
+    );
+  }
+  return { stale: reasons.length > 0, reasons };
 }
 
 // ─── startFeature: guarded atomic feature start (decision D2, plan.md test ──
