@@ -45,6 +45,15 @@
             "statusMessage": "bee: state sync"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"\n[ -n \"$r\" ] || { echo \"bee: hook transport unavailable (no git root)\" >&2; exit 0; }\nexec node \"$r\"/hooks/bee-tools-logger.mjs --source=repo",
+            "statusMessage": "bee: tools logger"
+          }
+        ]
       }
     ],
     "SubagentStop": [

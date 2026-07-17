@@ -99,7 +99,7 @@
     },
     {
       "path": ".bee/bin/lib/state.mjs",
-      "sha256": "8438b0a7b91bb2a4e7e6d5b5aa4bedce67028c87acf1dcdd248993a91f9f5008",
+      "sha256": "0876b96f1999709fd0b6315d63c18e7ac6bdd188a4a30a7addc61eb754a1032c",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -193,6 +193,13 @@
       "packagePath": "hooks/bee-state-sync.mjs"
     },
     {
+      "path": "hooks/bee-tools-logger.mjs",
+      "sha256": "668634222153c37d858bd5cb8ac5183507bc0da643ef78929219dcf810a39224",
+      "mode": "644",
+      "role": "plugin_hook",
+      "packagePath": "hooks/bee-tools-logger.mjs"
+    },
+    {
       "path": "hooks/bee-write-guard.mjs",
       "sha256": "13ed59ddca24fbf26aad431c982c276a2f95d302af85cf5949ab23c7b8e17a33",
       "mode": "644",
@@ -201,21 +208,21 @@
     },
     {
       "path": "hooks/catalog.mjs",
-      "sha256": "773be5fc68dce4670d6927e651329c57a4b4cde90c5675ba5492559264da6a6e",
+      "sha256": "af944778ee6f86b9d9ad43409a36d03c6f30fd88189ed41ef34deefa0ca41f2f",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/catalog.mjs"
     },
     {
       "path": "hooks/claude-hooks.json",
-      "sha256": "e5317ba67c09440fb5c6b4c7ee6efd710e0e34ab951cd856b0241c2b656100b2",
+      "sha256": "9dc6e5fb700cf3a094ee2ac632b684b5f4238a3540ec8d719fd94e50971411f1",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/claude-hooks.json"
     },
     {
       "path": "hooks/hooks.json",
-      "sha256": "2641b65ad12b304ebb97ce8c07a3fc7e8ef96993151a6e6c0176d70590f1c158",
+      "sha256": "1d18863f4c9964b15ef655313bd37d49822f3320d8fa18f4989e768145d6e08b",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/hooks.json"
@@ -229,7 +236,7 @@
     },
     {
       "path": "hooks/test_hook_contracts.mjs",
-      "sha256": "3586da6a79fc388a37ac50c2ba5111409b5ef9a58412850a80e56d1ba7cd8ad7",
+      "sha256": "8f5e88905b6df21d90765b07e19ab8193ecb92871f4fa7724d431ce30c558146",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/test_hook_contracts.mjs"
@@ -673,7 +680,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/state.mjs",
-      "sha256": "8438b0a7b91bb2a4e7e6d5b5aa4bedce67028c87acf1dcdd248993a91f9f5008",
+      "sha256": "0876b96f1999709fd0b6315d63c18e7ac6bdd188a4a30a7addc61eb754a1032c",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/state.mjs"

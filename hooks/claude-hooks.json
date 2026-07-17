@@ -55,6 +55,15 @@
             "statusMessage": "bee: state sync"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/bee-tools-logger.mjs\"",
+            "statusMessage": "bee: tools logger"
+          }
+        ]
       }
     ],
     "SubagentStop": [

@@ -101,6 +101,7 @@ const DEFAULT_HOOKS = {
   'state-sync': true,
   'chain-nudge': true,
   'session-close': true,
+  'tools-logger': true,
 };
 
 // Decision 0012 — model tiers, runtime-keyed. bee is dual-runtime, and each

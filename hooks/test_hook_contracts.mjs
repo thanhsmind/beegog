@@ -203,6 +203,7 @@ const WRAPPERS = [
   "bee-session-close.mjs",
   "bee-model-guard.mjs",
   "bee-write-guard.mjs",
+  "bee-tools-logger.mjs",
 ];
 
 const HUGE_BLOB_LEN = 2 * 1024 * 1024; // ~2MB
@@ -474,7 +475,138 @@ function eventRows(wrapperBase, fixtureRoot) {
       expect: expectApplyPatchIgnoredByModelGuard,
     });
   }
+  if (wrapperBase === "bee-tools-logger.mjs") {
+    rows.push(...toolsLoggerRows(fixtureRoot));
+  }
   return rows;
+}
+
+// W4 (advisor-and-orchestration, AO15/decision f1ca79b9): bee-tools-logger.mjs
+// is a passive PostToolUse measurement hook — zero enforcement, fail-open.
+// Distinguishing synthetic tool_name values (never produced by any other row
+// in this file, including the universal malformed-input rows) so each
+// assertion below targets its OWN emitted line, not an incidental one from an
+// earlier row sharing this wrapper's single fixtureRoot.
+//
+// The standing trap this row set exists to close: fail-open turns a crashed
+// logger into universal green. The happy-path rows are the "fails when
+// broken" half — they FAIL if the logger silently stops writing lines.
+function toolsLoggerRows(fixtureRoot) {
+  const rows = [];
+  rows.push({
+    id: "tools-logger-happy-path-orchestrator",
+    input: JSON.stringify({
+      hook_event_name: "PostToolUse",
+      tool_name: "ToolsLoggerHappyOrchestratorProbe",
+      tool_input: { secret: "must-never-be-logged" },
+      cwd: fixtureRoot,
+    }),
+    expect: (result) => {
+      if (result.status !== 0) {
+        return { pass: false, note: `expected exit 0 (passive logger); got status=${result.status}` };
+      }
+      const line = readToolsJsonl(fixtureRoot).find(
+        (l) => l.parsed.tool_name === "ToolsLoggerHappyOrchestratorProbe",
+      );
+      if (!line) {
+        return {
+          pass: false,
+          note: "no tools.jsonl line was written for an orchestrator-shaped PostToolUse payload " +
+            "(fails-when-broken: the logger must write on every enabled call)",
+        };
+      }
+      const { ts, tool_name, agent_id, agent_type, ...rest } = line.parsed;
+      const shapeOk =
+        typeof ts === "string" &&
+        tool_name === "ToolsLoggerHappyOrchestratorProbe" &&
+        agent_id === null &&
+        agent_type === null &&
+        Object.keys(rest).length === 0;
+      const noBody = !line.raw.includes("must-never-be-logged");
+      if (!shapeOk) {
+        return { pass: false, note: `unexpected line shape: ${line.raw}` };
+      }
+      if (!noBody) {
+        return { pass: false, note: `tool_input body leaked into the log line: ${line.raw}` };
+      }
+      return { pass: true, note: "orchestrator call logged with tool_name + null attribution, no body" };
+    },
+  });
+  rows.push({
+    id: "tools-logger-happy-path-subagent",
+    input: JSON.stringify({
+      hook_event_name: "PostToolUse",
+      tool_name: "ToolsLoggerHappySubagentProbe",
+      agent_id: "agent-jerry-1",
+      agent_type: "generation",
+      tool_response: { secret: "must-never-be-logged-either" },
+      cwd: fixtureRoot,
+    }),
+    expect: (result) => {
+      if (result.status !== 0) {
+        return { pass: false, note: `expected exit 0 (passive logger); got status=${result.status}` };
+      }
+      const line = readToolsJsonl(fixtureRoot).find(
+        (l) => l.parsed.tool_name === "ToolsLoggerHappySubagentProbe",
+      );
+      if (!line) {
+        return { pass: false, note: "no tools.jsonl line was written for a subagent-shaped PostToolUse payload" };
+      }
+      const attributionOk = line.parsed.agent_id === "agent-jerry-1" && line.parsed.agent_type === "generation";
+      const noBody = !line.raw.includes("must-never-be-logged-either");
+      if (!attributionOk) {
+        return { pass: false, note: `agent_id/agent_type not logged verbatim: ${line.raw}` };
+      }
+      if (!noBody) {
+        return { pass: false, note: `tool_response body leaked into the log line: ${line.raw}` };
+      }
+      return { pass: true, note: "subagent call logged with agent_id/agent_type verbatim, no body" };
+    },
+  });
+  return rows;
+}
+
+// Crash-injection half of the fails-when-broken pair, run standalone (own
+// dedicated fixture, own direct runWrapper call — never the shared
+// per-wrapper fixture the WRAPPERS loop above reuses across every row,
+// because this row deliberately corrupts state.mjs so it throws on import
+// and that corruption must not leak into any other row). Mirrors
+// test_model_guard.mjs's buildThrowingStateFixture pattern. fail-open must
+// stay VISIBLE (a crash line lands in .bee/logs/hooks.jsonl), never
+// fail-silent — and the broken logger must NOT have written a tools.jsonl
+// line for the call that crashed it.
+async function runToolsLoggerCrashRows() {
+  const root = buildFixture("hook-contracts-tools-logger-crash-");
+  fs.writeFileSync(
+    path.join(root, ".bee", "bin", "lib", "state.mjs"),
+    "throw new Error('boom: fixture state.mjs deliberately throws on import');\n",
+  );
+  const result = await runWrapper(
+    "bee-tools-logger.mjs",
+    JSON.stringify({
+      hook_event_name: "PostToolUse",
+      tool_name: "ToolsLoggerCrashProbe",
+      cwd: root,
+    }),
+    root,
+  );
+  const crashLine = readHooksJsonl(root).find((l) => l && l.hook === "tools-logger" && l.error);
+  const noToolsLine = !readToolsJsonl(root).some(
+    (l) => l.parsed.tool_name === "ToolsLoggerCrashProbe",
+  );
+  const pass = result.status === 0 && Boolean(crashLine) && noToolsLine;
+  return [
+    genericRow(
+      "bee-tools-logger.mjs",
+      "tools-logger-crash-injection-fails-open-visibly",
+      pass,
+      pass
+        ? "broken state.mjs -> exit 0 (fail-open) AND a visible crash line in hooks.jsonl, no silent tools.jsonl write"
+        : `expected exit 0 + visible crash line + no tools.jsonl write; got status=${result.status} ` +
+            `crashLine=${JSON.stringify(crashLine)} noToolsLine=${noToolsLine}`,
+      { status: result.status, stdout: result.stdout, stderr: result.stderr },
+    ),
+  ];
 }
 
 function buildRowsForWrapper(wrapperBase, fixtureRoot) {
@@ -809,7 +941,7 @@ function runCatalogDriftChecks() {
     "bee-codex-subagent-audit.mjs",
   );
   const transportOk =
-    repoCommands.length === 11 &&
+    repoCommands.length === 12 &&
     noClaudeVars &&
     launchesSourceWrappers &&
     visibleFailOpen &&
@@ -821,7 +953,7 @@ function runCatalogDriftChecks() {
       transportOk,
       transportOk
         ? `all ${repoCommands.length} generated repo commands carry no Claude root variable, include paired audit events, launch hooks/bee-*.mjs with --source=repo, and fail open visibly`
-        : `repo transport contract violated: commands=${repoCommands.length} (expected 11) ` +
+        : `repo transport contract violated: commands=${repoCommands.length} (expected 12) ` +
             `noClaudeVars=${noClaudeVars} launchesSourceWrappers=${launchesSourceWrappers} ` +
             `visibleFailOpen=${visibleFailOpen} startAudit=${repoStartAudit.length} stopAudit=${repoStopAudit.length}`,
     ),
@@ -1005,6 +1137,25 @@ function readHooksJsonl(fixtureRoot) {
     .map((l) => {
       try {
         return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+// bee-tools-logger.mjs's own log (W4, AO15). Same shape/discipline as
+// readHooksJsonl above — malformed lines are dropped rather than thrown.
+function readToolsJsonl(fixtureRoot) {
+  const file = path.join(fixtureRoot, ".bee", "logs", "tools.jsonl");
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, "utf8")
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map((l) => {
+      try {
+        return { raw: l, parsed: JSON.parse(l) };
       } catch {
         return null;
       }
@@ -2592,7 +2743,7 @@ function runPluginCensusRow() {
 function routeRequiredRowIds(commands, { configRef = null } = {}) {
   const ids = [
     "route-config-readable",
-    "route-config-nine-commands",
+    "route-config-ten-commands",
     "route-gitabsent-shim-precondition",
     "route-nongit-cwd-precondition",
     "route-pretooluse-command-present",
@@ -2655,11 +2806,11 @@ function runRepoRouteRows({ configRef = null } = {}) {
   const requiredIds = routeRequiredRowIds(commands, { configRef });
   rows.push(
     routeRow(
-      "route-config-nine-commands",
-      commands.length === 9,
-      commands.length === 9
-        ? `all 9 configured commands loaded from ${config.origin} and exercised through ${ROUTE_SHELL} -lc`
-        : `expected 9 configured commands, found ${commands.length} (${commands.map((c) => c.id).join(", ")})`,
+      "route-config-ten-commands",
+      commands.length === 10,
+      commands.length === 10
+        ? `all 10 configured commands loaded from ${config.origin} and exercised through ${ROUTE_SHELL} -lc`
+        : `expected 10 configured commands, found ${commands.length} (${commands.map((c) => c.id).join(", ")})`,
     ),
   );
 
@@ -3084,6 +3235,7 @@ async function main() {
   results.push(...await runHoldSessionRows());
   results.push(...await runHandoffSessionRows());
   results.push(...await runCoverageGapRows());
+  results.push(...await runToolsLoggerCrashRows());
   // ...plus cell codex-parity-6b's installed-route rows: the default suite
   // must also prove the ACTIVE .codex/hooks.json commands work through the
   // real Codex route, so deleting the route group cannot hide behind

@@ -137,6 +137,13 @@ const CATALOG = Object.freeze([
         matcher: "TaskCreate|TaskUpdate|TodoWrite",
         hooks: [cmd("bee-state-sync.mjs", "bee: state sync")],
       },
+      {
+        // No matcher = every tool (renders like the matcher-less
+        // UserPromptSubmit entry above). Passive measurement only — see
+        // hooks/bee-tools-logger.mjs; this hook can never deny or block.
+        runtimes: BOTH,
+        hooks: [cmd("bee-tools-logger.mjs", "bee: tools logger")],
+      },
     ],
   },
   {

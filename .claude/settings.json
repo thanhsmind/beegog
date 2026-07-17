@@ -63,6 +63,14 @@
             "command": "node \"$CLAUDE_PROJECT_DIR\"/.bee/bin/hooks/bee-state-sync.mjs"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.bee/bin/hooks/bee-tools-logger.mjs"
+          }
+        ]
       }
     ],
     "SubagentStop": [
