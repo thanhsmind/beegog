@@ -123,8 +123,9 @@ No live checkout is used as a fault-injection target.
 | Follow-up / rescue | `SendMessage` to the same agent id continues it with context intact; a new `Agent` call starts fresh | `followup_task({target: "<agent id or task name>", message: "..."})` to continue the same agent; a fresh `spawn_agent` only for a genuinely new task — no routine `send_input(...)` mid-flight |
 | Harness assist | `bee-chain-nudge` hook fires on SubagentStop: collect the status, update the cell, check reservations | None — the tend loop in this skill is the nudge |
 | Isolation guarantee | Fresh context per Agent call; include only the contract fields | `fork_turns: "none"`; never fork the parent history for routine cells (ORCH-02) |
+| Subagent type (W3, AO5/AO10/AO11) | `subagent_type: "bee-gather"`/`"bee-extract"`/`"bee-review"` for generation/extraction/review, when the rendered agent exists (`.claude/agents/bee-*.md`); `ceiling`, and any tier whose slot is cli-shaped or otherwise unrendered, use the runtime default (`general-purpose`) | No per-agent subagent type — the tier is enforced as a read budget + output cap in the worker prompt regardless of what is spawned (documented asymmetry, not parity) |
 
-On both runtimes the integrity rails are identical because they live in the helpers: `bee.mjs cells cap` refuses without a verify pass, and `bee.mjs reservations reserve` reports conflicts the worker must turn into `[BLOCKED]`.
+On both runtimes the integrity rails are identical because they live in the helpers: `bee.mjs cells cap` refuses without a verify pass, and `bee.mjs reservations reserve` reports conflicts the worker must turn into `[BLOCKED]`. On Claude Code, `bee-model-guard` additionally denies pairing a `[bee-tier: generation|extraction|review]` marker with `subagent_type: "general-purpose"` (`generic-type-denied`) — the pinned type above is not optional guidance, it is enforced at dispatch.
 
 ### Native Codex timeout interval
 

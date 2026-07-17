@@ -57,6 +57,7 @@ import {
   hasStaleAdvisorKey,
   STALE_ADVISOR_KEY_WARNING,
   validateModelsConfig,
+  validateAgentFilesDrift,
   readLaneStrict,
   writeLane,
   listLanes,
@@ -382,6 +383,15 @@ function buildStatus(root) {
   // never replacing anything already collected above.
   for (const problem of validateModelsConfig(readRawConfigForValidation(root))) {
     staleness.push(`config validate [${problem.code}]${problem.runtime ? ` models.${problem.runtime}.${problem.slot}:` : ''} ${problem.message}`);
+  }
+  // W3 drift advisory (ao-3b-2, AO12): a rendered .claude/agents/bee-*.md
+  // whose model: frontmatter no longer matches the configured tier. Advisory
+  // only — the dispatch itself is already protected by the guard's marker+
+  // param equality rule, independent of this check. Appended onto the same
+  // staleness_warnings output as the config-validate problems above, never a
+  // separate field.
+  for (const problem of validateAgentFilesDrift(root, readRawConfigForValidation(root))) {
+    staleness.push(`config validate [${problem.code}] ${problem.agent} (${problem.slot}): ${problem.message}`);
   }
   if (!isKnownPhase(state.phase)) {
     staleness.push(
@@ -2013,11 +2023,13 @@ function handleWorktreeUnregister(root, flags) {
 // refusal instead of today's silent revert to the seeded default.
 function handleConfigValidate(root, _flags) {
   const raw = readRawConfigForValidation(root);
-  const problems = validateModelsConfig(raw);
+  // W3 (ao-3b-2, AO12): the same drift advisory `bee status` surfaces joins
+  // the models-config problems here too, one CLI verb covering both checks.
+  const problems = [...validateModelsConfig(raw), ...validateAgentFilesDrift(root, raw)];
   const result = { ok: problems.length === 0, problem_count: problems.length, problems };
   const text =
     problems.length === 0
-      ? 'config validate: OK — no malformed/prompt-less/unsafe cli-tier config found.'
+      ? 'config validate: OK — no malformed/prompt-less/unsafe cli-tier config or rendered-agent drift found.'
       : problems
           .map(
             (p) =>

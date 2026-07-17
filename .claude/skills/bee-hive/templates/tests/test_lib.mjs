@@ -1942,6 +1942,10 @@ const EXPECTED_STATE_EXPORTS = [
   'ADVICE_CLASS_SLOTS',
   'ADVICE_CLASS_WRITABLE_TOKENS',
   'validateModelsConfig',
+  // ao-3b-2/AO12: root-taking drift advisory sibling — validateModelsConfig
+  // above stays pure (no root/fs); this one reads rendered .claude/agents/
+  // bee-*.md frontmatter and is called only from bee status/config validate.
+  'validateAgentFilesDrift',
   'findRepoRoot',
   'resolveRoots',
   'WorktreeLinkInvalidError',

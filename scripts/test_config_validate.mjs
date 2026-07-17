@@ -6,7 +6,15 @@
 // 'sonnet' stays, no error). Plain node asserts, no framework, matching the
 // style of the other scripts/test_*.mjs checks.
 
-import { validateModelsConfig, UNSAFE_CLI_FLAGS, ADVICE_CLASS_WRITABLE_TOKENS } from '../.bee/bin/lib/state.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  validateModelsConfig,
+  validateAgentFilesDrift,
+  UNSAFE_CLI_FLAGS,
+  ADVICE_CLASS_WRITABLE_TOKENS,
+} from '../.bee/bin/lib/state.mjs';
 
 const results = [];
 function record(desc, passed, detail) {
@@ -295,6 +303,130 @@ for (const bad of ['a string', 42, true, ['array', 'config'], () => {}]) {
   record(
     'a runtime value of the wrong type does not throw and reports runtime-malformed',
     !threw && hasCode(problems, 'runtime-malformed'),
+    JSON.stringify(problems),
+  );
+}
+
+// ── validateAgentFilesDrift (ao-3b-2, AO12) ─────────────────────────────────
+// The pure validateModelsConfig above never touches disk; drift-checking a
+// RENDERED .claude/agents/bee-*.md against live config needs root, so it is
+// a separate helper (AO12 purity split). Fixtures below write agent files
+// under a tmp root's .claude/agents/ directly — no onboarding render needed.
+
+function mkFixtureRoot(prefix) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.mkdirSync(path.join(root, '.claude', 'agents'), { recursive: true });
+  return root;
+}
+
+function writeAgentFile(root, agentName, frontmatterBody) {
+  fs.writeFileSync(
+    path.join(root, '.claude', 'agents', `${agentName}.md`),
+    `---\n${frontmatterBody}\n---\n\nBody text, not parsed by the drift check.\n`,
+  );
+}
+
+{
+  const root = mkFixtureRoot('bee-agent-drift-flagged-');
+  writeAgentFile(root, 'bee-gather', 'name: bee-gather\nmodel: opus');
+  const problems = validateAgentFilesDrift(root, { models: { claude: { generation: 'sonnet' } } });
+  record(
+    'a rendered agent file whose model no longer matches the configured tier is flagged agent-file-drift',
+    problems.length === 1 && problems[0].code === 'agent-file-drift' && problems[0].agent === 'bee-gather',
+    JSON.stringify(problems),
+  );
+}
+
+{
+  const root = mkFixtureRoot('bee-agent-drift-match-');
+  writeAgentFile(root, 'bee-gather', 'name: bee-gather\nmodel: sonnet');
+  writeAgentFile(root, 'bee-extract', 'name: bee-extract\nmodel: haiku');
+  writeAgentFile(root, 'bee-review', 'name: bee-review\nmodel: opus');
+  const problems = validateAgentFilesDrift(root, {
+    models: { claude: { generation: 'sonnet', extraction: 'haiku', review: 'opus' } },
+  });
+  record(
+    'rendered agent files whose model matches the configured tier report no problems',
+    problems.length === 0,
+    JSON.stringify(problems),
+  );
+}
+
+{
+  // No .claude/agents/*.md files at all — nothing rendered yet, or a
+  // cli/null slot correctly skipped by onboarding (AO10/AO11). Clean.
+  const root = mkFixtureRoot('bee-agent-drift-missing-');
+  const problems = validateAgentFilesDrift(root, { models: { claude: { generation: 'sonnet' } } });
+  record('missing agent files produce no problems (absent is clean)', problems.length === 0, JSON.stringify(problems));
+}
+
+{
+  // A configured slot now cli-shaped (no model name) but a stale rendered
+  // file still declares a model — flagged, never silently accepted.
+  const root = mkFixtureRoot('bee-agent-drift-cli-');
+  writeAgentFile(root, 'bee-gather', 'name: bee-gather\nmodel: sonnet');
+  const problems = validateAgentFilesDrift(root, {
+    models: { claude: { generation: { kind: 'cli', command: 'codex exec -m gpt-5.5 -s read-only -' } } },
+  });
+  record(
+    'a stale agent file under a now cli-shaped slot is flagged agent-file-drift',
+    problems.length === 1 && problems[0].code === 'agent-file-drift',
+    JSON.stringify(problems),
+  );
+}
+
+{
+  // Malformed frontmatter (no parseable "model:" line) never throws — it is
+  // reported as its own problem code.
+  const root = mkFixtureRoot('bee-agent-drift-malformed-');
+  fs.writeFileSync(
+    path.join(root, '.claude', 'agents', 'bee-extract.md'),
+    'not even frontmatter, just plain text\n',
+  );
+  let threw = false;
+  let problems = [];
+  try {
+    problems = validateAgentFilesDrift(root, { models: { claude: { extraction: 'haiku' } } });
+  } catch {
+    threw = true;
+  }
+  record(
+    'malformed agent-file frontmatter never throws and reports agent-file-malformed',
+    !threw && problems.length === 1 && problems[0].code === 'agent-file-malformed',
+    JSON.stringify(problems),
+  );
+}
+
+{
+  // review slot falls back to generation when explicitly null (decision
+  // 0021), same as resolveTier — the drift check must mirror that fallback.
+  const root = mkFixtureRoot('bee-agent-drift-review-fallback-');
+  writeAgentFile(root, 'bee-review', 'name: bee-review\nmodel: sonnet');
+  const problems = validateAgentFilesDrift(root, {
+    models: { claude: { generation: 'sonnet', review: null } },
+  });
+  record(
+    'a null review slot falls back to generation for the drift comparison (decision 0021)',
+    problems.length === 0,
+    JSON.stringify(problems),
+  );
+}
+
+{
+  // rawConfig undefined (no .bee/config.json on disk at all) never throws —
+  // resolves against the seeded defaults exactly like a fresh repo.
+  const root = mkFixtureRoot('bee-agent-drift-undefined-config-');
+  writeAgentFile(root, 'bee-gather', 'name: bee-gather\nmodel: sonnet');
+  let threw = false;
+  let problems = [];
+  try {
+    problems = validateAgentFilesDrift(root, undefined);
+  } catch {
+    threw = true;
+  }
+  record(
+    'validateAgentFilesDrift(root, undefined) does not throw and resolves against seeded defaults',
+    !threw && problems.length === 0,
     JSON.stringify(problems),
   );
 }

@@ -638,6 +638,102 @@ async function main() {
     JSON.stringify(malformedCrash),
   );
 
+  // === Slice 3B rows: pinned-type deny (generic-type-denied, W3/AO5/AO10) ===
+  // The enabled fixture's rendered agent types: generation->bee-gather,
+  // extraction->bee-extract, review->bee-review; "ceiling" has none.
+
+  // --- 33. per-tier bare marker + general-purpose -> deny, FIX names the
+  // pinned type, for each of generation/extraction/review. -----------------
+  const pinnedTypeByTier = { generation: "bee-gather", extraction: "bee-extract", review: "bee-review" };
+  for (const [pinTier, pinnedType] of Object.entries(pinnedTypeByTier)) {
+    const bareDeny = await runHookPayload(
+      {
+        tool_name: "Agent",
+        tool_input: { prompt: `[bee-tier: ${pinTier}] do the thing`, subagent_type: "general-purpose" },
+      },
+      enabledRoot,
+    );
+    check(
+      bareDeny.status === 2,
+      `row33[${pinTier}]: bare marker + general-purpose is denied (exit 2)`,
+      `status=${bareDeny.status} stderr=${bareDeny.stderr}`,
+    );
+    check(
+      bareDeny.stderr.includes(pinnedType),
+      `row33[${pinTier}]: FIX names the pinned type "${pinnedType}"`,
+      bareDeny.stderr,
+    );
+    const d33 = readLastJsonl(path.join(enabledRoot, ".bee", "logs", "dispatch.jsonl"));
+    check(
+      d33 && d33.transport === "generic-type-denied" && d33.tier === pinTier,
+      `row33[${pinTier}]: dispatch logged as generic-type-denied`,
+      JSON.stringify(d33),
+    );
+  }
+
+  // --- 34. marker + MATCHING model param + general-purpose -> still denied
+  // (the pinned-type rule fires before branch (1)'s marker+param equality
+  // allow — bare and matching-param alike must deny). --------------------
+  const r34 = await runHookPayload(
+    {
+      tool_name: "Agent",
+      tool_input: {
+        prompt: "[bee-tier: generation] do the thing",
+        model: expectedGenerationModel,
+        subagent_type: "general-purpose",
+      },
+    },
+    enabledRoot,
+  );
+  check(
+    r34.status === 2,
+    "row34: marker + matching model param + general-purpose is still denied",
+    `status=${r34.status} stderr=${r34.stderr}`,
+  );
+  check(r34.stderr.includes("bee-gather"), "row34: FIX names bee-gather even with a matching param", r34.stderr);
+
+  // --- 35. [bee-tier: ceiling] + general-purpose -> allowed (no pinned agent)
+  const r35 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: ceiling] do the thing", subagent_type: "general-purpose" } },
+    enabledRoot,
+  );
+  check(r35.status === 0, "row35: ceiling marker + general-purpose is allowed (no pinned agent)",
+    `status=${r35.status} stderr=${r35.stderr}`);
+
+  // --- 36. marker + subagent_type "Explore" -> allowed ----------------------
+  const r36 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: generation] do the thing", subagent_type: "Explore" } },
+    enabledRoot,
+  );
+  check(r36.status === 0, "row36: generation marker + subagent_type Explore is allowed",
+    `status=${r36.status} stderr=${r36.stderr}`);
+
+  // --- 37. marker + subagent_type absent -> allowed (untouched today) ------
+  const r37 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: review] check the diff" } },
+    enabledRoot,
+  );
+  check(r37.status === 0, "row37: review marker with no subagent_type is allowed",
+    `status=${r37.status} stderr=${r37.stderr}`);
+
+  // --- 38. marker + subagent_type "bee-gather" (its own pinned type) -> allowed
+  const r38 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { prompt: "[bee-tier: generation] do the thing", subagent_type: "bee-gather" } },
+    enabledRoot,
+  );
+  check(r38.status === 0, "row38: generation marker + its own pinned subagent_type is allowed",
+    `status=${r38.status} stderr=${r38.stderr}`);
+
+  // --- 39. no marker (bare param, general-purpose) -> untouched, still allowed
+  // (regresses row20a: model-param dispatches with general-purpose stay allowed
+  // — the new rule only fires when a tier marker is present).
+  const r39 = await runHookPayload(
+    { tool_name: "Agent", tool_input: { model: "haiku", subagent_type: "general-purpose" } },
+    enabledRoot,
+  );
+  check(r39.status === 0, "row39: bare param (no marker) + general-purpose stays allowed",
+    `status=${r39.status} stderr=${r39.stderr}`);
+
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }

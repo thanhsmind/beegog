@@ -420,6 +420,105 @@ export function validateModelsConfig(config) {
   return problems;
 }
 
+// W3 pinned agent files (ao-3b-1) — the tier each rendered .claude/agents/
+// bee-*.md belongs to. "ceiling" is deliberately absent: it has no rendered
+// agent (it IS the session model).
+const AGENT_FILE_TIER = {
+  'bee-gather': 'generation',
+  'bee-extract': 'extraction',
+  'bee-review': 'review',
+};
+
+// Extracts the `model:` value out of an agent file's YAML frontmatter with a
+// plain regex (no YAML parser dependency — the templates only ever emit a
+// flat `key: value` block, ao-3b-1). Never throws: a read failure (missing
+// file, permission) reports {found:false}; a present-but-unparseable file
+// reports {found:true, model:undefined} so the caller can flag it as
+// malformed rather than silently skip it.
+function readAgentFileModel(file) {
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch {
+    return { found: false, model: null };
+  }
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+  const modelLine = frontmatter ? /^model:\s*(.+)$/m.exec(frontmatter[1]) : null;
+  return { found: true, model: modelLine ? modelLine[1].trim() : undefined };
+}
+
+/**
+ * validateAgentFilesDrift (ao-3b-2, AO12) — advisory-only check that each
+ * rendered `.claude/agents/bee-*.md`'s `model:` frontmatter still matches
+ * the model currently configured for its tier. Deliberately a SEPARATE,
+ * root-taking helper: validateModelsConfig above must stay PURE (no root, no
+ * fs — it is read from inside bee-model-guard's fail-open hot path, and a
+ * throw there is swallowed by the hook's catch, a refusal that refuses
+ * nothing). This helper is called only from hosts that already have root
+ * (`bee status`, `bee config validate`) — never from a hook.
+ *
+ * NEVER throws: an absent agent file is clean (nothing rendered yet, or the
+ * tier is cli-shaped/unconfigured and onboarding correctly skipped it —
+ * AO10/AO11); a present file with unparseable frontmatter is reported as its
+ * own problem code, never an exception. Advisory only — this never refuses
+ * anything; the dispatch itself is already protected by the guard's
+ * marker+param equality rule (AO5), independent of this check.
+ *
+ * `rawConfig` is the SAME raw `.bee/config.json` payload validateModelsConfig
+ * takes (the readRawConfigForValidation undefined/null/object contract) —
+ * normalized here through the same normalizeModels() readConfig itself uses,
+ * so the comparison is against the EFFECTIVE model (seeded defaults applied),
+ * never the raw shape, and never a second disk read of config.json.
+ */
+export function validateAgentFilesDrift(root, rawConfig) {
+  const problems = [];
+  const rawModels =
+    rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig) ? rawConfig.models : undefined;
+  const models = normalizeModels(rawModels);
+  for (const [agentName, slot] of Object.entries(AGENT_FILE_TIER)) {
+    const file = path.join(root, '.claude', 'agents', `${agentName}.md`);
+    const { found, model: fileModel } = readAgentFileModel(file);
+    if (!found) continue; // absent is clean — nothing rendered, or a cli/null slot correctly skipped (AO10/AO11)
+    if (fileModel === undefined) {
+      problems.push({
+        code: 'agent-file-malformed',
+        agent: agentName,
+        slot,
+        message: `.claude/agents/${agentName}.md has no readable "model:" frontmatter line — cannot check drift; re-run onboarding to re-render it.`,
+      });
+      continue;
+    }
+    let value = models.claude ? models.claude[slot] : null;
+    if (value == null && slot === 'review') {
+      value = models.claude ? models.claude.generation : null; // review falls back to generation
+    }
+    let expected = null;
+    if (typeof value === 'string') expected = value;
+    else if (value && typeof value === 'object' && typeof value.model === 'string') expected = value.model;
+    // value.kind === 'cli', or value == null (budget/unconfigured), leaves
+    // expected === null: the slot now names no model at all, so ANY model
+    // string still in the file is drift (the file should be removed at the
+    // next onboarding sync, but that is onboarding's job, not this
+    // advisory's — it still surfaces the mismatch).
+    if (expected === null) {
+      problems.push({
+        code: 'agent-file-drift',
+        agent: agentName,
+        slot,
+        message: `.claude/agents/${agentName}.md declares model: "${fileModel}" but the ${slot} slot is now cli-shaped or unconfigured (no model name) — re-run onboarding to remove the stale file.`,
+      });
+    } else if (expected !== fileModel) {
+      problems.push({
+        code: 'agent-file-drift',
+        agent: agentName,
+        slot,
+        message: `.claude/agents/${agentName}.md declares model: "${fileModel}" but the configured ${slot} model is "${expected}" — re-run onboarding to re-render it.`,
+      });
+    }
+  }
+  return problems;
+}
+
 /**
  * Walk up from startDir looking for `.bee/onboarding.json`; if none found
  * anywhere up the tree, walk up again for the first `.git`; else null.

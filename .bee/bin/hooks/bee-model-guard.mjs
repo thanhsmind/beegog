@@ -24,6 +24,11 @@
 // executor (an in-family subagent cannot BE the external CLI); (4) a bare
 // dispatch (no param, no anchored marker) silently inherits the most expensive
 // session model, so it is denied.
+// (0, W3/AO5/AO10) BEFORE any of the above: a marker naming generation/
+// extraction/review paired with subagent_type "general-purpose" is denied
+// outright — those three tiers each have a rendered bee agent type
+// (bee-gather/bee-extract/bee-review) and general-purpose carries no pinned
+// identity; "ceiling" has no rendered agent and stays exempt.
 // Deny = exit 2 with the reason (rule + FIX line) on stderr, and a
 // {hook:'model-guard',event:'deny',...} line appended to .bee/logs/hooks.jsonl.
 // Input/root/crash-logging go through the shared runtime adapter
@@ -42,6 +47,19 @@ const DISPATCH_TOOLS = new Set(["Agent", "Task"]);
 // marker must be the first thing in prompt/description, never merely present
 // somewhere inside it (P1-1 — no 500-char scan window, no mid-text match).
 const ANCHORED_TIER_MARKER_RE = /^\s*\[bee-tier:\s*(ceiling|generation|extraction|review)\]/i;
+
+// W3 pinned-type rule (plan.md Slice 3B item 3, AO5/AO10/AO11): the three
+// model-backed tiers each get a rendered bee agent definition
+// (.claude/agents/bee-*.md, cell ao-3b-1) — "ceiling" deliberately has none,
+// it IS the session model. A dispatch that declares one of these tiers but
+// spawns "general-purpose" carries no pinned identity and would silently run
+// under whatever runtime default is in effect; the FIX below names the type
+// that DOES exist for that tier.
+const PINNED_AGENT_TYPE = {
+  generation: "bee-gather",
+  extraction: "bee-extract",
+  review: "bee-review",
+};
 
 function logDeny(root, toolName, toolInput) {
   // appendHookLog is itself fail-open: a log failure never blocks the deny.
@@ -171,6 +189,28 @@ async function main() {
         ? toolInput.model.trim()
         : null;
     const tier = markerTier(toolInput);
+    const subagentType =
+      typeof toolInput.subagent_type === "string" ? toolInput.subagent_type : null;
+
+    // (0) Pinned-type rule (W3, AO5/AO10/AO11) — fires BEFORE every allow
+    // branch below: placed after them it would be dead code, since branch (1)
+    // already allows a matching marker+param and branch (3) already allows a
+    // bare marker on these exact tiers (planning panel WARNING). "ceiling" is
+    // deliberately excluded — it has no rendered agent, so general-purpose is
+    // its only option. Fires regardless of any model param, matching or not:
+    // a general-purpose subagent carries no pinned identity no matter what
+    // model backs it.
+    if (tier && tier !== "ceiling" && subagentType === "general-purpose") {
+      const pinnedType = PINNED_AGENT_TYPE[tier];
+      const reason =
+        `bee-model-guard: [bee-tier: ${tier}] must spawn its pinned agent type, not ` +
+        'subagent_type: "general-purpose" — general-purpose carries no tier identity and ' +
+        "would run under whatever runtime default is in effect, not the rendered bee agent " +
+        "for this tier (AO5/AO10).\n" +
+        `FIX: set subagent_type: "${pinnedType}" (bee's rendered agent for the ${tier} tier), ` +
+        'or use "Explore" for a read-only gather that does not need the rendered agent.';
+      return denyWith(root, toolName, toolInput, reason, "generic-type-denied", modelParam, tier);
+    }
 
     // (1) Marker + model param — AO5 strict equality.
     if (tier && modelParam) {
