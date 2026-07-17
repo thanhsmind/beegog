@@ -108,20 +108,28 @@ The prior 2A failed Gate 3 (7 blockers B1–B7 + W-e; 3 invalidate the premise, 
 
 **Ordering (non-negotiable within 2A):** safety floor → structural boundary → guard integrity → dogfood. Cells are cut one sub-slice at a time; only the current sub-slice gets cells.
 
-- **2A-i — Safety floor (CURRENT sub-slice).** Make the cli path safe and non-silent *before* anything routes to it.
+- **2A-i — Safety floor (SHIPPED 2026-07-17; cells ao-2ai-1, ao-2ai-2 capped).** Make the cli path safe and non-silent *before* anything routes to it.
   - **W-e / AO12 (B-config):** add a `bee config validate` verb backed by a shared validator in `state.mjs`, hosted in `bee status` (AO12 — never in `resolveTier`, which is on the fail-open hook hot path). It **loudly refuses** what today silently reverts to sonnet (`normalizeTierValue` → `undefined` → seeded default, `state.mjs:158-174,228`).
   - **B2 (validation half):** the validator refuses a cli tier whose command **cannot receive a prompt** — prompt transport becomes config's explicit declared job, not an appended `-`.
   - **B6 + B7:** the validator refuses a cli command carrying an auto-approve / `--dangerously-skip-permissions` / `--yolo`-style flag (today enforced by **zero lines**). Re-scope AO18; fix the shipped sample + `docs/model-presets.md` to read-only sandboxed presets.
   - **B3:** fix the broken shipped command — `workspace-write` is a **bare positional = the prompt**; it must be `-s workspace-write` and the stdin `-` must be present, or the executor never reads its prompt.
-- **2A-ii — Structural boundary.** **B1:** purpose-scope `resolveTier` so a cli tier resolves for a **gather only**; a cli tier resolving for **cell execution** returns a typed refusal, not `{type:'cli'}` (prose is not a boundary). Add the Delegation-contract cli gather branch (ao-2b intent), now safe: read-only, stdout **IS** the digest, framed by a delimiter contract (`<<<BEE_DIGEST … BEE_DIGEST>>>`, W-a). Verbatim command, prompt on stdin, absolute paths (W7/W9).
+- **2A-ii — Structural boundary (CURRENT sub-slice).** **B1:** purpose-scope `resolveTier` so a cli tier resolves for a **gather only**; a cli tier resolving for **cell execution** returns a typed refusal, not `{type:'cli'}` (prose is not a boundary). Add the Delegation-contract cli gather branch (ao-2b intent), now safe: read-only, stdout **IS** the digest, framed by a delimiter contract (`<<<BEE_DIGEST … BEE_DIGEST>>>`, W-a). Verbatim command, prompt on stdin, absolute paths (W7/W9).
+  **Design settled at re-plan (2026-07-17):** `resolveTier(root, slot, runtime, purpose)` gains an optional 4th param `{for:'gather'|'cell'}` **defaulting to `'cell'`** — the fail-safe side: every existing 3-arg call (and any malformed/unknown purpose value) resolves as cell-execution and gets `{type:'refused', reason:'cli_tier_gather_only', ...}` when the tier is cli-shaped; only an explicit `{for:'gather'}` receives `{type:'cli', command}`. Non-cli values ignore purpose entirely (zero change). The refusal is a returned type, never a throw — `modelForTier` (the guard's hot path, `bee-model-guard.mjs:133`) keeps returning `null` for cli exactly as today. **Scope split settled at validation (plan-checker CRITICAL):** the resolveTier-level refusal applies to EVERY slot including `review` — a bare 3-arg resolve of a cli-shaped review slot returns `refused` in 2A-ii (the external-reviewer dispatch is a read-only gather, reachable via `{for:'gather'}`); only the *routing prose* updates (bee-reviewing/bee-validating/bee-swarming SKILL.md teaching the 4-arg call) wait for 2A-iii (B4(1)). Transitional state named in the release note: between 2A-ii and 2A-iii the documented 3-arg external-reviewer instruction resolves to `refused` — the mitigation is passing `{for:'gather'}`, which 2A-iii makes the documented form.
 - **2A-iii — Guard integrity.** **B4(2)/B5:** close the model-param short-circuit — read the declared tier **before** the model-param allow (`bee-model-guard.mjs:123-126`), and validate the param **equals** the model configured for that tier (reject `model:"banana"`). **B4(1):** a cli-shaped `review` slot **routes to the external-executor path**, it does not blanket-deny every `[bee-tier: review]` dispatch (plan-checker, panels, bee-reviewing).
 - **2A-iv — Dogfood.** **W11 / W-f:** run one real gather **through `.bee/config.json`** (not a hand-typed `bash -lc`), closing decision 0019's pending first dogfood. GO/NO-GO recorded verbatim.
 
 **Blast radius / test owed (high-risk):** every new refusal needs a malformed-input row (null/wrong-type config); the config-validate host must not throw on the hook hot path; a Bash-launched gather emits **zero** `dispatch.jsonl` rows (W-d) — measurement of the cli path is a known gap handed to Slice 3, not solved here.
 
-##### Slice 2A-i cells (current sub-slice)
+##### Slice 2A-i cells (SHIPPED)
 
-Created after Gate 2. Verify command per cell is the recorded suite subset it touches (`node hooks/test_model_guard.mjs` is untouched here; new tests are `node scripts/test_config_validate.mjs` + the sample-safety grep test).
+Created after Gate 2; both capped 2026-07-17 (`ao-2ai-1` config-validate verb + `validateModelsConfig` + 24-case suite; `ao-2ai-2` unsafe sample/doc cleanup + `test_config_samples_safe.mjs`).
+
+##### Slice 2A-ii cells (current sub-slice)
+
+| Cell | Lane | Files bounded to | Verify command |
+|---|---|---|---|
+| `ao-2aii-1` | standard | `skills/bee-hive/templates/lib/state.mjs`, `.bee/bin/lib/state.mjs` (byte mirror), `skills/bee-hive/templates/tests/test_lib.mjs`, release manifest | `node skills/bee-hive/templates/tests/test_lib.mjs && node scripts/test_lib_mirror.mjs && node hooks/test_model_guard.mjs && node scripts/release_manifest.mjs --check` — new rows: default/explicit-cell refusal, gather allow, malformed-purpose fail-safe, hot-path no-throw |
+| `ao-2aii-2` | standard | `skills/bee-hive/references/routing-and-contracts.md`, `skills/bee-hive/templates/AGENTS.block.md`, root `AGENTS.md` (re-rendered via self-onboard), `skills/bee-hive/templates/tests/test_lib.mjs` (census anchors), release manifest | `node skills/bee-hive/templates/tests/test_lib.mjs && node scripts/test_gate_bypass_doctrine.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/release_manifest.mjs --check` — deps: `ao-2aii-1` (test_lib overlap; the branch text cites the refusal semantics) |
 
 ### Slice 3 — Visibility + measurement (AO1-logger, AO3-agents)
 
@@ -159,7 +167,7 @@ The only part with leverage on the bill. Orchestrator's window becomes a control
 | **Removal census** | The degenerate check's removal is verified by **invariants, not by grepping the names deleted** (learning 20260711); re-derive any constant computed from it. |
 | **Migration** | An advisor previously *skipped* by the degenerate check will now be **consulted**. Blast radius small (shipped presets ship `advisor: null`) but the behavior change is real and belongs in the release note. |
 
-## Current Slice — Slice 2A (Slice 0 + Slice 1 are CLOSED, all 5 cells capped)
+## Current Slice — Slice 2A-ii (Slices 0, 1, 2A-i are CLOSED; the pre-re-plan table below is historical — the four `ao-2a…2d` cells it names were dropped at the re-plan)
 
 Slice 0 (hook suites repaired and wired into `commands.verify`) and Slice 1 (both spikes; S2's verdict superseded by AO15) are complete. Baseline verify is green this session: **1011 checks, 0 failures.**
 

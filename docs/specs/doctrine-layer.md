@@ -1,7 +1,7 @@
 ---
 area: doctrine-layer
 updated: 2026-07-17
-sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2)]
+sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17)]
 decisions: [ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface); 040f8ef0 (read-only analyst spawn + partial-return fan-out, B7/R11)]
 coverage: partial
 ---
@@ -152,6 +152,28 @@ observes: the orchestrator never hangs waiting on a fixed helper count
 one dispatch had died at creation), and no gathering helper can modify the
 project no matter what its instructions say (decision 040f8ef0).
 
+**B8 — A helper tier backed by an external command serves gathers only, and its
+output is accepted only between declared markers.** Trigger: a helper tier is
+configured as an external command-line assistant (a different vendor's model
+driven through its own command) and a dispatch resolves that tier. What happens:
+resolving it **for a read-only gather** yields the external command; resolving it
+**for unit execution** yields a typed refusal from the resolution machinery
+itself — the boundary is enforced in code, not by guidance text, because an
+external command runs in its own working directory where the workflow's own
+bookkeeping would land in a phantom copy and every record would be written where
+the workflow never reads (observed by probe). A gather through an external
+command runs the configured command **exactly as written** (nothing appended),
+feeds the task in on standard input, hands the command only absolute locations,
+and treats the printed output **between declared framing markers** as the digest;
+output missing its markers, or an empty digest, is a **failed run surfaced
+loudly** — never accepted as silent success. Such a gather creates no work unit,
+no reservation, and no worker registration. Known gap, assigned not omitted:
+these runs do not yet appear in the dispatch audit log. What each actor observes:
+the human's configured command is the whole invocation contract; a
+misconfigured or write-capable command is refused at configuration checking, and
+unit execution can never route to the external path until it earns its own proof
+(decisions 34398e69, 4ec5be1a).
+
 ## Actors & Access
 
 - **The orchestrating assistant** — reads the standing sheet every session and
@@ -203,6 +225,12 @@ project no matter what its instructions say (decision 040f8ef0).
   synthesis proceeds from partial returns — one re-dispatch per failed creation,
   then synthesize from what came back, never an unbounded wait for all-of-N
   (040f8ef0).
+- **R12** — An external-command helper tier is gather-only: the resolution
+  machinery returns a typed refusal when such a tier is resolved for unit
+  execution, and a caller must explicitly declare the gather purpose to receive
+  the command. Purpose defaults to the refused side; malformed purpose values
+  fail safe to refusal, and the refusal is a returned value, never a crash — the
+  resolution sits under a fail-open guard path (34398e69, 4ec5be1a).
 
 ## Edge Cases Settled
 
@@ -265,3 +293,10 @@ project no matter what its instructions say (decision 040f8ef0).
   to the runtime's read-only agent type — Claude Code `Explore` — with
   event-driven wait, one re-dispatch, partial-return synthesis); RED→GREEN
   record in `skills/bee-compounding/CREATION-LOG.md` amendment 2026-07-17.
+- B8/R12 implementation: `resolveTier(root, slot, runtime, {for:'gather'|'cell'})`
+  in `skills/bee-hive/templates/lib/state.mjs` (default `'cell'`, refusal
+  `{type:'refused', reason:'cli_tier_gather_only'}`); the cli gather branch +
+  `<<<BEE_DIGEST … BEE_DIGEST>>>` delimiter contract in
+  `skills/bee-hive/references/routing-and-contracts.md` § Delegation contract,
+  census-anchored in `templates/tests/test_lib.mjs`; feature
+  advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17).
