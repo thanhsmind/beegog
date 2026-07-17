@@ -911,7 +911,7 @@
     },
     {
       "path": "skills/bee-validating/SKILL.md",
-      "sha256": "8b97961e95253378be3540a8e452d5ca6670876095ceb0c6b0b5140485daca17",
+      "sha256": "540aa4b4fac0d92091402d21e830a183c7f551ac22f9464f62d694cae708b667",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-validating/SKILL.md"

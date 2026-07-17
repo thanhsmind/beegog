@@ -79,6 +79,23 @@ READY is a feasibility verdict, not execution approval — Gate 3 still requires
 
 ## Gate 3 — Execution Approval
 
+**Advisor consult (AO2b/AO3/AO4) — runs before this gate opens, at every bypass level.** For a high-risk or hard-gate slice, the orchestrator consults the configured advisor **before** presenting Gate 3 to the human, and before self-approving it under any bypass level (`normal`/`full`/`total` lift the *human* checkpoint below — they never lift this mechanical precondition). Resolve the advisor from config (`resolveAdvisor(root, runtime)`):
+- **cli-shaped** advisor → run the configured command verbatim, read-only, with an evidence bundle on stdin (plan summary, risk map, validation findings, open questions — never session history, never secrets) and capture the digest.
+- **model-shaped** advisor → dispatch a `bee-review`-class read-only run with the same evidence bundle.
+- **unconfigured** advisor (`resolveAdvisor` returns `null`) → record that fact and proceed. AO2(b) adds one trigger; it is not a hard dependency on an advisor being configured.
+
+Then record the consult: `node .bee/bin/bee.mjs state advisor-ref record --advisor "<identity>" --digest-file <path>` (the verb stamps the staleness anchors itself — the caller supplies only the advisor identity and the digest file).
+
+**Enforcement is a throw, not a warning.** For high-risk work, `node .bee/bin/bee.mjs state gate --name execution --approved true` refuses — throws, never just warns — when the selected record's `advisor_ref` is missing or stale (AO3/AO13). Nothing is written until a non-stale `advisor_ref` exists; this is CLI-enforced, not optional ceremony. An `advisor_ref` is stale if **any** of (AO13, verbatim):
+1. its feature differs from `state.feature`;
+2. the newest active decision id changed since the consult;
+3. `sha256(plan.md)` changed since the consult;
+4. the ref predates the most recent revocation of the execution gate.
+
+Never a time-based TTL — AO13 already burned this feature on one invented number once.
+
+**Advice never approves a gate and never overrides a locked decision.** The consult's digest is data for the human decision, not a decision itself (critical rule 13, existing law); an advisor result that conflicts with a locked `CONTEXT.md` decision is surfaced to the human, never silently followed or used to auto-approve.
+
 Write the full machine report (reality gate, matrix, plan-checker findings, cell review, approval block) to `docs/history/<feature>/reports/validation-<slice>.md`. For `small`/`standard`/`high-risk`, invoke `bee-briefing` in refresh mode to patch the implement plan's Validation Plan section with the accepted evidence links (and to flip its `status` if a source changed), so the Gate 3 message links a current brief. Then present **only the human layer** in chat per the Gate Presentation Contract (template in the reference): what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding — in the user's language, jargon-free, implement plan + report linked — then ask verbatim: **"Feasibility validated. Approve execution?"** Optionally offer a cross-model second opinion first (agreement → mention it; disagreement → quote both positions; never auto-resolve). Approval covers the **current work only**; future slices return to planning and validating.
 
 On approval, update state: `node .bee/bin/bee.mjs state gate --name execution --approved true` then `node .bee/bin/bee.mjs state set --owner validating --phase swarming --summary "<summary>" --next-action "Invoke bee-swarming for the validated work."` (`validated` is not a phase — it never was; the approved execution gate is what records that. See chain-integrity D6.)
@@ -105,6 +122,8 @@ With `mode:headless`: run every check, apply unambiguous cell repairs, and defer
 - CRITICAL cell flags left unfixed at approval time
 - a tiny fix wearing epic ceremony; a hard-gate change routed below high-risk
 - self-approving Gate 3, in any mode
+- presenting or auto-approving Gate 3 for high-risk/hard-gate work without first running the advisor consult and recording a non-stale `advisor_ref` (AO2b/AO3/AO13)
+- treating an advisor digest as a decision instead of data, or letting it silently override a locked `CONTEXT.md` decision
 
 Violating the letter of the rules is violating the spirit of the rules.
 
