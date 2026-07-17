@@ -7829,6 +7829,53 @@ await check('census: the Delegation contract (fan-out) lives in the always-loade
   }
 });
 
+await check('census: AO14 execution-worker class — the Delegation contract, bee-hive lane table, and bee-swarming carry it, and no canonical prose still asserts tiny/small in-session solo implementation', async () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = findRepoRoot(templatesRoot);
+  if (!repoRoot) return; // no repo context to check against (bare checkout)
+
+  const contractPath = path.join(repoRoot, 'skills', 'bee-hive', 'references', 'routing-and-contracts.md');
+  assert(fs.existsSync(contractPath), `routing-and-contracts.md not found at ${contractPath}`);
+  const contractText = fs.readFileSync(contractPath, 'utf8');
+  assert(
+    /Execution worker \(AO14/.test(contractText),
+    'routing-and-contracts.md must name the execution-worker class (AO14) beside the I/O-offload worker',
+  );
+  assert(
+    /does\*{0,2} register in the swarm registry/.test(contractText) && /does\*{0,2} take reservations/.test(contractText),
+    'routing-and-contracts.md must state an execution worker DOES register in the swarm registry and DOES take reservations, unlike an I/O worker',
+  );
+
+  const hivePath = path.join(repoRoot, 'skills', 'bee-hive', 'SKILL.md');
+  const hiveText = fs.readFileSync(hivePath, 'utf8');
+  assert(
+    !/\| direct, in-session \(solo\) \|/.test(hiveText),
+    'bee-hive/SKILL.md lane table must no longer say tiny/small Execute is "direct, in-session (solo)" (AO14)',
+  );
+  assert(
+    /dispatched execution worker/.test(hiveText),
+    'bee-hive/SKILL.md lane table must name a dispatched execution worker for the tiny/small Execute column',
+  );
+
+  const swarmingPath = path.join(repoRoot, 'skills', 'bee-swarming', 'SKILL.md');
+  const swarmingText = fs.readFileSync(swarmingPath, 'utf8');
+  assert(
+    /Single execution worker \(tiny\/small lanes\)/.test(swarmingText),
+    'bee-swarming/SKILL.md must carry the Single execution worker section replacing the old Solo execution section',
+  );
+  assert(
+    !/no workers are spawned/.test(swarmingText),
+    'bee-swarming/SKILL.md must not still claim no workers are spawned for tiny/small (AO14)',
+  );
+
+  const agentsBlockPath = path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md');
+  const agentsBlockText = fs.readFileSync(agentsBlockPath, 'utf8');
+  assert(
+    /never zero \*execution\* workers/.test(agentsBlockText),
+    'AGENTS.block.md critical rule 13 parenthetical must carry the AO14 execution-worker rider',
+  );
+});
+
 await check('census: native Codex empty waits require a material-action then commentary interval before another bounded wait on doctrine, ordinary-gather, and swarming surfaces', async () => {
   const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
   const repoRoot = findRepoRoot(templatesRoot);

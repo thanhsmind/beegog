@@ -17,9 +17,13 @@ metadata:
 
 You are the orchestrator. Launch workers, tend results, handle rescues, keep the swarm moving. In `standard`/`high-risk` lanes you never implement cells yourself — spawned workers load bee-executing and do the work.
 
-## Solo execution (tiny/small lanes)
+## Single execution worker (tiny/small lanes)
 
-For `tiny` and `small`, **no workers are spawned** — you implement the cell(s) directly in-session, keeping the cell discipline intact: claim the cell, read its `read_first`, implement within its `files`, run its `verify` command and quote the fresh output, record `verification_evidence` (and `red_failure_evidence` for `behavior_change` cells per the cap rules), cap it. Reservations are unnecessary with one actor; the frozen-judge check (`node .bee/bin/bee.mjs cells judge --id <id>`) still runs before capping. Then hand off: both `tiny` and `small` present the done-report (diff + fresh verify output + capture line) and invoke bee-scribing — no auto reviewer; the 1-correctness-reviewer contract lives inside a user-invoked session (implementation is verified; independent review runs only on user request, R1). Everything below this section is the worker protocol for `standard`/`high-risk`.
+For `tiny` and `small`, the merged Gate 2+3 question and the frozen-judge check stay with the orchestrator, but implementation itself runs through **one dispatched execution worker** (AO14) — a lighter direct Agent dispatch under the same execution contract as a swarm worker (same worker prompt template, same status-token protocol, same reservation and cap discipline), never a full bee-swarming wave: no wave analysis, no reviewers, no panels. Spawn it per the Operating Contract's Spawn step (param-carrying dispatch — a `model` param or a pinned agent type, never a bare marker) and the Delegation contract's execution-worker class (`references/routing-and-contracts.md`): it registers in the swarm registry (`state worker add`) and takes reservations under its own nickname, claims the cell, reads its `read_first`, implements within its `files`, runs its `verify` command and quotes the fresh output, records `verification_evidence` (and `red_failure_evidence` for `behavior_change` cells per the cap rules), caps it, releases its reservations, and returns exactly one status token.
+
+After `[DONE]`, the orchestrator — never the worker — authors the done-report: its evidence is the worker's verbatim diff plus the orchestrator's own independent verify re-run (AO14, decision 0018's goal-check restated as authorship, not new mechanics). Then hand off: both `tiny` and `small` present that done-report (diff + fresh verify output + capture line) and invoke bee-scribing — no auto reviewer; the 1-correctness-reviewer contract lives inside a user-invoked session (implementation is verified; independent review runs only on user request, R1).
+
+Everything below this section is the multi-worker wave protocol for `standard`/`high-risk`; a tiny/small dispatch borrows only its Spawn, tier-judgment, Record, and Goal-check steps for its single worker — never wave analysis or multi-cell assignment.
 
 ## Preconditions
 
@@ -31,7 +35,7 @@ For `tiny` and `small`, **no workers are spawned** — you implement the cell(s)
 
 Native isolation is an opt-in Git-consistency mode, not the default dispatch path.
 Normal native isolation is eligible only for an enabled Claude Code wave with at
-least two workers; solo lanes and single-worker waves stay in the shared checkout.
+least two workers; tiny/small's single execution-worker dispatch and single-worker waves stay in the shared checkout.
 The enabling implementation itself is serialized in that checkout as
 `worktree-isolation-1 → worktree-isolation-2 → worktree-isolation-3`, so no two
 workers contend for its shared index. `worktree-isolation-4` is the sole
@@ -143,7 +147,7 @@ When a cell or wave finishes (capped, verify green) and further execution-approv
 
 ## Hard Rules
 
-- In `standard`/`high-risk` lanes, never implement cells yourself — not even a one-line fix; make it a cell and dispatch it. (`tiny`/`small` run solo by design — see Solo execution.)
+- In `standard`/`high-risk` lanes, never implement cells yourself — not even a one-line fix; make it a cell and dispatch it. (`tiny`/`small` dispatch exactly ONE execution worker instead — see Single execution worker.)
 - Never spawn before Gate 3 approval.
 - Never let workers self-select cells; pass one explicit cell id each.
 - Never resolve file conflicts by "being careful" — fix reservations or cell scope.
@@ -164,7 +168,7 @@ With `mode:headless`: waves run without check-ins; unrescuable blockers and anyt
 - passive waiting while cells/reservations look unhealthy
 - state.json missing in-flight workers
 - orchestrator editing source files in a `standard`/`high-risk` wave
-- workers spawned for a `tiny`/`small` lane (solo execution owns those)
+- a WAVE of workers dispatched for a `tiny`/`small` lane (AO14: exactly one dispatched execution worker is correct there; more than one is the red flag)
 
 Violating the letter of the rules is violating the spirit of the rules.
 

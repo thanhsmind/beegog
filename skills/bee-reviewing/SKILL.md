@@ -64,7 +64,7 @@ Reviewer dispatch is impossible before step 2 succeeds and the preview in step 3
 
 ## Lane Scaling — the SESSION's scope sets review depth, not the originating feature's lane
 
-No lane auto-runs a reviewer at feature close (goal 1: zero reviewer tokens spent without a request). `tiny`'s self-review/done-report stays entirely inside `bee-swarming`'s solo execution — that is verification, not independent review, and it never substitutes for a session. Once a session is requested, its panel scales to the SCOPE's own risk, independent of any single feature's lane:
+No lane auto-runs a reviewer at feature close (goal 1: zero reviewer tokens spent without a request). `tiny`'s done-report stays entirely inside `bee-swarming`'s single-execution-worker dispatch (the orchestrator authors it from the worker's diff plus its own verify re-run, AO14) — that is verification, not independent review, and it never substitutes for a session. Once a session is requested, its panel scales to the SCOPE's own risk, independent of any single feature's lane:
 
 | Scope risk | Review | Gate 4 |
 |---|---|---|
