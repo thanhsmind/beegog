@@ -2191,7 +2191,8 @@ await check('resolveTier types every tier shape: inherit, model, budget, cli', a
     assert(resolveTier(eRoot, 'generation').type === 'model' && resolveTier(eRoot, 'generation').model === 'sonnet', 'default claude generation is a model');
     assert(resolveTier(eRoot, 'generation', 'codex').type === 'budget', 'codex null tier is budget/cap');
 
-    // a cli executor value resolves to a typed external dispatch
+    // a cli executor value resolves to a typed external dispatch — ONLY when
+    // purpose is the explicit 4-arg {for:'gather'} (B1, plan.md 2A-ii)
     writeJsonAtomic(path.join(eRoot, '.bee', 'config.json'), {
       models: {
         claude: {
@@ -2200,7 +2201,7 @@ await check('resolveTier types every tier shape: inherit, model, budget, cli', a
         },
       },
     });
-    const cli = resolveTier(eRoot, 'generation');
+    const cli = resolveTier(eRoot, 'generation', 'claude', { for: 'gather' });
     assert(cli.type === 'cli' && cli.command.startsWith('codex exec'), 'cli tier resolves with its command');
     assert(resolveTier(eRoot, 'extraction').model === 'haiku', 'string tier still resolves beside a cli tier');
     // legacy resolver degrades a cli tier to null (budget path), never a bogus name
@@ -2217,6 +2218,67 @@ await check('resolveTier types every tier shape: inherit, model, budget, cli', a
     assert(resolveTier(eRoot, 'generation').type === 'model', 'unknown kind keeps the default model');
   } finally {
     fs.rmSync(eRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── purpose-scoped resolveTier: cli resolves for gather only (B1, decision ──
+// AO12/plan.md 2A-ii). Default (and any malformed) purpose is cell-execution
+// and REFUSES a cli-shaped slot with a typed, non-throwing result; only an
+// explicit {for:'gather'} unlocks {type:'cli'}. This is a returned type on
+// the fail-open bee-model-guard hot path — it must never throw.
+await check('resolveTier purpose-scope: cli refuses for cell (default/explicit/malformed), allows for gather, non-cli untouched', async () => {
+  const pRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-purpose-'));
+  fs.mkdirSync(path.join(pRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(pRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  try {
+    writeJsonAtomic(path.join(pRoot, '.bee', 'config.json'), {
+      models: {
+        claude: {
+          generation: { kind: 'cli', command: 'codex exec -m gpt-5.5 gather' },
+          extraction: 'haiku',
+        },
+      },
+    });
+
+    // default purpose (bare 3-arg call, matches every existing caller) refuses
+    const bare = resolveTier(pRoot, 'generation');
+    assert(bare.type === 'refused', `bare 3-arg call on a cli slot refuses by default — got ${JSON.stringify(bare)}`);
+    assert(bare.reason === 'cli_tier_gather_only', `refusal carries reason cli_tier_gather_only — got ${JSON.stringify(bare)}`);
+    assert(bare.slot === 'generation', `refusal names the slot — got ${JSON.stringify(bare)}`);
+
+    // explicit {for:'cell'} refuses identically to the default
+    const explicitCell = resolveTier(pRoot, 'generation', 'claude', { for: 'cell' });
+    assert(explicitCell.type === 'refused' && explicitCell.reason === 'cli_tier_gather_only', `explicit {for:'cell'} refuses — got ${JSON.stringify(explicitCell)}`);
+
+    // explicit {for:'gather'} allows the cli dispatch
+    const gather = resolveTier(pRoot, 'generation', 'claude', { for: 'gather' });
+    assert(gather.type === 'cli' && gather.command.includes('gpt-5.5'), `{for:'gather'} resolves the cli command — got ${JSON.stringify(gather)}`);
+
+    // malformed purpose values never throw (an uncaught throw here would fail
+    // this check itself) and always fail safe to refusal
+    for (const bad of ['banana', 42, null, undefined, [], ['gather'], { for: 'banana' }]) {
+      const result = resolveTier(pRoot, 'generation', 'claude', bad);
+      assert(result.type === 'refused' && result.reason === 'cli_tier_gather_only', `malformed purpose ${JSON.stringify(bad)} fails safe to refusal — got ${JSON.stringify(result)}`);
+    }
+
+    // modelForTier stays null on a cli generation config and never throws
+    assert(modelForTier(pRoot, 'generation') === null, 'modelForTier still returns null for a cli tier after the purpose-scope change');
+
+    // non-cli tier values ignore purpose entirely — byte-identical either way
+    writeJsonAtomic(path.join(pRoot, '.bee', 'config.json'), {
+      models: { claude: { generation: 'sonnet' } },
+    });
+    const noPurpose = resolveTier(pRoot, 'generation');
+    const withGatherPurpose = resolveTier(pRoot, 'generation', 'claude', { for: 'gather' });
+    const withCellPurpose = resolveTier(pRoot, 'generation', 'claude', { for: 'cell' });
+    assert(
+      JSON.stringify(noPurpose) === JSON.stringify(withGatherPurpose) &&
+        JSON.stringify(noPurpose) === JSON.stringify(withCellPurpose),
+      `non-cli tier values resolve identically regardless of purpose — got ${JSON.stringify({ noPurpose, withGatherPurpose, withCellPurpose })}`,
+    );
+    assert(noPurpose.type === 'model' && noPurpose.model === 'sonnet', 'non-cli generation still resolves to its model');
+  } finally {
+    fs.rmSync(pRoot, { recursive: true, force: true });
   }
 });
 
@@ -2257,12 +2319,19 @@ await check('review slot: opus default, generation fallback, cli allowed, effort
     assert(gen.type === 'model' && gen.model === 'sonnet' && gen.effort === undefined, 'invalid effort drops, model survives');
     assert(modelForTier(rRoot, 'review') === 'opus', 'legacy resolver returns the model name for object values');
 
-    // GPT adversarial review: a cli executor in the review slot
+    // GPT adversarial review: a cli executor in the review slot — the
+    // resolveTier-level refusal applies to EVERY slot including 'review'
+    // (B1, plan.md 2A-ii scope-split note). A bare 3-arg resolve refuses;
+    // the external-reviewer dispatch stays reachable via {for:'gather'}
+    // (routing prose that teaches callers the 4-arg form moves to 2A-iii).
     writeJsonAtomic(path.join(rRoot, '.bee', 'config.json'), {
       models: { claude: { review: { kind: 'cli', command: 'codex exec -m gpt-5.5 review' } } },
     });
     const adv = resolveTier(rRoot, 'review');
-    assert(adv.type === 'cli' && adv.command.includes('gpt-5.5'), 'review slot accepts an external executor');
+    assert(adv.type === 'refused' && adv.reason === 'cli_tier_gather_only', `bare 3-arg resolve of a cli review slot refuses — got ${JSON.stringify(adv)}`);
+    assert(adv.slot === 'review', `refusal names the review slot — got ${JSON.stringify(adv)}`);
+    const advGather = resolveTier(rRoot, 'review', 'claude', { for: 'gather' });
+    assert(advGather.type === 'cli' && advGather.command.includes('gpt-5.5'), `{for:'gather'} still reaches the external-reviewer path — got ${JSON.stringify(advGather)}`);
   } finally {
     fs.rmSync(rRoot, { recursive: true, force: true });
   }
@@ -8370,6 +8439,46 @@ await check('worktree transactional contract: provenance, conservative cleanup, 
     assert(reference.includes(outcome), `${outcome} must suppress cleanup and preserve recovery identity`);
   }
   assert(/explicit operator authorization[\s\S]{0,220}status[\s\S]{0,120}dirty\/untracked diff[\s\S]{0,120}HEAD[\s\S]{0,120}reachability[\s\S]{0,180}(?:recovery ref|patch)/i.test(reference), 'destructive drop must require operator authorization and complete recovery capture');
+});
+
+await check('census: the Delegation contract carries the cli gather branch (plan 2A-ii, decision 34398e69) — BEE_DIGEST delimiter framing in routing-and-contracts.md, and the cli-gather transport rider on both the AGENTS.block.md template and the rendered root AGENTS.md', async () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = findRepoRoot(templatesRoot);
+  if (!repoRoot) return; // no repo context to check against (bare checkout)
+
+  const contractPath = path.join(repoRoot, 'skills', 'bee-hive', 'references', 'routing-and-contracts.md');
+  assert(fs.existsSync(contractPath), `routing-and-contracts.md not found at ${contractPath}`);
+  const contractText = fs.readFileSync(contractPath, 'utf8');
+  assert(
+    contractText.includes('<<<BEE_DIGEST'),
+    'routing-and-contracts.md must carry the BEE_DIGEST delimiter contract for the cli gather branch (plan 2A-ii)',
+  );
+  assert(
+    /BEE_DIGEST>>>/.test(contractText),
+    'routing-and-contracts.md must carry the closing BEE_DIGEST delimiter',
+  );
+  assert(
+    /missing delimiters|empty digest/i.test(contractText) && /failed run/i.test(contractText),
+    'routing-and-contracts.md must state that missing delimiters or an empty digest is a failed run, surfaced loudly',
+  );
+  assert(
+    /dispatch\.jsonl/.test(contractText) && /Slice 3/.test(contractText),
+    'routing-and-contracts.md must name the dispatch-log measurement gap and hand it to Slice 3, not omit it',
+  );
+
+  const riderSurfaces = [
+    path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+    path.join(repoRoot, 'AGENTS.md'),
+  ];
+  for (const surface of riderSurfaces) {
+    if (!fs.existsSync(surface)) continue; // host repos onboarded without a root AGENTS.md yet
+    const text = fs.readFileSync(surface, 'utf8');
+    const rel = path.relative(repoRoot, surface);
+    assert(
+      /cli gather branch/.test(text) && /not an Agent dispatch/.test(text),
+      `${rel} must carry the cli-gather transport rider on critical rule 13: when the generation tier is cli-shaped, the gather runs through the configured external command per the Delegation contract's cli gather branch, not an Agent dispatch`,
+    );
+  }
 });
 
 fs.rmSync(detectRoot, { recursive: true, force: true });

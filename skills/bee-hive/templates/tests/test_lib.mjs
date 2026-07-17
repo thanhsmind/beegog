@@ -8441,6 +8441,46 @@ await check('worktree transactional contract: provenance, conservative cleanup, 
   assert(/explicit operator authorization[\s\S]{0,220}status[\s\S]{0,120}dirty\/untracked diff[\s\S]{0,120}HEAD[\s\S]{0,120}reachability[\s\S]{0,180}(?:recovery ref|patch)/i.test(reference), 'destructive drop must require operator authorization and complete recovery capture');
 });
 
+await check('census: the Delegation contract carries the cli gather branch (plan 2A-ii, decision 34398e69) — BEE_DIGEST delimiter framing in routing-and-contracts.md, and the cli-gather transport rider on both the AGENTS.block.md template and the rendered root AGENTS.md', async () => {
+  const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
+  const repoRoot = findRepoRoot(templatesRoot);
+  if (!repoRoot) return; // no repo context to check against (bare checkout)
+
+  const contractPath = path.join(repoRoot, 'skills', 'bee-hive', 'references', 'routing-and-contracts.md');
+  assert(fs.existsSync(contractPath), `routing-and-contracts.md not found at ${contractPath}`);
+  const contractText = fs.readFileSync(contractPath, 'utf8');
+  assert(
+    contractText.includes('<<<BEE_DIGEST'),
+    'routing-and-contracts.md must carry the BEE_DIGEST delimiter contract for the cli gather branch (plan 2A-ii)',
+  );
+  assert(
+    /BEE_DIGEST>>>/.test(contractText),
+    'routing-and-contracts.md must carry the closing BEE_DIGEST delimiter',
+  );
+  assert(
+    /missing delimiters|empty digest/i.test(contractText) && /failed run/i.test(contractText),
+    'routing-and-contracts.md must state that missing delimiters or an empty digest is a failed run, surfaced loudly',
+  );
+  assert(
+    /dispatch\.jsonl/.test(contractText) && /Slice 3/.test(contractText),
+    'routing-and-contracts.md must name the dispatch-log measurement gap and hand it to Slice 3, not omit it',
+  );
+
+  const riderSurfaces = [
+    path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+    path.join(repoRoot, 'AGENTS.md'),
+  ];
+  for (const surface of riderSurfaces) {
+    if (!fs.existsSync(surface)) continue; // host repos onboarded without a root AGENTS.md yet
+    const text = fs.readFileSync(surface, 'utf8');
+    const rel = path.relative(repoRoot, surface);
+    assert(
+      /cli gather branch/.test(text) && /not an Agent dispatch/.test(text),
+      `${rel} must carry the cli-gather transport rider on critical rule 13: when the generation tier is cli-shaped, the gather runs through the configured external command per the Delegation contract's cli gather branch, not an Agent dispatch`,
+    );
+  }
+});
+
 fs.rmSync(detectRoot, { recursive: true, force: true });
 fs.rmSync(root, { recursive: true, force: true });
 fs.rmSync(siRoot, { recursive: true, force: true });
