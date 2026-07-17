@@ -1790,6 +1790,10 @@ const EXPECTED_STATE_EXPORTS = [
   'CONFIGURABLE_SLOTS',
   'EFFORT_LEVELS',
   'RUNTIMES',
+  // config-validate (ao-2ai-1): the shared validator + its unsafe-flag
+  // blocklist, read by both `bee config validate` and `bee status`.
+  'UNSAFE_CLI_FLAGS',
+  'validateModelsConfig',
   'findRepoRoot',
   'resolveRoots',
   'WorktreeLinkInvalidError',

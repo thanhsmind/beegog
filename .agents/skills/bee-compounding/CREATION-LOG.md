@@ -82,3 +82,43 @@ matching Red Flags entry added). All three re-run:
 Outcome: all three target behaviors enforced — unprompted refresh, warn-never-block on any
 failure (familiar or not), and no silent skip. Iron Law debt from the "PENDING" section above
 remains for the pre-existing steps; this amendment discharges it only for step 8.
+
+## Amendment 2026-07-17 — §2 analyst spawn/wait contract (D1 read-only, D2 phantom-wait)
+
+Origin: dogfood bug diagnosed from a host (forgent) session stuck "Waiting for 3 background
+agents to finish" in the compounding phase, plus a sibling report of a review/analyst subagent
+that implemented + committed source unrequested. Root cause traced to two prose gaps in §2:
+the three analysts had NO spawn-type pin (only the prompt string "write no files"), and no
+wait/dispatch-failure/partial-return handling. Added to §2: a **read-only spawn contract (D1)**
+and a **Wait, don't hang (D2)** clause; matching Hard Gates + Red Flags in SKILL.md and the
+reference. Additive — no existing step, gate, or refusal message changed.
+
+TDD-for-skills, RED before GREEN (2 sonnet probes each phase; runtime dispatch decisions):
+
+RED (unedited §2):
+- D1 (over-privilege) — the naive probe *listing* "Explore = read-only" picked Explore
+  (instruction "write no files" sufficed for a strong model with the safe option spelled out).
+  Re-run non-leading, with the ambient bee spawn convention present (bee-reviewing §Spawn
+  contract: "spawn every reviewer as the runtime's default/general subagent type"), the agent
+  picked `general-purpose` for ALL THREE: "This applies ambiently to all bee subagent spawns,
+  not just reviewers … the runtime's default/general subagent type is `general-purpose`." FAIL
+  — full Edit/Write/Bash door open, matching the empirical dispatch log (general-purpose used
+  in production) and the unrequested-commit report.
+- D2 (phantom-wait) — the agent did not naively hang; it locked to step 3 as a three-of-three
+  gate and refused partial-return: "the instruction has no fallback/retry/partial-synthesis
+  clause … that would need to come from you or a fuller version of the workflow doc." FAIL —
+  under a structural (deterministic) dispatch denial this is an unbounded retry-until-three
+  loop, exactly the reproduced-on-retry death.
+
+GREEN (§2 with D1 read-only spawn contract + D2 wait/partial-return, same hard framing):
+- D1 — agent picked `subagent_type: "Explore"` for all three, explicitly overriding the
+  convention: "explicitly *not* the bee-reviewing 'default/general' convention, since SKILL.md's
+  own text says that convention is reviewer-specific and 'does NOT extend to these read-only
+  analysts'." PASS.
+- D2 — Situation 1 (one dispatch denied at creation): re-dispatch that one analyst once, fix
+  the tier, leave the two returned alone. Situation 2 (identical re-denial): "Stop retrying —
+  do not dispatch a third time. Proceed straight to synthesis using the two findings, and record
+  the gap." PASS — the deterministic loop is broken.
+
+No new rationalizations surfaced in GREEN → no REFACTOR round needed. Mirrors
+(`.claude/`, `.agents/`) synced byte-identical.

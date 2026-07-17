@@ -1245,4 +1245,23 @@ export const COMMAND_REGISTRY = [
     examples: ['bee worktree unregister --id abc123 --json'],
     deprecated: null,
   },
+
+  // ─── config (ao-2ai-1) — loud refusal of malformed/prompt-less/unsafe
+  // cli-tier config, where today it silently reverts to the seeded default
+  // (normalizeTierValue -> undefined -> normalizeModels never overwrites). ──
+  {
+    name: 'config.validate',
+    invoke: 'bee config validate',
+    description:
+      'Validate .bee/config.json models config: flags a cli-tier value missing kind:"cli"/a non-empty command (silently reverts to the seeded default today), a cli value with no declared prompt transport, and a cli command containing a known unsafe auto-approve/sandbox-bypass flag. Never throws on malformed/null config — reports it as a problem row instead. Exits non-zero when any problem is found.',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line-per-problem report.' },
+      },
+      required: [],
+    },
+    examples: ['bee config validate --json'],
+    deprecated: null,
+  },
 ];
