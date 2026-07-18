@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.4.0",
+  "bee_version": "1.5.0",
   "managed": {
     "agents_block": "473f8041068905ef7f1bd1aacdec19d13f3af2a4db5c5411eee7968096bbc075",
     "gitignore_block": "b39fe93c0e919a6bc424f80fcc4a9f791579fbc75bb11956f0cb037848f6a0b8",
     "helpers": {
-      "bee.mjs": "7d7c32ab9af2e408e4dade3a7b96253af7ab29a865c7287e99b5eee1245252f7"
+      "bee.mjs": "163bebeb706b57d5fdcc1aa2f91470a4bbd24c27ce8b5be95c83873a009c618b"
     },
     "lib": {
       "backlog.mjs": "9e5b852c7b72fdb1d5d2f530e32cdc63a8271a83dba09d6407b30900d58990cd",
@@ -24,7 +24,7 @@
       "reviews.mjs": "6008cb1de50fb223c84638abaa4bdcd2521743c858ffd3e6b95bbcc6cce97502",
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "source-identity.mjs": "93c2f9669f0103af26c48bd723873bf1bebc4d3fe2d8f51013f4be529095c81b",
-      "state.mjs": "5bc38a4c4195a96782f216e36d1af96ffbce98c646692b1f3b437a065e32e073",
+      "state.mjs": "0b912f59f3b3b1bdfb43ec5c63a874914d50c8ed118ad21f28fe1b2a69e93608",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
       "worktree-store.mjs": "9b7370e16a317f156a868d9311371b7497cb25603e51e13856af5f47bfabbd18"
     },
@@ -36,7 +36,7 @@
       "bee-write-guard.mjs": "13ed59ddca24fbf26aad431c982c276a2f95d302af85cf5949ab23c7b8e17a33",
       "bee-state-sync.mjs": "2a0748bbd02884dbca87a494b825b350e0fcf149bb12a83c638a248d8619cbc4",
       "bee-chain-nudge.mjs": "0520c71fad2513d93666ad4c3353b7196faeeac382430b1e1395fabd0febd9cb",
-      "bee-session-close.mjs": "370260bf6f50d33ddc8eda31d422ef859342c076194ace486a6d6447f982c42d",
+      "bee-session-close.mjs": "201073ddce795525ee6ec7bab0297f4adef01830bac8935b528b694e03dea2e6",
       "bee-model-guard.mjs": "76f8054d042670a169d91087b5ae22c96c9feab43b936dee1e2b6ffd02199d13",
       "bee-tools-logger.mjs": "668634222153c37d858bd5cb8ac5183507bc0da643ef78929219dcf810a39224",
       ".codex/hooks.json": "a2cf89a0a7c40a509658d29f68eea6577530d21a7e6738033bb713464a52ccd0"
@@ -47,7 +47,7 @@
     }
   },
   "agents_sync": {
-    "bee_version": "1.4.0",
+    "bee_version": "1.5.0",
     "files": [
       ".claude/agents/bee-extract.md",
       ".claude/agents/bee-gather.md",
@@ -64,5 +64,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-17T16:51:12.018Z"
+  "updated_at": "2026-07-18T03:01:35.557Z"
 }
