@@ -272,6 +272,81 @@ async function scenario12() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+// Scenario 13 — doctor codex host topology (GH #22 P1-1): a NORMAL host
+// install renders .codex/hooks.json command strings with the host prefix
+// ("$r"/.bee/bin/hooks/<f>) and keeps handler files under .bee/bin/hooks/
+// ONLY — no root hooks/ dir at all (unlike scenario 12 above, which mimics
+// bee's own source-checkout topology and is left untouched). Before the
+// fix, hook_handlers_resolvable checked a single hard-coded "hooks/" dir and
+// reported every healthy hybrid host install as broken. Also proves the
+// negative: deleting one handler file from .bee/bin/hooks/ still warns.
+// ═════════════════════════════════════════════════════════════════════════
+
+const DOCTOR_HOOKS_JSON_HOST_TOPOLOGY = {
+  hooks: {
+    PreToolUse: [
+      {
+        matcher: "spawn_agent",
+        hooks: [{ type: "command", command: 'exec node "$r"/.bee/bin/hooks/bee-model-guard.mjs --source=repo' }],
+      },
+    ],
+    Stop: [{ hooks: [{ type: "command", command: 'exec node "$r"/.bee/bin/hooks/bee-state-sync.mjs --source=repo' }] }],
+  },
+};
+
+async function scenario13() {
+  const dir = mkFixture("bee-conformance-s13-");
+  try {
+    fs.mkdirSync(path.join(dir, ".bee", "bin", "hooks"), { recursive: true });
+    fs.mkdirSync(path.join(dir, ".codex"), { recursive: true });
+    const hooksJsonPath = path.join(dir, ".codex", "hooks.json");
+    fs.writeFileSync(hooksJsonPath, `${JSON.stringify(DOCTOR_HOOKS_JSON_HOST_TOPOLOGY, null, 2)}\n`, "utf8");
+    fs.writeFileSync(path.join(dir, ".bee", "bin", "hooks", "bee-model-guard.mjs"), "// stub\n", "utf8");
+    fs.writeFileSync(path.join(dir, ".bee", "bin", "hooks", "bee-state-sync.mjs"), "// stub\n", "utf8");
+    // bee.mjs refuses to run without a discoverable repo root
+    // (.bee/onboarding.json or .git up the tree) — this fixture lives under
+    // os.tmpdir(), which has neither on its own.
+    fs.writeFileSync(
+      path.join(dir, ".bee", "onboarding.json"),
+      `${JSON.stringify({ schema_version: "1.0", bee_version: "0.1.0", managed: {}, agents_sync: { files: [] } }, null, 2)}\n`,
+      "utf8",
+    );
+
+    // No root hooks/ dir anywhere — this is the defining trait of a normal
+    // host install (repoOwnsHookCatalog must read false).
+    const rootHooksAbsent = !fs.existsSync(path.join(dir, "hooks"));
+
+    const ok = await runBee(dir, ["doctor", "--runtime", "codex", "--json"]);
+    const okParsed = ok.status === 0 ? JSON.parse(ok.stdout) : null;
+    const okRow = okParsed && okParsed.rows.find((r) => r.row === "hook_handlers_resolvable");
+    const okResolved =
+      okRow &&
+      okRow.status === "ok" &&
+      typeof okRow.evidence === "string" &&
+      okRow.evidence.includes(".bee/bin/hooks/") &&
+      !okRow.evidence.includes("source-checkout");
+
+    // Negative: delete one handler file from .bee/bin/hooks/ (its only
+    // location in this topology) — must warn and name the missing file.
+    fs.rmSync(path.join(dir, ".bee", "bin", "hooks", "bee-state-sync.mjs"));
+    const missing = await runBee(dir, ["doctor", "--runtime", "codex", "--json"]);
+    const missingParsed = missing.status === 0 ? JSON.parse(missing.stdout) : null;
+    const missingRow = missingParsed && missingParsed.rows.find((r) => r.row === "hook_handlers_resolvable");
+    const missingWarned =
+      missingRow && missingRow.status === "warn" && missingRow.evidence.includes("bee-state-sync.mjs");
+
+    record(
+      "scenario-13",
+      "doctor --runtime codex resolves hook handlers at host topology (.bee/bin/hooks, no root hooks/ dir), naming the resolved location, and still warns with the missing filename when a handler is deleted",
+      rootHooksAbsent && okResolved && missingWarned,
+      `rootHooksAbsent=${rootHooksAbsent}; ok: status=${ok.status} row=${JSON.stringify(okRow)}; missing: status=${missing.status} row=${JSON.stringify(missingRow)}`,
+    );
+  } finally {
+    rm(dir);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 // ADAPTER REGRESSION — update_plan present in every rendered state-sync
 // matcher (D4: superset, never a swap). Checked against THIS repo's own
 // rendered targets, not a fixture — these are read-only inspections of
@@ -382,6 +457,7 @@ async function main() {
   await scenario6();
   await scenario5a();
   await scenario12();
+  await scenario13();
   adapterRegressionMatcherSuperset();
   await adapterRegressionSpawnGuard();
 

@@ -2537,7 +2537,24 @@ function doctorCodexTrustUnknownRows() {
   );
 }
 
-function doctorHookHandlersResolvable(root, hooksDir) {
+// Ported from skills/bee-hive/scripts/onboard_bee.mjs::repoOwnsHookCatalog
+// (a bare reference here would ReferenceError — bee.mjs and onboard_bee.mjs
+// are separate files, not mirrors of each other). Used only for evidence
+// labeling below: which install topology produced the resolution, never to
+// change which locations are checked.
+function repoOwnsHookCatalog(root) {
+  return fs.existsSync(path.join(root, 'hooks', 'catalog.mjs'));
+}
+
+// GH #22 P1-1: a normal host install renders hook commands as
+// "$r"/.bee/bin/hooks/<f>.mjs and has NO root hooks/ dir at all — only bee's
+// own source checkout (and the conformance fixture that mimics it) also has
+// a root hooks/. Checking a single hard-coded dir (formerly always "hooks")
+// reported every healthy hybrid host install as broken. Mirrors the
+// Claude-side resolver precedent (doctorClaudeHandlersResolvable below):
+// resolvable = file exists at .bee/bin/hooks/<f> OR hooks/<f>; the evidence
+// names WHICH location resolved each file (or that neither did).
+function doctorHookHandlersResolvable(root) {
   const hooksPath = path.join(root, '.codex', 'hooks.json');
   const hooksJson = doctorSafeReadJson(hooksPath);
   if (!hooksJson) {
@@ -2548,17 +2565,35 @@ function doctorHookHandlersResolvable(root, hooksDir) {
   if (files.length === 0) {
     return doctorRow('hook_handlers_resolvable', 'warn', [], 'no hooks/*.mjs command references found in .codex/hooks.json.');
   }
-  const missing = files.filter((f) => !fs.existsSync(path.join(root, hooksDir, f)));
+  const topology = repoOwnsHookCatalog(root)
+    ? 'repo owns hook catalog -> source-checkout topology'
+    : 'host topology (.bee/bin/hooks)';
+  const resolvedAt = [];
+  const missing = [];
+  for (const f of files) {
+    if (fs.existsSync(path.join(root, '.bee', 'bin', 'hooks', f))) {
+      resolvedAt.push(`${f} -> .bee/bin/hooks/`);
+    } else if (fs.existsSync(path.join(root, 'hooks', f))) {
+      resolvedAt.push(`${f} -> hooks/`);
+    } else {
+      missing.push(f);
+    }
+  }
   if (missing.length) {
     return doctorRow(
       'hook_handlers_resolvable',
       'warn',
       files,
-      `missing handler file(s) under ${hooksDir}/: ${missing.join(', ')}.`,
-      { fix: `Restore ${missing.join(', ')} under ${hooksDir}/, or re-render .codex/hooks.json from the catalog.` },
+      `${topology}; missing handler file(s) under .bee/bin/hooks/ or hooks/: ${missing.join(', ')}.`,
+      { fix: `Restore ${missing.join(', ')} under .bee/bin/hooks/ (or hooks/ in a source checkout), or re-render .codex/hooks.json from the catalog.` },
     );
   }
-  return doctorRow('hook_handlers_resolvable', 'ok', files, `${files.length} handler file(s) resolved under ${hooksDir}/.`);
+  return doctorRow(
+    'hook_handlers_resolvable',
+    'ok',
+    files,
+    `${topology}; ${resolvedAt.length} handler file(s) resolved: ${resolvedAt.join(', ')}.`,
+  );
 }
 
 // Provable ONLY against a session-start boundary, which a fresh bee.mjs
@@ -2754,7 +2789,7 @@ function handleDoctor(root, flags) {
       doctorHooksFilePresent(root),
       doctorCapabilityBaselineMatch(root),
       ...doctorCodexTrustUnknownRows(),
-      doctorHookHandlersResolvable(root, 'hooks'),
+      doctorHookHandlersResolvable(root),
       doctorHooksObservedThisSession(root),
       doctorPermissionModeCodex(root),
       doctorHookSourcesCodex(root),
