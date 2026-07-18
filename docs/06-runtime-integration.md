@@ -49,7 +49,7 @@ Hooks can only block or inject text; the *skills* define how the agent responds 
 
 ## Codex parity: the helper-enforced skeleton
 
-Codex has no lifecycle hooks, so each automation degrades to a mechanism that already exists in the khuym lineage — same rules, different belt:
+Codex now loads its own project hooks from `.codex/hooks.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStop, PreCompact, Stop — 7 events, rendered from the same shared catalog as the Claude Code side), replacing the earlier claim that Codex lacked lifecycle hook support. Helper-level enforcement stays the floor on both runtimes either way — hooks are a second belt, not the only one:
 
 | Automation | Claude Code (hooks) | Codex (helpers + AGENTS.md) |
 |---|---|---|
@@ -64,7 +64,7 @@ Codex has no lifecycle hooks, so each automation degrades to a mechanism that al
 | Chain advancement after workers finish | `bee-chain-nudge` | The parent thread receives `[DONE]/[BLOCKED]/…` tokens directly (khuym same-session swarm); swarming skill's tend-loop is the nudge |
 | End-of-session hygiene | `bee-session-close` | "Session Finish" section of the AGENTS.md block (close/update cells, leave state + HANDOFF consistent, name blockers) |
 
-Two accepted gaps on Codex (documented in the hive skill, revisited if Codex grows hook support): no mechanical privacy block, and prompt-level (not harness-level) chain nudging. Everything gate- and integrity-critical is helper-enforced and therefore identical.
+Codex's project hooks ship a PreToolUse write/privacy guard and a SubagentStop chain-nudge alongside the rest, so the privacy-block and chain-nudging gaps once listed here are mechanism-present (file-shipped) rather than truly absent; whether a given installed Codex actually discovers and trusts each event — as opposed to the file merely being present — is what the capability spike confirms, not something assumed from shipping. Everything gate- and integrity-critical remains helper-enforced first regardless, so behavior stays identical either way.
 
 ## Shared `lib/` — one brain, two belts
 

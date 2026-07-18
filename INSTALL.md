@@ -117,7 +117,7 @@ Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* <repo>\.agents\skills\     
 Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* $env:USERPROFILE\.codex\skills\  # legacy global
 ```
 
-Codex has no lifecycle hooks — that's by design in bee: bootstrap comes from the `AGENTS.md` BEE block (installed in step 3), and every gate- and integrity-critical rule is enforced by the vendored `bee.mjs` CLI, identically to Claude Code. See [docs/06-runtime-integration.md](docs/06-runtime-integration.md) for the parity matrix.
+Codex loads project hooks from `.codex/hooks.json` (7 lifecycle events shipped: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStop, PreCompact, Stop) — the earlier claim that Codex lacked hook support was stale. Bootstrap still comes from the `AGENTS.md` BEE block (installed in step 3) regardless of hook state, and every gate- and integrity-critical rule is enforced by the vendored `bee.mjs` CLI, identically to Claude Code — hooks are a second belt, not the only one. See §4 below for the Codex hook verify procedure and [docs/06-runtime-integration.md](docs/06-runtime-integration.md) for the parity matrix.
 
 ---
 
@@ -192,6 +192,12 @@ echo '{"tool_name":"Write","tool_input":{"file_path":"src/x.ts"}}' | node .bee/b
 (with `--repo-hooks` install; for the plugin route the hooks run from the plugin directory — just watch the session preamble instead).
 
 Codex — start a session in the repo: the agent should follow the AGENTS.md BEE block and run `bee.mjs status` as its first scout step. Then try: "Route this through bee: fix the typo in README" → expect tiny-lane routing, not ceremony.
+
+Codex hook verify procedure — three-state model, `hooks_file_present ≠ hooks_discovered ≠ hooks_trusted_and_observed`; a file shipping in `.codex/hooks.json` is never by itself evidence that a hook ran:
+
+1. **Trust** — confirm the project directory is trusted. Codex refuses to run project-local hooks/commands from an untrusted directory, so an untrusted `.codex/` never reaches "discovered".
+2. **Review** — where the installed Codex version exposes a `/hooks` step, review and trust the bee hooks there. Trust semantics for that step are still being confirmed by the capability spike; treat this step as conditional on your installed version, not guaranteed.
+3. **Observed** — evidence differs by event. `.bee/logs/tools.jsonl` (written by `bee-tools-logger`, the general PostToolUse success log) is where a healthy PostToolUse hook run shows up; `.bee/logs/hooks.jsonl` records only crashes and a narrow set of subagent-lifecycle cases, so a healthy session does **not** necessarily add a `hooks.jsonl` row — its absence is not evidence of failure. Check `tools.jsonl` for the PostToolUse row, or watch the session for a hook's `statusMessage` (e.g. `bee: state sync`), to confirm `hooks_trusted_and_observed` for a given event.
 
 Smoke the enforcement (any runtime, any agent):
 

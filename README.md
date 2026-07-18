@@ -431,7 +431,7 @@ Self-arming (silent unless the repo has `.bee/onboarding.json`); per-repo kill s
 | `bee-chain-nudge.mjs` | subagent stop | nudges the orchestrator to collect worker status / synthesize reviews |
 | `bee-session-close.mjs` | session stop | warns about claimed-uncapped cells, missing HANDOFF, or unlogged decisions |
 
-Codex has no hooks — by design the same rules hold there because the *helpers* enforce them and the AGENTS.md block covers bootstrap. Parity matrix: [docs/06-runtime-integration.md](docs/06-runtime-integration.md).
+Codex now ships its own project hooks (`.codex/hooks.json`, 7 lifecycle events) rendered from the same shared catalog, replacing the earlier claim that Codex lacked hook support. The *helpers* remain the enforcement floor regardless of hook state, and the AGENTS.md block covers bootstrap either way. Parity matrix: [docs/06-runtime-integration.md](docs/06-runtime-integration.md).
 
 ### Runtime files — `<repo>/.bee/`
 
