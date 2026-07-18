@@ -174,7 +174,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -205,7 +205,7 @@ await check('registry covers every subcommand of the 4 existing helpers', async 
 // prepended, exactly what each shim used to do internally, so the observed
 // "Unknown command" contract line is unchanged.
 
-const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree'];
+const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch'];
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
 // bee.mjs's own `cells update` verb separately emits an unrelated
@@ -277,11 +277,11 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
 });
 
 await check('DA5 bijection: the only dot-free registry entries are "status" and "doctor", and every entry\'s group is one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
-  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config']);
+  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch']);
   const allowedDotFree = new Set(['status', 'doctor']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
-    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config`);
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config|dispatch`);
     if (!entry.name.includes('.')) {
       assert(allowedDotFree.has(entry.name), `dot-free registry entry "${entry.name}" is not one of status|doctor — only those may be dot-free`);
     }
@@ -1175,6 +1175,23 @@ await check('perf.sync example scans + writes the log (transcript-less temp env)
   const result = await assertExampleOk('perf.sync');
   const res = JSON.parse(result.stdout);
   assert(typeof res.sessions === 'number', 'perf sync --json reports a session count');
+});
+
+// ─── dispatch group example (g22-1, GH #22 P0-3): a read-only "gather" kind
+// needs no --cell and no extra fixture state, so it runs safely against the
+// shared `root` fixture above (no config.json there -> the seeded default
+// claude.generation model "sonnet" resolves, matching state.mjs's
+// DEFAULT_MODELS). Full behavioral coverage (codex/claude payload shapes,
+// the cli-cell refusal, advisor resolution, the prepare-time dispatch
+// record) lives in scripts/test_dispatch_prepare.mjs — this is the
+// registry-example-is-a-tested-contract proof for the new group.
+await check('dispatch.prepare example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('dispatch.prepare');
+  const out = JSON.parse(result.stdout);
+  assert(out.tool === 'Agent', `expected tool Agent, got ${result.stdout}`);
+  assert(out.payload.subagent_type === 'bee-gather', `expected pinned type bee-gather, got ${result.stdout}`);
+  assert(typeof out.dispatch_id === 'string' && out.dispatch_id, `expected a dispatch_id, got ${result.stdout}`);
+  assert(out.economics && out.economics.channel === 'claude-agent', `expected channel claude-agent, got ${result.stdout}`);
 });
 
 // ─── worktree group examples: a REAL git repo + real `git worktree add`,
