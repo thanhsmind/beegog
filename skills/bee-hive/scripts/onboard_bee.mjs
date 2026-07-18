@@ -2385,7 +2385,7 @@ function applyPlan(
       // only after the fact in a forced apply's own report. Surfaced here so
       // the refused-apply response (the response most users actually see
       // first) carries it.
-      return {
+      const blockedResult = {
         blocked: {
           status: skillSync.blocked.status,
           reason: skillSync.blocked.reason,
@@ -2395,6 +2395,18 @@ function applyPlan(
         skills: { source_root: skillSync.source_root, targets: skillSync.targets },
         beeVersion,
       };
+      // P49: a forceable refusal names its blast radius beyond skills - the
+      // copy_lib/copy_helper paths a --force-downgrade would also overwrite
+      // under .bee/bin. Filtered from the already-computed `plan` verbatim,
+      // order preserved, never recomputed. Non-forceable refusals (unknown
+      // version, blocked_no_source) omit the field entirely - it never
+      // invites a force that can't happen.
+      if (skillSync.blocked.forceable) {
+        blockedResult.host_items = plan.filter(
+          ({ action }) => action === "copy_lib" || action === "copy_helper",
+        );
+      }
+      return blockedResult;
     }
   }
   const skillTargetRootByKind = new Map(
@@ -2838,21 +2850,26 @@ export function main(argv = process.argv.slice(2)) {
     const result = applyPlan(repoRoot, options);
     if (result.blocked) {
       // Refused apply: zero mutations happened; exit nonzero (D3).
-      emit(
-        {
-          repo_root: repoRoot,
-          status: result.blocked.status,
-          bee_version: result.beeVersion,
-          reason: result.blocked.reason,
-          versions: result.versions,
-          // Review P1-6 / D2: same forced-apply-transparency payload as plan
-          // mode - this refused response is what most users see BEFORE
-          // deciding whether to pass --force-downgrade, so it must carry every
-          // target's computed items too.
-          skills: result.skills,
-        },
-        args.json,
-      );
+      const refusalPayload = {
+        repo_root: repoRoot,
+        status: result.blocked.status,
+        bee_version: result.beeVersion,
+        reason: result.blocked.reason,
+        versions: result.versions,
+        // Review P1-6 / D2: same forced-apply-transparency payload as plan
+        // mode - this refused response is what most users see BEFORE
+        // deciding whether to pass --force-downgrade, so it must carry every
+        // target's computed items too.
+        skills: result.skills,
+      };
+      // P49: thread the host-lib blast radius through to the emitted refusal
+      // payload, top-level sibling beside `skills`. Present (possibly empty)
+      // only when applyPlan() computed it for a forceable refusal; absent
+      // otherwise.
+      if (result.host_items !== undefined) {
+        refusalPayload.host_items = result.host_items;
+      }
+      emit(refusalPayload, args.json);
       return 1;
     }
     const recheck = computePlan(repoRoot, options);

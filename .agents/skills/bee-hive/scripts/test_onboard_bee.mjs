@@ -2201,6 +2201,15 @@ for (const scenario of [
       "refused force reports no forced_downgrade");
     check(hashTree(home) === homeBefore && hashTree(repo) === repoBefore,
       "unforceable refusal keeps repo and target byte-identical");
+    // P49 (advisor finding 1/4): a non-forceable refusal never invites a
+    // force - host_items is omitted entirely, not an empty array, so a
+    // consumer can't mistake "nothing to force" for "forceable with none".
+    check(apply.payload?.host_items === undefined,
+      "unknown-version refusal carries NO host_items field",
+      JSON.stringify(apply.payload?.host_items));
+    check(forced.payload?.host_items === undefined,
+      "unknown-version refusal via --force-downgrade also carries no host_items",
+      JSON.stringify(forced.payload?.host_items));
   } finally {
     try {
       fs.rmSync(base, { recursive: true, force: true });
@@ -3442,6 +3451,194 @@ for (const scenario of [
     check(legacyItem && !("scope" in legacyItem) && !("target" in legacyItem),
       "scope: legacy repo-relative items carry no scope/target fields at all (unchanged)",
       JSON.stringify(legacyItem));
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10z1. host_items: refused-apply payload enumerates the copy_lib/ -------
+// copy_helper blast radius a --force-downgrade would overwrite under
+// .bee/bin (P49; docs/history/p49-force-downgrade-blast-radius/reports/
+// advisor-verdict.md findings 1-3, 5, 7). Follows 10v's three-step shape
+// (dry-run enumerates -> refused apply enumerates -> forced apply touches
+// exactly the previewed set) but STRENGTHENED: exact normalized
+// {action, path} array equality across all three steps (10v's :3311 discards
+// fields and tolerates a subset - not repeated here), and the fixture is
+// seeded so BOTH action classes fire. makeFakeSkillsRoot vendors every real
+// templates/lib/*.mjs (readdirSync) into the fake source but never a
+// top-level templates/*.mjs helper, so reusing it unchanged only ever
+// exercises copy_lib - the real top-level helper set is vendored here too,
+// itself via readdirSync of the real TEMPLATES_DIR (never a hand-kept
+// filename list - critical-patterns fixture-list-rot).
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-hostitems-enum-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.18",
+    });
+    const hiveDir = path.dirname(path.dirname(launcher));
+    const fakeTemplatesDir = path.join(hiveDir, "templates");
+    const realHelperNames = fs
+      .readdirSync(TEMPLATES_DIR, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith(".mjs"))
+      .map((e) => e.name);
+    for (const name of realHelperNames) {
+      fs.writeFileSync(
+        path.join(fakeTemplatesDir, name),
+        fs.readFileSync(path.join(TEMPLATES_DIR, name), "utf8"),
+        "utf8",
+      );
+    }
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(path.join(repo, ".bee", "bin", "lib"), { recursive: true });
+    fs.writeFileSync(path.join(repo, ".bee", "bin", "lib", "state.mjs"),
+      fakeStateSource("0.1.19"), "utf8"); // newer than source -> forceable downgrade block
+    seedRepoSkillTargets(repo, "0.1.19"); // numeric per-target installs keep the refusal forceable
+
+    // No --global-skills here (unlike 10v/10e): the global target's own
+    // installed_skills would resolve "absent" while host_helpers (shared,
+    // repo-side) reads 0.1.19 > source 0.1.18 - a genuine but unforceable
+    // block on that ONE target (not all versions resolved numeric), which
+    // would drag the aggregate forceable to false for a reason unrelated to
+    // what this case tests. Repo-local targets alone keep the scenario clean.
+    const plan = await runOnboardAt(launcher, ["--repo-root", repo, "--json"], home);
+    check(plan.status === 0 && plan.payload?.status === "blocked_downgrade",
+      "host-items: plan mode reports blocked_downgrade (forceable)",
+      `exit ${plan.status} status ${plan.payload?.status}`);
+
+    // Expected set, derived the SAME way onboard derives it (readdirSync,
+    // never hardcoded names): every real helper is absent from the repo's
+    // .bee/bin, every real lib module besides state.mjs is absent from
+    // .bee/bin/lib, and state.mjs itself is version-drifted - so every one
+    // of them is a pending copy_helper/copy_lib item.
+    const expectedHostItems = [
+      ...realHelperNames.slice().sort()
+        .map((name) => ({ action: "copy_helper", path: `.bee/bin/${name}` })),
+      ...fs.readdirSync(path.join(hiveDir, "templates", "lib"), { withFileTypes: true })
+        .filter((e) => e.isFile() && e.name.endsWith(".mjs"))
+        .map((e) => e.name).sort()
+        .map((name) => ({ action: "copy_lib", path: `.bee/bin/lib/${name}` })),
+    ];
+    check(expectedHostItems.some((i) => i.action === "copy_helper") &&
+      expectedHostItems.some((i) => i.action === "copy_lib"),
+      "host-items: fixture exercises BOTH copy_lib and copy_helper action classes",
+      JSON.stringify([...new Set(expectedHostItems.map((i) => i.action))]));
+
+    const planHostItems = (plan.payload?.plan || [])
+      .filter((i) => i.action === "copy_lib" || i.action === "copy_helper")
+      .map((i) => ({ action: i.action, path: i.path }));
+    check(JSON.stringify(planHostItems) === JSON.stringify(expectedHostItems),
+      "host-items: dry-run plan enumerates exactly the expected copy_lib/copy_helper set, order-preserved",
+      JSON.stringify({ planHostItems, expectedHostItems }));
+
+    const refused = await runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--json"], home);
+    check(refused.status === 1 && refused.payload?.status === "blocked_downgrade",
+      "host-items: refused apply (no --force-downgrade) still reports blocked_downgrade");
+    const refusedHostItemsRaw = refused.payload?.host_items;
+    const refusedHostItems = (refusedHostItemsRaw || [])
+      .map((i) => ({ action: i.action, path: i.path }));
+    check(JSON.stringify(refusedHostItems) === JSON.stringify(expectedHostItems),
+      "host-items: refused apply's host_items is EXACT normalized {action,path} array equality with the dry-run plan (no subset tolerance, unlike 10v :3311)",
+      JSON.stringify({ refusedHostItems, expectedHostItems }));
+    check(Array.isArray(refusedHostItemsRaw) && refusedHostItemsRaw.every((i) =>
+      Object.keys(i).sort().join(",") === "action,path"),
+      "host-items: host items carry NO scope/target fields (advisor finding 7 - lib/helper paths are always repo-root-relative)",
+      JSON.stringify(refusedHostItemsRaw));
+
+    const forced = await runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--force-downgrade", "--json"], home);
+    check(forced.status === 0 && forced.payload?.status === "applied" &&
+      forced.payload?.forced_downgrade === true,
+      "host-items: forcing actually applies", `exit ${forced.status} status ${forced.payload?.status}`);
+    const appliedHostItems = (forced.payload?.applied || [])
+      .filter((i) => i.action === "copy_lib" || i.action === "copy_helper")
+      .map((i) => ({ action: i.action, path: i.path }));
+    check(JSON.stringify(appliedHostItems) === JSON.stringify(expectedHostItems),
+      "host-items: forced apply touches EXACTLY the previewed host_items set - exact equality, no subset tolerance",
+      JSON.stringify({ appliedHostItems, expectedHostItems }));
+  } finally {
+    try {
+      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+// --- 10z2. host_items: forceable refusal with zero lib/helper drift ---------
+// carries host_items: [] (present, empty) - a forceable downgrade can be
+// driven purely by a target's own installed_skills version, with the host's
+// .bee/bin/lib and .bee/bin already byte-identical to source. Absence would
+// be indistinguishable from the non-forceable omission case (10d); presence
+// as an empty array tells the operator "nothing to force here" precisely.
+{
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "bee-hostitems-empty-"));
+  const home = makeFakeHome();
+  try {
+    const { launcher } = makeFakeSkillsRoot(path.join(base, "skills"), {
+      version: "0.1.18",
+    });
+    const hiveDir = path.dirname(path.dirname(launcher));
+    const fakeTemplatesDir = path.join(hiveDir, "templates");
+    const fakeTemplatesLibDir = path.join(hiveDir, "templates", "lib");
+    const realHelperNames = fs
+      .readdirSync(TEMPLATES_DIR, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith(".mjs"))
+      .map((e) => e.name);
+    for (const name of realHelperNames) {
+      fs.writeFileSync(
+        path.join(fakeTemplatesDir, name),
+        fs.readFileSync(path.join(TEMPLATES_DIR, name), "utf8"),
+        "utf8",
+      );
+    }
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(path.join(repo, ".bee", "bin", "lib"), { recursive: true });
+    // Vendor the repo's .bee/bin + .bee/bin/lib byte-for-byte from the fake
+    // SOURCE tree (never the real repo tree, in case the two ever diverge) -
+    // zero drift by construction, discovered via readdirSync on each side.
+    for (const name of realHelperNames) {
+      fs.writeFileSync(path.join(repo, ".bee", "bin", name),
+        fs.readFileSync(path.join(fakeTemplatesDir, name), "utf8"), "utf8");
+    }
+    for (const name of fs.readdirSync(fakeTemplatesLibDir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith(".mjs"))
+      .map((e) => e.name)) {
+      fs.writeFileSync(path.join(repo, ".bee", "bin", "lib", name),
+        fs.readFileSync(path.join(fakeTemplatesLibDir, name), "utf8"), "utf8");
+    }
+    // The block itself comes solely from the in-repo targets' own
+    // installed_skills version being newer than source - host_helpers stays
+    // equal to source (0.1.18), so hostLibDowngradeBlock contributes nothing.
+    seedRepoSkillTargets(repo, "0.1.19");
+
+    const refused = await runOnboardAt(launcher, ["--repo-root", repo, "--apply", "--global-skills", "--json"], home);
+    check(refused.status === 1 && refused.payload?.status === "blocked_downgrade",
+      "host-items-empty: refused apply reports blocked_downgrade (forceable, target-version-driven)",
+      `exit ${refused.status} status ${refused.payload?.status}`);
+    check(refused.payload?.host_items !== undefined && Array.isArray(refused.payload?.host_items) &&
+      refused.payload.host_items.length === 0,
+      "host-items-empty: forceable refusal with zero lib/helper drift carries host_items: [] (present, empty)",
+      JSON.stringify(refused.payload?.host_items));
+
+    const forced = await runOnboardAt(launcher,
+      ["--repo-root", repo, "--apply", "--global-skills", "--force-downgrade", "--json"], home);
+    check(forced.status === 0 && forced.payload?.status === "applied" &&
+      forced.payload?.forced_downgrade === true,
+      "host-items-empty: forcing still applies (the skill-target downgrade)",
+      `exit ${forced.status} status ${forced.payload?.status}`);
+    const appliedHostItems = (forced.payload?.applied || [])
+      .filter((i) => i.action === "copy_lib" || i.action === "copy_helper");
+    check(appliedHostItems.length === 0,
+      "host-items-empty: forced apply touches no copy_lib/copy_helper items either (nothing was ever drifted)",
+      JSON.stringify(appliedHostItems));
   } finally {
     try {
       fs.rmSync(base, { recursive: true, force: true });

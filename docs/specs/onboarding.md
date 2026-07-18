@@ -488,6 +488,20 @@ landing page from day one in every onboarded project.
   Package transition begins only after confirmation and is exercised in an
   isolated environment that proves the ordering rather than bypassing it with a
   prewritten status response.
+- **R26** — A refused apply that can be forced names its full blast radius
+  before the operator consents. When a blocked downgrade is force-eligible, the
+  refusal report enumerates — beyond the per-target skill actions it already
+  carried — every vendored runtime file (helper and library path under the
+  project's tools directory) that the force would overwrite, copied verbatim
+  from the pending plan in plan order, never recomputed. The list is present
+  and empty when a forceable refusal has no runtime drift, and absent entirely
+  when the refusal cannot be forced (unknown version, unresolved source) — a
+  refusal never advertises a force that cannot happen. Runtime-file entries
+  carry plain project-relative paths with no target/scope tagging (those
+  belong only to skill items, whose paths resolve against varying roots). The
+  preview is exact: forcing applies precisely the enumerated runtime set, no
+  more, no fewer (PBI P49, v1.1.0 review P2; advisor-consulted; cell
+  p49-force-downgrade-blast-radius-1).
 
 ## Edge Cases Settled
 
