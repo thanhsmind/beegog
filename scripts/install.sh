@@ -349,6 +349,17 @@ probe_plugin_state "$STATE_FILE"
 cp "$STATE_FILE" "$PRE_STATE_FILE"
 
 DIST_ARGS=(--mode "$DISTRIBUTION_MODE" --runtime "$RUNTIME" --repo-root "$TARGET_DIR" --release-manifest "$RELEASE_MANIFEST" --plugin-state-file "$STATE_FILE")
+# GH #22 P0-1 (cph-1 self-erasure fix): a plugin-first install whose runtime
+# scope covers codex gets the codex-hybrid .codex/hooks.json + .bee/bin/hooks/
+# write from onboard_bee.mjs — its own --plugin-source defaults --runtime to
+# "both", so that write fires today regardless of $RUNTIME (ONBOARD_FLAGS does
+# not thread --runtime through to onboard_bee.mjs yet; that broader wiring is
+# a later cell). Without --codex-hybrid here, the next line's $DIST_HELPER
+# cleanup pass would immediately strip the very hook entries onboarding just
+# wrote, right back to zero mechanical enforcement for Codex sessions.
+if [ "$DISTRIBUTION_MODE" = "plugin-first" ] && runtime_active codex; then
+  DIST_ARGS+=(--codex-hybrid)
+fi
 if [ -n "$OWNERSHIP_LEDGER" ]; then DIST_ARGS+=(--ledger "$OWNERSHIP_LEDGER"); fi
 if [ "$GLOBAL_SKILLS" -eq 1 ]; then
   if [ "$RUNTIME" = "claude" ] || [ "$RUNTIME" = "both" ]; then DIST_ARGS+=(--user-skill-root "${CLAUDE_HOME:-$HOME/.claude}/skills"); fi

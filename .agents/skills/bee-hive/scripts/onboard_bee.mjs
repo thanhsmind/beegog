@@ -38,6 +38,21 @@
 // --apply refreshed doctrine, helpers, and the version stamp while leaving
 // first-onboard guards in place — and still reported up_to_date.)
 //
+// --runtime claude|codex|both (default both) names which runtime(s) this
+// onboarding invocation covers. Combined with --plugin-source it drives the
+// codex-hybrid path (GH #22 P0-1): codex-cli's plugin manifest packages
+// skills only — there is no codex plugin-hook mechanism (capability matrix
+// row B1) — so `--plugin-source --runtime codex` (or `both`) ALWAYS also
+// vendors .bee/bin/hooks/ and merges .codex/hooks.json, exactly like
+// --repo-hooks's codex projection, so a plugin-first-onboarded repo never
+// reports itself onboarded while carrying zero mechanical enforcement for
+// Codex sessions. This gate reads the PASSED --runtime only, never
+// hasRepoHooksRecorded or any other recorded state (an old plugin-source
+// install carries no runtime record to infer coverage from). --runtime
+// claude leaves --plugin-source's existing behavior byte-identical (no
+// repo-local Claude hooks, no Codex files either) — plugin-first for Claude
+// relies on the plugin's own hooks, which codex-cli does not have.
+//
 // Never overwrites existing .bee/state.json, .bee/decisions.jsonl, or .bee/cells/.
 
 import { execFileSync } from "node:child_process";
@@ -2048,6 +2063,13 @@ function repoOwnsHookCatalog(repoRoot) {
   return fs.existsSync(path.join(repoRoot, "hooks", "catalog.mjs"));
 }
 
+// GH #22 P0-1: does the PASSED --runtime cover Codex? "both" (the default)
+// and "codex" do; "claude" does not. Never reads any recorded/sticky state -
+// see the --runtime block comment at the top of this file for why.
+function runtimeCoversCodex(runtime) {
+  return runtime === "codex" || runtime === "both";
+}
+
 function codexHookCommand(fileName) {
   return [
     'r="$(git rev-parse --show-toplevel 2>/dev/null)"',
@@ -2158,6 +2180,41 @@ function mergeCodexHooks(hooksPath) {
     text: `${JSON.stringify({ ...existing, hooks: merged }, null, 2)}\n`,
     changed,
   };
+}
+
+// GH #22 P0-1 / advisor R3: a typed preflight for the codex-hybrid write
+// path, checked BEFORE applyPlan's main loop ever runs (see the codexHybrid
+// block there). Without it, a `.codex` path occupied by a plain file (or a
+// `.bee/bin/hooks` path occupied by a plain file) would throw a raw
+// ENOTDIR/EEXIST out of writeFileAtomic's mkdirSync deep inside the apply
+// loop, AFTER skills may already have been synced - an untyped {error:...}
+// escape hatch that reports a broken partial apply as a generic crash rather
+// than a named refusal, and (fail-closed requirement) must never let skills
+// be reported "applied" without the hooks that make them mechanically
+// enforced for Codex. Returns null when both target paths are writable
+// (absent or already a plain directory); otherwise returns a blocked
+// descriptor shaped exactly like skillSync.blocked ({status, reason,
+// forceable}) so main()'s existing blocked-result rendering handles it with
+// zero new payload shapes. Never forceable: there is no downgrade to force
+// through a filesystem collision.
+function codexHookWriteBlocker(repoRoot) {
+  const checks = [
+    { target: path.join(repoRoot, ".bee", "bin", "hooks"), label: ".bee/bin/hooks" },
+    { target: path.join(repoRoot, ".codex"), label: ".codex" },
+  ];
+  for (const { target, label } of checks) {
+    const stat = lstatIfExists(target);
+    if (stat && !stat.isDirectory()) {
+      return {
+        status: "blocked",
+        reason:
+          `codex hook apply refused: "${label}" exists and is not a directory. FIX: remove or rename it, ` +
+          "then retry the hybrid apply, or pass --distribution repo-copy for a plain repo-local install instead.",
+        forceable: false,
+      };
+    }
+  }
+  return null;
 }
 
 // ---------- codex user config status line (machine-level) ----------
@@ -2317,8 +2374,23 @@ function blockedSourceIdentitySkillSync(repoRoot, options, identity) {
   };
 }
 
-function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkills = false, syncSkills = true } = {}) {
+function computePlan(
+  repoRoot,
+  {
+    repoHooks = false,
+    claudeMd = true,
+    globalSkills = false,
+    syncSkills = true,
+    pluginSource = false,
+    runtime = "both",
+  } = {},
+) {
   const plan = [];
+  // GH #22 P0-1: whether THIS run's --plugin-source + --runtime combination
+  // covers the codex-hybrid hook path. Computed once, read by both the plan
+  // block below and the managed-set gate (buildManagedVersions/subsetManaged)
+  // so the two can never drift from each other.
+  const codexHybrid = pluginSource && runtimeCoversCodex(runtime);
   const releaseIdentity = readSourceReleaseIdentity();
   if (releaseIdentity.blocked) {
     return {
@@ -2332,6 +2404,7 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
         { globalSkills, syncSkills },
         releaseIdentity,
       ),
+      codexHybrid,
     };
   }
   const beeVersion = releaseIdentity.version;
@@ -2479,6 +2552,36 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
     }
   }
 
+  // 5a. codex-hybrid hooks (plugin-first + --runtime covers codex, GH #22
+  // P0-1): repoHooks is ALWAYS false under --plugin-source (see options
+  // below / main()), so this is a separately-gated path, never folded into
+  // the `if (repoHooks)` block above — it fires purely off codexHybrid
+  // (computed from the PASSED --runtime, above). Reuses the exact same
+  // projection (listPluginHooks/mergeCodexHooks/renderCodexHookEntries) the
+  // --repo-hooks path uses, so the two mechanisms can never drift from each
+  // other, and the same repoOwnsHookCatalog self-skip applies (bee's own
+  // repo is the catalog's authority, never a projection target). Never
+  // touches .claude/settings.json: Claude's own plugin hooks already work
+  // under plugin-first (only Codex lacks a plugin-hook mechanism), so no
+  // repo-local Claude entries are written here.
+  if (codexHybrid && !repoOwnsHookCatalog(repoRoot)) {
+    for (const name of listPluginHooks()) {
+      const source = fs.readFileSync(path.join(PLUGIN_HOOKS_DIR, name), "utf8");
+      const target = path.join(repoRoot, ".bee", "bin", "hooks", name);
+      if (readTextIfExists(target) !== source) {
+        plan.push({ action: "copy_repo_hook", path: `.bee/bin/hooks/${name}` });
+      }
+    }
+    const codexHooksPath = path.join(repoRoot, ".codex", "hooks.json");
+    try {
+      if (mergeCodexHooks(codexHooksPath).changed) {
+        plan.push({ action: "merge_codex_hooks", path: ".codex/hooks.json" });
+      }
+    } catch {
+      plan.push({ action: "merge_codex_hooks", path: ".codex/hooks.json" });
+    }
+  }
+
   // 5c. Codex user-config status line (machine-level, add-only): the item's
   // path is display-only — the apply case resolves the real user-config path
   // itself and never joins it under repoRoot.
@@ -2507,14 +2610,15 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
 
   // 6. onboarding.json drift (managed versions)
   const statusline = statuslineOptIn(repoRoot);
-  const desiredManaged = buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, statusline);
+  const desiredManaged = buildManagedVersions(
+    renderedBlock, renderedGitignoreBlock, repoHooks, statusline, codexHybrid);
   const onboarding = readJsonIfExists(path.join(repoRoot, ".bee", "onboarding.json"));
   const onboardingCurrent =
     onboarding &&
     onboarding.schema_version === ONBOARDING_SCHEMA_VERSION &&
     onboarding.bee_version === beeVersion &&
-    JSON.stringify(subsetManaged(onboarding.managed, repoHooks, statusline)) ===
-      JSON.stringify(subsetManaged(desiredManaged, repoHooks, statusline));
+    JSON.stringify(subsetManaged(onboarding.managed, repoHooks, statusline, codexHybrid)) ===
+      JSON.stringify(subsetManaged(desiredManaged, repoHooks, statusline, codexHybrid));
   if (!onboardingCurrent) {
     plan.push({ action: "write_onboarding", path: ".bee/onboarding.json" });
   }
@@ -2538,7 +2642,7 @@ function computePlan(repoRoot, { repoHooks = false, claudeMd = true, globalSkill
     }
   }
 
-  return { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync };
+  return { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync, codexHybrid };
 }
 
 // Legacy-global version-parity refresh items are a best-effort side pass over
@@ -2553,7 +2657,24 @@ function coreChangesNeeded(plan) {
   return plan.some((item) => item.action !== "refresh_legacy_global_skill");
 }
 
-function buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, statusline = false) {
+// Shared by the --repo-hooks managed.repo_hooks map and the codex-hybrid
+// managed.codex_hooks map below (GH #22 P0-1): both track the identical
+// vendored-script + .codex/hooks.json projection, so one render function
+// keeps them from ever drifting apart.
+function buildHookVersions() {
+  const hooks = {};
+  for (const name of listPluginHooks()) {
+    hooks[name] = sha256(fs.readFileSync(path.join(PLUGIN_HOOKS_DIR, name), "utf8"));
+  }
+  // Pseudo-entry: the desired Codex projection rides the same managed map,
+  // so a render change here surfaces as onboarding drift like any hook edit.
+  hooks[".codex/hooks.json"] = sha256(JSON.stringify(renderCodexHookEntries()));
+  return hooks;
+}
+
+function buildManagedVersions(
+  renderedBlock, renderedGitignoreBlock, repoHooks, statusline = false, codexHybrid = false,
+) {
   const helpers = {};
   for (const name of listTemplateHelpers()) {
     helpers[name] = hashFile(path.join(TEMPLATES_DIR, name));
@@ -2569,14 +2690,16 @@ function buildManagedVersions(renderedBlock, renderedGitignoreBlock, repoHooks, 
     lib,
   };
   if (repoHooks) {
-    const hooks = {};
-    for (const name of listPluginHooks()) {
-      hooks[name] = sha256(fs.readFileSync(path.join(PLUGIN_HOOKS_DIR, name), "utf8"));
-    }
-    // Pseudo-entry: the desired Codex projection rides the same managed map,
-    // so a render change here surfaces as onboarding drift like any hook edit.
-    hooks[".codex/hooks.json"] = sha256(JSON.stringify(renderCodexHookEntries()));
-    managed.repo_hooks = hooks;
+    managed.repo_hooks = buildHookVersions();
+  }
+  if (codexHybrid) {
+    // Advisor R5: a DISTINCT key from repo_hooks — repo_hooks means "this
+    // repo opted into the full --repo-hooks install" (Claude + Codex, sticky
+    // via hasRepoHooksRecorded); codex_hooks means only the codex-hybrid
+    // projection is active (no Claude repo-local entries). Conflating the
+    // two would make hasRepoHooksRecorded misfire on a plugin-first repo
+    // that only ever asked for Codex coverage.
+    managed.codex_hooks = buildHookVersions();
   }
   if (statusline) {
     const pair = {};
@@ -2603,8 +2726,11 @@ function hasRepoHooksRecorded(repoRoot) {
 
 // Compare only the parts we manage in this run: without --repo-hooks, ignore
 // any repo_hooks entry recorded by a previous --repo-hooks run; without the
-// statusline opt-in, ignore any statusline entry the same way.
-function subsetManaged(managed, repoHooks, statusline = false) {
+// statusline opt-in, ignore any statusline entry the same way. Without
+// codexHybrid, ignore any codex_hooks entry a previous hybrid run recorded
+// (advisor R5) — a claude-only run must never report codex_hooks drift, nor
+// treat one as present to preserve.
+function subsetManaged(managed, repoHooks, statusline = false, codexHybrid = false) {
   const src = managed && typeof managed === "object" ? managed : {};
   const out = {
     agents_block: src.agents_block || null,
@@ -2615,25 +2741,86 @@ function subsetManaged(managed, repoHooks, statusline = false) {
   if (repoHooks) {
     out.repo_hooks = src.repo_hooks || {};
   }
+  if (codexHybrid) {
+    out.codex_hooks = src.codex_hooks || {};
+  }
   if (statusline) {
     out.statusline = src.statusline || {};
   }
   return out;
 }
 
+// GH #22 P0-1 / advisor R6 (point 6): a repo that once recorded a full
+// --repo-hooks install (Claude + Codex repo-local wiring, sticky via
+// hasRepoHooksRecorded) and is now re-onboarded as --plugin-source no longer
+// gets that record silently carried forward (see applyPlan's onboarding.json
+// write) — repoHooks is unconditionally false under --plugin-source (main()
+// options), so the block that WRITES .claude/settings.json entries never
+// runs this pass, and plugin-first distribution cleanup (plugin_distribution.mjs)
+// is expected to strip the stale Claude entries it left behind (Claude's own
+// plugin hooks take over). Silently dropping the record would be honest
+// about the mechanism but dishonest about the SURPRISE: the human opted into
+// full repo-local coverage once and it just changed shape underneath them.
+// This notice makes that transition visible exactly once, naming which
+// coverage survives (codex-hybrid, when --runtime covers codex) and which
+// does not (Claude repo-local entries, always; Codex too when --runtime
+// claude was passed without codex/both).
+function repoHooksTransitionNotices(repoRoot, { pluginSource, codexHybrid }) {
+  if (!pluginSource || !hasRepoHooksRecorded(repoRoot)) {
+    return [];
+  }
+  if (codexHybrid) {
+    return [
+      "This repo previously opted into --repo-hooks (full repo-local Claude + Codex hook wiring). " +
+        "Onboarding as --plugin-source retires the repo-local Claude entries in .claude/settings.json " +
+        "(Claude's own plugin hooks take over) and keeps Codex mechanically enforced through the " +
+        "codex-hybrid .codex/hooks.json projection instead — no action needed.",
+    ];
+  }
+  return [
+    "This repo previously opted into --repo-hooks (full repo-local Claude + Codex hook wiring). " +
+      "Onboarding as --plugin-source with --runtime claude retires ALL repo-local hook entries, " +
+      "including Codex's — pass --runtime codex or --runtime both to keep Codex mechanically " +
+      "enforced via the codex-hybrid path, or use --distribution repo-copy to keep the full " +
+      "repo-local install as-is.",
+  ];
+}
+
 // ---------- apply ----------
 
 function applyPlan(
   repoRoot,
-  { repoHooks = false, claudeMd = true, globalSkills = false, syncSkills = true, forceDowngrade = false } = {},
+  {
+    repoHooks = false,
+    claudeMd = true,
+    globalSkills = false,
+    syncSkills = true,
+    forceDowngrade = false,
+    pluginSource = false,
+    runtime = "both",
+  } = {},
 ) {
-  const { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync } =
+  const { plan, beeVersion, renderedBlock, renderedGitignoreBlock, desiredManaged, skillSync, codexHybrid } =
     computePlan(repoRoot, {
       repoHooks,
       claudeMd,
       globalSkills,
       syncSkills,
+      pluginSource,
+      runtime,
     });
+
+  // GH #22 P0-1 / advisor R3: the codex-hybrid write preflight. Checked
+  // BEFORE the skillSync.blocked branch below and before any write anywhere
+  // — fail-closed (point 3): skills must never be reported applied without
+  // the hooks that make them mechanically enforced for Codex, so a blocked
+  // hook write refuses the WHOLE apply, typed exactly like skillSync.blocked.
+  if (codexHybrid && !repoOwnsHookCatalog(repoRoot)) {
+    const hookBlock = codexHookWriteBlocker(repoRoot);
+    if (hookBlock) {
+      return { blocked: hookBlock, beeVersion };
+    }
+  }
 
   // D3 preflight: refusal aborts the ENTIRE apply BEFORE any write - the item
   // loop below and the unconditional onboarding.json rewrite after it are
@@ -2944,7 +3131,14 @@ function applyPlan(
   const onboardingPath = path.join(repoRoot, ".bee", "onboarding.json");
   const previous = readJsonIfExists(onboardingPath) || {};
   const managed = { ...desiredManaged };
-  if (!repoHooks && previous.managed && previous.managed.repo_hooks) {
+  // Advisor R6 / point 6: a --plugin-source apply lets a prior --repo-hooks
+  // record LAPSE rather than silently carrying it forward — repoHooksTransitionNotices
+  // (above) surfaces this transition to the human in the same run, so it is
+  // documented, not silent. Every OTHER path is unaffected: hasRepoHooksRecorded
+  // already forces repoHooks true again on a normal (non-plugin-source)
+  // re-run, so `!repoHooks` below is otherwise unreachable while a repo_hooks
+  // record exists — this line only ever changed behavior for --plugin-source.
+  if (!repoHooks && !pluginSource && previous.managed && previous.managed.repo_hooks) {
     // preserve the record of a prior --repo-hooks install
     managed.repo_hooks = previous.managed.repo_hooks;
   }
@@ -2991,6 +3185,10 @@ function parseArgs(argv) {
     globalSkills: false,
     pluginSource: false,
     forceDowngrade: false,
+    // GH #22 P0-1: which runtime(s) this invocation covers. Default "both"
+    // matches install.sh's own default and keeps a bare invocation's
+    // behavior unchanged (codexHybrid still requires --plugin-source too).
+    runtime: "both",
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -3015,14 +3213,23 @@ function parseArgs(argv) {
       args.pluginSource = true;
     } else if (arg === "--force-downgrade") {
       args.forceDowngrade = true;
+    } else if (arg === "--runtime") {
+      args.runtime = argv[i + 1];
+      i += 1;
+    } else if (arg.startsWith("--runtime=")) {
+      args.runtime = arg.slice("--runtime=".length);
     } else if (arg === "--help" || arg === "-h") {
       process.stdout.write(
-        "Usage: onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--plugin-source] [--no-claude-md] [--claude-md] [--global-skills] [--force-downgrade]\n",
+        "Usage: onboard_bee.mjs --repo-root <path> [--apply] [--json] [--repo-hooks] [--plugin-source] " +
+          "[--runtime claude|codex|both] [--no-claude-md] [--claude-md] [--global-skills] [--force-downgrade]\n",
       );
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+  if (!["claude", "codex", "both"].includes(args.runtime)) {
+    throw new Error(`--runtime must be claude, codex, or both (got: ${args.runtime})`);
   }
   return args;
 }
@@ -3105,7 +3312,18 @@ export function main(argv = process.argv.slice(2)) {
       globalSkills: args.globalSkills,
       syncSkills: !args.pluginSource,
       forceDowngrade: args.forceDowngrade,
+      // GH #22 P0-1: threaded through so computePlan/applyPlan can gate the
+      // codex-hybrid path (pluginSource && runtimeCoversCodex(runtime)) —
+      // see the --runtime block comment at the top of this file.
+      pluginSource: args.pluginSource,
+      runtime: args.runtime,
     };
+    // Advisor R6 (point 6): surfaced in BOTH plan and apply notices, so a
+    // dry-run already shows the transition before anything is written.
+    const hooksTransitionNotices = repoHooksTransitionNotices(repoRoot, {
+      pluginSource: args.pluginSource,
+      codexHybrid: args.pluginSource && runtimeCoversCodex(args.runtime),
+    });
     if (!args.apply) {
       const { plan, beeVersion, skillSync } = computePlan(repoRoot, options);
       const payload = {
@@ -3136,6 +3354,7 @@ export function main(argv = process.argv.slice(2)) {
           ...commandsNotices(repoRoot, { firstOnboard }),
           ...staleAdvisorNotices(repoRoot),
           ...trackedPathsNotices(repoRoot),
+          ...hooksTransitionNotices,
         ],
       };
       if (skillSync.blocked) {
@@ -3216,6 +3435,7 @@ export function main(argv = process.argv.slice(2)) {
         ...commandsNotices(repoRoot, { firstOnboard }),
         ...staleAdvisorNotices(repoRoot),
         ...trackedPathsNotices(repoRoot),
+        ...hooksTransitionNotices,
       ],
     };
     if (result.forcedDowngrade) {

@@ -7,6 +7,15 @@ import { fileURLToPath } from "node:url";
 
 const PROJECT_SKILL_ROOTS = [".claude/skills", ".agents/skills", ".codex/skills"];
 const PROJECT_HOOK_FILES = [".claude/settings.json", ".codex/hooks.json"];
+// GH #22 P0-1 / advisor R4 (self-erasure fix): .codex/hooks.json's bee
+// entries as written by onboard_bee.mjs's codex-hybrid path (--plugin-source
+// --runtime codex|both) are BYTE-IDENTICAL to the entries this cleanup
+// pass's cleanHookConfig() strips — same "/.bee/bin/hooks/" command shape,
+// same recognizedBeeCommand() match. Without a scoping flag, a plugin-first
+// install that hybrid-wrote the ONLY mechanical enforcement Codex sessions
+// get would have this very cleanup pass immediately delete it again, right
+// after onboarding reported the apply successful.
+const CODEX_HYBRID_EXEMPT_FILE = ".codex/hooks.json";
 // D9/cnr2-12: plugin_skill_*_render cover the committed per-runtime rendered
 // skill trees (.claude-plugin/skills/, .codex-plugin/skills/) that the plugin
 // manifests now route to; they must be counted as expected package content
@@ -232,7 +241,27 @@ function cleanHookConfig(absPath) {
   return removed ? { path: absPath, removed, before: fs.readFileSync(absPath), after: Buffer.from(`${JSON.stringify(next, null, 2)}\n`) } : null;
 }
 
-function collectProjectCleanup(repoRoot, managedSkills) {
+// codexHybrid (default false, GH #22 P0-1 / advisor R4): when true,
+// .codex/hooks.json is EXCLUDED from this pass entirely — its bee entries
+// are the codex-hybrid projection onboard_bee.mjs just wrote (the only
+// mechanical enforcement Codex sessions get; codex-cli has no plugin-hook
+// mechanism), and must survive this cleanup rather than be stripped again.
+// .claude/settings.json cleanup is UNCHANGED either way: Claude's own plugin
+// hooks work under plugin-first, so its repo-local entries (if any) are
+// always stale and always stripped.
+//
+// CONTRACT (advisor R4's "pick the cleanest contract"): the default is
+// false, so every EXISTING caller of collectProjectCleanup/buildDistributionPlan
+// that never passes codexHybrid keeps today's behavior byte-for-byte — both
+// hook files get their bee entries stripped, exactly as before this flag
+// existed. codexHybrid is never inferred from `runtimes` (buildDistributionPlan's
+// existing parameter): `runtimes` names which CLIENT plugin(s) this cleanup
+// is proving installed/inactive for — a different axis from which hook
+// projection onboarding wrote. The caller (install.sh, the next cell) owns
+// deciding when a run is a codex-hybrid install and must pass codexHybrid:true
+// on exactly those runs — this file only guarantees that, once told, it
+// keeps its hands off .codex/hooks.json.
+function collectProjectCleanup(repoRoot, managedSkills, { codexHybrid = false } = {}) {
   assertPlainDirectory(repoRoot, "repository root");
   if (!(managedSkills instanceof Set) || managedSkills.size === 0) fail("project cleanup requires the managed release skill set");
   const dirs = [];
@@ -254,7 +283,10 @@ function collectProjectCleanup(repoRoot, managedSkills) {
       dirs.push(target);
     }
   }
-  const configs = PROJECT_HOOK_FILES.map((relative) => cleanHookConfig(path.join(repoRoot, relative))).filter(Boolean);
+  const hookFiles = codexHybrid
+    ? PROJECT_HOOK_FILES.filter((relative) => relative !== CODEX_HYBRID_EXEMPT_FILE)
+    : PROJECT_HOOK_FILES;
+  const configs = hookFiles.map((relative) => cleanHookConfig(path.join(repoRoot, relative))).filter(Boolean);
   return { dirs: dirs.sort(), configs };
 }
 
@@ -325,7 +357,7 @@ function revalidateSnapshot(snapshot) {
   }
 }
 
-export function buildDistributionPlan({ mode, runtimes, repoRoot, pluginStates, inventory, ledgerPath = null, userSkillRoots = [] }) {
+export function buildDistributionPlan({ mode, runtimes, repoRoot, pluginStates, inventory, ledgerPath = null, userSkillRoots = [], codexHybrid = false }) {
   if (!['plugin-first', 'repo-copy'].includes(mode)) fail(`unknown distribution mode: ${mode}`);
   if (!Array.isArray(runtimes) || runtimes.length === 0) fail("at least one runtime is required");
   const selectedStates = runtimes.map((runtime) => pluginStates.find((state) => state.runtime === runtime) ?? { runtime, installed: false, enabled: false });
@@ -335,7 +367,7 @@ export function buildDistributionPlan({ mode, runtimes, repoRoot, pluginStates, 
   }
   const managedSkills = managedSkillNames(inventory);
   const proofs = selectedStates.map((state) => proveInstalledPackage(state, inventory));
-  const project = collectProjectCleanup(path.resolve(repoRoot), managedSkills);
+  const project = collectProjectCleanup(path.resolve(repoRoot), managedSkills, { codexHybrid });
   const user = readOwnershipLedger(ledgerPath, userSkillRoots);
   const dirs = [...project.dirs, ...user.dirs];
   const cleanupRealpaths = dirs.map((target) => fs.realpathSync.native(target));
@@ -383,10 +415,14 @@ export function applyDistributionPlan(plan) {
 }
 
 function parseArgs(argv) {
-  const options = { apply: false, userSkillRoots: [] };
+  const options = { apply: false, userSkillRoots: [], codexHybrid: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--apply") options.apply = true;
+    // GH #22 P0-1: boolean, like --apply — no value token follows it. Kept
+    // OUT of the generic "--"-prefixed fallback below (which always consumes
+    // a value arg) so `--codex-hybrid` never eats the next positional/flag.
+    else if (arg === "--codex-hybrid") options.codexHybrid = true;
     else if (arg === "--user-skill-root") options.userSkillRoots.push(argv[++i]);
     else if (arg.startsWith("--")) options[arg.slice(2).replaceAll("-", "_")] = argv[++i];
     else fail(`unexpected argument: ${arg}`);
@@ -411,7 +447,7 @@ function runCli() {
   const payload = JSON.parse(fs.readFileSync(args.plugin_state_file, "utf8").replace(/^\uFEFF/, ""));
   const pluginStates = runtimes.map((runtime) => discoverBeePlugin(payload?.[runtime] ?? payload, runtime));
   const inventory = loadPackageInventory(args.release_manifest);
-  const plan = buildDistributionPlan({ mode: args.mode, runtimes, repoRoot: args.repo_root, pluginStates, inventory, ledgerPath: args.ledger, userSkillRoots: args.userSkillRoots });
+  const plan = buildDistributionPlan({ mode: args.mode, runtimes, repoRoot: args.repo_root, pluginStates, inventory, ledgerPath: args.ledger, userSkillRoots: args.userSkillRoots, codexHybrid: args.codexHybrid });
   const result = args.apply ? applyDistributionPlan(plan) : { status: plan.status, removed: plan.dirs.length, updated: plan.writes.length };
   process.stdout.write(`${JSON.stringify({ ok: true, mode: args.mode, runtimes, dryRun: !args.apply, ...result })}\n`);
 }

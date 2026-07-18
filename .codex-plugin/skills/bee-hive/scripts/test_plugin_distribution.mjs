@@ -131,6 +131,39 @@ check("plugin-first removes only direct bee copies and recognized hooks", () => 
   fs.rmSync(f.root, { recursive: true, force: true });
 });
 
+// ─── GH #22 P0-1 / advisor R4: codex-hybrid cleanup scoping ────────────────
+// onboard_bee.mjs's codex-hybrid path (--plugin-source --runtime codex|both)
+// writes .codex/hooks.json bee entries that are byte-shape-identical to what
+// this file's own cleanHookConfig() strips — without scoping, plugin-first
+// cleanup would immediately erase the only mechanical enforcement Codex
+// sessions get, right after onboarding reported the apply successful.
+
+check("codex-hybrid: .codex/hooks.json bee entries survive cleanup; .claude/settings.json is still stripped", () => {
+  const f = fixture();
+  const result = applyDistributionPlan(planFor(f, { codexHybrid: true }));
+  assert.equal(result.status, "applied");
+  const codex = JSON.parse(fs.readFileSync(path.join(f.repo, ".codex/hooks.json")));
+  assert.equal(
+    codex.hooks.SessionStart[0].hooks[0].command,
+    'node "$CLAUDE_PROJECT_DIR"/.bee/bin/hooks/bee-write-guard.mjs',
+    "codex-hybrid bee entry survives cleanup",
+  );
+  assert.deepEqual(codex.foreign, { keep: true }, "non-bee .codex/hooks.json content survives untouched");
+  const claude = JSON.parse(fs.readFileSync(path.join(f.repo, ".claude/settings.json")));
+  assert.equal(claude.hooks.PreToolUse[0].hooks.length, 1, "claude settings.json bee entry is still stripped under hybrid");
+  assert.equal(claude.hooks.PreToolUse[0].hooks[0].command, "node user-hook.mjs");
+  fs.rmSync(f.root, { recursive: true, force: true });
+});
+
+check("codex-hybrid flag omitted (default false): legacy behavior stays byte-identical — both hook files stripped", () => {
+  const f = fixture();
+  const result = applyDistributionPlan(planFor(f));
+  assert.equal(result.status, "applied");
+  const codex = JSON.parse(fs.readFileSync(path.join(f.repo, ".codex/hooks.json")));
+  assert.deepEqual(codex, { foreign: { keep: true } }, "without codexHybrid, .codex/hooks.json bee entry is stripped exactly as before this flag existed");
+  fs.rmSync(f.root, { recursive: true, force: true });
+});
+
 check("cleanup candidates derive from exact plugin_skill inventory names only", () => {
   const f = fixture();
   const names = managedSkillNames(f.inventory);
