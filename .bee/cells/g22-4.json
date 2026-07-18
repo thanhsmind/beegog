@@ -1,0 +1,47 @@
+{
+  "id": "g22-4",
+  "feature": "gh22-completion",
+  "lane": "high-risk",
+  "behavior_change": true,
+  "title": "bee-render/2 inventory sidecar + doctor deep skill audit (D7)",
+  "deps": [
+    "g22-3"
+  ],
+  "action": "Upgrade the render sidecar to schema bee-render/2: {schema:'bee-render/2', target_runtime, skills:[{name, sha256 (deterministic hash of the rendered skill dir's file set)}]} — written by scripts/render_plugin_skill_trees.mjs AND the onboarding managed-target sync path (renderSkillBytes flow in onboard_bee.mjs) so all four runtime-target trees carry it. Readers accept bee-render/1 (legacy) with a shallow-only warn. Doctor doctorSkillsInstalled becomes a deep audit: expected list = sidecar skills[]; check every expected skill dir present, no unexpected plain bee-* strays, per-skill sha256 recomputed matches; mismatch names the drifted/missing/stray skill(s); legacy sidecar -> warn 'inventory unavailable (bee-render/1)'. Watch the FOUR consumers of the sidecar (renderer, onboard sync, plugin_distribution proof, doctor) for compat, and regenerate the release manifest (sidecar bytes change -> manifest churn is expected, one clean regeneration). Fixtures: deep-audit pass, missing-skill, stray-skill, hash-drift, legacy-sidecar warn.",
+  "must_haves": {
+    "truths": [
+      "all four runtime-target trees carry bee-render/2 with per-skill hashes after render/onboard",
+      "doctor detects and names a missing skill, a stray bee-* dir, and a hash-drifted skill",
+      "bee-render/1 degrades to a shallow warn, never a crash",
+      "plugin_distribution and onboarding flows stay green with the new sidecar",
+      "manifest regenerated once, check green"
+    ]
+  },
+  "verify": "node scripts/test_skill_render.mjs && node skills/bee-hive/scripts/test_plugin_distribution.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/test_conformance.mjs && node scripts/release_manifest.mjs --check",
+  "files": [
+    "scripts/render_plugin_skill_trees.mjs",
+    "skills/bee-hive/scripts/onboard_bee.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    "scripts/test_skill_render.mjs",
+    ".bee/bin/*",
+    ".claude/*",
+    ".agents/*",
+    ".claude-plugin/*",
+    ".codex-plugin/*"
+  ],
+  "status": "open",
+  "decisions": [],
+  "read_first": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

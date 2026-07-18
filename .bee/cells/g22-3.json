@@ -1,0 +1,45 @@
+{
+  "id": "g22-3",
+  "feature": "gh22-completion",
+  "lane": "high-risk",
+  "behavior_change": true,
+  "title": "doctor three-state (ready/degraded/blocked) + attest verb + version-scoped verdicts (D4/D5/D6)",
+  "action": "SERIALIZED after g22-1 (advisor wave fix — same bee.mjs + registry file; worker rebases onto the g22-1 merge commit first). templates/bee.mjs doctor section: doctorOverallStatus -> three states: 'blocked' when any MECHANICAL blocking row not-ok; 'degraded' when mechanical ok but trust rows structurally unknown (re-class the 4 rows from blocking to degraded-class with degraded_reason naming /hooks); 'ready' = mechanical green + VALID attestation. New verb doctor.attest (registry + handler): records {hooks_file_sha256, codex_version, session_id, at, repo_identity} to a gitignored runtime-tier file. D5-REVISED validity (advisor R4 — the observation leg is CLAUDE-ONLY because hooks.jsonl is deny/crash-only and tools.jsonl is claude-only): codex VALID = current .codex/hooks.json sha matches + current codex --version matches + repo identity unchanged (static attest; the reason string says honestly that codex exposes no hook-fire event surface, so liveness is not attestable); claude VALID additionally requires one bee tool/hook event with ts > attestation.at in .bee/logs/tools.jsonl. Any failed leg -> attestation inert with the stale reason named -> degraded, never ready. D6: version-scope trust wording — probed-version constant (0.144.4); live codex --version differs -> rows say unprobed_version (suggest re-probe), never blanket unsupported. Fixtures in test_conformance.mjs + test_bee_cli.mjs: blocked / degraded / ready(static attest on codex) / stale (hash flip) / version-mismatch wording / claude observation leg. Mirrors + manifest.",
+  "must_haves": {
+    "truths": [
+      "three states each proven by fixture: blocked / degraded / ready",
+      "ready requires a valid attestation incl. a post-attestation observed event; any of the four validity legs failing -> degraded with the stale reason named",
+      "trust verdict wording is version-scoped: live version != probed version -> unprobed_version, never blanket unsupported",
+      "attest verb is registry-complete (bijection + example) and writes only gitignored runtime-tier state",
+      "mirrors + manifest green"
+    ]
+  },
+  "verify": "node scripts/test_conformance.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+  "files": [
+    "skills/bee-hive/templates/bee.mjs",
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "scripts/test_conformance.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+    ".bee/bin/*",
+    ".claude/skills/bee-hive/templates/*",
+    ".agents/skills/bee-hive/templates/*"
+  ],
+  "status": "open",
+  "deps": [
+    "g22-1"
+  ],
+  "decisions": [],
+  "read_first": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}
