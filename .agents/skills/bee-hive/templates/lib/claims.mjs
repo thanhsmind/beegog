@@ -109,6 +109,30 @@ export function readSession(root, sessionId) {
   return session;
 }
 
+/**
+ * List every readable session record under .bee/sessions/ (GH#20: the reader
+ * cells.mjs's claim-next fallback pool needs to detect a lane's live owner).
+ * Fail-open, matching readSession/heartbeatStale's posture: a missing
+ * .bee/sessions/ directory is zero records, never an error, and an
+ * unreadable/corrupt entry is silently skipped rather than surfaced — a
+ * broken session record counts as absent, not as a reason to stop.
+ */
+export function listSessionRecords(root) {
+  let entries;
+  try {
+    entries = fs.readdirSync(sessionsDir(root));
+  } catch {
+    return [];
+  }
+  const sessions = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    const record = readSession(root, entry.slice(0, -'.json'.length));
+    if (record) sessions.push(record);
+  }
+  return sessions;
+}
+
 export function heartbeatSession(root, sessionId, { now = Date.now() } = {}) {
   const session = readSession(root, sessionId);
   if (!session) {

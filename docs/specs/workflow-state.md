@@ -329,11 +329,20 @@ reclaimed in the same pass, so "no work" is never reported while such a unit
 exists; then selection prefers the session's own lane's ready units (its
 execution gate approved), then ready units of OTHER lanes **whose execution
 gate a human approved** — an unapproved lane is never touched even when its
-units are the only ready ones (the puller never widens authority, D2); units
-whose files overlap another session's live holds are skipped; cross-lane
-order follows the product backlog's ranking (by the lane's feature row),
-falling back to lane age. Nothing qualifies → the typed answer "no approved
-work left", and the session stops honestly. Claiming the chosen unit is
+units are the only ready ones (the puller never widens authority, D2); a lane
+**actively owned by another live session** — some other session is bound to it
+and its heartbeat is still fresh (the same staleness rule that governs claim
+reclaim) — is never pulled from either, even when its units are the only ready
+ones anywhere: the planner keeps the work it just planned (GH #20), and only a
+stale-heartbeat owner leaves its lane reclaimable again (steal-after-death is
+preserved). The default pipeline record carries no session binding, so this
+ownership guard applies to lanes only, deliberately; the acting session's own
+binding never blocks its own pull, and explicitly claiming a named unit stays
+possible (orchestrator assignment is intent, the guard governs only automatic
+selection). Units whose files overlap another session's live holds are skipped;
+cross-lane order follows the product backlog's ranking (by the lane's feature
+row), falling back to lane age. Nothing qualifies → the typed answer "no
+approved work left", and the session stops honestly. Claiming the chosen unit is
 crash-safe: the cross-session claim file is taken first, the work record
 second, and a failure of the second releases the first (no orphaned claim).
 
@@ -829,7 +838,10 @@ its knowledge actually landed — the state and the specs can no longer disagree
   registration in `hooks/bee-session-init.mjs`; pure kind-branch rendering in
   `lib/inject.mjs` (`handoffOutcome` param); `claimNextCell`/`claimCellCrossSession`
   in `lib/cells.mjs` + `featureBacklogRank` in `lib/backlog.mjs`; CLI
-  `cells.claim-next` (the production `sweepExpiredClaims` trigger). Evidence:
+  `cells.claim-next` (the production `sweepExpiredClaims` trigger); live-owner
+  lane guard in the cross-lane fallback pool (`listSessionRecords` in
+  `lib/claims.mjs` + `heartbeatStale` membership check in `claimNextCell`,
+  GH #20, trace `.bee/cells/cnlg-1.json`). Evidence:
   traces `.bee/cells/fsh-{9,10,11}.json`, commits 79e800e, d419e0e, 9931fc6;
   `docs/history/fresh-session-handoff/reports/validation-s4.md` (incl. the
   orchestrator's retro-RED probe for fsh-11).

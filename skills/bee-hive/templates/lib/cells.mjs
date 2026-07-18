@@ -19,7 +19,13 @@ import {
 // import cycle (claims.mjs/reservations.mjs import only fsutil/node builtins;
 // backlog.mjs imports only fs/path — same discipline state.mjs already relies
 // on for pathsOverlap/readSession above it in the module graph).
-import { sweepExpiredClaims, claimCellFile, releaseClaim } from './claims.mjs';
+import {
+  sweepExpiredClaims,
+  claimCellFile,
+  releaseClaim,
+  listSessionRecords,
+  heartbeatStale,
+} from './claims.mjs';
 import { findSessionConflicts } from './reservations.mjs';
 import { featureBacklogRank } from './backlog.mjs';
 // parallel-scheduler D2: cycle refusal at every dep-mutating write reuses the
@@ -849,7 +855,14 @@ export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } =
 //       pooled and ordered by backlog rank (docs/backlog.md's Feature
 //       column, via backlog.mjs's featureBacklogRank) then lane created_at,
 //       oldest first; a pipeline with no backlog row, or no created_at,
-//       sorts after one that has it.
+//       sorts after one that has it. GH#20: a LANE (never the default
+//       state.json pipeline, which has no binding concept) actively owned by
+//       another live session — some OTHER session record has lane === that
+//       feature and a fresh heartbeat (!heartbeatStale, claims.mjs's own
+//       staleness rule) — is skipped entirely, never pooled, so claim-next
+//       cannot steal a cell out from under a session mid-lane on it; a lane
+//       whose only owner's heartbeat has gone stale is fair game again
+//       (steal-after-death is preserved, only live ownership blocks).
 //   (3) any candidate whose declared files intersect ANOTHER session's
 //       active reservation hold (findSessionConflicts, D3) is skipped
 //       outright — the acting session's own holds never exclude a cell.
@@ -900,10 +913,31 @@ export function claimNextCell(root, { sessionId, worker, ttl } = {}) {
     const state = readState(root);
     const pipelines = new Map(); // feature -> { approved, created_at }
     if (state.feature && state.feature !== ownFeature) {
+      // The default state.json pipeline stays poolable here on purpose: it
+      // has no binding concept, so the live-owner guard below (which is
+      // strictly a lane-record check) never applies to it.
       pipelines.set(state.feature, { approved: gateApproved(state, 'execution'), created_at: null });
+    }
+    // GH#20: build the set of lanes actively owned by another live session
+    // ONCE, from every session record, so the lane loop below is a plain
+    // membership check. "Owned" = some OTHER session (id !== the acting
+    // session — rule: the acting session's own binding never blocks
+    // anything) is bound to that lane (record.lane) with a fresh heartbeat
+    // (!heartbeatStale, claims.mjs's own staleness rule/threshold — the same
+    // rule claim-sweep uses). An unreadable/corrupt session record already
+    // reads as absent via listSessionRecords' fail-open posture, matching
+    // heartbeatStale's own "missing/unparseable = stale" posture: it can
+    // never mark a lane as live-owned.
+    const liveOwnedLanes = new Set();
+    for (const record of listSessionRecords(root)) {
+      if (!record || record.id === session) continue;
+      const boundLane = typeof record.lane === 'string' ? record.lane.trim() : '';
+      if (!boundLane || heartbeatStale(record)) continue;
+      liveOwnedLanes.add(boundLane);
     }
     for (const lane of listLanes(root)) {
       if (!lane.feature || lane.feature === ownFeature || pipelines.has(lane.feature)) continue;
+      if (liveOwnedLanes.has(lane.feature)) continue; // GH#20: a lane actively owned by another live session is never pooled
       pipelines.set(lane.feature, {
         approved: gateApproved(lane, 'execution'),
         created_at: lane.created_at || null,
