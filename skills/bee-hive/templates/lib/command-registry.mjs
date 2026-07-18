@@ -1283,12 +1283,12 @@ export const COMMAND_REGISTRY = [
     name: 'worktree.new',
     invoke: 'bee worktree new',
     description:
-      "Create AND register a fresh linked git worktree for an independent feature in ONE move (GH #21): runs `git worktree add ../<repo-basename>--wt--<feature> -b wt/<feature> [baseRef]`, then grants and bootstraps it exactly as `worktree register` does (copies onboarding.json/config.json from the main store if present, writes a FRESH state.json — phase idle, every gate unapproved, feature set). Must be run from the MAIN checkout (an ordinary, non-worktree directory), never from inside another linked worktree. Typed, zero-mutation refusal when the feature slug is invalid, --base-ref is not a valid git ref, the target sibling path or branch already exists, or a grant already exists for the derived id; `git worktree add` failing at runtime is caught and re-surfaced typed too, and a failure AFTER the worktree was created rolls back best-effort.",
+      "Create AND register a fresh linked git worktree for an independent feature in ONE move (GH #21): runs `git worktree add ../<repo-basename>--wt--<feature> -b wt/<feature> [resolved baseRef sha]`, then grants and bootstraps it exactly as `worktree register` does (copies onboarding.json/config.json from the main store if present, writes a FRESH state.json — phase idle, every gate unapproved, feature set). Must be run from the MAIN checkout (an ordinary, non-worktree directory), never from inside another linked worktree. Typed, zero-mutation refusal when the feature slug is invalid, --base-ref does not resolve to a commit, the target sibling path or branch already exists, or a grant already exists for the derived id; `git worktree add` failing at runtime is caught and re-surfaced typed too, and a failure AFTER the worktree was created rolls back best-effort.",
     parameters: {
       type: 'object',
       properties: {
         feature: { type: 'string', description: 'Feature slug for the new worktree (must match ^[a-z0-9][a-z0-9-]*$); becomes branch `wt/<feature>` and directory `../<repo-basename>--wt--<feature>`, and is stamped into the bootstrapped state.json.' },
-        'base-ref': { type: 'string', description: 'Git ref/commit-ish to base the new branch on (validated via `git check-ref-format`). Defaults to the main checkout\'s current HEAD when omitted.' },
+        'base-ref': { type: 'string', description: 'Git commit-ish to base the new branch on — branch, tag, HEAD~N, short sha, `<tag>^{commit}`, etc. Resolved to a concrete commit sha via `git rev-parse --verify --end-of-options` (git >= 2.24), and that RESOLVED sha (not the ref string) is what the new branch is actually based on. Defaults to the main checkout\'s current HEAD when omitted.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a short confirmation report.' },
       },
       required: ['feature'],

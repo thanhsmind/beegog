@@ -357,12 +357,75 @@ try {
     const baseRefResult = bee(main, ['worktree', 'new', '--feature', baseRefFeature, '--base-ref', 'main', '--json']);
     const ok = baseRefResult.status === 0;
     record('worktree new --base-ref main exits 0', ok, `status=${baseRefResult.status} stdout=${baseRefResult.stdout} stderr=${baseRefResult.stderr}`);
+    let baseRefJson = null;
+    try {
+      baseRefJson = JSON.parse(baseRefResult.stdout);
+    } catch {
+      /* checked below */
+    }
+    const mainHeadSha = git(main, ['rev-parse', 'main']).trim();
+    const shaOk = baseRefJson && baseRefJson.baseRefSha === mainHeadSha;
+    record('worktree new --base-ref main reports the RESOLVED sha (not the ref string) in JSON output', shaOk, baseRefResult.stdout);
   }
-  {
-    const badRefResult = bee(main, ['worktree', 'new', '--feature', 'wsr-bad-base-ref', '--base-ref', 'not a ref!!', '--json']);
-    const ok = badRefResult.status !== 0 && /WORKTREE_INVALID_BASE_REF/.test(badRefResult.stdout + badRefResult.stderr);
-    record('worktree new refuses an invalid --base-ref (WORKTREE_INVALID_BASE_REF)', ok, `status=${badRefResult.status} stdout=${badRefResult.stdout} stderr=${badRefResult.stderr}`);
-  }
+
+  // ── p162-3 (decision D3 / advisor R8): base-ref is validated via `git
+  // rev-parse --verify --end-of-options "<ref>^{commit}"`, NOT `git
+  // check-ref-format` — check-ref-format only checks ref-NAME syntax and
+  // wrongly rejects/mishandles commit-ish forms like `HEAD~1`, a short sha,
+  // and `<tag>^{commit}`. A second real commit + a tag give every accepted
+  // form something concrete to resolve against. ────────────────────────────
+  git(main, ['commit', '--allow-empty', '-q', '-m', 'second commit for base-ref resolution tests']);
+  git(main, ['tag', 'v1.2.0']);
+  const baseRefShortSha = git(main, ['rev-parse', '--short', 'HEAD']).trim();
+  const baseRefHeadSha = git(main, ['rev-parse', 'HEAD']).trim();
+  const baseRefParentSha = git(main, ['rev-parse', 'HEAD~1']).trim();
+
+  const acceptedBaseRefs = [
+    { ref: 'HEAD', label: 'HEAD', expectSha: baseRefHeadSha },
+    { ref: 'HEAD~1', label: 'HEAD~1', expectSha: baseRefParentSha },
+    { ref: baseRefShortSha, label: 'a short sha', expectSha: baseRefHeadSha },
+    { ref: 'v1.2.0^{commit}', label: 'a tag with ^{commit}', expectSha: baseRefHeadSha },
+  ];
+  acceptedBaseRefs.forEach(({ ref, label, expectSha }, i) => {
+    const feature = `wsr-baseref-ok-${i}`;
+    const result = bee(main, ['worktree', 'new', '--feature', feature, '--base-ref', ref, '--json']);
+    const ok = result.status === 0;
+    record(`worktree new --base-ref ${JSON.stringify(ref)} (${label}) exits 0`, ok, `status=${result.status} stdout=${result.stdout} stderr=${result.stderr}`);
+    let json = null;
+    try {
+      json = JSON.parse(result.stdout);
+    } catch {
+      /* checked below */
+    }
+    const shaOk = json && json.baseRefSha === expectSha;
+    record(`worktree new --base-ref ${JSON.stringify(ref)} (${label}) resolves to the expected commit sha`, shaOk, `expected=${expectSha} got=${json && json.baseRefSha} stdout=${result.stdout}`);
+  });
+
+  // ── nonexistent ref, syntactically-invalid garbage, and a leading-dash
+  // injection string all refuse the SAME way: typed WORKTREE_BASE_NOT_FOUND,
+  // zero mutation. There is no cheap syntax-only pre-check left standing
+  // once validation is `rev-parse --verify` — a bad-syntax ref and a
+  // well-formed-but-missing ref both fail resolution identically, so the
+  // old WORKTREE_INVALID_BASE_REF code (which assumed a syntax check could
+  // be told apart from an existence check) is retired; everything that
+  // fails to resolve collapses into WORKTREE_BASE_NOT_FOUND. ───────────────
+  const rejectedBaseRefs = [
+    { ref: 'nonexistent-ref-xyz-zzz', label: 'a nonexistent ref' },
+    { ref: 'not a ref!!', label: 'syntactically invalid garbage' },
+    { ref: '--upload-pack=/bin/sh', label: 'a leading-dash injection string' },
+  ];
+  rejectedBaseRefs.forEach(({ ref, label }, i) => {
+    const feature = `wsr-baseref-bad-${i}`;
+    const before = fs.readFileSync(grantsFile, 'utf8');
+    const beforeEntries = fs.readdirSync(tmp).sort();
+    const result = bee(main, ['worktree', 'new', '--feature', feature, '--base-ref', ref, '--json']);
+    const ok = result.status !== 0 && /WORKTREE_BASE_NOT_FOUND/.test(result.stdout + result.stderr);
+    record(`worktree new refuses --base-ref ${JSON.stringify(ref)} (${label}) typed WORKTREE_BASE_NOT_FOUND`, ok, `status=${result.status} stdout=${result.stdout} stderr=${result.stderr}`);
+    const after = fs.readFileSync(grantsFile, 'utf8');
+    const afterEntries = fs.readdirSync(tmp).sort();
+    const mutationOk = after === before && JSON.stringify(afterEntries) === JSON.stringify(beforeEntries);
+    record(`worktree new --base-ref ${JSON.stringify(ref)} (${label}) refusal is zero-mutation`, mutationOk, `before=${JSON.stringify(beforeEntries)} after=${JSON.stringify(afterEntries)}`);
+  });
 
   // ── injected post-add failure rolls back (dir + grant + branch) and
   // reports typed — exercised directly against createFeatureWorktree (the
