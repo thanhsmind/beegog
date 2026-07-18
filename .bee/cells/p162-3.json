@@ -1,0 +1,42 @@
+{
+  "id": "p162-3",
+  "feature": "pre-162-fixes",
+  "lane": "high-risk",
+  "behavior_change": true,
+  "title": "base-ref validated as commit-ish via rev-parse --verify, typed WORKTREE_BASE_NOT_FOUND (review P3, D3)",
+  "action": "In skills/bee-hive/templates/lib/worktree-store.mjs createFeatureWorktree: replace git check-ref-format --allow-onelevel validation of baseRef with git rev-parse --verify --end-of-options \"<baseRef>^{commit}\" (argv array; --end-of-options requires git >= 2.24 — note the floor in a code comment, bee already targets modern git — advisor R8); failure -> typed WORKTREE_BASE_NOT_FOUND, zero mutation; on success pass the RESOLVED sha to git worktree add (deterministic, immune to ref moving mid-command — document the choice). Tests in scripts/test_worktree_cli.mjs: HEAD, HEAD~1, short sha, tag^{commit} accepted; nonexistent/garbage -> WORKTREE_BASE_NOT_FOUND zero-mutation; leading-dash injection still refused; UPDATE the existing assertion at ~:362-364 expecting WORKTREE_INVALID_BASE_REF to the new code (advisor R8). Sync worktree-store.mjs mirrors + manifest.",
+  "must_haves": {
+    "truths": [
+      "HEAD~1, short shas, and tag^{commit} forms are accepted as base refs",
+      "nonexistent/garbage refs yield typed WORKTREE_BASE_NOT_FOUND with zero mutation",
+      "leading-dash and injection-shaped inputs remain refused",
+      "mirrors byte-identical, manifest green"
+    ]
+  },
+  "verify": "node scripts/test_worktree_cli.mjs && node scripts/test_worktree_store.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs",
+  "deps": [
+    "p162-2"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/worktree-store.mjs",
+    "scripts/test_worktree_cli.mjs",
+    ".bee/bin/lib/worktree-store.mjs",
+    ".claude/skills/bee-hive/templates/lib/worktree-store.mjs",
+    ".agents/skills/bee-hive/templates/lib/worktree-store.mjs"
+  ],
+  "status": "open",
+  "decisions": [],
+  "read_first": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

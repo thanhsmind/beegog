@@ -232,3 +232,6 @@
 {"ts":"2026-07-18T14:15:34.656Z","type":"friction","title":"Lane close blocked by another pipeline's scribing debt","detail":"","severity":"P3","layer":"workflow","feature":""}
 {"ts":"2026-07-18T16:36:49.169Z","type":"friction","title":"collectProjectCleanup ENOTDIR raw message on .codex-as-file","detail":"","severity":"P3","layer":"onboarding","feature":""}
 {"ts":"2026-07-18T16:36:49.218Z","type":"friction","title":"install.ps1 has no plugin transition rollback machinery","detail":"","severity":"P3","layer":"onboarding","feature":""}
+{"ts":"2026-07-18T18:10:23.469Z","type":"proposal","title":"Doctor three-state ready/degraded/blocked + attestation verb","detail":"","severity":"P2","layer":"workflow","feature":""}
+{"ts":"2026-07-18T18:10:23.518Z","type":"proposal","title":"Doctor deep skill inventory check","detail":"","severity":"P2","layer":"workflow","feature":""}
+{"ts":"2026-07-18T18:10:23.569Z","type":"proposal","title":"CI matrix: Ubuntu Node 18/20/22 + Windows PS5.1/PS7; codex canary lane","detail":"","severity":"P2","layer":"workflow","feature":""}

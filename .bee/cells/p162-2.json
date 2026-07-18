@@ -1,0 +1,43 @@
+{
+  "id": "p162-2",
+  "feature": "pre-162-fixes",
+  "lane": "high-risk",
+  "behavior_change": true,
+  "title": "worktree merge becomes a safe transaction: --no-commit, abort on conflict/red verify, commit only on green (review P1-2, D2)",
+  "action": "In skills/bee-hive/templates/lib/worktree-store.mjs mergeFeatureWorktree (advisor conditions folded): staged transaction — capture pre-merge HEAD; git merge --no-ff --no-commit <branch>; handle the 'Already up to date' no-op branch explicitly (no MERGE_HEAD -> report typed no-op, never attempt commit — advisor R7); textual conflict -> git merge --abort + three-part HEAD-unchanged proof (rev-parse HEAD equal + .git/MERGE_HEAD absent + git status --porcelain --untracked-files=no clean — advisor R5) + typed MERGE_CONFLICT saying main untouched; clean merge -> run caller-passed verifyCommand on the merged-but-UNCOMMITTED tree (document in code that verify sees a mid-merge repo: MERGE_HEAD live, changes staged — advisor R7), with the abort executed in a finally/ensure path so a verify crash or timeout can never strand a staged merge; red -> abort + three-part proof + typed MERGE_VERIFY_RED naming the semantic alarm AND stating main was left untouched (supersedes never-rolled-back); green -> git commit (message naming the id), then post-commit guard: git status --porcelain --untracked-files=no MUST be empty, else attach a typed warning that verify mutated tracked files (advisor R4 — the pre/post-commit verify equivalence is backed by this assertion, not assumed); document git revert -m 1 as recovery if a later independent verify reddens. --cleanup strictly post-commit (D4); never on conflict/red/no-op. Update CLI handler text; update worktree-store.mjs:826-828 message. e2e in scripts/test_worktree_cli.mjs: REWORK THE FIXTURE CHAIN (advisor R6 — :802-805 depends on the alarm test leaving mainA/flag.txt flipped; that premise collapses under abort): make the no-cleanup-red case flip its own flag, and audit every mainA reuse for stale premises; replace :544-550 old-contract assertion; add: conflict -> abort + three-part proof + no MERGE_MSG/MERGE_HEAD residue; red verify -> abort + proof; green -> exactly one merge commit incl. ff-possible pair still yielding a true merge commit (--no-ff --no-commit interaction test); verify-mutates-tracked-file case -> typed warning; cleanup only post-commit. DRIFT AUDIT in the same cell (advisor): update docs/specs/worktree-parallelism.md:81-83 (main byte-untouched; no merge commit exists until verify green), skills/bee-hive/SKILL.md:69 Session Scout note, AGENTS.block.md template + rendered AGENTS.md rule 14 rider (staged-then-verified; red aborts), then re-render plugin trees + refresh managed copies + manifest --write. Sync 4-way byte mirrors.",
+  "must_haves": {
+    "truths": [
+      "conflict path: main HEAD and index byte-unchanged after abort, no MERGE_HEAD/MERGE_MSG residue, typed MERGE_CONFLICT",
+      "red-verify path: aborted, HEAD unchanged, typed MERGE_VERIFY_RED naming the semantic alarm and stating main untouched",
+      "green path: exactly one merge commit; ff-possible pair still yields a true merge commit",
+      "cleanup runs only after the commit exists; never on conflict/red",
+      "old contract prose/tests fully replaced (no assertion or message still claims the merge commit survives a red verify)"
+    ]
+  },
+  "verify": "node scripts/test_worktree_cli.mjs && node scripts/test_worktree_store.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs",
+  "files": [
+    "skills/bee-hive/templates/lib/worktree-store.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    "scripts/test_worktree_cli.mjs",
+    ".bee/bin/*",
+    ".claude/skills/bee-hive/templates/*",
+    ".agents/skills/bee-hive/templates/*"
+  ],
+  "status": "claimed",
+  "deps": [],
+  "decisions": [],
+  "read_first": [],
+  "trace": {
+    "worker": "p162-2-worker",
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claimed_at": "2026-07-18T18:16:58.392Z"
+  }
+}

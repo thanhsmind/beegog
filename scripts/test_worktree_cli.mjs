@@ -411,8 +411,19 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-// ─── "bee worktree merge --id <id>" (GH #21, decision D8): merge-back with
-// the semantic-conflict alarm (wsr-2) ───────────────────────────────────────
+// ─── "bee worktree merge --id <id>" (GH #21, decision D8; reworked into a
+// STAGED transaction by decision D2-REVISED, user review P1-2): merge-back
+// with the semantic-conflict alarm (wsr-2) ─────────────────────────────────
+// Every fixture below is set up so its own assertions are self-contained —
+// none of them depend on state a PRIOR test happened to leave behind
+// (advisor R6 fixture-chain warning). This matters concretely for mainA: the
+// old contract's "merge commit is never rolled back" meant a red-verify test
+// that flipped flag.txt to "on" left it flipped for every later test on the
+// same fixture; under the new abort-on-red contract that flip is undone the
+// moment bee runs "git merge --abort", so any later test that wants a red
+// verify creates its OWN worktree that flips flag.txt itself, rather than
+// reusing residue from an earlier case.
+//
 // A production-shaped .gitignore (byte-copy of this repo's own top-level
 // .bee/* ignore rules) is committed into the fixture main repo so a freshly
 // bootstrapped worktree store's cache/runtime-tier files (state.json,
@@ -466,6 +477,24 @@ function mergeNewWorktree(main, feature) {
   return JSON.parse(r.stdout);
 }
 
+// The three-part "main was left byte-untouched" proof (decision D2-REVISED)
+// bee itself runs after every "git merge --abort" — asserted independently
+// here rather than trusted, exactly like the library code does it: HEAD
+// unchanged, no live MERGE_HEAD/MERGE_MSG, and a clean tracked status.
+function threePartProof(main, preHead) {
+  const headNow = git(main, ['rev-parse', 'HEAD']).trim();
+  const mergeHeadGone = !fs.existsSync(path.join(main, '.git', 'MERGE_HEAD'));
+  const mergeMsgGone = !fs.existsSync(path.join(main, '.git', 'MERGE_MSG'));
+  const statusClean = git(main, ['status', '--porcelain', '--untracked-files=no']).trim() === '';
+  return {
+    ok: headNow === preHead && mergeHeadGone && mergeMsgGone && statusClean,
+    headNow,
+    mergeHeadGone,
+    mergeMsgGone,
+    statusClean,
+  };
+}
+
 const mergeTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-worktree-merge-'));
 try {
   // ── fixture A: verify checks flag.txt === "off" — proves the green path,
@@ -515,10 +544,27 @@ try {
     const ok = fs.existsSync(path.join(mainA, 'feature.txt'));
     record('green-path merge brought the worktree\'s committed file into main', ok, mainA);
   }
+  {
+    // greenCreated's branch never diverged from main's own history (main
+    // gained no commits of its own between "worktree new" and this merge),
+    // so this IS the fast-forward-eligible case: "git merge --no-ff
+    // --no-commit" must still stage (and, once committed, still yield) a
+    // TRUE two-parent merge commit rather than silently fast-forwarding the
+    // ref — the explicit --no-ff/--no-commit interaction the rework depends
+    // on (main is never left mid-merge, but it also never loses the "always
+    // a real merge commit" guarantee `--no-ff` alone used to provide).
+    const parents = git(mainA, ['log', '-1', '--pretty=%P']).trim().split(/\s+/).filter(Boolean);
+    record('green-path (fast-forward-eligible) merge still produced a TRUE 2-parent merge commit, not a fast-forward', parents.length === 2, `parents=${JSON.stringify(parents)}`);
+  }
 
   // ── semantic-conflict alarm: a SECOND worktree changes flag.txt (no file
   // main also touches, so the merge is textually clean) to "on" — verify
-  // flips red only AFTER the (already-landed) merge. ────────────────────────
+  // runs against the merged-but-UNCOMMITTED tree and goes red BEFORE any
+  // commit ever exists, so the merge is aborted and main is proven
+  // byte-untouched (decision D2-REVISED — supersedes the old "merge commit
+  // is never rolled back" contract: under the new invariant there is no
+  // merge commit to roll back in the first place). ──────────────────────────
+  const alarmPreHead = git(mainA, ['log', '-1', '--pretty=%H']).trim();
   const alarmCreated = mergeNewWorktree(mainA, 'wsr-merge-alarm');
   fs.writeFileSync(path.join(alarmCreated.worktreeRoot, 'flag.txt'), 'on');
   git(alarmCreated.worktreeRoot, ['commit', '-am', 'flip the flag']);
@@ -534,19 +580,34 @@ try {
     /* checked below */
   }
   {
-    const ok = alarmJson && alarmJson.ok === false && alarmJson.code === 'MERGE_VERIFY_RED' && alarmJson.merged === true && alarmJson.verify === 'red' && typeof alarmJson.output_tail === 'string';
-    record('semantic-conflict alarm: --json reports ok:false, code:"MERGE_VERIFY_RED", merged:true, verify:"red", and an output_tail', ok, alarmResult.stdout);
+    const ok = alarmJson && alarmJson.ok === false && alarmJson.code === 'MERGE_VERIFY_RED' && alarmJson.merged === false && alarmJson.verify === 'red' && typeof alarmJson.output_tail === 'string';
+    record('semantic-conflict alarm: --json reports ok:false, code:"MERGE_VERIFY_RED", merged:false (never committed), verify:"red", and an output_tail', ok, alarmResult.stdout);
   }
   {
     const ok = /semantic-conflict alarm/.test(JSON.stringify(alarmJson));
     record('semantic-conflict alarm result names it a semantic-conflict alarm in prose', ok, JSON.stringify(alarmJson));
   }
   {
-    // The merge commit is NEVER rolled back, even on a red verify.
+    const ok = /byte-untouched/.test(JSON.stringify(alarmJson)) && /no merge commit exists/.test(JSON.stringify(alarmJson));
+    record('semantic-conflict alarm result states in prose that main was left byte-untouched and no merge commit exists', ok, JSON.stringify(alarmJson));
+  }
+  {
+    const proof = threePartProof(mainA, alarmPreHead);
+    record('semantic-conflict alarm: the staged merge was aborted and main passes the three-part untouched proof (HEAD unchanged, no MERGE_HEAD/MERGE_MSG, clean status)', proof.ok, JSON.stringify(proof));
+  }
+  {
+    // Do NOT assert "no /Merge worktree/ in the log" here — mainA's HEAD
+    // already carries the EARLIER green-path merge commit (also named
+    // "Merge worktree ..."), so that phrase legitimately appears regardless
+    // of this attempt. HEAD-equality to the pre-attempt value is already
+    // proven above by threePartProof; this just re-confirms the visible
+    // symptom: flag.txt is back to "off" (the abort undid the staged flip),
+    // and this attempt's OWN branch name is nowhere in the log (it was
+    // never committed).
     const log = git(mainA, ['log', '-1', '--pretty=%B']);
     const flagContent = fs.readFileSync(path.join(mainA, 'flag.txt'), 'utf8').trim();
-    const ok = /Merge worktree/.test(log) && flagContent === 'on';
-    record('semantic-conflict alarm: the merge commit is NOT rolled back (flag.txt stayed flipped on main)', ok, `log=${log} flag=${flagContent}`);
+    const ok = !/wsr-merge-alarm/.test(log) && flagContent === 'off';
+    record('semantic-conflict alarm: no merge commit for THIS attempt landed, and flag.txt reverted to "off" on main (the abort undid the staged flip)', ok, `log=${log} flag=${flagContent}`);
   }
 
   // ── unknown/ungranted id: typed, zero-mutation. ───────────────────────────
@@ -566,12 +627,17 @@ try {
   const grantsFileB = path.join(mainB, '.bee', 'runtime', 'worktree-grants.json');
 
   // ── MERGE_CONFLICT: main and the worktree both edit the SAME line of a
-  // tracked file after branching -> a real textual conflict. ───────────────
+  // tracked file after branching -> a real textual conflict. Under the
+  // staged-transaction rework bee itself runs "git merge --abort" and
+  // proves main untouched — there is no conflict state left for a human to
+  // resolve on main anymore (it never gets that far); a human resolves the
+  // conflict in the WORKTREE and retries the merge instead. ────────────────
   const conflictCreated = mergeNewWorktree(mainB, 'wsr-merge-conflict');
   fs.writeFileSync(path.join(conflictCreated.worktreeRoot, 'f'), 'from the worktree\n');
   git(conflictCreated.worktreeRoot, ['commit', '-am', 'worktree edits f']);
   fs.writeFileSync(path.join(mainB, 'f'), 'from main\n');
   git(mainB, ['commit', '-am', 'main edits f too']);
+  const conflictPreHead = git(mainB, ['log', '-1', '--pretty=%H']).trim(); // AFTER "main edits f too" landed — the real pre-merge-attempt HEAD
   const conflictResult = bee(mainB, ['worktree', 'merge', '--id', conflictCreated.id, '--json']);
   {
     const ok = conflictResult.status !== 0;
@@ -588,14 +654,17 @@ try {
     record('worktree merge --json reports ok:false, code:"MERGE_CONFLICT"', ok, conflictResult.stdout);
   }
   {
-    const status = git(mainB, ['status', '--porcelain']);
-    const ok = /^UU /m.test(status) || /both modified/.test(git(mainB, ['status']));
-    record('MERGE_CONFLICT leaves real git conflict state in main for the human (no auto-resolve)', ok, status);
+    const ok = /byte-untouched/.test(JSON.stringify(conflictJson));
+    record('MERGE_CONFLICT result states in prose that main was left byte-untouched', ok, JSON.stringify(conflictJson));
   }
-  git(mainB, ['merge', '--abort']);
   {
-    const status = git(mainB, ['status', '--porcelain']).trim();
-    record('main is clean again after "git merge --abort" (test cleanup, not bee behavior)', status === '', status);
+    // conflictPreHead was captured AFTER "main edits f too" landed, i.e. the
+    // real pre-merge-attempt HEAD — bee already ran "git merge --abort"
+    // internally by the time this returns, so main must already be back to
+    // that exact state (no manual cleanup abort needed or possible: there is
+    // nothing left to abort).
+    const proof = threePartProof(mainB, conflictPreHead);
+    record('MERGE_CONFLICT: bee already aborted the staged merge and main passes the three-part untouched proof (HEAD unchanged, no MERGE_HEAD/MERGE_MSG, clean status)', proof.ok, JSON.stringify(proof));
   }
 
   // ── dirty MAIN refuses, zero-mutation. ────────────────────────────────────
@@ -782,36 +851,124 @@ try {
     record('the untracked leftover file (planted by verify, simulating a race) is still there — cleanup did not silently delete it', ok, leftoverPath);
   }
 
-  // ── no cleanup on MERGE_CONFLICT or MERGE_VERIFY_RED, even with --cleanup
-  // passed. ─────────────────────────────────────────────────────────────────
+  // ── post-commit guard: a verify command that mutates a TRACKED file
+  // (without bee's knowledge) still lets the green merge commit land — but
+  // the result carries a typed "verify_mutated_tracked_files" warning
+  // instead of silently treating the working tree as equivalent to the
+  // commit (D2-REVISED step 6). A dedicated fixture (mainD) records a verify
+  // command that unconditionally overwrites tracked file "f" and exits 0.
+  const mainD = path.join(mergeTmp, 'mainD');
+  fs.mkdirSync(mainD, { recursive: true });
+  git(mainD, ['init', '-q', '-b', 'main']);
+  git(mainD, ['config', 'user.email', 's@e']);
+  git(mainD, ['config', 'user.name', 's']);
+  fs.writeFileSync(path.join(mainD, '.gitignore'), BEE_GITIGNORE);
+  fs.mkdirSync(path.join(mainD, '.bee'), { recursive: true });
+  fs.writeFileSync(path.join(mainD, '.bee', 'onboarding.json'), JSON.stringify({ schema_version: '1.0', bee_version: '0.0.0' }));
+  fs.writeFileSync(path.join(mainD, '.bee', 'config.json'), JSON.stringify({ commands: { verify: 'node verify-mutate.mjs' } }));
+  fs.writeFileSync(path.join(mainD, 'f'), 'x');
+  fs.writeFileSync(
+    path.join(mainD, 'verify-mutate.mjs'),
+    "import fs from 'node:fs';\nfs.writeFileSync('f', 'mutated-by-verify\\n');\nprocess.exit(0);\n",
+  );
+  git(mainD, ['add', '.']);
+  git(mainD, ['commit', '-q', '-m', 'init']);
+
+  const mutateCreated = mergeNewWorktree(mainD, 'wsr-merge-mutate');
+  fs.writeFileSync(path.join(mutateCreated.worktreeRoot, 'other.txt'), 'unrelated file\n');
+  git(mutateCreated.worktreeRoot, ['add', 'other.txt']);
+  git(mutateCreated.worktreeRoot, ['commit', '-q', '-m', 'mutate fixture work']);
+  const mutateResult = bee(mainD, ['worktree', 'merge', '--id', mutateCreated.id, '--json']);
+  {
+    const ok = mutateResult.status === 0;
+    record('worktree merge (verify mutates a tracked file, but still exits green) still exits 0', ok, `status=${mutateResult.status} stdout=${mutateResult.stdout} stderr=${mutateResult.stderr}`);
+  }
+  let mutateJson = null;
+  try {
+    mutateJson = JSON.parse(mutateResult.stdout);
+  } catch {
+    /* checked below */
+  }
+  {
+    const ok = mutateJson && mutateJson.ok === true && mutateJson.merged === true && mutateJson.verify === 'green' && mutateJson.warning && mutateJson.warning.code === 'verify_mutated_tracked_files';
+    record('verify mutating a tracked file on a green merge attaches a typed warning.code:"verify_mutated_tracked_files" instead of silently claiming tree === commit', ok, mutateResult.stdout);
+  }
+  {
+    const ok = /Merge worktree/.test(git(mainD, ['log', '-1', '--pretty=%B']));
+    record('the merge commit itself still landed despite the post-commit tracked-file-mutation warning', ok, git(mainD, ['log', '--oneline', '-1']));
+  }
+  {
+    const content = fs.readFileSync(path.join(mainD, 'f'), 'utf8');
+    const status = git(mainD, ['status', '--porcelain', '--untracked-files=no']);
+    const ok = content === 'mutated-by-verify\n' && /^ M f/m.test(status);
+    record('the tracked-file mutation from verify is really sitting dirty on top of the merge commit (not silently absorbed)', ok, `content=${JSON.stringify(content)} status=${JSON.stringify(status)}`);
+  }
+  git(mainD, ['checkout', '--', 'f']); // test cleanup only (restores mainD's tree), not bee behavior
+
+  // ── no cleanup on MERGE_CONFLICT, MERGE_VERIFY_RED, or ALREADY_UP_TO_DATE,
+  // even with --cleanup passed (D2-REVISED step 7: strictly post-commit). ───
   {
     const noCleanupConflictCreated = mergeNewWorktree(mainB, 'wsr-merge-no-cleanup-conflict');
     fs.writeFileSync(path.join(noCleanupConflictCreated.worktreeRoot, 'f'), 'worktree edit again\n');
     git(noCleanupConflictCreated.worktreeRoot, ['commit', '-am', 'worktree edits f again']);
     fs.writeFileSync(path.join(mainB, 'f'), 'main edit again\n');
     git(mainB, ['commit', '-am', 'main edits f again too']);
+    const attemptPreHead = git(mainB, ['log', '-1', '--pretty=%H']).trim(); // after "main edits f again too" landed
     const r = bee(mainB, ['worktree', 'merge', '--id', noCleanupConflictCreated.id, '--cleanup', '--json']);
     const parsed = JSON.parse(r.stdout);
     const ok = parsed.ok === false && parsed.code === 'MERGE_CONFLICT' && !('cleanup' in parsed);
     record('MERGE_CONFLICT + --cleanup never attempts cleanup (no .cleanup field on the result)', ok, r.stdout);
     const stillThere = fs.existsSync(noCleanupConflictCreated.worktreeRoot);
     record('MERGE_CONFLICT + --cleanup left the worktree in place', stillThere, noCleanupConflictCreated.worktreeRoot);
-    git(mainB, ['merge', '--abort']);
+    // bee already ran "git merge --abort" internally (proven above by the
+    // dedicated MERGE_CONFLICT case) — nothing is left for the test to
+    // clean up by hand here.
+    const proof = threePartProof(mainB, attemptPreHead);
+    record('MERGE_CONFLICT + --cleanup: main still passes the three-part untouched proof after the aborted attempt', proof.ok, JSON.stringify(proof));
   }
   {
+    // Self-contained (advisor R6): this worktree flips flag.txt to "on"
+    // itself rather than relying on a previous test's red-verify leftover —
+    // under the new abort-on-red contract, mainA's flag.txt reverts to
+    // "off" the moment ANY red-verify merge attempt is aborted, so no such
+    // leftover exists to depend on anymore.
     const noCleanupRedCreated = mergeNewWorktree(mainA, 'wsr-merge-no-cleanup-red');
-    // mainA's flag.txt is already "on" (flipped by the semantic-alarm test
-    // above and never rolled back) — ANY merge into mainA now fails verify,
-    // so this worktree needs no extra edits to trigger MERGE_VERIFY_RED.
-    fs.writeFileSync(path.join(noCleanupRedCreated.worktreeRoot, 'unrelated.txt'), 'unrelated work\n');
-    git(noCleanupRedCreated.worktreeRoot, ['add', 'unrelated.txt']);
-    git(noCleanupRedCreated.worktreeRoot, ['commit', '-q', '-m', 'unrelated work']);
+    fs.writeFileSync(path.join(noCleanupRedCreated.worktreeRoot, 'flag.txt'), 'on');
+    git(noCleanupRedCreated.worktreeRoot, ['commit', '-am', 'flip the flag again']);
     const r = bee(mainA, ['worktree', 'merge', '--id', noCleanupRedCreated.id, '--cleanup', '--json']);
     const parsed = JSON.parse(r.stdout);
     const ok = parsed.ok === false && parsed.code === 'MERGE_VERIFY_RED' && !('cleanup' in parsed);
     record('MERGE_VERIFY_RED + --cleanup never attempts cleanup (no .cleanup field on the result)', ok, r.stdout);
     const stillThere = fs.existsSync(noCleanupRedCreated.worktreeRoot);
     record('MERGE_VERIFY_RED + --cleanup left the worktree in place', stillThere, noCleanupRedCreated.worktreeRoot);
+    const flagContent = fs.readFileSync(path.join(mainA, 'flag.txt'), 'utf8').trim();
+    record('MERGE_VERIFY_RED + --cleanup: the abort still reverted flag.txt to "off" on main (cleanup skip did not skip the abort)', flagContent === 'off', flagContent);
+  }
+  // ── ALREADY_UP_TO_DATE: a worktree with no new commits vs main is a typed
+  // no-op — never a commit attempt, and --cleanup is never attempted either
+  // (strictly post-commit). ───────────────────────────────────────────────
+  {
+    const noopCreated = mergeNewWorktree(mainB, 'wsr-merge-noop');
+    const before = git(mainB, ['log', '-1', '--pretty=%H']).trim();
+    const r = bee(mainB, ['worktree', 'merge', '--id', noopCreated.id, '--cleanup', '--json']);
+    {
+      const ok = r.status === 0;
+      record('worktree merge on an already-up-to-date branch exits 0', ok, `status=${r.status} stdout=${r.stdout} stderr=${r.stderr}`);
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(r.stdout);
+    } catch {
+      /* checked below */
+    }
+    {
+      const ok = parsed && parsed.ok === true && parsed.merged === false && parsed.code === 'ALREADY_UP_TO_DATE' && parsed.verify === 'skipped' && !('cleanup' in parsed);
+      record('worktree merge --json reports ok:true, merged:false, code:"ALREADY_UP_TO_DATE", verify:"skipped", and --cleanup was never attempted (no .cleanup field)', ok, r.stdout);
+    }
+    const after = git(mainB, ['log', '-1', '--pretty=%H']).trim();
+    record('already-up-to-date merge never committed anything (main HEAD unchanged)', before === after, `${before} vs ${after}`);
+    const stillThere = fs.existsSync(noopCreated.worktreeRoot);
+    record('already-up-to-date merge left the worktree in place (--cleanup never runs on a no-op)', stillThere, noopCreated.worktreeRoot);
   }
 
   // ── without --cleanup, a green/skipped result only SUGGESTS the cleanup

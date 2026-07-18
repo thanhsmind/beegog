@@ -490,18 +490,25 @@ export function createFeatureWorktree(mainRoot, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// mergeFeatureWorktree — "bee worktree merge --id <id>" (GH #21, decision D8):
-// merge a granted worktree's branch back into MAIN and run the host project's
-// configured verify command against the merged tree, so a textually-clean
-// merge that silently breaks behavior is caught before it ever reaches a
-// release. `mainRoot` MUST already be a resolved ORDINARY checkout root — see
-// createFeatureWorktree's header comment for why this module re-derives that
-// distinction itself instead of importing resolveRoots (state.mjs cycle) —
-// and per decision D8/advisor-R5, running merge from inside ANY linked
-// worktree (including the very one being merged) already fails this SAME
-// check, since a linked worktree's own `.git` is a file, never a directory:
-// there is no separate "own worktree" code, the not-ordinary refusal IS the
-// own-worktree guard (see mergeFeatureWorktree's own doc comment below).
+// mergeFeatureWorktree — "bee worktree merge --id <id>" (GH #21, decision D8;
+// reworked into a STAGED transaction by decision D2-REVISED, user review
+// P1-2): merge a granted worktree's branch back into MAIN as a staged,
+// uncommitted merge (`git merge --no-ff --no-commit`), run the host
+// project's configured verify command against that merged-but-uncommitted
+// tree, and only ever `git commit` once verify is green. A textual conflict
+// or a red verify both `git merge --abort` and PROVE (mainUntouchedProof
+// above) that main was left byte-untouched — no known-red merge commit and
+// no stranded conflict state can reach main anymore, superseding the old
+// D8 contract where a red verify left a real, never-rolled-back merge
+// commit on main. `mainRoot` MUST already be a resolved ORDINARY checkout
+// root — see createFeatureWorktree's header comment for why this module
+// re-derives that distinction itself instead of importing resolveRoots
+// (state.mjs cycle) — and per decision D8/advisor-R5, running merge from
+// inside ANY linked worktree (including the very one being merged) already
+// fails this SAME check, since a linked worktree's own `.git` is a file,
+// never a directory: there is no separate "own worktree" code, the
+// not-ordinary refusal IS the own-worktree guard (see mergeFeatureWorktree's
+// own doc comment below).
 //
 // verifyCommand is deliberately a CALLER-PASSED option, not something this
 // module reads from .bee/config.json itself: worktree-store.mjs keeps
@@ -540,6 +547,36 @@ function gitStatusPorcelain(cwd) {
 
 function isTreeDirty(cwd) {
   return gitStatusPorcelain(cwd).trim().length > 0;
+}
+
+/**
+ * The three-part "main was left byte-untouched" proof (decision D2-REVISED)
+ * required after EVERY `git merge --abort` this module runs — a textual
+ * conflict, a red post-merge verify, or the exception-safety net around the
+ * verify call. Deliberately checks all three independently rather than
+ * trusting `git merge --abort`'s own exit code, because the whole point of
+ * this rework is that a claim of "main untouched" is proven, not asserted:
+ *   1. `git rev-parse HEAD` is unchanged from the pre-merge value.
+ *   2. `.git/MERGE_HEAD` no longer exists (no merge-in-progress state).
+ *   3. `git status --porcelain --untracked-files=no` is clean (tracked-file
+ *      dirt only — untracked litter from an unrelated source is not this
+ *      check's concern, same scope `--untracked-files=no` always implies).
+ * Returns `{ ok, reason? }` instead of throwing so the caller can build a
+ * SPECIFIC typed refusal when the proof fails, instead of a generic throw.
+ */
+function mainUntouchedProof(mainRoot, preMergeHead, mergeHeadFile) {
+  const headNow = runGit(mainRoot, ['rev-parse', 'HEAD']).stdout.trim();
+  if (headNow !== preMergeHead) {
+    return { ok: false, reason: `HEAD moved from ${preMergeHead} to ${headNow}` };
+  }
+  if (fs.existsSync(mergeHeadFile)) {
+    return { ok: false, reason: '.git/MERGE_HEAD is still present' };
+  }
+  const status = runGit(mainRoot, ['status', '--porcelain', '--untracked-files=no']).stdout;
+  if (status.trim().length > 0) {
+    return { ok: false, reason: `"git status --porcelain --untracked-files=no" is not clean:\n${status}` };
+  }
+  return { ok: true };
 }
 
 /** The worktree's CURRENT checked-out branch, or `null` on detached HEAD (or
@@ -705,22 +742,63 @@ function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, clea
 }
 
 /**
- * Merges a granted worktree's branch back into `mainRoot` (`git merge
- * --no-ff <branch>`, run with `mainRoot` as cwd), then runs
- * `options.verifyCommand` (if given) against the merged tree. Returns a
- * plain result object for every outcome that follows a real git mutation
- * (`MERGE_CONFLICT`, `MERGE_VERIFY_RED`, or a green/skipped success) — those
- * are settled facts about repo state the caller needs to inspect, not
- * refusals to retry. Every check BEFORE the merge itself is a typed,
- * ZERO-MUTATION `WorktreeMergeError` throw (unknown/ungranted id, caller
- * checkout not ordinary, dirty main, dirty worktree, detached HEAD, or a
- * branch other than the worktree's expected `wt/<slug>`-style branch) —
- * same error-class style as `createFeatureWorktree`'s `WorktreeCreateError`.
+ * Merges a granted worktree's branch into `mainRoot` as a STAGED
+ * transaction (decision D2-REVISED). Sequence, run with `mainRoot` as cwd:
+ *
+ *   1. Capture pre-merge HEAD (`git rev-parse HEAD`).
+ *   2. `git merge --no-ff --no-commit <branch>` — stages the merge WITHOUT
+ *      committing it. `--no-ff` also forces a real merge (never a
+ *      fast-forward) even when `<branch>` is a fast-forward-eligible
+ *      ancestor-of-main relationship, so a staged merge always means a
+ *      TRUE merge commit once committed, not a silent ref move.
+ *      - Non-zero exit: textual conflict (or another merge-attempt
+ *        failure). `git merge --abort`, prove main is untouched
+ *        (`mainUntouchedProof`), return typed `MERGE_CONFLICT`.
+ *      - Zero exit but no `.git/MERGE_HEAD` created: "Already up to date"
+ *        — branch has nothing new for main. Returns a typed no-op result;
+ *        `git commit` is NEVER attempted here (there is nothing staged —
+ *        committing would either error or produce an empty commit).
+ *   3. A merge is now staged (MERGE_HEAD live, changes staged, nothing
+ *      committed). If `verifyCommand` was given, it runs NOW, against this
+ *      merged-but-UNCOMMITTED tree (MERGE_HEAD is live, changes are staged
+ *      but not committed) — verify is deliberately run before any commit
+ *      exists, so a semantic break is caught before it ever becomes a real
+ *      commit on main, not after. The abort path for a red verify runs
+ *      inside a `finally`-guarded try (see body): a verify crash/timeout
+ *      can never strand a staged merge on main.
+ *      - Verify red: `git merge --abort`, prove main untouched, return
+ *        typed `MERGE_VERIFY_RED` — the semantic-conflict alarm. Unlike
+ *        the old D8 contract, NO merge commit exists at this point, so
+ *        there is nothing to roll back: main was left byte-untouched.
+ *   4. Verify green (or no `verifyCommand` given at all): `git commit`
+ *      names the id in its message. Post-commit guard: `git status
+ *      --porcelain --untracked-files=no` MUST be empty; if verify itself
+ *      left tracked files modified (a misbehaving verify command), the
+ *      result carries a typed `warning.code: 'verify_mutated_tracked_files'`
+ *      instead of silently claiming the tree matches the commit. Recovery
+ *      if a LATER independent verify goes red on an already-committed
+ *      merge: `git revert -m 1 <merge-commit>` (documented, not automated).
+ *
+ * Returns a plain result object for every outcome that follows a real git
+ * mutation (`MERGE_CONFLICT`, `ALREADY_UP_TO_DATE`, `MERGE_VERIFY_RED`, or a
+ * green/skipped success) — those are settled facts about repo state the
+ * caller needs to inspect, not refusals to retry. Every check BEFORE the
+ * merge itself is a typed, ZERO-MUTATION `WorktreeMergeError` throw
+ * (unknown/ungranted id, caller checkout not ordinary, dirty main, dirty
+ * worktree, detached HEAD, or a branch other than the worktree's expected
+ * `wt/<slug>`-style branch) — same error-class style as
+ * `createFeatureWorktree`'s `WorktreeCreateError`. A `WorktreeMergeError` is
+ * ALSO thrown (not returned) if an abort-then-prove step itself fails
+ * (`WORKTREE_MERGE_ABORT_FAILED`) or the commit step itself fails
+ * (`WORKTREE_MERGE_COMMIT_FAILED`) — both are environment-level defects,
+ * never a normal outcome to fold into a typed result.
  *
  * `options`:
  *   - `id` (required): the worktree's git-verified id (as granted via
  *     `worktree new`/`worktree register`).
  *   - `cleanup` (optional, default false): see `attachCleanupOutcome` above.
+ *     Strictly post-commit — never attempted on conflict, red verify, or
+ *     the already-up-to-date no-op.
  *   - `verifyCommand` (optional): a shell command string, run via
  *     `spawnSync(verifyCommand, { cwd: mainRoot, shell: true })`. Omit (or
  *     pass a falsy value) when the host project has no `commands.verify`
@@ -788,48 +866,130 @@ export function mergeFeatureWorktree(mainRoot, options = {}) {
     );
   }
 
-  // ── everything above is zero-mutation; the merge itself is the first real
-  // write, and everything after this point is a returned result, not a
-  // thrown refusal. ─────────────────────────────────────────────────────────
+  // ── everything above is zero-mutation; the staged merge below is the
+  // first real write. It is deliberately staged with `--no-commit` so verify
+  // always runs against a merged-but-UNCOMMITTED tree (or is skipped for a
+  // no-op / verify-less repo) and NOTHING is committed to main until a
+  // semantic gate says it's safe — decision D2-REVISED. ────────────────────
+  const preMergeHead = runGit(mainRoot, ['rev-parse', 'HEAD']).stdout.trim();
+  const mergeHeadFile = path.join(mainRoot, '.git', 'MERGE_HEAD');
   const mergeMessage = `Merge worktree ${id} (branch ${branch}) via bee worktree merge`;
-  const mergeResult = runGit(mainRoot, ['merge', '--no-ff', '-m', mergeMessage, '--', branch]);
+
+  const mergeResult = runGit(mainRoot, ['merge', '--no-ff', '--no-commit', '--', branch]);
   if (mergeResult.status !== 0) {
+    // Textual conflict (or another merge-attempt failure) — abort whatever
+    // git staged, then PROVE main is back to its pre-merge state before ever
+    // telling the caller so; a claim of "main untouched" that isn't checked
+    // is exactly the bug this staged-transaction rework replaces.
+    runGit(mainRoot, ['merge', '--abort']);
+    const proof = mainUntouchedProof(mainRoot, preMergeHead, mergeHeadFile);
+    if (!proof.ok) {
+      refuseMerge(
+        'WORKTREE_MERGE_ABORT_FAILED',
+        `"git merge --no-ff --no-commit ${branch}" failed and "git merge --abort" did NOT fully restore ${mainRoot} to its pre-merge state (${proof.reason}) — main may be left mid-merge; inspect it by hand before retrying.`,
+      );
+    }
     return {
       ok: false,
       code: 'MERGE_CONFLICT',
       id,
       branch,
       worktreeRoot,
-      message: `"git merge --no-ff ${branch}" left conflict/failure state in ${mainRoot} — resolve it there; bee does not roll back or auto-resolve a textual conflict.`,
+      message: `"git merge --no-ff ${branch}" hit a textual conflict — the merge was aborted and ${mainRoot} was left byte-untouched (HEAD unchanged, no MERGE_HEAD, clean tracked status); bee does not auto-resolve a textual conflict.`,
       output: `${mergeResult.stdout || ''}${mergeResult.stderr || ''}`,
     };
   }
 
-  if (!verifyCommand) {
-    const result = { ok: true, merged: true, id, branch, worktreeRoot, verify: 'skipped' };
-    attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify: result.verify });
-    return result;
-  }
-
-  const verifyResult = spawnSync(verifyCommand, { cwd: mainRoot, shell: true, encoding: 'utf8' });
-  if (verifyResult.status !== 0) {
-    const combined = `${verifyResult.stdout || ''}${verifyResult.stderr || ''}`;
-    const tail = combined.split('\n').slice(-30).join('\n');
+  if (!fs.existsSync(mergeHeadFile)) {
+    // Zero exit but nothing staged: "Already up to date" — branch has
+    // nothing new for main. Never attempt a commit here; there is nothing
+    // staged, so "git commit" would either error or produce an empty commit.
     return {
-      ok: false,
-      code: 'MERGE_VERIFY_RED',
+      ok: true,
+      merged: false,
       id,
       branch,
       worktreeRoot,
-      merged: true,
-      verify: 'red',
-      message:
-        'the merge was textually clean but the post-merge verify failed — this is the semantic-conflict alarm: behavior broke even though git found no textual conflict. Fix-first before release. The merge commit is NEVER rolled back by bee.',
-      output_tail: tail,
+      code: 'ALREADY_UP_TO_DATE',
+      verify: 'skipped',
+      message: `"${branch}" is already up to date with ${mainRoot} — nothing to merge.`,
     };
   }
 
-  const result = { ok: true, merged: true, id, branch, worktreeRoot, verify: 'green' };
-  attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify: result.verify });
-  return result;
+  // A merge is now staged (MERGE_HEAD live, changes staged, nothing yet
+  // committed). Every exit from here must either commit (verify green / no
+  // verify configured) or abort (conflict already handled above; red
+  // verify below; any unexpected throw) — the `finally` is the safety net
+  // for that last case, so a verify crash/timeout can never strand a
+  // staged merge on main.
+  let committed = false;
+  try {
+    if (verifyCommand) {
+      const verifyResult = spawnSync(verifyCommand, { cwd: mainRoot, shell: true, encoding: 'utf8' });
+      if (verifyResult.status !== 0) {
+        const combined = `${verifyResult.stdout || ''}${verifyResult.stderr || ''}`;
+        const tail = combined.split('\n').slice(-30).join('\n');
+        runGit(mainRoot, ['merge', '--abort']);
+        const proof = mainUntouchedProof(mainRoot, preMergeHead, mergeHeadFile);
+        if (!proof.ok) {
+          refuseMerge(
+            'WORKTREE_MERGE_ABORT_FAILED',
+            `verify failed and "git merge --abort" did NOT fully restore ${mainRoot} to its pre-merge state (${proof.reason}) — main may be left mid-merge; inspect it by hand before retrying.`,
+          );
+        }
+        return {
+          ok: false,
+          code: 'MERGE_VERIFY_RED',
+          id,
+          branch,
+          worktreeRoot,
+          merged: false,
+          verify: 'red',
+          message:
+            `the merge was textually clean but the post-merge verify failed against the merged-but-uncommitted tree — this is the semantic-conflict alarm: behavior broke even though git found no textual conflict. The merge was aborted and ${mainRoot} was left byte-untouched (HEAD unchanged, no MERGE_HEAD, clean tracked status); no merge commit exists. Fix-first before release.`,
+          output_tail: tail,
+        };
+      }
+    }
+
+    const commitResult = runGit(mainRoot, ['commit', '-m', mergeMessage]);
+    if (commitResult.status !== 0) {
+      // Should not happen — a live MERGE_HEAD always has something staged
+      // to commit — but never silently swallow it: abort rather than leave
+      // a half-done staged merge sitting on main.
+      runGit(mainRoot, ['merge', '--abort']);
+      refuseMerge(
+        'WORKTREE_MERGE_COMMIT_FAILED',
+        `"git commit" failed for the staged merge of ${branch} (${(commitResult.stderr || commitResult.stdout || '').trim() || `exit ${commitResult.status}`}) — the staged merge was aborted; ${mainRoot} was left untouched.`,
+      );
+    }
+    committed = true;
+
+    const result = { ok: true, merged: true, id, branch, worktreeRoot, verify: verifyCommand ? 'green' : 'skipped' };
+
+    // Post-commit guard (D2-REVISED): the commit above only ever contains
+    // what git staged for the merge itself. If the verify command mutated
+    // TRACKED files without bee's knowledge, those changes are now dirty
+    // working-tree state sitting on top of an otherwise-clean merge commit
+    // — surface that loudly instead of silently treating tree === commit.
+    const postCommitStatus = runGit(mainRoot, ['status', '--porcelain', '--untracked-files=no']).stdout;
+    if (postCommitStatus.trim().length > 0) {
+      result.warning = {
+        code: 'verify_mutated_tracked_files',
+        message: `the post-merge verify command left tracked files modified after the merge commit landed ("git status --porcelain --untracked-files=no" is non-empty) — the merge commit itself is clean, but verify mutated the working tree afterward; inspect and commit/discard those changes separately. Recovery if a LATER independent verify goes red on this merge: "git revert -m 1 <merge-commit>".`,
+        status: postCommitStatus,
+      };
+    }
+
+    attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify: result.verify });
+    return result;
+  } finally {
+    if (!committed && fs.existsSync(mergeHeadFile)) {
+      // Exception-safety net only: every normal exit above already aborted
+      // (and proved it) before returning/throwing, so this fires only when
+      // something unexpected blew up mid-verify/mid-commit without going
+      // through either handled path yet.
+      runGit(mainRoot, ['merge', '--abort']);
+    }
+  }
 }

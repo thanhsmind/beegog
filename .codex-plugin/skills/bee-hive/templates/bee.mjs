@@ -2185,9 +2185,14 @@ function handleWorktreeMerge(_root, flags) {
   const mergeResultValue = mergeFeatureWorktree(mainRoot, { id, cleanup, verifyCommand });
 
   const lines = [];
-  if (mergeResultValue.ok) {
+  if (mergeResultValue.ok && mergeResultValue.code === 'ALREADY_UP_TO_DATE') {
+    lines.push(`Worktree ${id} (branch ${mergeResultValue.branch}) is already up to date with ${mainRoot} — nothing to merge; no commit was made.`);
+  } else if (mergeResultValue.ok) {
     lines.push(`Merged worktree ${id} (branch ${mergeResultValue.branch}) into ${mainRoot}.`);
     lines.push(`  verify: ${mergeResultValue.verify}`);
+    if (mergeResultValue.warning) {
+      lines.push(`  WARNING (${mergeResultValue.warning.code}): ${mergeResultValue.warning.message}`);
+    }
     if (mergeResultValue.cleanup) {
       lines.push(
         mergeResultValue.cleanup.ok
@@ -2201,12 +2206,12 @@ function handleWorktreeMerge(_root, flags) {
       lines.push(`  cleanup: run \`${mergeResultValue.cleanup_suggested_command}\` when ready.`);
     }
   } else if (mergeResultValue.code === 'MERGE_VERIFY_RED') {
-    lines.push(`Merged worktree ${id} (branch ${mergeResultValue.branch}) — TEXTUALLY CLEAN, but verify is RED (semantic-conflict alarm).`);
-    lines.push('Fix-first before release. The merge commit is NOT rolled back.');
+    lines.push(`Merge of worktree ${id} (branch ${mergeResultValue.branch}) was TEXTUALLY CLEAN, but verify is RED (semantic-conflict alarm).`);
+    lines.push(`The merge was aborted — ${mainRoot} was left byte-untouched; no merge commit exists. Fix-first before release, then retry the merge.`);
     lines.push('--- verify output tail ---');
     lines.push(mergeResultValue.output_tail);
   } else {
-    lines.push(`Merge of worktree ${id} left conflict/failure state in ${mainRoot} — resolve it there; bee does not roll back or auto-resolve.`);
+    lines.push(`Merge of worktree ${id} hit a textual conflict — the merge was aborted and ${mainRoot} was left byte-untouched; bee does not auto-resolve a textual conflict. Resolve it in the worktree and retry.`);
   }
   return { result: mergeResultValue, text: lines.join('\n'), exitCode: mergeResultValue.ok ? 0 : 1 };
 }
