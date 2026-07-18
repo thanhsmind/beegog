@@ -27,6 +27,7 @@ const MANDATORY_SUITES = [
   "test_state_write_concurrency",
   "test_installers_e2e",
   "test_conformance",
+  "test_agents_budget",
 ];
 
 /**
