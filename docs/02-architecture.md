@@ -212,7 +212,7 @@ The spawn *contract* is identical on both: assigned cell id, CONTEXT.md path, gl
 
 ### Everything else is shared
 
-Skills, artifacts, cells, gates, helpers, templates: one copy. Both plugin manifests point at the same `skills/` directory (khuym proves this works for Codex via `.codex-plugin/plugin.json` with `"skills": "./skills/"`).
+Skills, artifacts, cells, gates, helpers, templates: one copy of prose/logic in `skills/`. Each plugin manifest routes to its own **committed rendered tree** instead — `.claude-plugin/plugin.json` → `.claude-plugin/skills/` = `render(skills/, "claude")`, `.codex-plugin/plugin.json` → `.codex-plugin/skills/` = `render(skills/, "codex")` — generated only through the D9 renderer (`skills/bee-hive/scripts/onboard_bee.mjs::renderSkillBytes`, regenerated via `scripts/render_plugin_skill_trees.mjs`); with zero runtime markers today both rendered trees stay byte-identical to `skills/` (cnr2-12).
 
 ## Hooks: the automation skeleton (Claude Code) + helper enforcement (Codex)
 

@@ -187,7 +187,17 @@ function stagedSource() {
   execFileSync("node", [path.join(src, "scripts/release_manifest.mjs"), "--write"], { cwd: src, stdio: "ignore" });
   // Build a fake installed package = exactly the package files named by the manifest.
   const pkg = path.join(root, "pkg");
-  const roles = new Set(["plugin_skill", "plugin_hook", "plugin_manifest", "plugin_marketplace"]);
+  // Kept in lockstep with plugin_distribution.mjs's PACKAGE_ROLES (D9/cnr2-12):
+  // the committed per-runtime rendered skill trees are now expected package
+  // content too, alongside the unchanged canonical skills/ tree.
+  const roles = new Set([
+    "plugin_skill",
+    "plugin_skill_claude_render",
+    "plugin_skill_codex_render",
+    "plugin_hook",
+    "plugin_manifest",
+    "plugin_marketplace",
+  ]);
   const manifest = JSON.parse(fs.readFileSync(path.join(src, "docs/history/codex-harness-hardening/release-manifest.json"), "utf8"));
   for (const record of manifest.files) {
     if (!roles.has(record.role)) continue;

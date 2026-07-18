@@ -1,0 +1,154 @@
+# Validation Reference
+
+Load after bee-validating is selected and the required inputs exist. Formats here are normative — reports must use them.
+
+## Protocol
+
+1. Orient: `node .bee/bin/bee.mjs status --json`, mode/lane, approved `plan.md`, current cells.
+2. Reality gate report (below), evidence attached.
+3. Feasibility matrix for every blocking assumption.
+4. Spike/probe any unproven assumption that can invalidate the current work.
+5. Plan-checker subagent, max 3 iterations.
+6. Cell review (cold pickup); fix CRITICAL flags.
+7. Decision, then the Gate 3 approval block.
+
+## Reality Gate Report
+
+```text
+REALITY GATE REPORT
+Mode: <tiny|spike|small|standard|high-risk>
+Current work: <one sentence>
+MODE FIT: PASS|FAIL       — lane matches the mechanical risk flags; least honest workflow
+REPO FIT: PASS|FAIL       — named files/APIs/commands exist in this repo today
+ASSUMPTIONS: PASS|FAIL    — every blocking assumption is listed in the matrix
+SMALLER PATH: PASS|FAIL   — no smaller path delivers the locked decisions
+PROOF SURFACE: PASS|FAIL  — every cell's verify command runs in this repo
+Decision: proceed | revise planning | run spike first | collapse mode
+Evidence: <file paths / command output / runtime evidence per line above>
+```
+
+Fail on: nonexistent code paths, unsupported commands, stale versions, missing credentials, unreachable services, hidden architecture work, or excess ceremony.
+
+## Feasibility Matrix
+
+Required whenever blocking assumptions remain; always for the high-risk lane.
+
+```text
+FEASIBILITY MATRIX
+Assumption | Risk | Proof Required | Evidence | Result
+```
+
+Accepted evidence: existing implementation, file/API/type inspection, command output, build/typecheck/test result, official version/doc proof, runtime/API probe, or `.bee/spikes/<feature>/` proof. "Should work", "likely", "expected", or model knowledge → the row (and the matrix) is **NOT READY**.
+
+## Spike / Probe Rules
+
+- One spike = one yes/no question.
+- Disposable proof lives under `.bee/spikes/<feature>/`.
+- NO → return to bee-planning with the failed assumption and the plan change it forces.
+- YES → record constraints for planning and execution.
+- Spike code must never silently become production implementation.
+
+## Repair Routing
+
+| Finding | Route |
+|---|---|
+| False assumption / wrong mode or lane | back to bee-planning |
+| Locked decision uncovered by any cell | `plan.md` + new/edited cells (cite the D-ID) |
+| Cell dependency, file-scope, or test gap | edit the cell (`node .bee/bin/bee.mjs cells show --id <id>` first) |
+| Broken or unrunnable verify command | fix the cell's `verify`; re-run PROOF SURFACE |
+| Unreachable exit / integration hole | `plan.md` (key links) then cells |
+| Scope reduction of a locked decision | prohibited — SPLIT the work instead, via planning |
+
+## Plan-Checker Subagent Prompt
+
+Dispatch at the **generation** tier; name the model explicitly (fallback: read budget + output cap). Verify, do not redesign.
+
+```text
+You are an adversarial plan checker. Assume the plan is flawed until proven otherwise.
+Inputs: docs/history/<feature>/CONTEXT.md, approach.md, plan.md, and the current-work cells
+(node .bee/bin/bee.mjs cells list --feature <feature>).
+Verify exactly 5 dimensions:
+1. Requirement/decision coverage — every locked D-ID lands in at least one cell.
+2. Cell completeness — each cell has files, read_first, directive action, must_haves
+   (per lane tier), and a runnable verify.
+3. Dependency correctness — deps form a DAG; no cell depends on a future slice.
+4. Key links — integration points named in plan.md are owned by a specific cell.
+5. Scope sanity — no cell is doing hidden architecture work or exceeds its lane.
+Report every finding as BLOCKER (structurally unsound) or WARNING (survivable, note it).
+Do not propose redesigns. Do not soften findings. Quote file/cell evidence per finding.
+```
+
+Max 3 structural iterations (check → repair → re-check). An open BLOCKER after iteration 3 escalates to the user with both positions. Never run iteration 4.
+
+### High-Risk Persona Panel
+
+For the high-risk lane, replace the single checker with a small panel: **coherence** and **feasibility** personas always; add conditional lenses — **security**, **product**, **scope-guardian** — chosen by the diff of concerns (auth/data → security; user-visible behavior → product; growing surface → scope-guardian). Each persona gets the same inputs and the BLOCKER/WARNING vocabulary. Dedupe overlapping findings, then synthesize into two buckets: **auto-fix** (apply, record) and **present-for-decision** (user judgment required).
+
+## Cell-Reviewer Subagent Prompt
+
+Dispatch at the **generation** tier. Stress-test whether each cell can be picked up cold.
+
+```text
+You are a fresh-eyes cell reviewer with NO session history. For each current-work cell
+(node .bee/bin/bee.mjs cells show --id <id>), answer: could a worker who has read only
+CONTEXT.md, plan.md, and this cell implement and verify it without guessing?
+Flag CRITICAL: assumed context, vague acceptance, scope overload, unproven feasibility,
+broken verify command.
+Flag MINOR: missing rationale, implicit file assumption, fuzzy boundary, known tradeoff
+not recorded.
+```
+
+```text
+CELL REVIEW REPORT
+Work: <current slice / direct task>
+Cells reviewed: <N>
+CRITICAL FLAGS: <cell-id> problem / evidence / fix
+MINOR FLAGS: <cell-id> problem / evidence / suggestion
+CLEAN CELLS: <cell-id>, <cell-id>
+REVISIONS MADE: <cell-id> change / why
+SUMMARY: <2-3 sentences>
+```
+
+All CRITICAL flags must be fixed before Gate 3. MINOR flags ship with a recorded note.
+
+## Approval Gate Block
+
+Two layers (Gate Presentation Contract, bee-hive routing reference). The machine block goes into the **report file** `docs/history/<feature>/reports/validation-<slice>.md`, together with the reality gate report, feasibility matrix, plan-checker findings, and cell review above. It is never pasted into chat:
+
+```text
+VALIDATION COMPLETE - APPROVAL REQUIRED BEFORE EXECUTION
+Mode: <mode>
+Work: <current slice / direct task / spike>
+Reality gate: PASS
+Feasibility: READY | READY WITH CONSTRAINTS
+Structure: PASS after <N> iterations
+Spikes: <none | passed | constraints recorded>
+Cell review: PASS (<N> cells, 0 CRITICAL open)
+Unresolved concerns: <none | list>
+```
+
+The **chat message** is the human layer only — in the user's language, jargon-free:
+
+```text
+What I'm about to do: [the change in the user's terms, one sentence — what changes for them, not the mechanism].
+Why it's trustworthy: [the single strongest piece of evidence, plain words — e.g. "a dry run rebuilt all 3 pages byte-for-byte identical"].
+If it goes wrong: [what breaks for the user + how we'd notice — loud failure, rollback path].
+You are deciding: whether I may start editing real files — this slice of work only.
+Full validation report: docs/history/<feature>/reports/validation-<slice>.md
+Feasibility validated. Approve execution?
+```
+
+Litmus: the user can restate what they are approving in their own words.
+
+Approval is for the current work only. On yes: update `.bee/state.json` (`approved_gates.execution: true`) and hand off to bee-swarming. In headless mode, stop here — emit both layers in the terminal report and exit without approval.
+
+## Red Flags
+
+- skipping reality or feasibility gates because everything "looks right"
+- plausibility accepted as proof under time pressure
+- continuing after a NO spike
+- iteration 4 of the plan checker
+- cells not tied to the current work slice
+- a small fix generating epic ceremony; a hard-gate change validated as small
+- Gate 3 asked with CRITICAL cell flags still open
+- the machine block pasted into chat, or a gate message the user cannot restate in their own words

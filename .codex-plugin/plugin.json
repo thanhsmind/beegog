@@ -14,7 +14,7 @@
     "multi-agent",
     "validate-first"
   ],
-  "skills": "./skills/",
+  "skills": "./.codex-plugin/skills/",
   "interface": {
     "displayName": "Bee",
     "shortDescription": "Validate-first skills for agentic software delivery",

@@ -41,6 +41,16 @@ const MANIFEST_PATH = path.join(
 );
 
 const RUNTIME_LIB_DIR = path.join(REPO_ROOT, ".bee", "bin", "lib");
+// D9/cnr2-12: the committed per-runtime plugin skill-route trees (render at
+// skills/bee-hive/scripts/onboard_bee.mjs::renderSkillBytes). Distinct roles
+// from "plugin_skill" (the canonical skills/ tree, still hashed unchanged for
+// package integrity) so managedSkillNames() — which parses "skills/bee-*"
+// paths — never sees these ".claude-plugin/skills/..." / ".codex-plugin/
+// skills/..." paths.
+const PLUGIN_SKILL_RENDER_ROOTS = [
+  { dir: path.join(REPO_ROOT, ".claude-plugin", "skills"), role: "plugin_skill_claude_render" },
+  { dir: path.join(REPO_ROOT, ".codex-plugin", "skills"), role: "plugin_skill_codex_render" },
+];
 const NAMED_PLUGIN_MANIFESTS = [
   path.join(REPO_ROOT, ".claude-plugin", "plugin.json"),
   path.join(REPO_ROOT, ".codex-plugin", "plugin.json"),
@@ -119,6 +129,7 @@ function buildCurrentRecords() {
   const records = [
     ...enumerateMjsDir(RUNTIME_LIB_DIR, "runtime_lib"),
     ...enumerateTree(path.join(REPO_ROOT, "skills"), "plugin_skill"),
+    ...PLUGIN_SKILL_RENDER_ROOTS.flatMap(({ dir, role }) => enumerateTree(dir, role)),
     ...enumerateTree(path.join(REPO_ROOT, "hooks"), "plugin_hook"),
     ...NAMED_PLUGIN_MANIFESTS.map((absPath) => {
       if (!fs.existsSync(absPath)) {
