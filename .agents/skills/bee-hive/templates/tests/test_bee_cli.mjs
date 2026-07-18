@@ -1231,6 +1231,45 @@ await check('worktree.new example runs through the real dispatcher against a rea
   }
 });
 
+await check('worktree.merge example (registry refusal-shaped: unknown id) runs through the real dispatcher against a real ORDINARY checkout (wsr-2, GH #21)', async () => {
+  const wtMergeTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-worktree-merge-'));
+  try {
+    const git = (cwd, args) => {
+      const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert(r.status === 0, `git ${args.join(' ')} (cwd=${cwd}) failed: ${r.stderr}`);
+      return r.stdout;
+    };
+
+    const wtMergeMain = path.join(wtMergeTmp, 'main');
+    fs.mkdirSync(wtMergeMain);
+    git(wtMergeMain, ['init', '-q', '-b', 'main']);
+    git(wtMergeMain, ['config', 'user.email', 's@e']);
+    git(wtMergeMain, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(wtMergeMain, 'f'), 'x');
+    git(wtMergeMain, ['add', '.']);
+    git(wtMergeMain, ['commit', '-q', '-m', 'init']);
+    fs.mkdirSync(path.join(wtMergeMain, '.bee'), { recursive: true });
+    writeJsonAtomic(path.join(wtMergeMain, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+
+    // registry example: 'bee worktree merge --id demo-feature-missing --json'
+    // — deliberately refusal-shaped (an unknown/ungranted id): no worktree
+    // fixture is needed just to prove the example is runnable through the
+    // real dispatcher from a real ORDINARY checkout. The full green-path /
+    // MERGE_CONFLICT / MERGE_VERIFY_RED / cleanup surface is proven
+    // end-to-end, with real git worktrees, in scripts/test_worktree_cli.mjs
+    // (part of the mandatory verify chain) — this check only satisfies the
+    // "every registry example is executed" guard below.
+    const { result } = await runExample('worktree.merge', { cwd: wtMergeMain });
+    assert(result.status !== 0, `expected the unknown-id example to refuse (non-zero exit), got status 0: ${result.stdout}`);
+    assert(
+      /WORKTREE_MERGE_UNKNOWN_ID/.test(result.stdout + result.stderr),
+      `expected a typed WORKTREE_MERGE_UNKNOWN_ID refusal, got stdout=${result.stdout} stderr=${result.stderr}`,
+    );
+  } finally {
+    fs.rmSync(wtMergeTmp, { recursive: true, force: true });
+  }
+});
+
 await check('worktree.register/list/unregister examples run through the real dispatcher against a real linked git worktree', async () => {
   const wtTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-worktree-'));
   try {
