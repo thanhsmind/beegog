@@ -15,10 +15,13 @@
 // the Codex projection.
 //
 // Runtime differences are explicit data, never hand-maintained projection
-// drift. Claude alone has the native pre-spawn model guard; Codex alone has
-// post-start / stop native-subagent audit hooks because those are the events
-// Codex exposes today. See ALLOWED_DIFFERENCES and the drift-check test in
-// hooks/test_hook_contracts.mjs.
+// drift. Both runtimes carry a native pre-spawn model guard, but on the tool
+// matcher each runtime actually exposes: Claude guards Agent|Task, Codex
+// guards spawn_agent (the collaboration-spawn tool name observed reaching
+// PreToolUse on codex-cli 0.144.4 — codex-native-runtime-v2 D4, capability
+// matrix row D1). Codex alone has the post-start / stop native-subagent audit
+// hooks because those are the events Codex exposes today. See
+// ALLOWED_DIFFERENCES and the drift-check test in hooks/test_hook_contracts.mjs.
 // No wrapper .mjs is forked per runtime — only this catalog's projection
 // output differs; see ALLOWED_DIFFERENCES and the drift-check test in
 // hooks/test_hook_contracts.mjs.
@@ -125,6 +128,20 @@ const CATALOG = Object.freeze([
       {
         runtimes: CLAUDE_ONLY,
         matcher: "Agent|Task",
+        hooks: [cmd("bee-model-guard.mjs", "bee: model-tier guard")],
+      },
+      {
+        // Codex-native spawn guard (codex-native-runtime-v2 D4, decision 0023
+        // parity). Codex exposes agent spawns through PreToolUse as tool_name
+        // "spawn_agent" (spike codex-cli 0.144.4, capability-matrix row D1),
+        // never as "Agent"/"Task", so this is a SEPARATE Codex-only group, not
+        // a superset of the Claude matcher above. The SAME bee-model-guard.mjs
+        // handles it through an isolated Codex branch keyed on the observed
+        // envelope (tool_input.agent_type "worker" + tool_input.message, marker
+        // anchored at the START of message). This gates the built-in worker
+        // spawn only — it is NOT D8 custom agents (deferred).
+        runtimes: CODEX_ONLY,
+        matcher: "spawn_agent",
         hooks: [cmd("bee-model-guard.mjs", "bee: model-tier guard")],
       },
     ],
@@ -265,9 +282,26 @@ export const ALLOWED_DIFFERENCES = Object.freeze([
     matcher: "Agent|Task",
     script: "bee-model-guard.mjs",
     description:
-      'bee-model-guard.mjs (PreToolUse matcher "Agent|Task") is Claude-only: ' +
-      "Codex does not expose collaboration spawn through PreToolUse " +
-      "(approach.md section 2; CONTEXT.md decisions D1/D2).",
+      'bee-model-guard.mjs on the PreToolUse matcher "Agent|Task" is Claude-only: ' +
+      '"Agent"/"Task" are the tool names Claude uses for subagent dispatch. This ' +
+      "is a MATCHER difference, not a capability gap — Codex exposes the same guard " +
+      'on its own spawn tool name (see "model-tier-guard-codex-spawn" below; ' +
+      "codex-native-runtime-v2 D4, capability-matrix row D1).",
+  },
+  {
+    id: "model-tier-guard-codex-spawn",
+    runtime: RUNTIMES.CODEX,
+    event: "PreToolUse",
+    matcher: "spawn_agent",
+    script: "bee-model-guard.mjs",
+    description:
+      'bee-model-guard.mjs on the PreToolUse matcher "spawn_agent" is Codex-only: ' +
+      'Codex exposes collaboration spawn as tool_name "spawn_agent" (never ' +
+      '"Agent"/"Task"), observed reaching PreToolUse on codex-cli 0.144.4. The ' +
+      "guard runs an isolated Codex branch keyed on the observed envelope " +
+      "(agent_type \"worker\" + message; marker anchored at the start of message) " +
+      "and fails open on every unobserved shape (codex-native-runtime-v2 D4, " +
+      "decision 0023 parity; NOT D8 custom agents).",
   },
   {
     id: "subagent-start-audit-codex-only",

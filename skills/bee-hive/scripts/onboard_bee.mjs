@@ -1756,8 +1756,10 @@ function mergeRepoSettings(settingsPath) {
 // (the Claude-only variable above), so every command resolves the git root
 // from the session cwd and fails open VISIBLY when there is none. Two pinned
 // differences from renderRepoHookEntries(), both from hooks/catalog.mjs:
-//   - bee-model-guard.mjs is Claude-only (ALLOWED_DIFFERENCES: Codex does not
-//     expose collaboration spawn through PreToolUse) and is never wired here.
+//   - bee-model-guard.mjs is wired on a DIFFERENT matcher per runtime: Claude
+//     guards Agent|Task, Codex guards spawn_agent (the collaboration-spawn tool
+//     name Codex exposes through PreToolUse — capability-matrix row D1). Same
+//     handler, only the matcher differs (ALLOWED_DIFFERENCES).
 //   - each entry carries a statusMessage (Codex TUI shows it while running).
 
 const CODEX_TRANSPORT_DIAGNOSTIC = "bee: hook transport unavailable (no git root)";
@@ -1803,6 +1805,14 @@ function renderCodexHookEntries() {
       {
         matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep|AskUserQuestion",
         hooks: [entry("bee-write-guard.mjs", "bee: write guard")],
+      },
+      {
+        // Codex-native spawn guard (codex-native-runtime-v2 D4): Codex exposes
+        // agent spawns as tool_name "spawn_agent"; bee-model-guard.mjs runs an
+        // isolated Codex branch on the observed envelope. Claude wires the same
+        // handler on Agent|Task (renderRepoHookEntries) — matcher differs only.
+        matcher: "spawn_agent",
+        hooks: [entry("bee-model-guard.mjs", "bee: model-tier guard")],
       },
     ],
     PostToolUse: [

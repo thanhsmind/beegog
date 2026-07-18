@@ -774,8 +774,18 @@ try {
   const codexRepoText = JSON.stringify(codexRepo);
   check(!codexRepoText.includes("CLAUDE_PROJECT_DIR"),
     ".codex/hooks.json never uses $CLAUDE_PROJECT_DIR (Codex never sets it)");
-  check(!codexRepoText.includes("bee-model-guard.mjs"),
-    ".codex/hooks.json never wires bee-model-guard.mjs (Claude-only per catalog ALLOWED_DIFFERENCES)");
+  // cnr2-8 (codex-native-runtime-v2 D4): the Codex projection DOES wire
+  // bee-model-guard.mjs, but on the spawn_agent matcher (Claude uses Agent|Task)
+  // — a per-runtime matcher difference pinned in ALLOWED_DIFFERENCES, not a
+  // Claude-only guard. Structural check: exactly one PreToolUse entry whose
+  // matcher is "spawn_agent" wires the guard.
+  const codexPreToolUse = Array.isArray(codexRepo.hooks?.PreToolUse) ? codexRepo.hooks.PreToolUse : [];
+  const codexSpawnGuardEntries = codexPreToolUse.filter((e) =>
+    e.matcher === "spawn_agent" &&
+    (e.hooks || []).some((h) => String(h.command || "").includes("bee-model-guard.mjs")));
+  check(codexSpawnGuardEntries.length === 1,
+    ".codex/hooks.json wires bee-model-guard.mjs on exactly one PreToolUse spawn_agent entry (Codex spawn guard)",
+    JSON.stringify(codexPreToolUse));
   let codexCommandCount = 0;
   let codexTransportOk = true;
   let codexStatusMessageOk = true;
@@ -805,7 +815,7 @@ try {
       }
     }
   }
-  check(codexCommandCount === 12, ".codex/hooks.json wires exactly 12 hook commands",
+  check(codexCommandCount === 13, ".codex/hooks.json wires exactly 13 hook commands",
     `count: ${codexCommandCount}`);
   check(codexTransportOk,
     "every .codex/hooks.json command uses the git-root transport with the pinned fail-open diagnostic");

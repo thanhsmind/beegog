@@ -734,6 +734,147 @@ async function main() {
   check(r39.status === 0, "row39: bare param (no marker) + general-purpose stays allowed",
     `status=${r39.status} stderr=${r39.stderr}`);
 
+  // === Codex spawn ABI rows (cnr2-8, codex-native-runtime-v2 D4) ===========
+  // The isolated Codex branch triggers ONLY on the spike-observed envelope
+  // (tool_name "spawn_agent", tool_input {agent_type:"worker", message}). The
+  // [bee-tier:] marker anchors at the START of message; every unobserved shape
+  // fails open. These rows are the recognition boundary as fixtures.
+  const codexDispatchLog = path.join(enabledRoot, ".bee", "logs", "dispatch.jsonl");
+
+  // --- 40. anchored marker in message -> allow, logged codex-spawn-marker --
+  const c40 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "worker", message: "[bee-tier: generation] gather the callers" } },
+    enabledRoot,
+  );
+  check(c40.status === 0, "row40: spawn_agent worker + anchored marker in message is allowed",
+    `status=${c40.status} stderr=${c40.stderr}`);
+  const d40 = readLastJsonl(codexDispatchLog);
+  check(
+    d40 && d40.transport === "codex-spawn-marker" && d40.tier === "generation" && d40.tool === "spawn_agent",
+    "row40: allowed spawn logged as codex-spawn-marker with the extracted tier",
+    JSON.stringify(d40),
+  );
+
+  // --- 41. leading whitespace before the marker -> allow ------------------
+  const c41 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "worker", message: "   [bee-tier: ceiling] do the thing" } },
+    enabledRoot,
+  );
+  check(c41.status === 0, "row41: spawn message with leading whitespace before the marker is allowed",
+    `status=${c41.status} stderr=${c41.stderr}`);
+
+  // --- 42. marker mid-message -> deny (exit 2), Codex-shaped FIX -----------
+  const c42 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "worker", message: "please [bee-tier: generation] do it" } },
+    enabledRoot,
+  );
+  check(c42.status === 2, "row42: marker mid-message is denied", `status=${c42.status} stderr=${c42.stderr}`);
+  check(c42.stderr.includes("bee-tier") && c42.stderr.includes("FIX"), "row42: deny has bee-tier + FIX", c42.stderr);
+  check(c42.stderr.includes("spawn_agent"), "row42: deny is Codex-shaped (names spawn_agent)", c42.stderr);
+  const d42 = readLastJsonl(codexDispatchLog);
+  check(d42 && d42.transport === "codex-spawn-unmarked",
+    "row42: denied spawn logged as codex-spawn-unmarked", JSON.stringify(d42));
+
+  // --- 43. no marker at all (the exact captured message) -> deny ----------
+  const c43 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "worker", message: "reply with the single word OK" } },
+    enabledRoot,
+  );
+  check(c43.status === 2, "row43: spawn message with no marker is denied", `status=${c43.status} stderr=${c43.stderr}`);
+
+  // --- 44. empty message -> fail open (exit 0, empty stderr) --------------
+  const c44 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "worker", message: "" } },
+    enabledRoot,
+  );
+  check(c44.status === 0, "row44: empty message fails open", `status=${c44.status} stderr=${c44.stderr}`);
+  check(c44.stderr === "", "row44: empty message produces empty stderr", JSON.stringify(c44.stderr));
+
+  // --- 45. missing message -> fail open -----------------------------------
+  const c45 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "worker" } },
+    enabledRoot,
+  );
+  check(c45.status === 0, "row45: missing message fails open", `status=${c45.status} stderr=${c45.stderr}`);
+
+  // --- 46. non-string message -> fail open --------------------------------
+  const c46 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "worker", message: { not: "a string" } } },
+    enabledRoot,
+  );
+  check(c46.status === 0, "row46: non-string message fails open", `status=${c46.status} stderr=${c46.stderr}`);
+
+  // --- 47. agent_type "default" (unobserved) -> fail open -----------------
+  const c47 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "default", message: "no marker here at all" } },
+    enabledRoot,
+  );
+  check(c47.status === 0, "row47: agent_type default fails open (only worker was observed)",
+    `status=${c47.status} stderr=${c47.stderr}`);
+
+  // --- 48. agent_type "explorer" (unobserved) -> fail open ----------------
+  const c48 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "explorer", message: "no marker here at all" } },
+    enabledRoot,
+  );
+  check(c48.status === 0, "row48: agent_type explorer fails open", `status=${c48.status} stderr=${c48.stderr}`);
+
+  // --- 49. missing agent_type -> fail open --------------------------------
+  const c49 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { message: "no marker here at all" } },
+    enabledRoot,
+  );
+  check(c49.status === 0, "row49: missing agent_type fails open", `status=${c49.status} stderr=${c49.stderr}`);
+
+  // --- 50. non-object tool_input -> fail open -----------------------------
+  const c50 = await runHookPayload({ tool_name: "spawn_agent", tool_input: "oops" }, enabledRoot);
+  check(c50.status === 0, "row50: non-object tool_input fails open", `status=${c50.status} stderr=${c50.stderr}`);
+
+  // --- 51. anchored marker in prompt does NOT rescue an unmarked message --
+  const c51 = await runHookPayload(
+    {
+      tool_name: "spawn_agent",
+      tool_input: { agent_type: "worker", message: "reply with OK", prompt: "[bee-tier: generation] task" },
+    },
+    enabledRoot,
+  );
+  check(c51.status === 2, "row51: anchored marker in prompt does not rescue an unmarked message (deny)",
+    `status=${c51.status} stderr=${c51.stderr}`);
+
+  // --- 52. top-level toolName alias (no tool_name) -> fail open -----------
+  const c52 = await runHookPayload(
+    { toolName: "spawn_agent", tool_input: { agent_type: "worker", message: "no marker here at all" } },
+    enabledRoot,
+  );
+  check(c52.status === 0, "row52: top-level toolName alias is not the observed envelope, fails open",
+    `status=${c52.status} stderr=${c52.stderr}`);
+
+  // --- 53. extra fields tolerated once required fields match (marker) -> allow
+  const c53 = await runHookPayload(
+    {
+      tool_name: "spawn_agent",
+      tool_input: { agent_type: "worker", message: "[bee-tier: review] check", extra: 1, task_name: "x" },
+    },
+    enabledRoot,
+  );
+  check(c53.status === 0, "row53: extra fields tolerated when required fields match (allow)",
+    `status=${c53.status} stderr=${c53.stderr}`);
+
+  // --- 54. spawn under the disabled guard -> exit 0 (toggle respected) ----
+  const c54 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { agent_type: "worker", message: "no marker here at all" } },
+    disabledRoot,
+  );
+  check(c54.status === 0, "row54: spawn_agent under disabled guard is allowed (toggle respected)",
+    `status=${c54.status} stderr=${c54.stderr}`);
+
+  // --- 55. the Codex spawn deny is Codex-shaped, NOT Claude Agent/Task text
+  check(
+    !c43.stderr.includes("Agent/Task") && c43.stderr.includes("message must OPEN"),
+    "row55: Codex spawn deny uses Codex remediation, never Claude Agent/Task model-param text",
+    c43.stderr,
+  );
+
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }

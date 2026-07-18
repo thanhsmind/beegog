@@ -1019,7 +1019,7 @@ function runCatalogDriftChecks() {
     "bee-codex-subagent-audit.mjs",
   );
   const transportOk =
-    repoCommands.length === 12 &&
+    repoCommands.length === 13 &&
     noClaudeVars &&
     launchesSourceWrappers &&
     visibleFailOpen &&
@@ -1031,7 +1031,7 @@ function runCatalogDriftChecks() {
       transportOk,
       transportOk
         ? `all ${repoCommands.length} generated repo commands carry no Claude root variable, include paired audit events, launch hooks/bee-*.mjs with --source=repo, and fail open visibly`
-        : `repo transport contract violated: commands=${repoCommands.length} (expected 12) ` +
+        : `repo transport contract violated: commands=${repoCommands.length} (expected 13) ` +
             `noClaudeVars=${noClaudeVars} launchesSourceWrappers=${launchesSourceWrappers} ` +
             `visibleFailOpen=${visibleFailOpen} startAudit=${repoStartAudit.length} stopAudit=${repoStopAudit.length}`,
     ),
@@ -1080,6 +1080,31 @@ function runCatalogDriftChecks() {
         ? `both catalog projections carry the state-sync PostToolUse superset matcher "${EXPECTED_STATE_SYNC_MATCHER}"`
         : `DRIFT: expected "${EXPECTED_STATE_SYNC_MATCHER}" on both projections, ` +
             `got claude="${claudeStateSyncMatcher}" codex="${codexStateSyncMatcher}"`,
+    ),
+  );
+
+  // cell cnr2-8 (codex-native-runtime-v2 D4): the Codex spawn guard now wires
+  // bee-model-guard.mjs on BOTH runtimes, so its source (hooks/) and runtime
+  // mirror (.bee/bin/hooks/) must stay byte-identical. The release manifest
+  // inventories hooks/ but NOT .bee/bin/hooks/, so it would not catch a mirror
+  // that drifted from source — this row pins the pair directly. (test_lib_mirror
+  // derives the same pair from the projections, but this suite runs in the cell
+  // verify and must fail on drift on its own.)
+  const guardSource = path.join(HOOKS_DIR, "bee-model-guard.mjs");
+  const guardMirror = path.join(REPO_ROOT, ".bee", "bin", "hooks", "bee-model-guard.mjs");
+  const mirrorExists = fs.existsSync(guardMirror);
+  const guardParity =
+    mirrorExists &&
+    fs.readFileSync(guardSource).equals(fs.readFileSync(guardMirror));
+  rows.push(
+    catalogDriftRow(
+      "model-guard-source-mirror-byte-identical",
+      guardParity,
+      guardParity
+        ? "hooks/bee-model-guard.mjs and .bee/bin/hooks/bee-model-guard.mjs are byte-identical"
+        : mirrorExists
+          ? "DRIFT: hooks/bee-model-guard.mjs and .bee/bin/hooks/bee-model-guard.mjs differ byte-for-byte (the Codex spawn branch must land in both)"
+          : "MISSING: .bee/bin/hooks/bee-model-guard.mjs does not exist (the runtime mirror of the source guard)",
     ),
   );
 
@@ -2570,10 +2595,15 @@ function routePayload(event, cwd, fixtureRoot) {
   }
 }
 
-// PreToolUse is the one configured command whose contract is a DENY; every
-// other event is fail-open/advisory.
-function routeExpectation(event) {
-  if (event === "PreToolUse") return expectApplyPatchDenied;
+// PreToolUse now carries TWO configured commands (cnr2-8): bee-write-guard
+// DENIES a gated apply_patch, while bee-model-guard (Codex spawn guard, matcher
+// spawn_agent) is not a dispatch tool for an apply_patch payload and must FAIL
+// OPEN. So the PreToolUse contract is keyed on the script, not the event alone;
+// every other event is fail-open/advisory.
+function routeExpectation(event, script) {
+  if (event === "PreToolUse") {
+    return script === "write-guard" ? expectApplyPatchDenied : expectNoCrash;
+  }
   if (ADVISORY_ROUTE_EVENTS.includes(event)) return expectAdvisoryJsonOrSilent;
   return expectNoCrash;
 }
@@ -2867,7 +2897,7 @@ function runPluginCensusRow() {
 function routeRequiredRowIds(commands, { configRef = null } = {}) {
   const ids = [
     "route-config-readable",
-    "route-config-twelve-commands",
+    "route-config-thirteen-commands",
     "route-gitabsent-shim-precondition",
     "route-nongit-cwd-precondition",
     "route-pretooluse-command-present",
@@ -2930,11 +2960,11 @@ function runRepoRouteRows({ configRef = null } = {}) {
   const requiredIds = routeRequiredRowIds(commands, { configRef });
   rows.push(
     routeRow(
-      "route-config-twelve-commands",
-      commands.length === 12,
-      commands.length === 12
-        ? `all 12 configured commands loaded from ${config.origin} and exercised through ${ROUTE_SHELL} -lc`
-        : `expected 12 configured commands, found ${commands.length} (${commands.map((c) => c.id).join(", ")})`,
+      "route-config-thirteen-commands",
+      commands.length === 13,
+      commands.length === 13
+        ? `all 13 configured commands loaded from ${config.origin} and exercised through ${ROUTE_SHELL} -lc`
+        : `expected 13 configured commands, found ${commands.length} (${commands.map((c) => c.id).join(", ")})`,
     ),
   );
 
@@ -2987,7 +3017,7 @@ function runRepoRouteRows({ configRef = null } = {}) {
         routePayload(cmd.event, fixture.root, fixture.root),
         env,
       );
-      const rootVerdict = routeExpectation(cmd.event)(atRoot);
+      const rootVerdict = routeExpectation(cmd.event, cmd.script)(atRoot);
       rows.push(
         routeRow(
           `route-root:${cmd.id}`,
@@ -3004,7 +3034,7 @@ function runRepoRouteRows({ configRef = null } = {}) {
         routePayload(cmd.event, fixture.nested, fixture.root),
         env,
       );
-      const nestedVerdict = routeExpectation(cmd.event)(atNested);
+      const nestedVerdict = routeExpectation(cmd.event, cmd.script)(atNested);
       rows.push(
         routeRow(
           `route-nested:${cmd.id}`,
@@ -3128,16 +3158,24 @@ function runRepoRouteRows({ configRef = null } = {}) {
     // Not a direct wrapper call: the command string out of .codex/hooks.json,
     // through the login shell, must itself come back exit 2 with a reason.
     const preToolUse = commands.filter((c) => c.event === "PreToolUse");
+    const writeGuardPre = preToolUse.filter((c) => c.script === "write-guard");
+    const modelGuardPre = preToolUse.filter((c) => c.script === "model-guard");
+    const preShapeOk = writeGuardPre.length === 1 && modelGuardPre.length === 1;
     rows.push(
       routeRow(
         "route-pretooluse-command-present",
-        preToolUse.length === 1,
-        preToolUse.length === 1
-          ? "exactly one configured PreToolUse command to exercise"
-          : `expected exactly 1 configured PreToolUse command, found ${preToolUse.length}`,
+        preShapeOk,
+        preShapeOk
+          ? "the two configured PreToolUse commands are exactly one write-guard (apply_patch deny) and one " +
+              "model-guard (Codex spawn guard, matcher spawn_agent)"
+          : `expected exactly 1 write-guard + 1 model-guard PreToolUse command, found ` +
+              `write-guard=${writeGuardPre.length} model-guard=${modelGuardPre.length} (total ${preToolUse.length})`,
       ),
     );
-    for (const cmd of preToolUse) {
+    // Only the write-guard command carries the apply_patch DENY contract; the
+    // spawn guard is exercised as a fail-open through the per-command arm loop
+    // above (cnr2-8).
+    for (const cmd of writeGuardPre) {
       const denied = runRouteCommand(
         cmd.command,
         fixture.nested,

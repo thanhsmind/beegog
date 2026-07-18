@@ -43,6 +43,15 @@ import { readHookContext, logCrash, libModuleUrl, appendHookLog } from "./adapte
 
 const HOOK_NAME = "model-guard";
 const DISPATCH_TOOLS = new Set(["Agent", "Task"]);
+// Codex-native collaboration spawn (codex-native-runtime-v2 D4): Codex exposes
+// agent spawns through PreToolUse as tool_name "spawn_agent" (spike codex-cli
+// 0.144.4, capability-matrix row D1), with tool_input.agent_type "worker" and
+// the task text in tool_input.message. This is an ISOLATED branch, never a
+// member of DISPATCH_TOOLS — the Claude enforcement below reads model/tier/
+// subagent_type and emits Claude-specific model-param remediation, which would
+// misread a real Codex spawn message as a bare Claude dispatch.
+const CODEX_SPAWN_TOOL = "spawn_agent";
+const CODEX_SPAWN_WORKER_TYPE = "worker";
 // Anchored to the start of the string (leading whitespace allowed): the
 // marker must be the first thing in prompt/description, never merely present
 // somewhere inside it (P1-1 — no 500-char scan window, no mid-text match).
@@ -84,6 +93,53 @@ function markerTier(toolInput) {
   return (
     startsWithTierMarker(toolInput.description) || startsWithTierMarker(toolInput.prompt) || null
   );
+}
+
+// Codex-native spawn guard (codex-native-runtime-v2 D4, decision 0023 parity).
+// Triggered ONLY by the exact envelope the codex-cli 0.144.4 spike observed
+// (capability-matrix row D1): tool_name "spawn_agent", tool_input
+// {agent_type: "worker", message: "..."}. The authoritative task field is
+// MESSAGE, not prompt, and the [bee-tier: <tier>] marker must anchor to the
+// START of message (leading whitespace allowed). Recognition boundary, in
+// order — every UNOBSERVED shape FAILS OPEN (allow), never denies, because the
+// spike only ever captured agent_type "worker"; denying a shape it never saw
+// would guess at semantics the evidence does not support:
+//   - tool_input missing / null / non-object / array          -> fail open
+//   - agent_type missing / non-string / not "worker"
+//     (includes the other built-ins "default" / "explorer")   -> fail open
+//   - message missing / non-string / empty string             -> fail open
+//   - message opens with an ANCHORED [bee-tier:] marker         -> allow
+//   - message present, marker mid-text or absent               -> DENY (exit 2)
+// Only `message` is read: an anchored marker in `prompt` (or any other field)
+// never rescues an unmarked `message`. Extra fields are tolerated once the
+// required fields match.
+function codexSpawnGuard(root, payload) {
+  const toolName = CODEX_SPAWN_TOOL;
+  const toolInput = payload.tool_input;
+  if (!toolInput || typeof toolInput !== "object" || Array.isArray(toolInput)) {
+    return 0;
+  }
+  if (toolInput.agent_type !== CODEX_SPAWN_WORKER_TYPE) {
+    return 0;
+  }
+  const message = toolInput.message;
+  if (typeof message !== "string" || message === "") {
+    return 0;
+  }
+  const tier = startsWithTierMarker(message);
+  if (tier) {
+    logDispatch(root, toolName, toolInput, "codex-spawn-marker", null, tier);
+    return 0;
+  }
+  const reason =
+    `bee-model-guard: Codex spawn_agent(agent_type: "worker") needs an explicit ` +
+    "tier — its message must OPEN with a [bee-tier: <tier>] marker (decision 0023 " +
+    "parity, codex-native-runtime-v2 D4). A marker anywhere but the start of the " +
+    "message does not count, and a marker in any other field is ignored; without " +
+    "one the spawned worker silently inherits the session model.\n" +
+    "FIX: begin the spawn message with the marker, e.g. " +
+    '"[bee-tier: generation] <task>" (tiers: ceiling/generation/extraction/review).';
+  return denyWith(root, toolName, toolInput, reason, "codex-spawn-unmarked", null, null);
 }
 
 // Dispatch audit log (P22, feature dispatch-log): one line per evaluated
@@ -160,13 +216,25 @@ async function main() {
     }
 
     const toolName = payload.tool_name || payload.toolName || "";
-    if (!DISPATCH_TOOLS.has(toolName)) {
+    // Codex spawn recognition keys on the AUTHORITATIVE field payload.tool_name
+    // ONLY — a top-level `toolName` alias is not the observed Codex envelope and
+    // fails open. The Claude dispatch set (Agent|Task) is evaluated exactly as
+    // before; this line adds the Codex tool without changing that behavior.
+    const isCodexSpawn = payload.tool_name === CODEX_SPAWN_TOOL;
+    if (!isCodexSpawn && !DISPATCH_TOOLS.has(toolName)) {
       return 0;
     }
 
     const stateLib = await import(libModuleUrl(root, "state.mjs"));
     if (!stateLib.hookEnabled(root, HOOK_NAME)) {
       return 0;
+    }
+
+    // Isolated Codex branch (codex-native-runtime-v2 D4): returns its own
+    // decision and NEVER falls through into the Claude enforcement below. The
+    // guard toggle above gates it exactly like the Claude path.
+    if (isCodexSpawn) {
+      return codexSpawnGuard(root, payload);
     }
 
     // An absent or non-object tool_input can never reach the deny branch —
