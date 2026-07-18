@@ -95,7 +95,7 @@ import {
   claimNextCell,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
-import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore } from './lib/worktree-store.mjs';
+import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree } from './lib/worktree-store.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
@@ -2115,6 +2115,42 @@ function handleWorktreeRegister(_root, flags) {
   return { result, text };
 }
 
+// "bee worktree new --feature <slug>" (GH #21, decision D7): create AND
+// register a fresh linked git worktree in one move. MUST run from the MAIN
+// (ordinary) checkout — resolveRoots is the same primitive
+// handleWorktreeRegister uses to require the opposite ('linked-valid'); here
+// it must be 'ordinary', because "new" is what CREATES the linked worktree
+// register later runs inside of.
+function handleWorktreeNew(_root, flags) {
+  const feature = requireFlag(flags, 'feature');
+  const baseRef = flags['base-ref'] !== undefined ? String(flags['base-ref']) : undefined;
+  let resolution;
+  try {
+    resolution = resolveRoots(process.cwd());
+  } catch (error) {
+    throw new Error(
+      `"bee worktree new" must be run from inside the main checkout (not a linked worktree): ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (resolution.worktreeResolution !== 'ordinary' || !resolution.workRoot) {
+    throw new Error(
+      `"bee worktree new" must be run from inside the main checkout, not a "${resolution.worktreeResolution}" checkout — run it from the main repo root, then open your next session inside the created worktree.`,
+    );
+  }
+  const mainRoot = resolution.workRoot;
+  const created = createFeatureWorktree(mainRoot, { feature, baseRef });
+  const result = { id: created.id, worktreeRoot: created.worktreeRoot, branch: created.branch };
+  const text = [
+    `Created worktree for feature "${feature}": ${created.worktreeRoot}`,
+    `  branch:      ${created.branch}`,
+    created.bootstrap.created
+      ? `  bootstrapped ${created.bootstrap.worktreeStoreRoot} (phase idle, gates unapproved).`
+      : `  worktree .bee/state.json already existed — left untouched (${created.bootstrap.reason}).`,
+    `Open your next session in ${created.worktreeRoot} to work this feature.`,
+  ].join('\n');
+  return { result, text };
+}
+
 function handleWorktreeList(root, _flags) {
   const mainRoot = resolveMainRoot(root);
   const mainStoreRoot = path.join(mainRoot, '.bee');
@@ -2381,7 +2417,7 @@ function configUsageFallback(leading) {
 
 function worktreeUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister.`;
+  return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister, new.`;
 }
 
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
@@ -2493,6 +2529,7 @@ const HANDLERS = {
   'worktree.register': handleWorktreeRegister,
   'worktree.list': handleWorktreeList,
   'worktree.unregister': handleWorktreeUnregister,
+  'worktree.new': handleWorktreeNew,
   'config.get': handleConfigGet,
   'config.set': handleConfigSet,
   'config.unset': handleConfigUnset,
