@@ -600,7 +600,7 @@ const RELEASE_MANIFEST_LINT_PATH = 'docs/history/codex-harness-hardening/release
 // missing/non-array files) — the lint must never throw on a bad cell; that
 // judgment belongs to validateNewCell/updateCell's own refusals, not this
 // advisory pass.
-function manifestLintWarning(cell) {
+export function manifestLintWarning(cell) {
   if (!cell || typeof cell !== 'object') return null;
   if (typeof cell.verify !== 'string' || !cell.verify.includes('release_manifest')) return null;
   const files = Array.isArray(cell.files) ? cell.files : [];

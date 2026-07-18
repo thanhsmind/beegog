@@ -1,0 +1,57 @@
+{
+  "id": "pah-3",
+  "feature": "post-advisor-hardening",
+  "title": "H3: session-close B15 instruction names the advisor-consult prerequisite for high-risk",
+  "lane": "standard",
+  "behavior_change": true,
+  "deps": [],
+  "files": [
+    "hooks/bee-session-close.mjs",
+    ".bee/bin/hooks/bee-session-close.mjs",
+    "hooks/test_bypass_stop_net.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/post-advisor-hardening/CONTEXT.md",
+    "docs/history/post-advisor-hardening/plan.md",
+    "hooks/bee-session-close.mjs",
+    "docs/specs/workflow-state.md"
+  ],
+  "action": "Per H3 (CONTEXT.md): in hooks/bee-session-close.mjs's gate-bypass net (the B15 block, ~:211+), extend the instruction text it emits for a pending EXECUTION gate: when the record's mode is high-risk, the instruction names the consult prerequisite — run the configured advisor read-only with the evidence bundle on stdin, record via 'bee state advisor-ref record --advisor <identity> --digest-file <path>', THEN record the approval (which otherwise throws per AO3/AO13). Message/prose text only: no change to when the net fires, the loop-guard, the verdict shape, or any other gate's instruction. Byte-mirror .bee/bin/hooks/bee-session-close.mjs. Extend hooks/test_bypass_stop_net.mjs (checker BLOCKER: this purpose-built harness — buildFixture(mode, gateBypass) + runHook, existing firing/instruction rows incl. 'Gate 3'/'execution' at ~:114 — is where B15 coverage lives; test_hook_contracts.mjs has only wrapper/event-routing rows and stays untouched): a row asserting the high-risk (full/total) execution instruction contains the consult step, and a row asserting the non-high-risk instruction is unchanged; every existing net/loop-guard row (incl. row 8 ~:152, normal+high-risk -> no block) regresses green. Note the reason string is a single flat template today — add the mode branch minimally (const mode = record.mode is already in scope). FINAL STEP: node scripts/release_manifest.mjs --write, then the cell verify.",
+  "must_haves": {
+    "truths": [
+      "high-risk execution instruction names consult-then-record",
+      "non-high-risk instructions byte-unchanged",
+      "net firing conditions, loop-guard, verdict shape untouched",
+      "mirror byte-identical",
+      "existing test_bypass_stop_net rows green (incl. normal+high-risk no-block row)"
+    ],
+    "artifacts": [
+      "fresh verify output"
+    ],
+    "key_links": [
+      "docs/history/post-advisor-hardening/CONTEXT.md (H3)",
+      "docs/specs/workflow-state.md (B9a)"
+    ],
+    "prohibitions": [
+      "no behavior change to the net itself — instruction text only",
+      "no edits outside bounded files (manifest via --write only)"
+    ]
+  },
+  "verify": "node hooks/test_bypass_stop_net.mjs && node hooks/test_hook_contracts.mjs && node scripts/release_manifest.mjs --check",
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  },
+  "tier": "generation"
+}
