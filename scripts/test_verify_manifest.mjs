@@ -16,6 +16,7 @@ const CONFIG_PATH = path.join(REPO_ROOT, ".bee", "config.json");
 // The suites that MUST always run as part of commands.verify.
 const MANDATORY_SUITES = [
   "test_lib",
+  "test_skill_render",
   "test_onboard_bee",
   "test_plugin_distribution",
   "test_portable_paths",
@@ -23,6 +24,7 @@ const MANDATORY_SUITES = [
   "test_write_guard",
   "test_hook_contracts",
   "test_bee_cli",
+  "test_state_write_concurrency",
   "test_installers_e2e",
 ];
 
