@@ -1534,6 +1534,196 @@ try {
   }
 }
 
+// --- 9b. codex-hybrid (GH #22 P0-1) ------------------------------------------
+// --plugin-source alone installs plugin skills but no hooks: codex-cli has no
+// plugin-hook mechanism (capability matrix row B1), so a plugin-first-onboarded
+// repo used to report itself onboarded while carrying ZERO mechanical
+// enforcement for Codex sessions. --runtime codex|both (default both) now
+// ALWAYS also vendors .bee/bin/hooks/ and merges .codex/hooks.json under
+// --plugin-source, reusing the exact --repo-hooks codex projection. Uses the
+// REAL script directly (not a version-pinned fixture), same as the plain
+// --repo-hooks tests above — plugin-source's own release-identity gate
+// resolves fine against the running repo's own self-consistent tree.
+{
+  const hybridTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-codex-hybrid-"));
+
+  // (a) plugin-source + runtime codex -> .codex/hooks.json AND vendored
+  // .bee/bin/hooks/ are written; project skill projections stay absent
+  // (plugin-source's existing behavior for skills is untouched).
+  {
+    const repo = path.join(hybridTmp, "runtime-codex");
+    fs.mkdirSync(repo, { recursive: true });
+    const home = makeFakeHome();
+
+    const apply = await runOnboard(
+      ["--repo-root", repo, "--apply", "--plugin-source", "--runtime", "codex", "--json"], home);
+    check(apply.payload?.status === "applied",
+      "codex-hybrid: plugin-source + runtime codex apply succeeds",
+      JSON.stringify(apply.payload));
+    check(fs.existsSync(path.join(repo, ".codex", "hooks.json")),
+      "codex-hybrid: .codex/hooks.json is written");
+    const hooksDir = path.join(repo, ".bee", "bin", "hooks");
+    check(listMjs(hooksDir).length > 0,
+      "codex-hybrid: .bee/bin/hooks/ is vendored");
+    const codexHooksText = fs.readFileSync(path.join(repo, ".codex", "hooks.json"), "utf8");
+    check(codexHooksText.includes(".bee/bin/hooks/bee-write-guard.mjs"),
+      "codex-hybrid: .codex/hooks.json wires bee-write-guard.mjs");
+    check(!fs.existsSync(path.join(repo, ".claude", "skills")) &&
+      !fs.existsSync(path.join(repo, ".agents", "skills")),
+      "codex-hybrid: plugin-source still skips project skill projections");
+    check(apply.payload?.onboarding?.managed?.codex_hooks &&
+      Object.keys(apply.payload.onboarding.managed.codex_hooks).length > 0,
+      "codex-hybrid: onboarding.json managed set records codex_hooks",
+      JSON.stringify(apply.payload?.onboarding?.managed));
+    check(!apply.payload?.onboarding?.managed?.repo_hooks,
+      "codex-hybrid: onboarding.json managed set never records repo_hooks (that key is --repo-hooks-only)");
+
+    const recheck = await runOnboard(
+      ["--repo-root", repo, "--plugin-source", "--runtime", "codex", "--json"], home);
+    check(recheck.payload?.status === "up_to_date",
+      "codex-hybrid: immediate recheck is up_to_date",
+      JSON.stringify(recheck.payload?.plan || []));
+  }
+
+  // (a2) --runtime both (the default) covers codex too — same effect as
+  // explicit --runtime codex, and matches install.sh's own default.
+  {
+    const repo = path.join(hybridTmp, "runtime-both-default");
+    fs.mkdirSync(repo, { recursive: true });
+    const home = makeFakeHome();
+
+    const apply = await runOnboard(["--repo-root", repo, "--apply", "--plugin-source", "--json"], home);
+    check(apply.payload?.status === "applied",
+      "codex-hybrid: plugin-source with no --runtime (default both) apply succeeds");
+    check(fs.existsSync(path.join(repo, ".codex", "hooks.json")),
+      "codex-hybrid: default --runtime both also writes .codex/hooks.json");
+  }
+
+  // (b) plugin-source + runtime claude -> NO codex files, NO claude repo-local
+  // hook entries either — exclusivity byte-identical to plain --plugin-source
+  // before --runtime existed.
+  {
+    const repo = path.join(hybridTmp, "runtime-claude");
+    fs.mkdirSync(repo, { recursive: true });
+    const home = makeFakeHome();
+
+    const apply = await runOnboard(
+      ["--repo-root", repo, "--apply", "--plugin-source", "--runtime", "claude", "--json"], home);
+    check(apply.payload?.status === "applied",
+      "codex-hybrid: plugin-source + runtime claude apply succeeds");
+    check(!fs.existsSync(path.join(repo, ".codex", "hooks.json")),
+      "codex-hybrid: runtime claude writes no .codex/hooks.json");
+    check(!fs.existsSync(path.join(repo, ".bee", "bin", "hooks")),
+      "codex-hybrid: runtime claude vendors no .bee/bin/hooks/");
+    check(!fs.existsSync(path.join(repo, ".claude", "settings.json")),
+      "codex-hybrid: runtime claude writes no .claude/settings.json (plugin-first relies on the plugin's own Claude hooks)");
+    check(!apply.payload?.onboarding?.managed?.codex_hooks &&
+      !apply.payload?.onboarding?.managed?.repo_hooks,
+      "codex-hybrid: runtime claude records neither codex_hooks nor repo_hooks",
+      JSON.stringify(apply.payload?.onboarding?.managed));
+
+    // (5) managed-set gating (advisor R5): a claude-only run's recheck must
+    // never report codex drift — a phantom changes_needed would mean the
+    // managed-set gate leaked codex_hooks expectations into a claude-only run.
+    const recheck = await runOnboard(
+      ["--repo-root", repo, "--plugin-source", "--runtime", "claude", "--json"], home);
+    check(recheck.payload?.status === "up_to_date",
+      "codex-hybrid: runtime claude reports no phantom codex drift on recheck",
+      JSON.stringify(recheck.payload?.plan || []));
+  }
+
+  // (c) typed blocked apply (advisor R3): a `.codex` path occupied by a plain
+  // FILE must refuse the WHOLE apply with a typed {status, reason, forceable}
+  // result — never an untyped {error: ...} crash — and mutate nothing (D3
+  // fail-closed: skills/doctrine must never be reported applied without the
+  // hooks that make them mechanically enforced for Codex).
+  {
+    const repo = path.join(hybridTmp, "blocked-codex-file");
+    fs.mkdirSync(repo, { recursive: true });
+    fs.writeFileSync(path.join(repo, ".codex"), "not a directory\n", "utf8");
+    const home = makeFakeHome();
+    const before = hashTree(repo);
+
+    const apply = await runOnboard(
+      ["--repo-root", repo, "--apply", "--plugin-source", "--runtime", "codex", "--json"], home);
+    check(apply.status === 1, "codex-hybrid blocked: apply exits nonzero", String(apply.status));
+    check(apply.payload !== null, "codex-hybrid blocked: output is valid JSON (never an untyped crash)",
+      apply.stdout || "");
+    check(apply.payload?.status === "blocked",
+      "codex-hybrid blocked: typed status is 'blocked'", JSON.stringify(apply.payload));
+    check(typeof apply.payload?.reason === "string" &&
+      /repo-copy|hybrid apply/i.test(apply.payload.reason),
+      "codex-hybrid blocked: reason names repo-copy or a hybrid retry",
+      String(apply.payload?.reason));
+    check(apply.payload?.error === undefined,
+      "codex-hybrid blocked: never falls through to the generic untyped {error} shape",
+      JSON.stringify(apply.payload));
+    check(hashTree(repo) === before,
+      "codex-hybrid blocked: zero mutation — the whole apply refuses, not just the hook write");
+  }
+
+  fs.rmSync(hybridTmp, { recursive: true, force: true });
+}
+
+// --- 9c. sticky repo-hooks record under --plugin-source (point 6) -----------
+// A repo that once recorded a full --repo-hooks install (Claude + Codex
+// repo-local wiring) and is re-onboarded as --plugin-source must not have
+// that record silently carried forward while the mechanism underneath it
+// quietly changed shape. The record is allowed to lapse (repoHooks is always
+// false under --plugin-source), but the transition is surfaced as a notice
+// in the SAME run, naming what survives (codex-hybrid, when --runtime covers
+// codex) and what does not (Claude repo-local entries, always).
+{
+  const stickyPluginTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-sticky-plugin-source-"));
+
+  // (a) --runtime codex: the codex portion is honestly replaced by the
+  // codex-hybrid projection; the notice says so.
+  {
+    const repo = path.join(stickyPluginTmp, "codex-covered");
+    fs.mkdirSync(repo, { recursive: true });
+    const home = makeFakeHome();
+
+    await runOnboard(["--repo-root", repo, "--apply", "--repo-hooks", "--json"], home);
+    check(JSON.parse(fs.readFileSync(path.join(repo, ".bee", "onboarding.json"), "utf8"))
+      .managed?.repo_hooks, "sticky/plugin-source precondition: repo_hooks recorded after --repo-hooks");
+
+    const apply = await runOnboard(
+      ["--repo-root", repo, "--apply", "--plugin-source", "--runtime", "codex", "--json"], home);
+    check(apply.payload?.status === "applied",
+      "sticky/plugin-source: re-onboard as plugin-source + runtime codex applies cleanly");
+    const onboarding = JSON.parse(fs.readFileSync(path.join(repo, ".bee", "onboarding.json"), "utf8"));
+    check(!onboarding.managed?.repo_hooks,
+      "sticky/plugin-source: the stale repo_hooks record is NOT silently carried forward",
+      JSON.stringify(onboarding.managed));
+    check(!!onboarding.managed?.codex_hooks,
+      "sticky/plugin-source: codex_hooks now records the surviving codex-hybrid coverage");
+    check((apply.payload?.notices || []).some((n) => /previously opted into --repo-hooks/.test(n) &&
+      /codex-hybrid/.test(n)),
+      "sticky/plugin-source: a notice surfaces the transition and names codex-hybrid as the replacement",
+      JSON.stringify(apply.payload?.notices));
+  }
+
+  // (b) --runtime claude: NO replacement covers Codex any more — the notice
+  // says so plainly instead of staying silent about the regression.
+  {
+    const repo = path.join(stickyPluginTmp, "claude-only");
+    fs.mkdirSync(repo, { recursive: true });
+    const home = makeFakeHome();
+
+    await runOnboard(["--repo-root", repo, "--apply", "--repo-hooks", "--json"], home);
+    const apply = await runOnboard(
+      ["--repo-root", repo, "--apply", "--plugin-source", "--runtime", "claude", "--json"], home);
+    check(apply.payload?.status === "applied",
+      "sticky/plugin-source: re-onboard as plugin-source + runtime claude applies cleanly");
+    check((apply.payload?.notices || []).some((n) => /previously opted into --repo-hooks/.test(n) &&
+      /retires ALL repo-local hook entries, including Codex/.test(n)),
+      "sticky/plugin-source: runtime claude's notice names the Codex coverage loss plainly",
+      JSON.stringify(apply.payload?.notices));
+  }
+
+  fs.rmSync(stickyPluginTmp, { recursive: true, force: true });
+}
+
 // --- 10. skill-sync (D1-D5): safety-critical behavioral cases ---------------
 // Fixture authority (F4): source authority = the EXECUTING file's own tree, so
 // fake-source cases copy the launcher + its relative deps into the fake

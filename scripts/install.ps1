@@ -229,6 +229,17 @@ try {
   }
 
   $distributionArgs = @('--mode', $Distribution, '--runtime', $Runtime, '--repo-root', $Directory, '--release-manifest', $releaseManifest, '--plugin-state-file', $stateFile)
+  # GH #22 P0-1 (cph-1 self-erasure fix): a plugin-first install whose runtime
+  # scope covers codex gets the codex-hybrid .codex/hooks.json + .bee/bin/hooks/
+  # write from onboard_bee.mjs - its own --plugin-source defaults --runtime to
+  # "both", so that write fires today regardless of $Runtime ($onboardFlags does
+  # not thread --runtime through to onboard_bee.mjs yet; that broader wiring is
+  # a later cell). Without --codex-hybrid here, the distribution helper's
+  # cleanup pass below would immediately strip the very hook entries onboarding
+  # just wrote, right back to zero mechanical enforcement for Codex sessions.
+  if ($Distribution -eq 'plugin-first' -and $Runtime -in @('codex', 'both')) {
+    $distributionArgs += @('--codex-hybrid')
+  }
   if ($OwnershipLedger) { $distributionArgs += @('--ledger', $OwnershipLedger) }
   if ($GlobalSkills) {
     $claudeHome = if ($env:CLAUDE_HOME) { $env:CLAUDE_HOME } else { Join-Path $HOME '.claude' }
