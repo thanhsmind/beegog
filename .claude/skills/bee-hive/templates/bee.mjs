@@ -96,7 +96,7 @@ import {
   claimNextCell,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
-import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore } from './lib/worktree-store.mjs';
+import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree } from './lib/worktree-store.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
@@ -2116,6 +2116,101 @@ function handleWorktreeRegister(_root, flags) {
   return { result, text };
 }
 
+// "bee worktree new --feature <slug>" (GH #21, decision D7): create AND
+// register a fresh linked git worktree in one move. MUST run from the MAIN
+// (ordinary) checkout — resolveRoots is the same primitive
+// handleWorktreeRegister uses to require the opposite ('linked-valid'); here
+// it must be 'ordinary', because "new" is what CREATES the linked worktree
+// register later runs inside of.
+function handleWorktreeNew(_root, flags) {
+  const feature = requireFlag(flags, 'feature');
+  const baseRef = flags['base-ref'] !== undefined ? String(flags['base-ref']) : undefined;
+  let resolution;
+  try {
+    resolution = resolveRoots(process.cwd());
+  } catch (error) {
+    throw new Error(
+      `"bee worktree new" must be run from inside the main checkout (not a linked worktree): ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (resolution.worktreeResolution !== 'ordinary' || !resolution.workRoot) {
+    throw new Error(
+      `"bee worktree new" must be run from inside the main checkout, not a "${resolution.worktreeResolution}" checkout — run it from the main repo root, then open your next session inside the created worktree.`,
+    );
+  }
+  const mainRoot = resolution.workRoot;
+  const created = createFeatureWorktree(mainRoot, { feature, baseRef });
+  const result = { id: created.id, worktreeRoot: created.worktreeRoot, branch: created.branch };
+  const text = [
+    `Created worktree for feature "${feature}": ${created.worktreeRoot}`,
+    `  branch:      ${created.branch}`,
+    created.bootstrap.created
+      ? `  bootstrapped ${created.bootstrap.worktreeStoreRoot} (phase idle, gates unapproved).`
+      : `  worktree .bee/state.json already existed — left untouched (${created.bootstrap.reason}).`,
+    `Open your next session in ${created.worktreeRoot} to work this feature.`,
+  ].join('\n');
+  return { result, text };
+}
+
+// "bee worktree merge --id <id>" (GH #21, decision D8): merge a granted
+// worktree's branch back into MAIN and run the host project's configured
+// verify against the merged tree — the semantic-conflict alarm for a merge
+// that is textually clean but breaks behavior. Requires an ORDINARY checkout
+// (same resolveRoots-based guard handleWorktreeNew uses, for the same
+// reason: running merge from inside ANY linked worktree — including the one
+// named by --id — already fails this check, which IS the "a worktree cannot
+// merge itself" refusal; mergeFeatureWorktree's own isOrdinaryCheckout(mainRoot)
+// re-check is the belt-and-braces layer, exactly like createFeatureWorktree's).
+// verifyCommand is resolved HERE (readConfig(mainRoot).commands.verify) and
+// passed down as a plain option, per worktree-store.mjs's zero-deps-beyond-
+// node-builtins module contract (see mergeFeatureWorktree's header comment).
+function handleWorktreeMerge(_root, flags) {
+  const id = requireFlag(flags, 'id');
+  const cleanup = flags.cleanup === true;
+  let resolution;
+  try {
+    resolution = resolveRoots(process.cwd());
+  } catch (error) {
+    throw new Error(
+      `"bee worktree merge" must be run from inside the main checkout (not a linked worktree): ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (resolution.worktreeResolution !== 'ordinary' || !resolution.workRoot) {
+    throw new Error(
+      `"bee worktree merge" must be run from inside the main checkout, not a "${resolution.worktreeResolution}" checkout — a worktree, including the one being merged, cannot merge itself.`,
+    );
+  }
+  const mainRoot = resolution.workRoot;
+  const verifyCommand = readConfig(mainRoot).commands.verify || undefined;
+  const mergeResultValue = mergeFeatureWorktree(mainRoot, { id, cleanup, verifyCommand });
+
+  const lines = [];
+  if (mergeResultValue.ok) {
+    lines.push(`Merged worktree ${id} (branch ${mergeResultValue.branch}) into ${mainRoot}.`);
+    lines.push(`  verify: ${mergeResultValue.verify}`);
+    if (mergeResultValue.cleanup) {
+      lines.push(
+        mergeResultValue.cleanup.ok
+          ? '  cleanup: worktree removed, branch deleted.'
+          : `  cleanup: refused (${mergeResultValue.cleanup.code}) — ${mergeResultValue.cleanup.reason}`,
+      );
+      if (mergeResultValue.cleanup.warning) {
+        lines.push(`  WARNING: ${mergeResultValue.cleanup.warning}`);
+      }
+    } else if (mergeResultValue.cleanup_suggested_command) {
+      lines.push(`  cleanup: run \`${mergeResultValue.cleanup_suggested_command}\` when ready.`);
+    }
+  } else if (mergeResultValue.code === 'MERGE_VERIFY_RED') {
+    lines.push(`Merged worktree ${id} (branch ${mergeResultValue.branch}) — TEXTUALLY CLEAN, but verify is RED (semantic-conflict alarm).`);
+    lines.push('Fix-first before release. The merge commit is NOT rolled back.');
+    lines.push('--- verify output tail ---');
+    lines.push(mergeResultValue.output_tail);
+  } else {
+    lines.push(`Merge of worktree ${id} left conflict/failure state in ${mainRoot} — resolve it there; bee does not roll back or auto-resolve.`);
+  }
+  return { result: mergeResultValue, text: lines.join('\n'), exitCode: mergeResultValue.ok ? 0 : 1 };
+}
+
 function handleWorktreeList(root, _flags) {
   const mainRoot = resolveMainRoot(root);
   const mainStoreRoot = path.join(mainRoot, '.bee');
@@ -2763,7 +2858,7 @@ function configUsageFallback(leading) {
 
 function worktreeUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister.`;
+  return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister, new, merge.`;
 }
 
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
@@ -2875,6 +2970,8 @@ const HANDLERS = {
   'worktree.register': handleWorktreeRegister,
   'worktree.list': handleWorktreeList,
   'worktree.unregister': handleWorktreeUnregister,
+  'worktree.new': handleWorktreeNew,
+  'worktree.merge': handleWorktreeMerge,
   'config.get': handleConfigGet,
   'config.set': handleConfigSet,
   'config.unset': handleConfigUnset,
@@ -2898,7 +2995,9 @@ const HANDLERS = {
 // handoff fsh-4, D2/D4) is state.start-feature's lane-mode opt-in — a
 // DISTINCT flag name from the `--lane <feature>` string flag used by
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string']);
+// `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
+// `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup']);
 
 export function splitCommandTokens(argv) {
   const leading = [];
