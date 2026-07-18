@@ -1,0 +1,84 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Only suites that were actually read end-to-end for path-separator and
+  # spawnSync assumptions run here. Each of the three below uses
+  # node:path (path.join/path.resolve) consistently, never a hardcoded "/"
+  # or "\\" separator, and its only child_process call is `spawnSync('git',
+  # [...])` (never a POSIX-shaped shell string) — confirmed by reading the
+  # full source of each file plus its non-trivial imports (e.g.
+  # .bee/bin/lib/commands_detect.mjs already branches on
+  # `process.platform === 'win32'` for its own direct-invocation check).
+  #
+  # EXCLUDED from this lane — present in .bee/config.json `commands.verify`
+  # but NOT proven on Windows path/git semantics yet, honestly left out
+  # rather than shipped as assumed-green:
+  #   - scripts/test_worktree_store.mjs
+  #   - scripts/test_worktree_cli.mjs
+  #   - scripts/test_worktree_grant_resolve.mjs
+  #     (git worktree store/CLI/grant-resolve — worktree path handling
+  #     across drives/UNC paths is untested on Windows)
+  #   - scripts/test_installers_e2e.mjs (installer E2E — invokes install.sh,
+  #     bash-shaped, not install.ps1)
+  #   - hooks/test_hook_contracts.mjs
+  #   - hooks/test_write_guard.mjs
+  #   - hooks/test_model_guard.mjs
+  #     (hook contract suites — not yet read for Windows path assumptions)
+  #   - every other scripts/test_*.mjs and skills/*/scripts/test_*.mjs in
+  #     the verify chain not named above
+  # Add any of these to the matrix only after a real windows-latest run
+  # confirms it green. A full install.ps1 end-to-end run (actually invoking
+  # the installer against a scratch checkout, not just a syntax check) is a
+  # named backlog item, not covered by this workflow yet.
+  portable-suites:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: bee-hive template test_lib
+        run: node skills/bee-hive/templates/tests/test_lib.mjs
+
+      - name: portable paths guard
+        run: node scripts/test_portable_paths.mjs
+
+      - name: config validate
+        run: node scripts/test_config_validate.mjs
+
+  install-ps1-syntax:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # PS 5.1-compatible syntax check via the legacy tokenizer API, run
+      # under Windows PowerShell (not pwsh/PowerShell Core) since that is
+      # what `shell: powershell` selects on windows-latest and matches the
+      # PS 5.1 target install.ps1 is written for.
+      - name: PowerShell 5.1 syntax check (install.ps1)
+        shell: powershell
+        run: |
+          $errs = $null
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content -Raw scripts/install.ps1), [ref]$errs) | Out-Null
+          if ($errs.Count) {
+            $errs
+            exit 1
+          }
