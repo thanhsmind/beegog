@@ -115,6 +115,36 @@ async function main() {
       "total + validating + execution-pending + Stop → block (Gate 3)");
   }
 
+  // 3b. H3: high-risk validating/execution instruction names the AO3/AO13
+  // advisor-consult prerequisite before "Set the gate yourself now".
+  {
+    const root = buildFixture({ phase: "validating", mode: "high-risk", gateBypass: "total" });
+    const r = await runHook(root);
+    check(
+      r.fired &&
+        r.stdout.includes("state advisor-ref record") &&
+        r.stdout.includes("AO3/AO13") &&
+        r.stdout.indexOf("advisor consult") < r.stdout.indexOf("Set the gate yourself now"),
+      "total + high-risk + validating/execution → block names advisor-consult prerequisite before setting the gate",
+      r.stdout,
+    );
+  }
+
+  // 3c. Non-high-risk execution instruction stays byte-unchanged — no consult
+  // sentence, straight from "do NOT ask the human." to "Set the gate yourself now".
+  {
+    const root = buildFixture({ phase: "validating", mode: "standard", gateBypass: "total" });
+    const r = await runHook(root);
+    check(
+      r.fired &&
+        !r.stdout.includes("advisor-ref record") &&
+        !r.stdout.includes("AO3/AO13") &&
+        r.stdout.includes("do NOT ask the human. Set the gate yourself now:"),
+      "total + standard mode + validating/execution → block instruction unchanged (no consult sentence)",
+      r.stdout,
+    );
+  }
+
   // 4. exploring phase is never mechanized (Gate 1 info questions still stop).
   {
     const root = buildFixture({ phase: "exploring", gateBypass: "total" });

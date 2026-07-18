@@ -268,10 +268,21 @@ async function maybeBypassBlock(root, ctx) {
   injectLib.markInjected(root, key, hash);
 
   const gateNo = gate === "shape" ? "2" : "3";
+  // AO3/AO13: `state gate --name execution --approved true` refuses for
+  // high-risk work without a non-stale advisor_ref (.bee/bin/bee.mjs
+  // handleStateGate). Pre-precondition this instruction only named "set the
+  // gate" and would steer the agent straight into that throw uninformed
+  // (H3 / P3 friction). Prose only — the net's firing conditions, loop-guard,
+  // and verdict shape are untouched; the sentence is empty (byte-identical
+  // instruction) for every non-high-risk-execution case.
+  const consultSentence =
+    gate === "execution" && mode === "high-risk"
+      ? 'High-risk execution requires a live advisor consult first: resolve the advisor from config (models.<runtime>.advisor), run it read-only with the evidence bundle on stdin, then record it via node .bee/bin/bee.mjs state advisor-ref record --advisor "<identity>" --digest-file <path> (the gate throws without a non-stale advisor_ref, per AO3/AO13) — do this BEFORE setting the gate. '
+      : "";
   return (
     `⚡ GATE BYPASS (${level}): you are stopping mid-${phase} with Gate ${gateNo} ` +
     `(${gate}) still pending, but bypass level "${level}" requires auto-approval at ` +
-    `this lane — do NOT ask the human. Set the gate yourself now: ` +
+    `this lane — do NOT ask the human. ${consultSentence}Set the gate yourself now: ` +
     `node .bee/bin/bee.mjs state gate --name ${gate} --approved true ; log a one-line ` +
     `audit decision (node .bee/bin/bee.mjs decisions log --decision "auto-approved Gate ` +
     `${gateNo} (bypass): <choice>" --rationale "<why>"); post the short "⚡ auto-approved ` +

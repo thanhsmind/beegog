@@ -39,19 +39,27 @@
     ]
   },
   "verify": "node hooks/test_bypass_stop_net.mjs && node hooks/test_hook_contracts.mjs && node scripts/release_manifest.mjs --check",
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "Kev2",
+    "outcome": "B15 gate-bypass net instruction for high-risk execution (Gate 3) now names the AO3/AO13 advisor-consult prerequisite (resolve advisor, run read-only, record via 'state advisor-ref record') before telling the agent to set the gate; non-high-risk and Gate 2 instructions are byte-unchanged; net firing conditions, loop-guard, and verdict shape untouched; mirror byte-identical",
+    "files_changed": [
+      "hooks/bee-session-close.mjs",
+      ".bee/bin/hooks/bee-session-close.mjs",
+      "hooks/test_bypass_stop_net.mjs",
+      "docs/history/codex-harness-hardening/release-manifest.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null
+    "capped_at": "2026-07-18T02:56:05.590Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\"hooks/test_bypass_stop_net.mjs\", \"hooks/test_hook_contracts.mjs\"],\n  \"tests_added_or_changed\": [\n    \"hooks/test_bypass_stop_net.mjs row 3b (new): total + high-risk mode + validating/execution -> block reason contains 'state advisor-ref record' and 'AO3/AO13', and the consult sentence appears before 'Set the gate yourself now'\",\n    \"hooks/test_bypass_stop_net.mjs row 3c (new): total + standard mode + validating/execution -> block reason has no consult text and reads 'do NOT ask the human. Set the gate yourself now:' unchanged\"\n  ],\n  \"red_failure_evidence\": \"git show HEAD:hooks/bee-session-close.mjs (pre-change) had a single flat reason template with no mode branch: '...this lane — do NOT ask the human. Set the gate yourself now: node .bee/bin/bee.mjs state gate --name ${gate} --approved true ...' for every mode, high-risk included. Row 3b's assertions (presence of 'state advisor-ref record' / 'AO3/AO13' in the block reason) would fail RED against that prior text since the string never appeared for any mode.\",\n  \"verification_run\": \"node hooks/test_bypass_stop_net.mjs && node hooks/test_hook_contracts.mjs && node scripts/release_manifest.mjs --check -> ALL PASS (16 rows incl. new 3b/3c) + 162 rows/19 groups 0 failing + 146 file(s) match stored manifest\",\n  \"deliberate_exceptions\": []\n}\n",
+    "verify_output": "test_bypass_stop_net.mjs: ALL PASS (16 checks incl. new rows 3b/3c for H3 high-risk consult prereq + non-high-risk byte-unchanged). test_hook_contracts.mjs: 162 rows across 19 check groups, 0 skipped, 0 failing target contract, ALL PASS. release_manifest --check: 146 file(s) match stored manifest.",
+    "verify_passed": true,
+    "claimed_at": "2026-07-18T02:54:53.051Z",
+    "verify_command": "node hooks/test_bypass_stop_net.mjs && node hooks/test_hook_contracts.mjs && node scripts/release_manifest.mjs --check",
+    "verified_at": "2026-07-18T02:55:49.159Z"
   },
   "tier": "generation"
 }
