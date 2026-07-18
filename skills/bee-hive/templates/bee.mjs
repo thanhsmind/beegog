@@ -97,6 +97,7 @@ import {
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree } from './lib/worktree-store.mjs';
+import { prepareDispatch } from './lib/dispatch-prepare.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
@@ -2789,6 +2790,21 @@ function doctorOverallStatus(rows) {
   return { overall_status: 'not_ready', reasons };
 }
 
+// dispatch (g22-1, GH #22 P0-3) — thin flag-parsing wrapper: every actual
+// resolution/payload-construction/prepare-time-record decision lives in
+// lib/dispatch-prepare.mjs's prepareDispatch, so this handler's only job is
+// pulling flags and letting prepareDispatch's own errors/refusals surface
+// (a bad --runtime/--kind or a missing --cell throws; a cli-shaped cell
+// resolution or an unconfigured advisor slot is a typed {ok:false} result,
+// not a throw — same discipline as reservations.reserve's conflict result).
+function handleDispatchPrepare(root, flags) {
+  const runtime = requireFlag(flags, 'runtime');
+  const kind = requireFlag(flags, 'kind');
+  const cellId = typeof flags.cell === 'string' && flags.cell ? flags.cell : null;
+  const out = prepareDispatch(root, { runtime, kind, cell: cellId });
+  return { result: out, text: JSON.stringify(out, null, 2) };
+}
+
 function handleDoctor(root, flags) {
   const runtime = requireFlag(flags, 'runtime');
   if (runtime !== 'codex' && runtime !== 'claude') {
@@ -2909,6 +2925,11 @@ function worktreeUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister, new, merge.`;
 }
 
+function dispatchUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: prepare.`;
+}
+
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
 // bee_reservations.mjs/bee_decisions.mjs are now shims, so their own
 // default-case "Unknown command ... Use: ..." messages (previously emitted
@@ -2942,6 +2963,7 @@ const GROUP_USAGE_FALLBACKS = {
   perf: perfUsageFallback,
   worktree: worktreeUsageFallback,
   config: configUsageFallback,
+  dispatch: dispatchUsageFallback,
 };
 
 const HANDLERS = {
@@ -3024,6 +3046,7 @@ const HANDLERS = {
   'config.set': handleConfigSet,
   'config.unset': handleConfigUnset,
   'config.validate': handleConfigValidate,
+  'dispatch.prepare': handleDispatchPrepare,
   doctor: handleDoctor,
 };
 

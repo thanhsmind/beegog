@@ -1415,6 +1415,30 @@ export const COMMAND_REGISTRY = [
   // (docs/history/codex-native-runtime-v2/reports/capability-matrix.md) for
   // every structurally-unknown codex row. Performs zero writes, including
   // bypassing the dispatcher's own pre-routing manifest-hash cache write. ──
+  // ─── dispatch (g22-1, GH #22 P0-3) — one source of truth for bee-owned
+  // dispatch payloads: resolves the tier/advisor slot for the given
+  // (runtime, kind), builds the exact Agent/spawn_agent/Bash-shaped envelope
+  // dispatch-guard.mjs's evaluateDispatch will judge, and records a
+  // prepare-time economics line to .bee/logs/dispatch.jsonl. ────────────────
+  {
+    name: 'dispatch.prepare',
+    invoke: 'bee dispatch prepare',
+    description:
+      'Build a bee-owned dispatch payload (Agent tool / spawn_agent / an external cli executor) for the given runtime and purpose, plus an economics record (logical_tier, requested_model, channel, enforcement). kind "cell" resolves the generation tier for cell execution and requires --cell (loaded for prompt context); kinds "gather"/"reviewer" resolve read-only gather-shaped tiers (generation/review respectively); kind "advisor" resolves the configured advisor slot, never a bare tier. A cli-shaped resolution for kind "cell" is returned as a typed refusal ({ok:false, reason:"cli_tier_gather_only", ...}) — prepare never routes around it. A cli-shaped resolution for gather/reviewer/advisor builds an external-executor Bash payload instead of an Agent/spawn_agent one.',
+    parameters: {
+      type: 'object',
+      properties: {
+        runtime: { type: 'string', description: 'Target runtime the payload is shaped for.', enum: ['codex', 'claude'] },
+        kind: { type: 'string', description: 'Dispatch purpose.', enum: ['cell', 'gather', 'reviewer', 'advisor'] },
+        cell: { type: 'string', description: 'Cell id — required when --kind cell; loaded for prompt context.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of pretty-printed JSON (prepare always prints JSON; flag kept for surface consistency).' },
+      },
+      required: ['runtime', 'kind'],
+    },
+    examples: ['bee dispatch prepare --runtime claude --kind gather --json'],
+    deprecated: null,
+  },
+
   {
     name: 'doctor',
     invoke: 'bee doctor',
