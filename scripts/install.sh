@@ -218,6 +218,16 @@ fi
 log "target   $TARGET_DIR [$MODE]"
 
 ONBOARD_FLAGS=()
+# Thread --runtime through to onboard_bee.mjs on both branches: it's the flag
+# that gates the codex-hybrid write (pluginSource && runtimeCoversCodex(runtime)
+# in onboard_bee.mjs computePlan/applyPlan) so plugin-first + --runtime codex/both
+# actually reaches the hook-write path this installer's --codex-hybrid cleanup
+# scoping (DIST_ARGS above) assumes is active. repo-copy passes it too for
+# symmetry — onboard_bee.mjs's skill-sync targets are runtime-independent today,
+# so this is currently a no-op there, but it keeps both branches honest about
+# which runtime the installer was asked for instead of always defaulting to
+# onboard_bee.mjs's own "both".
+ONBOARD_FLAGS+=("--runtime" "$RUNTIME")
 if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
   ONBOARD_FLAGS+=("--plugin-source")
 elif [ "$REPO_HOOKS" -eq 1 ]; then
@@ -351,12 +361,12 @@ cp "$STATE_FILE" "$PRE_STATE_FILE"
 DIST_ARGS=(--mode "$DISTRIBUTION_MODE" --runtime "$RUNTIME" --repo-root "$TARGET_DIR" --release-manifest "$RELEASE_MANIFEST" --plugin-state-file "$STATE_FILE")
 # GH #22 P0-1 (cph-1 self-erasure fix): a plugin-first install whose runtime
 # scope covers codex gets the codex-hybrid .codex/hooks.json + .bee/bin/hooks/
-# write from onboard_bee.mjs — its own --plugin-source defaults --runtime to
-# "both", so that write fires today regardless of $RUNTIME (ONBOARD_FLAGS does
-# not thread --runtime through to onboard_bee.mjs yet; that broader wiring is
-# a later cell). Without --codex-hybrid here, the next line's $DIST_HELPER
-# cleanup pass would immediately strip the very hook entries onboarding just
-# wrote, right back to zero mechanical enforcement for Codex sessions.
+# write from onboard_bee.mjs, gated by its own --runtime (now threaded through
+# via ONBOARD_FLAGS above, so onboard_bee.mjs's codexHybrid computation sees
+# the SAME $RUNTIME this installer resolved --runtime codex/both to). Without
+# --codex-hybrid here, the next line's $DIST_HELPER cleanup pass would
+# immediately strip the very hook entries onboarding just wrote, right back to
+# zero mechanical enforcement for Codex sessions.
 if [ "$DISTRIBUTION_MODE" = "plugin-first" ] && runtime_active codex; then
   DIST_ARGS+=(--codex-hybrid)
 fi
@@ -403,8 +413,27 @@ transition_plugin || handle_transition_failure "Plugin transition failed"
 # before onboarding, to prove the rollback contract (never set in real installs).
 [ -n "${BEE_INSTALL_FAULT_AFTER_TRANSITION:-}" ] && handle_transition_failure "injected post-transition fault (BEE_INSTALL_FAULT_AFTER_TRANSITION)"
 
+# A typed-blocked/refused apply (e.g. the codex-hybrid hook write preflight in
+# onboard_bee.mjs applyPlan refusing because .codex/hooks.json or .bee/bin/hooks/
+# can't be written — a pre-existing non-directory .codex, permissions, etc. — or
+# the same obstacle caught earlier by $DIST_HELPER's own project-cleanup probe,
+# e.g. an ENOTDIR lstat under a pre-existing non-directory .codex when it walks
+# .codex/skills) names the concrete way out: repo-copy sidesteps codex-hybrid
+# entirely, or clearing the on-disk obstacle and re-running plugin-first tries
+# the same hybrid write again. Only prints for a plugin-first run whose runtime
+# scope covers codex — the one case a codex-hybrid obstacle can explain.
+apply_failure_fix_options() {
+  [ "$DISTRIBUTION_MODE" = "plugin-first" ] && runtime_active codex || return 0
+  printf '  fix options:\n' >&2
+  printf '    - re-run with --distribution repo-copy (no codex-hybrid hook write required)\n' >&2
+  printf '    - clear the obstacle blocking the write (see reason above) and re-run --distribution plugin-first\n' >&2
+}
+
 probe_plugin_state "$STATE_FILE"
-node "$DIST_HELPER" "${DIST_ARGS[@]}" || handle_transition_failure "Distribution preflight refused after transition"
+node "$DIST_HELPER" "${DIST_ARGS[@]}" || {
+  apply_failure_fix_options
+  handle_transition_failure "Distribution preflight refused after transition"
+}
 
 # 5. apply onboarding, but ONLY when the plan has work. A repeat install that is
 #    already current must not rewrite managed files (no timestamp-only churn).
@@ -413,9 +442,15 @@ APPLY_STATUS="$(plan_field "$APPLY_JSON" status)"
 case "$APPLY_STATUS" in
   up_to_date) log "onboard  already current — no managed files rewritten" ;;
   changes_needed)
-    node "$ONBOARD" --repo-root "$TARGET_DIR" --apply ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} >/dev/null \
-      || handle_transition_failure "Onboarding apply failed" ;;
-  *) handle_transition_failure "Onboarding refused after transition [$APPLY_STATUS]" ;;
+    APPLY_OUTPUT="$(node "$ONBOARD" --repo-root "$TARGET_DIR" --apply ${ONBOARD_FLAGS[@]+"${ONBOARD_FLAGS[@]}"} 2>&1)" || {
+      printf '%s\n' "$APPLY_OUTPUT" >&2
+      apply_failure_fix_options
+      handle_transition_failure "Onboarding apply failed"
+    } ;;
+  *)
+    printf '%s\n' "$APPLY_JSON" >&2
+    apply_failure_fix_options
+    handle_transition_failure "Onboarding refused after transition [$APPLY_STATUS]" ;;
 esac
 
 if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
