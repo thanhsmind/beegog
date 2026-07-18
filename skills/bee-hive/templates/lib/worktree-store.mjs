@@ -488,3 +488,348 @@ export function createFeatureWorktree(mainRoot, options = {}) {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// mergeFeatureWorktree — "bee worktree merge --id <id>" (GH #21, decision D8):
+// merge a granted worktree's branch back into MAIN and run the host project's
+// configured verify command against the merged tree, so a textually-clean
+// merge that silently breaks behavior is caught before it ever reaches a
+// release. `mainRoot` MUST already be a resolved ORDINARY checkout root — see
+// createFeatureWorktree's header comment for why this module re-derives that
+// distinction itself instead of importing resolveRoots (state.mjs cycle) —
+// and per decision D8/advisor-R5, running merge from inside ANY linked
+// worktree (including the very one being merged) already fails this SAME
+// check, since a linked worktree's own `.git` is a file, never a directory:
+// there is no separate "own worktree" code, the not-ordinary refusal IS the
+// own-worktree guard (see mergeFeatureWorktree's own doc comment below).
+//
+// verifyCommand is deliberately a CALLER-PASSED option, not something this
+// module reads from .bee/config.json itself: worktree-store.mjs keeps
+// createFeatureWorktree's "zero deps beyond node builtins" contract (the
+// state.mjs-imports-readGrants-FROM-here cycle note above still applies), so
+// the CLI handler in bee.mjs resolves `readConfig(mainRoot).commands.verify`
+// and passes the string down as `options.verifyCommand`.
+// ---------------------------------------------------------------------------
+
+/** Typed refusal for mergeFeatureWorktree: same `[CODE] message` / `.code`
+ * convention as WorktreeCreateError above. */
+export class WorktreeMergeError extends Error {
+  constructor(code, message) {
+    super(`[${code}] ${message}`);
+    this.name = 'WorktreeMergeError';
+    this.code = code;
+  }
+}
+
+function refuseMerge(code, message) {
+  throw new WorktreeMergeError(code, message);
+}
+
+/** `git status --porcelain` — deliberately WITHOUT `--ignored` (decision D8a):
+ * a worktree whose only "dirty" content is its fully-bootstrapped gitignored
+ * `.bee` store must NOT read as dirty. Throws a plain (untyped) Error only
+ * when git itself cannot be asked at all — a git failure here is an
+ * environment problem, not a typed merge refusal. */
+function gitStatusPorcelain(cwd) {
+  const r = runGit(cwd, ['status', '--porcelain']);
+  if (r.status !== 0) {
+    throw new Error(`"git status --porcelain" failed in ${cwd}: ${(r.stderr || r.stdout || '').trim() || `exit ${r.status}`}`);
+  }
+  return r.stdout;
+}
+
+function isTreeDirty(cwd) {
+  return gitStatusPorcelain(cwd).trim().length > 0;
+}
+
+/** The worktree's CURRENT checked-out branch, or `null` on detached HEAD (or
+ * no HEAD ref at all). */
+function currentBranch(cwd) {
+  const r = runGit(cwd, ['symbolic-ref', '-q', '--short', 'HEAD']);
+  if (r.status !== 0) return null;
+  return r.stdout.trim();
+}
+
+/** Best-effort read of the worktree's OWN bootstrapped `.bee/state.json`
+ * `feature` field — used to derive the branch merge expects to consume
+ * (`wt/<feature>`, the convention `createFeatureWorktree` always uses).
+ * Never throws: a missing/corrupt/foreign state.json just means "unknown",
+ * handled by the caller via the pattern-only fallback below. */
+function readWorktreeFeature(worktreeRoot) {
+  try {
+    const raw = fs.readFileSync(path.join(worktreeRoot, '.bee', 'state.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.feature === 'string' && parsed.feature ? parsed.feature : null;
+  } catch {
+    return null;
+  }
+}
+
+// Pattern-only fallback when the worktree's own state.json has no readable
+// `feature` (e.g. a worktree adopted via `worktree register` whose state.json
+// predates this field, or was hand-edited) — still requires SOME "wt/<slug>"
+// shaped branch rather than accepting anything checked out.
+const WT_BRANCH_RE = /^wt\/[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * Resolves a granted worktree id to its worktreeRoot using the SAME
+ * bidirectional gitdir validation `resolveRoots` uses (see state.mjs), just
+ * keyed by `id` instead of by walking up from a cwd: reads
+ * `<mainRoot>/.git/worktrees/<id>/gitdir` (which should point at
+ * `<worktreeRoot>/.git`), then reverse-reads `<worktreeRoot>/.git` (which
+ * should point back at `<mainRoot>/.git/worktrees/<id>`). Returns `null` on
+ * ANY mismatch, missing file, or unreadable content — never throws, so the
+ * caller can fold "no such id" and "id's link is broken" into the same typed
+ * WORKTREE_MERGE_UNKNOWN_ID refusal.
+ */
+function resolveWorktreeById(mainRoot, id) {
+  const gitWorktreeDir = path.join(mainRoot, '.git', 'worktrees', id);
+  let stat;
+  try {
+    stat = fs.statSync(gitWorktreeDir);
+  } catch {
+    return null;
+  }
+  if (!stat.isDirectory()) return null;
+
+  let forwardRaw;
+  try {
+    forwardRaw = fs.readFileSync(path.join(gitWorktreeDir, 'gitdir'), 'utf8').trim();
+  } catch {
+    return null;
+  }
+  if (!forwardRaw) return null;
+  const resolvedGitFile = path.resolve(gitWorktreeDir, forwardRaw.replace(/\\/g, path.sep));
+  const worktreeRoot = path.dirname(resolvedGitFile);
+
+  let reverseRaw;
+  try {
+    reverseRaw = fs.readFileSync(path.join(worktreeRoot, '.git'), 'utf8').trim();
+  } catch {
+    return null;
+  }
+  const match = reverseRaw.match(/^gitdir:\s*(.+)$/);
+  if (!match) return null;
+  const reverseResolved = path.resolve(worktreeRoot, match[1].trim().replace(/\\/g, path.sep));
+  if (path.resolve(reverseResolved) !== path.resolve(gitWorktreeDir)) return null;
+
+  return { worktreeRoot };
+}
+
+/**
+ * Re-checks freshness immediately before removal, then `git worktree remove
+ * --force` + `git branch -d` (NEVER -D), in that order (decision D8b —
+ * advisor R4). `--force` is used ONLY to push past git's own removal-safety
+ * check tripping on the disposable gitignored `.bee` store (runtime/cache
+ * tier files are untracked-but-ignored, not a real dirty signal) — it is
+ * NEVER used to push through a genuinely dirty worktree, because the
+ * freshness re-check below (same `git status --porcelain`, no `--ignored`,
+ * as the pre-merge dirty check) already refuses, typed, before `remove` is
+ * ever invoked, whenever a tracked-modified or untracked file sits at a
+ * TRACKED path. Never throws: every outcome is a returned `{ok, code?}`
+ * object folded into the merge result's `.cleanup` field, per D8b ("cleanup
+ * refuses, typed, merge result still reported ok"). Also drops the id's
+ * grant from the MAIN store's registry once the worktree and branch are both
+ * gone — the same removeGrant call `createFeatureWorktree`'s own rollback
+ * path makes, so a merged-and-cleaned-up id never lingers in `bee worktree
+ * list` pointing at a directory that no longer exists (best-effort: a grant
+ * removal failure does not turn an otherwise-successful cleanup into a
+ * failure, since the worktree and branch are already gone by that point).
+ */
+function performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped = false }) {
+  let status;
+  try {
+    status = gitStatusPorcelain(worktreeRoot);
+  } catch (error) {
+    return { ok: false, code: 'WORKTREE_MERGE_CLEANUP_CHECK_FAILED', reason: error instanceof Error ? error.message : String(error) };
+  }
+  if (status.trim().length > 0) {
+    return {
+      ok: false,
+      code: 'WORKTREE_MERGE_CLEANUP_DIRTY',
+      reason: `${worktreeRoot} has tracked-modified or untracked files at tracked paths — cleanup refuses. Remove them (a bootstrapped, gitignored .bee store alone does not block cleanup) and retry, or clean up manually.`,
+      status,
+    };
+  }
+
+  const removeResult = runGit(mainRoot, ['worktree', 'remove', '--force', '--', worktreeRoot]);
+  if (removeResult.status !== 0) {
+    return {
+      ok: false,
+      code: 'WORKTREE_MERGE_CLEANUP_REMOVE_FAILED',
+      reason: (removeResult.stderr || removeResult.stdout || '').trim() || `exit ${removeResult.status}`,
+    };
+  }
+
+  const branchDeleteResult = runGit(mainRoot, ['branch', '-d', '--', branch]);
+  if (branchDeleteResult.status !== 0) {
+    return {
+      ok: false,
+      code: 'WORKTREE_MERGE_CLEANUP_BRANCH_DELETE_FAILED',
+      removed: true,
+      reason: (branchDeleteResult.stderr || branchDeleteResult.stdout || '').trim() || `exit ${branchDeleteResult.status}`,
+    };
+  }
+
+  try {
+    removeGrant(path.join(mainRoot, '.bee'), id);
+  } catch {
+    // best-effort — the worktree and branch are already gone either way.
+  }
+
+  const outcome = { ok: true, removed: true, branch_deleted: true };
+  if (verifySkipped) {
+    // D8 only names "verify green" for the unconditional --cleanup trigger;
+    // it does not address a repo with no commands.verify recorded at all.
+    // Extending eligibility to verify:'skipped' (advisor-confirmed gap
+    // resolution, not literal D8 text) is conditioned on this NEVER being
+    // silent: cleanup that ran with no semantic gate must say so loudly,
+    // every time, right here in the result the caller sees.
+    outcome.warning = 'verify skipped — no commands.verify recorded; cleaned up unchecked.';
+  }
+  return outcome;
+}
+
+/** With `--cleanup`, runs cleanup unconditionally on any positive merge
+ * outcome (`verify: 'green'` OR `'skipped'` — the only outcomes that ever
+ * reach this function; `MERGE_CONFLICT`/`MERGE_VERIFY_RED` both return
+ * earlier in `mergeFeatureWorktree` and never call this). Without the flag,
+ * attaches the suggested command instead of running anything (decision D8b:
+ * "never prompt" — the suggestion is informational, not a question). */
+function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify }) {
+  if (!cleanup) {
+    result.cleanup_suggested_command = `bee worktree merge --id ${id} --cleanup --json`;
+    return;
+  }
+  result.cleanup = performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped: verify === 'skipped' });
+}
+
+/**
+ * Merges a granted worktree's branch back into `mainRoot` (`git merge
+ * --no-ff <branch>`, run with `mainRoot` as cwd), then runs
+ * `options.verifyCommand` (if given) against the merged tree. Returns a
+ * plain result object for every outcome that follows a real git mutation
+ * (`MERGE_CONFLICT`, `MERGE_VERIFY_RED`, or a green/skipped success) — those
+ * are settled facts about repo state the caller needs to inspect, not
+ * refusals to retry. Every check BEFORE the merge itself is a typed,
+ * ZERO-MUTATION `WorktreeMergeError` throw (unknown/ungranted id, caller
+ * checkout not ordinary, dirty main, dirty worktree, detached HEAD, or a
+ * branch other than the worktree's expected `wt/<slug>`-style branch) —
+ * same error-class style as `createFeatureWorktree`'s `WorktreeCreateError`.
+ *
+ * `options`:
+ *   - `id` (required): the worktree's git-verified id (as granted via
+ *     `worktree new`/`worktree register`).
+ *   - `cleanup` (optional, default false): see `attachCleanupOutcome` above.
+ *   - `verifyCommand` (optional): a shell command string, run via
+ *     `spawnSync(verifyCommand, { cwd: mainRoot, shell: true })`. Omit (or
+ *     pass a falsy value) when the host project has no `commands.verify`
+ *     recorded — the CLI handler is what resolves this from
+ *     `readConfig(mainRoot).commands.verify` (see module header note above).
+ *
+ * "Own worktree" refusal: running merge from inside a linked worktree —
+ * including the very worktree named by `id` — is caught by the SAME
+ * `WORKTREE_MERGE_CALLER_NOT_ORDINARY` check below (a linked worktree's own
+ * `.git` is a file, never a directory, so `isOrdinaryCheckout(mainRoot)` is
+ * already false); there is deliberately no second, distinct code for this
+ * (decision D8 / advisor R5 belt-and-braces framing, not a separate rule).
+ */
+export function mergeFeatureWorktree(mainRoot, options = {}) {
+  const { id, cleanup = false, verifyCommand } = options;
+
+  if (typeof id !== 'string' || !id) {
+    refuseMerge('WORKTREE_MERGE_INVALID_ID', `id ${JSON.stringify(id)} must be a non-empty string.`);
+  }
+
+  if (!isOrdinaryCheckout(mainRoot)) {
+    refuseMerge(
+      'WORKTREE_MERGE_CALLER_NOT_ORDINARY',
+      `"bee worktree merge" must be run from the MAIN checkout, not a linked worktree (${mainRoot} is not an ordinary checkout) — a worktree, including the one being merged, cannot merge itself.`,
+    );
+  }
+
+  const mainStoreRoot = path.join(mainRoot, '.bee');
+  const grants = readGrants(mainStoreRoot);
+  if (grants[id] !== true) {
+    refuseMerge('WORKTREE_MERGE_UNKNOWN_ID', `no granted worktree found for id ${JSON.stringify(id)} — run "bee worktree list" to see granted ids.`);
+  }
+
+  const resolved = resolveWorktreeById(mainRoot, id);
+  if (!resolved || !fs.existsSync(resolved.worktreeRoot)) {
+    refuseMerge(
+      'WORKTREE_MERGE_UNKNOWN_ID',
+      `id ${JSON.stringify(id)} is granted but no matching, bidirectionally-valid git worktree link was found under ${mainRoot} (or the worktree no longer exists on disk) — run "git worktree prune" and "bee worktree unregister --id ${id}" if it was removed by hand.`,
+    );
+  }
+  const { worktreeRoot } = resolved;
+
+  if (isTreeDirty(mainRoot)) {
+    refuseMerge('WORKTREE_MERGE_MAIN_DIRTY', `the MAIN checkout at ${mainRoot} has uncommitted changes ("git status --porcelain" is non-empty) — commit or stash before merging.`);
+  }
+  if (isTreeDirty(worktreeRoot)) {
+    refuseMerge(
+      'WORKTREE_MERGE_WORKTREE_DIRTY',
+      `the worktree at ${worktreeRoot} has uncommitted changes ("git status --porcelain" is non-empty) — commit or stash before merging. (A bootstrapped, gitignored .bee store alone is NOT dirty, per decision D8a.)`,
+    );
+  }
+
+  const branch = currentBranch(worktreeRoot);
+  if (!branch) {
+    refuseMerge('WORKTREE_MERGE_DETACHED_HEAD', `the worktree at ${worktreeRoot} is on a detached HEAD — check out its branch before merging.`);
+  }
+
+  const feature = readWorktreeFeature(worktreeRoot);
+  const expectedBranch = feature ? `wt/${feature}` : null;
+  const branchOk = expectedBranch ? branch === expectedBranch : WT_BRANCH_RE.test(branch);
+  if (!branchOk) {
+    refuseMerge(
+      'WORKTREE_MERGE_BRANCH_MISMATCH',
+      `the worktree at ${worktreeRoot} is checked out to "${branch}", not its expected ${expectedBranch ? `"${expectedBranch}"` : '"wt/<slug>"-style'} branch — merge refuses to guess which branch to consume.`,
+    );
+  }
+
+  // ── everything above is zero-mutation; the merge itself is the first real
+  // write, and everything after this point is a returned result, not a
+  // thrown refusal. ─────────────────────────────────────────────────────────
+  const mergeMessage = `Merge worktree ${id} (branch ${branch}) via bee worktree merge`;
+  const mergeResult = runGit(mainRoot, ['merge', '--no-ff', '-m', mergeMessage, '--', branch]);
+  if (mergeResult.status !== 0) {
+    return {
+      ok: false,
+      code: 'MERGE_CONFLICT',
+      id,
+      branch,
+      worktreeRoot,
+      message: `"git merge --no-ff ${branch}" left conflict/failure state in ${mainRoot} — resolve it there; bee does not roll back or auto-resolve a textual conflict.`,
+      output: `${mergeResult.stdout || ''}${mergeResult.stderr || ''}`,
+    };
+  }
+
+  if (!verifyCommand) {
+    const result = { ok: true, merged: true, id, branch, worktreeRoot, verify: 'skipped' };
+    attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify: result.verify });
+    return result;
+  }
+
+  const verifyResult = spawnSync(verifyCommand, { cwd: mainRoot, shell: true, encoding: 'utf8' });
+  if (verifyResult.status !== 0) {
+    const combined = `${verifyResult.stdout || ''}${verifyResult.stderr || ''}`;
+    const tail = combined.split('\n').slice(-30).join('\n');
+    return {
+      ok: false,
+      code: 'MERGE_VERIFY_RED',
+      id,
+      branch,
+      worktreeRoot,
+      merged: true,
+      verify: 'red',
+      message:
+        'the merge was textually clean but the post-merge verify failed — this is the semantic-conflict alarm: behavior broke even though git found no textual conflict. Fix-first before release. The merge commit is NEVER rolled back by bee.',
+      output_tail: tail,
+    };
+  }
+
+  const result = { ok: true, merged: true, id, branch, worktreeRoot, verify: 'green' };
+  attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify: result.verify });
+  return result;
+}

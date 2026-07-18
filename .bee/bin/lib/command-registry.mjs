@@ -1297,6 +1297,23 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
   {
+    name: 'worktree.merge',
+    invoke: 'bee worktree merge',
+    description:
+      "Merge a granted worktree's branch back into the MAIN checkout (GH #21, decision D8) — `git merge --no-ff <branch>` run from MAIN, then the host project's configured commands.verify (if recorded) run against the merged tree. A textually-clean merge whose verify goes RED is the semantic-conflict alarm: behavior broke even though git found no conflict; the merge commit is NEVER rolled back. Must be run from the MAIN checkout (an ordinary, non-worktree directory) — running it from inside ANY linked worktree, including the one being merged, is refused (a worktree cannot merge itself). Typed, zero-mutation refusal when the id is unknown/ungranted, the MAIN or WORKTREE tree is dirty (a bootstrapped gitignored .bee store alone does not count as dirty), or the worktree is on a detached HEAD or a branch other than its expected `wt/<slug>`-style branch. With `--cleanup` and a green verify, cleanup runs unconditionally: `git worktree remove --force` (safe only because freshness was re-checked immediately before), `git branch -d` (never -D), then removeGrant — the same unregister D8 names as part of cleanup, so a merged-and-cleaned-up id never lingers in `bee worktree list`. A repo with no commands.verify recorded (verify:'skipped') is ALSO cleanup-eligible, but the result always carries a loud warning that nothing was semantically gated. Without `--cleanup` the result only suggests the cleanup command; cleanup never runs when the merge itself came back MERGE_CONFLICT or MERGE_VERIFY_RED, even with --cleanup passed.",
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: "The granted worktree's git-verified id (see `bee worktree list`)." },
+        cleanup: { type: 'boolean', description: "After a successful merge with a green (or skipped, loudly-warned) verify, remove the worktree, delete its branch, and drop its grant, unconditionally. Never runs after a conflict or a red verify." },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a short confirmation report.' },
+      },
+      required: ['id'],
+    },
+    examples: ['bee worktree merge --id demo-feature-missing --json'],
+    deprecated: null,
+  },
+  {
     name: 'worktree.list',
     invoke: 'bee worktree list',
     description: "List the MAIN store's worktree grant registry (which worktree ids currently have their own local .bee store).",
