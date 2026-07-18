@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.5.0",
+  "bee_version": "1.5.1",
   "managed": {
     "agents_block": "473f8041068905ef7f1bd1aacdec19d13f3af2a4db5c5411eee7968096bbc075",
     "gitignore_block": "b39fe93c0e919a6bc424f80fcc4a9f791579fbc75bb11956f0cb037848f6a0b8",
@@ -24,7 +24,7 @@
       "reviews.mjs": "6008cb1de50fb223c84638abaa4bdcd2521743c858ffd3e6b95bbcc6cce97502",
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "source-identity.mjs": "716740641e1f6bfbb5ccc5b4fe7827f1165c2a1f1127ee3800f52a47ac09fc7a",
-      "state.mjs": "0b912f59f3b3b1bdfb43ec5c63a874914d50c8ed118ad21f28fe1b2a69e93608",
+      "state.mjs": "1cd3d59119175ecff70f9ebce3de73fcb4b2e655913284e5d264592824576cab",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
       "worktree-store.mjs": "9b7370e16a317f156a868d9311371b7497cb25603e51e13856af5f47bfabbd18"
     },
@@ -47,7 +47,7 @@
     }
   },
   "agents_sync": {
-    "bee_version": "1.5.0",
+    "bee_version": "1.5.1",
     "files": [
       ".claude/agents/bee-extract.md",
       ".claude/agents/bee-gather.md",
@@ -64,5 +64,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-18T09:08:11.600Z"
+  "updated_at": "2026-07-18T09:16:01.250Z"
 }
