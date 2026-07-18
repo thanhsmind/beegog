@@ -1486,7 +1486,17 @@ function buildDoctorFixture({ withHandlerFiles = true } = {}) {
     },
   });
   fs.mkdirSync(path.join(dir, '.bee', 'bin', 'hooks'), { recursive: true });
-  for (const f of ['bee-session-init.mjs', 'bee-prompt-context.mjs', 'bee-write-guard.mjs', 'bee-model-guard.mjs', 'bee-tools-logger.mjs', 'bee-state-sync.mjs']) {
+  // bee-model-guard.mjs / bee-state-sync.mjs are the SAME two filenames the
+  // codex fixture above references (GH #22 P1-1: doctor's dual-location
+  // check resolves a codex handler at .bee/bin/hooks/<f> OR hooks/<f>) —
+  // when withHandlerFiles is false, both locations must lack them for the
+  // codex missing-handler assertion below to still hold; the other four
+  // stay so claude's own handlers_resolvable row (a distinct check, not
+  // exercised by that assertion) is unaffected.
+  const beeBinHandlerFiles = withHandlerFiles
+    ? ['bee-session-init.mjs', 'bee-prompt-context.mjs', 'bee-write-guard.mjs', 'bee-model-guard.mjs', 'bee-tools-logger.mjs', 'bee-state-sync.mjs']
+    : ['bee-session-init.mjs', 'bee-prompt-context.mjs', 'bee-write-guard.mjs', 'bee-tools-logger.mjs'];
+  for (const f of beeBinHandlerFiles) {
     fs.writeFileSync(path.join(dir, '.bee', 'bin', 'hooks', f), '// stub\n', 'utf8');
   }
   return dir;
