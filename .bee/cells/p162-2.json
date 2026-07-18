@@ -23,21 +23,31 @@
     ".claude/skills/bee-hive/templates/*",
     ".agents/skills/bee-hive/templates/*"
   ],
-  "status": "claimed",
+  "status": "capped",
   "deps": [],
   "decisions": [],
   "read_first": [],
   "trace": {
     "worker": "p162-2-worker",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "Worktree merge is now a staged transaction: no-commit stage, abort+three-part main-untouched proof on conflict/red verify, commit only on green with tracked-mutation warning guard, finally-backstopped; old never-rolled-back prose replaced across spec/SKILL/AGENTS; e2e rebuilt 103/103; independent verify green on main d3a7a03",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/worktree-store.mjs",
+      "skills/bee-hive/templates/bee.mjs",
+      "scripts/test_worktree_cli.mjs",
+      "docs/specs/worktree-parallelism.md",
+      "skills/bee-hive/SKILL.md",
+      "skills/bee-hive/templates/AGENTS.block.md",
+      "AGENTS.md"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claimed_at": "2026-07-18T18:16:58.392Z"
+    "capped_at": "2026-07-18T18:32:02.181Z",
+    "behavior_change": true,
+    "verification_evidence": "# p162-2 — done report (worktree merge staged transaction)\n\nWorker: p162-2-worker (sonnet, isolated harness worktree). Worker commit\n`9d4c6be`, merged into main as `d3a7a03` (one generated-manifest conflict,\nresolved by regeneration; both workers' bee.mjs regions hunk-merged clean).\n2026-07-19.\n\n## What shipped (supersedes the old \"never rolled back\" contract)\n- `mergeFeatureWorktree`: `git merge --no-ff --no-commit`; typed\n  `ALREADY_UP_TO_DATE` no-op (no MERGE_HEAD → never commits); conflict and\n  red verify both abort + `mainUntouchedProof()` three-part check (HEAD\n  unchanged, MERGE_HEAD gone, tracked-clean) before returning typed\n  `MERGE_CONFLICT` / `MERGE_VERIFY_RED`; verify runs against the\n  merged-but-uncommitted tree (documented: MERGE_HEAD live, changes staged);\n  commit only on green; post-commit guard attaches\n  `warning.code: 'verify_mutated_tracked_files'` when verify dirtied tracked\n  files (advisor R4); `finally`-guarded abort backstops any exception between\n  staging and commit (advisor R7); `git revert -m 1` documented as recovery.\n- CLI text: \"main was left byte-untouched\" messaging; ALREADY_UP_TO_DATE\n  outcome; warning surfaced.\n- Drift audit executed in-feature: worktree-parallelism spec §Returning\n  rewritten to the staged-transaction contract; SKILL.md Session Scout note;\n  AGENTS.block.md rule 14 rider (16753 B, under budget) + rendered AGENTS.md.\n- e2e suite rebuilt: 103 assertions; advisor-R6 fixture chain fixed (each\n  red-verify case flips its own flag); three-part-proof assertions;\n  ff-eligible pair still yields a 2-parent commit (empirically confirmed in a\n  throwaway repo); `mainD` fixture proves the tracked-mutation warning;\n  cleanup never fires on no-op/conflict/red.\n- 6-way mirrors byte-identical; trees re-rendered; manifest regenerated.\n\n## Verification (fresh command output)\nIndependent orchestrator re-run on main after merge d3a7a03:\nworktree_cli 103/103; worktree_store 22/22; bee_cli 180/0; lib_mirror 4/4;\nskill_render 27/0; plugin_distribution 38/0; manifest 354 match; conformance\nALL PASS (doctor fix regression-checked in the same run) → P1622_VERIFY_GREEN.\n\n## Diff\n27 files changed, 1537 insertions(+), 377 deletions(-) (worker commit).\n",
+    "verify_output": "Independent re-run on main after merge d3a7a03: worktree_cli 103/103; worktree_store 22/22; bee_cli 180/0; lib_mirror 4/4; skill_render 27/0; plugin_distribution 38/0; manifest 354 match; conformance ALL PASS. Worker commit 9d4c6be.",
+    "verify_passed": true,
+    "claimed_at": "2026-07-18T18:16:58.392Z",
+    "verify_command": "node scripts/test_worktree_cli.mjs && node scripts/test_worktree_store.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs",
+    "verified_at": "2026-07-18T18:32:02.133Z"
   }
 }

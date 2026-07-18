@@ -52,8 +52,11 @@ The paved road for STARTING a feature worktree — create and register in one mo
 the ordinary main checkout:
 
 - Creates the sibling `../<repo-basename>--wt--<slug>` on branch `wt/<slug>` (optional
-  `--base-ref`, validated via `git check-ref-format`), then grants + bootstraps exactly as
-  `register` does. The grant id is read back from the worktree's git metadata after creation,
+  `--base-ref`, resolved as a commit-ish via `git rev-parse --verify --end-of-options
+  "<ref>^{commit}"` — accepts HEAD, HEAD~1, short shas, tag^{commit}; the RESOLVED sha is
+  what the worktree is created from, and anything unresolvable is one typed
+  `WORKTREE_BASE_NOT_FOUND` refusal, the old separate invalid-syntax code retired), then
+  grants + bootstraps exactly as `register` does. The grant id is read back from the worktree's git metadata after creation,
   never assumed from the directory name. Output names the created path and tells the human to
   open their next session there — a running session is never auto-teleported.
 - Slug allowlist `^[a-z0-9][a-z0-9-]*$`; every git call is an argv array (no shell), `--`

@@ -24,19 +24,27 @@
     ".claude/skills/bee-hive/templates/lib/worktree-store.mjs",
     ".agents/skills/bee-hive/templates/lib/worktree-store.mjs"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "read_first": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "p162-3-worker",
+    "outcome": "base-ref resolved as commit-ish via rev-parse --verify --end-of-options; resolved sha drives worktree add and is surfaced in output; single typed WORKTREE_BASE_NOT_FOUND (INVALID code retired); injection still neutralized; independent verify green on main 735ae56",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/worktree-store.mjs",
+      "skills/bee-hive/templates/lib/command-registry.mjs",
+      "skills/bee-hive/templates/bee.mjs",
+      "scripts/test_worktree_cli.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null
+    "capped_at": "2026-07-18T18:42:54.209Z",
+    "behavior_change": true,
+    "verification_evidence": "# p162-3 — done report (base-ref rev-parse resolution)\n\nWorker: p162-3-worker (sonnet, isolated harness worktree, rebased onto main\nd3a7a03). Worker commit `d20faeb`, merged into main as `735ae56`. 2026-07-19.\n\n## What shipped\n- `createFeatureWorktree`: `resolveBaseRefCommit` runs `git rev-parse\n  --verify --end-of-options \"<ref>^{commit}\"` (argv array; git >= 2.24 floor\n  noted); failure → typed `WORKTREE_BASE_NOT_FOUND`, zero mutation; the\n  RESOLVED sha feeds `git worktree add` (deterministic even if the ref moves\n  mid-command); return carries `baseRef`/`baseRefSha`, surfaced in CLI\n  JSON/text; registry help text updated.\n- `WORKTREE_INVALID_BASE_REF` retired: rev-parse cannot distinguish bad\n  syntax from nonexistent, so all unresolvable inputs (garbage, missing refs,\n  dash-injection) collapse into the single typed refusal — old assertion\n  updated.\n- Tests: HEAD / HEAD~1 / short sha / v1.2.0^{commit} accepted with exact\n  resolved-sha assertions; nonexistent + garbage + `--upload-pack=/bin/sh`\n  injection → typed zero-mutation refusals. `--end-of-options` neutralizing\n  dash-injection verified empirically.\n- Mirrors 4-way + rendered trees + manifest regenerated.\n\n## Verification (fresh command output)\nIndependent orchestrator re-run on main after merge 735ae56:\nworktree_cli 117/117; worktree_store 22/22; bee_cli 180/0; lib_mirror all\nPASS; manifest 354 match → P1623_VERIFY_GREEN.\n\n## Diff\n20 files changed, 523 insertions(+), 94 deletions(-).\n",
+    "verify_output": "Independent re-run on main after merge 735ae56: worktree_cli 117/117; worktree_store 22/22; bee_cli 180/0; lib_mirror all PASS; manifest 354 match. Worker commit d20faeb.",
+    "verify_passed": true,
+    "claimed_at": "2026-07-18T18:32:06.672Z",
+    "verify_command": "node scripts/test_worktree_cli.mjs && node scripts/test_worktree_store.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs",
+    "verified_at": "2026-07-18T18:42:54.161Z"
   }
 }
