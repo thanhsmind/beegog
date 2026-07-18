@@ -6220,6 +6220,145 @@ await check(
   },
 );
 
+// GH#20: a lane actively owned by another live session (some OTHER session
+// record is bound to it with a fresh heartbeat) must never be pooled by the
+// cross-lane fallback — otherwise claim-next steals a cell out from under a
+// session that just had its lane planned/claimed on it. bindLiveSession /
+// bindStaleSessionOnLane reuse claims.mjs's own createSession/bindSessionLane/
+// heartbeatSession primitives (already imported above) rather than hand-
+// writing session JSON, so the fixtures stay honest about the real shape.
+
+function bindLiveSession(dir, sessionId, feature) {
+  laneBinding.createSession(dir, { id: sessionId });
+  laneBinding.bindSessionLane(dir, sessionId, feature); // last_heartbeat is "now" — fresh
+}
+
+function bindStaleSessionOnLane(dir, sessionId, feature) {
+  laneBinding.createSession(dir, { id: sessionId });
+  laneBinding.bindSessionLane(dir, sessionId, feature);
+  heartbeatSession(dir, sessionId, { now: Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 60) * 1000 });
+}
+
+await check(
+  "claimNextCell: a lane owned by another LIVE session (fresh heartbeat) is excluded from the fallback pool even when it is backlog-ranked first — the unowned approved lane is picked instead (GH#20)",
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-live-owner-excluded-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+      const approved = { context: true, shape: true, execution: true, review: false };
+      writeLaneFixture(dir, 'lane-owned', { approved_gates: approved });
+      writeLaneFixture(dir, 'lane-free', { approved_gates: approved });
+      makeCellFile(dir, 'owned-1', { feature: 'lane-owned', status: 'open', deps: [] });
+      makeCellFile(dir, 'free-1', { feature: 'lane-free', status: 'open', deps: [] });
+      fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'docs', 'backlog.md'),
+        [
+          '| ID | Story | CoS | Status | Feature |',
+          '|----|-------|-----|--------|---------|',
+          '| B1 | owned lane ranks first | x | in-flight | lane-owned |',
+          '| B2 | free lane ranks last | x | in-flight | lane-free |',
+        ].join('\n'),
+        'utf8',
+      );
+      bindLiveSession(dir, 'sess-other-live', 'lane-owned');
+
+      const result = claimNextCell(dir, { sessionId: 'sess-acting', worker: 'w' });
+      assert(
+        result.ok === true && result.cell.id === 'free-1',
+        `the live-owned lane must be skipped despite its better backlog rank, got ${JSON.stringify(result)}`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  "claimNextCell: a lane whose only binder's heartbeat has gone STALE is poolable again — steal-after-death is preserved (GH#20)",
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-stale-owner-poolable-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+      const approved = { context: true, shape: true, execution: true, review: false };
+      writeLaneFixture(dir, 'lane-owned', { approved_gates: approved });
+      writeLaneFixture(dir, 'lane-free', { approved_gates: approved });
+      makeCellFile(dir, 'owned-1', { feature: 'lane-owned', status: 'open', deps: [] });
+      makeCellFile(dir, 'free-1', { feature: 'lane-free', status: 'open', deps: [] });
+      fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, 'docs', 'backlog.md'),
+        [
+          '| ID | Story | CoS | Status | Feature |',
+          '|----|-------|-----|--------|---------|',
+          '| B1 | owned lane ranks first | x | in-flight | lane-owned |',
+          '| B2 | free lane ranks last | x | in-flight | lane-free |',
+        ].join('\n'),
+        'utf8',
+      );
+      bindStaleSessionOnLane(dir, 'sess-other-dead', 'lane-owned');
+
+      const result = claimNextCell(dir, { sessionId: 'sess-acting', worker: 'w' });
+      assert(
+        result.ok === true && result.cell.id === 'owned-1',
+        `a stale-heartbeat binder must not protect the lane — it is poolable and wins its backlog rank, got ${JSON.stringify(result)}`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  "claimNextCell: the acting session's OWN binding never blocks anything — bound to lane X (empty), lane Y owned by a live OTHER session, lane Z unowned -> picks Z, never Y (GH#20)",
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-own-binding-never-blocks-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+      const approved = { context: true, shape: true, execution: true, review: false };
+      writeLaneFixture(dir, 'lane-x', { approved_gates: approved }); // acting session's own lane, no ready cells
+      writeLaneFixture(dir, 'lane-y', { approved_gates: approved }); // owned by a live OTHER session
+      writeLaneFixture(dir, 'lane-z', { approved_gates: approved }); // unowned
+      makeCellFile(dir, 'y-1', { feature: 'lane-y', status: 'open', deps: [] });
+      makeCellFile(dir, 'z-1', { feature: 'lane-z', status: 'open', deps: [] });
+      laneBinding.createSession(dir, { id: 'sess-acting-x' });
+      laneBinding.bindSessionLane(dir, 'sess-acting-x', 'lane-x'); // acting session bound to its OWN lane
+      bindLiveSession(dir, 'sess-other-y', 'lane-y');
+
+      const result = claimNextCell(dir, { sessionId: 'sess-acting-x', worker: 'w' });
+      assert(
+        result.ok === true && result.cell.id === 'z-1',
+        `own binding to lane-x must not block anything and lane-y must stay excluded, got ${JSON.stringify(result)}`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  'claimNextCell: when the ONLY candidate anywhere lives in a live-owned lane, protection beats starvation — typed NO_APPROVED_WORK, not a steal (GH#20)',
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-live-owner-only-candidate-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
+      const approved = { context: true, shape: true, execution: true, review: false };
+      writeLaneFixture(dir, 'lane-owned', { approved_gates: approved });
+      makeCellFile(dir, 'owned-only-1', { feature: 'lane-owned', status: 'open', deps: [] });
+      bindLiveSession(dir, 'sess-other-live', 'lane-owned');
+
+      const result = claimNextCell(dir, { sessionId: 'sess-acting-lonely', worker: 'w' });
+      assert(
+        result.ok === false && result.code === 'NO_APPROVED_WORK',
+        `a live-owned lane must never be raided even as the only candidate anywhere, got ${JSON.stringify(result)}`,
+      );
+      assert(readCell(dir, 'owned-only-1').status === 'open', 'the live-owned cell is untouched');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
 await check(
   "claimNextCell: a cell whose files intersect ANOTHER session's active hold is skipped; the acting session's own hold on the same files never excludes it (D3)",
   async () => {
@@ -7886,12 +8025,25 @@ await check('census: native Codex empty waits require a material-action then com
     path.join(repoRoot, 'AGENTS.md'),
     path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
   ];
-  const procedureSurfaces = [
+  // D9 (codex-native-runtime-v2, cnr2-11): these three sources now carry the
+  // native empty-wait procedure inside a `<!-- bee:only codex -->` block
+  // (tagged in cnr2-10) — it is a Codex-only mechanic (wait_agent/list_agents
+  // have no Claude Code equivalent), so the per-runtime render KEEPS it in the
+  // canonical source and the Codex projection, and STRIPS it from the Claude
+  // projection. The census below is runtime-aware for exactly this reason:
+  // presence is required on the canonical + `.agents/skills` (Codex) copies,
+  // and absence is required on the `.claude/skills` (Claude) copies.
+  const procedureSurfacesKeepWaitAgent = [
     path.join(repoRoot, 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
-    path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
+    path.join(repoRoot, '.agents', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
     path.join(repoRoot, 'skills', 'bee-swarming', 'SKILL.md'),
-    path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'SKILL.md'),
+    path.join(repoRoot, '.agents', 'skills', 'bee-swarming', 'SKILL.md'),
     path.join(repoRoot, 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+    path.join(repoRoot, '.agents', 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+  ];
+  const procedureSurfacesStripWaitAgent = [
+    path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
+    path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'SKILL.md'),
     path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
   ];
 
@@ -7908,7 +8060,7 @@ await check('census: native Codex empty waits require a material-action then com
     assert(/external (process|CLI|executor)/i.test(text) && /artifact polling/i.test(text), `${rel} must keep external process/artifact polling outside the native-agent rule`);
   }
 
-  for (const surface of procedureSurfaces) {
+  for (const surface of procedureSurfacesKeepWaitAgent) {
     assert(fs.existsSync(surface), `required procedure surface missing: ${path.relative(repoRoot, surface)}`);
     const text = fs.readFileSync(surface, 'utf8');
     const rel = path.relative(repoRoot, surface);
@@ -7916,6 +8068,20 @@ await check('census: native Codex empty waits require a material-action then com
     assert(/material task-local work/i.test(text) && /exactly\s+one[\s\S]{0,50}list_agents[\s\S]{0,30}snapshot/i.test(text), `${rel} must carry the exact material-action fallback`);
     assert(/commentary[\s\S]{0,180}(live|running)\s+agent\s+state[\s\S]{0,100}next\s+action/i.test(text), `${rel} must require the state-and-next-action commentary update`);
     assert(/duplicate\s+dispatch/i.test(text) && /claim/i.test(text) && /reservation/i.test(text), `${rel} must preserve dispatch and ownership on timeout`);
+  }
+
+  for (const surface of procedureSurfacesStripWaitAgent) {
+    assert(fs.existsSync(surface), `required Claude-rendered procedure surface missing: ${path.relative(repoRoot, surface)}`);
+    const text = fs.readFileSync(surface, 'utf8');
+    const rel = path.relative(repoRoot, surface);
+    assert(
+      !/wait_agent/.test(text) && !/list_agents/.test(text),
+      `${rel} is a Claude Code projection and must NOT carry the Codex-only wait_agent/list_agents native-tending prose (D9 who-must-act attribution, cnr2-10/cnr2-11) — found a leaked token`,
+    );
+    assert(
+      !/bee:only|bee:end/.test(text),
+      `${rel} is a rendered projection and must carry no surviving bee:only/bee:end marker`,
+    );
   }
 });
 

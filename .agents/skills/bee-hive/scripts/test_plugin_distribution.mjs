@@ -10,10 +10,12 @@ import {
   applyDistributionPlan,
   buildDistributionPlan,
   discoverBeePlugin,
+  loadPackageInventory,
   managedSkillNames,
   proveInstalledPackage,
   provePluginInactive,
 } from "./plugin_distribution.mjs";
+import { renderSkillBytes, RENDER_RUNTIMES, RENDER_SIDECAR } from "./onboard_bee.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -239,6 +241,113 @@ check("cachebuster staging changes one staged version and never canonical tuple"
   const staged = JSON.parse(fs.readFileSync(stagedPath)); const differing = Object.keys(staged).filter((key) => JSON.stringify(staged[key]) !== JSON.stringify(canonical[key]));
   assert.deepEqual(differing, ["version"]); assert.equal(staged.version.split("+codex.")[0], canonical.version.split("+")[0]); assert.deepEqual(fs.readFileSync(canonicalPath), canonicalBytes);
   fs.rmSync(stage, { recursive: true, force: true });
+});
+
+// ─── D9/cnr2-12: committed per-runtime plugin skill-route trees ───────────
+//
+// Each plugin manifest now routes to a COMMITTED rendered tree
+// (.claude-plugin/skills/ = render(canonical, claude), .codex-plugin/skills/
+// = render(canonical, codex)) generated only through the cnr2-9 renderer
+// (scripts/render_plugin_skill_trees.mjs). These checks recompute the render
+// from the REAL canonical skills/ tree at test time and compare it against
+// what is actually committed — a drift pin, not a trust of a prior run.
+
+const SKILL_DIR_RE = /^bee-/;
+const SKILLS_ROOT = path.join(REPO_ROOT, "skills");
+const PLUGIN_RENDER_ROOTS = {
+  claude: path.join(REPO_ROOT, ".claude-plugin", "skills"),
+  codex: path.join(REPO_ROOT, ".codex-plugin", "skills"),
+};
+
+function listRelFiles(root) {
+  const out = [];
+  const walk = (dir, relPrefix) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(abs, rel);
+      else out.push(rel);
+    }
+  };
+  walk(root, "");
+  return out.sort();
+}
+
+function canonicalSkillFiles() {
+  const files = [];
+  for (const name of fs.readdirSync(SKILLS_ROOT, { withFileTypes: true }).filter((e) => e.isDirectory() && SKILL_DIR_RE.test(e.name)).map((e) => e.name).sort()) {
+    for (const rel of listRelFiles(path.join(SKILLS_ROOT, name))) files.push(`${name}/${rel}`);
+  }
+  return files.sort();
+}
+
+for (const runtime of RENDER_RUNTIMES) {
+  check(`plugin skill tree (${runtime}): every file byte-equals render(canonical, ${runtime})`, () => {
+    const canonical = canonicalSkillFiles();
+    const targetRoot = PLUGIN_RENDER_ROOTS[runtime];
+    const committed = listRelFiles(targetRoot).filter((rel) => rel !== RENDER_SIDECAR);
+    assert.deepEqual(committed, canonical, `committed ${runtime} tree file set must equal canonical`);
+    for (const rel of canonical) {
+      const sourceBytes = fs.readFileSync(path.join(SKILLS_ROOT, rel));
+      const expected = renderSkillBytes(sourceBytes, runtime);
+      const actual = fs.readFileSync(path.join(targetRoot, ...rel.split("/")));
+      assert.equal(Buffer.compare(actual, expected), 0, `${runtime}/${rel} must equal render(canonical, ${runtime})`);
+    }
+  });
+
+  check(`plugin skill tree (${runtime}): carries the D9 render provenance sidecar`, () => {
+    const sidecar = JSON.parse(fs.readFileSync(path.join(PLUGIN_RENDER_ROOTS[runtime], RENDER_SIDECAR), "utf8"));
+    assert.equal(sidecar.target_runtime, runtime);
+    assert.equal(sidecar.schema, "bee-render/1");
+  });
+}
+
+// A genuine, well-formed, full marker LINE — same shape as onboard_bee.mjs's
+// own MARKER_ONLY_RE/MARKER_END_RE grammar (column-0, trailing whitespace
+// only). Deliberately NOT a substring search: onboard_bee.mjs's own comments
+// document the marker syntax inline (e.g. "//   <!-- bee:only claude -->
+// ...") — legitimate prose about the mechanism, never a real marker line, and
+// must not false-positive here the way a bare `.includes()` would.
+const REAL_MARKER_LINE_RE = /^<!-- bee:(?:only (?:claude|codex)|end) -->[ \t]*$/;
+
+function realMarkerLines(text) {
+  return text.split(/\r\n|\n/).filter((line) => REAL_MARKER_LINE_RE.test(line));
+}
+
+check("runtime-clean: claude plugin tree carries no unstripped marker line", () => {
+  for (const rel of listRelFiles(PLUGIN_RENDER_ROOTS.claude).filter((r) => r !== RENDER_SIDECAR)) {
+    const text = fs.readFileSync(path.join(PLUGIN_RENDER_ROOTS.claude, ...rel.split("/")), "utf8");
+    assert.deepEqual(realMarkerLines(text), [], `claude tree left an unstripped marker line in ${rel}`);
+  }
+});
+
+check("runtime-clean: codex plugin tree carries no unstripped marker line", () => {
+  for (const rel of listRelFiles(PLUGIN_RENDER_ROOTS.codex).filter((r) => r !== RENDER_SIDECAR)) {
+    const text = fs.readFileSync(path.join(PLUGIN_RENDER_ROOTS.codex, ...rel.split("/")), "utf8");
+    assert.deepEqual(realMarkerLines(text), [], `codex tree left an unstripped marker line in ${rel}`);
+  }
+});
+
+check("release inventory covers both committed plugin skill trees with matching sha256", () => {
+  const inventory = loadPackageInventory(path.join(REPO_ROOT, "docs/history/codex-harness-hardening/release-manifest.json"));
+  for (const [runtime, role] of [["claude", "plugin_skill_claude_render"], ["codex", "plugin_skill_codex_render"]]) {
+    const targetRoot = PLUGIN_RENDER_ROOTS[runtime];
+    const pluginDir = runtime === "claude" ? ".claude-plugin" : ".codex-plugin";
+    const expectedPaths = listRelFiles(targetRoot).map((rel) => `${pluginDir}/skills/${rel}`).sort();
+    const records = inventory.filter((r) => r.role === role);
+    assert.deepEqual(records.map((r) => r.path).sort(), expectedPaths, `${role} inventory paths must match committed tree`);
+    for (const record of records) {
+      const abs = path.join(REPO_ROOT, ...record.path.split("/"));
+      assert.equal(createHash("sha256").update(fs.readFileSync(abs)).digest("hex"), record.sha256, `${record.path} sha256 must match release manifest`);
+    }
+  }
+});
+
+check("plugin manifests route to their own committed rendered skill tree", () => {
+  const claudeManifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, ".claude-plugin/plugin.json"), "utf8"));
+  const codexManifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, ".codex-plugin/plugin.json"), "utf8"));
+  assert.equal(claudeManifest.skills, "./.claude-plugin/skills/");
+  assert.equal(codexManifest.skills, "./.codex-plugin/skills/");
 });
 
 console.log(`\nplugin_distribution: ${passed} passed, ${failed} failed`);

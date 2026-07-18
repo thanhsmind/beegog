@@ -56,7 +56,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "TaskCreate|TaskUpdate|TodoWrite",
+        "matcher": "update_plan|TaskCreate|TaskUpdate|TodoWrite",
         "hooks": [
           {
             "type": "command",

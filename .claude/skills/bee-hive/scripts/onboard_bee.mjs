@@ -398,6 +398,23 @@ function readSourceReleaseIdentity() {
     sourceKind = classifySource({ hiveDir: HIVE_DIR, homeDir: os.homedir() }).kind;
   } catch {}
 
+  // D9 provenance: a rendered per-runtime projection (carries the render
+  // sidecar) is NEVER an authoritative source, for ANY target — its own runtime
+  // included. Refuse fail-closed with zero mutations; the canonical checkout or
+  // a plugin package is required. No target-filter semantics.
+  if (sourceKind === "rendered_projection") {
+    return {
+      version: null,
+      components: [runtimeComponent],
+      blocked: {
+        status: "blocked_no_source",
+        reason:
+          "onboarding source is a rendered per-runtime projection (carries the render provenance marker) - a projection is never an authoritative source for any target; use the canonical checkout or plugin package",
+        forceable: false,
+      },
+    };
+  }
+
   // Project/global projections intentionally do not carry package manifests.
   // They remain valid downgrade sentinels, but never become package release
   // authorities: validate only their runtime marker and let the existing
@@ -483,7 +500,13 @@ function versionLabel(v) {
 // symlink (or other non-file/dir entry) found blocks the WHOLE skill (F6 - a
 // symlinked skill dir is plausibly a developer's live checkout; writing
 // through or unlinking it would destroy real work).
-function walkSkillTree(rootDir) {
+// `transform`, when given, maps a file's raw bytes to the bytes that would be
+// materialized (the per-runtime render, D9). Source walks pass it so the drift
+// fingerprint compares render(source, runtime) against the installed bytes;
+// target walks omit it (the installed tree already holds rendered bytes). With
+// no markers in any file, render is byte-identity, so every fingerprint is
+// exactly the pre-render one and the whole sync path is unchanged.
+function walkSkillTree(rootDir, transform) {
   const files = new Map(); // rel path ("/"-joined) -> sha256
   const dirs = [];
   let blocked = null;
@@ -505,7 +528,8 @@ function walkSkillTree(rootDir) {
         dirs.push(rel);
         walk(abs, rel);
       } else if (entry.isFile()) {
-        files.set(rel, sha256(fs.readFileSync(abs)));
+        const raw = fs.readFileSync(abs);
+        files.set(rel, sha256(transform ? transform(raw, rel) : raw));
       } else {
         blocked = { path: rel, reason: "unsupported entry type" };
         return;
@@ -518,6 +542,239 @@ function walkSkillTree(rootDir) {
 
 function manifestFingerprint(files) {
   return JSON.stringify([...files.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+}
+
+// ---------- skill runtime rendering (D9) ----------
+//
+// A skill source file may carry runtime-scoped blocks fenced by strict,
+// full-line HTML-comment markers:
+//
+//   <!-- bee:only claude -->   ...claude-only prose...   <!-- bee:end -->
+//   <!-- bee:only codex  -->   ...codex-only prose...     <!-- bee:end -->
+//
+// render(bytes, runtime) drops the blocks not meant for `runtime`, strips every
+// marker line, and passes unmarked content through. TODAY NO SKILL FILE CARRIES
+// A MARKER, so render is byte-for-byte identity on every real file and the whole
+// sync/drift path is unchanged until content is tagged in a later cell. Byte
+// identity for the no-marker case is exact — a file whose bytes contain no
+// marker at all is returned unchanged (BOM, CRLF, final-newline state, and
+// arbitrary bytes preserved), never decoded-and-re-encoded.
+export const RENDER_RUNTIMES = ["claude", "codex"];
+const RENDER_SCHEMA = "bee-render/1";
+// Provenance sidecar written at each rendered target's skills ROOT (a sibling
+// of the bee-* dirs, never inside one). source-identity classifies any skills
+// root carrying it as a rendered projection and refuses it as an onboarding
+// source for ANY target (D9 provenance).
+export const RENDER_SIDECAR = ".bee-render.json";
+
+// A line that begins (indentation allowed, so a mis-indented marker is caught,
+// not silently ignored) with an HTML-comment bee marker. Any line matching this
+// participates in rendering/validation; a file with none is passed through
+// untouched.
+const NEAR_MARKER_RE = /^[ \t]*<!--[ \t]*bee:(only|end)\b/;
+// The exact, canonical, column-0 markers (only trailing horizontal whitespace
+// tolerated). A NEAR line that is not one of these is malformed.
+const MARKER_ONLY_RE = /^<!-- bee:only (\S+) -->[ \t]*$/;
+const MARKER_END_RE = /^<!-- bee:end -->[ \t]*$/;
+const FRONTMATTER_DELIM_RE = /^---[ \t]*$/;
+
+function fenceChar(line) {
+  const m = line.match(/^[ \t]*(`{3,}|~{3,})/);
+  return m ? m[1][0] : null;
+}
+
+// True when the raw bytes could contain a marker at all — the cheap gate that
+// keeps the no-marker path from ever decoding (byte-identity guarantee).
+function bufHasMarkerBytes(buf) {
+  return buf.includes("bee:only") || buf.includes("bee:end");
+}
+
+// Split into [content, terminator] pairs preserving exact line endings (the
+// final line's terminator is "" when the file has no trailing newline), so
+// concatenating every pair rebuilds the input byte-for-byte.
+function splitLinesPreserving(text) {
+  const out = [];
+  const re = /\r\n|\n/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    out.push([text.slice(last, m.index), m[0]]);
+    last = m.index + m[0].length;
+  }
+  out.push([text.slice(last), ""]);
+  return out;
+}
+
+// Classify one NEAR line: {kind:"only",runtime} | {kind:"end"} | {error}.
+function classifyMarkerLine(line) {
+  const only = line.match(MARKER_ONLY_RE);
+  if (only) {
+    const label = only[1];
+    if (!RENDER_RUNTIMES.includes(label)) {
+      return { error: `unknown runtime label "${label}" (expected ${RENDER_RUNTIMES.join(" or ")})` };
+    }
+    return { kind: "only", runtime: label };
+  }
+  if (MARKER_END_RE.test(line)) {
+    return { kind: "end" };
+  }
+  return { error: `ambiguous near-marker "${line.trim()}" (not an exact full-line bee marker)` };
+}
+
+// Whole-file grammar check. Returns a list of human-readable error strings;
+// empty means the file is well-formed (or carries no markers). Enforced BEFORE
+// any mutation, per file, across the whole tree.
+export function validateSkillMarkers(text) {
+  const errors = [];
+  const lines = text.split(/\r\n|\n/);
+  // Frontmatter span: only when the very first line is a `---` delimiter.
+  let frontmatterEnd = -1;
+  if (lines.length > 0 && FRONTMATTER_DELIM_RE.test(lines[0])) {
+    for (let i = 1; i < lines.length; i += 1) {
+      if (FRONTMATTER_DELIM_RE.test(lines[i])) {
+        frontmatterEnd = i;
+        break;
+      }
+    }
+  }
+  let fence = null;
+  let openRuntime = null;
+  let openLine = -1;
+  let firstFrontmatterOpener = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    // Track code fences (outside the frontmatter span).
+    if (i > frontmatterEnd) {
+      const fc = fenceChar(line);
+      if (fence === null) {
+        if (fc) fence = fc;
+      } else if (fc === fence) {
+        fence = null;
+      }
+    }
+    if (!NEAR_MARKER_RE.test(line)) {
+      // A `---` opener appearing AFTER a marker but with the marker above the
+      // top of the file signals a marker placed before frontmatter.
+      if (firstFrontmatterOpener === -1 && FRONTMATTER_DELIM_RE.test(line) && i > 0 && frontmatterEnd === -1) {
+        firstFrontmatterOpener = i;
+      }
+      continue;
+    }
+    // Inside a fenced code block: forbidden, and never parsed as a marker.
+    if (fence !== null) {
+      errors.push(`marker inside a fenced code block at line ${i + 1}: "${line.trim()}"`);
+      continue;
+    }
+    // Inside the YAML frontmatter span: forbidden.
+    if (frontmatterEnd !== -1 && i <= frontmatterEnd) {
+      errors.push(`marker inside YAML frontmatter at line ${i + 1}: "${line.trim()}"`);
+      continue;
+    }
+    const cls = classifyMarkerLine(line);
+    if (cls.error) {
+      errors.push(`${cls.error} at line ${i + 1}`);
+      continue;
+    }
+    if (cls.kind === "only") {
+      if (openRuntime !== null) {
+        errors.push(`nested bee:only block at line ${i + 1} (block opened at line ${openLine + 1} not closed)`);
+        continue;
+      }
+      openRuntime = cls.runtime;
+      openLine = i;
+      // A well-formed marker sitting above a later frontmatter opener is a
+      // marker placed before frontmatter.
+      if (firstFrontmatterOpener !== -1) {
+        errors.push(`marker before YAML frontmatter at line ${i + 1}`);
+      }
+    } else {
+      // end
+      if (openRuntime === null) {
+        errors.push(`stray bee:end with no open block at line ${i + 1}`);
+        continue;
+      }
+      openRuntime = null;
+    }
+  }
+  if (openRuntime !== null) {
+    errors.push(`unclosed bee:only block opened at line ${openLine + 1}`);
+  }
+  return errors;
+}
+
+// Filter one file's bytes for `runtime`. On any parse ambiguity the caller has
+// already refused via validateSkillMarkers; here a file with no marker line is
+// returned byte-identical (never decoded), and a marked file is rebuilt with
+// exact line endings, its marker lines stripped and its off-runtime blocks
+// dropped.
+export function renderSkillBytes(buf, runtime) {
+  if (!bufHasMarkerBytes(buf)) {
+    return buf;
+  }
+  const text = buf.toString("utf8");
+  const lines = text.split(/\r\n|\n/);
+  if (!lines.some((line) => NEAR_MARKER_RE.test(line))) {
+    return buf; // literal "bee:only"/"bee:end" in prose, no actual marker line
+  }
+  const pairs = splitLinesPreserving(text);
+  let out = "";
+  let openRuntime = null;
+  for (const [content, term] of pairs) {
+    if (NEAR_MARKER_RE.test(content)) {
+      const cls = classifyMarkerLine(content);
+      // Validation guarantees well-formedness before render is ever reached;
+      // treat any recognized marker as a control line and strip it.
+      if (!cls.error) {
+        if (cls.kind === "only") openRuntime = cls.runtime;
+        else openRuntime = null;
+        continue;
+      }
+    }
+    if (openRuntime === null || openRuntime === runtime) {
+      out += content + term;
+    }
+  }
+  return Buffer.from(out, "utf8");
+}
+
+// Which runtime a target root renders for: repo-agents is Codex, every other
+// managed root (repo-claude, global, legacy-global) is Claude.
+function runtimeForTargetKind(kind) {
+  return kind === "repo-agents" ? "codex" : "claude";
+}
+
+// Whole-tree grammar gate (D9): scan every bee-* skill FILE in the source tree
+// and collect marker-grammar errors. Read-only; symlinked/unsupported entries
+// are left to the sync path's own block handling. A non-empty result refuses
+// the WHOLE apply with zero writes.
+function validateSkillTreeMarkers(sourceRoot) {
+  const errors = [];
+  for (const entry of listBeeSkillEntries(sourceRoot)) {
+    if (entry.isSymbolicLink() || !entry.isDirectory()) {
+      continue;
+    }
+    const skillDir = path.join(sourceRoot, entry.name);
+    const walk = walkSkillTree(skillDir);
+    if (walk.blocked) {
+      continue;
+    }
+    for (const rel of walk.files.keys()) {
+      const abs = path.join(skillDir, ...rel.split("/"));
+      let buf;
+      try {
+        buf = fs.readFileSync(abs);
+      } catch {
+        continue;
+      }
+      if (!bufHasMarkerBytes(buf)) {
+        continue;
+      }
+      for (const e of validateSkillMarkers(buf.toString("utf8"))) {
+        errors.push(`${entry.name}/${rel}: ${e}`);
+      }
+    }
+  }
+  return errors;
 }
 
 // The deletion domain is constructed here: only /^bee-/ entries are ever
@@ -619,8 +876,9 @@ function aliasBlockedItem(name, detail) {
 
 // D4/D5 drift plan items. Content difference IS drift, at any version (D5);
 // a bee-* skill absent from the anchored source IS an intentional removal (D2).
-function computeSkillItems(sourceRoot, targetRoot) {
+function computeSkillItems(sourceRoot, targetRoot, runtime) {
   const items = [];
+  const renderSource = (buf) => renderSkillBytes(buf, runtime);
   const sourceEntries = listBeeSkillEntries(sourceRoot);
   const sourceNames = new Set(sourceEntries.map((entry) => entry.name));
   const aliasCollisions = detectAliasCollisions(sourceNames, targetRoot);
@@ -645,7 +903,7 @@ function computeSkillItems(sourceRoot, targetRoot) {
     if (!entry.isDirectory()) {
       continue; // stray bee-* file in source: not a skill dir
     }
-    const sourceWalk = walkSkillTree(path.join(sourceRoot, name));
+    const sourceWalk = walkSkillTree(path.join(sourceRoot, name), renderSource);
     if (sourceWalk.blocked) {
       items.push({
         action: "blocked_symlink",
@@ -886,7 +1144,7 @@ function computeSkillSyncTarget({
       // still carries its computed items BEFORE any --force-downgrade.
       // `target` on every item names the root it belongs to; `path` stays
       // target_root-relative (scope semantics unchanged).
-      target.items = computeSkillItems(sourceRoot, targetRoot).map((item) => ({
+      target.items = computeSkillItems(sourceRoot, targetRoot, runtimeForTargetKind(kind)).map((item) => ({
         ...item,
         target: kind,
       }));
@@ -1029,7 +1287,7 @@ function computeLegacyGlobalRefresh({ sourceRoot, realSource, realRepo, sourceVe
   // remove pass (never delete) and its create case (never create an absent
   // dir), relabel a drifted managed dir as refresh_legacy_global_skill, and keep
   // any per-skill block as a loud skip.
-  for (const item of computeSkillItems(sourceRoot, globalRoot)) {
+  for (const item of computeSkillItems(sourceRoot, globalRoot, "claude")) {
     if (item.action === "remove_skill") {
       continue; // never delete from the legacy global root
     }
@@ -1066,8 +1324,8 @@ function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
     blocked: null, // blocked-first aggregate: { status, reason, forceable, versions }
   };
 
-  const blockAll = (reason) => {
-    const blocked = { status: "blocked_no_source", reason, forceable: false };
+  const blockAll = (reason, status = "blocked_no_source") => {
+    const blocked = { status, reason, forceable: false };
     result.targets = targetSpecs.map(({ kind, target_root }) => ({
       kind,
       target_root,
@@ -1093,6 +1351,16 @@ function computeSkillSync(repoRoot, { globalSkills = false } = {}) {
   if (!identityOk) {
     return blockAll(
       "no authoritative skill source: the running script's tree failed the bee-hive realpath identity check",
+    );
+  }
+
+  // Whole-tree marker-grammar gate (D9): a malformed marker anywhere refuses the
+  // ENTIRE apply with zero writes, BEFORE any per-target resolution or mutation.
+  const markerErrors = validateSkillTreeMarkers(sourceRoot);
+  if (markerErrors.length > 0) {
+    return blockAll(
+      `skill source markers are malformed - refusing to render, zero writes: ${markerErrors.join("; ")}`,
+      "blocked_render",
     );
   }
 
@@ -1159,13 +1427,14 @@ function writeFileAtomicRandom(filePath, buffer) {
 
 // Mirror one bee-* skill dir into the target (D4/D5). Re-verifies the symlink
 // policy at apply time so plan-to-apply races fail closed.
-function applySyncSkill(sourceRoot, targetRoot, name) {
+function applySyncSkill(sourceRoot, targetRoot, name, runtime) {
+  const renderSource = (buf) => renderSkillBytes(buf, runtime);
   const sourceDir = path.join(sourceRoot, name);
   const sourceStat = lstatIfExists(sourceDir);
   if (!sourceStat || sourceStat.isSymbolicLink() || !sourceStat.isDirectory()) {
     return { blocked: `source ${name} is not a plain directory - skipped` };
   }
-  const sourceWalk = walkSkillTree(sourceDir);
+  const sourceWalk = walkSkillTree(sourceDir, renderSource);
   if (sourceWalk.blocked) {
     return {
       blocked: `source ${name} contains a ${sourceWalk.blocked.reason} at ${sourceWalk.blocked.path} - skipped`,
@@ -1236,7 +1505,7 @@ function applySyncSkill(sourceRoot, targetRoot, name) {
     }
     writeFileAtomicRandom(
       path.join(targetDir, ...rel.split("/")),
-      fs.readFileSync(path.join(sourceDir, ...rel.split("/"))),
+      renderSource(fs.readFileSync(path.join(sourceDir, ...rel.split("/")))),
     );
   }
   return { blocked: null };
@@ -1709,7 +1978,7 @@ function renderRepoHookEntries() {
       { matcher: "Agent|Task", hooks: [entry("bee-model-guard.mjs")] },
     ],
     PostToolUse: [
-      { matcher: "TaskCreate|TaskUpdate|TodoWrite", hooks: [entry("bee-state-sync.mjs")] },
+      { matcher: "update_plan|TaskCreate|TaskUpdate|TodoWrite", hooks: [entry("bee-state-sync.mjs")] },
       { hooks: [entry("bee-tools-logger.mjs")] },
     ],
     SubagentStop: [{ hooks: [entry("bee-state-sync.mjs"), entry("bee-chain-nudge.mjs")] }],
@@ -1756,8 +2025,10 @@ function mergeRepoSettings(settingsPath) {
 // (the Claude-only variable above), so every command resolves the git root
 // from the session cwd and fails open VISIBLY when there is none. Two pinned
 // differences from renderRepoHookEntries(), both from hooks/catalog.mjs:
-//   - bee-model-guard.mjs is Claude-only (ALLOWED_DIFFERENCES: Codex does not
-//     expose collaboration spawn through PreToolUse) and is never wired here.
+//   - bee-model-guard.mjs is wired on a DIFFERENT matcher per runtime: Claude
+//     guards Agent|Task, Codex guards spawn_agent (the collaboration-spawn tool
+//     name Codex exposes through PreToolUse — capability-matrix row D1). Same
+//     handler, only the matcher differs (ALLOWED_DIFFERENCES).
 //   - each entry carries a statusMessage (Codex TUI shows it while running).
 
 const CODEX_TRANSPORT_DIAGNOSTIC = "bee: hook transport unavailable (no git root)";
@@ -1804,10 +2075,18 @@ function renderCodexHookEntries() {
         matcher: "Edit|Write|MultiEdit|Bash|Read|Glob|Grep|AskUserQuestion",
         hooks: [entry("bee-write-guard.mjs", "bee: write guard")],
       },
+      {
+        // Codex-native spawn guard (codex-native-runtime-v2 D4): Codex exposes
+        // agent spawns as tool_name "spawn_agent"; bee-model-guard.mjs runs an
+        // isolated Codex branch on the observed envelope. Claude wires the same
+        // handler on Agent|Task (renderRepoHookEntries) — matcher differs only.
+        matcher: "spawn_agent",
+        hooks: [entry("bee-model-guard.mjs", "bee: model-tier guard")],
+      },
     ],
     PostToolUse: [
       {
-        matcher: "TaskCreate|TaskUpdate|TodoWrite",
+        matcher: "update_plan|TaskCreate|TaskUpdate|TodoWrite",
         hooks: [entry("bee-state-sync.mjs", "bee: state sync")],
       },
       {
@@ -2588,6 +2867,7 @@ function applyPlan(
           skillSync.source_root,
           skillTargetRootByKind.get(item.target),
           item.skill,
+          runtimeForTargetKind(item.target),
         );
         if (result.blocked) {
           skippedSkills.push({ skill: item.skill, target: item.target, reason: result.blocked });
@@ -2610,7 +2890,12 @@ function applyPlan(
           });
           continue;
         }
-        const result = applySyncSkill(skillSync.source_root, root, item.skill);
+        const result = applySyncSkill(
+          skillSync.source_root,
+          root,
+          item.skill,
+          runtimeForTargetKind(item.target),
+        );
         if (result.blocked) {
           skippedSkills.push({ skill: item.skill, target: item.target, reason: result.blocked });
           continue; // skipped loudly, not applied
@@ -2636,6 +2921,23 @@ function applyPlan(
         break;
     }
     applied.push(item);
+  }
+
+  // D9 provenance: stamp each rendered target's skills ROOT with the render
+  // sidecar so source-identity refuses it as an onboarding source for any
+  // target. Deterministic content (no timestamp) keeps re-applies idempotent.
+  // `noop` targets are the running source itself (source === target) and are
+  // NEVER stamped — that would poison the canonical source into a projection.
+  if (syncSkills) {
+    for (const t of skillSync.targets) {
+      if (t.blocked || (t.mode !== "sync" && t.mode !== "fresh")) {
+        continue;
+      }
+      writeFileAtomic(
+        path.join(t.target_root, RENDER_SIDECAR),
+        `${JSON.stringify({ schema: RENDER_SCHEMA, target_runtime: runtimeForTargetKind(t.kind) }, null, 2)}\n`,
+      );
+    }
   }
 
   // Always (re)write onboarding.json on apply so managed versions are current.

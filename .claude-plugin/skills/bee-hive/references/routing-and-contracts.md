@@ -224,22 +224,6 @@ The one orchestration pattern bee runs: the session model (the owner's best mode
 - **Execution worker (AO14, second named class)** — the Delegation contract's other dispatch shape, distinguished from the I/O-offload worker by **authority and state effects**, not by task size. Unlike an I/O worker, an execution worker **does** register in the swarm registry (`bee.mjs state worker add`) and **does** take reservations under its own nickname; it implements exactly one assigned cell (claim → read `read_first` → implement within `files` → verify → cap → release) and returns exactly one status token (`[DONE]`/`[BLOCKED]`/`[HANDOFF]`/`[NOOP]`) — it is authority-bearing, never a digest-only gather. Every `bee-swarming` worker dispatch belongs to this class: full waves in `standard`/`high-risk`, and, since AO14, the single dispatched worker that now carries out `tiny`/`small` cell implementation too (`bee-swarming/SKILL.md`'s Single execution worker section) — never zero of them, even for the lightest lane. An independent reviewer or checker (plan-checker, cell reviewer, panel member) is **neither** class: it is a review-class dispatch — read-only, no registry entry, no reservations, no cell of its own — and is never called an "execution worker."
 - **cli gather branch (plan 2A-ii, decision 34398e69)** — when `resolveTier(root, 'generation', runtime, {for:'gather'}).type === 'cli'`, a gather dispatch runs the configured command **verbatim** via the shell — nothing appended, ever (W7); the prompt goes in on **stdin**; every path handed to the worker is **absolute** (W9); the run is **read-only** by contract. **Stdout IS the digest**, framed by a delimiter contract: the worker prompt instructs the CLI to emit its digest between `<<<BEE_DIGEST` and `BEE_DIGEST>>>` lines, and the orchestrator extracts only what sits between them — missing delimiters or an empty digest is a **failed run**, surfaced loudly, never accepted as a silent green (fail-open-masking pattern, critical-patterns 20260716-class). No `result.json`, no cell, no reservation, no `bee.mjs state worker add` registration for a gather, same as any other I/O worker. **Known measurement gap, named not solved here:** a Bash-launched gather emits zero `dispatch.jsonl` rows (W-d) — closing that gap is Slice 3's job, not this branch's.
 
-### Native Codex subagent tending
-
-For every bee-owned native Codex subagent flow, including ordinary delegated
-gathers, a completed `wait_agent` call with no completion is an **empty wait**:
-it is a timeout signal only, never failure. Never follow an empty wait directly
-with another `wait_agent`; authority, urgency, and no-chatter instructions create
-no exception. Before any later bounded wait, continue material task-local work
-when any remains; otherwise take exactly one `list_agents` snapshot. Then send
-one concise commentary update naming both the live agent state and the next
-action; only then may a later bounded wait run. No-op work, repeated state reads,
-hidden reasoning, generic commentary, or commentary alone do not qualify.
-Timeout never licenses interrupt, duplicate dispatch, claim release, or
-reservation release; every running agent, claim, and reservation stays owned.
-This refines, rather than replaces, the ban on file/scratchpad polling for
-harness-managed subagents. External process and artifact polling keeps its own
-contract and is outside this native-agent rule.
 
 ## Question Format
 

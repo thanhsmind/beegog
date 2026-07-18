@@ -659,6 +659,19 @@ try {
     "exactly one PreToolUse entry wires bee-write-guard.mjs, matcher is byte-identical to the write-guard matcher",
     JSON.stringify(writeGuardEntries));
 
+  // D4 (codex-native-runtime-v2): renderRepoHookEntries()'s PostToolUse
+  // matcher for bee-state-sync.mjs must carry the update_plan superset
+  // (never a swap) - parsed structurally, not string-contained, so a matcher
+  // that dropped a legacy name would turn this red instead of hiding behind
+  // "settings.json still mentions bee-state-sync.mjs somewhere".
+  const postToolUse = Array.isArray(settings.hooks?.PostToolUse) ? settings.hooks.PostToolUse : [];
+  const stateSyncEntries = postToolUse.filter((e) =>
+    (e.hooks || []).some((h) => String(h.command || "").includes("bee-state-sync.mjs")));
+  check(stateSyncEntries.length === 1 &&
+    stateSyncEntries[0].matcher === "update_plan|TaskCreate|TaskUpdate|TodoWrite",
+    "exactly one PostToolUse entry wires bee-state-sync.mjs, matcher is exactly the update_plan superset",
+    JSON.stringify(stateSyncEntries));
+
   // model-guard must not be folded into any other event or entry anywhere in
   // the applied settings tree.
   const modelGuardSightings = [];
@@ -761,8 +774,18 @@ try {
   const codexRepoText = JSON.stringify(codexRepo);
   check(!codexRepoText.includes("CLAUDE_PROJECT_DIR"),
     ".codex/hooks.json never uses $CLAUDE_PROJECT_DIR (Codex never sets it)");
-  check(!codexRepoText.includes("bee-model-guard.mjs"),
-    ".codex/hooks.json never wires bee-model-guard.mjs (Claude-only per catalog ALLOWED_DIFFERENCES)");
+  // cnr2-8 (codex-native-runtime-v2 D4): the Codex projection DOES wire
+  // bee-model-guard.mjs, but on the spawn_agent matcher (Claude uses Agent|Task)
+  // — a per-runtime matcher difference pinned in ALLOWED_DIFFERENCES, not a
+  // Claude-only guard. Structural check: exactly one PreToolUse entry whose
+  // matcher is "spawn_agent" wires the guard.
+  const codexPreToolUse = Array.isArray(codexRepo.hooks?.PreToolUse) ? codexRepo.hooks.PreToolUse : [];
+  const codexSpawnGuardEntries = codexPreToolUse.filter((e) =>
+    e.matcher === "spawn_agent" &&
+    (e.hooks || []).some((h) => String(h.command || "").includes("bee-model-guard.mjs")));
+  check(codexSpawnGuardEntries.length === 1,
+    ".codex/hooks.json wires bee-model-guard.mjs on exactly one PreToolUse spawn_agent entry (Codex spawn guard)",
+    JSON.stringify(codexPreToolUse));
   let codexCommandCount = 0;
   let codexTransportOk = true;
   let codexStatusMessageOk = true;
@@ -792,7 +815,7 @@ try {
       }
     }
   }
-  check(codexCommandCount === 12, ".codex/hooks.json wires exactly 12 hook commands",
+  check(codexCommandCount === 13, ".codex/hooks.json wires exactly 13 hook commands",
     `count: ${codexCommandCount}`);
   check(codexTransportOk,
     "every .codex/hooks.json command uses the git-root transport with the pinned fail-open diagnostic");
@@ -805,6 +828,19 @@ try {
     JSON.stringify(["SubagentStart", "SubagentStop"]),
     "generated Codex SubagentStart and SubagentStop each resolve to the copied bounded audit handler",
     JSON.stringify(codexAuditEvents));
+
+  // D4 (codex-native-runtime-v2): renderCodexHookEntries()'s PostToolUse
+  // matcher for bee-state-sync.mjs must carry the update_plan superset -
+  // parsed structurally (own row, independent of the triple-parity check
+  // below), so a matcher regression here cannot hide behind that check
+  // accidentally passing for an unrelated reason.
+  const codexPostToolUse = Array.isArray(codexRepo.hooks?.PostToolUse) ? codexRepo.hooks.PostToolUse : [];
+  const codexStateSyncEntries = codexPostToolUse.filter((e) =>
+    (e.hooks || []).some((h) => String(h.command || "").includes("bee-state-sync.mjs")));
+  check(codexStateSyncEntries.length === 1 &&
+    codexStateSyncEntries[0].matcher === "update_plan|TaskCreate|TaskUpdate|TodoWrite",
+    "exactly one .codex/hooks.json PostToolUse entry wires bee-state-sync.mjs, matcher is exactly the update_plan superset",
+    JSON.stringify(codexStateSyncEntries));
 
   // Parity with the checked-in Codex plugin projection: identical
   // (event, matcher, filename) triples — only the command root differs.

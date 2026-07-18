@@ -8025,12 +8025,25 @@ await check('census: native Codex empty waits require a material-action then com
     path.join(repoRoot, 'AGENTS.md'),
     path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
   ];
-  const procedureSurfaces = [
+  // D9 (codex-native-runtime-v2, cnr2-11): these three sources now carry the
+  // native empty-wait procedure inside a `<!-- bee:only codex -->` block
+  // (tagged in cnr2-10) — it is a Codex-only mechanic (wait_agent/list_agents
+  // have no Claude Code equivalent), so the per-runtime render KEEPS it in the
+  // canonical source and the Codex projection, and STRIPS it from the Claude
+  // projection. The census below is runtime-aware for exactly this reason:
+  // presence is required on the canonical + `.agents/skills` (Codex) copies,
+  // and absence is required on the `.claude/skills` (Claude) copies.
+  const procedureSurfacesKeepWaitAgent = [
     path.join(repoRoot, 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
-    path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
+    path.join(repoRoot, '.agents', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
     path.join(repoRoot, 'skills', 'bee-swarming', 'SKILL.md'),
-    path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'SKILL.md'),
+    path.join(repoRoot, '.agents', 'skills', 'bee-swarming', 'SKILL.md'),
     path.join(repoRoot, 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+    path.join(repoRoot, '.agents', 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+  ];
+  const procedureSurfacesStripWaitAgent = [
+    path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
+    path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'SKILL.md'),
     path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
   ];
 
@@ -8047,7 +8060,7 @@ await check('census: native Codex empty waits require a material-action then com
     assert(/external (process|CLI|executor)/i.test(text) && /artifact polling/i.test(text), `${rel} must keep external process/artifact polling outside the native-agent rule`);
   }
 
-  for (const surface of procedureSurfaces) {
+  for (const surface of procedureSurfacesKeepWaitAgent) {
     assert(fs.existsSync(surface), `required procedure surface missing: ${path.relative(repoRoot, surface)}`);
     const text = fs.readFileSync(surface, 'utf8');
     const rel = path.relative(repoRoot, surface);
@@ -8055,6 +8068,20 @@ await check('census: native Codex empty waits require a material-action then com
     assert(/material task-local work/i.test(text) && /exactly\s+one[\s\S]{0,50}list_agents[\s\S]{0,30}snapshot/i.test(text), `${rel} must carry the exact material-action fallback`);
     assert(/commentary[\s\S]{0,180}(live|running)\s+agent\s+state[\s\S]{0,100}next\s+action/i.test(text), `${rel} must require the state-and-next-action commentary update`);
     assert(/duplicate\s+dispatch/i.test(text) && /claim/i.test(text) && /reservation/i.test(text), `${rel} must preserve dispatch and ownership on timeout`);
+  }
+
+  for (const surface of procedureSurfacesStripWaitAgent) {
+    assert(fs.existsSync(surface), `required Claude-rendered procedure surface missing: ${path.relative(repoRoot, surface)}`);
+    const text = fs.readFileSync(surface, 'utf8');
+    const rel = path.relative(repoRoot, surface);
+    assert(
+      !/wait_agent/.test(text) && !/list_agents/.test(text),
+      `${rel} is a Claude Code projection and must NOT carry the Codex-only wait_agent/list_agents native-tending prose (D9 who-must-act attribution, cnr2-10/cnr2-11) — found a leaked token`,
+    );
+    assert(
+      !/bee:only|bee:end/.test(text),
+      `${rel} is a rendered projection and must carry no surviving bee:only/bee:end marker`,
+    );
   }
 });
 

@@ -7,7 +7,18 @@ import { fileURLToPath } from "node:url";
 
 const PROJECT_SKILL_ROOTS = [".claude/skills", ".agents/skills", ".codex/skills"];
 const PROJECT_HOOK_FILES = [".claude/settings.json", ".codex/hooks.json"];
-const PACKAGE_ROLES = new Set(["plugin_skill", "plugin_hook", "plugin_manifest", "plugin_marketplace"]);
+// D9/cnr2-12: plugin_skill_*_render cover the committed per-runtime rendered
+// skill trees (.claude-plugin/skills/, .codex-plugin/skills/) that the plugin
+// manifests now route to; they must be counted as expected package content
+// (proveInstalledPackage) alongside the unchanged canonical plugin_skill tree.
+const PACKAGE_ROLES = new Set([
+  "plugin_skill",
+  "plugin_skill_claude_render",
+  "plugin_skill_codex_render",
+  "plugin_hook",
+  "plugin_manifest",
+  "plugin_marketplace",
+]);
 const BEE_HOOK_HANDLERS = new Set([
   "bee-session-init.mjs", "bee-prompt-context.mjs", "bee-write-guard.mjs",
   "bee-model-guard.mjs", "bee-state-sync.mjs", "bee-chain-nudge.mjs",
