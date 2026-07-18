@@ -81,7 +81,7 @@ up-to-date project reports "nothing to do".
 | machine-local runtime record | Content the managed ignore section silences: workflow state, reservations, worker scratch, logs, capture queue, feedback snapshot, injection cache, the pause/handoff record, and disposable experiment files. |
 | team-durable knowledge | Content that always stays version-tracked, never silenced by the managed ignore section: vendored tooling, configuration, the decision log, the friction log, and work-cell records. |
 | ignore-section fingerprint | A hash of the managed ignore section's expected content, stored in the project's onboarding record so a later run can detect drift in that section specifically. |
-| distribution mode | The exclusive source selected for one install: `plugin-first` or explicit `repo-copy`. The two are never active together. |
+| distribution mode | The exclusive source selected for one install: `plugin-first` or explicit `repo-copy`. The two are never active together. Codex carve-out (hybrid): because the Codex CLI loads no plugin hooks, plugin-first on a Codex-covering install still writes the repo-local Codex hook projection — skills from the plugin, hooks repo-local — and this is part of plugin-first, not a third mode. |
 | release inventory | The complete, duplicate-free file set and package metadata that an enabled installed package must match before cleanup is authorized. |
 | ownership ledger | The installer's exact record of user-runtime roots and directories it created; name similarity alone never grants deletion authority. |
 | recognized bee hook entry | A hook entry whose event, matcher, and handler match the generated bee catalog. Foreign and user entries are never recognized by name alone. |
@@ -192,7 +192,15 @@ disappears once no silenced path remains tracked.
 default on a capable runtime. It proves an enabled installed package and its
 complete release inventory, preflights the whole transaction, then removes only
 direct plain `bee-*` skill directories and catalog-recognized bee hook entries
-from project fallback roots. Repo-copy first proves the package inactive, then
+from project fallback roots. **Codex hybrid rule (GH #22 P0-1):** when the
+selected runtime covers Codex, plugin-first additionally writes the repo-local
+Codex hook projection (hook file + vendored handlers) in the same apply,
+because the Codex CLI loads no plugin hooks — and the cleanup pass is scoped
+so it never strips the Codex hook entries it just gained (the claude-side
+stripping is unchanged). The projection fires from the caller-passed runtime
+selection, never from recorded state. A failed hook write is a typed blocked
+apply that aborts and rolls the plugin back — an install can never end with
+plugin skills and no hooks. Repo-copy first proves the package inactive, then
 generates the managed project projections; Codex-only receives the same hook
 catalog as a combined-runtime install. Bash and PowerShell installers use the
 same planner and proof rules. A symlink, alias, unknown target, invalid ledger,
@@ -380,7 +388,11 @@ landing page from day one in every onboarded project.
   Per-project copies are created only by the explicit repo-copy fallback; a
   machine-global copy remains explicit opt-in. The workflow's source tree is not
   a host-install target (codex-hook-state-parity D9/D10; supersedes the
-  default-copy portion of decision 3318374a; decision cf511ff3).
+  default-copy portion of decision 3318374a; decision cf511ff3). Codex
+  carve-out: the repo-local Codex hook projection is exempt from "per-project
+  copies only via repo-copy" — plugin-first on a Codex-covering install always
+  writes it (hybrid), fail-closed, with the cleanup pass scoped to preserve it
+  (codex-plugin-first-hybrid D1-D6, GH #22 P0-1).
 - **R13** — The assistant-instructions import artifact is created by default on
   onboarding; declining it is an explicit opt-out. Content outside the managed
   import is never replaced without consent (decision 3318374a, D1).
