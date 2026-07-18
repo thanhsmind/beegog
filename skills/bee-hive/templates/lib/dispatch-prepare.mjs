@@ -34,7 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveTier, resolveAdvisor } from './state.mjs';
 import { readCell } from './cells.mjs';
-import { PINNED_AGENT_TYPE } from './dispatch-guard.mjs';
+import { PINNED_AGENT_TYPE, deriveEconomics } from './dispatch-guard.mjs';
 
 export const DISPATCH_RUNTIMES = ['codex', 'claude'];
 export const DISPATCH_KINDS = ['cell', 'gather', 'reviewer', 'advisor'];
@@ -181,7 +181,6 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
   let tool;
   let payload;
   let channel;
-  let enforcement;
 
   if (resolved.type === 'cli') {
     // External-executor dispatch (swarming-reference.md "External Executors"):
@@ -191,7 +190,6 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
     tool = 'Bash';
     payload = { command: resolved.command, stdin: promptBody };
     channel = 'cli-exec';
-    enforcement = 'cli-command';
   } else if (runtime === 'codex') {
     tool = 'spawn_agent';
     payload = {
@@ -205,7 +203,6 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
     // "Codex has no per-agent model selection today"): the tier is enforced
     // as a read budget + output cap stated in the prompt, never a structural
     // param, regardless of whether resolveTier resolved a model name.
-    enforcement = 'prompt-budget';
   } else {
     tool = 'Agent';
     payload = {
@@ -217,25 +214,20 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
       payload.model = resolved.model;
     }
     channel = 'claude-agent';
-    enforcement = resolved.type === 'model' ? 'model-param' : 'prompt-budget';
   }
 
-  const effectiveModelStatus =
-    enforcement === 'model-param'
-      ? 'pinned'
-      : enforcement === 'cli-command'
-        ? 'unverified'
-        : 'inherited-or-unknown';
+  // Shared derivation (g22-2, GH #22 P1-6 D3): the honest pinned/unverified/
+  // inherited-or-unknown split now lives ONCE in dispatch-guard.mjs's
+  // deriveEconomics, so this module's economics block and the enforcement
+  // hook's dispatch-log economics can never independently drift. A
+  // structural `model` param exists here ONLY on the claude-agent channel
+  // when resolved.type === 'model' (the exact condition, above, that set
+  // payload.model) — codex-native's spawn_agent has no such field, and
+  // cli-exec's Bash payload names its own model outside this vocabulary.
+  const paramModel = channel === 'claude-agent' && resolved.type === 'model' ? resolved.model : null;
+  const economics = deriveEconomics({ channel, tier: tierToken, paramModel, resolved });
 
   const dispatch_id = crypto.randomUUID();
-  const economics = {
-    logical_tier: tierToken,
-    requested_model: requestedModel,
-    effective_model: null,
-    effective_model_status: effectiveModelStatus,
-    channel,
-    enforcement,
-  };
 
   appendPrepareRecord(root, {
     dispatch_id,

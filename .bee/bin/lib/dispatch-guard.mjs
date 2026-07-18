@@ -241,6 +241,89 @@ function evaluateClaudeDispatch(rawToolInput, root) {
   return denyResult(reason, 'bare-denied', { tier: null, model: null, subagentType });
 }
 
+// ─── Dispatch economics (g22-2, GH #22 P1-6, D3 + advisor R3) ──────────────
+// A single honest mapping from "what the dispatch declared" to "what we can
+// actually prove about the model that ran" — shared by hooks/bee-model-
+// guard.mjs's logDispatch (enforcement-time audit line) and
+// dispatch-prepare.mjs's economics block (prepare-time record), so the two
+// sides of the SAME judgment (advisor A2's "one vocabulary" principle,
+// extended from decisions to economics) never carry two independently
+// hand-rolled status computations that could drift apart.
+//
+// This is a pure function — zero I/O, zero fs/log access — matching the rest
+// of this module's contract. Callers resolve `resolved` themselves (via
+// resolveTier/resolveAdvisor, which DO read .bee/config.json) and hand the
+// typed result in; deriveEconomics only ever maps already-known facts to the
+// {logical_tier, requested_model, effective_model, effective_model_status,
+// channel, enforcement} shape. Never call resolveTier from in here.
+//
+// CHANNEL is the transport family (claude-agent / codex-native / cli-exec) —
+// deliberately a NEW vocabulary, not a reuse of the legacy `transport` field
+// evaluateDispatch/logDispatch already emit (advisor R3: transport keeps its
+// existing enforcement-label meaning — 'model-param'/'marker'/'bare-denied'/
+// etc — untouched; channel is additive, never a replacement).
+//
+// The honest mapping (GH #22 P1-6 D3):
+//   - claude-agent + a real structural `model` param  -> 'pinned'; the
+//     effective model IS the param (we watched the caller pass it).
+//   - claude-agent + tier/budget only, no param        -> 'unverified'; we
+//     know what SHOULD run (requested_model, if the tier resolves to a named
+//     model) but never observe a structural pin, so we cannot claim more.
+//   - codex-native (spawn_agent)                       -> 'inherited-or-
+//     unknown', ALWAYS — codex-cli 0.144.4 has no per-agent model selection
+//     at all (P14/P17), so claiming 'pinned' or even 'unverified' here would
+//     imply a verification path that does not exist. This status never
+//     changes based on tier/model inputs; only a future capability probe
+//     proving per-agent selection would justify moving it.
+//   - cli-exec (external executor payloads)             -> 'unverified'; the
+//     cli command names its own model in its own argv, so requested_model is
+//     always null here (nothing in bee's config vocabulary to report) even
+//     when the resolved slot happens to carry cli metadata.
+function deriveEconomics({ channel, tier = null, paramModel = null, resolved = null } = {}) {
+  const resolvedModel = resolved && resolved.type === 'model' ? resolved.model : null;
+
+  let enforcement;
+  if (channel === 'cli-exec') {
+    enforcement = 'cli-command';
+  } else if (channel === 'codex-native') {
+    enforcement = 'prompt-budget';
+  } else {
+    // claude-agent (or any unrecognized channel defaults to the claude shape):
+    // a real param structurally pins the dispatch; its absence means the tier
+    // marker alone is carrying the request as a prompt-stated budget.
+    enforcement = paramModel ? 'model-param' : 'prompt-budget';
+  }
+
+  let effectiveModel = null;
+  let effectiveModelStatus;
+  if (channel === 'codex-native') {
+    effectiveModelStatus = 'inherited-or-unknown';
+  } else if (channel === 'cli-exec') {
+    effectiveModelStatus = 'unverified';
+  } else if (paramModel) {
+    effectiveModel = paramModel;
+    effectiveModelStatus = 'pinned';
+  } else {
+    effectiveModelStatus = 'unverified';
+  }
+
+  // cli-exec never reports a requested_model (the command names its own,
+  // outside bee's config vocabulary); every other channel prefers the actual
+  // param when present, else falls back to what config would have named.
+  const requestedModel = channel === 'cli-exec' ? null : paramModel || resolvedModel || null;
+
+  return {
+    logical_tier: tier,
+    requested_model: requestedModel,
+    effective_model: effectiveModel,
+    effective_model_status: effectiveModelStatus,
+    channel,
+    enforcement,
+  };
+}
+
+export { deriveEconomics };
+
 /**
  * evaluateDispatch(toolName, toolInput, root) — the single decision function
  * both the guard hook and `bee dispatch prepare` call. `toolInput` is exactly

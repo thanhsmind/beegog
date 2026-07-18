@@ -456,6 +456,18 @@ async function main() {
     "row20a: dispatch line records model-param transport with the model name",
     JSON.stringify(d20a),
   );
+  // g22-2 economics (GH #22 P1-6 D3): a real structural model param -> pinned,
+  // effective_model equals that param, additive alongside the legacy fields.
+  check(
+    d20a &&
+      d20a.channel === "claude-agent" &&
+      d20a.enforcement === "model-param" &&
+      d20a.effective_model_status === "pinned" &&
+      d20a.effective_model === "haiku" &&
+      d20a.requested_model === "haiku",
+    "row20a economics: claude-agent/model-param -> pinned, effective_model equals the param",
+    JSON.stringify(d20a),
+  );
 
   const r20b = await runHookPayload(
     { tool_name: "Task", tool_input: { prompt: "[bee-tier: review] check the diff" } },
@@ -468,6 +480,20 @@ async function main() {
     "row20b: dispatch line records marker transport with the extracted tier",
     JSON.stringify(d20b),
   );
+  // g22-2 economics: a bare-marker dispatch (no structural param) is
+  // 'unverified' — never 'inherited-or-unknown' (that status is codex-native
+  // only) — even though the review slot resolves to a real configured model
+  // (requested_model still reports it, informationally).
+  check(
+    d20b &&
+      d20b.channel === "claude-agent" &&
+      d20b.enforcement === "prompt-budget" &&
+      d20b.effective_model_status === "unverified" &&
+      d20b.effective_model === null &&
+      d20b.requested_model === "opus",
+    "row20b economics: claude-agent/prompt-budget -> unverified, requested_model from config, no effective_model",
+    JSON.stringify(d20b),
+  );
 
   const r20c = await runHookPayload(
     { tool_name: "Agent", tool_input: { prompt: "bare dispatch with nothing declared" } },
@@ -478,6 +504,18 @@ async function main() {
     r20c.status === 2 && d20c && d20c.transport === "bare-denied",
     "row20c: denied bare dispatch is logged as bare-denied (deny semantics unchanged)",
     `status=${r20c.status} line=${JSON.stringify(d20c)}`,
+  );
+  // g22-2 economics: a denied dispatch gets the fields too, where derivable —
+  // a fully bare dispatch (no tier, no param) derives to unverified/null, the
+  // same shape an allowed claude-agent prompt-budget dispatch would carry.
+  check(
+    d20c &&
+      d20c.channel === "claude-agent" &&
+      d20c.effective_model_status === "unverified" &&
+      d20c.effective_model === null &&
+      d20c.requested_model === null,
+    "row20c economics: denied bare dispatch still carries derivable economics fields",
+    JSON.stringify(d20c),
   );
 
   const r20d = await runHookPayload(
@@ -754,6 +792,19 @@ async function main() {
     "row40: allowed spawn logged as codex-spawn-marker with the extracted tier",
     JSON.stringify(d40),
   );
+  // g22-2 economics: codex-native is ALWAYS inherited-or-unknown (0.144.4 has
+  // no per-agent model selection to verify) — never 'pinned', regardless of
+  // the tier resolving to a real configured model name.
+  check(
+    d40 &&
+      d40.channel === "codex-native" &&
+      d40.enforcement === "prompt-budget" &&
+      d40.effective_model_status === "inherited-or-unknown" &&
+      d40.effective_model === null &&
+      d40.requested_model === "gpt-5.5",
+    "row40 economics: codex-native -> inherited-or-unknown ALWAYS, requested_model informational",
+    JSON.stringify(d40),
+  );
 
   // --- 41. leading whitespace before the marker -> allow ------------------
   const c41 = await runHookPayload(
@@ -774,6 +825,16 @@ async function main() {
   const d42 = readLastJsonl(codexDispatchLog);
   check(d42 && d42.transport === "codex-spawn-unmarked",
     "row42: denied spawn logged as codex-spawn-unmarked", JSON.stringify(d42));
+  // g22-2 economics: a denied codex spawn still carries inherited-or-unknown
+  // ALWAYS — the deny/allow outcome never changes this channel's status.
+  check(
+    d42 &&
+      d42.channel === "codex-native" &&
+      d42.effective_model_status === "inherited-or-unknown" &&
+      d42.effective_model === null,
+    "row42 economics: denied codex spawn still inherited-or-unknown",
+    JSON.stringify(d42),
+  );
 
   // --- 43. no marker at all (the exact captured message) -> deny ----------
   const c43 = await runHookPayload(

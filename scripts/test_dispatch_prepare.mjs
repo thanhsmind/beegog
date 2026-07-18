@@ -149,6 +149,46 @@ await check("claude gather payload round-trips ALLOW through evaluateDispatch; g
   assert(denied.transport === "generic-type-denied", `expected generic-type-denied, got ${JSON.stringify(denied)}`);
 });
 
+// ─── claude channel economics (g22-2, GH #22 P1-6 D3): a real model param on
+// the payload is 'pinned' and effective_model equals that param — never null
+// — because we watched the caller build a structural pin, not merely a
+// prompt-stated budget. ──────────────────────────────────────────────────
+
+await check("claude channel economics: model-param enforcement, pinned status, effective_model equals the payload's model", async () => {
+  const root = mkFixture("dispatch-prepare-claude-economics-pinned-");
+  writeConfig(root, { claude: { extraction: "haiku", generation: "sonnet", review: "opus" } });
+
+  const out = await prepareOk(["--runtime", "claude", "--kind", "gather"], root);
+  assert(out.payload.model === "sonnet", `expected payload.model sonnet, got ${JSON.stringify(out.payload)}`);
+  assert(out.economics.channel === "claude-agent", `expected channel claude-agent, got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.enforcement === "model-param", `expected enforcement model-param, got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.effective_model_status === "pinned", `expected pinned status, got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.effective_model === "sonnet", `expected effective_model sonnet (a real param was passed), got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.requested_model === "sonnet", `expected requested_model sonnet, got ${JSON.stringify(out.economics)}`);
+});
+
+// ─── claude channel economics on a null (budget-shaped) generation slot: no
+// structural model param exists to pin, so the honest status is 'unverified'
+// — NEVER 'inherited-or-unknown' (that status is codex-native-only; a claude
+// dispatch relying on the prompt-stated tier budget is a different, weaker
+// claim than "the runtime has no per-agent model selection at all"). ──────
+
+await check("claude channel economics on a budget-shaped (null) generation slot: prompt-budget enforcement, unverified status, no effective_model", async () => {
+  const root = mkFixture("dispatch-prepare-claude-economics-budget-");
+  writeConfig(root, { claude: { extraction: "haiku", generation: null, review: "opus" } });
+
+  const out = await prepareOk(["--runtime", "claude", "--kind", "gather"], root);
+  assert(!("model" in out.payload), `a budget-shaped slot must carry no structural model param, got ${JSON.stringify(out.payload)}`);
+  assert(out.economics.channel === "claude-agent", `expected channel claude-agent, got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.enforcement === "prompt-budget", `expected enforcement prompt-budget, got ${JSON.stringify(out.economics)}`);
+  assert(
+    out.economics.effective_model_status === "unverified",
+    `expected unverified status (never inherited-or-unknown — that's codex-only), got ${JSON.stringify(out.economics)}`,
+  );
+  assert(out.economics.effective_model === null, `expected effective_model null, got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.requested_model === null, `a budget-shaped (null) slot names no model, got ${JSON.stringify(out.economics)}`);
+});
+
 // ─── cli-cell refusal: prepare NEVER routes around a refusal ───────────────
 
 await check("kind cell against a cli-shaped generation slot returns the typed cli_tier_gather_only refusal, never a payload", async () => {
