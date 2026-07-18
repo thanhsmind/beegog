@@ -166,6 +166,16 @@ try {
   Write-Host "target   $Directory [$mode]"
 
   $onboardFlags = @()
+  # Thread -Runtime through to onboard_bee.mjs on both branches: it's the flag
+  # that gates the codex-hybrid write (pluginSource && runtimeCoversCodex(runtime)
+  # in onboard_bee.mjs computePlan/applyPlan) so plugin-first + -Runtime codex/both
+  # actually reaches the hook-write path this installer's --codex-hybrid cleanup
+  # scoping ($distributionArgs above) assumes is active. repo-copy passes it too
+  # for symmetry - onboard_bee.mjs's skill-sync targets are runtime-independent
+  # today, so this is currently a no-op there, but it keeps both branches honest
+  # about which runtime the installer was asked for instead of always defaulting
+  # to onboard_bee.mjs's own "both".
+  $onboardFlags += @('--runtime', $Runtime)
   if ($Distribution -eq 'plugin-first') { $onboardFlags += '--plugin-source' }
   elseif (-not $NoHooks) { $onboardFlags += '--repo-hooks' }
   if ($NoClaudeMd) { $onboardFlags += '--no-claude-md' }
@@ -231,10 +241,10 @@ try {
   $distributionArgs = @('--mode', $Distribution, '--runtime', $Runtime, '--repo-root', $Directory, '--release-manifest', $releaseManifest, '--plugin-state-file', $stateFile)
   # GH #22 P0-1 (cph-1 self-erasure fix): a plugin-first install whose runtime
   # scope covers codex gets the codex-hybrid .codex/hooks.json + .bee/bin/hooks/
-  # write from onboard_bee.mjs - its own --plugin-source defaults --runtime to
-  # "both", so that write fires today regardless of $Runtime ($onboardFlags does
-  # not thread --runtime through to onboard_bee.mjs yet; that broader wiring is
-  # a later cell). Without --codex-hybrid here, the distribution helper's
+  # write from onboard_bee.mjs, gated by its own --runtime (now threaded
+  # through via $onboardFlags above, so onboard_bee.mjs's codexHybrid
+  # computation sees the SAME $Runtime this installer resolved -Runtime
+  # codex/both to). Without --codex-hybrid here, the distribution helper's
   # cleanup pass below would immediately strip the very hook entries onboarding
   # just wrote, right back to zero mechanical enforcement for Codex sessions.
   if ($Distribution -eq 'plugin-first' -and $Runtime -in @('codex', 'both')) {
@@ -261,8 +271,21 @@ try {
   }
 
   if (-not (Confirm-Step "Apply this onboarding plan to $Directory?")) { Fail 'Aborted - nothing applied.' }
-  node $onboard --repo-root $Directory --apply @onboardFlags | Out-Null
-  if ($LASTEXITCODE -ne 0) { Fail 'Onboarding apply failed.' }
+  $applyOutput = node $onboard --repo-root $Directory --apply @onboardFlags
+  if ($LASTEXITCODE -ne 0) {
+    # A typed-blocked/refused apply (e.g. the codex-hybrid hook write preflight
+    # in onboard_bee.mjs applyPlan refusing because .codex/hooks.json or
+    # .bee/bin/hooks/ can't be written) names the concrete way out: repo-copy
+    # sidesteps codex-hybrid entirely, or clear the obstacle and retry hybrid.
+    # NOTE: unlike install.sh, this installer has no plugin transition/rollback
+    # machinery (the plugin add/remove above is not undone on a later failure);
+    # this only extends the failure message with fix guidance.
+    Write-Host ($applyOutput -join "`n")
+    Write-Host '  fix options:'
+    Write-Host '    - re-run with -Distribution repo-copy (no codex-hybrid hook write required)'
+    Write-Host '    - clear the obstacle blocking the write (see reason above) and re-run -Distribution plugin-first'
+    Fail 'Onboarding apply failed.'
+  }
 
   if ($Distribution -eq 'plugin-first') {
     node $distributionHelper @distributionArgs --apply

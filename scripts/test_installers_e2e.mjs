@@ -501,6 +501,137 @@ check("plugin-first: installs package after confirmation, proves it, finishes up
   assert.equal(fs.readFileSync(path.join(sb.target, ".claude/skills/bee-custom/SKILL.md"), "utf8"), "custom owned\n", "project-owned bee-custom must survive");
 });
 
+// ── 12a. codex plugin-first: post-cleanup end state has hooks + no skill copies ─
+// GH #22 P0-1 (cph-1) + cph-2's --runtime passthrough: a `--runtime codex
+// --distribution plugin-first` install must land the codex-hybrid write
+// (.codex/hooks.json + vendored .bee/bin/hooks/) and finish with skills
+// resolving from the plugin only — no .claude/skills or .agents/skills copies
+// left behind for Codex to load instead of the plugin package.
+check("codex plugin-first: post-cleanup end state has codex-hybrid hooks and no repo-local skill copies", () => {
+  const staged = stagedSource();
+  const sb = sandbox({ preinstalled: false, version: staged.version, pkgRoot: staged.pkg });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--runtime", "codex", "--distribution", "plugin-first", "--source", staged.src] });
+  assert.equal(r.code, 0, `codex plugin-first install must succeed:\n${r.out}`);
+  assertVersionParity(sb, staged.version, { sourceRoot: staged.src, onboardFlags: ["--plugin-source", "--runtime", "codex"] });
+
+  // .codex/hooks.json exists with the required bee matchers.
+  const hooksJsonPath = path.join(sb.target, ".codex", "hooks.json");
+  assert.ok(fs.existsSync(hooksJsonPath), ".codex/hooks.json must exist after a codex plugin-first install");
+  const hooksJson = JSON.parse(fs.readFileSync(hooksJsonPath, "utf8"));
+  const requiredEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "PreCompact", "Stop"];
+  for (const event of requiredEvents) {
+    assert.ok(Array.isArray(hooksJson.hooks?.[event]) && hooksJson.hooks[event].length > 0, `.codex/hooks.json must carry a ${event} entry`);
+  }
+  const allCommands = Object.values(hooksJson.hooks).flat().flatMap((group) => group.hooks || []).map((h) => h.command);
+  assert.ok(allCommands.some((c) => /\.bee\/bin\/hooks\/bee-write-guard\.mjs/.test(c)), "bee-write-guard must be wired");
+  assert.ok(allCommands.some((c) => /\.bee\/bin\/hooks\/bee-model-guard\.mjs/.test(c)), "bee-model-guard must be wired");
+  const preToolUseMatchers = (hooksJson.hooks.PreToolUse || []).map((g) => g.matcher);
+  assert.ok(preToolUseMatchers.includes("spawn_agent"), "PreToolUse must carry the Codex spawn_agent matcher for bee-model-guard");
+
+  // Vendored .bee/bin/hooks/ exists with all 10 canonical hook handlers
+  // (same VENDORED_HOOKS set the repo-copy greenfield test proves above —
+  // codex-hybrid reuses the exact same listPluginHooks()/copy_repo_hook path).
+  const vendoredDir = path.join(sb.target, ".bee", "bin", "hooks");
+  assert.ok(fs.existsSync(vendoredDir), ".bee/bin/hooks/ must be vendored for a codex-hybrid install");
+  for (const hook of VENDORED_HOOKS) {
+    assert.ok(fs.existsSync(path.join(vendoredDir, hook)), `vendored hook ${hook} must exist in .bee/bin/hooks/`);
+  }
+
+  // Skills resolve from the plugin, not repo-local copies: plugin-first never
+  // syncs skills, so neither project skill root should exist.
+  assert.equal(fs.existsSync(path.join(sb.target, ".claude", "skills")), false, "plugin-first must not leave a .claude/skills copy");
+  assert.equal(fs.existsSync(path.join(sb.target, ".agents", "skills")), false, "plugin-first must not leave an .agents/skills copy");
+
+  // `bee.mjs doctor --runtime codex --json` in the sandbox target: hooks_file_present
+  // must be ok; the trust/discovery rows stay blocking on codex-cli 0.144.4 (no
+  // machine-readable hook-discovery/trust surface — CODEX_DOCTOR_TRUST_UNKNOWN_REASON),
+  // which is EXPECTED, not fought.
+  const doctorResult = spawnSync("node", [".bee/bin/bee.mjs", "doctor", "--runtime", "codex", "--json"], { cwd: sb.target, encoding: "utf8" });
+  assert.equal(doctorResult.status, 0, `doctor must run cleanly in the sandbox target:\n${doctorResult.stdout}\n${doctorResult.stderr}`);
+  let doctor;
+  try {
+    doctor = JSON.parse(doctorResult.stdout);
+  } catch (error) {
+    assert.fail(`doctor --json must produce parsable JSON: ${error.message}\nstdout:\n${doctorResult.stdout}`);
+  }
+  const rowsByName = Object.fromEntries(doctor.rows.map((row) => [row.row, row]));
+  assert.equal(rowsByName.hooks_file_present?.status, "ok", `hooks_file_present must be ok: ${JSON.stringify(rowsByName.hooks_file_present)}`);
+  for (const trustRow of ["hooks_discovered", "hooks_trusted", "project_trust", "pending_hook_review"]) {
+    assert.equal(rowsByName[trustRow]?.status, "unknown", `${trustRow} must stay unknown/blocking on codex-cli 0.144.4: ${JSON.stringify(rowsByName[trustRow])}`);
+    assert.equal(rowsByName[trustRow]?.blocking, true, `${trustRow} must be flagged blocking: ${JSON.stringify(rowsByName[trustRow])}`);
+  }
+});
+
+// ── 12b. hook-write-impossible fixture: typed refusal, plugin rollback, no skills-only end state ─
+check("codex plugin-first refuses when .codex is a pre-existing file, rolls the plugin back, leaves no skills-only end state", () => {
+  const staged = stagedSource();
+  const sb = sandbox({ preinstalled: false, version: staged.version, pkgRoot: staged.pkg });
+  fs.mkdirSync(sb.target, { recursive: true });
+  // Pre-create .codex as a regular FILE — the write-impossible fixture: the
+  // codex-hybrid hook write can never create .codex/hooks.json under it.
+  fs.writeFileSync(path.join(sb.target, ".codex"), "not-a-directory\n");
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--no-git-init", "--runtime", "codex", "--distribution", "plugin-first", "--source", staged.src] });
+  assert.notEqual(r.code, 0, "a pre-existing .codex file must refuse the install");
+  // A pre-existing .codex FILE trips $DIST_HELPER's own project-cleanup probe
+  // (it walks PROJECT_SKILL_ROOTS including .codex/skills) BEFORE onboarding's
+  // apply step is ever reached, so the surfaced typed refusal is plugin_distribution.mjs's
+  // caught {status:"blocked", error:...} JSON (an ENOTDIR lstat under the file),
+  // not onboard_bee.mjs's own curated codexHookWriteBlocker message — that
+  // message only fires for an obstacle collectProjectCleanup never touches
+  // (e.g. .bee/bin/hooks pre-occupied by a file, proven in the doc comment
+  // above the fix-options helper in install.sh). Both are typed refusals
+  // (a status field, not a raw stack trace) that roll the plugin back.
+  assert.match(r.out, /"status":\s*"blocked"/, "must surface a typed (status: blocked) refusal, not an uncaught crash");
+  assert.match(r.out, /\.codex/, "must name .codex somewhere in the refusal (path under the pre-existing file)");
+  assert.match(r.out, /Distribution preflight refused after transition/, "must report the distribution preflight as the failing step");
+  assert.match(r.out, /fix options:/, "must name the fix options (repo-copy, or clear the obstacle and retry hybrid)");
+  assert.match(r.out, /--distribution repo-copy/, "must name repo-copy as a fix option");
+  assert.match(r.out, /retry.*hybrid|re-run.*plugin-first/i, "must name retrying hybrid after clearing the obstacle as a fix option");
+  assert.match(r.out, /rollback: pre-run plugin state restored/i, "must roll the plugin transition back");
+
+  // End state must NOT be skills-only: no plugin left installed, no repo
+  // skills claiming success.
+  const stateAfter = JSON.parse(fs.readFileSync(sb.statePath, "utf8"));
+  assert.equal(stateAfter.codex.installed, false, "codex plugin must be rolled back to its pre-run not-installed state");
+  assert.equal(fs.existsSync(path.join(sb.target, ".bee")), false, "the write-impossible preflight fires before any target write — no .bee/ at all");
+  assert.equal(fs.existsSync(path.join(sb.target, ".claude", "skills")), false, "no .claude/skills copy may appear when the install refused");
+  assert.equal(fs.existsSync(path.join(sb.target, ".agents", "skills")), false, "no .agents/skills copy may appear when the install refused");
+  // The fixture file itself survives untouched (never coerced into a directory).
+  assert.equal(fs.statSync(path.join(sb.target, ".codex")).isDirectory(), false, ".codex must remain the pre-existing plain file, never coerced into a directory");
+  assert.equal(fs.readFileSync(path.join(sb.target, ".codex"), "utf8"), "not-a-directory\n", ".codex file content must be untouched");
+});
+
+// ── 12c. claude regression guard: exclusivity unchanged, no codex artifacts ───
+check("claude plugin-first regression guard: repo-local claude hook entries stripped as today, no codex-hybrid artifacts appear", () => {
+  const staged = stagedSource();
+  const sb = sandbox({ preinstalled: false, version: staged.version, pkgRoot: staged.pkg });
+  fs.mkdirSync(sb.target, { recursive: true });
+  // Seed a stale repo-local bee hook entry in .claude/settings.json (as a prior
+  // --repo-hooks or plugin-first run might have left behind) — plugin-first
+  // cleanup must strip it exactly as it does today, --runtime claude included.
+  fs.mkdirSync(path.join(sb.target, ".claude"), { recursive: true });
+  fs.writeFileSync(
+    path.join(sb.target, ".claude", "settings.json"),
+    JSON.stringify({
+      hooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR"/.bee/bin/hooks/bee-session-init.mjs', statusMessage: "bee: session bootstrap" }] }],
+      },
+    }, null, 2) + "\n",
+  );
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--runtime", "claude", "--distribution", "plugin-first", "--source", staged.src] });
+  assert.equal(r.code, 0, `claude plugin-first install must succeed:\n${r.out}`);
+  assertVersionParity(sb, staged.version, { sourceRoot: staged.src, onboardFlags: ["--plugin-source", "--runtime", "claude"] });
+
+  // Exclusivity unchanged: the repo-local claude bee hook entry is stripped.
+  const settings = JSON.parse(fs.readFileSync(path.join(sb.target, ".claude", "settings.json"), "utf8"));
+  assert.equal(settings.hooks?.SessionStart, undefined, "the stale repo-local bee SessionStart entry must be stripped, exactly as today");
+
+  // No codex-hybrid artifacts appear for a claude-only run.
+  assert.equal(fs.existsSync(path.join(sb.target, ".codex", "hooks.json")), false, "--runtime claude must never write .codex/hooks.json");
+  assert.equal(fs.existsSync(path.join(sb.target, ".bee", "bin", "hooks")), false, "--runtime claude must never vendor .bee/bin/hooks/ (no codex-hybrid, no --repo-hooks)");
+});
+
 // ── 13. injected post-transition/pre-onboarding failure: rollback + report ────
 check("injected post-transition failure restores pre-run plugin state, leaves target unchanged, exits nonzero", () => {
   const sb = sandbox({ preinstalled: true }); // repo-copy pre-run state: bee INSTALLED
