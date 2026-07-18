@@ -95,6 +95,7 @@ const CODEX_REPO_HOOKS_PATH = path.join(REPO_ROOT, ".codex", "hooks.json");
 const REQUIRED_CATALOG_ROW_IDS = Object.freeze([
   "codex-repo-target-generated-topology",
   "codex-generated-repo-audit-execution",
+  "codex-repo-target-byte-identical",
 ]);
 
 // Turn "required row is absent or skipped" into a real, visible FAILING row,
@@ -979,9 +980,11 @@ function runCatalogDriftChecks() {
 
   // --- generated repo-target rows -----------------------------------------
   //
-  // D9: root .codex/hooks.json is a development/fallback snapshot, not the
-  // plugin release proof surface. Prove the generated repo projection itself;
-  // a separate fixture executes its new audit commands below.
+  // Root .codex/hooks.json is regenerated FROM the catalog repo-target render
+  // (cell cnr2-7, codex-native-runtime-v2 D4) and pinned byte-identical below
+  // - no allowed-difference masks it, so this is a real drift check, not a
+  // development/fallback snapshot left unproven. A separate fixture executes
+  // its new SubagentStart/Stop audit commands further down.
 
   // D2 / the incident itself: the repo transport must carry NO Claude-only
   // root variable (Codex sets neither; $CLAUDE_PROJECT_DIR unset is exactly
@@ -1031,6 +1034,24 @@ function runCatalogDriftChecks() {
         : `repo transport contract violated: commands=${repoCommands.length} (expected 12) ` +
             `noClaudeVars=${noClaudeVars} launchesSourceWrappers=${launchesSourceWrappers} ` +
             `visibleFailOpen=${visibleFailOpen} startAudit=${repoStartAudit.length} stopAudit=${repoStopAudit.length}`,
+    ),
+  );
+
+  // cell cnr2-7 (codex-native-runtime-v2 D4): the checked-in .codex/hooks.json
+  // must byte-equal the SAME repo-target render proved above - rendered from
+  // the catalog AT TEST TIME, never a stored snapshot, so any hand-edit or
+  // stale regeneration of the file shows up here rather than only in the
+  // generic route rows below.
+  const repoText = renderProjectionText(RUNTIMES.CODEX, { target: TARGETS.REPO });
+  const onDiskRepo = fs.readFileSync(CODEX_REPO_HOOKS_PATH, "utf8");
+  const repoByteIdentical = repoText === onDiskRepo;
+  rows.push(
+    catalogDriftRow(
+      "codex-repo-target-byte-identical",
+      repoByteIdentical,
+      repoByteIdentical
+        ? "rendering the logical catalog for \"codex\" at target \"repo\" reproduces .codex/hooks.json byte-for-byte"
+        : "DRIFT: rendering the logical catalog for \"codex\" at target \"repo\" does NOT reproduce .codex/hooks.json byte-for-byte",
     ),
   );
 
@@ -2846,7 +2867,7 @@ function runPluginCensusRow() {
 function routeRequiredRowIds(commands, { configRef = null } = {}) {
   const ids = [
     "route-config-readable",
-    "route-config-ten-commands",
+    "route-config-twelve-commands",
     "route-gitabsent-shim-precondition",
     "route-nongit-cwd-precondition",
     "route-pretooluse-command-present",
@@ -2909,11 +2930,11 @@ function runRepoRouteRows({ configRef = null } = {}) {
   const requiredIds = routeRequiredRowIds(commands, { configRef });
   rows.push(
     routeRow(
-      "route-config-ten-commands",
-      commands.length === 10,
-      commands.length === 10
-        ? `all 10 configured commands loaded from ${config.origin} and exercised through ${ROUTE_SHELL} -lc`
-        : `expected 10 configured commands, found ${commands.length} (${commands.map((c) => c.id).join(", ")})`,
+      "route-config-twelve-commands",
+      commands.length === 12,
+      commands.length === 12
+        ? `all 12 configured commands loaded from ${config.origin} and exercised through ${ROUTE_SHELL} -lc`
+        : `expected 12 configured commands, found ${commands.length} (${commands.map((c) => c.id).join(", ")})`,
     ),
   );
 
