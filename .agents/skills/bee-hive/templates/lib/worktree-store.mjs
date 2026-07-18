@@ -329,8 +329,37 @@ function runGit(cwd, args) {
   return spawnSync('git', args, { cwd, encoding: 'utf8' });
 }
 
-function isValidRefFormat(cwd, ref) {
-  return runGit(cwd, ['check-ref-format', '--allow-onelevel', ref]).status === 0;
+/**
+ * Resolves a `--base-ref` commit-ish to a concrete commit sha via `git
+ * rev-parse --verify --end-of-options "<baseRef>^{commit}"` — NOT `git
+ * check-ref-format`, which only validates ref-NAME syntax and wrongly
+ * rejects/mishandles perfectly valid commit-ish forms `check-ref-format`
+ * was never meant to judge: `HEAD~1` (the `~` is a disallowed ref-name
+ * character), a short sha (not a ref at all), or `v1.2.0^{commit}` (the `^`
+ * and `{`/`}` are disallowed too) — decision D3 / advisor R8. `rev-parse
+ * --verify` instead proves the commit-ish actually RESOLVES to a real
+ * commit in THIS repo, which is the property `createFeatureWorktree`
+ * actually needs before handing it to `git worktree add`.
+ *
+ * `--end-of-options` (requires git >= 2.24) tells git everything after it
+ * is a positional revision argument, never an option — this is what stops a
+ * `baseRef` value starting with `-` (e.g. `--upload-pack=evil`) from being
+ * parsed as a git flag instead of data, even though it already arrives as
+ * its own argv array element (spawnSync, no shell) rather than a
+ * shell-interpolated string.
+ *
+ * Returns the resolved, full commit sha on success, or `null` when the
+ * commit-ish doesn't resolve — bad syntax and "doesn't exist" both land
+ * here as the SAME `null` (git's own `rev-parse --verify` doesn't
+ * distinguish the two either: both fail with "Needed a single revision").
+ * The call site collapses both into one typed refusal, `WORKTREE_BASE_NOT_FOUND`
+ * — see that refusal's comment for why no separate syntax-only code remains.
+ */
+function resolveBaseRefCommit(cwd, ref) {
+  const result = runGit(cwd, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]);
+  if (result.status !== 0) return null;
+  const sha = (result.stdout || '').trim();
+  return sha || null;
 }
 
 function branchExists(mainRoot, branch) {
@@ -358,13 +387,17 @@ function readWorktreeGitVerifiedId(worktreeRoot) {
 
 /**
  * Creates a NEW linked git worktree for `feature` — `git worktree add
- * <mainRoot's sibling>--wt--<feature> -b wt/<feature> [baseRef]` — then
+ * <mainRoot's sibling>--wt--<feature> -b wt/<feature> [baseRefSha]` — then
  * grants and bootstraps it exactly as `worktree register` does. Returns
- * `{ id, worktreeRoot, branch, bootstrap }` on success.
+ * `{ id, worktreeRoot, branch, baseRef, baseRefSha, bootstrap }` on success.
  *
  * `options`:
  *   - `feature` (required): slug, validated against `FEATURE_SLUG_RE`.
- *   - `baseRef` (optional): validated via `git check-ref-format` when given.
+ *   - `baseRef` (optional): a commit-ish (branch, tag, `HEAD~N`, short sha,
+ *     `<tag>^{commit}`, ...), resolved to a concrete commit sha via `git
+ *     rev-parse --verify --end-of-options` when given (see
+ *     `resolveBaseRefCommit`'s own comment for why not `check-ref-format`;
+ *     requires git >= 2.24 for `--end-of-options`).
  *   - `_writeGrant` / `_bootstrapWorktreeStore`: internal test-only injection
  *     points (default to the real `writeGrant` / `bootstrapWorktreeStore`
  *     exports above) so a test can force the POST-add failure + rollback
@@ -391,9 +424,23 @@ export function createFeatureWorktree(mainRoot, options = {}) {
     );
   }
 
+  // Resolved once here (not re-derived later): the SAME sha this refusal
+  // check proves resolvable is the sha `git worktree add` below actually
+  // receives, so there is no gap between "we checked it exists" and "we
+  // used it" for a ref that moves between the two (see the addArgs comment
+  // below for why the resolved sha, not the original ref string, is what
+  // gets passed to `git worktree add`).
+  let baseRefSha;
   if (baseRef !== undefined && baseRef !== null && baseRef !== '') {
-    if (typeof baseRef !== 'string' || !isValidRefFormat(mainRoot, baseRef)) {
-      refuse('WORKTREE_INVALID_BASE_REF', `--base-ref ${JSON.stringify(baseRef)} is not a valid git ref ("git check-ref-format" refused it).`);
+    if (typeof baseRef !== 'string') {
+      refuse('WORKTREE_BASE_NOT_FOUND', `--base-ref must be a string, got ${JSON.stringify(baseRef)}.`);
+    }
+    baseRefSha = resolveBaseRefCommit(mainRoot, baseRef);
+    if (!baseRefSha) {
+      refuse(
+        'WORKTREE_BASE_NOT_FOUND',
+        `--base-ref ${JSON.stringify(baseRef)} does not resolve to a commit in ${mainRoot} ("git rev-parse --verify" found nothing) — check the ref/sha/tag exists (and isn't just a syntax typo).`,
+      );
     }
   }
 
@@ -433,8 +480,14 @@ export function createFeatureWorktree(mainRoot, options = {}) {
     );
   }
 
+  // Pass the RESOLVED SHA, not the original `baseRef` string, to `git
+  // worktree add` — deterministic even if `baseRef` names something that
+  // moves (a branch tip, `HEAD`) in the window between the resolve above
+  // and this call, and immune to the same leading-dash/argument-injection
+  // concern `resolveBaseRefCommit`'s `--end-of-options` already guards
+  // (a raw sha can never be mistaken for a git flag).
   const addArgs = ['worktree', 'add', '-b', branch, '--', worktreeRoot];
-  if (baseRef) addArgs.push(baseRef);
+  if (baseRefSha) addArgs.push(baseRefSha);
   const addResult = runGit(mainRoot, addArgs);
   if (addResult.status !== 0) {
     refuse(
@@ -448,7 +501,7 @@ export function createFeatureWorktree(mainRoot, options = {}) {
     id = readWorktreeGitVerifiedId(worktreeRoot);
     _writeGrant(mainStoreRoot, id);
     const bootstrap = _bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature);
-    return { id, worktreeRoot, branch, bootstrap };
+    return { id, worktreeRoot, branch, baseRef: baseRef || null, baseRefSha: baseRefSha || null, bootstrap };
   } catch (postAddError) {
     // git worktree add itself succeeded, but deriving the id / writing the
     // grant / bootstrapping the store threw. Roll back best-effort so a

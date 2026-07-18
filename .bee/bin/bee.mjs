@@ -2140,10 +2140,18 @@ function handleWorktreeNew(_root, flags) {
   }
   const mainRoot = resolution.workRoot;
   const created = createFeatureWorktree(mainRoot, { feature, baseRef });
-  const result = { id: created.id, worktreeRoot: created.worktreeRoot, branch: created.branch };
+  const result = {
+    id: created.id,
+    worktreeRoot: created.worktreeRoot,
+    branch: created.branch,
+    baseRef: created.baseRef,
+    baseRefSha: created.baseRefSha,
+  };
   const text = [
     `Created worktree for feature "${feature}": ${created.worktreeRoot}`,
-    `  branch:      ${created.branch}`,
+    created.baseRefSha
+      ? `  branch:      ${created.branch} (based on ${JSON.stringify(created.baseRef)}, resolved to ${created.baseRefSha})`
+      : `  branch:      ${created.branch}`,
     created.bootstrap.created
       ? `  bootstrapped ${created.bootstrap.worktreeStoreRoot} (phase idle, gates unapproved).`
       : `  worktree .bee/state.json already existed — left untouched (${created.bootstrap.reason}).`,
