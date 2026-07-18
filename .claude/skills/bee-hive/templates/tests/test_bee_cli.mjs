@@ -1181,6 +1181,56 @@ await check('perf.sync example scans + writes the log (transcript-less temp env)
 // end-to-end. A dedicated temp tree (not the shared `root` above, which has
 // no .git and is deliberately classified 'ordinary') so register's own
 // "must run from inside a linked worktree" requirement is satisfiable. ─────
+await check('worktree.new example runs through the real dispatcher against a real ORDINARY checkout, creating and granting a linked worktree in one move (wsr-1, GH #21)', async () => {
+  const wtNewTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-worktree-new-'));
+  try {
+    const git = (cwd, args) => {
+      const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert(r.status === 0, `git ${args.join(' ')} (cwd=${cwd}) failed: ${r.stderr}`);
+      return r.stdout;
+    };
+
+    const wtNewMain = path.join(wtNewTmp, 'main');
+    fs.mkdirSync(wtNewMain);
+    git(wtNewMain, ['init', '-q', '-b', 'main']);
+    git(wtNewMain, ['config', 'user.email', 's@e']);
+    git(wtNewMain, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(wtNewMain, 'f'), 'x');
+    git(wtNewMain, ['add', '.']);
+    git(wtNewMain, ['commit', '-q', '-m', 'init']);
+    fs.mkdirSync(path.join(wtNewMain, '.bee'), { recursive: true });
+    writeJsonAtomic(path.join(wtNewMain, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+
+    // registry example: 'bee worktree new --feature demo-feature --json'
+    const result = await assertExampleOk('worktree.new', { cwd: wtNewMain });
+    const created = JSON.parse(result.stdout);
+    assert(typeof created.id === 'string' && created.id, `worktree.new example should report a git-verified id, got ${result.stdout}`);
+    assert(created.branch === 'wt/demo-feature', `worktree.new example should create branch "wt/demo-feature", got ${JSON.stringify(created)}`);
+    assert(fs.existsSync(created.worktreeRoot), `worktree.new example should create ${created.worktreeRoot}`);
+    const newStateFile = path.join(created.worktreeRoot, '.bee', 'state.json');
+    assert(fs.existsSync(newStateFile), 'worktree.new example should bootstrap .bee/state.json');
+    const newState = JSON.parse(fs.readFileSync(newStateFile, 'utf8'));
+    assert(
+      newState.feature === 'demo-feature' && newState.phase === 'idle',
+      `expected a fresh idle demo-feature state, got ${JSON.stringify(newState)}`,
+    );
+    const grantsFile = path.join(wtNewMain, '.bee', 'runtime', 'worktree-grants.json');
+    const grants = JSON.parse(fs.readFileSync(grantsFile, 'utf8'));
+    assert(grants[created.id] === true, `worktree.new example should grant the new worktree's id, got ${JSON.stringify(grants)}`);
+
+    // Running the SAME example again from the same ordinary checkout must
+    // typed-refuse (the target directory now exists), never crash.
+    const repeatResult = await runExample('worktree.new', { cwd: wtNewMain });
+    assert(repeatResult.result.status !== 0, 'a second "worktree new --feature demo-feature" from the same checkout must not exit 0');
+    assert(
+      /WORKTREE_TARGET_EXISTS/.test(repeatResult.result.stdout + repeatResult.result.stderr),
+      `expected a typed WORKTREE_TARGET_EXISTS refusal, got stdout=${repeatResult.result.stdout} stderr=${repeatResult.result.stderr}`,
+    );
+  } finally {
+    fs.rmSync(wtNewTmp, { recursive: true, force: true });
+  }
+});
+
 await check('worktree.register/list/unregister examples run through the real dispatcher against a real linked git worktree', async () => {
   const wtTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-worktree-'));
   try {
