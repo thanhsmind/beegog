@@ -505,6 +505,19 @@ landing page from day one in every onboarded project.
 
 ## Edge Cases Settled
 
+- Skill distribution renders per runtime (codex-native-runtime-v2): source skill
+  files may carry full-line runtime-conditional block markers; the sync stage
+  filters each managed root's copy (claude-class targets drop codex blocks and
+  vice versa, marker lines always stripped, unmarked content shared). A file
+  with no markers passes through byte-identically (BOM/CRLF/final-newline
+  preserved). Malformed markers (nesting, unclosed, stray end, unknown label,
+  frontmatter or fenced placement) refuse the ENTIRE apply loudly with zero
+  writes. Per-target drift compares installed bytes against the rendered form;
+  release/package hashing stays canonical-source bytes; the downgrade preflight
+  stays version-based. Rendered targets carry provenance metadata and are
+  refused as onboarding sources for ANY target — canonical or plugin source
+  required. Plugin routes ship committed per-runtime rendered trees, drift-
+  pinned to a test-time re-render of canonical.
 - Settings file unparseable → not opted in, run proceeds normally.
 - Status-display command present but not a text value → not opted in.
 - Project-directory variable used elsewhere in the command while the script path

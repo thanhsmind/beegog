@@ -27,9 +27,13 @@ belt for anything a checkpoint cannot see.
   agent starts, when a child agent stops, and when the session stops.
 - Which checkpoints are active comes from one **catalog of record** rendered
   into projections. Each supported runtime consumes only its own projection;
-  the projections differ only by an explicitly named allowed list. There are
-  three directional differences: Claude alone has the pre-spawn model-tier
-  guard, while Codex alone has child-start and child-stop lifecycle audits.
+  the projections differ only by an explicitly named allowed list. The
+  directional differences: both runtimes carry a pre-spawn dispatch guard —
+  Claude on its dispatch tools, Codex on its native spawn call, judging only
+  the envelope shape actually observed on the probed runtime version and
+  passing every unobserved shape through open — while Codex alone has
+  child-start and child-stop lifecycle audits (codex-native-runtime-v2,
+  cnr2-8).
 - One runtime loads its checkpoints from two possible delivery locations: a
   packaged location, and its own project's source-repository fallback
   location. Both are rendered from the same catalog of record, at an explicit
@@ -414,6 +418,31 @@ that it reduces anything.
   working directory whose path contains spaces and non-ASCII characters as it
   does from a plain path (proven against an isolated fixture, codex-runtime-parity
   cell 6b).
+- The state-sync trigger matches the plan/task tools of BOTH runtimes as a
+  superset — Codex's native plan tool (`update_plan`) alongside the legacy
+  Claude names — extended at the generator sources (catalog + both host
+  renderers), never by hand-editing a rendered manifest; behavior proven by a
+  contract row driving a real `update_plan` payload (codex-native-runtime-v2,
+  cnr2-2).
+- Concurrent hook invocations can no longer corrupt a state write through
+  temp-file collision: atomic writes use a unique per-invocation temp name
+  (write-then-rename contract unchanged), proven by a parallel regression test
+  (18 concurrent OS processes, zero corrupt reads). Logical last-writer-wins
+  between full read-modify-write cycles remains a named, accepted limitation
+  (codex-native-runtime-v2, cnr2-5).
+- A read-only, fail-closed doctor command reports per-runtime health: every row
+  carries value + evidence + ok/warn/unknown/unsupported; trust and discovery
+  surfaces the runtime does not expose are structurally `unknown` and BLOCK
+  readiness (never guessed, never inferred from recent logs without a session
+  boundary); capability verdicts are version-scoped; a drifted hooks file is
+  `not_ready` with per-row FIX lines; the command performs zero writes,
+  including the dispatcher's manifest-hash cache (codex-native-runtime-v2,
+  cnr2-13).
+- A scripted conformance suite drives the guard and CLI binaries as
+  subprocesses against isolated fixtures with negative-state assertions
+  (denied action changed nothing); agent-behavior scenarios live in a manual
+  checklist with named metrics and are never auto-asserted
+  (codex-native-runtime-v2, cnr2-14).
 
 ## Open Gaps
 
