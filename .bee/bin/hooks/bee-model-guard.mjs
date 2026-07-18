@@ -67,11 +67,43 @@ function logDeny(root, toolName, toolInput) {
   });
 }
 
+// Dispatch economics (g22-2, GH #22 P1-6 D3 + advisor R3): the same honest
+// channel/logical/requested/effective split dispatch-prepare.mjs's economics
+// block carries, derived here through the ONE shared function
+// (dispatch-guard.mjs's deriveEconomics) rather than a second hand-rolled
+// copy. `dispatchGuard`/`stateLib` are the already-imported modules from
+// main() below — this never does its own dynamic import, and never resolves
+// a tier the caller did not already tell us about. `resolved` is looked up
+// fresh (resolveTier is a read, not a mutation) ONLY when a tier is present,
+// so a bare/unmarked dispatch (no tier at all) never pays for a lookup it
+// cannot use. `paramModel` is exactly `model` — the structural param this
+// hook already extracted from tool_input — so a claude-agent dispatch that
+// carries a real param is 'pinned' and one that doesn't (marker-only, relying
+// on the prompt budget) is 'unverified'; codex-native is ALWAYS
+// 'inherited-or-unknown' regardless of tier/model (0.144.4 has no per-agent
+// model selection to verify). Fails open to `null` fields on any resolution
+// error — economics are an audit convenience, never a blocker.
+function deriveDispatchEconomics(root, dispatchGuard, stateLib, toolName, isCodexSpawn, model, tier) {
+  try {
+    const channel = isCodexSpawn ? "codex-native" : "claude-agent";
+    const runtime = isCodexSpawn ? "codex" : "claude";
+    const resolved = tier ? stateLib.resolveTier(root, tier, runtime) : null;
+    return dispatchGuard.deriveEconomics({ channel, tier: tier || null, paramModel: model || null, resolved });
+  } catch {
+    return null;
+  }
+}
+
 // Dispatch audit log (P22, feature dispatch-log): one line per evaluated
 // Agent/Task/spawn_agent dispatch — allowed or denied — so the resolved
 // model/tier is auditable independent of what the UI shows. Fail-open like
 // logDeny: a log failure never changes the guard's decision or exit code.
-function logDispatch(root, toolName, toolInput, transport, model, tier) {
+// `economics` (g22-2) is ADDITIVE ONLY — every field this function already
+// wrote (transport/model/tier/subagent_type/description) stays byte-for-byte
+// the same; economics is spread in alongside them, never over them, and is
+// entirely absent (not even null-valued keys) when the caller has none to
+// give (denied dispatches where nothing was derivable).
+function logDispatch(root, toolName, toolInput, transport, model, tier, economics) {
   try {
     const logsDir = path.join(root, ".bee", "logs");
     fs.mkdirSync(logsDir, { recursive: true });
@@ -87,6 +119,7 @@ function logDispatch(root, toolName, toolInput, transport, model, tier) {
         tier: tier || null,
         subagent_type: typeof toolInput.subagent_type === "string" ? toolInput.subagent_type : null,
         description,
+        ...(economics || {}),
       })}\n`,
     );
   } catch {
@@ -98,8 +131,8 @@ function logDispatch(root, toolName, toolInput, transport, model, tier) {
 // transport label that names WHY it was rejected), append the deny event, and
 // write the reason to stderr for Claude Code to feed back on PreToolUse exit 2.
 // Both log calls are fail-open — a log failure never changes the exit code.
-function denyWith(root, toolName, toolInput, reason, transport, model, tier) {
-  logDispatch(root, toolName, toolInput, transport, model || null, tier || null);
+function denyWith(root, toolName, toolInput, reason, transport, model, tier, economics) {
+  logDispatch(root, toolName, toolInput, transport, model || null, tier || null, economics);
   logDeny(root, toolName, toolInput);
   process.stderr.write(reason);
   return 2;
@@ -155,12 +188,25 @@ async function main() {
     if (result.transport === null) {
       return 0;
     }
+    // Economics (g22-2): derived from the SAME decision fields evaluateDispatch
+    // already returned, for both allow and deny (advisor R3: "denied dispatches
+    // get the fields too where derivable"). A resolution failure fails open to
+    // null, never blocking or altering the allow/deny outcome itself.
+    const economics = deriveDispatchEconomics(
+      root,
+      dispatchGuard,
+      stateLib,
+      toolName,
+      isCodexSpawn,
+      result.model,
+      result.tier,
+    );
     if (result.decision === "deny") {
-      return denyWith(root, toolName, toolInput, result.reason, result.transport, result.model, result.tier);
+      return denyWith(root, toolName, toolInput, result.reason, result.transport, result.model, result.tier, economics);
     }
     // Allow: log the evaluated transport exactly as every allow branch did
     // before the refactor (model-param / marker / codex-spawn-marker).
-    logDispatch(root, toolName, toolInput, result.transport, result.model, result.tier);
+    logDispatch(root, toolName, toolInput, result.transport, result.model, result.tier, economics);
     return 0;
   } catch (error) {
     logCrash(root, HOOK_NAME, error, ctx.source);
