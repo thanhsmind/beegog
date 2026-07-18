@@ -659,6 +659,19 @@ try {
     "exactly one PreToolUse entry wires bee-write-guard.mjs, matcher is byte-identical to the write-guard matcher",
     JSON.stringify(writeGuardEntries));
 
+  // D4 (codex-native-runtime-v2): renderRepoHookEntries()'s PostToolUse
+  // matcher for bee-state-sync.mjs must carry the update_plan superset
+  // (never a swap) - parsed structurally, not string-contained, so a matcher
+  // that dropped a legacy name would turn this red instead of hiding behind
+  // "settings.json still mentions bee-state-sync.mjs somewhere".
+  const postToolUse = Array.isArray(settings.hooks?.PostToolUse) ? settings.hooks.PostToolUse : [];
+  const stateSyncEntries = postToolUse.filter((e) =>
+    (e.hooks || []).some((h) => String(h.command || "").includes("bee-state-sync.mjs")));
+  check(stateSyncEntries.length === 1 &&
+    stateSyncEntries[0].matcher === "update_plan|TaskCreate|TaskUpdate|TodoWrite",
+    "exactly one PostToolUse entry wires bee-state-sync.mjs, matcher is exactly the update_plan superset",
+    JSON.stringify(stateSyncEntries));
+
   // model-guard must not be folded into any other event or entry anywhere in
   // the applied settings tree.
   const modelGuardSightings = [];
@@ -805,6 +818,19 @@ try {
     JSON.stringify(["SubagentStart", "SubagentStop"]),
     "generated Codex SubagentStart and SubagentStop each resolve to the copied bounded audit handler",
     JSON.stringify(codexAuditEvents));
+
+  // D4 (codex-native-runtime-v2): renderCodexHookEntries()'s PostToolUse
+  // matcher for bee-state-sync.mjs must carry the update_plan superset -
+  // parsed structurally (own row, independent of the triple-parity check
+  // below), so a matcher regression here cannot hide behind that check
+  // accidentally passing for an unrelated reason.
+  const codexPostToolUse = Array.isArray(codexRepo.hooks?.PostToolUse) ? codexRepo.hooks.PostToolUse : [];
+  const codexStateSyncEntries = codexPostToolUse.filter((e) =>
+    (e.hooks || []).some((h) => String(h.command || "").includes("bee-state-sync.mjs")));
+  check(codexStateSyncEntries.length === 1 &&
+    codexStateSyncEntries[0].matcher === "update_plan|TaskCreate|TaskUpdate|TodoWrite",
+    "exactly one .codex/hooks.json PostToolUse entry wires bee-state-sync.mjs, matcher is exactly the update_plan superset",
+    JSON.stringify(codexStateSyncEntries));
 
   // Parity with the checked-in Codex plugin projection: identical
   // (event, matcher, filename) triples — only the command root differs.

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// bee-state-sync: PostToolUse (TaskCreate|TaskUpdate|TodoWrite) + SubagentStop + Stop.
+// bee-state-sync: PostToolUse (update_plan|TaskCreate|TaskUpdate|TodoWrite) + SubagentStop + Stop.
 // Refreshes cell status counts and last_activity into .bee/state.json so state
 // stays fresh as a side effect of working. Always silent — it never emits
 // stdout, so the Codex SubagentStop/Stop JSON-output requirement is satisfied

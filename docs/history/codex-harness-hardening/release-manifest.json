@@ -187,7 +187,7 @@
     },
     {
       "path": "hooks/bee-state-sync.mjs",
-      "sha256": "2a0748bbd02884dbca87a494b825b350e0fcf149bb12a83c638a248d8619cbc4",
+      "sha256": "d2cd7739174199dc4ce0f11ddbaf76f5896e2f35c57f4996abd0c47353f1c0ce",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/bee-state-sync.mjs"
@@ -208,21 +208,21 @@
     },
     {
       "path": "hooks/catalog.mjs",
-      "sha256": "af944778ee6f86b9d9ad43409a36d03c6f30fd88189ed41ef34deefa0ca41f2f",
+      "sha256": "bce6216c756835c31023b9a45462543291832caf6cf35213f171a374484a0ab2",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/catalog.mjs"
     },
     {
       "path": "hooks/claude-hooks.json",
-      "sha256": "9dc6e5fb700cf3a094ee2ac632b684b5f4238a3540ec8d719fd94e50971411f1",
+      "sha256": "5e936119fb361e9c8016b12634192f51494db9f25daf298ab53da0de09ba9112",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/claude-hooks.json"
     },
     {
       "path": "hooks/hooks.json",
-      "sha256": "1d18863f4c9964b15ef655313bd37d49822f3320d8fa18f4989e768145d6e08b",
+      "sha256": "3b93a5d79b47726f1b772e1fb4298671909d2a23a722244b8fff9682529e7e3e",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/hooks.json"
@@ -236,7 +236,7 @@
     },
     {
       "path": "hooks/test_hook_contracts.mjs",
-      "sha256": "8f5e88905b6df21d90765b07e19ab8193ecb92871f4fa7724d431ce30c558146",
+      "sha256": "51beab9e75d9b65c4a8a478352ad36d4743b461fca87c0f86ef16d68efcf232b",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/test_hook_contracts.mjs"
@@ -512,7 +512,7 @@
     },
     {
       "path": "skills/bee-hive/scripts/onboard_bee.mjs",
-      "sha256": "3ef450837cd82af29113e2356aa53f3aa77da2b428d52100030c0346f04b458e",
+      "sha256": "878412cb60d00fa5cdc6e6417d27b637b664ef4c0e1d41ee55faf0414bad38c9",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/scripts/onboard_bee.mjs"
@@ -526,7 +526,7 @@
     },
     {
       "path": "skills/bee-hive/scripts/test_onboard_bee.mjs",
-      "sha256": "17139c1b31295432f1fe666e23d79f9ce0a87b5bc7e2a83e9775760072dbca57",
+      "sha256": "6f1eebe5445a32fc67bc5cfd3b1d3239ee6db0cbed340c42464dfc7858a0dfef",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/scripts/test_onboard_bee.mjs"

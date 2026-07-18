@@ -133,8 +133,14 @@ const CATALOG = Object.freeze([
     event: "PostToolUse",
     groups: [
       {
+        // Superset, never a swap (D4, codex-native-runtime-v2): update_plan
+        // is Codex's native plan-tool call; TaskCreate/TaskUpdate/TodoWrite
+        // stay wired for Claude (and any Codex build that still emits them).
+        // bee-state-sync.mjs itself filters on NEITHER tool_name NOR
+        // tool_input - the matcher below is the only filter - so no wrapper
+        // change was needed to add update_plan.
         runtimes: BOTH,
-        matcher: "TaskCreate|TaskUpdate|TodoWrite",
+        matcher: "update_plan|TaskCreate|TaskUpdate|TodoWrite",
         hooks: [cmd("bee-state-sync.mjs", "bee: state sync")],
       },
       {

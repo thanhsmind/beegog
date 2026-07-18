@@ -1709,7 +1709,7 @@ function renderRepoHookEntries() {
       { matcher: "Agent|Task", hooks: [entry("bee-model-guard.mjs")] },
     ],
     PostToolUse: [
-      { matcher: "TaskCreate|TaskUpdate|TodoWrite", hooks: [entry("bee-state-sync.mjs")] },
+      { matcher: "update_plan|TaskCreate|TaskUpdate|TodoWrite", hooks: [entry("bee-state-sync.mjs")] },
       { hooks: [entry("bee-tools-logger.mjs")] },
     ],
     SubagentStop: [{ hooks: [entry("bee-state-sync.mjs"), entry("bee-chain-nudge.mjs")] }],
@@ -1807,7 +1807,7 @@ function renderCodexHookEntries() {
     ],
     PostToolUse: [
       {
-        matcher: "TaskCreate|TaskUpdate|TodoWrite",
+        matcher: "update_plan|TaskCreate|TaskUpdate|TodoWrite",
         hooks: [entry("bee-state-sync.mjs", "bee: state sync")],
       },
       {

@@ -478,7 +478,82 @@ function eventRows(wrapperBase, fixtureRoot) {
   if (wrapperBase === "bee-tools-logger.mjs") {
     rows.push(...toolsLoggerRows(fixtureRoot));
   }
+  if (wrapperBase === "bee-state-sync.mjs") {
+    rows.push(stateSyncUpdatePlanRow(fixtureRoot));
+  }
   return rows;
+}
+
+// D4 (codex-native-runtime-v2, advisor findings 1/2): bee-state-sync.mjs
+// filters on NEITHER tool_name NOR tool_input - the PostToolUse matcher lives
+// in hooks.json/catalog.mjs, not inside this wrapper. This row proves the
+// wrapper still does its one job (refresh cell counts + last_activity, leave
+// every unrelated state.json field untouched) when fed a REAL update_plan
+// payload shape. A cell is planted on disk right before the row is built (not
+// inside `expect`, which runs after the wrapper has already executed) so the
+// refreshed count is a fact the wrapper had to compute, not a fixture that
+// merely echoes back its own initial state.
+function stateSyncUpdatePlanRow(fixtureRoot) {
+  const cellsDir = path.join(fixtureRoot, ".bee", "cells");
+  fs.mkdirSync(cellsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(cellsDir, "update-plan-probe-1.json"),
+    `${JSON.stringify({ id: "update-plan-probe-1", feature: "demo", status: "open" }, null, 2)}\n`,
+  );
+  const stateBefore = JSON.parse(
+    fs.readFileSync(path.join(fixtureRoot, ".bee", "state.json"), "utf8"),
+  );
+  return {
+    id: "update-plan-refreshes-counts-preserves-unrelated-state",
+    input: JSON.stringify({
+      hook_event_name: "PostToolUse",
+      tool_name: "update_plan",
+      tool_input: { plan: [{ step: "ship D4", status: "in_progress" }] },
+      cwd: fixtureRoot,
+    }),
+    expect: (result) => {
+      if (result.status !== 0) {
+        return { pass: false, note: `expected exit 0 (silent state-sync); got status=${result.status}` };
+      }
+      const stateAfter = JSON.parse(
+        fs.readFileSync(path.join(fixtureRoot, ".bee", "state.json"), "utf8"),
+      );
+      const countsOk =
+        stateAfter.cells &&
+        stateAfter.cells.open === 1 &&
+        stateAfter.cells.claimed === 0 &&
+        stateAfter.cells.capped === 0 &&
+        stateAfter.cells.blocked === 0;
+      const activityOk =
+        typeof stateAfter.last_activity === "string" && !Number.isNaN(Date.parse(stateAfter.last_activity));
+      const unrelatedPreserved =
+        stateAfter.phase === stateBefore.phase &&
+        stateAfter.mode === stateBefore.mode &&
+        stateAfter.feature === stateBefore.feature &&
+        JSON.stringify(stateAfter.approved_gates) === JSON.stringify(stateBefore.approved_gates);
+      if (!countsOk) {
+        return {
+          pass: false,
+          note: `cell counts not refreshed from the planted fixture cell: ${JSON.stringify(stateAfter.cells)}`,
+        };
+      }
+      if (!activityOk) {
+        return { pass: false, note: `last_activity not a valid ISO timestamp: ${stateAfter.last_activity}` };
+      }
+      if (!unrelatedPreserved) {
+        return {
+          pass: false,
+          note:
+            `unrelated state.json fields changed: before=${JSON.stringify(stateBefore)} ` +
+            `after=${JSON.stringify(stateAfter)}`,
+        };
+      }
+      return {
+        pass: true,
+        note: "update_plan payload refreshed cell counts + last_activity; unrelated state preserved",
+      };
+    },
+  };
 }
 
 // W4 (advisor-and-orchestration, AO15/decision f1ca79b9): bee-tools-logger.mjs
@@ -956,6 +1031,34 @@ function runCatalogDriftChecks() {
         : `repo transport contract violated: commands=${repoCommands.length} (expected 12) ` +
             `noClaudeVars=${noClaudeVars} launchesSourceWrappers=${launchesSourceWrappers} ` +
             `visibleFailOpen=${visibleFailOpen} startAudit=${repoStartAudit.length} stopAudit=${repoStopAudit.length}`,
+    ),
+  );
+
+  // D4 (codex-native-runtime-v2): the state-sync PostToolUse matcher is a
+  // SUPERSET, never a swap - update_plan joins TaskCreate/TaskUpdate/TodoWrite
+  // in BOTH catalog projections. A text assertion, not merely "the row set
+  // still runs", because a matcher regressed to a swap (or to only one
+  // runtime) would otherwise pass every other check here silently.
+  const EXPECTED_STATE_SYNC_MATCHER = "update_plan|TaskCreate|TaskUpdate|TodoWrite";
+  function stateSyncMatcher(projection) {
+    const group = (projection.hooks.PostToolUse || []).find((g) =>
+      (g.hooks || []).some((h) => typeof h.command === "string" && h.command.includes("bee-state-sync.mjs")),
+    );
+    return group ? group.matcher : undefined;
+  }
+  const claudeStateSyncMatcher = stateSyncMatcher(claudeProjection);
+  const codexStateSyncMatcher = stateSyncMatcher(codexProjection);
+  const stateSyncSupersetOk =
+    claudeStateSyncMatcher === EXPECTED_STATE_SYNC_MATCHER &&
+    codexStateSyncMatcher === EXPECTED_STATE_SYNC_MATCHER;
+  rows.push(
+    catalogDriftRow(
+      "state-sync-matcher-is-superset",
+      stateSyncSupersetOk,
+      stateSyncSupersetOk
+        ? `both catalog projections carry the state-sync PostToolUse superset matcher "${EXPECTED_STATE_SYNC_MATCHER}"`
+        : `DRIFT: expected "${EXPECTED_STATE_SYNC_MATCHER}" on both projections, ` +
+            `got claude="${claudeStateSyncMatcher}" codex="${codexStateSyncMatcher}"`,
     ),
   );
 
