@@ -117,7 +117,20 @@ Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* <repo>\.agents\skills\     
 Copy-Item -Recurse D:\projects\tools\AI\bee\skills\* $env:USERPROFILE\.codex\skills\  # legacy global
 ```
 
-Codex loads project hooks from `.codex/hooks.json` (7 lifecycle events shipped: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStop, PreCompact, Stop) — the earlier claim that Codex lacked hook support was stale. Bootstrap still comes from the `AGENTS.md` BEE block (installed in step 3) regardless of hook state, and every gate- and integrity-critical rule is enforced by the vendored `bee.mjs` CLI, identically to Claude Code — hooks are a second belt, not the only one. See §4 below for the Codex hook verify procedure and [docs/06-runtime-integration.md](docs/06-runtime-integration.md) for the parity matrix.
+Codex loads project hooks from `.codex/hooks.json` (8 lifecycle events shipped: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStart, SubagentStop, PreCompact, Stop) — the earlier claim that Codex lacked hook support was stale. Bootstrap still comes from the `AGENTS.md` BEE block (installed in step 3) regardless of hook state, and every gate- and integrity-critical rule is enforced by the vendored `bee.mjs` CLI, identically to Claude Code — hooks are a second belt, not the only one. See §4 below for the Codex hook verify procedure and [docs/06-runtime-integration.md](docs/06-runtime-integration.md) for the parity matrix.
+
+### Codex permission policy vs bee gate_bypass
+
+Codex's `approval_policy` (in `.codex/config.toml`) and bee's `gate_bypass` (in `.bee/config.json`, set via the `bee-bypass-gate` skill) are **distinct concepts** governing different layers — setting one never sets the other. `approval_policy` decides whether Codex asks before running a tool call (edit, shell command, etc.); `gate_bypass` decides whether bee auto-approves its own workflow gates (the exploring/planning/validating/reviewing chain). A third, independent layer sits underneath both: Codex hook **trust** — a changed `.codex/hooks.json` may be skipped pending a `/hooks` review no matter what `approval_policy` or `gate_bypass` are set to (see the Codex hook verify procedure in §4).
+
+bee ships **no `approval_policy` default** in any distributed template or renderer — the host repo owner chooses. Two recommended profiles:
+
+| Profile | `approval_policy` | `gate_bypass` | Trade-off |
+|---|---|---|---|
+| `bee-safe` | `on-request` | off / `normal` | Codex asks before risky tool calls, bee asks at every gate — slowest, most supervised |
+| `bee-autopilot` | `never` | `total` | Codex never interrupts for tool approval, bee never stops for a gate — fastest, zero-supervision; only appropriate when you trust the agent and the repo |
+
+This repo's own working copy keeps `approval_policy = "never"` locally (`.codex/config.toml`) with `gate_bypass: "total"` in `.bee/config.json` — a deliberate local choice by this repo's owner, not the distributed default.
 
 ---
 

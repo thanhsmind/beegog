@@ -49,7 +49,7 @@ Hooks can only block or inject text; the *skills* define how the agent responds 
 
 ## Codex parity: the helper-enforced skeleton
 
-Codex now loads its own project hooks from `.codex/hooks.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStop, PreCompact, Stop — 7 events, rendered from the same shared catalog as the Claude Code side), replacing the earlier claim that Codex lacked lifecycle hook support. Helper-level enforcement stays the floor on both runtimes either way — hooks are a second belt, not the only one:
+Codex now loads its own project hooks from `.codex/hooks.json` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStart, SubagentStop, PreCompact, Stop — 8 events, rendered from the same shared catalog as the Claude Code side), replacing the earlier claim that Codex lacked lifecycle hook support. Helper-level enforcement stays the floor on both runtimes either way — hooks are a second belt, not the only one:
 
 | Automation | Claude Code (hooks) | Codex (helpers + AGENTS.md) |
 |---|---|---|
@@ -65,6 +65,8 @@ Codex now loads its own project hooks from `.codex/hooks.json` (SessionStart, Us
 | End-of-session hygiene | `bee-session-close` | "Session Finish" section of the AGENTS.md block (close/update cells, leave state + HANDOFF consistent, name blockers) |
 
 Codex's project hooks ship a PreToolUse write/privacy guard and a SubagentStop chain-nudge alongside the rest, so the privacy-block and chain-nudging gaps once listed here are mechanism-present (file-shipped) rather than truly absent; whether a given installed Codex actually discovers and trusts each event — as opposed to the file merely being present — is what the capability spike confirms, not something assumed from shipping. Everything gate- and integrity-critical remains helper-enforced first regardless, so behavior stays identical either way.
+
+Codex's `approval_policy` (tool-call permission, `.codex/config.toml`) and bee's `gate_bypass` (workflow-gate auto-approval, `.bee/config.json`) are distinct layers, which is exactly why this table's helper-level enforcement column holds regardless of either setting: gate, reservation, and verification checks live in the shared helpers, not in Codex's permission mode. Codex hook trust is a third, independent layer underneath both — a changed `.codex/hooks.json` may be skipped pending a `/hooks` review no matter how `approval_policy` or `gate_bypass` are configured. See [INSTALL.md](../INSTALL.md) §2 for the recommended `bee-safe`/`bee-autopilot` profiles.
 
 ## Shared `lib/` — one brain, two belts
 
