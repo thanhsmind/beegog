@@ -473,7 +473,6 @@ try {
   // store + committed work merges cleanly) all in one repo. ────────────────
   const mainA = path.join(mergeTmp, 'mainA');
   initMergeFixtureMain(mainA, { verifyScript: 'verify.mjs' });
-  const grantsFileA = path.join(mainA, '.bee', 'runtime', 'worktree-grants.json');
 
   // ── green path: committed work in the worktree, verify still passes
   // (flag.txt untouched) — also the D8a proof (a bootstrapped .bee store,
