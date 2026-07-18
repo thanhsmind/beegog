@@ -67,9 +67,26 @@ export function removeFileIfExists(file) {
   }
 }
 
+// A process-local counter folded into the tmp name so two writes issued back
+// to back in the same tick (same pid, same crypto.randomBytes draw would be
+// astronomically unlikely to collide anyway, but the counter makes it
+// impossible rather than improbable) never share a tmp path.
+let writeJsonAtomicCounter = 0;
+
+// writeJsonAtomic — write-then-rename, same as before, but the tmp file now
+// gets a name unique per invocation (pid + counter + random suffix) instead
+// of the single fixed `<file>.tmp`. Concurrent writers targeting the same
+// `file` (separate processes/hook invocations) no longer share one tmp path,
+// so one writer can't unlink/rewrite another's in-flight tmp file out from
+// under it or collide on the same rename source. The tmp file stays in the
+// same directory as `file`, so renameSync is still an atomic same-filesystem
+// rename, and the written JSON content / lack of fsync are unchanged — this
+// only removes the tmp-name collision, it does not add locking or serialize
+// the logical read-modify-write (last-writer-wins on that is unchanged).
 export function writeJsonAtomic(file, obj) {
   ensureDir(path.dirname(file));
-  const tmp = `${file}.tmp`;
+  const unique = `${process.pid}-${(writeJsonAtomicCounter++).toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  const tmp = `${file}.${unique}.tmp`;
   fs.writeFileSync(tmp, `${JSON.stringify(obj, null, 2)}\n`, 'utf8');
   fs.renameSync(tmp, file);
 }

@@ -51,7 +51,7 @@
     },
     {
       "path": ".bee/bin/lib/fsutil.mjs",
-      "sha256": "c73ef7c226729d26b934865c83189bc32e05da0f9345d8c1ba08c3ded5e44647",
+      "sha256": "d3c90d70f48bf3a4fde33fff164248b3813103bad175a9c9a5c545b13374773e",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -645,7 +645,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/fsutil.mjs",
-      "sha256": "c73ef7c226729d26b934865c83189bc32e05da0f9345d8c1ba08c3ded5e44647",
+      "sha256": "d3c90d70f48bf3a4fde33fff164248b3813103bad175a9c9a5c545b13374773e",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/fsutil.mjs"
