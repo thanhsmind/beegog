@@ -25,7 +25,7 @@ import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { addCell } from '../lib/cells.mjs';
-import { writeJsonAtomic } from '../lib/fsutil.mjs';
+import { writeJsonAtomic, hashFile } from '../lib/fsutil.mjs';
 import { defaultState, writeState, BEE_VERSION } from '../lib/state.mjs';
 import {
   splitCommandTokens,
@@ -174,7 +174,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -276,13 +276,14 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
   }
 });
 
-await check('DA5 bijection: the only dot-free registry entry is "status", and every entry\'s group is one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
-  const allowedGroups = new Set(['status', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config']);
+await check('DA5 bijection: the only dot-free registry entries are "status" and "doctor", and every entry\'s group is one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
+  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config']);
+  const allowedDotFree = new Set(['status', 'doctor']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
-    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config`);
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config`);
     if (!entry.name.includes('.')) {
-      assert(entry.name === 'status', `dot-free registry entry "${entry.name}" is not "status" — only "status" may be dot-free`);
+      assert(allowedDotFree.has(entry.name), `dot-free registry entry "${entry.name}" is not one of status|doctor — only those may be dot-free`);
     }
   }
 });
@@ -1340,6 +1341,239 @@ await check('state.advisor-ref examples run through the real dispatcher', async 
   await assertExampleOk('state.advisor-ref.record', { cwd: dir });
   const show = await assertExampleOk('state.advisor-ref.show', { cwd: dir });
   assert(JSON.parse(show.stdout).advisor_ref.advisor === 'gpt-5.6-sol', `show example returns the recorded advisor, got ${show.stdout}`);
+});
+
+// ─── doctor (codex-native-runtime-v2 cnr2-13, D11): fail-closed runtime
+// health report. A dedicated isolated fixture repo per test — doctor reads
+// .codex/hooks.json, .claude/settings.json, hooks/*.mjs, and
+// .bee/onboarding.json's recorded baseline hash, none of which the shared
+// `root`/`root2` fixtures carry in the exact shape these tests need.
+
+const DOCTOR_HOOKS_JSON = {
+  hooks: {
+    PreToolUse: [
+      {
+        matcher: 'spawn_agent',
+        hooks: [{ type: 'command', command: 'exec node "$r"/hooks/bee-model-guard.mjs --source=repo' }],
+      },
+    ],
+    Stop: [{ hooks: [{ type: 'command', command: 'exec node "$r"/hooks/bee-state-sync.mjs --source=repo' }] }],
+  },
+};
+
+function buildDoctorFixture({ withHandlerFiles = true } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-doctor-test-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.codex'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'hooks'), { recursive: true });
+  const hooksJsonPath = path.join(dir, '.codex', 'hooks.json');
+  fs.writeFileSync(hooksJsonPath, `${JSON.stringify(DOCTOR_HOOKS_JSON, null, 2)}\n`, 'utf8');
+  if (withHandlerFiles) {
+    fs.writeFileSync(path.join(dir, 'hooks', 'bee-model-guard.mjs'), '// stub\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'hooks', 'bee-state-sync.mjs'), '// stub\n', 'utf8');
+  }
+  fs.writeFileSync(path.join(dir, '.codex', 'config.toml'), 'approval_policy = "never"\n', 'utf8');
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+    managed: { repo_hooks: { '.codex/hooks.json': hashFile(hooksJsonPath) } },
+    agents_sync: { files: [] },
+  });
+  fs.mkdirSync(path.join(dir, '.agents', 'skills'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.agents', 'skills', '.bee-render.json'), { schema: 'bee-render/1', target_runtime: 'codex' });
+  fs.mkdirSync(path.join(dir, '.claude', 'skills'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.claude', 'skills', '.bee-render.json'), { schema: 'bee-render/1', target_runtime: 'claude' });
+  writeJsonAtomic(path.join(dir, '.claude', 'settings.json'), {
+    permissions: { defaultMode: 'bypassPermissions' },
+    hooks: {
+      SessionStart: [{ hooks: [{ type: 'command', command: 'node .bee/bin/hooks/bee-session-init.mjs' }] }],
+      UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node .bee/bin/hooks/bee-prompt-context.mjs' }] }],
+      PreToolUse: [
+        { matcher: 'Edit|Write', hooks: [{ type: 'command', command: 'node .bee/bin/hooks/bee-write-guard.mjs' }] },
+        { matcher: 'Agent|Task', hooks: [{ type: 'command', command: 'node .bee/bin/hooks/bee-model-guard.mjs' }] },
+      ],
+      PostToolUse: [{ hooks: [{ type: 'command', command: 'node .bee/bin/hooks/bee-tools-logger.mjs' }] }],
+      Stop: [{ hooks: [{ type: 'command', command: 'node .bee/bin/hooks/bee-state-sync.mjs' }] }],
+    },
+  });
+  fs.mkdirSync(path.join(dir, '.bee', 'bin', 'hooks'), { recursive: true });
+  for (const f of ['bee-session-init.mjs', 'bee-prompt-context.mjs', 'bee-write-guard.mjs', 'bee-model-guard.mjs', 'bee-tools-logger.mjs', 'bee-state-sync.mjs']) {
+    fs.writeFileSync(path.join(dir, '.bee', 'bin', 'hooks', f), '// stub\n', 'utf8');
+  }
+  return dir;
+}
+
+await check('doctor: ok fixture — checkable codex rows pass ok, claude reaches overall_status ready', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    const codexResult = await assertExampleOk('doctor', { exampleIndex: 0, cwd: dir });
+    const codex = JSON.parse(codexResult.stdout);
+    assert(codex.runtime === 'codex', `expected runtime codex, got ${JSON.stringify(codex)}`);
+    const byRow = Object.fromEntries(codex.rows.map((r) => [r.row, r]));
+    assert(byRow.hooks_file_present.status === 'ok', `hooks_file_present should be ok, got ${JSON.stringify(byRow.hooks_file_present)}`);
+    assert(byRow.capability_baseline_match.status === 'ok', `capability_baseline_match should be ok on a matching baseline, got ${JSON.stringify(byRow.capability_baseline_match)}`);
+    assert(byRow.hook_handlers_resolvable.status === 'ok', `hook_handlers_resolvable should be ok when every handler file exists, got ${JSON.stringify(byRow.hook_handlers_resolvable)}`);
+    // Fail-closed by construction: codex's structurally-unknown trust rows
+    // block readiness even on an otherwise-clean fixture (CONTEXT.md D11 —
+    // never "ready" from file presence alone).
+    assert(codex.overall_status === 'not_ready', `codex overall_status must stay not_ready while trust rows are unknown, got ${codex.overall_status}`);
+
+    const claudeResult = await assertExampleOk('doctor', { exampleIndex: 1, cwd: dir });
+    const claude = JSON.parse(claudeResult.stdout);
+    assert(claude.runtime === 'claude', `expected runtime claude, got ${JSON.stringify(claude)}`);
+    assert(claude.overall_status === 'ready', `claude should reach ready on a fully-wired fixture with no blocking rows, got ${claude.overall_status}: ${JSON.stringify(claude.rows)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: drifted .codex/hooks.json -> capability_baseline_match warns with a FIX line, forcing not_ready', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    // Mutate the live file AFTER the baseline hash was recorded — a real
+    // post-onboarding drift, not a missing-baseline case.
+    fs.writeFileSync(path.join(dir, '.codex', 'hooks.json'), `${JSON.stringify({ hooks: { Stop: [] } }, null, 2)}\n`, 'utf8');
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
+    assert(result.status === 0, `doctor must not throw on a drifted fixture, got exit ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    const row = parsed.rows.find((r) => r.row === 'capability_baseline_match');
+    assert(row.status === 'warn', `expected capability_baseline_match warn on drift, got ${JSON.stringify(row)}`);
+    assert(typeof row.fix === 'string' && row.fix.includes('onboard_bee.mjs'), `drifted row must carry a FIX line, got ${JSON.stringify(row)}`);
+    assert(parsed.overall_status === 'not_ready', `drift must force not_ready, got ${parsed.overall_status}`);
+    assert(parsed.reasons.some((r) => r.startsWith('capability_baseline_match:')), `reasons must name the drifted row, got ${JSON.stringify(parsed.reasons)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: missing hook handler file -> hook_handlers_resolvable warns and names the missing file', async () => {
+  const dir = buildDoctorFixture({ withHandlerFiles: false });
+  try {
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
+    assert(result.status === 0, `doctor must not throw, got exit ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    const row = parsed.rows.find((r) => r.row === 'hook_handlers_resolvable');
+    assert(row.status === 'warn', `expected hook_handlers_resolvable warn on missing handler files, got ${JSON.stringify(row)}`);
+    assert(row.evidence.includes('bee-model-guard.mjs') || row.evidence.includes('bee-state-sync.mjs'), `evidence should name a missing handler, got ${row.evidence}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: codex binary absent from PATH -> codex_version warns instead of crashing', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    // An empty PATH inside the isolated worker's own env cannot resolve the
+    // "codex" binary, regardless of what is actually installed on the
+    // machine running this suite — the parent process's PATH is untouched.
+    const result = await runModuleWorker(BEE_MJS, {
+      args: ['doctor', '--runtime', 'codex', '--json'],
+      cwd: dir,
+      env: { ...process.env, PATH: '' },
+    });
+    assert(result.status === 0, `doctor must not throw when codex is absent, got exit ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    const row = parsed.rows.find((r) => r.row === 'codex_version');
+    assert(row.status === 'warn', `expected codex_version warn when the binary cannot be found, got ${JSON.stringify(row)}`);
+    assert(row.value === null, `codex_version value should be null when unresolved, got ${JSON.stringify(row.value)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: codex trust/discovery rows are always present, unknown, and blocking — never inferred from file presence', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
+    const parsed = JSON.parse(result.stdout);
+    for (const rowName of ['hooks_discovered', 'hooks_trusted', 'project_trust', 'pending_hook_review']) {
+      const row = parsed.rows.find((r) => r.row === rowName);
+      assert(row, `row "${rowName}" must always be present on --runtime codex`);
+      assert(row.status === 'unknown', `${rowName} must stay unknown, got ${row.status}`);
+      assert(row.blocking === true, `${rowName} must be marked blocking, got ${JSON.stringify(row)}`);
+    }
+    assert(parsed.overall_status === 'not_ready', 'blocking unknown rows must force not_ready');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: custom_agents verdict is version-scoped, never a bare "unsupported"', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
+    const parsed = JSON.parse(result.stdout);
+    const row = parsed.rows.find((r) => r.row === 'custom_agents');
+    assert(row.status === 'unsupported', `expected unsupported, got ${JSON.stringify(row)}`);
+    assert(row.evidence.includes('0.144.4'), `custom_agents evidence must cite the probed version, got ${row.evidence}`);
+    assert(row.evidence.toLowerCase().includes('version-scoped') || row.evidence.toLowerCase().includes('other versions'), `custom_agents evidence must scope the verdict to the probed version, got ${row.evidence}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: performs zero writes, even with an unwritable cache directory (read-only sandbox)', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    const cacheDir = path.join(dir, '.bee', 'cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const cacheFile = path.join(cacheDir, 'manifest-hash.json');
+    fs.chmodSync(cacheDir, 0o500); // read+execute only: writes/creates inside must fail
+    try {
+      const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
+      assert(result.status === 0, `doctor must not crash under an unwritable cache dir, got exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+      assert(!fs.existsSync(cacheFile), `doctor must never create ${cacheFile} — it is read-only FOR REAL, not merely best-effort`);
+    } finally {
+      fs.chmodSync(cacheDir, 0o700);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: a mutating command still persists the manifest-hash cache (best-effort, not weakened)', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    const cacheFile = path.join(dir, '.bee', 'cache', 'manifest-hash.json');
+    assert(!fs.existsSync(cacheFile), 'precondition: no cache file yet');
+    const result = await runModuleWorker(BEE_MJS, { args: ['status', '--json'], cwd: dir });
+    assert(result.status === 0, `status must succeed, got ${result.status}: ${result.stderr}`);
+    assert(fs.existsSync(cacheFile), 'a non-doctor command must still persist the manifest-hash cache');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: --json shape is stable (runtime, overall_status, rows[], reasons[]) for both runtimes', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    for (const runtime of ['codex', 'claude']) {
+      const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', runtime, '--json'], cwd: dir });
+      assert(result.status === 0, `doctor --runtime ${runtime} must exit 0, got ${result.status}: ${result.stderr}`);
+      const parsed = JSON.parse(result.stdout);
+      assert(parsed.runtime === runtime, `runtime field mismatch, got ${JSON.stringify(parsed)}`);
+      assert(['ready', 'not_ready'].includes(parsed.overall_status), `overall_status must be ready|not_ready, got ${parsed.overall_status}`);
+      assert(Array.isArray(parsed.rows) && parsed.rows.length > 0, `rows must be a non-empty array, got ${JSON.stringify(parsed.rows)}`);
+      for (const row of parsed.rows) {
+        assert(typeof row.row === 'string' && row.row, `every row needs a name, got ${JSON.stringify(row)}`);
+        assert(['ok', 'warn', 'unknown', 'unsupported'].includes(row.status), `row "${row.row}" has an unrecognized status "${row.status}"`);
+        assert(typeof row.evidence === 'string' && row.evidence, `row "${row.row}" must carry non-empty evidence`);
+      }
+      assert(Array.isArray(parsed.reasons), `reasons must be an array, got ${JSON.stringify(parsed.reasons)}`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: an unknown --runtime is refused, never silently defaulted', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'windows', '--json'], cwd: dir });
+    assert(result.status !== 0, `an unrecognized runtime must be refused, got exit ${result.status}: ${result.stdout}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {

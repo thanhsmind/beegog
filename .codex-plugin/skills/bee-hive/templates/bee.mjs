@@ -32,6 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -2306,6 +2307,387 @@ function handleConfigUnset(root, flags) {
   return { result: { key, removed: true }, text: `config unset: removed "${key}".` };
 }
 
+// ─── doctor (codex-native-runtime-v2 D11): fail-closed runtime health report
+// ─────────────────────────────────────────────────────────────────────────
+// Every row states its own evidence and status (ok/warn/unknown/unsupported);
+// "ready" is reachable only where every load-bearing row is ok — file
+// presence alone never grants it. On codex, hook discovery/trust/project-
+// trust/pending-review are structurally unknown on codex-cli 0.144.4 (no
+// machine surface — capability matrix row F1) and are marked `blocking: true`
+// so they hold overall_status at not_ready regardless of every other row.
+// This whole command performs ZERO writes: every helper below only reads.
+
+const CODEX_DOCTOR_TRUST_UNKNOWN_REASON =
+  'codex-cli 0.144.4 exposes no machine-readable hook-discovery/trust surface — `codex doctor --json` reports no hook/trust/agent rows (capability matrix row F1); trust state lives only in the interactive `/hooks` TUI, which is not machine-readable.';
+
+function doctorRow(row, status, value, evidence, extra = {}) {
+  return { row, status, value, evidence, ...extra };
+}
+
+function doctorSafeReadText(file) {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function doctorSafeReadJson(file) {
+  const text = doctorSafeReadText(file);
+  if (text === null) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function doctorExtractHookCommands(hooksJson) {
+  const commands = [];
+  const events = hooksJson && hooksJson.hooks && typeof hooksJson.hooks === 'object' ? hooksJson.hooks : {};
+  for (const matchers of Object.values(events)) {
+    if (!Array.isArray(matchers)) continue;
+    for (const matcher of matchers) {
+      const list = matcher && Array.isArray(matcher.hooks) ? matcher.hooks : [];
+      for (const h of list) {
+        if (h && typeof h.command === 'string') commands.push(h.command);
+      }
+    }
+  }
+  return commands;
+}
+
+// Every rendered hook command (both the repo and plugin targets) execs
+// "node .../hooks/<file>.mjs" — pull every referenced filename regardless of
+// which absolute prefix precedes it (repo target resolves it at runtime from
+// $r, so no static prefix is provable here; only the filename is).
+function doctorHookHandlerFilenames(commands) {
+  const files = new Set();
+  const re = /hooks\/([A-Za-z0-9_.-]+\.mjs)/g;
+  for (const command of commands) {
+    let match;
+    while ((match = re.exec(command)) !== null) files.add(match[1]);
+  }
+  return [...files];
+}
+
+function doctorCodexVersion() {
+  try {
+    const result = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 5000 });
+    if (result.error || typeof result.status !== 'number' || result.status !== 0) {
+      return doctorRow(
+        'codex_version',
+        'warn',
+        null,
+        'codex binary not found on PATH (or exited non-zero) — cannot report an installed version.',
+      );
+    }
+    const value = (result.stdout || '').trim() || null;
+    return doctorRow(
+      'codex_version',
+      value ? 'ok' : 'warn',
+      value,
+      value ? `codex --version -> ${value}` : 'codex --version produced no output.',
+    );
+  } catch (error) {
+    return doctorRow(
+      'codex_version',
+      'warn',
+      null,
+      `codex --version threw: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function doctorHooksFilePresent(root) {
+  const present = fs.existsSync(path.join(root, '.codex', 'hooks.json'));
+  return doctorRow(
+    'hooks_file_present',
+    present ? 'ok' : 'warn',
+    present,
+    present ? '.codex/hooks.json exists.' : '.codex/hooks.json is missing.',
+  );
+}
+
+// Byte-compares the LIVE repo-fallback hooks file against the sha256 the
+// onboarding ledger recorded at install time (managed.repo_hooks) — the same
+// honest-drift discipline bee_status already uses for vendored runtime files
+// (no second hashing implementation; reuses lib/fsutil.mjs's hashFile).
+function doctorCapabilityBaselineMatch(root) {
+  const hooksPath = path.join(root, '.codex', 'hooks.json');
+  if (!fs.existsSync(hooksPath)) {
+    return doctorRow('capability_baseline_match', 'warn', false, '.codex/hooks.json is absent — cannot compare against the recorded baseline.');
+  }
+  const onboarding = readOnboarding(root);
+  const recorded = onboarding?.managed?.repo_hooks?.['.codex/hooks.json'] ?? null;
+  if (!recorded) {
+    return doctorRow('capability_baseline_match', 'unknown', null, 'no recorded baseline hash in .bee/onboarding.json managed.repo_hooks — run onboarding.');
+  }
+  const live = hashFile(hooksPath);
+  if (live !== recorded) {
+    return doctorRow(
+      'capability_baseline_match',
+      'warn',
+      false,
+      `live .codex/hooks.json sha256 (${live}) does not match the recorded baseline (${recorded}).`,
+      { fix: 'Re-render via self-onboard sync: node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply' },
+    );
+  }
+  return doctorRow('capability_baseline_match', 'ok', true, `live .codex/hooks.json byte-matches the recorded baseline (${live}).`);
+}
+
+function doctorCodexTrustUnknownRows() {
+  return ['hooks_discovered', 'hooks_trusted', 'project_trust', 'pending_hook_review'].map((row) =>
+    doctorRow(row, 'unknown', null, CODEX_DOCTOR_TRUST_UNKNOWN_REASON, { blocking: true }),
+  );
+}
+
+function doctorHookHandlersResolvable(root, hooksDir) {
+  const hooksPath = path.join(root, '.codex', 'hooks.json');
+  const hooksJson = doctorSafeReadJson(hooksPath);
+  if (!hooksJson) {
+    return doctorRow('hook_handlers_resolvable', 'warn', null, `${hooksPath} is missing or unparsable — no command paths to resolve.`);
+  }
+  const commands = doctorExtractHookCommands(hooksJson);
+  const files = doctorHookHandlerFilenames(commands);
+  if (files.length === 0) {
+    return doctorRow('hook_handlers_resolvable', 'warn', [], 'no hooks/*.mjs command references found in .codex/hooks.json.');
+  }
+  const missing = files.filter((f) => !fs.existsSync(path.join(root, hooksDir, f)));
+  if (missing.length) {
+    return doctorRow(
+      'hook_handlers_resolvable',
+      'warn',
+      files,
+      `missing handler file(s) under ${hooksDir}/: ${missing.join(', ')}.`,
+      { fix: `Restore ${missing.join(', ')} under ${hooksDir}/, or re-render .codex/hooks.json from the catalog.` },
+    );
+  }
+  return doctorRow('hook_handlers_resolvable', 'ok', files, `${files.length} handler file(s) resolved under ${hooksDir}/.`);
+}
+
+// Provable ONLY against a session-start boundary, which a fresh bee.mjs
+// process never has — never inferred from recent log activity; the newest
+// row timestamp(s) are surfaced as context only, not as proof of observation.
+function doctorHooksObservedThisSession(root) {
+  const text = doctorSafeReadText(path.join(root, '.bee', 'logs', 'hooks.jsonl'));
+  if (!text || !text.trim()) {
+    return doctorRow('hooks_observed_this_session', 'unknown', null, 'no .bee/logs/hooks.jsonl on disk yet — no session-start boundary to test against.');
+  }
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const recent = lines
+    .slice(-3)
+    .map((line) => {
+      try {
+        return JSON.parse(line).ts;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  return doctorRow(
+    'hooks_observed_this_session',
+    'unknown',
+    null,
+    `bee.mjs runs as a fresh process with no session-start boundary to test against — never inferred from recent log activity alone. Newest logged row timestamp(s) as context only: ${recent.join(', ') || '(none)'}.`,
+  );
+}
+
+function doctorPermissionModeCodex(root) {
+  const text = doctorSafeReadText(path.join(root, '.codex', 'config.toml'));
+  const match = text ? text.match(/approval_policy\s*=\s*"([^"]*)"/) : null;
+  const configured = match ? match[1] : null;
+  return doctorRow(
+    'permission_mode',
+    'unknown',
+    { configured, observed: null },
+    configured
+      ? `configured approval_policy = "${configured}" in .codex/config.toml; observed permission_mode has no doctor-time runtime surface on codex-cli 0.144.4 (it only appears inside a fired hook envelope, matrix row C2).`
+      : 'no approval_policy configured in .codex/config.toml; observed permission_mode has no doctor-time runtime surface.',
+  );
+}
+
+function doctorHookSourcesCodex(root) {
+  const repoPresent = fs.existsSync(path.join(root, '.codex', 'hooks.json'));
+  const pluginProjectionCheckedIn = fs.existsSync(path.join(root, 'hooks', 'hooks.json'));
+  const configured = { repo: repoPresent, plugin_projection_checked_in: pluginProjectionCheckedIn };
+  return doctorRow(
+    'hook_sources',
+    repoPresent ? 'ok' : 'warn',
+    { configured, active: 'unknown' },
+    repoPresent
+      ? 'repo-fallback .codex/hooks.json is configured and is the sole exercisable source today (plugin hooks not-observed on codex-cli 0.144.4, capability matrix row B1); which source is actively loaded has no runtime surface, so "active" stays unknown rather than inferred from presence.'
+      : 'no repo-fallback .codex/hooks.json found; nothing configured to load.',
+  );
+}
+
+function doctorSkillsInstalled(root, skillsDir) {
+  const dir = path.join(root, skillsDir);
+  const sidecar = doctorSafeReadJson(path.join(dir, '.bee-render.json'));
+  const exists = fs.existsSync(dir);
+  const entries = exists ? fs.readdirSync(dir).filter((n) => !n.startsWith('.')) : [];
+  return doctorRow(
+    'skills_installed',
+    exists && sidecar ? 'ok' : 'warn',
+    { count: entries.length, provenance: sidecar },
+    exists
+      ? `${entries.length} skill dir(s) under ${skillsDir}/, provenance sidecar ${sidecar ? 'present' : 'MISSING'}; runtime-side discovery has no machine-readable surface to confirm against.`
+      : `${skillsDir}/ is absent.`,
+  );
+}
+
+function doctorCustomAgentsCodex(codexVersionValue) {
+  return doctorRow(
+    'custom_agents',
+    'unsupported',
+    codexVersionValue,
+    `${codexVersionValue || '(codex version unknown)'}: .codex/agents/*.toml discovery is not-observed on codex-cli 0.144.4 (capability matrix rows A1/A2) — only built-in default/explorer/worker agent types spawn, carrying no bee developer_instructions. This verdict is version-scoped: other versions are unverified until re-probed.`,
+  );
+}
+
+function doctorClaudeHookWiring(root) {
+  const settings = doctorSafeReadJson(path.join(root, '.claude', 'settings.json'));
+  if (!settings || !settings.hooks) {
+    return doctorRow('hook_wiring_resolvable', 'warn', false, '.claude/settings.json has no hooks block.');
+  }
+  const events = Object.keys(settings.hooks);
+  const required = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
+  const missing = required.filter((e) => !events.includes(e));
+  if (missing.length) {
+    return doctorRow('hook_wiring_resolvable', 'warn', events, `missing lifecycle event(s) in .claude/settings.json hooks: ${missing.join(', ')}.`);
+  }
+  return doctorRow('hook_wiring_resolvable', 'ok', events, `${events.length} lifecycle event(s) wired in .claude/settings.json.`);
+}
+
+function doctorClaudeHandlersResolvable(root) {
+  const settings = doctorSafeReadJson(path.join(root, '.claude', 'settings.json'));
+  const commands = doctorExtractHookCommands({ hooks: settings ? settings.hooks : {} });
+  if (!commands.length) {
+    return doctorRow('handlers_resolvable', 'warn', [], 'no hook commands found in .claude/settings.json.');
+  }
+  const files = doctorHookHandlerFilenames(commands);
+  const missing = files.filter(
+    (f) => !fs.existsSync(path.join(root, '.bee', 'bin', 'hooks', f)) && !fs.existsSync(path.join(root, 'hooks', f)),
+  );
+  if (missing.length) {
+    return doctorRow(
+      'handlers_resolvable',
+      'warn',
+      files,
+      `missing handler file(s): ${missing.join(', ')}.`,
+      { fix: 'Re-run onboarding to restore .bee/bin/hooks/*.' },
+    );
+  }
+  return doctorRow('handlers_resolvable', 'ok', files, `${files.length} handler file(s) resolved.`);
+}
+
+function doctorClaudeModelGuardEntry(root) {
+  const settings = doctorSafeReadJson(path.join(root, '.claude', 'settings.json'));
+  const preToolUse = settings && settings.hooks && Array.isArray(settings.hooks.PreToolUse) ? settings.hooks.PreToolUse : [];
+  const found = preToolUse.some(
+    (m) =>
+      m &&
+      typeof m.matcher === 'string' &&
+      /Agent/.test(m.matcher) &&
+      Array.isArray(m.hooks) &&
+      m.hooks.some((h) => h && typeof h.command === 'string' && h.command.includes('bee-model-guard')),
+  );
+  return doctorRow(
+    'model_guard_entry_present',
+    found ? 'ok' : 'warn',
+    found,
+    found
+      ? 'PreToolUse Agent-shaped matcher is wired to bee-model-guard.mjs.'
+      : 'no PreToolUse Agent-shaped bee-model-guard entry found in .claude/settings.json.',
+  );
+}
+
+function doctorClaudeRenderedAgents(root) {
+  const onboarding = readOnboarding(root);
+  const files = Array.isArray(onboarding?.agents_sync?.files) ? onboarding.agents_sync.files : [];
+  if (!files.length) {
+    return doctorRow('rendered_agents_present', 'unknown', [], 'no agents_sync.files recorded in .bee/onboarding.json.');
+  }
+  const missing = files.filter((f) => !fs.existsSync(path.join(root, f)));
+  if (missing.length) {
+    return doctorRow('rendered_agents_present', 'warn', files, `missing rendered agent file(s): ${missing.join(', ')}.`);
+  }
+  return doctorRow('rendered_agents_present', 'ok', files, `${files.length} rendered agent file(s) present.`);
+}
+
+function doctorClaudePermissionMode(root) {
+  const settings = doctorSafeReadJson(path.join(root, '.claude', 'settings.json'));
+  const configured =
+    settings && settings.permissions && typeof settings.permissions.defaultMode === 'string' ? settings.permissions.defaultMode : null;
+  return doctorRow(
+    'permission_mode',
+    configured ? 'ok' : 'unknown',
+    { configured, observed: null },
+    configured
+      ? `configured permissions.defaultMode = "${configured}" in .claude/settings.json; observed mode has no doctor-time runtime surface.`
+      : 'no permissions.defaultMode configured in .claude/settings.json.',
+  );
+}
+
+// A row is load-bearing (blocking) only when the cell that produced it says
+// so explicitly (today: codex's 4 structurally-unknown trust/discovery
+// rows) — never inferred from its status alone, so a `warn` on a
+// non-load-bearing row can never silently promote itself to a blocker.
+function doctorOverallStatus(rows) {
+  const blocked = rows.filter((r) => r.blocking && r.status !== 'ok');
+  const warned = rows.filter((r) => r.status === 'warn');
+  if (blocked.length === 0 && warned.length === 0) {
+    return { overall_status: 'ready', reasons: [] };
+  }
+  const reasons = [
+    ...blocked.map((r) => `${r.row}: BLOCKS readiness — ${r.evidence}`),
+    ...warned.map((r) => `${r.row}: ${r.evidence}${r.fix ? ` FIX: ${r.fix}` : ''}`),
+  ];
+  return { overall_status: 'not_ready', reasons };
+}
+
+function handleDoctor(root, flags) {
+  const runtime = requireFlag(flags, 'runtime');
+  if (runtime !== 'codex' && runtime !== 'claude') {
+    throw new Error(`doctor: --runtime must be "codex" or "claude", got "${runtime}".`);
+  }
+  let rows;
+  if (runtime === 'codex') {
+    const versionRow = doctorCodexVersion();
+    rows = [
+      versionRow,
+      doctorHooksFilePresent(root),
+      doctorCapabilityBaselineMatch(root),
+      ...doctorCodexTrustUnknownRows(),
+      doctorHookHandlersResolvable(root, 'hooks'),
+      doctorHooksObservedThisSession(root),
+      doctorPermissionModeCodex(root),
+      doctorHookSourcesCodex(root),
+      doctorSkillsInstalled(root, path.join('.agents', 'skills')),
+      doctorCustomAgentsCodex(versionRow.value),
+    ];
+  } else {
+    rows = [
+      doctorClaudeHookWiring(root),
+      doctorClaudeHandlersResolvable(root),
+      doctorClaudeModelGuardEntry(root),
+      doctorSkillsInstalled(root, path.join('.claude', 'skills')),
+      doctorClaudeRenderedAgents(root),
+      doctorClaudePermissionMode(root),
+      doctorHooksObservedThisSession(root),
+    ];
+  }
+  const { overall_status, reasons } = doctorOverallStatus(rows);
+  const result = { runtime, overall_status, rows, reasons };
+  const lines = [`bee doctor --runtime ${runtime}: ${overall_status.toUpperCase()}`];
+  for (const row of rows) lines.push(`  [${row.status}] ${row.row}: ${row.evidence}`);
+  if (reasons.length) {
+    lines.push('', 'Reasons:');
+    for (const reason of reasons) lines.push(`  - ${reason}`);
+  }
+  return { result, text: lines.join('\n') };
+}
+
 // Per-group usage fallback (dispatcher-unify du-1): the shim always supplies
 // the group token, so the generic no-command path can never fire for helper
 // calls. When a leading group token resolves to no registry entry, its group's
@@ -2497,6 +2879,7 @@ const HANDLERS = {
   'config.set': handleConfigSet,
   'config.unset': handleConfigUnset,
   'config.validate': handleConfigValidate,
+  doctor: handleDoctor,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─
@@ -2652,16 +3035,31 @@ function legacyManifestHashStatePath(root) {
 
 /** Compare the current registry hash against the last-persisted one, then
  * persist the current hash. Returns {manifest_changed, hint} — hint is only
- * meaningful when manifest_changed is true. */
-function checkManifestDrift(root) {
+ * meaningful when manifest_changed is true.
+ *
+ * `skipWrite` (codex-native-runtime-v2 D11): doctor is read-only FOR REAL —
+ * zero writes anywhere, including this cache. main() passes skipWrite:true
+ * only for the doctor route, which never even attempts the write, so it
+ * cannot fail even on an unwritable cache dir. For every OTHER (mutating)
+ * command the write still runs, but is now wrapped best-effort: a write
+ * failure (e.g. a read-only sandbox) must never crash drift detection — the
+ * comparison above already completed off the successfully-read prior hash,
+ * so drift checking itself is never weakened, only the persistence step. */
+function checkManifestDrift(root, { skipWrite = false } = {}) {
   const current = computeManifestHash();
   const stateFile = manifestHashStatePath(root);
   // Prefer the new .bee/cache/ hash; fall back to a legacy root file once so the
   // first post-#11 call doesn't spuriously report "manifest changed".
   const prior = readJson(stateFile, null) || readJson(legacyManifestHashStatePath(root), null);
   const priorHash = prior && typeof prior.hash === 'string' ? prior.hash : null;
-  writeJsonAtomic(stateFile, { hash: current, checked_at: new Date().toISOString() });
-  removeFileIfExists(legacyManifestHashStatePath(root));
+  if (!skipWrite) {
+    try {
+      writeJsonAtomic(stateFile, { hash: current, checked_at: new Date().toISOString() });
+      removeFileIfExists(legacyManifestHashStatePath(root));
+    } catch {
+      // best-effort persistence only; see doc comment above.
+    }
+  }
   if (priorHash && priorHash !== current) {
     return {
       manifest_changed: true,
@@ -2770,7 +3168,11 @@ export function main(argv) {
     return emitError(error instanceof Error ? error.message : String(error), jsonRequested);
   }
 
-  const drift = checkManifestDrift(root);
+  // doctor is read-only FOR REAL (codex-native-runtime-v2 D11): bypass the
+  // pre-routing cache write entirely rather than merely best-effort for this
+  // one route, since "zero writes" is the command's own contract, not a
+  // side effect of a hostile sandbox.
+  const drift = checkManifestDrift(root, { skipWrite: commandName === 'doctor' });
   const entry = COMMAND_REGISTRY.find((e) => e.name === commandName);
 
   if (!entry) {

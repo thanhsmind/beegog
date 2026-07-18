@@ -1374,4 +1374,27 @@ export const COMMAND_REGISTRY = [
     examples: ['bee config validate --json'],
     deprecated: null,
   },
+
+  // ─── doctor (codex-native-runtime-v2 D11) — fail-closed runtime health
+  // report. Reuses the onboarding-recorded hash baseline for drift (never a
+  // second hash implementation) and cites the capability matrix
+  // (docs/history/codex-native-runtime-v2/reports/capability-matrix.md) for
+  // every structurally-unknown codex row. Performs zero writes, including
+  // bypassing the dispatcher's own pre-routing manifest-hash cache write. ──
+  {
+    name: 'doctor',
+    invoke: 'bee doctor',
+    description:
+      'Fail-closed runtime health report: never "ready" from file presence alone. --runtime codex reports hooks-file presence, capability-baseline byte match against the recorded onboarding hash, hook-handler resolvability, and the hook-discovery/trust/project-trust/pending-review rows that are structurally unknown on codex-cli 0.144.4 and BLOCK readiness (capability matrix row F1); --runtime claude reports hook wiring, handler resolvability, model-guard entry presence, installed skills/rendered agents, and permission mode. Performs zero writes anywhere, including the dispatcher\'s own pre-routing manifest-hash cache.',
+    parameters: {
+      type: 'object',
+      properties: {
+        runtime: { type: 'string', description: 'Which runtime to report on.', enum: ['codex', 'claude'] },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a human-readable report.' },
+      },
+      required: ['runtime'],
+    },
+    examples: ['bee doctor --runtime codex --json', 'bee doctor --runtime claude --json'],
+    deprecated: null,
+  },
 ];
