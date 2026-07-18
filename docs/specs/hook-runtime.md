@@ -1,7 +1,7 @@
 ---
 area: hook-runtime
-updated: 2026-07-17
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17)]
+updated: 2026-07-18
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18)]
 decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated)]
 coverage: partial
 ---
@@ -218,7 +218,12 @@ lanes — a `normal`-lane high-risk change still stops; `off` never fires). The
 exploring/Gate-1 phase is **excluded on purpose**: under the highest level a
 genuine *information* question still stops for the human — only rubber-stamp
 approval gates are mechanized. The block carries an instruction to record the
-approval, log the audit decision, and proceed. **Loop-guard:** it blocks at most
+approval, log the audit decision, and proceed — and when the pending gate is
+execution approval on high-risk work, the instruction additionally names the
+adviser-consult prerequisite first (run the configured adviser read-only,
+record the consult, then approve), so the mechanized instruction can no longer
+steer the assistant into the consult-precondition refusal uninformed; every
+other gate's instruction is unchanged (cell pah-3, 2026-07-18). **Loop-guard:** it blocks at most
 once per (session, phase, gate, level); an immediate re-stop at the same gate is
 deduped and degrades to the ordinary advisory, so a turn that genuinely cannot
 proceed is never trapped in a loop. Fail-open is unchanged: any internal failure
