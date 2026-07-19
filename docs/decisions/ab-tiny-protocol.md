@@ -81,3 +81,53 @@ comparison — every row in the sample is a cell someone actually needed done. T
 a synthetic benchmark would measure the harness's overhead in isolation, not the thing that
 actually matters, which is end-to-end cost on real work with real context pressure and real
 model behavior.
+
+## Canary probe leg protocol (codex-native-transport, cnt-5)
+
+A second, unrelated-topic protocol recorded in this file at the same "how bee runs an
+evidence-gathering experiment" altitude as the A/B arms above: the **probe leg** pattern a
+canary script uses to gather version-scoped, observed (never assumed) evidence about an
+external runtime's real behavior, established by `scripts/canary_codex.mjs --probe` /
+`--probe-selftest` for the codex-native-transport feature (CONTEXT D3, D4; plan.md V1–V3).
+Recorded here, rather than only in the feature's own history, because the pattern is meant to
+be reused by future capability probes, not treated as one-off feature code.
+
+**The pattern:**
+
+1. **A probe is a separate CLI mode, never folded into the default canary/verify suite.** A
+   probe leg may force an under-development feature flag and run a real model turn — cost and
+   flakiness unsuited to riding along on every default run. `--probe-selftest` (offline, asserts
+   the isolation invariant below without touching `codex` at all) is the cell's actual `verify`
+   command; `--probe` (live, requires `codex` on PATH, degrades to the same skip-guard as the
+   default suite when absent) is the manual-evidence-gathering step, run on demand.
+2. **Isolation is non-negotiable and independently checked, not just asserted (D4).** Every
+   invocation runs against a per-run `mktemp` `CODEX_HOME`, seeded with a read-only copy of
+   `auth.json` and whatever config the probe needs to force. The real `CODEX_HOME`'s
+   `config.toml` is snapshotted before and asserted byte-identical after, in a `finally`, whether
+   the probe's own observation is positive, negative, or the process crashes.
+3. **Build the fixture the way that has actually been proven to work, not the cheapest-looking
+   one.** A hand-rolled single-hook `.codex/hooks.json` was tried first and never observed a
+   `PreToolUse` fire despite a successful underlying tool call — a real, cited gap
+   (`.bee/spikes/codex-native-transport/probe-v1v3.md`). The fix was building the fixture through
+   the project's own onboarding entrypoint (`onboard_bee.mjs --apply --repo-hooks`, the full
+   hook chain), the same method an earlier capability spike used when it *did* observe the hook
+   fire. When a probe needs to observe something beyond what the installed chain already reports,
+   inject an additional hook entry into the onboarded `.codex/hooks.json` (never replace the
+   real installed hook it sits next to) so the exact real chain still runs unmodified.
+4. **Either answer is a valid green.** A probe records what it observed — acceptance or refusal,
+   a fired hook or a silent one — and never treats a negative result as a failure to retry or
+   paper over. The only failures that stop the probe (non-zero exit) are infrastructure failures
+   (fixture/codex-home build) or a violated isolation invariant; the observation itself never
+   does.
+5. **The evidence is version-scoped, and versions can regress.** A probe records the exact
+   client version alongside its observation and treats every verdict as scoped to that version —
+   never inferred from a version string, never assumed stable across a patch bump. cnt-5's own
+   evidence is the concrete proof this matters: an override surface confirmed live on codex-cli
+   0.144.4 was fully refused (a new API-level schema rejection) two patch versions later on
+   0.144.6, with no changelog signal available to bee (full detail:
+   `docs/history/codex-native-transport/reports/probe-evidence.md`).
+6. **The machine record is separate from, and additive to, any existing attest/doctor record.**
+   A probe's structured evidence is written through a dedicated writer (here,
+   `writeNativeTransportProbe`, `.bee/bin/bee.mjs`) to its own gitignored, host-local file — never
+   mixed into an unrelated attestation record, and never applied to the user's real environment
+   (D4 again: bee observes, it does not flip flags on the user's behalf).
