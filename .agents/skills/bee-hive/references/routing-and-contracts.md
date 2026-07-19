@@ -107,8 +107,8 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 |-------|-------|--------|
 | hive | onboarding, state, HANDOFF, critical-patterns, decisions | state routing updates only |
 | exploring | user conversation, critical-patterns, quick scout | `docs/history/<feature>/CONTEXT.md`, state update |
-| planning | CONTEXT.md, critical-patterns, active decisions, bee_status | `approach.md`, `plan.md` (requirements-only → implementation-ready), current-slice cells via `bee.mjs cells add` |
-| briefing | CONTEXT.md, approach.md, plan.md, cells, validating reports, state gates (render/refresh); capped cell traces, review findings, UAT (walkthrough) | `docs/history/<feature>/implement-plan.md` (projection; `small`+); `docs/history/<feature>/walkthrough.md` (post-Gate-4; `standard`/`high-risk`) |
+| planning | CONTEXT.md, critical-patterns, active decisions, bee_status | `approach.md`, `plan.md` (frozen at Gate 2 — approval stamp only after approval; none for `tiny`, opt-in for `small`, D1/D3/D4), current-slice cells via `bee.mjs cells add` |
+| briefing | CONTEXT.md, approach.md, frozen plan.md + cells (drift re-render triggers on cell changes only, since the plan can no longer drift after approval — D9), validating reports, state gates (render/refresh); capped cell traces, review findings, UAT (walkthrough) | `docs/history/<feature>/implement-plan.md` (projection; `high-risk` always, `standard` on-demand, `small` optional on request per D4); `docs/history/<feature>/walkthrough.md` (post-Gate-4; `standard`/`high-risk`) |
 | validating | CONTEXT.md, discovery, approach, approved shape, cells | reality-gate report, feasibility matrix, spike results in `.bee/spikes/`, repaired cells |
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
 | executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `docs/history/<feature>/reports/` |
@@ -266,7 +266,9 @@ One question per message. Never bundle. Never answer your own question.
   bin/  bin/lib/
 
 docs/history/<feature>/
-  CONTEXT.md  plan.md  reports/                       ← always
+  CONTEXT.md  reports/                                ← always
+  plan.md                                              ← frozen at Gate 2 (D1): standard/high-risk
+                                                        always; small opt-in (D4); tiny/spike none (D3)
   discovery.md  approach.md  implement-plan.md        ← conditional (decision 0009): separate
                                                         files only for L2+ discovery / high-risk;
                                                         else folded into plan.md sections

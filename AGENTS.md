@@ -24,7 +24,7 @@ Use `bee-hive` first in this repo unless you are resuming an already approved be
 ```
 bee-hive
   -> bee-exploring     [GATE 1] "Decisions locked. Approve CONTEXT.md before planning?"
-  -> bee-planning      (shape) → bee-briefing renders implement-plan.md (small+)
+  -> bee-planning      (shape) → bee-briefing renders implement-plan.md (standard: on-demand; high-risk: always)
                        [GATE 2] "Work shape is ready. Approve before current-work preparation?"
   -> bee-validating    [GATE 3] "Feasibility validated. Approve execution?"
   -> bee-swarming
@@ -48,7 +48,7 @@ Independent review is user-invoked, not an automatic chain stage (decision 565e6
 6. At roughly 65% context usage, write `.bee/HANDOFF.json` and pause cleanly.
 7. `docs/history/<feature>/CONTEXT.md` is the source of truth for locked decisions. Log decisions through `node .bee/bin/bee.mjs decisions`, never by hand-editing `.bee/decisions.jsonl`.
 8. One commit per cell, cell id in the commit message.
-9. **Lanes scale ceremony, never memory.** A settled rule, behavior, or value gets captured into `docs/specs/` the moment it settles — tiny lanes included — never left in the chat. Detecting settlement is the agent's job, every turn, unprompted; the user should never have to ask. Full trigger, lane-scaling, and detection discipline: `bee-scribing` skill.
+9. **Lanes scale ceremony, never memory.** A settled rule, behavior, or value gets captured into `docs/specs/` the moment it settles — tiny lanes included, whether or not the lane produced a `plan.md` (D3/D4) — never left in the chat. Detecting settlement is the agent's job, every turn, unprompted; the user should never have to ask. Full trigger, lane-scaling, and detection discipline: `bee-scribing` skill.
 10. **The agent runs the machinery, not the user.** Every bee command is run by the agent itself the moment the workflow calls for it — never printed for the user to execute. The only human actions in bee are gate approvals, decision answers, and privacy approvals. Full rule: `bee-hive` skill, critical rule 10.
 11. **Silent bookkeeping — work language only.** Bee mechanics are never narrated into chat; the user hears the work itself in their own terms ("fixing X", "done — tests pass"). Litmus: strip every bee term from a chat message — if nothing the user needs is lost, those terms should not have been there. Full rule: `bee-hive` skill, critical rule 11.
 12. **The hook is a safety net, not the authority.** The law is this file: route through `bee-hive` before touching source, every time. Hooks exist to catch the times you *forget* that law — they are not a gatekeeper whose silence grants permission. Never reason "I'll try the edit; if the hook blocks me, then I'll route through bee" — that inverts the contract: it makes the guard's coverage your protocol, so every gap in the guard becomes a gap in the workflow. (Exactly how it failed: a closed feature left the phase terminal and its gates still approved, no branch of the guard fired, and post-feature source edits walked through untouched — decision c2c46488.) An unblocked write is not an approved write. A guard with a hole is still a law without one.
@@ -72,7 +72,7 @@ Independent review is user-invoked, not an automatic chain stage (decision 565e6
   bin/                <- bee.mjs (single dispatcher, all 9 command groups; sole shipped CLI)
   bin/lib/            <- shared modules used by helpers, bee.mjs, and hooks
 
-docs/history/<feature>/    <- always: CONTEXT.md, plan.md, reports/; conditional (decision 0009): discovery.md/approach.md/implement-plan.md only for L2+ discovery or high-risk, else folded into plan.md sections
+docs/history/<feature>/    <- always: CONTEXT.md, reports/; plan.md frozen at Gate 2 (D1) - standard/high-risk always, plan.md is opt-in (D4) for small, tiny/spike none since the cell is the micro-plan (D3); conditional (decision 0009): discovery.md/approach.md/implement-plan.md only for L2+ discovery or high-risk, else folded into plan.md sections
 docs/history/learnings/    <- critical-patterns.md + dated learnings
 docs/specs/           <- state layer: BA-grade area specs + reading-map.md (read spec before code)
 docs/backlog.md       <- product backlog: PBI rows (proposed/in-flight/done), scribing-owned; NOT .bee/backlog.jsonl (that stays machine friction/grooming)

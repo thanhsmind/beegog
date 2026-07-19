@@ -334,6 +334,126 @@ for (const { file, gate, tokens } of GATE_SKILLS) {
   }
 }
 
+// Lane-ceremony-v3 doctrine (D6/D7/D10): README.md and the AGENTS.block.md
+// template are the last two surfaces that restate the lane/plan doctrine
+// (D10 — "any README.md sections that restate the lane/plan doctrine ...
+// updated in lockstep — shipping contradictory doctrine surfaces is out of
+// the question"). Both must carry the SAME narrowed flag wording and lane
+// shapes as the already-rewritten skills/bee-hive/SKILL.md (lcv3-2), never
+// the retired unnarrowed flags or the unconditional "(small+)" briefing
+// fan-out this feature removes.
+{
+  const readmeAbs = path.join(REPO_ROOT, 'README.md');
+  const agentsBlockAbs = path.join(REPO_ROOT, 'skills/bee-hive/templates/AGENTS.block.md');
+  let readmeText = '';
+  let agentsBlockText = '';
+  try {
+    readmeText = fs.readFileSync(readmeAbs, 'utf8');
+  } catch {
+    fail('README.md: unreadable — lane-ceremony-v3 README doctrine lives here');
+  }
+  try {
+    agentsBlockText = fs.readFileSync(agentsBlockAbs, 'utf8');
+  } catch {
+    fail('skills/bee-hive/templates/AGENTS.block.md: unreadable — lane-ceremony-v3 AGENTS block doctrine lives here');
+  }
+
+  // (a) D7: old narrow-flag wordings must be gone from README.md.
+  const OLD_FLAG_PHRASES_README = ['existing covered behavior', 'weak proof'];
+  for (const phrase of OLD_FLAG_PHRASES_README) {
+    if (readmeText.includes(phrase)) {
+      fail(`README.md (D7): still carries the retired flag wording "${phrase}" — narrowed per D7`);
+    } else {
+      ok(`README.md (D7): retired flag wording "${phrase}" absent`);
+    }
+  }
+
+  // (b) D7: new narrowed wordings present in README.md, verbatim as in
+  // skills/bee-hive/SKILL.md.
+  const NEW_FLAG_TOKENS_README = [
+    'changes behavior an existing test asserts',
+    'weakening, deleting, or replacing existing proof',
+  ];
+  for (const token of NEW_FLAG_TOKENS_README) {
+    if (!readmeText.includes(token)) {
+      fail(`README.md (D7): missing narrowed flag wording "${token}"`);
+    } else {
+      ok(`README.md (D7): narrowed flag wording "${token}" present`);
+    }
+  }
+
+  // (c) D6: product-files-only carve-out present in README.md's lane section.
+  if (!readmeText.includes('product files only')) {
+    fail('README.md (D6): missing "product files only" carve-out — lane caps must count product files only');
+  } else {
+    ok('README.md (D6): "product files only" carve-out present');
+  }
+
+  // (d) D3/D4: README's lane table states tiny has no plan.md (D3, "the cell
+  // is the micro-plan"), small's plan.md is opt-in (D4) — matching the
+  // already-rewritten skills/bee-hive/SKILL.md lane table verbatim.
+  const LANE_TOKENS_README = [
+    { token: 'cell is the micro-plan', d: 'D3' },
+    { token: 'plan.md is opt-in', d: 'D4' },
+  ];
+  for (const { token, d } of LANE_TOKENS_README) {
+    if (!readmeText.includes(token)) {
+      fail(`README.md (${d}): missing lane-table wording "${token}"`);
+    } else {
+      ok(`README.md (${d}): "${token}" present`);
+    }
+  }
+
+  // (e) D9/D10 fan-out: bee-briefing is on-demand for standard, mandatory for
+  // high-risk — the old unconditional "(small+)"/"(bigger work)" wording for
+  // when a brief renders must be gone, replaced by the real fan-out, stated
+  // identically in README.md and the AGENTS.block.md template.
+  if (readmeText.includes('implement plan (bigger work)')) {
+    fail('README.md (D9/D10): still carries the retired unconditional "(bigger work)" briefing fan-out wording');
+  } else {
+    ok('README.md (D9/D10): retired "(bigger work)" briefing fan-out wording absent');
+  }
+  if (agentsBlockText.includes('implement-plan.md (small+)')) {
+    fail('skills/bee-hive/templates/AGENTS.block.md (D9/D10): chain line still carries the retired unconditional "(small+)" briefing fan-out wording');
+  } else {
+    ok('skills/bee-hive/templates/AGENTS.block.md (D9/D10): retired "(small+)" briefing fan-out wording absent');
+  }
+  for (const [label, text] of [['README.md', readmeText], ['skills/bee-hive/templates/AGENTS.block.md', agentsBlockText]]) {
+    if (!text.includes('standard: on-demand') || !text.includes('high-risk: always')) {
+      fail(`${label} (D9/D10): missing the real briefing fan-out wording ("standard: on-demand" / "high-risk: always")`);
+    } else {
+      ok(`${label} (D9/D10): real briefing fan-out wording present`);
+    }
+  }
+
+  // (f) D1/D3/D4/D10: AGENTS.block.md's docs/history tree note must state
+  // plan.md's freeze + per-lane conditionality, not the old unconditional
+  // "always: CONTEXT.md, plan.md, reports/" line.
+  if (agentsBlockText.includes('always: CONTEXT.md, plan.md, reports/')) {
+    fail('skills/bee-hive/templates/AGENTS.block.md (D1/D3/D4): docs/history tree note still states plan.md as unconditionally always-present');
+  } else {
+    ok('skills/bee-hive/templates/AGENTS.block.md (D1/D3/D4): docs/history tree note no longer states plan.md as unconditional');
+  }
+  const TREE_TOKENS = ['frozen at Gate 2', 'plan.md is opt-in', 'cell is the micro-plan'];
+  for (const token of TREE_TOKENS) {
+    if (!agentsBlockText.includes(token)) {
+      fail(`skills/bee-hive/templates/AGENTS.block.md: docs/history tree note missing "${token}"`);
+    } else {
+      ok(`skills/bee-hive/templates/AGENTS.block.md: docs/history tree note carries "${token}"`);
+    }
+  }
+
+  // (g) D3/D4: AGENTS.block.md critical rule 9 ("Lanes scale ceremony, never
+  // memory") must explicitly tie the tiny/small no-plan.md shapes to D3/D4,
+  // so the scribing-capture obligation is legible even when a lane produced
+  // no plan.md at all.
+  if (!agentsBlockText.includes('whether or not the lane produced a `plan.md` (D3/D4)')) {
+    fail('skills/bee-hive/templates/AGENTS.block.md: critical rule 9 missing the D3/D4 tie ("whether or not the lane produced a `plan.md` (D3/D4)")');
+  } else {
+    ok('skills/bee-hive/templates/AGENTS.block.md: critical rule 9 ties lanes-scale-ceremony to D3/D4');
+  }
+}
+
 // Sentinel: prove the checker bites. A synthetic gate surface missing the tokens
 // (and carrying a banned phrase) MUST be flagged by the same predicates.
 const sentinelBad = 'Present Gate X, then verbatim ask. The safety floor is absolute.';

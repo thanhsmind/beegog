@@ -98,6 +98,11 @@ import {
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree } from './lib/worktree-store.mjs';
 import { prepareDispatch } from './lib/dispatch-prepare.mjs';
+import {
+  classifyNativeTransport,
+  NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE,
+  NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY,
+} from './lib/dispatch-guard.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
@@ -2523,7 +2528,7 @@ function doctorHookHandlerFilenames(commands) {
   return [...files];
 }
 
-function doctorCodexVersion() {
+export function doctorCodexVersion() {
   try {
     const result = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 5000 });
     if (result.error || typeof result.status !== 'number' || result.status !== 0) {
@@ -3113,6 +3118,194 @@ function handleDoctorAttest(root, flags) {
   };
 }
 
+// ─── native transport capability probe (codex-native-transport D3/D4,
+// advisor Δ2/R3 — binding): a version+config-scoped record of whether the
+// installed codex-cli can accept a native spawn_agent model override,
+// mirroring the g22-3 doctor-attest pattern above (same validity-leg
+// discipline: any single failed leg invalidates the whole record, never
+// partially trusted) but stored in its OWN separate gitignored file —
+// doctor-attest's 3 legs (hooks hash, codex version, repo identity) cannot
+// see codex FEATURE/config changes, so this record needs a 4th leg
+// (config_scope_hash) alongside version+identity. Never merged into
+// doctor-attest.json (Δ2, binding: attest is a human-reviewed /hooks trust
+// vouching, this is a machine-observed capability fact — different
+// questions, different files).
+//
+// Evidence is produced by `codex features list` (read-only, safe against
+// the real environment — it lists, it never sets) and, for the actual
+// override-spawn acceptance leg, the g22-6 canary harness (cnt-5) running
+// under an ISOLATED per-run CODEX_HOME (D4: bee never flips flags on the
+// user's real config). This cell (cnt-2) only defines the record shape,
+// the writer cnt-5 calls with its canary evidence, and the reader every
+// downstream consumer gates on (readNativeTransportClassification — R3).
+export function nativeTransportProbePath(root) {
+  return path.join(root, '.bee', 'native-transport-probe.json');
+}
+
+const NATIVE_TRANSPORT_PROBE_SCHEMA = 'native-transport-probe/1';
+
+// The feature/config scope this probe cares about (D3a/Δ2-amended,
+// decisions c0cba64e/760e9b05 — authoritative): the hash covers ALL FOUR
+// verdict-determining flags — multi_agent, multi_agent_v2 (both directly
+// observable via `codex features list`, doctorCodexFeaturesList below —
+// D3a made base multi_agent a determinant too, via the external_cli_only
+// trigger, so it must be hashed or an unhashed multi_agent toggle would
+// leave a stale verdict standing) plus hide_spawn_agent_metadata and
+// tool_namespace (config.toml-only settings the canary configures inside
+// its isolated CODEX_HOME and cannot be independently re-observed later
+// without re-running the canary — included in the schema/hash for
+// completeness and provenance, but honestly excluded from the LIVE
+// re-check in readNativeTransportClassification below, which only has a
+// re-observation surface for the first two).
+const NATIVE_TRANSPORT_SCOPE_KEYS = ['multi_agent', 'multi_agent_v2', 'hide_spawn_agent_metadata', 'tool_namespace'];
+
+function nativeTransportScopeFromEvidence(evidence) {
+  const scope = {};
+  for (const key of NATIVE_TRANSPORT_SCOPE_KEYS) {
+    scope[key] = evidence && typeof evidence === 'object' && key in evidence ? evidence[key] : null;
+  }
+  return scope;
+}
+
+export function nativeTransportConfigScopeHash(scope) {
+  const flat = scope && typeof scope === 'object' ? scope : {};
+  const keys = Object.keys(flat).sort();
+  return crypto.createHash('sha256').update(JSON.stringify(flat, keys)).digest('hex');
+}
+
+// Read-only `codex features list` — the same tolerance for a subprocess call
+// as doctorCodexVersion() above (identical failure handling: binary absent,
+// non-zero exit, or a hung call all degrade to null rather than throwing).
+// Never mutates codex state; safe to run against the user's real CODEX_HOME.
+export function doctorCodexFeaturesList() {
+  try {
+    const result = spawnSync('codex', ['features', 'list'], { encoding: 'utf8', timeout: 5000 });
+    if (result.error || typeof result.status !== 'number' || result.status !== 0) {
+      return null;
+    }
+    const flags = {};
+    for (const rawLine of (result.stdout || '').split('\n')) {
+      const line = rawLine.trimEnd();
+      const match = /^(\S+)\s+(.+?)\s+(true|false)\s*$/.exec(line);
+      if (match) {
+        flags[match[1]] = { maturity: match[2].trim(), enabled: match[3] === 'true' };
+      }
+    }
+    return flags;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * writeNativeTransportProbe(root, { codexVersion, evidence }) — the writer
+ * cnt-5's canary calls after it runs. `evidence` carries every raw
+ * observation: { multi_agent, multi_agent_v2, hide_spawn_agent_metadata,
+ * tool_namespace, override_spawn_accepted } (D3a/Δ2-amended). The
+ * classification (classifyNativeTransport, dispatch-guard.mjs, pure) and the
+ * config_scope hashed for the 3rd validity leg (the 4 verdict-determining
+ * flags, Δ2-amended) are BOTH derived from this single evidence object —
+ * one source, so classification and hash can never independently drift the
+ * way two separately-passed parameters could. Stamps the remaining validity
+ * legs (repo identity, codex version) at write time and stores atomically.
+ * Returns the written record.
+ */
+export function writeNativeTransportProbe(root, { codexVersion = null, evidence = null } = {}) {
+  const configScope = nativeTransportScopeFromEvidence(evidence);
+  const record = {
+    schema: NATIVE_TRANSPORT_PROBE_SCHEMA,
+    at: new Date().toISOString(),
+    codex_version: codexVersion || null,
+    repo_identity: doctorRepoIdentity(root),
+    config_scope: configScope,
+    config_scope_hash: nativeTransportConfigScopeHash(configScope),
+    evidence: evidence || null,
+    classification: classifyNativeTransport(evidence),
+  };
+  writeJsonAtomic(nativeTransportProbePath(root), record);
+  return record;
+}
+
+/**
+ * readNativeTransportClassification(root) — R3 (binding), the ONE reader
+ * every downstream consumer (cnt-3's prepare, cnt-4's guard) gates on.
+ * Applies the validity legs in order — repo identity, codex version,
+ * config-scope integrity, then a live re-check of the codex-observable
+ * subset of the scope — and returns `native_budget_only` the moment any leg
+ * fails, or the record is missing/malformed. D3: unknown/absent evidence
+ * stays inert until proven on the host's actual build.
+ *
+ * Returns { classification, valid, reason, record }: `classification` is
+ * the single string downstream code should branch on; `valid`/`reason`/
+ * `record` exist so a caller can build the named-reason refusal D1 requires
+ * ("reports its reason; it never silently runs CLI") without re-deriving
+ * the leg logic itself.
+ */
+export function readNativeTransportClassification(root) {
+  const record = doctorSafeReadJson(nativeTransportProbePath(root));
+  if (!record || record.schema !== NATIVE_TRANSPORT_PROBE_SCHEMA) {
+    return { classification: NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY, valid: false, reason: 'no_probe_record', record: null };
+  }
+  const liveIdentity = doctorRepoIdentity(root);
+  if (liveIdentity !== record.repo_identity) {
+    return { classification: NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY, valid: false, reason: 'identity_changed', record };
+  }
+  const liveVersion = doctorCodexVersion().value;
+  if ((liveVersion || null) !== (record.codex_version || null)) {
+    return { classification: NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY, valid: false, reason: 'version_changed', record };
+  }
+  const recomputedHash = nativeTransportConfigScopeHash(record.config_scope);
+  if (recomputedHash !== record.config_scope_hash) {
+    return { classification: NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY, valid: false, reason: 'config_scope_corrupt', record };
+  }
+  const liveFlags = doctorCodexFeaturesList();
+  if (liveFlags) {
+    const scope = record.config_scope || {};
+    const liveMultiAgent = liveFlags.multi_agent ? liveFlags.multi_agent.enabled : null;
+    const liveMultiAgentV2 = liveFlags.multi_agent_v2 ? liveFlags.multi_agent_v2.enabled : null;
+    if (liveMultiAgent !== (scope.multi_agent ?? null) || liveMultiAgentV2 !== (scope.multi_agent_v2 ?? null)) {
+      return { classification: NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY, valid: false, reason: 'flag_state_changed', record };
+    }
+  }
+  return { classification: record.classification, valid: true, reason: null, record };
+}
+
+// D4 (binding): informational only — this row NAMES the unlock, it never
+// applies it. Bee never writes features.multi_agent_v2 / hide_spawn_agent_
+// metadata into the user's real ~/.codex/config.toml (only the canary's
+// isolated per-run copy does). Deliberately non-blocking, non-degrading —
+// same "informational, never load-bearing" family as codex_version /
+// hooks_observed_this_session / permission_mode / hook_sources / custom_
+// agents (see the doctorOverallStatus comment above).
+export function doctorNativeTransportUnlock(root, liveFeatures) {
+  const probe = readNativeTransportClassification(root);
+  const shipsFlag = !!(liveFeatures && liveFeatures.multi_agent_v2);
+  if (probe.classification === NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE) {
+    return doctorRow(
+      'native_transport_unlock',
+      'ok',
+      { classification: probe.classification, ships_flag: shipsFlag },
+      'native model-override transport is classified native_model_override — no unlock needed.',
+    );
+  }
+  if (probe.classification !== NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY || !shipsFlag) {
+    return doctorRow(
+      'native_transport_unlock',
+      'ok',
+      { classification: probe.classification, ships_flag: shipsFlag },
+      `native transport classification is "${probe.classification}"; this codex-cli install does not ship the multi_agent_v2 feature flag, so there is no unlock to name.`,
+    );
+  }
+  return doctorRow(
+    'native_transport_unlock',
+    'ok',
+    { classification: probe.classification, ships_flag: true },
+    'native model-override transport is classified native_budget_only, but this codex-cli build ships the multi_agent_v2 feature flag (currently disabled). ' +
+      'To unlock native per-agent model override, enable `features.multi_agent_v2 = true` and `hide_spawn_agent_metadata = false` in YOUR OWN ~/.codex/config.toml ' +
+      '(D4: bee never writes this for you), then re-run the canary probe to re-classify. This row only names the unlock.',
+  );
+}
+
 // dispatch (g22-1, GH #22 P0-3) — thin flag-parsing wrapper: every actual
 // resolution/payload-construction/prepare-time-record decision lives in
 // lib/dispatch-prepare.mjs's prepareDispatch, so this handler's only job is
@@ -3120,11 +3313,22 @@ function handleDoctorAttest(root, flags) {
 // (a bad --runtime/--kind or a missing --cell throws; a cli-shaped cell
 // resolution or an unconfigured advisor slot is a typed {ok:false} result,
 // not a throw — same discipline as reservations.reserve's conflict result).
+// Native-transport classification (codex-native-transport D1/D3, R3 —
+// binding): this handler is the ONE place that reads
+// readNativeTransportClassification(root) and hands its `.classification`
+// string into prepareDispatch — dispatch-prepare.mjs (lib) deliberately never
+// imports that reader itself (it lives here, in the bin layer; a lib module
+// reaching back into bin would invert the repo's bin->lib import direction —
+// see prepareDispatch's own docstring). Only the codex runtime ever carries a
+// native-transport probe; every other runtime passes classification
+// undefined, which prepareDispatch treats exactly like an unprobed host (D3:
+// "unprobed/unknown => native_budget_only") — inert for every non-native slot.
 function handleDispatchPrepare(root, flags) {
   const runtime = requireFlag(flags, 'runtime');
   const kind = requireFlag(flags, 'kind');
   const cellId = typeof flags.cell === 'string' && flags.cell ? flags.cell : null;
-  const out = prepareDispatch(root, { runtime, kind, cell: cellId });
+  const classification = runtime === 'codex' ? readNativeTransportClassification(root).classification : undefined;
+  const out = prepareDispatch(root, { runtime, kind, cell: cellId, classification });
   return { result: out, text: JSON.stringify(out, null, 2) };
 }
 
@@ -3148,6 +3352,7 @@ function handleDoctor(root, flags) {
       doctorHookSourcesCodex(root),
       doctorSkillsInstalled(root, path.join('.agents', 'skills')),
       doctorCustomAgentsCodex(versionRow.value),
+      doctorNativeTransportUnlock(root, doctorCodexFeaturesList()),
     ];
     attestation = doctorValidateAttestation(root, versionRow.value);
   } else {

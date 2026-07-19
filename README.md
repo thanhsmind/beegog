@@ -80,7 +80,8 @@ You describe what you want. bee routes it by size and risk, then walks it throug
    ▶ GATE 1  "Are these the right decisions?"        ← you approve
            │
         bee-planning           shapes the work: the plan, the approach
-        bee-briefing           writes a human-readable implement plan (bigger work)
+        bee-briefing           writes a human-readable implement plan
+                                (standard: on-demand; high-risk: always)
            ▼
    ▶ GATE 2  "Is this the right thing, at the right size?"   ← you approve
            │
@@ -122,7 +123,7 @@ You describe what you want. bee routes it by size and risk, then walks it throug
 
 Each gate is a single plain-language question with the machine detail linked, not dumped. You must be able to **restate what you're approving in your own words** — a gate you can't restate is worse than no gate.
 
-Which artifacts get written scales with the work (decision 0009): a small/standard feature produces just `CONTEXT.md` + `plan.md`; separate `discovery.md` / `approach.md` / `implement-plan.md` files appear only for deeper research (L2+) or `high-risk` work. No more four documents restating the same "current state".
+Which artifacts get written scales with the work: `tiny`/`spike` write no `plan.md` at all — the cell is the micro-plan; `small` defaults to a logged scoping synthesis, with `plan.md` opt-in only when a durable multi-slice doc is genuinely needed; `standard`/`high-risk` produce `CONTEXT.md` + `plan.md` as a matter of course. Separate `discovery.md` / `approach.md` / `implement-plan.md` files appear only for deeper research (L2+) or `high-risk` work (decision 0009). No more four documents restating the same "current state".
 
 ---
 
@@ -214,12 +215,12 @@ Then **Gate 4**: P1 > 0 blocks merge (fix cells run through swarming, review re-
 
 ## Lanes: ceremony scales with risk
 
-Every planning pass counts mechanical **risk flags** (auth · authorization · data model · audit/security · external systems · public contracts · cross-platform · existing covered behavior · weak proof · multi-domain) and picks the smallest honest lane:
+Every planning pass counts mechanical **risk flags** (auth · authorization · data model · audit/security · external systems · public contracts · cross-platform · changes behavior an existing test asserts (a covered contract must change) · the change requires weakening, deleting, or replacing existing proof · multi-domain) and picks the smallest honest lane. **Lane file caps count product files only** — production source, tests, and runtime config the behavior change itself must touch; never counted are `.bee/**`, `docs/**`, plans/briefs/reports, or generated projections/manifests:
 
 | Lane | When | What it gets |
 |---|---|---|
-| `tiny` | 0–1 flags, ≤2 files, one direct task | one cell, one-line trace, self-review + done-report (no auto reviewer) |
-| `small` | 0–1 flags, ≤3 files, no gray areas | a cell or two, optional mini-brief, self-checks only (no auto reviewer) |
+| `tiny` | 0–1 flags, ≤2 product files, one direct task | one cell — the cell is the micro-plan, no `plan.md` — one-line trace, self-review + done-report (no auto reviewer) |
+| `small` | 0–1 flags, ≤3 product files, no gray areas | logged scoping synthesis + a cell or two; plan.md is opt-in, only when a durable multi-slice doc is genuinely needed; self-checks only (no auto reviewer) |
 | `standard` | 2–3 flags, or story-sized behavior | full cells + must_haves; a review session runs only if you ask for one |
 | `high-risk` | 4+ flags, or any hard-gate flag | mandatory spikes/feasibility proof, strict trace, slower Gate 3; a review session runs only if you ask for one |
 | `spike` | one yes/no question decides if the plan is real | a disposable experiment under `.spikes/`, answers then discards |
@@ -272,8 +273,10 @@ open a session          →   hook prints the bee preamble       (reads .bee/sta
 "add feature X"         →   bee-hive routes by scope + risk
                             bee-exploring locks decisions      docs/history/X/CONTEXT.md
 you approve GATE 1      →
-                            bee-planning shapes the work       plan.md (+ approach, if earned)
-                            bee-briefing renders the brief     implement-plan.md (bigger work)
+                            bee-planning shapes the work       plan.md (standard/high-risk; small opt-in;
+                                                                tiny/spike none — the cell is the micro-plan)
+                            bee-briefing renders the brief     implement-plan.md (standard: on-demand;
+                                                                high-risk: always)
 you approve GATE 2      →
                             bee-validating proves feasibility  reality gate, spikes, cells
 you approve GATE 3      →   ← before this, source writes are DENIED by the write-guard

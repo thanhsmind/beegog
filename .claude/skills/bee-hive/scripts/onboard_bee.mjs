@@ -123,6 +123,11 @@ const GITIGNORE_BLOCK_PATTERNS = [
   // machine-local runtime state, never tracked (a different checkout or a
   // re-clone must re-attest, never inherit someone else's attestation).
   ".bee/doctor-attest.json",
+  // Native transport capability probe (codex-native-transport D3/D4, advisor
+  // Δ2): a SEPARATE version+config-scoped machine-observed capability record
+  // — never doctor-attest.json, never tracked (see bee.mjs's
+  // readNativeTransportClassification/writeNativeTransportProbe).
+  ".bee/native-transport-probe.json",
 ];
 
 const HOOK_FILENAMES = [

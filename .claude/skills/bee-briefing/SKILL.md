@@ -32,7 +32,7 @@ Match the brief to the lane the plan already chose. A tiny fix wearing a 12-sect
 | Lane | Brief |
 |---|---|
 | `tiny` / `spike` | **none** — the Gate chat layer and `plan.md`'s direct note are the record. Do not create the file. |
-| `small` | **none by default**; render the ~15-line **mini-brief** (Goal · Scope in/out · Affected files · Validation · one-line Risk · one-line Rollback, template in the reference) only when the user asks for a consolidated doc |
+| `small` | **none by default**; render the ~15-line **mini-brief** (Goal · Scope in/out · Affected files · Validation · one-line Risk · one-line Rollback, template in the reference) only when a `plan.md` exists (D4 — `plan.md` is opt-in for small) and the user asks for a consolidated doc |
 | `standard` | **on-demand** — default is `plan.md` + the Gate 2 chat layer; render the **full template (empty sections dropped**, never "N/A") when the user asks or the slice spans multiple domains. Do not auto-generate it for a single-slice standard fix |
 | `high-risk` | **mandatory** — full template; **Rollback and Security/Permissions sections are mandatory** and must have real content |
 
@@ -81,7 +81,7 @@ The brief is the human-layer **projection** of the truth artifacts (extends D12,
 
 - **Approval happens on the brief, but the brief is never the sole change site.** When the human comments on `implement-plan.md` ("change decision X", "add XLSX"), the change flows into the truth artifacts first — `bee-planning` revises `plan.md`; a locked decision is superseded via `node .bee/bin/bee.mjs decisions supersede` and `CONTEXT.md` updated — THEN the brief re-renders so all documents agree. Hand-editing the brief alone creates a render that disagrees with its own source.
 - **Review Status is real state.** Frontmatter `status` mirrors the gates: `Draft` (rendering) → `Ready for Review` (presented at a gate) → `Approved` (gate passed) → `Needs Revision`, and → `Shipped` when the walkthrough is written after Gate 4. Approved at Gate 2 covers the shape; the Validation Plan section is patched with real evidence after validating, before Gate 3.
-- **Drift rule (prose in v1).** If a source artifact changes after the brief was approved, set `status: Needs Revision` and re-render before the next gate. (A mechanical `bee_status` warning on source-hash drift is a recorded follow-up, not required for v1.)
+- **Drift rule (prose in v1, D9).** Since D1 freezes `plan.md` content at Gate 2, the plan itself can no longer drift once approved — drift now fires on **cell changes only**: if the current-slice cells change after the brief was approved, set `status: Needs Revision` and re-render before the next gate. (A mechanical `bee_status` warning on source-hash drift is a recorded follow-up, not required for v1.)
 
 ## 4. Gate Presentation
 

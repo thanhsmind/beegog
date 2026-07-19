@@ -24,11 +24,11 @@ Start with `node .bee/bin/bee.mjs status --json`. If onboarding is missing or st
 ## Required Inputs
 
 - `docs/history/<feature>/CONTEXT.md`
-- `docs/history/<feature>/plan.md` — approved at Gate 2 and enriched to `artifact_readiness: implementation-ready`
+- `docs/history/<feature>/plan.md` — approved and **frozen at Gate 2** (D1): its content sections are immutable once `approved_gates.shape` is set, so what validating reads is byte-identical to what the human approved
 - the discovery and approach content: `docs/history/<feature>/discovery.md` and `approach.md` **if they exist**; otherwise the `## Discovery` and `## Approach` sections folded into `plan.md` (decision 0009 — separate files are written only for L2+ discovery or high-risk lanes)
-- current-work cells: `node .bee/bin/bee.mjs cells list --feature <feature>`
+- current-slice cells exist: `node .bee/bin/bee.mjs cells list --feature <feature>` (D2 — the current slice lives only in cells; there is no separate slice document)
 
-If `plan.md` is absent, unapproved, or its `artifact_readiness` is not `implementation-ready`, stop and return to bee-planning. Never validate an unapproved shape. A missing `discovery.md`/`approach.md` is **not** a failure when `plan.md` carries the equivalent sections — read those instead; stop only if neither the files nor the sections exist and the plan genuinely lacks discovery/approach content.
+If `plan.md` is absent, unapproved, or the current-slice cells do not exist, stop and return to bee-planning. Never validate an unapproved shape. A missing `discovery.md`/`approach.md` is **not** a failure when `plan.md` carries the equivalent sections — read those instead; stop only if neither the files nor the sections exist and the plan genuinely lacks discovery/approach content.
 
 ## Operating Contract
 
