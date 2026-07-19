@@ -6,12 +6,13 @@ Open this when the compact worker loop needs exact fields or commands.
 
 The orchestrator supplies: agent nickname (reservation identity), assigned cell id, feature name, paths to `CONTEXT.md` and `plan.md`, global constraints, model tier, and the status-token protocol. Nothing else arrives — if the cell is not executable from that plus the repo, return `[BLOCKED]`; do not guess.
 
+The assigned cell arrives **already claimed** under the worker's nickname — the orchestrator claims before spawning (D1), never the worker. No literal session id is ever handed down in the prompt (D3): reservation and claim verbs resolve the session from `CLAUDE_CODE_SESSION_ID` in the worker's own environment when one is needed, never from prompt text.
+
 ## Expanded Commands
 
 ```text
 node .bee/bin/bee.mjs status --json
 node .bee/bin/bee.mjs cells show --id <id>
-node .bee/bin/bee.mjs cells claim --id <id> --worker "<name>"
 node .bee/bin/bee.mjs reservations reserve --agent "<name>" --cell "<id>" --path "<path>" --ttl 3600
 node .bee/bin/bee.mjs cells verify --id <id> --command "<cmd>" --passed true|false [--output-file <f>]
 node .bee/bin/bee.mjs cells cap --id <id> [--outcome TEXT] [--files a,b] [--behavior-change] [--evidence-stdin] [--deviations-file F] [--friction TEXT]
@@ -27,14 +28,15 @@ BEE_AGENT_NAME="<name>" git add src/foo.ts
 
 ## Assigned Cell Check
 
-For the one assigned cell, confirm before claiming:
+For the one assigned cell, confirm before starting (D1 — the orchestrator claims before spawning; the worker only validates, never claims):
 
-- status is `open` and all `deps` are capped
+- `cells show --id <id>` shows `status: "claimed"` with `trace.worker` matching your nickname — a different worker, no claim, or any other status is not yours to touch
+- all `deps` are capped
 - `files` scope is clear and reservable
 - the `verify` command is concrete and runnable in this repo
 - referenced decision IDs resolve in `CONTEXT.md` and do not contradict the action
 
-`[NOOP]` if the cell is missing or already done; `[BLOCKED]` for ambiguity or a locked-decision conflict.
+`[NOOP]` if the cell is missing or already done; `[BLOCKED]` for ambiguity, a locked-decision conflict, or an ownership mismatch.
 
 ## Trace Field Tiers By Lane
 
