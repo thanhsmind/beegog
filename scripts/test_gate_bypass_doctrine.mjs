@@ -128,6 +128,123 @@ for (const { file, gate, tokens } of GATE_SKILLS) {
   }
 }
 
+// Lane-ceremony-v3 doctrine (D3/D4/D5/D6/D7): the bee-hive surfaces (SKILL.md,
+// go-mode.md, routing-and-contracts.md) must restate the SAME lane doctrine as
+// the already-rewritten bee-planning/SKILL.md (lcv3-1) — never the old
+// shrunken-feature-plan / unconditional-plan-caps wording. Consistency across
+// restatements is the point of this cell.
+{
+  const hiveAbs = path.join(REPO_ROOT, 'skills/bee-hive/SKILL.md');
+  const goModeAbs = path.join(REPO_ROOT, 'skills/bee-hive/references/go-mode.md');
+  const routingAbs = path.join(REPO_ROOT, 'skills/bee-hive/references/routing-and-contracts.md');
+  let hiveText = '';
+  let goModeText = '';
+  let routingText = '';
+  try {
+    hiveText = fs.readFileSync(hiveAbs, 'utf8');
+  } catch {
+    fail('skills/bee-hive/SKILL.md: unreadable — lane-ceremony-v3 hive doctrine lives here');
+  }
+  try {
+    goModeText = fs.readFileSync(goModeAbs, 'utf8');
+  } catch {
+    fail('skills/bee-hive/references/go-mode.md: unreadable — lane-ceremony-v3 go-mode doctrine lives here');
+  }
+  try {
+    routingText = fs.readFileSync(routingAbs, 'utf8');
+  } catch {
+    fail('skills/bee-hive/references/routing-and-contracts.md: unreadable — lane-ceremony-v3 routing doctrine lives here');
+  }
+
+  // (a) D7: old narrow-flag wordings must be gone from bee-hive/SKILL.md.
+  const OLD_FLAG_PHRASES = ['existing covered behavior', 'weak proof around the area'];
+  for (const phrase of OLD_FLAG_PHRASES) {
+    if (hiveText.includes(phrase)) {
+      fail(`skills/bee-hive/SKILL.md (D7): still carries the retired flag wording "${phrase}" — narrowed per D7`);
+    } else {
+      ok(`skills/bee-hive/SKILL.md (D7): retired flag wording "${phrase}" absent`);
+    }
+  }
+
+  // (b) D7: new narrowed wordings present, matching bee-planning verbatim.
+  const NEW_FLAG_TOKENS = [
+    'changes behavior an existing test asserts',
+    'weakening, deleting, or replacing existing proof',
+  ];
+  for (const token of NEW_FLAG_TOKENS) {
+    if (!hiveText.includes(token)) {
+      fail(`skills/bee-hive/SKILL.md (D7): missing narrowed flag wording "${token}"`);
+    } else {
+      ok(`skills/bee-hive/SKILL.md (D7): narrowed flag wording "${token}" present`);
+    }
+  }
+
+  // (c) D6: product-files-only carve-out present.
+  if (!hiveText.includes('product files only')) {
+    fail('skills/bee-hive/SKILL.md (D6): missing "product files only" carve-out — lane caps must count product files only');
+  } else {
+    ok('skills/bee-hive/SKILL.md (D6): "product files only" carve-out present');
+  }
+
+  // (d) D3/D4: lane table states tiny has no plan.md, small's plan.md is opt-in.
+  const LANE_TOKENS = [
+    { token: 'cell is the micro-plan', d: 'D3' },
+    { token: 'plan.md is opt-in', d: 'D4' },
+    { token: 'logged scoping synthesis', d: 'D4' },
+  ];
+  for (const { token, d } of LANE_TOKENS) {
+    if (!hiveText.includes(token)) {
+      fail(`skills/bee-hive/SKILL.md (${d}): missing lane-table wording "${token}"`);
+    } else {
+      ok(`skills/bee-hive/SKILL.md (${d}): "${token}" present`);
+    }
+  }
+
+  // (e) D5: go-mode's fast-path line describes preview-then-merged-gate, and
+  // AO14's dispatched execution worker — not plan.md-first / solo-in-session.
+  if (!goModeText.includes('previewed before persist')) {
+    fail('skills/bee-hive/references/go-mode.md (D5): fast-path line missing "previewed before persist"');
+  } else {
+    ok('skills/bee-hive/references/go-mode.md (D5): fast-path line describes preview-before-persist');
+  }
+  if (goModeText.includes('solo in-session execution')) {
+    fail('skills/bee-hive/references/go-mode.md (AO14): still carries retired "solo in-session execution" wording — tiny/small execute via one dispatched execution worker');
+  } else {
+    ok('skills/bee-hive/references/go-mode.md (AO14): retired "solo in-session execution" wording absent');
+  }
+  if (!goModeText.includes('one dispatched execution worker')) {
+    fail('skills/bee-hive/references/go-mode.md (AO14): fast-path line missing "one dispatched execution worker"');
+  } else {
+    ok('skills/bee-hive/references/go-mode.md (AO14): "one dispatched execution worker" present');
+  }
+
+  // (f) D1: STEP 2/3 and the Gate 2 revise line no longer restate the retired
+  // requirements-only -> implementation-ready mutation.
+  if (goModeText.includes('plan.md enriched to implementation-ready')) {
+    fail('skills/bee-hive/references/go-mode.md (D1): STEP 3 still carries the retired "plan.md enriched to implementation-ready" wording');
+  } else {
+    ok('skills/bee-hive/references/go-mode.md (D1): retired "plan.md enriched to implementation-ready" wording absent');
+  }
+  if (goModeText.includes('still `requirements-only`')) {
+    fail('skills/bee-hive/references/go-mode.md (D1): Gate 2 revise line still carries the retired "still requirements-only" wording');
+  } else {
+    ok('skills/bee-hive/references/go-mode.md (D1): retired "still requirements-only" wording absent');
+  }
+
+  // (g) D1/D2: routing-and-contracts.md Chaining Contract / working-files tree
+  // no longer state plan.md as unconditional or requirements-only -> implementation-ready.
+  if (routingText.includes('requirements-only → implementation-ready')) {
+    fail('skills/bee-hive/references/routing-and-contracts.md (D1): Chaining Contract still carries the retired "requirements-only → implementation-ready" arrow');
+  } else {
+    ok('skills/bee-hive/references/routing-and-contracts.md (D1): retired "requirements-only → implementation-ready" arrow absent');
+  }
+  if (!routingText.includes('frozen at Gate 2')) {
+    fail('skills/bee-hive/references/routing-and-contracts.md (D1): missing "frozen at Gate 2" wording');
+  } else {
+    ok('skills/bee-hive/references/routing-and-contracts.md (D1): "frozen at Gate 2" wording present');
+  }
+}
+
 // Sentinel: prove the checker bites. A synthetic gate surface missing the tokens
 // (and carrying a banned phrase) MUST be flagged by the same predicates.
 const sentinelBad = 'Present Gate X, then verbatim ask. The safety floor is absolute.';
