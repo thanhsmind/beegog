@@ -759,7 +759,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-swarming/references/swarming-reference.md",
-      "sha256": "7d128f1e0c3ec170029a3863d816a4c7446a4937b678f7bb1fa0bd89c8d40bc2",
+      "sha256": "897b4e1af57f39e30c969a2d1f12645ba171e88b2cebe887f69bbad09a2276ba",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-swarming/references/swarming-reference.md"
@@ -1508,7 +1508,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-swarming/references/swarming-reference.md",
-      "sha256": "7d128f1e0c3ec170029a3863d816a4c7446a4937b678f7bb1fa0bd89c8d40bc2",
+      "sha256": "1b69b1c07f1f47ac7050fb99fbb2404c9cbf71a53df3b130625ea21a8b09a76c",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-swarming/references/swarming-reference.md"

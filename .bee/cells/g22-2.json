@@ -25,19 +25,29 @@
     "skills/bee-hive/templates/lib/dispatch-prepare.mjs",
     "skills/bee-swarming/references/swarming-reference.md"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "read_first": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "g22-2-worker",
+    "outcome": "Every dispatch record now carries the honest economics split via one shared deriveEconomics (channel field, legacy keys untouched); codex-native never claims a pinned model; prepare aligned and corrected",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/dispatch-guard.mjs",
+      "skills/bee-hive/templates/lib/dispatch-prepare.mjs",
+      "hooks/bee-model-guard.mjs",
+      "hooks/test_model_guard.mjs",
+      "scripts/test_dispatch_prepare.mjs",
+      "skills/bee-swarming/references/swarming-reference.md"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null
+    "capped_at": "2026-07-18T23:56:46.129Z",
+    "behavior_change": true,
+    "verification_evidence": "# g22-2 — done report (dispatch economics split)\n\nWorker: g22-2-worker (sonnet, isolated worktree, rebased onto e784665).\nWorker commit `dd0f0c2`, merged into main clean. 2026-07-19.\n\n## What shipped\n- `deriveEconomics()` in dispatch-guard.mjs (single shared mapping, 6 copies\n  mirrored): claude+param → pinned (effective_model = the param — corrects\n  g22-1's hardcoded null); claude marker-only → unverified (corrects g22-1's\n  inherited-or-unknown, now reserved for codex); codex-native →\n  inherited-or-unknown ALWAYS; cli-exec → unverified, requested_model null.\n- logDispatch gains the fields additively (allow AND deny paths); legacy\n  transport/model/tier/subagent_type untouched (advisor R3 honored).\n- dispatch-prepare uses the shared helper; test_dispatch_prepare grew to\n  17/17 incl. the corrected semantics.\n- test_model_guard extended with 5 per-branch economics rows; all legacy\n  rows green. swarming-reference gains the economics paragraph.\n\n## Verification (fresh command output)\nIndependent orchestrator re-run on main post-merge: model_guard ALL PASS;\ndispatch_prepare 17/17; lib_mirror 4/4; manifest 362 match →\nG222_VERIFY_GREEN.\n\n## Diff\n22 files changed, 1112 insertions(+), 139 deletions(-).\n",
+    "verify_output": "Independent re-run on main post-merge: model_guard ALL PASS incl. 5 new economics rows; dispatch_prepare 17/17; lib_mirror 4/4; manifest 362 match. Worker commit dd0f0c2.",
+    "verify_passed": true,
+    "claimed_at": "2026-07-18T23:44:34.117Z",
+    "verify_command": "node hooks/test_model_guard.mjs && node scripts/test_dispatch_prepare.mjs && node scripts/test_lib_mirror.mjs",
+    "verified_at": "2026-07-18T23:56:46.077Z"
   }
 }

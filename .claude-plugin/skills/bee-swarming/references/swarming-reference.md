@@ -10,7 +10,6 @@ Load after Gate 3 approval, before spawning the first wave.
 4. Assign one cell per worker, build each prompt from the template below, pick and state the model tier.
 5. Record workers in `.bee/state.json`, spawn the wave, tend, repeat.
 
-<!-- bee:only claude -->
 ## Native Worktree Integration Transaction
 
 This is the orchestrator-owned goal-check for an eligible Claude Code native
@@ -113,11 +112,9 @@ Acceptance tests use deterministic temporary Git repositories to inject identity
 mismatch, out-of-scope diff, merge conflict, targeted red, post-commit full red,
 `[BLOCKED]`, `[HANDOFF]`, abandonment, cleanup suppression, and revert behavior.
 No live checkout is used as a fault-injection target.
-<!-- bee:end -->
 
 ## Runtime Spawn Mechanics (side by side)
 
-<!-- bee:only claude -->
 | | Claude Code |
 |---|---|
 | Spawn | `Agent` tool, one call per worker; put the worker prompt in `prompt`; set `run_in_background: true` so the whole wave runs in parallel (send all spawns of a wave in one message) |
@@ -127,40 +124,10 @@ No live checkout is used as a fault-injection target.
 | Harness assist | `bee-chain-nudge` hook fires on SubagentStop: collect the status, update the cell, check reservations |
 | Isolation guarantee | Fresh context per Agent call; include only the contract fields |
 | Subagent type (W3, AO5/AO10/AO11) | `subagent_type: "bee-gather"`/`"bee-extract"`/`"bee-review"` for generation/extraction/review, when the rendered agent exists (`.claude/agents/bee-*.md`); `ceiling`, and any tier whose slot is cli-shaped or otherwise unrendered, use the runtime default (`general-purpose`) |
-<!-- bee:end -->
-<!-- bee:only codex -->
-| | Codex |
-|---|---|
-| Spawn | `spawn_agent({task_name: "<stable-name>", message: "<WORKER_PROMPT>", fork_turns: "none"})` (ORCH-01) |
-| Model tier | `config.models.codex[tier]` if set; today Codex cannot select a per-agent model → tier is enforced as a read budget + output cap in the prompt |
-| Result collection | Status tokens arrive in the parent thread; use `wait_agent(..., timeout_ms=60000)` only when a specific result is needed |
-| Follow-up / rescue | `followup_task({target: "<agent id or task name>", message: "..."})` to continue the same agent; a fresh `spawn_agent` only for a genuinely new task — no routine `send_input(...)` mid-flight |
-| Harness assist | None — the tend loop in this skill is the nudge |
-| Isolation guarantee | `fork_turns: "none"`; never fork the parent history for routine cells (ORCH-02) |
-| Subagent type (W3, AO5/AO10/AO11) | No per-agent subagent type — the tier is enforced as a read budget + output cap in the worker prompt regardless of what is spawned (documented asymmetry, not parity) |
-<!-- bee:end -->
 
 On both runtimes the integrity rails are identical because they live in the helpers: `bee.mjs cells cap` refuses without a verify pass, and `bee.mjs reservations reserve` reports conflicts the worker must turn into `[BLOCKED]`.
-<!-- bee:only claude -->
 On Claude Code, `bee-model-guard` additionally denies pairing a `[bee-tier: generation|extraction|review]` marker with `subagent_type: "general-purpose"` (`generic-type-denied`) — the pinned type above is not optional guidance, it is enforced at dispatch.
-<!-- bee:end -->
 
-<!-- bee:only codex -->
-### Native Codex timeout interval
-
-A `wait_agent` result with no completion is an **empty wait**, not a worker
-failure. Never follow an empty wait directly with `wait_agent`; authority,
-urgency, and no-chatter instructions create no exception. Before a later bounded
-wait, continue material task-local work when any remains; otherwise take exactly
-one `list_agents` snapshot. Then send one concise commentary update naming both
-the live agent state and the next action; only then may a later bounded wait run.
-No-op work, repeated state reads, hidden reasoning, generic commentary, or
-commentary alone do not qualify. The timeout never licenses interrupt, duplicate
-dispatch, claim release, or reservation release: every running agent, claim, and
-reservation stays owned. Do not poll files or scratchpads for harness-managed
-native agents. External process and artifact polling stays governed by External
-Executors below and is outside this native-agent rule.
-<!-- bee:end -->
 
 ## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
 
@@ -271,9 +238,7 @@ Startup:
 ```
 
 The `Advisor` line is omitted entirely — a session whose config has no advisor slot dispatches byte-identical prompts to today — whenever no advisor resolves, or the advisor's model name literally matches the worker's own resolved model (the one honest no-op). Ceiling-tier workers are no longer a skip condition — config is the authority and the orchestrator does not second-guess it with a strength ladder (AO5). The same-model no-op is the orchestrator's, run at dispatch, never left to the worker (AO4 + AO5). When present, `<TRANSPORT>` states the proven transport verbatim, matching what bee-executing's Advisor Consult section tells the worker to run:
-<!-- bee:only claude -->
 for a **model-shaped** advisor, `your own Agent tool, model param <advisor-model>, description starting exactly "advisor-consult <CELL_ID>: <advisor-model>"` (fallback: headless `claude -p --model <advisor-model>`);
-<!-- bee:end -->
 for a **cli-shaped** advisor, `<the configured command>, evidence bundle on stdin` (External Executors output-capture discipline, above).
 
 Never include session history, other cells, or the orchestrator's reasoning. If a worker needs more than this contract, the cell failed cold-pickup review — route the gap back, do not widen the prompt with transcript.

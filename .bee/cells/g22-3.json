@@ -24,14 +24,14 @@
     ".claude/skills/bee-hive/templates/*",
     ".agents/skills/bee-hive/templates/*"
   ],
-  "status": "open",
+  "status": "claimed",
   "deps": [
     "g22-1"
   ],
   "decisions": [],
   "read_first": [],
   "trace": {
-    "worker": null,
+    "worker": "g22-3-worker",
     "outcome": null,
     "files_changed": [],
     "deviations": [],
@@ -40,6 +40,7 @@
     "behavior_change": false,
     "verification_evidence": null,
     "verify_output": null,
-    "verify_passed": null
+    "verify_passed": null,
+    "claimed_at": "2026-07-18T23:44:34.061Z"
   }
 }
