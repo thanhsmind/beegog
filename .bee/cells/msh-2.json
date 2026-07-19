@@ -1,0 +1,62 @@
+{
+  "id": "msh-2",
+  "lane": "high-risk",
+  "title": "cells claim re-backed by O_EXCL claim file + session-id self-derivation (D1+D3)",
+  "feature": "multi-session-hardening",
+  "files": [
+    "skills/bee-hive/templates/lib/cells.mjs",
+    "skills/bee-hive/templates/lib/claims.mjs",
+    ".bee/bin/lib/cells.mjs",
+    ".bee/bin/lib/claims.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "scripts/test_claim_race.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/multi-session-hardening/CONTEXT.md",
+    "skills/bee-hive/templates/lib/claims.mjs",
+    "skills/bee-hive/templates/lib/cells.mjs:380-430"
+  ],
+  "action": "FREEZE FIRST: run test_lib.mjs + test_bee_cli.mjs green, record output. Per D3: export resolveSessionId({flag}) from claims.mjs — precedence explicit flag -> CLAUDE_CODE_SESSION_ID env -> null; claim-next keeps --session-id. Per D1 (Δ2-amended): claimCell acquires the claim file via claimCellFile FIRST (typed CLAIMED refusal naming owner session + expiry), then mutates cell JSON. claimCellFile session requirement deliberately relaxed: sessionless single-user claims allowed; releaseClaim owner check handles absent session. CORRECTION (plan-check): NO existing release on cap/unclaim — releaseClaim has exactly one caller today (claim-next unwind, cells.mjs:831). REQUIRED: release the claim file on EVERY claim-clearing transition — capCell, unclaimCell, blockCell, dropCell, reopenCell — else a same-session block/drop->reopen->claim self-refuses CLAIMED for the full TTL. Forked-racer scripts/test_claim_race.mjs: N concurrent cells claim --id X -> exactly 1 winner, N-1 typed CLAIMED; plus a claim->block->reopen->claim same-session round-trip proving no self-refusal. Existing rows byte-unchanged (freeze). Manifest --write + --check.",
+  "must_haves": {
+    "truths": [
+      "single-session flow (no env id) still claims successfully",
+      "loser refusal names owner and expiry",
+      "claim-next path unchanged for winners"
+    ],
+    "artifacts": [
+      "test_claim_race.mjs green + deliberate-red run recorded"
+    ],
+    "key_links": [
+      "CONTEXT D1 D3",
+      "critical-patterns 20260716 freeze-first",
+      "20260719 claim-before-spawn"
+    ],
+    "prohibitions": [
+      "no store format change",
+      "no scheduler changes"
+    ]
+  },
+  "verify": "node scripts/test_claim_race.mjs && node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "msh-1"
+  ],
+  "status": "dropped",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "dropped_reason": "moved to worktree beegog--wt--multi-session-hardening per decision ac75fc61 (main ceded to lane-ceremony-v3)"
+  }
+}

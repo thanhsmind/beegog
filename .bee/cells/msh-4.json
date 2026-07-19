@@ -1,0 +1,57 @@
+{
+  "id": "msh-4",
+  "lane": "high-risk",
+  "title": "claim-ownership check on cell mutators + audited force door (D4)",
+  "feature": "multi-session-hardening",
+  "files": [
+    "skills/bee-hive/templates/lib/cells.mjs",
+    ".bee/bin/lib/cells.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/multi-session-hardening/CONTEXT.md",
+    "skills/bee-hive/templates/lib/cells.mjs:426-620"
+  ],
+  "action": "FREEZE FIRST: test_lib + test_bee_cli green recorded. Per D4 (Δ5-amended): recordVerify/capCell/blockCell/unclaimCell/reopenCell (+updateCell when claimed) read the live claim file via readClaim/isClaimActive/claimExpiry (claims.mjs:187-207 — compose, do not add readers): live unexpired claim with session differing from caller (resolveSessionId) -> typed refusal naming owner+expiry; expired, absent, sessionless, or matching -> proceed unchanged. --force-ownership bypasses with an audit record appended to trace.ownership_overrides (NEW append-only key — NEVER trace.deviations: capCell replaces deviations wholesale at cells.mjs:531; the ...trace spread at :528 preserves unknown keys). Forced unclaim also clears-or-adopts the claim file (releaseClaim or adoptClaim) so the forced-open cell is claimable. Test rows: all three branches + force-audit row surviving a subsequent cap + forced-unclaim reclaim. Existing rows byte-unchanged. Manifest --write + --check.",
+  "must_haves": {
+    "truths": [
+      "single-session use never hits a refusal",
+      "refusal names owner and expiry",
+      "force always leaves an audit line in the trace"
+    ],
+    "artifacts": [
+      "ownership test rows green"
+    ],
+    "key_links": [
+      "CONTEXT D4",
+      "audit row P2-3"
+    ],
+    "prohibitions": [
+      "no throw inside guard-consumed paths (typed returns only)",
+      "no change to cap verify-evidence requirements"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_lib.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "msh-2"
+  ],
+  "status": "dropped",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "dropped_reason": "moved to worktree beegog--wt--multi-session-hardening per decision ac75fc61 (main ceded to lane-ceremony-v3)"
+  }
+}

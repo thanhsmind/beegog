@@ -1,0 +1,70 @@
+{
+  "id": "msh-5",
+  "lane": "high-risk",
+  "title": "throttled heartbeat+lease renewal in hooks; state RMW under lock (D5+D6)",
+  "feature": "multi-session-hardening",
+  "files": [
+    "skills/bee-hive/templates/lib/claims.mjs",
+    ".bee/bin/lib/claims.mjs",
+    "skills/bee-hive/templates/lib/state.mjs",
+    ".bee/bin/lib/state.mjs",
+    "skills/bee-hive/templates/lib/reservations.mjs",
+    ".bee/bin/lib/reservations.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/bee.mjs",
+    "hooks/bee-prompt-context.mjs",
+    "hooks/bee-state-sync.mjs",
+    ".bee/bin/hooks/bee-prompt-context.mjs",
+    ".bee/bin/hooks/bee-state-sync.mjs",
+    "scripts/test_heartbeat_touch.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/multi-session-hardening/CONTEXT.md",
+    "hooks/bee-prompt-context.mjs",
+    "hooks/bee-state-sync.mjs",
+    "skills/bee-hive/templates/lib/claims.mjs:120-160"
+  ],
+  "action": "FREEZE FIRST: test_hook_contracts + test_state_write_concurrency green recorded. Per D5 (Δ3/Δ4-amended): claims.mjs gains heartbeatTouch(root,sessionId) — no-op unless stored heartbeat older than 60s; else refresh heartbeat AND renew leases via NEW same-session-only primitives: renewClaimTTL(root,sessionId) in claims.mjs (per claim: acquireGate skip-if-held per claims.mjs:214-230 — a renewal racing adoptClaim must never revert ownership; rewrite claim file only when its session matches) and renewHoldsBySession(root,sessionId) in reservations.mjs. EVERY store write inside touch goes through withStoreLock in try-once/skip-on-busy mode (LOCK_BUSY -> skip silently; hooks never WAIT on the lock). Wire touch into hooks/bee-prompt-context.mjs + hooks/bee-state-sync.mjs inside their existing fail-open try/catch (session id derived from ctx.payload.session_id, pattern bee-session-init.mjs:49-51; catalog does NOT hash handler bytes — no projection re-render, but hooks/ <-> .bee/bin/hooks/ mirror is enforced by test_lib_mirror). ALSO Δ3: bee-state-sync own state RMW (bee-state-sync.mjs:42-45) goes under the same try-once lock. Per D6 (plan-check C3): the state logical-RMW verbs live in bee.mjs — set/gate/worker add|remove/scribing-run via resolveMutationTarget (bee.mjs:979), stateWorkerMutate (:1151), handleStateGate (:1153-1157) — plus startFeature (state.mjs:1620); wrap each read-mutate-write in withStoreLock(root,state,fn) (CLI verbs WAIT normally). scripts/test_heartbeat_touch.mjs: throttle no-op byte-identical; over-60s refresh + both renewals; touch-throw leaves hook exit green; LOCK_BUSY skip case; renewal-vs-adopt gate case. Documented non-goal (Δ6): idle-session blanket renewal accepted — force door + terminal release are the rescue. Existing suites byte-unchanged and green. Manifest --write + --check.",
+  "must_haves": {
+    "truths": [
+      "hooks remain fail-open (a touch throw never blocks)",
+      "at most one heartbeat write per 60s per session",
+      "state verbs serialized under the lock"
+    ],
+    "artifacts": [
+      "test_heartbeat_touch.mjs green + deliberate-red recorded"
+    ],
+    "key_links": [
+      "CONTEXT D5 D6",
+      "audit rows P2-4 P2-5",
+      "hook-runtime spec (read before editing hooks)"
+    ],
+    "prohibitions": [
+      "no stale-threshold change (900s stays)",
+      "no new hook events registered"
+    ]
+  },
+  "verify": "node scripts/test_heartbeat_touch.mjs && node hooks/test_hook_contracts.mjs && node scripts/test_state_write_concurrency.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "msh-1",
+    "msh-2",
+    "msh-3"
+  ],
+  "status": "dropped",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "dropped_reason": "moved to worktree beegog--wt--multi-session-hardening per decision ac75fc61 (main ceded to lane-ceremony-v3)"
+  }
+}

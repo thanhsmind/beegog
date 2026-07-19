@@ -1,0 +1,58 @@
+{
+  "id": "msh-3",
+  "lane": "high-risk",
+  "title": "reservations RMW under store lock + session auto-derive (D2+D3)",
+  "feature": "multi-session-hardening",
+  "files": [
+    "skills/bee-hive/templates/lib/reservations.mjs",
+    ".bee/bin/lib/reservations.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/bee.mjs",
+    "scripts/test_reservation_race.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/multi-session-hardening/CONTEXT.md",
+    "skills/bee-hive/templates/lib/reservations.mjs"
+  ],
+  "action": "FREEZE FIRST: existing reservation rows in test_lib/test_bee_cli green, record. Per D2: wrap reserve/release/sweep read-check-write bodies in withStoreLock(root,reservations,fn); conflict check runs INSIDE the lock. Per D3: when --session absent, reserve resolves via resolveSessionId (msh-2 helper) so top-level-session reserves become cross-session-visible by default; a truly absent id still writes session-less row (today-compatible). Typed LOCK_BUSY surfaces holder. Forked-racer scripts/test_reservation_race.mjs: N concurrent reserves distinct paths -> N rows survive; same path -> 1 winner + typed conflicts; child-orchestrator pattern. Manifest --write + --check.",
+  "must_haves": {
+    "truths": [
+      "no reservation silently lost under concurrency",
+      "write-guard consumers see auto-derived sessions",
+      "hooks still never take the lock"
+    ],
+    "artifacts": [
+      "test_reservation_race.mjs green + deliberate-red recorded"
+    ],
+    "key_links": [
+      "CONTEXT D2 D3",
+      "audit rows P1-2"
+    ],
+    "prohibitions": [
+      "no reservations.json format change",
+      "no hook edits in this cell"
+    ]
+  },
+  "verify": "node scripts/test_reservation_race.mjs && node skills/bee-hive/templates/tests/test_lib.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "msh-1",
+    "msh-2"
+  ],
+  "status": "dropped",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "dropped_reason": "moved to worktree beegog--wt--multi-session-hardening per decision ac75fc61 (main ceded to lane-ceremony-v3)"
+  }
+}

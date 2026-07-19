@@ -1,0 +1,56 @@
+{
+  "id": "msh-1",
+  "lane": "high-risk",
+  "title": "withStoreLock O_EXCL lockfile primitive + racer selftest (D2)",
+  "feature": "multi-session-hardening",
+  "files": [
+    "skills/bee-hive/templates/lib/lock.mjs",
+    ".bee/bin/lib/lock.mjs",
+    "scripts/test_store_lock.mjs",
+    ".gitignore",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/multi-session-hardening/CONTEXT.md",
+    "skills/bee-hive/templates/lib/fsutil.mjs",
+    "scripts/test_state_write_concurrency.mjs"
+  ],
+  "action": "Per D2 (Δ1-amended): new templates/lib/lock.mjs exporting withStoreLock(root,name,fn): mkdir .bee/locks, acquire .bee/locks/<name>.lock via writeFileSync wx containing {pid,session,ts,token}; on EEXIST retry ~50ms up to 100 tries; staleness re-verified at each retry (never cached): if lock mtime older than 30s, TAKEOVER BY ATOMIC RENAME — rename(lock, lock.stale-<pid>-<ts>); exactly one renamer wins (ENOENT losers back off into the retry loop); winner unlinks the corpse then wx-acquires. NEVER unconditional unlink (spike negative control: any racer can delete the live holder fresh lock -> 7-8 winners). On timeout typed {type:refused,reason:LOCK_BUSY,holder} parsed from lock body; ALWAYS release in finally (unlink only if body token matches own). Header comment: locked sections are pure JSON RMW, milliseconds-scale, ~1000x margin under the 30s threshold — never hold the lock across a child process. Sync byte-identical to .bee/bin/lib/. scripts/test_store_lock.mjs forked-racer child-orchestrator (single spawnSync row, exit 0/1): (a) N-racer RMW counter no lost update, (b) unguarded control demonstrates loss, (c) stale takeover with N concurrent takeover attempts -> exactly one winner, (d) LOCK_BUSY timeout case. Record a deliberate-red falsifiability run. Gitignore .bee/locks/. release_manifest --write then --check. Do NOT wire callers (msh-2/3/5 own that).",
+  "must_haves": {
+    "truths": [
+      "lock body names holder pid+session+ts",
+      "release only removes a lock this process acquired",
+      "no caller changes in this cell"
+    ],
+    "artifacts": [
+      "scripts/test_store_lock.mjs green including deliberate-red falsifiability run recorded"
+    ],
+    "key_links": [
+      "CONTEXT D2",
+      "critical-patterns 20260714 (async child-orchestrator)",
+      "20260715 manifest-in-feature"
+    ],
+    "prohibitions": [
+      "no fail-open unlocked write path",
+      "no dependency additions"
+    ]
+  },
+  "verify": "node scripts/test_store_lock.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "deps": [],
+  "status": "dropped",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "dropped_reason": "moved to worktree beegog--wt--multi-session-hardening per decision ac75fc61 (main ceded to lane-ceremony-v3)"
+  }
+}
