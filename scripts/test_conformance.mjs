@@ -200,7 +200,14 @@ async function scenario5a() {
 
 // ═════════════════════════════════════════════════════════════════════════
 // Scenario 12 — doctor fail-closed: a drifted fixture never reaches "ready"
-// (cnr2-13 doctor fixtures; D11 — file presence is never capability)
+// (cnr2-13 doctor fixtures; D11 — file presence is never capability). g22-3
+// D4 three-state update: the CLEAN baseline (mechanical rows all ok, trust
+// rows structurally unknown, no attestation recorded) now reads 'degraded',
+// not the old bare 'not_ready' — it is recoverable via `doctor attest`,
+// never a mechanical failure. The DRIFTED case (capability-baseline byte
+// mismatch, a MECHANICAL fact per D4) now reads 'blocked' — strictly worse
+// than 'degraded', since nothing is provable once the baseline itself is
+// wrong. Neither ever reaches 'ready' from file presence alone (D11 intact).
 // ═════════════════════════════════════════════════════════════════════════
 
 const DOCTOR_HOOKS_JSON = {
@@ -226,6 +233,15 @@ async function scenario12() {
     fs.writeFileSync(path.join(dir, "hooks", "bee-model-guard.mjs"), "// stub\n", "utf8");
     fs.writeFileSync(path.join(dir, "hooks", "bee-state-sync.mjs"), "// stub\n", "utf8");
     fs.writeFileSync(path.join(dir, ".codex", "config.toml"), 'approval_policy = "never"\n', "utf8");
+    // skills_installed is one of D4's mechanical blocking rows — a realistic
+    // clean install has this, and this scenario is testing the trust-row
+    // degrade, not a skills gap, so give it a sidecar like a real install.
+    fs.mkdirSync(path.join(dir, ".agents", "skills"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, ".agents", "skills", ".bee-render.json"),
+      `${JSON.stringify({ schema: "bee-render/1", target_runtime: "codex" }, null, 2)}\n`,
+      "utf8",
+    );
 
     const crypto = await import("node:crypto");
     const baselineHash = crypto.createHash("sha256").update(fs.readFileSync(hooksJsonPath)).digest("hex");
@@ -244,26 +260,29 @@ async function scenario12() {
       "utf8",
     );
 
-    // Baseline (clean, unmutated) fixture: even here, structurally-unknown
-    // trust/discovery rows must keep overall_status not_ready (D11 — never
-    // "ready" from file presence alone).
+    // Baseline (clean, unmutated) fixture: mechanical rows are all ok, but
+    // codex's structurally-unknown trust/discovery rows still hold it at
+    // 'degraded' with no attestation recorded (D4/D11 — never "ready" from
+    // file presence alone; degraded is recoverable via `doctor attest`).
     const clean = await runBee(dir, ["doctor", "--runtime", "codex", "--json"]);
     const cleanParsed = clean.status === 0 ? JSON.parse(clean.stdout) : null;
-    const cleanNotReady = clean.status === 0 && cleanParsed.overall_status === "not_ready";
+    const cleanDegraded = clean.status === 0 && cleanParsed.overall_status === "degraded";
 
     // Now drift the file AFTER the baseline hash was recorded — a real
-    // post-onboarding drift, not a missing-baseline case.
+    // post-onboarding drift, not a missing-baseline case. capability_
+    // baseline_match is a MECHANICAL blocking row (D4), so this now reads
+    // 'blocked' — strictly worse than the clean case's 'degraded'.
     fs.writeFileSync(hooksJsonPath, `${JSON.stringify({ hooks: { Stop: [] } }, null, 2)}\n`, "utf8");
     const drifted = await runBee(dir, ["doctor", "--runtime", "codex", "--json"]);
     const driftedParsed = drifted.status === 0 ? JSON.parse(drifted.stdout) : null;
-    const driftedNotReady = drifted.status === 0 && driftedParsed && driftedParsed.overall_status === "not_ready";
+    const driftedBlocked = drifted.status === 0 && driftedParsed && driftedParsed.overall_status === "blocked";
     const driftRow = driftedParsed && driftedParsed.rows.find((r) => r.row === "capability_baseline_match");
     const driftWarned = driftRow && driftRow.status === "warn" && typeof driftRow.fix === "string" && driftRow.fix.length > 0;
 
     record(
       "scenario-12",
-      "doctor --runtime codex fail-closes on a drifted fixture: overall_status never reaches ready, even on the clean baseline, and the drifted row carries a FIX line",
-      cleanNotReady && driftedNotReady && driftWarned,
+      "doctor --runtime codex fail-closes on a drifted fixture: overall_status never reaches ready on the clean baseline (degraded) or the drifted fixture (blocked), and the drifted row carries a FIX line",
+      cleanDegraded && driftedBlocked && driftWarned,
       `clean: status=${clean.status} overall=${cleanParsed && cleanParsed.overall_status}; drifted: status=${drifted.status} overall=${driftedParsed && driftedParsed.overall_status} row=${JSON.stringify(driftRow)}`,
     );
   } finally {

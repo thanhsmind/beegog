@@ -2419,15 +2419,58 @@ function handleConfigUnset(root, flags) {
 // ─── doctor (codex-native-runtime-v2 D11): fail-closed runtime health report
 // ─────────────────────────────────────────────────────────────────────────
 // Every row states its own evidence and status (ok/warn/unknown/unsupported);
-// "ready" is reachable only where every load-bearing row is ok — file
-// presence alone never grants it. On codex, hook discovery/trust/project-
-// trust/pending-review are structurally unknown on codex-cli 0.144.4 (no
-// machine surface — capability matrix row F1) and are marked `blocking: true`
-// so they hold overall_status at not_ready regardless of every other row.
-// This whole command performs ZERO writes: every helper below only reads.
+// overall_status is a THREE-state verdict (g22-3, D4): 'blocked' when any
+// MECHANICAL row marked `blocking: true` is not-ok (hooks file missing,
+// capability-baseline drift, handlers unresolvable, skills missing/warn);
+// 'degraded' when every mechanical row is ok but codex's four trust rows
+// (marked `degrades: true`, never `blocking` anymore) are still structurally
+// unknown and no valid attestation covers them; 'ready' only when mechanical
+// rows are all ok AND (codex) a valid attestation exists, or (claude, which
+// has no trust-unknown rows) mechanical green alone — no attestation
+// concept on claude, deliberately kept simple. File presence alone never
+// grants 'ready'. This whole command performs ZERO writes EXCEPT `doctor
+// attest`, which records a static attestation file on request (D5-REVISED)
+// — `doctor` (no verb) itself still performs zero writes, every helper below
+// still only reads.
+
+// D6: the codex-cli version the capability matrix (docs/history/
+// codex-native-runtime-v2/reports/capability-matrix.md) actually probed.
+// Trust/discovery verdicts below are conclusions about THIS version only —
+// a live codex whose --version differs is unprobed territory, never
+// silently asserted as if it shared the same F1 capability-matrix row.
+const PROBED_CODEX_VERSION = '0.144.4';
 
 const CODEX_DOCTOR_TRUST_UNKNOWN_REASON =
-  'codex-cli 0.144.4 exposes no machine-readable hook-discovery/trust surface — `codex doctor --json` reports no hook/trust/agent rows (capability matrix row F1); trust state lives only in the interactive `/hooks` TUI, which is not machine-readable.';
+  `codex-cli ${PROBED_CODEX_VERSION} exposes no machine-readable hook-discovery/trust surface — \`codex doctor --json\` reports no hook/trust/agent rows (capability matrix row F1); trust state lives only in the interactive \`/hooks\` TUI, which is not machine-readable.`;
+
+// `codex --version` prints a full label ("codex-cli 0.144.4"), not a bare
+// semver — extract just the number for comparison against
+// PROBED_CODEX_VERSION so this never false-mismatches on the label text.
+function doctorExtractVersionNumber(raw) {
+  if (typeof raw !== 'string') return null;
+  const match = raw.match(/(\d+\.\d+\.\d+)/);
+  return match ? match[1] : null;
+}
+
+// D6: when the live codex --version does not match PROBED_CODEX_VERSION, the
+// trust rows must not assert the probed version's conclusions — they report
+// `unprobed_version` instead (evidence carries that literal token so callers
+// can grep for it), naming the mismatch and asking for a re-probe rather
+// than a silent guess either way (ready or blocked). An unresolved live
+// version (codex not on PATH) cannot be proven to differ, so it keeps the
+// default (probed) wording rather than a speculative mismatch claim.
+function doctorCodexTrustUnknownReason(liveVersionRaw) {
+  const liveVersionNumber = doctorExtractVersionNumber(liveVersionRaw);
+  if (liveVersionNumber && liveVersionNumber !== PROBED_CODEX_VERSION) {
+    return (
+      `unprobed_version: live codex --version reports "${liveVersionRaw}" (${liveVersionNumber}), which has not been ` +
+      `capability-probed (only ${PROBED_CODEX_VERSION} has — capability matrix row F1); re-run the probe before ` +
+      'trusting any hook-discovery/trust conclusion for this version. Trust state lives only in the interactive ' +
+      '`/hooks` TUI, which is not machine-readable.'
+    );
+  }
+  return CODEX_DOCTOR_TRUST_UNKNOWN_REASON;
+}
 
 function doctorRow(row, status, value, evidence, extra = {}) {
   return { row, status, value, evidence, ...extra };
@@ -2508,6 +2551,9 @@ function doctorCodexVersion() {
   }
 }
 
+// Mechanical/blocking (D4): a missing hooks file is a MECHANICAL fact, not a
+// codex-runtime-trust unknown — it blocks readiness outright rather than
+// merely degrading it.
 function doctorHooksFilePresent(root) {
   const present = fs.existsSync(path.join(root, '.codex', 'hooks.json'));
   return doctorRow(
@@ -2515,6 +2561,7 @@ function doctorHooksFilePresent(root) {
     present ? 'ok' : 'warn',
     present,
     present ? '.codex/hooks.json exists.' : '.codex/hooks.json is missing.',
+    { blocking: true },
   );
 }
 
@@ -2522,15 +2569,17 @@ function doctorHooksFilePresent(root) {
 // onboarding ledger recorded at install time (managed.repo_hooks) — the same
 // honest-drift discipline bee_status already uses for vendored runtime files
 // (no second hashing implementation; reuses lib/fsutil.mjs's hashFile).
+// Mechanical/blocking (D4): every non-ok status here (warn OR unknown) is a
+// file-state fact, never a trust unknown — all of them block readiness.
 function doctorCapabilityBaselineMatch(root) {
   const hooksPath = path.join(root, '.codex', 'hooks.json');
   if (!fs.existsSync(hooksPath)) {
-    return doctorRow('capability_baseline_match', 'warn', false, '.codex/hooks.json is absent — cannot compare against the recorded baseline.');
+    return doctorRow('capability_baseline_match', 'warn', false, '.codex/hooks.json is absent — cannot compare against the recorded baseline.', { blocking: true });
   }
   const onboarding = readOnboarding(root);
   const recorded = onboarding?.managed?.repo_hooks?.['.codex/hooks.json'] ?? null;
   if (!recorded) {
-    return doctorRow('capability_baseline_match', 'unknown', null, 'no recorded baseline hash in .bee/onboarding.json managed.repo_hooks — run onboarding.');
+    return doctorRow('capability_baseline_match', 'unknown', null, 'no recorded baseline hash in .bee/onboarding.json managed.repo_hooks — run onboarding.', { blocking: true });
   }
   const live = hashFile(hooksPath);
   if (live !== recorded) {
@@ -2539,15 +2588,25 @@ function doctorCapabilityBaselineMatch(root) {
       'warn',
       false,
       `live .codex/hooks.json sha256 (${live}) does not match the recorded baseline (${recorded}).`,
-      { fix: 'Re-render via self-onboard sync: node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply' },
+      { fix: 'Re-render via self-onboard sync: node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply', blocking: true },
     );
   }
-  return doctorRow('capability_baseline_match', 'ok', true, `live .codex/hooks.json byte-matches the recorded baseline (${live}).`);
+  return doctorRow('capability_baseline_match', 'ok', true, `live .codex/hooks.json byte-matches the recorded baseline (${live}).`, { blocking: true });
 }
 
-function doctorCodexTrustUnknownRows() {
+// D4 re-class: these four rows used to carry `blocking: true` (holding
+// overall_status at not_ready outright). They now carry `degrades: true`
+// instead — structurally unknown trust state no longer BLOCKS readiness by
+// itself, it only prevents 'ready' until a valid attestation (D5-REVISED,
+// `doctor attest`) covers it; `degraded_reason` is the short, user-facing
+// instruction (review /hooks) distinct from the long evidence string.
+function doctorCodexTrustUnknownRows(liveVersion) {
+  const reason = doctorCodexTrustUnknownReason(liveVersion);
   return ['hooks_discovered', 'hooks_trusted', 'project_trust', 'pending_hook_review'].map((row) =>
-    doctorRow(row, 'unknown', null, CODEX_DOCTOR_TRUST_UNKNOWN_REASON, { blocking: true }),
+    doctorRow(row, 'unknown', null, reason, {
+      degrades: true,
+      degraded_reason: 'trust state is not machine-verifiable — review it yourself via the interactive `/hooks` TUI, then run `bee doctor attest --runtime codex` once satisfied.',
+    }),
   );
 }
 
@@ -2568,16 +2627,17 @@ function repoOwnsHookCatalog(root) {
 // Claude-side resolver precedent (doctorClaudeHandlersResolvable below):
 // resolvable = file exists at .bee/bin/hooks/<f> OR hooks/<f>; the evidence
 // names WHICH location resolved each file (or that neither did).
+// Mechanical/blocking (D4): every branch below is a file-resolution fact.
 function doctorHookHandlersResolvable(root) {
   const hooksPath = path.join(root, '.codex', 'hooks.json');
   const hooksJson = doctorSafeReadJson(hooksPath);
   if (!hooksJson) {
-    return doctorRow('hook_handlers_resolvable', 'warn', null, `${hooksPath} is missing or unparsable — no command paths to resolve.`);
+    return doctorRow('hook_handlers_resolvable', 'warn', null, `${hooksPath} is missing or unparsable — no command paths to resolve.`, { blocking: true });
   }
   const commands = doctorExtractHookCommands(hooksJson);
   const files = doctorHookHandlerFilenames(commands);
   if (files.length === 0) {
-    return doctorRow('hook_handlers_resolvable', 'warn', [], 'no hooks/*.mjs command references found in .codex/hooks.json.');
+    return doctorRow('hook_handlers_resolvable', 'warn', [], 'no hooks/*.mjs command references found in .codex/hooks.json.', { blocking: true });
   }
   const topology = repoOwnsHookCatalog(root)
     ? 'repo owns hook catalog -> source-checkout topology'
@@ -2599,7 +2659,7 @@ function doctorHookHandlersResolvable(root) {
       'warn',
       files,
       `${topology}; missing handler file(s) under .bee/bin/hooks/ or hooks/: ${missing.join(', ')}.`,
-      { fix: `Restore ${missing.join(', ')} under .bee/bin/hooks/ (or hooks/ in a source checkout), or re-render .codex/hooks.json from the catalog.` },
+      { fix: `Restore ${missing.join(', ')} under .bee/bin/hooks/ (or hooks/ in a source checkout), or re-render .codex/hooks.json from the catalog.`, blocking: true },
     );
   }
   return doctorRow(
@@ -2607,6 +2667,7 @@ function doctorHookHandlersResolvable(root) {
     'ok',
     files,
     `${topology}; ${resolvedAt.length} handler file(s) resolved: ${resolvedAt.join(', ')}.`,
+    { blocking: true },
   );
 }
 
@@ -2660,11 +2721,13 @@ function doctorHookSourcesCodex(root) {
     repoPresent ? 'ok' : 'warn',
     { configured, active: 'unknown' },
     repoPresent
-      ? 'repo-fallback .codex/hooks.json is configured and is the sole exercisable source today (plugin hooks not-observed on codex-cli 0.144.4, capability matrix row B1); which source is actively loaded has no runtime surface, so "active" stays unknown rather than inferred from presence.'
+      ? `repo-fallback .codex/hooks.json is configured and is the sole exercisable source today (plugin hooks not-observed on codex-cli ${PROBED_CODEX_VERSION}, capability matrix row B1); which source is actively loaded has no runtime surface, so "active" stays unknown rather than inferred from presence.`
       : 'no repo-fallback .codex/hooks.json found; nothing configured to load.',
   );
 }
 
+// Mechanical/blocking (D4) — shared by both runtimes (codex's .agents/skills,
+// claude's .claude/skills).
 function doctorSkillsInstalled(root, skillsDir) {
   const dir = path.join(root, skillsDir);
   const sidecar = doctorSafeReadJson(path.join(dir, '.bee-render.json'));
@@ -2677,6 +2740,7 @@ function doctorSkillsInstalled(root, skillsDir) {
     exists
       ? `${entries.length} skill dir(s) under ${skillsDir}/, provenance sidecar ${sidecar ? 'present' : 'MISSING'}; runtime-side discovery has no machine-readable surface to confirm against.`
       : `${skillsDir}/ is absent.`,
+    { blocking: true },
   );
 }
 
@@ -2685,29 +2749,35 @@ function doctorCustomAgentsCodex(codexVersionValue) {
     'custom_agents',
     'unsupported',
     codexVersionValue,
-    `${codexVersionValue || '(codex version unknown)'}: .codex/agents/*.toml discovery is not-observed on codex-cli 0.144.4 (capability matrix rows A1/A2) — only built-in default/explorer/worker agent types spawn, carrying no bee developer_instructions. This verdict is version-scoped: other versions are unverified until re-probed.`,
+    `${codexVersionValue || '(codex version unknown)'}: .codex/agents/*.toml discovery is not-observed on codex-cli ${PROBED_CODEX_VERSION} (capability matrix rows A1/A2) — only built-in default/explorer/worker agent types spawn, carrying no bee developer_instructions. This verdict is version-scoped: other versions are unverified until re-probed.`,
   );
 }
 
+// Claude's analogous mechanical set (D4): hook_wiring_resolvable /
+// handlers_resolvable / model_guard_entry_present / skills_installed (shared
+// helper above) — the four rows that block claude's readiness outright.
+// Claude has no structurally-unknown trust rows (no `degrades` concept), so
+// mechanical-green alone reaches 'ready' — no attestation required; see
+// doctorOverallStatus for why that is kept deliberately simple.
 function doctorClaudeHookWiring(root) {
   const settings = doctorSafeReadJson(path.join(root, '.claude', 'settings.json'));
   if (!settings || !settings.hooks) {
-    return doctorRow('hook_wiring_resolvable', 'warn', false, '.claude/settings.json has no hooks block.');
+    return doctorRow('hook_wiring_resolvable', 'warn', false, '.claude/settings.json has no hooks block.', { blocking: true });
   }
   const events = Object.keys(settings.hooks);
   const required = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
   const missing = required.filter((e) => !events.includes(e));
   if (missing.length) {
-    return doctorRow('hook_wiring_resolvable', 'warn', events, `missing lifecycle event(s) in .claude/settings.json hooks: ${missing.join(', ')}.`);
+    return doctorRow('hook_wiring_resolvable', 'warn', events, `missing lifecycle event(s) in .claude/settings.json hooks: ${missing.join(', ')}.`, { blocking: true });
   }
-  return doctorRow('hook_wiring_resolvable', 'ok', events, `${events.length} lifecycle event(s) wired in .claude/settings.json.`);
+  return doctorRow('hook_wiring_resolvable', 'ok', events, `${events.length} lifecycle event(s) wired in .claude/settings.json.`, { blocking: true });
 }
 
 function doctorClaudeHandlersResolvable(root) {
   const settings = doctorSafeReadJson(path.join(root, '.claude', 'settings.json'));
   const commands = doctorExtractHookCommands({ hooks: settings ? settings.hooks : {} });
   if (!commands.length) {
-    return doctorRow('handlers_resolvable', 'warn', [], 'no hook commands found in .claude/settings.json.');
+    return doctorRow('handlers_resolvable', 'warn', [], 'no hook commands found in .claude/settings.json.', { blocking: true });
   }
   const files = doctorHookHandlerFilenames(commands);
   const missing = files.filter(
@@ -2719,10 +2789,10 @@ function doctorClaudeHandlersResolvable(root) {
       'warn',
       files,
       `missing handler file(s): ${missing.join(', ')}.`,
-      { fix: 'Re-run onboarding to restore .bee/bin/hooks/*.' },
+      { fix: 'Re-run onboarding to restore .bee/bin/hooks/*.', blocking: true },
     );
   }
-  return doctorRow('handlers_resolvable', 'ok', files, `${files.length} handler file(s) resolved.`);
+  return doctorRow('handlers_resolvable', 'ok', files, `${files.length} handler file(s) resolved.`, { blocking: true });
 }
 
 function doctorClaudeModelGuardEntry(root) {
@@ -2743,6 +2813,7 @@ function doctorClaudeModelGuardEntry(root) {
     found
       ? 'PreToolUse Agent-shaped matcher is wired to bee-model-guard.mjs.'
       : 'no PreToolUse Agent-shaped bee-model-guard entry found in .claude/settings.json.',
+    { blocking: true },
   );
 }
 
@@ -2774,20 +2845,150 @@ function doctorClaudePermissionMode(root) {
 }
 
 // A row is load-bearing (blocking) only when the cell that produced it says
-// so explicitly (today: codex's 4 structurally-unknown trust/discovery
-// rows) — never inferred from its status alone, so a `warn` on a
-// non-load-bearing row can never silently promote itself to a blocker.
-function doctorOverallStatus(rows) {
+// so explicitly — never inferred from its status alone, so a `warn` on a
+// non-load-bearing informational row (codex_version, hooks_observed_this_
+// session, permission_mode, hook_sources, custom_agents, claude's rendered_
+// agents_present) can never silently promote itself into the verdict. D4:
+// three states, computed in two passes —
+//   1. any `blocking` row not-ok -> 'blocked', full stop (mechanical facts:
+//      a missing/drifted hooks file or an unresolvable handler/skill set
+//      means nothing downstream is provable, attested or not).
+//   2. otherwise, any `degrades` row (codex's 4 structurally-unknown trust
+//      rows) without a currently-VALID attestation -> 'degraded'; a valid
+//      attestation covers them -> 'ready'.
+//   3. no blocking, no degrading (or claude, which has neither concept for
+//      today's row set) -> 'ready' outright — mechanical green is the whole
+//      bar; no attestation concept applies.
+// `attestation` is null for claude (and for a codex call that never reaches
+// this far) — see doctorValidateAttestation below.
+function doctorOverallStatus(rows, attestation = null) {
   const blocked = rows.filter((r) => r.blocking && r.status !== 'ok');
-  const warned = rows.filter((r) => r.status === 'warn');
-  if (blocked.length === 0 && warned.length === 0) {
+  if (blocked.length > 0) {
+    return {
+      overall_status: 'blocked',
+      reasons: blocked.map((r) => `${r.row}: BLOCKS readiness — ${r.evidence}`),
+    };
+  }
+  const degrading = rows.filter((r) => r.degrades);
+  if (degrading.length === 0) {
+    return { overall_status: 'ready', reasons: [] };
+  }
+  if (attestation && attestation.valid) {
     return { overall_status: 'ready', reasons: [] };
   }
   const reasons = [
-    ...blocked.map((r) => `${r.row}: BLOCKS readiness — ${r.evidence}`),
-    ...warned.map((r) => `${r.row}: ${r.evidence}${r.fix ? ` FIX: ${r.fix}` : ''}`),
+    ...degrading.map((r) => `${r.row}: ${r.evidence}${r.degraded_reason ? ` ${r.degraded_reason}` : ''}`),
+    attestation
+      ? `${attestation.reason}: ${attestation.detail}`
+      : 'no_attestation: no attestation recorded — run `bee doctor attest --runtime codex` once trust state has been reviewed via /hooks.',
   ];
-  return { overall_status: 'not_ready', reasons };
+  return { overall_status: 'degraded', reasons };
+}
+
+// ─── doctor attest (g22-3, D5-REVISED): a static, request-only attestation
+// that a human (or an agent on the human's behalf) reviewed codex trust
+// state via the interactive /hooks TUI and is vouching for THIS exact
+// hooks-file/codex-version/repo pairing. Recorded to a gitignored runtime-
+// tier file — never tracked state, never auto-run by `doctor` itself (D5-
+// REVISED: attest is a distinct, deliberate verb, not a doctor side effect).
+// No liveness leg exists on codex: hooks.jsonl only ever logs deny/crash
+// events and tools.jsonl is claude-only (bee-tools-logger.mjs, PostToolUse)
+// — a healthy codex session writes NOTHING codex-side that doctor could
+// observe, so attestation validity is purely static (hash/version/identity),
+// and the reason string says so honestly rather than implying a liveness
+// check that does not exist.
+function doctorAttestPath(root) {
+  return path.join(root, '.bee', 'doctor-attest.json');
+}
+
+function doctorRepoIdentity(root) {
+  try {
+    return fs.realpathSync(root);
+  } catch {
+    return root;
+  }
+}
+
+// Validates a recorded attestation against LIVE state: hooks-file sha256,
+// codex --version, and repo identity must all still match what was attested.
+// Any single failed leg makes the whole attestation inert (never partially
+// trusted) — the specific stale reason is one of hash_changed / version_
+// changed / identity_changed / no_attestation, exactly as D5-REVISED names
+// them, so a caller can branch on `reason` without parsing prose.
+function doctorValidateAttestation(root, liveCodexVersion) {
+  const record = doctorSafeReadJson(doctorAttestPath(root));
+  if (!record) {
+    return {
+      valid: false,
+      reason: 'no_attestation',
+      detail: 'no attestation recorded — run `bee doctor attest --runtime codex` once trust state has been reviewed via /hooks.',
+      record: null,
+    };
+  }
+  const hooksPath = path.join(root, '.codex', 'hooks.json');
+  const liveHash = fs.existsSync(hooksPath) ? hashFile(hooksPath) : null;
+  if (!liveHash || liveHash !== record.hooks_file_sha256) {
+    return {
+      valid: false,
+      reason: 'hash_changed',
+      detail: `live .codex/hooks.json sha256 (${liveHash || '(file missing)'}) no longer matches the attested hash (${record.hooks_file_sha256}) — re-review /hooks and re-attest.`,
+      record,
+    };
+  }
+  if ((liveCodexVersion || null) !== (record.codex_version || null)) {
+    return {
+      valid: false,
+      reason: 'version_changed',
+      detail: `live codex --version (${liveCodexVersion || '(unresolved)'}) no longer matches the attested version (${record.codex_version || '(unresolved)'}) — re-review /hooks and re-attest.`,
+      record,
+    };
+  }
+  const liveIdentity = doctorRepoIdentity(root);
+  if (liveIdentity !== record.repo_identity) {
+    return {
+      valid: false,
+      reason: 'identity_changed',
+      detail: `live repo identity (${liveIdentity}) no longer matches the attested identity (${record.repo_identity}) — an attestation from a different checkout never carries over; re-attest here.`,
+      record,
+    };
+  }
+  return {
+    valid: true,
+    reason: null,
+    detail:
+      `attested at ${record.at} — hooks-file sha256, codex version, and repo identity all still match. ` +
+      'codex exposes no hook-fire event surface (hooks.jsonl is deny/crash-only, tools.jsonl is claude-only) — attestation is static, not a liveness check.',
+    record,
+  };
+}
+
+function handleDoctorAttest(root, flags) {
+  const runtime = requireFlag(flags, 'runtime');
+  if (runtime !== 'codex') {
+    throw new Error(`doctor attest: --runtime must be "codex" (got "${runtime}") — claude has no trust-unknown rows and no attestation model.`);
+  }
+  const hooksPath = path.join(root, '.codex', 'hooks.json');
+  if (!fs.existsSync(hooksPath)) {
+    throw new Error(`doctor attest: ${hooksPath} does not exist — nothing to attest.`);
+  }
+  const versionRow = doctorCodexVersion();
+  const sessionId =
+    typeof flags.session === 'string' && flags.session
+      ? flags.session
+      : process.env.CODEX_SESSION_ID || process.env.CLAUDE_SESSION_ID || null;
+  const record = {
+    hooks_file_sha256: hashFile(hooksPath),
+    codex_version: versionRow.value,
+    session_id: sessionId,
+    at: new Date().toISOString(),
+    repo_identity: doctorRepoIdentity(root),
+  };
+  writeJsonAtomic(doctorAttestPath(root), record);
+  const result = { ok: true, attestation: record };
+  return {
+    result,
+    text: `doctor attest: recorded (hooks sha256 ${record.hooks_file_sha256.slice(0, 12)}…, codex ${record.codex_version || '(unresolved)'}, repo ${record.repo_identity}).`,
+  };
 }
 
 // dispatch (g22-1, GH #22 P0-3) — thin flag-parsing wrapper: every actual
@@ -2811,13 +3012,14 @@ function handleDoctor(root, flags) {
     throw new Error(`doctor: --runtime must be "codex" or "claude", got "${runtime}".`);
   }
   let rows;
+  let attestation = null;
   if (runtime === 'codex') {
     const versionRow = doctorCodexVersion();
     rows = [
       versionRow,
       doctorHooksFilePresent(root),
       doctorCapabilityBaselineMatch(root),
-      ...doctorCodexTrustUnknownRows(),
+      ...doctorCodexTrustUnknownRows(versionRow.value),
       doctorHookHandlersResolvable(root),
       doctorHooksObservedThisSession(root),
       doctorPermissionModeCodex(root),
@@ -2825,6 +3027,7 @@ function handleDoctor(root, flags) {
       doctorSkillsInstalled(root, path.join('.agents', 'skills')),
       doctorCustomAgentsCodex(versionRow.value),
     ];
+    attestation = doctorValidateAttestation(root, versionRow.value);
   } else {
     rows = [
       doctorClaudeHookWiring(root),
@@ -2836,8 +3039,13 @@ function handleDoctor(root, flags) {
       doctorHooksObservedThisSession(root),
     ];
   }
-  const { overall_status, reasons } = doctorOverallStatus(rows);
+  const { overall_status, reasons } = doctorOverallStatus(rows, attestation);
   const result = { runtime, overall_status, rows, reasons };
+  if (runtime === 'codex') {
+    result.attestation = attestation.valid
+      ? { status: 'valid', at: attestation.record.at, codex_version: attestation.record.codex_version, repo_identity: attestation.record.repo_identity }
+      : { status: 'invalid', reason: attestation.reason, detail: attestation.detail };
+  }
   const lines = [`bee doctor --runtime ${runtime}: ${overall_status.toUpperCase()}`];
   for (const row of rows) lines.push(`  [${row.status}] ${row.row}: ${row.evidence}`);
   if (reasons.length) {
@@ -3048,6 +3256,7 @@ const HANDLERS = {
   'config.validate': handleConfigValidate,
   'dispatch.prepare': handleDispatchPrepare,
   doctor: handleDoctor,
+  'doctor.attest': handleDoctorAttest,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─

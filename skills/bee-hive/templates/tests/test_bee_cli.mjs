@@ -1519,7 +1519,7 @@ function buildDoctorFixture({ withHandlerFiles = true } = {}) {
   return dir;
 }
 
-await check('doctor: ok fixture — checkable codex rows pass ok, claude reaches overall_status ready', async () => {
+await check('doctor: ok fixture — checkable codex rows pass ok, mechanical-green codex reaches degraded (no attestation), claude reaches overall_status ready', async () => {
   const dir = buildDoctorFixture();
   try {
     const codexResult = await assertExampleOk('doctor', { exampleIndex: 0, cwd: dir });
@@ -1529,36 +1529,121 @@ await check('doctor: ok fixture — checkable codex rows pass ok, claude reaches
     assert(byRow.hooks_file_present.status === 'ok', `hooks_file_present should be ok, got ${JSON.stringify(byRow.hooks_file_present)}`);
     assert(byRow.capability_baseline_match.status === 'ok', `capability_baseline_match should be ok on a matching baseline, got ${JSON.stringify(byRow.capability_baseline_match)}`);
     assert(byRow.hook_handlers_resolvable.status === 'ok', `hook_handlers_resolvable should be ok when every handler file exists, got ${JSON.stringify(byRow.hook_handlers_resolvable)}`);
-    // Fail-closed by construction: codex's structurally-unknown trust rows
-    // block readiness even on an otherwise-clean fixture (CONTEXT.md D11 —
-    // never "ready" from file presence alone).
-    assert(codex.overall_status === 'not_ready', `codex overall_status must stay not_ready while trust rows are unknown, got ${codex.overall_status}`);
+    // D4 three-state: mechanical rows are all ok, but codex's structurally-
+    // unknown trust rows still `degrades` readiness with no attestation
+    // recorded — 'degraded', never a bare "ready" from file presence alone,
+    // and never 'blocked' either since nothing mechanical failed.
+    assert(codex.overall_status === 'degraded', `codex overall_status must be degraded (mechanical green, trust rows unknown, no attestation), got ${codex.overall_status}`);
+    assert(codex.reasons.some((r) => r.startsWith('hooks_discovered:')), `reasons must name the degrading trust rows, got ${JSON.stringify(codex.reasons)}`);
+    assert(codex.reasons.some((r) => r.startsWith('no_attestation:')), `reasons must name no_attestation, got ${JSON.stringify(codex.reasons)}`);
+    assert(codex.attestation && codex.attestation.status === 'invalid' && codex.attestation.reason === 'no_attestation', `attestation summary must report invalid/no_attestation, got ${JSON.stringify(codex.attestation)}`);
 
     const claudeResult = await assertExampleOk('doctor', { exampleIndex: 1, cwd: dir });
     const claude = JSON.parse(claudeResult.stdout);
     assert(claude.runtime === 'claude', `expected runtime claude, got ${JSON.stringify(claude)}`);
     assert(claude.overall_status === 'ready', `claude should reach ready on a fully-wired fixture with no blocking rows, got ${claude.overall_status}: ${JSON.stringify(claude.rows)}`);
+    assert(!('attestation' in claude), `claude has no attestation model and must not carry an attestation field, got ${JSON.stringify(claude)}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-await check('doctor: drifted .codex/hooks.json -> capability_baseline_match warns with a FIX line, forcing not_ready', async () => {
+await check('doctor attest: a valid attestation over a mechanical-green fixture reaches ready', async () => {
   const dir = buildDoctorFixture();
   try {
-    // Mutate the live file AFTER the baseline hash was recorded — a real
-    // post-onboarding drift, not a missing-baseline case.
-    fs.writeFileSync(path.join(dir, '.codex', 'hooks.json'), `${JSON.stringify({ hooks: { Stop: [] } }, null, 2)}\n`, 'utf8');
+    const attestResult = await assertExampleOk('doctor.attest', { cwd: dir });
+    const attested = JSON.parse(attestResult.stdout);
+    assert(attested.ok === true && attested.attestation && typeof attested.attestation.hooks_file_sha256 === 'string', `doctor attest must record an attestation, got ${attestResult.stdout}`);
+    assert(fs.existsSync(path.join(dir, '.bee', 'doctor-attest.json')), 'doctor attest must write .bee/doctor-attest.json');
+
     const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
-    assert(result.status === 0, `doctor must not throw on a drifted fixture, got exit ${result.status}: ${result.stderr}`);
+    assert(result.status === 0, `doctor must not throw after attesting, got exit ${result.status}: ${result.stderr}`);
     const parsed = JSON.parse(result.stdout);
-    const row = parsed.rows.find((r) => r.row === 'capability_baseline_match');
-    assert(row.status === 'warn', `expected capability_baseline_match warn on drift, got ${JSON.stringify(row)}`);
-    assert(typeof row.fix === 'string' && row.fix.includes('onboard_bee.mjs'), `drifted row must carry a FIX line, got ${JSON.stringify(row)}`);
-    assert(parsed.overall_status === 'not_ready', `drift must force not_ready, got ${parsed.overall_status}`);
-    assert(parsed.reasons.some((r) => r.startsWith('capability_baseline_match:')), `reasons must name the drifted row, got ${JSON.stringify(parsed.reasons)}`);
+    assert(parsed.overall_status === 'ready', `a valid attestation over a mechanical-green fixture must reach ready, got ${parsed.overall_status}: ${JSON.stringify(parsed.reasons)}`);
+    assert(parsed.attestation && parsed.attestation.status === 'valid', `attestation summary must report valid, got ${JSON.stringify(parsed.attestation)}`);
+    assert(parsed.reasons.length === 0, `ready must carry no reasons, got ${JSON.stringify(parsed.reasons)}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor attest: flipping .codex/hooks.json after attesting goes stale (hash_changed) -> degraded', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    await assertExampleOk('doctor.attest', { cwd: dir });
+    // A real post-attestation drift — mutate the live file AFTER attesting.
+    // Keeps the same hook commands (so hook_handlers_resolvable/capability_
+    // baseline_match — re-baselined below — both stay mechanically ok) and
+    // only adds a harmless marker field, isolating the assertion to the
+    // attestation's own hash leg rather than the mechanical rows.
+    fs.writeFileSync(
+      path.join(dir, '.codex', 'hooks.json'),
+      `${JSON.stringify({ ...DOCTOR_HOOKS_JSON, _post_attest_marker: true }, null, 2)}\n`,
+      'utf8',
+    );
+    writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+      schema_version: '1.0',
+      bee_version: '0.1.0',
+      managed: { repo_hooks: { '.codex/hooks.json': hashFile(path.join(dir, '.codex', 'hooks.json')) } },
+      agents_sync: { files: [] },
+    });
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
+    assert(result.status === 0, `doctor must not throw on a stale attestation, got exit ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    assert(parsed.overall_status === 'degraded', `a stale (hash-changed) attestation must degrade, not block or ready, got ${parsed.overall_status}`);
+    assert(parsed.attestation && parsed.attestation.status === 'invalid' && parsed.attestation.reason === 'hash_changed', `attestation summary must name hash_changed, got ${JSON.stringify(parsed.attestation)}`);
+    assert(parsed.reasons.some((r) => r.startsWith('hash_changed:')), `reasons must name hash_changed, got ${JSON.stringify(parsed.reasons)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor attest: --runtime claude is refused (no attestation model)', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', 'attest', '--runtime', 'claude', '--json'], cwd: dir });
+    assert(result.status !== 0, `doctor attest --runtime claude must be refused, got exit ${result.status}: ${result.stdout}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: missing .codex/hooks.json -> blocked (mechanical, not merely degraded)', async () => {
+  const dir = buildDoctorFixture();
+  try {
+    fs.rmSync(path.join(dir, '.codex', 'hooks.json'));
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
+    assert(result.status === 0, `doctor must not throw on a missing hooks file, got exit ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    assert(parsed.overall_status === 'blocked', `a missing mechanical hooks file must block readiness outright, got ${parsed.overall_status}`);
+    assert(parsed.reasons.some((r) => r.startsWith('hooks_file_present:')), `reasons must name hooks_file_present, got ${JSON.stringify(parsed.reasons)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('doctor: version-mismatch wording — a live codex --version other than the probed one reports unprobed_version, never the probed conclusions', async () => {
+  const dir = buildDoctorFixture();
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-doctor-codex-stub-'));
+  try {
+    // A tiny fake "codex" binary ahead on PATH that reports a version other
+    // than PROBED_CODEX_VERSION ('0.144.4') — proves the wording switches
+    // without needing an actually-different codex install on this machine.
+    const stubPath = path.join(stubDir, 'codex');
+    fs.writeFileSync(stubPath, '#!/bin/sh\necho "codex-cli 9.9.9"\n', { mode: 0o755 });
+    const result = await runModuleWorker(BEE_MJS, {
+      args: ['doctor', '--runtime', 'codex', '--json'],
+      cwd: dir,
+      env: { ...process.env, PATH: `${stubDir}${path.delimiter}${process.env.PATH || ''}` },
+    });
+    assert(result.status === 0, `doctor must not throw on an unprobed codex version, got exit ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    const row = parsed.rows.find((r) => r.row === 'hooks_discovered');
+    assert(row.evidence.includes('unprobed_version'), `evidence must carry the unprobed_version token, got ${row.evidence}`);
+    assert(!row.evidence.includes('0.144.4 exposes no machine-readable'), `evidence must not assert the probed-version conclusion verbatim, got ${row.evidence}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(stubDir, { recursive: true, force: true });
   }
 });
 
@@ -1597,7 +1682,7 @@ await check('doctor: codex binary absent from PATH -> codex_version warns instea
   }
 });
 
-await check('doctor: codex trust/discovery rows are always present, unknown, and blocking — never inferred from file presence', async () => {
+await check('doctor: codex trust/discovery rows are always present, unknown, and degrading (D4 re-class: no longer blocking) — never inferred from file presence', async () => {
   const dir = buildDoctorFixture();
   try {
     const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: dir });
@@ -1606,9 +1691,14 @@ await check('doctor: codex trust/discovery rows are always present, unknown, and
       const row = parsed.rows.find((r) => r.row === rowName);
       assert(row, `row "${rowName}" must always be present on --runtime codex`);
       assert(row.status === 'unknown', `${rowName} must stay unknown, got ${row.status}`);
-      assert(row.blocking === true, `${rowName} must be marked blocking, got ${JSON.stringify(row)}`);
+      // D4 re-class: these rows carry `degrades: true`, never `blocking`
+      // anymore — a bare unknown trust state degrades readiness (recoverable
+      // via "doctor attest"), it no longer blocks it outright.
+      assert(row.degrades === true, `${rowName} must be marked degrades, got ${JSON.stringify(row)}`);
+      assert(!row.blocking, `${rowName} must no longer be marked blocking, got ${JSON.stringify(row)}`);
+      assert(typeof row.degraded_reason === 'string' && row.degraded_reason.length > 0, `${rowName} must carry a degraded_reason, got ${JSON.stringify(row)}`);
     }
-    assert(parsed.overall_status === 'not_ready', 'blocking unknown rows must force not_ready');
+    assert(parsed.overall_status === 'degraded', 'unattested degrading trust rows must degrade (not block, not ready)');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -1668,7 +1758,7 @@ await check('doctor: --json shape is stable (runtime, overall_status, rows[], re
       assert(result.status === 0, `doctor --runtime ${runtime} must exit 0, got ${result.status}: ${result.stderr}`);
       const parsed = JSON.parse(result.stdout);
       assert(parsed.runtime === runtime, `runtime field mismatch, got ${JSON.stringify(parsed)}`);
-      assert(['ready', 'not_ready'].includes(parsed.overall_status), `overall_status must be ready|not_ready, got ${parsed.overall_status}`);
+      assert(['ready', 'degraded', 'blocked'].includes(parsed.overall_status), `overall_status must be ready|degraded|blocked, got ${parsed.overall_status}`);
       assert(Array.isArray(parsed.rows) && parsed.rows.length > 0, `rows must be a non-empty array, got ${JSON.stringify(parsed.rows)}`);
       for (const row of parsed.rows) {
         assert(typeof row.row === 'string' && row.row, `every row needs a name, got ${JSON.stringify(row)}`);
