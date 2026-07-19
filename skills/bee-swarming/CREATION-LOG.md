@@ -173,3 +173,109 @@ boundary (exit 1, empty stdout/stderr), although both exact constituents are
 green when invoked directly. The exact configured full repository verification
 was also attempted and hit the same boundary: exit 1 with empty stdout/stderr;
 it is retained as a sandbox constraint, not relabeled green.
+
+## Amendment 2026-07-19 — independently reviewed D6/D7 repair
+
+The pre-repair localized census was added before doctrine wording changed. Its
+literal RED run exited `1` at `348 passed, 1 failed`:
+
+```text
+FAIL  census: native Codex empty waits use one localized, ordered, mutation-resistant contract on every writable surface
+      skills/bee-hive/templates/AGENTS.block.md must keep timeout distinct from failure
+```
+
+The repaired census extracts only the bounded wait contract on each writable
+surface, asserts action → completion handling → liveness → commentary → later
+wait order, and rejects mutations for wait-before-commentary, urgency/no-chatter
+exceptions, timeout-as-failure, interruption, redispatch, ownership release,
+stale completion, zero-agent re-wait, and loss of the external carve-out.
+`.agents/**` remains scope-locked read-only for this repair and is pinned only to
+its existing D1-D5 contract. A fresh filesystem probe returned
+`test -w .agents/skills/bee-swarming/CREATION-LOG.md -> exit 0`; that capability
+does not widen the cell's explicit no-write authority. No `.agents` file was
+changed or claimed synchronized. Root doctrine is the live Codex boundary and
+canonical skills are the next-sync payload.
+
+### Root-AGENTS-only replay
+
+A fresh review child used `fork_turns=none`, read only root `AGENTS.md`, and did
+not load canonical or projected skills. Verbatim result:
+
+```text
+1. **B — PASS.** After an empty wait with no material work remaining, take exactly one `list_agents` snapshot, report the live state and next action, then wait again only if reviewers remain live. “No progress” authority and turn cost create no exception.
+
+2. **B — PASS.** The UI panel does not satisfy the required progress interval. Timeout means silence, not failure; snapshot once, comment once, then resume waiting. Do not interrupt agents or disturb their ownership.
+
+3. **B — PASS.** Deadline and manager authority do not override the empty-wait rule. Snapshot once, provide the required concise update, and wait again if either reviewer remains live. Do not cancel or ship without required reports.
+
+4. **B — PASS.** Because material work remains, complete at least one check before waiting again; exhaustion of all three is unnecessary. Handle any completion exactly once, recompute live agents, post the required update, and wait only if a relevant agent remains.
+
+Across all scenarios, claims, reservations, and agent ownership remain intact; a timeout is an empty wait, never evidence of failure.
+```
+
+### Combined future-sync replay
+
+A separate fresh review child loaded root doctrine plus canonical routing and
+swarming surfaces. Verbatim result:
+
+```text
+1. **B — PASS.** An empty wait is a timeout, not failure, and consecutive `wait_agent` calls are forbidden even under no-progress instructions or high turn cost. With local work exhausted, take exactly one `list_agents` snapshot, post the required concise live-state/next-action update, then wait only if reviewers remain live. Ownership remains intact.
+
+2. **B — PASS.** Existing UI panels, fatigue, elapsed time, and sunk cost do not waive the progress interval. With no material work left, one snapshot plus concise commentary is mandatory before another bounded wait. Silence does not justify interruption.
+
+3. **B — PASS.** Manager authority, urgency, and no-chatter instructions create no exception. Take exactly one snapshot, post one concise update, and wait again only if reviewers remain live. Shipping incomplete or cancelling reviewers is forbidden; claims and reservations remain owned.
+
+4. **B — PASS.** Because material work remains, complete at least one task-local evidence check; exhausting all three is unnecessary. Handle any completion exactly once, recompute the live set, post the required live-state/next-action update, then wait only if a relevant agent remains.
+```
+
+Scoring: all eight decisions selected B/PASS. The root-only run independently
+proves the current deployment boundary; the combined run proves the future-sync
+payload. Scenario 4 rejects both immediate re-wait and exhausting every local
+action, and both runs carry exact-once completion handling, liveness
+recomputation, and the zero-agent stop.
+
+### Controlled native ordinary-gather trace
+
+One extraction-tier, read-only I/O child audited one declared markdown fact in
+`docs/specs/doctrine-layer.md`. The live native chronology was:
+
+1. `wait_agent(timeout_ms=10000)` returned `Wait timed out.` with no completion.
+2. The orchestrator ran the genuine task-local artifact check
+   `git diff --check`; it exited `0` with no output.
+3. One `list_agents` liveness recomputation showed the gather still running.
+4. Commentary named that live gather and the next collection action.
+5. One later `wait_agent(timeout_ms=60000)` completed with the gather result.
+6. The result was handled once; a fresh liveness recomputation showed zero
+   relevant live agents, so collection stopped without another wait.
+
+The gather read only the doctrine spec and returned anchored coverage for the
+definition, at-least-one action minimum, exact-once completion handling,
+liveness recomputation, commentary order, zero-agent stop, ownership
+preservation, and native/external boundary. Verdict: `no contradiction`.
+
+### Controlled native two-reviewer trace
+
+Two review-tier, read-only children were dispatched concurrently over distinct
+doctrine lenses: order/liveness and safety/external-boundary. The initial
+`wait_agent(timeout_ms=10000)` returned a real empty timeout. During the required
+material evidence interval, the order/liveness reviewer completed; its result
+was handled exactly once before commentary. It reported PASS across all six
+writable contract surfaces and rejected wait-before-commentary,
+stale-completion, and zero-agent-rewait mutations. The safety reviewer remained
+live at this checkpoint; its final chronology and verdict follow below after
+collection.
+
+The material action was this evidence-log update itself, written after consuming
+the order/liveness result. One `list_agents` recomputation then showed that
+reviewer completed and the safety reviewer still running. Commentary named that
+single live reviewer and the next collection action. One later
+`wait_agent(timeout_ms=60000)` completed with the safety result, which was
+handled exactly once. A final liveness recomputation showed zero relevant live
+reviewers, so collection stopped without another wait.
+
+The safety reviewer also reported PASS across all six surfaces: timeout stays
+non-failure; authority, urgency, and no-chatter create no exception; timeout
+never licenses interruption, redispatch, or ownership release; non-material
+loopholes do not satisfy the interval; and external process/artifact polling
+keeps its separate contract. No child was interrupted, redispatched, or used to
+release ownership, and no file/scratchpad polling manufactured either trace.

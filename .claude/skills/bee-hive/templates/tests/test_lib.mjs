@@ -8140,31 +8140,54 @@ await check('census: AO14 execution-worker class — the Delegation contract, be
   );
 });
 
-await check('census: native Codex empty waits require a material-action then commentary interval before another bounded wait on doctrine, ordinary-gather, and swarming surfaces', async () => {
+await check('census: native Codex empty waits use one localized, ordered, mutation-resistant contract on every writable surface', async () => {
   const templatesRoot = fileURLToPath(new URL('..', import.meta.url));
   const repoRoot = findRepoRoot(templatesRoot);
   if (!repoRoot) return; // no repo context to check against (bare checkout)
 
-  const doctrineSurfaces = [
-    path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
-    path.join(repoRoot, 'AGENTS.md'),
-    path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+  const writableContractSurfaces = [
+    {
+      path: path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+      block: /15\. \*\*Native Codex empty waits require a progress interval\.\*\*[^\n]+/,
+    },
+    {
+      path: path.join(repoRoot, 'AGENTS.md'),
+      block: /15\. \*\*Native Codex empty waits require a progress interval\.\*\*[^\n]+/,
+    },
+    {
+      path: path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'templates', 'AGENTS.block.md'),
+      block: /15\. \*\*Native Codex empty waits require a progress interval\.\*\*[^\n]+/,
+    },
+    {
+      path: path.join(repoRoot, 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
+      block: /### Native Codex subagent tending[\s\S]+?<!-- bee:end -->/,
+    },
+    {
+      path: path.join(repoRoot, 'skills', 'bee-swarming', 'SKILL.md'),
+      block: /<!-- bee:only codex -->\n\s+For native Codex agents,[\s\S]+?<!-- bee:end -->/,
+    },
+    {
+      path: path.join(repoRoot, 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+      block: /### Native Codex timeout interval[\s\S]+?<!-- bee:end -->/,
+    },
   ];
-  // D9 (codex-native-runtime-v2, cnr2-11): these three sources now carry the
-  // native empty-wait procedure inside a `<!-- bee:only codex -->` block
-  // (tagged in cnr2-10) — it is a Codex-only mechanic (wait_agent/list_agents
-  // have no Claude Code equivalent), so the per-runtime render KEEPS it in the
-  // canonical source and the Codex projection, and STRIPS it from the Claude
-  // projection. The census below is runtime-aware for exactly this reason:
-  // presence is required on the canonical + `.agents/skills` (Codex) copies,
-  // and absence is required on the `.claude/skills` (Claude) copies.
-  const procedureSurfacesKeepWaitAgent = [
-    path.join(repoRoot, 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
-    path.join(repoRoot, '.agents', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
-    path.join(repoRoot, 'skills', 'bee-swarming', 'SKILL.md'),
-    path.join(repoRoot, '.agents', 'skills', 'bee-swarming', 'SKILL.md'),
-    path.join(repoRoot, 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
-    path.join(repoRoot, '.agents', 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+  // `.agents/**` is a checked-in Codex projection but is scope-locked read-only
+  // for this repair. Keep its existing D1-D5 contract pinned locally without
+  // claiming the D6/D7 repair has synchronized there; canonical skills are the
+  // next-sync payload and root AGENTS.md is the live deployment boundary.
+  const readOnlyCodexProjectionSurfaces = [
+    {
+      path: path.join(repoRoot, '.agents', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
+      block: /### Native Codex subagent tending[\s\S]+?(?=\n## Question Format|$)/,
+    },
+    {
+      path: path.join(repoRoot, '.agents', 'skills', 'bee-swarming', 'SKILL.md'),
+      block: /For native Codex agents,[^\n]+/,
+    },
+    {
+      path: path.join(repoRoot, '.agents', 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
+      block: /### Native Codex timeout interval[\s\S]+?(?=\n## Model Tiers|$)/,
+    },
   ];
   const procedureSurfacesStripWaitAgent = [
     path.join(repoRoot, '.claude', 'skills', 'bee-hive', 'references', 'routing-and-contracts.md'),
@@ -8172,27 +8195,53 @@ await check('census: native Codex empty waits require a material-action then com
     path.join(repoRoot, '.claude', 'skills', 'bee-swarming', 'references', 'swarming-reference.md'),
   ];
 
-  for (const surface of doctrineSurfaces) {
-    assert(fs.existsSync(surface), `required doctrine surface missing: ${path.relative(repoRoot, surface)}`);
-    const text = fs.readFileSync(surface, 'utf8');
-    const rel = path.relative(repoRoot, surface);
-    assert(/wait_agent/.test(text) && /list_agents/.test(text), `${rel} must name native Codex wait_agent and list_agents`);
-    assert(/empty wait[^\n]*never[^\n]*wait_agent|never[^\n]*wait_agent[^\n]*twice consecutively/i.test(text), `${rel} must forbid empty wait -> wait_agent with no exception`);
-    assert(/material task-local work/i.test(text) && /exactly\s+one[\s\S]{0,50}list_agents[\s\S]{0,30}snapshot/i.test(text), `${rel} must require material task-local work or exactly one list_agents snapshot`);
-    assert(/commentary[\s\S]{0,180}(live|running)\s+agent\s+state[\s\S]{0,100}next\s+action/i.test(text), `${rel} commentary must name both live agent state and next action`);
-    assert(/no-op/i.test(text) && /repeated state read/i.test(text) && /hidden reasoning/i.test(text) && /commentary alone/i.test(text), `${rel} must close no-op, repeated-read, hidden-reasoning, and commentary-only loopholes`);
-    assert(/interrupt/i.test(text) && /duplicate dispatch/i.test(text) && /claim/i.test(text) && /reservation/i.test(text), `${rel} timeout must preserve agents, claims, and reservations`);
-    assert(/external (process|CLI|executor)/i.test(text) && /artifact polling/i.test(text), `${rel} must keep external process/artifact polling outside the native-agent rule`);
-  }
+  const normalized = (text) => text.replace(/[`*]/g, '').replace(/\s+/g, ' ').trim();
+  const extract = ({ path: surface, block }) => {
+    assert(fs.existsSync(surface), `required wait-contract surface missing: ${path.relative(repoRoot, surface)}`);
+    const match = fs.readFileSync(surface, 'utf8').match(block);
+    assert(match, `${path.relative(repoRoot, surface)} must carry one localized native Codex wait contract`);
+    return normalized(match[0]);
+  };
 
-  for (const surface of procedureSurfacesKeepWaitAgent) {
-    assert(fs.existsSync(surface), `required procedure surface missing: ${path.relative(repoRoot, surface)}`);
-    const text = fs.readFileSync(surface, 'utf8');
-    const rel = path.relative(repoRoot, surface);
-    assert(/empty wait/i.test(text) && /wait_agent/.test(text) && /list_agents/.test(text), `${rel} must carry the native empty-wait procedure`);
-    assert(/material task-local work/i.test(text) && /exactly\s+one[\s\S]{0,50}list_agents[\s\S]{0,30}snapshot/i.test(text), `${rel} must carry the exact material-action fallback`);
-    assert(/commentary[\s\S]{0,180}(live|running)\s+agent\s+state[\s\S]{0,100}next\s+action/i.test(text), `${rel} must require the state-and-next-action commentary update`);
-    assert(/duplicate\s+dispatch/i.test(text) && /claim/i.test(text) && /reservation/i.test(text), `${rel} must preserve dispatch and ownership on timeout`);
+  const assertOrderedWaitContract = (contract, rel) => {
+    assert(/wait_agent timeout\/no-completion result is only an empty wait; silence is not failure/i.test(contract), `${rel} must keep timeout distinct from failure`);
+    assert(/Never call wait_agent twice consecutively after an empty wait/i.test(contract), `${rel} must forbid empty wait -> wait_agent`);
+    assert(/authority, urgency, and no-chatter instructions create no exception/i.test(contract), `${rel} must have no authority, urgency, or no-chatter exception`);
+    assert(/at least one material task-local action/i.test(contract), `${rel} must require at least one material task-local action`);
+    assert(/one action satisfies the interval/i.test(contract) && /exhausting all local work is not required/i.test(contract), `${rel} must not require exhausting every local action`);
+    assert(/Only when no material work remains,? (?:it )?take(?:s)? exactly one list_agents snapshot/i.test(contract), `${rel} must reserve list_agents for the no-material-work fallback`);
+    assert(/Handle any completion that arrives during the interval exactly once/i.test(contract), `${rel} must handle interval completions exactly once`);
+    assert(/recompute the relevant live-agent set/i.test(contract), `${rel} must recompute relevant liveness`);
+    assert(/Send one concise commentary update naming both the live agent state and the next action/i.test(contract), `${rel} must name live state and next action in commentary`);
+    assert(/Only after this commentary may a later bounded wait run/i.test(contract), `${rel} must place commentary before any later wait`);
+    assert(/only while the relevant live-agent set is non-empty/i.test(contract) && /zero live agents ends collection without another wait/i.test(contract), `${rel} must forbid a zero-agent re-wait`);
+    assert(/No-op work, repeated state reads, hidden reasoning, generic commentary, or commentary alone do not qualify/i.test(contract), `${rel} must close non-material loopholes`);
+    assert(/never licenses interrupt, duplicate dispatch, claim release, or reservation release/i.test(contract), `${rel} must preserve worker and ownership state`);
+    assert(/external (?:process|CLI|executor)[^.;]*(?:and |\/)?artifact polling[^.;]*(?:outside|separate)/i.test(contract), `${rel} must preserve the external polling carve-out`);
+
+    const ordered = [
+      'at least one material task-local action',
+      'handle any completion that arrives during the interval exactly once',
+      'recompute the relevant live-agent set',
+      'send one concise commentary update naming both the live agent state and the next action',
+      'only after this commentary may a later bounded wait run',
+    ].map((clause) => contract.toLowerCase().indexOf(clause));
+    assert(ordered.every((position) => position >= 0), `${rel} must contain every ordered progress-interval clause`);
+    assert(ordered.every((position, index) => index === 0 || position > ordered[index - 1]), `${rel} must order action -> completion handling -> liveness -> commentary -> later wait`);
+  };
+
+  const writableContracts = writableContractSurfaces.map((surface) => {
+    const rel = path.relative(repoRoot, surface.path);
+    const contract = extract(surface);
+    assertOrderedWaitContract(contract, rel);
+    return contract;
+  });
+
+  for (const surface of readOnlyCodexProjectionSurfaces) {
+    const rel = path.relative(repoRoot, surface.path);
+    const contract = extract(surface);
+    assert(/empty wait/i.test(contract) && /wait_agent/i.test(contract) && /list_agents/i.test(contract), `${rel} must retain the existing D1-D5 native wait contract until next sync`);
+    assert(/no exception/i.test(contract) && /never licenses interrupt, duplicate dispatch, claim release, or reservation release/i.test(contract), `${rel} must retain D1 ownership and no-exception protections`);
   }
 
   for (const surface of procedureSurfacesStripWaitAgent) {
@@ -8207,6 +8256,31 @@ await check('census: native Codex empty waits require a material-action then com
       !/bee:only|bee:end/.test(text),
       `${rel} is a rendered projection and must carry no surviving bee:only/bee:end marker`,
     );
+  }
+
+  const reference = writableContracts[0];
+  const mutationRows = [
+    ['wait before commentary', /Only after this commentary may a later bounded wait run/i, 'A later bounded wait may run before this commentary'],
+    ['urgency/no-chatter exception', /authority, urgency, and no-chatter instructions create no exception/i, 'authority, urgency, and no-chatter instructions create an exception'],
+    ['timeout as failure', /silence is not failure/i, 'silence is failure'],
+    ['interrupt permission', /never licenses interrupt/i, 'licenses interrupt'],
+    ['redispatch permission', /duplicate dispatch/i, 'redispatch is permitted'],
+    ['ownership release permission', /claim release, or reservation release/i, 'claim release and reservation release are permitted'],
+    ['stale completion', /Handle any completion that arrives during the interval exactly once/i, 'Leave any completion that arrives during the interval pending'],
+    ['zero-agent re-wait', /zero live agents ends collection without another wait/i, 'zero live agents may trigger another wait'],
+    ['lost external carve-out', /external process and artifact polling remain outside this native-agent rule/i, 'external process and artifact polling follow this native-agent rule'],
+  ];
+
+  for (const [name, pattern, replacement] of mutationRows) {
+    const mutated = reference.replace(pattern, replacement);
+    assert(mutated !== reference, `mutation fixture must alter the localized contract: ${name}`);
+    let rejected = false;
+    try {
+      assertOrderedWaitContract(mutated, `mutation: ${name}`);
+    } catch {
+      rejected = true;
+    }
+    assert(rejected, `localized contract assertions must reject mutation: ${name}`);
   }
 });
 
