@@ -4,11 +4,11 @@ Use when `bee-planning` needs artifact templates, cell quality rules, or shape g
 
 ## Artifact fan-out — separate files are earned, not default (decision 0009)
 
-`plan.md` is the one planning artifact always written. Discovery and approach content default to **sections inside `plan.md`**; they graduate to their own files only when real complexity makes a standalone file worth reading on its own. The dogfood lesson: a small/standard feature that spawned `discovery.md` + `approach.md` + `plan.md` + `implement-plan.md` restated the same "current state" four times.
+`plan.md` is the truth artifact for **standard/high-risk** lanes (and small only when opt-in). Tiny drops it entirely and small skips it by default (D3/D4) — the cell(s) and the logged scoping synthesis carry the shape. Where `plan.md` exists, discovery and approach content default to **sections inside it**; they graduate to their own files only when real complexity makes a standalone file worth reading on its own. The dogfood lesson: a small/standard feature that spawned `discovery.md` + `approach.md` + `plan.md` + `implement-plan.md` restated the same "current state" four times.
 
 | Artifact | Separate file when | Otherwise |
 |---|---|---|
-| `plan.md` | always | — (this is the truth artifact) |
+| `plan.md` | standard/high-risk (frozen at Gate 2), or small when a durable multi-slice/product-decision doc is genuinely needed | **tiny: none** — request + one cell (D3); **small: opt-in** — a logged scoping synthesis + 1–3 cells is the default (D4) |
 | `discovery.md` | discovery ran at **L2/L3** (a real multi-candidate comparison worth preserving) | a `## Discovery` note inside `plan.md` (L0/L1 findings, cited) |
 | `approach.md` | **high-risk** lane, or discovery **L2+** (rejected alternatives + a risk map substantial enough to stand alone) | an `## Approach` section inside `plan.md` |
 | `implement-plan.md` (via `bee-briefing`) | **high-risk** (mandatory) | **standard**: on-demand — `plan.md` + the Gate 2 chat layer are the review record; render only if the user asks or the slice spans multiple domains. `small`: optional mini-brief on request. `tiny`/`spike`: none |
@@ -41,13 +41,15 @@ Rule of thumb: if the separate file would just repeat what `plan.md` already say
 - <assumption that could invalidate the path>
 ```
 
-## Artifact: plan.md (unified, one file per feature)
+## Artifact: plan.md (standard/high-risk; small only when opt-in)
+
+Frozen at Gate 2 (D1): once `approved_gates.shape` is set the content sections are immutable — the only permitted post-approval write is the approval stamp in the frontmatter. No requirements-only→implementation-ready mutation, no in-place enrichment.
 
 ```markdown
 ---
 artifact_contract: bee-plan/v1
-artifact_readiness: requirements-only   # → implementation-ready after Gate 2, enriched IN PLACE
-mode: tiny | small | standard | high-risk | spike
+mode: standard | high-risk | spike | small (opt-in)
+# approved_gate2: <unset until Gate 2; then a date stamp — the only permitted post-approval write>
 ---
 
 # Plan: <Feature>
@@ -79,17 +81,14 @@ high-risk = probes written out per dimension>
 
 ## Out of scope
 <explicitly not solved; deferred ideas stay deferred>
-
-<!-- implementation-ready additions (after Gate 2): -->
-## Current slice
-<slice name, entry state, exit state, files bounded, verify commands>
-## Cells
-<ids created via bee.mjs cells add — the cells are the JSON files, this is just the index>
 ```
+
+No `## Current slice` / `## Cells` sections are added post-approval: the plan is frozen (D1) and the current slice lives **only in cells** (D2). Prep creates the cells; the plan is never re-opened to index them.
 
 **Shape bodies by mode:**
 
-- `tiny` / `small` — a direct note: current work outcome, proof command, out of scope.
+- `tiny` — no plan.md (D3): the cell `action` is the micro-plan (current work outcome, proof command, out of scope).
+- `small` — no plan.md by default (D4): a logged scoping synthesis + 1–3 cells carry the shape; write a plan.md only when opt-in (durable multi-slice/product-decision doc).
 - `spike` — the one yes/no question, what proves YES, what NO implies, `.bee/spikes/<feature>/` location.
 - `standard` (milestone-shaped) — **phase plan**: `Phase | What Changes | Why Now | Demo | Unlocks` table. First phase obvious; later phases build on it; no technical buckets ("backend", "frontend" are not phases).
 - `standard` / `high-risk` (capability/risk-shaped) — **epic map**: feature outcome, repo-reality basis, `Epic | Capability/Risk Area | Why It Exists | Slices | Proof Needed` table, slice queue with deps and feasibility status, current slice to prepare.
@@ -153,5 +152,7 @@ A batch is all-or-nothing: every cell is validated (including duplicate ids with
 ## Trace of shapes
 
 ```text
-mode -> shape (plan.md, requirements-only) -> [GATE 2] -> current slice prep (same plan.md, implementation-ready) -> cells
+mode -> shape (plan.md, frozen at Gate 2) -> [GATE 2] -> cells
 ```
+
+(Tiny/small have no plan.md in this trace: `mode -> draft-cell preview + reality check -> [merged gate] -> cells`, D3/D4/D5.)

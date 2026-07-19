@@ -1,0 +1,16 @@
+ok    skills/bee-exploring/SKILL.md (Gate 1): level-aware bypass carve-out present, no stale floor phrasing
+ok    skills/bee-planning/SKILL.md (Gate 2): level-aware bypass carve-out present, no stale floor phrasing
+ok    skills/bee-validating/SKILL.md (Gate 3): level-aware bypass carve-out present, no stale floor phrasing
+ok    skills/bee-hive/references/go-mode.md (go mode): level-aware bypass carve-out present, no stale floor phrasing
+ok    skills/bee-exploring/SKILL.md: info-vs-approval refinement present (asks for information, not approval, under bypass)
+FAIL  skills/bee-planning/SKILL.md (D1): still carries the retired in-place enrichment "Enrich the **same**" — plan.md is frozen at Gate 2, the enrichment step is removed
+FAIL  skills/bee-planning/SKILL.md (D1): missing required lane-doctrine wording "frozen at Gate 2" — plan.md content is immutable once approved_gates.shape is set
+FAIL  skills/bee-planning/SKILL.md (D1): missing required lane-doctrine wording "approval stamp" — the only permitted post-approval plan.md write is an approval stamp
+FAIL  skills/bee-planning/SKILL.md (D8): missing required lane-doctrine wording "intake classification" — cheap intake classification runs before the lane-scaled bootstrap
+FAIL  skills/bee-planning/SKILL.md (D3): missing required lane-doctrine wording "request + one cell" — tiny lane shape = request + one cell, no plan.md
+ok    skills/bee-planning/SKILL.md (D4): "scoping synthesis" present
+FAIL  skills/bee-planning/SKILL.md (D4): missing required lane-doctrine wording "plan.md is opt-in" — plan.md is opt-in for small, never written by default
+FAIL  skills/bee-planning/SKILL.md (D5): missing required lane-doctrine wording "never persist-then-preview" — draft cells are previewed before the merged gate; persisted only after approval
+ok    sentinel: a non-compliant gate surface is correctly flagged (checker bites)
+
+FAIL - gate-bypass doctrine: 7 failure(s)

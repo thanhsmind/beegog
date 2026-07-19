@@ -88,6 +88,46 @@ for (const { file, gate, tokens } of GATE_SKILLS) {
   }
 }
 
+// Lane-ceremony-v3 doctrine (D1/D3/D4/D5/D8): bee-planning must carry the NEW
+// plan-freeze + intake-first + lane-shape wording and must NOT carry the retired
+// in-place plan enrichment. Prose-only invariants get bypassed unless mechanized
+// (crit-pattern 20260714); these pins keep the rewrite from silently reverting to
+// the shrunken-feature-plan model this feature removes.
+{
+  const planningAbs = path.join(REPO_ROOT, 'skills/bee-planning/SKILL.md');
+  let planningText = '';
+  try {
+    planningText = fs.readFileSync(planningAbs, 'utf8');
+  } catch {
+    fail('skills/bee-planning/SKILL.md: unreadable — lane-ceremony-v3 planning doctrine lives here');
+  }
+
+  // (a) D1: the retired in-place enrichment instruction must be gone.
+  if (planningText.includes('Enrich the **same**')) {
+    fail('skills/bee-planning/SKILL.md (D1): still carries the retired in-place enrichment "Enrich the **same**" — plan.md is frozen at Gate 2, the enrichment step is removed');
+  } else {
+    ok('skills/bee-planning/SKILL.md (D1): retired in-place enrichment instruction absent');
+  }
+
+  // (b)-(f) Present-wording pins: each new lane invariant must be stated in text.
+  const REQUIRED_PLANNING = [
+    { token: 'frozen at Gate 2', d: 'D1', why: 'plan.md content is immutable once approved_gates.shape is set' },
+    { token: 'approval stamp', d: 'D1', why: 'the only permitted post-approval plan.md write is an approval stamp' },
+    { token: 'intake classification', d: 'D8', why: 'cheap intake classification runs before the lane-scaled bootstrap' },
+    { token: 'request + one cell', d: 'D3', why: 'tiny lane shape = request + one cell, no plan.md' },
+    { token: 'scoping synthesis', d: 'D4', why: 'small lane default = a logged scoping synthesis + 1-3 cells' },
+    { token: 'plan.md is opt-in', d: 'D4', why: 'plan.md is opt-in for small, never written by default' },
+    { token: 'never persist-then-preview', d: 'D5', why: 'draft cells are previewed before the merged gate; persisted only after approval' },
+  ];
+  for (const { token, d, why } of REQUIRED_PLANNING) {
+    if (!planningText.includes(token)) {
+      fail(`skills/bee-planning/SKILL.md (${d}): missing required lane-doctrine wording "${token}" — ${why}`);
+    } else {
+      ok(`skills/bee-planning/SKILL.md (${d}): "${token}" present`);
+    }
+  }
+}
+
 // Sentinel: prove the checker bites. A synthetic gate surface missing the tokens
 // (and carrying a banned phrase) MUST be flagged by the same predicates.
 const sentinelBad = 'Present Gate X, then verbatim ask. The safety floor is absolute.';
