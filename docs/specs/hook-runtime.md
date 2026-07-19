@@ -1,8 +1,8 @@
 ---
 area: hook-runtime
-updated: 2026-07-19
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19); codex-native-transport cell cnt-7 (Claude model-param guard allowlist folds a configured model-shaped adviser's own model, closing a live adviser-dispatch refusal, allow-only-widening; trace in .bee/cells/, report docs/history/codex-native-transport/reports/cnt-7.md, 2026-07-19)]
-decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated); codex-native-transport D3-D5 (3ceba8f5, D3a c0cba64e, Δ2-amended 760e9b05); 350f1e82 (codex-native-transport cnt-4 rescope — override-field route-check deferred to a documented pass-through-open gap, pending observed evidence)]
+updated: 2026-07-20
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19); codex-native-transport cell cnt-7 (Claude model-param guard allowlist folds a configured model-shaped adviser's own model, closing a live adviser-dispatch refusal, allow-only-widening; trace in .bee/cells/, report docs/history/codex-native-transport/reports/cnt-7.md, 2026-07-19); multi-session-hardening cell msh-5 (throttled heartbeat-and-lease renewal wired into the per-prompt and post-task-update checkpoints, try-once/skip-on-busy against the coordination lock; trace in .bee/cells/, report docs/history/multi-session-hardening/reports/msh-5.md, 2026-07-19)]
+decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated); codex-native-transport D3-D5 (3ceba8f5, D3a c0cba64e, Δ2-amended 760e9b05); 350f1e82 (codex-native-transport cnt-4 rescope — override-field route-check deferred to a documented pass-through-open gap, pending observed evidence); multi-session-hardening D2/D5 with Δ3-amendment (docs/history/multi-session-hardening/CONTEXT.md; audit 12f54e88, locked 17a624dc)]
 coverage: partial
 ---
 
@@ -313,6 +313,26 @@ mismatch any plausible configured route is still allowed, unaffected; the
 identical override fields on an unmarked message are still denied,
 unaffected (codex-native-transport D6; decision 350f1e82).
 
+**B20 — The per-prompt and post-task-update checkpoints opportunistically
+refresh coordination state, never blocking on it.** Trigger: the per-prompt
+checkpoint and the post-task-update checkpoint fire, as they already do for
+their own primary job (context injection, state/cell-count refresh). What
+happens: each also attempts the acting session's own heartbeat-and-lease
+refresh (workflow-state B24) — its own automatic, throttled renewal of the
+session's heartbeat plus every claim and hold it owns. That attempt is wrapped
+in its own failure boundary, separate from the checkpoint's primary job: a
+failure inside the refresh is logged as a visible gap and never blocks,
+delays, or changes the checkpoint's own outcome (B1 unchanged). The refresh's
+own writes never wait on a busy shared coordination store: they try once and
+skip silently on contention, the same discipline every lifecycle checkpoint
+uses against the coordination lock (workflow-state B21) — a checkpoint never
+waits on that lock, only a command-line verb does. What each actor observes: a
+session that stays genuinely active keeps its claims and holds fresh without
+any extra step; a checkpoint that loses the lock race simply skips one
+opportunistic refresh, and the primary reminder or state-refresh work it
+exists for still runs and is still reported exactly as before
+(multi-session-hardening D5).
+
 **B17 — A passive usage log records every tool call, and enforces nothing.**
 After every tool the assistant runs — any tool, both runtimes — a checkpoint
 appends one line to a machine-local usage log: timestamp, the tool's name, and
@@ -433,6 +453,11 @@ that it reduces anything.
   observed that field arrive on some client version; until then, a
   marker-anchored spawn carrying such fields decides exactly as it would
   without them (B19; codex-native-transport D6, decision 350f1e82).
+- R19 — A lifecycle checkpoint's own opportunistic coordination-state refresh
+  never waits on the coordination lock and never lets a failure inside it
+  change the checkpoint's primary outcome; only a command-line verb's
+  read-modify-write waits for the lock (B20; multi-session-hardening D2/D5,
+  Δ3-amended).
 
 ## Edge Cases Settled
 
@@ -461,8 +486,16 @@ that it reduces anything.
   temp-file collision: atomic writes use a unique per-invocation temp name
   (write-then-rename contract unchanged), proven by a parallel regression test
   (18 concurrent OS processes, zero corrupt reads). Logical last-writer-wins
-  between full read-modify-write cycles remains a named, accepted limitation
-  (codex-native-runtime-v2, cnr2-5).
+  between full read-modify-write cycles is now CLOSED for every
+  read-modify-write verb that runs its body under the coordination store lock
+  (workflow-state B21/B23) — a command-line verb's read-check-write serializes
+  through the lock and waits for it; only a lifecycle checkpoint's own
+  opportunistic refresh still uses the try-once, skip-on-busy discipline
+  (B20), which was always allowed to skip a cycle rather than corrupt one. A
+  future full revision/compare-and-swap layer remains a deferred concern for
+  if cross-process contention ever outgrows the lock, not a currently open
+  gap (codex-native-runtime-v2, cnr2-5, superseded by
+  multi-session-hardening D2/D6).
 - A read-only, fail-closed doctor command reports per-runtime health: every row
   carries value + evidence + ok/warn/unknown/unsupported; capability verdicts
   are version-scoped; the command performs zero writes, including the
@@ -650,6 +683,20 @@ that it reduces anything.
   `--probe` / `--probe-selftest`; probe leg protocol recorded in
   `docs/decisions/ab-tiny-protocol.md`. Evidence: `.bee/cells/cnt-5.json`,
   `docs/history/codex-native-transport/reports/probe-evidence.md`.
+- Opportunistic coordination refresh (B20, R19): `heartbeatTouch` (session
+  heartbeat + `renewClaimTTL`) in `skills/bee-hive/templates/lib/claims.mjs`,
+  `renewHoldsBySession` in `skills/bee-hive/templates/lib/reservations.mjs`,
+  composed at the checkpoint call site (not imported by `claims.mjs` itself)
+  in `hooks/bee-prompt-context.mjs` (UserPromptSubmit) and
+  `hooks/bee-state-sync.mjs` (PostToolUse/Stop), each inside its own
+  try/catch separate from the checkpoint's primary job; both hook copies
+  mirrored under `.bee/bin/hooks/`. Coordination lock primitive:
+  `withStoreLock` (`options.maxAttempts`/`retryDelayMs` power the checkpoint's
+  try-once mode) in `skills/bee-hive/templates/lib/lock.mjs`. Suite:
+  `scripts/test_heartbeat_touch.mjs` (throttle no-op, real-hook-driven
+  refresh, touch-throw fail-open, `LOCK_BUSY` silent skip, renewal-vs-adopt
+  gate skip). Evidence: `.bee/cells/msh-5.json`,
+  `docs/history/multi-session-hardening/reports/msh-5.md`.
 - Claude model-param allowlist advisor fold (B16, "Choice only"):
   `configuredModelSet` in `skills/bee-hive/templates/lib/dispatch-guard.mjs`
   (mirrored in `.bee/bin/lib/dispatch-guard.mjs`), folding

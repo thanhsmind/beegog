@@ -529,6 +529,13 @@ cell (cnt-6) repaired it. Prose alone did not hold under a multi-session checkou
 mechanization (manifest check derived into the verify of any cell whose files hit rendered
 trees or `lib/`) is now the recorded fix direction, not a nice-to-have.
 
+**Recurred 2026-07-20 (msh-1) — THIRD instance, new layer:** the cell added a lib file and
+regenerated the manifest, but the committed plugin skill trees were never re-rendered
+(`render_plugin_skill_trees.mjs`); red surfaced only at the feature-close full chain and cost a
+fix-first cell (msh-8). The derived-artifact set for a `templates/lib/` touch is now known to be
+THREE-deep: `.bee/bin` mirror + rendered plugin trees + release manifest. Until the mechanization
+lands (backlog), any lib-touching cell's verify carries all three regen/checks explicitly.
+
 ## [20260719] With concurrent sessions possible, the claim precedes the spawn — and session ids are self-derived, never handed down
 **Category:** process
 **Feature:** codex-native-transport
@@ -546,6 +553,22 @@ the worker's own runtime env at reserve time — an orchestrator-handed id in th
 worker's own write as a "cross-session" conflict this feature. Corollary: a live session reads as
 stale after 15 min (heartbeat refreshes only at session start), so liveness signals are advisory
 — check for commits/holds before treating a lane owner as dead.
+
+## [20260720] A cell that changes a shared mutator surface re-runs the sibling suites of that surface — its own new suite is not enough
+**Category:** failure
+**Feature:** multi-session-hardening
+**Tags:** [verify-authoring, cross-cell, guards, silent-rot]
+
+msh-2 shipped a claim-race suite, green at cap. Two cells later msh-4 added an ownership guard
+to the same mutators (block/reopen); msh-4's verify ran only its own suites, so the msh-2 suite
+silently went red and sat broken for two cells — discovered only when msh-6 wired the new suites
+into the standing `commands.verify` chain (the wiring step caught the feature's first real
+cross-cell interaction bug at close instead of after ship). **Two rules:** (1) a cell that
+changes shared guard/ownership/dispatch logic lists, in its own verify, every EXISTING suite
+that exercises the same surface — grep the tests for the functions it edits at plan time;
+(2) new suites are wired into the standing chain INSIDE the feature, never left as cap-only
+artifacts — a suite that runs only at its birth cell's cap is orphaned from regression the day
+that cell closes, and the wiring run itself is a detector (concurrency of truths, not ceremony).
 
 ## [20260716] A cell dependency in the wrong field name is silently ignored — verify the wave, not the write
 **Category:** failure

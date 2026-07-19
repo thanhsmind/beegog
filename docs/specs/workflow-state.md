@@ -1,10 +1,10 @@
 ---
 area: workflow-state
-updated: 2026-07-19
+updated: 2026-07-20
 parity_sources: [codex-hook-state-parity cell codex-hook-state-parity-1 (pre-phase routing ownership and review isolation; report and capped trace, 2026-07-16)]
 parity_decisions: [codex-hook-state-parity D4-D6]
-sources: [lane-ceremony-v3 cells lcv3-1..lcv3-5 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan document frozen at shape approval, slice-in-units, close-out full-chain evidence); worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..5 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15/16 — computed schedule, cycle refusal, schedule query verb, orchestration prose; -5: review fix scoping refusal to introduced/participating cycles), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times), advisor-and-orchestration Slice 2B cells ao-2b-1/ao-2b-2 (AO5 adviser form — ladder and ceiling-skip removed, same-model no-op only; advice-class write-token refusal + promptVia migration; traces in .bee/cells/, reports docs/history/advisor-and-orchestration/reports/, 2026-07-17); advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17); post-advisor-hardening cell pah-2 (cells add/update manifest-lint advisory, 2026-07-18)]
-decisions: [lane-ceremony-v3 D1/D2/D9 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19); worktree-isolation D1-D4 (docs/history/worktree-isolation/CONTEXT.md; logged 58c56bb6/5de1fd36/8cc1bde1/b24a2efc); a83a3613 (shared isolated runner plus real external command status/output grading); parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable), 72f3d6dd (AO5 config is the authority — adviser strength ladder removed, cells ao-2b-1/ao-2b-2 2026-07-17), AO3/AO13 (Gate 3 adviser precondition, event-based staleness, never a TTL — cells ao-4-1/ao-4-2 2026-07-17)]
+sources: [lane-ceremony-v3 cells lcv3-1..lcv3-5 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan document frozen at shape approval, slice-in-units, close-out full-chain evidence); worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..5 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15/16 — computed schedule, cycle refusal, schedule query verb, orchestration prose; -5: review fix scoping refusal to introduced/participating cycles), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times), advisor-and-orchestration Slice 2B cells ao-2b-1/ao-2b-2 (AO5 adviser form — ladder and ceiling-skip removed, same-model no-op only; advice-class write-token refusal + promptVia migration; traces in .bee/cells/, reports docs/history/advisor-and-orchestration/reports/, 2026-07-17); advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17); post-advisor-hardening cell pah-2 (cells add/update manifest-lint advisory, 2026-07-18); multi-session-hardening cells msh-1..7 (traces in .bee/cells/, reports docs/history/multi-session-hardening/reports/, 2026-07-19 — coordination lock primitive, every-claim-path exclusivity, session self-derivation, mutator ownership guard, throttled heartbeat/lease renewal, orchestrator-claims-before-spawn doctrine sync)]
+decisions: [lane-ceremony-v3 D1/D2/D9 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19); worktree-isolation D1-D4 (docs/history/worktree-isolation/CONTEXT.md; logged 58c56bb6/5de1fd36/8cc1bde1/b24a2efc); a83a3613 (shared isolated runner plus real external command status/output grading); parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable), 72f3d6dd (AO5 config is the authority — adviser strength ladder removed, cells ao-2b-1/ao-2b-2 2026-07-17), AO3/AO13 (Gate 3 adviser precondition, event-based staleness, never a TTL — cells ao-4-1/ao-4-2 2026-07-17), multi-session-hardening D1-D7 with Δ1-Δ6 amendments (docs/history/multi-session-hardening/CONTEXT.md; audit 12f54e88, locked 17a624dc)]
 coverage: partial
 ---
 
@@ -62,10 +62,11 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | consult | One evidence-backed question from a stuck worker to the adviser plus the reply. Budgeted: at most two per claim of a work unit; a re-dispatch of the same unit grants a fresh budget. |
 | degenerate consult | A consult that would ask literally the same model the worker itself runs on — the one honest no-op, and the only consult the dispatcher skips (72f3d6dd/AO5: the configured adviser is the adviser; no family test, no strength test, no self-judged skip — a strength ladder was removed by AO5). An external-command adviser is never the same model, so it is always offered. |
 | catalog fingerprint | A local fingerprint of the command catalog from the previous invocation. It detects that the discoverable surface changed without altering a command's normal result. |
-| working session | One terminal's live occupancy of the project, recorded durably with its start time and a heartbeat it renews while working. Claims and (in later slices) file holds name their owning session. |
-| claim | Exclusive ownership of one unit of work by one working session, with a lifetime (TTL) and the owner's heartbeat. Created atomically: among any number of simultaneous claimants exactly one wins; every loser receives a typed refusal, never a crash. |
-| typed refusal | The uniform "no" every coordination operation answers with on contention: a structured result carrying a refusal code and reason, never an exception. Codes and meanings: `SESSION_EXISTS` — the session record already exists; `SESSION_MISSING` — the named owner has no session record; `CLAIMED` — another live session owns the unit; `GATE_HELD` — someone is mid-mutation on this claim, try again; `NOT_OWNER` — the caller is not the claim's owner; `NOT_FOUND` — no such claim exists. |
-| adoption | Ownership transfer of a live claim to a successor session (the fresh-session handoff, D1). Performed under the claim's own exclusive gate while the claim record stays continuously present — at no instant does the unit look unclaimed, so no third session can seize it mid-transfer. |
+| working session | One terminal's live occupancy of the project, recorded durably with its start time and a heartbeat that renews itself automatically on activity, throttled to a short minimum interval between writes so routine work does not spam the shared store. Claims and file holds name their owning session, and the same automatic renewal carries both of their leases forward at the same moment. |
+| claim | Exclusive ownership of one unit of work by one working session, with a lifetime (TTL) and the owner's heartbeat. Created atomically through the SAME exclusive-creation primitive on every path that claims a unit — a direct claim by identity as well as the cross-session picker — so among any number of simultaneous claimants exactly one wins; every loser receives a typed refusal, never a crash. A claim with no owning session (a single-user, ownerless claim) remains a legal, supported shape. |
+| typed refusal | The uniform "no" every coordination operation answers with on contention: a structured result carrying a refusal code and reason, never an exception. Codes and meanings: `SESSION_EXISTS` — the session record already exists; `SESSION_MISSING` — the named owner has no session record; `CLAIMED` — another live session owns the unit, naming it and its expiry; `GATE_HELD` — someone is mid-mutation on this claim, try again; `NOT_OWNER` — the caller is not the claim's owner; `NOT_FOUND` — no such claim exists; `LOCK_BUSY` — a shared coordination store's lock is held by another process past the wait budget, naming the holder. |
+| coordination lock | The bounded-wait mutual-exclusion primitive guarding a shared coordination store's (holds, the durable workflow record) read-modify-write body against a second concurrent writer. A command-line verb waits for it (bounded retry); a lifecycle checkpoint never waits — it tries once and skips its own update silently when busy, the same fail-open discipline every checkpoint already follows. A holder that goes stale (far past the time any real read-modify-write body could still be running) is taken over by an atomic handoff — staleness is re-verified at every retry, never cached, so at most one process ever believes it holds the lock at once. |
+| adoption | Ownership transfer of a live claim to a successor session (the fresh-session handoff, D1). Performed under the claim's own exclusive gate while the claim record stays continuously present — at no instant does the unit look unclaimed, so no third session can seize it mid-transfer. An automatic lease renewal (the heartbeat above) never fires against a claim mid-transfer — it is skipped that cycle rather than risk reverting the transfer. |
 | reclaim (sweep) | Taking back an abandoned claim. Permitted only when BOTH the claim's lifetime has expired AND its owner's heartbeat is stale, re-verified while holding the claim's gate. A stall signal alone never justifies stealing live work. |
 | lane | One feature's own pipeline record — its feature name, mode, phase (same closed vocabulary), all four gates, summary and next action — living beside the default record so several features can be active at once. The default record is itself a lane: the one every unbound session sees. |
 | lane binding | The lane named on a working session's record. Resolution order is fixed: the session's bound lane when it names an existing lane, otherwise the default record — never a guess, never a scan. A binding to a missing or corrupt lane answers with a typed refusal (`LANE_MISSING`/`LANE_CORRUPT`/`LANE_INVALID`). While unbound, the session record simply omits the binding. |
@@ -223,24 +224,36 @@ sanctioned fix). The lint is a loud advisory line naming the trap and the fix �
 it never refuses the write, never changes the outcome, and tolerates malformed
 shapes silently (cells pah-2, 2026-07-18).
 
-**B11 — Concurrent sessions coordinate through atomic claims (foundation, not
-yet wired).** Trigger: a working session wants exclusive ownership of a unit of
-work while other sessions may want the same unit at the same moment. What
-happens: the claim is created by exclusive creation — a storage-level operation
-that cannot succeed twice — so exactly one claimant wins; every other claimant
-receives the typed refusal `CLAIMED` and remains free to pick other work. The
-winning claim carries its owner, lifetime, and heartbeat. Mutating a live claim
-(adoption to a successor session; reclaim of an abandoned one) happens only
-under that claim's own exclusive gate, with the claim record continuously
-present throughout — an observer polling at any instant sees the unit owned by
-exactly one session, never unowned mid-transfer. Reclaim additionally
-re-verifies, while holding the gate, that the lifetime is expired AND the
-heartbeat is stale. Single-winner behavior is proven by repeated multi-process
-races on both supported platforms (Linux/WSL2 and Windows). What each actor
+**B11 — Concurrent sessions coordinate through atomic claims, on every claim
+path, not only the cross-session picker.** Trigger: a working session wants
+exclusive ownership of a unit of work while other sessions may want the same
+unit at the same moment — whether it asks for a specific unit by identity or
+pulls the next available one. What happens: the claim is created by exclusive
+creation — a storage-level operation that cannot succeed twice — so exactly one
+claimant wins; every other claimant receives the typed refusal `CLAIMED`,
+naming the winner and its expiry, and remains free to pick other work. The
+winning claim carries its owner, lifetime, and heartbeat; a claim with no
+owning session (a single-user, ownerless claim) is a legal, supported shape.
+The exclusive token behind a claim is released on EVERY transition that clears
+it — completion, hand-back, block, drop, or reopen — not only the
+cross-session-picker's own unwind, so a same-session round trip (claim, block,
+reopen, claim again) never self-refuses against its own prior claim. Mutating a
+live claim (adoption to a successor session; reclaim of an abandoned one)
+happens only under that claim's own exclusive gate, with the claim record
+continuously present throughout — an observer polling at any instant sees the
+unit owned by exactly one session, never unowned mid-transfer. Reclaim
+additionally re-verifies, while holding the gate, that the lifetime is expired
+AND the heartbeat is stale. Single-winner behavior is proven by repeated
+multi-process races on both supported platforms (Linux/WSL2 and Windows),
+exercised through every claim path, not only the picker. What each actor
 observes today: the full flow is wired — sessions and lane bindings are
 commandable (B12), the readers consult them (B13), cross-session holds are
-enforced at write time (B14), and a finished task hands itself to a fresh
-session (B15) which can then pull further approved work (B16).
+enforced at write time (B14), a finished task hands itself to a fresh session
+(B15) which can then pull further approved work (B16), a shared coordination
+store never silently drops a concurrent write (B21), a session's identity is
+never handed down by another party (B22), mutating a claimed unit checks
+ownership (B23), and a live session's heartbeat and leases renew themselves
+(B24).
 
 **B12 — A feature can start as its own lane, and every lane mutation is
 commandable.** Trigger: new work begins while other features are mid-flight.
@@ -419,6 +432,76 @@ preserves recovery identity. Destructive disposal requires explicit operator
 authorization plus captured status, diff, revision, reachability, and a
 recovery reference or patch.
 
+**B21 — A shared coordination store serializes its own concurrent writes.**
+Trigger: two or more sessions attempt a read-modify-write against the same
+shared coordination store (a hold ledger, the durable workflow record) at the
+same moment. What happens: each read-modify-write body runs inside that
+store's coordination lock (Data Dictionary) — acquired by exclusive creation
+with bounded retry, and a stale holder is taken over by an atomic handoff
+rather than an unconditional removal, so a waiter can never delete a fresh
+holder's lock out from under it; staleness is re-verified at every retry,
+never cached. A command-line verb waits for the lock, bounded; a lifecycle
+checkpoint never waits — it tries once and, if busy, skips its own update
+silently, preserving the checkpoint's existing fail-open discipline. On a
+genuine timeout the caller receives the typed `LOCK_BUSY` refusal naming the
+current holder — never a silent fall-through to an unlocked write, because
+mutual exclusion is the entire point. What each actor observes: no hold and no
+coordination-record write is ever silently dropped by a second concurrent
+writer; a checkpoint that loses the race simply skips one opportunistic
+refresh, with the next one along shortly (D2).
+
+**B22 — A session's identity is derived automatically, never handed to it by
+another party.** Trigger: any operation that records or checks a session's
+ownership — claiming, holding, or renewing. What happens: the acting session's
+identity is resolved from its own runtime environment at the moment of the
+operation, in a fixed order of preference, with an explicit override reserved
+for tests; nothing else ever substitutes a different party's stated identity
+for the caller's own. What each actor observes: an operation with no
+resolvable identity still records an ownerless (sessionless) entry exactly as
+it always could; every other operation is now attributed to the real acting
+session by default rather than only when a caller opted in, so cross-session
+holds and claims become visible without any special handling (D3).
+
+**B23 — Mutating a claimed unit of work requires the caller to own it, with an
+audited rescue door.** Trigger: any operation that would change a claimed
+unit's state — recording verification, completing it, blocking it, releasing
+it, or reopening it. What happens: the operation compares the caller's own
+derived identity (B22) against the unit's live claim. A live claim owned by a
+different session refuses — typed, naming the owner and when its claim
+expires. An expired claim, an absent claim, an ownerless claim, or a claim the
+caller itself owns all proceed exactly as before — a single working session
+never encounters this refusal. An explicit forced override exists for genuine
+rescue: it proceeds regardless of ownership and always appends a permanent,
+append-only audit entry to the unit's own record — never silently — and that
+entry survives the unit's own completion, kept apart from any other audit
+trail the unit already carries so a later mutation can never overwrite it. A
+forced release of a claim also clears or hands off the underlying claim
+record, so the rescued unit is not left unclaimable by anyone. What each actor
+observes: normal single-session work is unaffected; a session that tries to
+mutate another live session's claimed work gets a clear refusal instead of
+silently overwriting it; a deliberate rescue always leaves a trace (D4).
+
+**B24 — A live session's heartbeat renews itself, throttled, and carries its
+claims and holds forward with it.** Trigger: a working session performs any
+tracked activity while it is already known to the coordination store. What
+happens: the session's heartbeat record refreshes automatically, at most once
+per a short throttle window (well under the staleness threshold that governs
+reclaim), so routine work does not spam the shared store with writes. In the
+same moment, every claim and hold the session owns has its lease renewed —
+except a claim currently gated by an in-flight ownership transfer (B11
+adoption), which is skipped rather than rewritten, so an automatic renewal can
+never revert a transfer that is mid-flight. This automatic renewal is
+opportunistic, not authoritative: it runs through the same never-wait,
+try-once discipline as any other lifecycle-triggered write (B21), and a
+failure to renew never blocks or delays the session's own primary work. What
+each actor observes: a session that stays genuinely active never goes stale,
+so its claims and holds are not mistakenly reclaimed out from under it; the
+accepted residual is that a session idling in unrelated activity still
+renews — the audited forced door (B23) and release on any claim-clearing
+transition (B11) remain the rescue; the staleness threshold itself is
+unchanged, so real silence that long still genuinely means the session is
+gone (D5).
+
 ### Closing a feature — the tail of the chain
 
 Closing is the one stretch of the pipeline where each step must *prove* the step
@@ -467,7 +550,7 @@ refusal that says which step was skipped and how to perform it, and the record i
 untouched. The human sees a feature that cannot be reported as finished until
 its knowledge actually landed — the state and the specs can no longer disagree.
 
-**B21 — The approved plan document is frozen; the current slice lives only in
+**B25 — The approved plan document is frozen; the current slice lives only in
 work units.** Trigger: shape approval is granted for a feature whose lane keeps
 a plan document (lane-ceremony-v3 D1/D2/D9). What happens: from that moment the
 plan document's content is immutable — the only permitted post-approval write
@@ -488,8 +571,11 @@ work shape is the unit itself (doctrine-layer R13).
 
 - **The agent** runs every verb itself; the human never runs workflow
   commands. The human's actions are gate approvals and decision answers.
-- **Workers** touch only cell claim/verify/cap and reservations — never phase,
-  gates, or feature identity.
+- **Workers** touch only cell verify/cap and reservations — never phase,
+  gates, or feature identity, and never claim a unit of work for themselves.
+  Ownership of the unit a worker is dispatched to is always won by whoever
+  dispatches it, before the worker starts; the worker's own job is to validate
+  the ownership it was handed, never to acquire it.
 - **Independent reviewers** write only their review-session record. They cannot
   change active routing state or execution readiness; validation owns that
   decision.
@@ -682,6 +768,30 @@ work shape is the unit itself (doctrine-layer R13).
 - R35 — Canonical physical containment always precedes logical path
   normalization and authorization. When safe resolution is impossible,
   worktree mode is refused rather than run unguarded (worktree-isolation D4).
+- R36 — Every claim path — a direct claim by identity as well as the
+  cross-session picker — acquires the same exclusive token before any claim
+  state changes, and that token is released on every transition that clears a
+  claim (completion, hand-back, block, drop, reopen), so a same-session round
+  trip never self-refuses against its own prior claim (multi-session-hardening
+  D1, Δ2-amended).
+- R37 — A shared coordination store's read-modify-write body always serializes
+  through its coordination lock: a command-line verb waits (bounded), a
+  lifecycle checkpoint tries once and skips silently on contention — never a
+  fall-through to an unlocked write (multi-session-hardening D2, Δ1/Δ3-amended).
+- R38 — A session's identity is always self-resolved at the moment of the
+  operation from its own runtime environment, never accepted as handed down by
+  another party except an explicit test override; an operation with no
+  resolvable identity still proceeds, recorded as ownerless
+  (multi-session-hardening D3).
+- R39 — Mutating a claimed unit of work is refused when a live claim names a
+  different session, naming the owner and expiry; an expired, absent,
+  ownerless, or matching claim proceeds unchanged, and a forced override
+  always appends a permanent audit entry that survives the unit's own
+  completion (multi-session-hardening D4, Δ5-amended).
+- R40 — A worker never establishes its own ownership of a unit of work; the
+  dispatching orchestrator wins the claim before the worker starts, and the
+  worker only validates the ownership it was handed (multi-session-hardening
+  D1 worker-execution-contract amendment).
 
 ## Edge Cases Settled
 
@@ -738,6 +848,19 @@ work shape is the unit itself (doctrine-layer R13).
   session coordination: exclusive creation is not reliable there. The
   supported topologies are a local Linux/WSL2 disk and a local Windows disk
   (both race-proven).
+- A same-session round trip on one unit of work — claim, block, reopen, claim
+  again — never self-refuses: the exclusive token is released on every
+  claim-clearing transition, not only completion (multi-session-hardening
+  D1, Δ2-amended).
+- A forced ownership override always leaves a permanent audit trace naming the
+  verb, who forced it, whose ownership was bypassed, and when — kept apart
+  from any other audit trail on the unit so a later mutation can never
+  overwrite it — and a forced release of the claim leaves the unit claimable
+  again, never stuck self-refusing (multi-session-hardening D4, Δ5-amended).
+- A single-user workspace with no session identity anywhere in the
+  environment behaves exactly as before: claims and holds are recorded
+  ownerless, and the new ownership check never fires against an ownerless
+  claim (multi-session-hardening D3/D4).
 
 ## Open Gaps
 
@@ -875,6 +998,35 @@ work shape is the unit itself (doctrine-layer R13).
   e4f51a2, da2e165; traces
   `.bee/cells/review-od-{1,2,3}.json`; acceptance map
   `docs/history/review-on-demand/reports/uat-scenarios.md`.
+- Multi-session hardening (B11/B21-B24, R36-R40): coordination lock primitive
+  `withStoreLock` in `skills/bee-hive/templates/lib/lock.mjs` (byte-mirrored
+  to `.bee/bin/lib/`), O_EXCL acquire with stale-holder takeover by atomic
+  rename, forked-racer suite `scripts/test_store_lock.mjs`; `cells claim --id`
+  re-backed by the same claim-file gate `claim-next` uses
+  (`claimCellCrossSession` in `lib/cells.mjs`), forked-racer suite
+  `scripts/test_claim_race.mjs`; session id self-derivation `resolveSessionId`
+  in `lib/claims.mjs`; claim-clearing release on cap/unclaim/block/drop/reopen
+  via `clearClaim` in `lib/claims.mjs`; reservation read-modify-write and
+  session auto-derive under the lock in `lib/reservations.mjs`
+  (`reserve`/`release`/`sweepExpired`), forked-racer suite
+  `scripts/test_reservation_race.mjs`; ownership guard on cell mutators
+  (`checkClaimOwnership`/`guardClaimOwnership`, `--force-ownership`, the
+  `trace.ownership_overrides` audit key kept apart from `trace.deviations`)
+  in `lib/cells.mjs`; throttled heartbeat-and-lease renewal
+  (`heartbeatTouch`, `renewClaimTTL` in `lib/claims.mjs`,
+  `renewHoldsBySession` in `lib/reservations.mjs`) wired into
+  `hooks/bee-prompt-context.mjs` and `hooks/bee-state-sync.mjs` in try-once
+  mode, suite `scripts/test_heartbeat_touch.mjs`; state logical
+  read-modify-write verbs (`startFeature` in `lib/state.mjs`;
+  `handleStateSet`/`handleStateGate`/`stateWorkerMutate`/
+  `handleStateScribingRun` in `bee.mjs`) serialized under the same lock,
+  waiting normally. Orchestrator-claims-before-spawn doctrine in
+  `skills/bee-executing/SKILL.md` + `references/worker-details.md` and
+  `skills/bee-swarming/SKILL.md` + `references/swarming-reference.md`; the
+  four new suites added to `.bee/config.json` `commands.verify`. Evidence:
+  `docs/history/multi-session-hardening/CONTEXT.md` (D1-D7, Δ1-Δ6); traces
+  `.bee/cells/msh-{1..7}.json`; reports
+  `docs/history/multi-session-hardening/reports/msh-{1..7}.md`.
 - Computed schedule (B17/B18, R26/R27): `skills/bee-hive/templates/lib/schedule.mjs`
   (`computeSchedule`, `detectCycles` — pure, Kahn layering + greedy `pathsOverlap`
   packing, Tarjan SCC for cycles; byte-mirrored to `.bee/bin/lib/`); cycle refusal

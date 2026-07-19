@@ -63,6 +63,8 @@ import {
   capCell,
   blockCell,
   dropCell,
+  unclaimCell,
+  reopenCell,
   scribingDebt,
   tierMix,
   ceilingScarcityWarning,
@@ -80,12 +82,14 @@ import {
   claimCellFile,
   readClaim,
   releaseClaim,
+  clearClaim,
   adoptClaim,
   sweepExpiredClaims,
   isClaimActive,
   sessionPath,
   claimPath,
   claimGatePath,
+  resolveSessionId,
   DEFAULT_CLAIM_TTL_SECONDS,
   DEFAULT_HEARTBEAT_STALE_SECONDS,
 } from '../lib/claims.mjs';
@@ -168,6 +172,23 @@ function assert(condition, message) {
 function assertThrows(fn, needle, message) {
   try {
     fn();
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    assert(
+      text.toLowerCase().includes(needle.toLowerCase()),
+      `${message} — threw, but message "${text}" does not mention "${needle}"`,
+    );
+    return;
+  }
+  throw new Error(`${message} — expected an error, none thrown`);
+}
+
+// The async sibling of assertThrows (msh-5): startFeature (lib/state.mjs)
+// now wraps its body in withStoreLock, so its refusals reject a Promise
+// instead of throwing synchronously — same message-substring contract.
+async function assertRejects(fn, needle, message) {
+  try {
+    await fn();
   } catch (error) {
     const text = error instanceof Error ? error.message : String(error);
     assert(
@@ -788,6 +809,35 @@ await check('claimCell claims an open, dep-free cell', async () => {
   assert(cell.trace.worker === 'worker-a', 'worker recorded');
 });
 
+// ─── D1: claimCellCrossSession is the path `cells claim --id` now runs ────
+// through (bee.mjs handleCellsClaim) — the claim file is acquired BEFORE the
+// cell JSON flips, so a losing concurrent claimant gets a typed CLAIMED
+// refusal instead of silently double-claiming. D3: a null/absent sessionId is
+// a legal sessionless claim (single-session use is unaffected).
+
+await check('claimCellCrossSession backs "cells claim --id": winner claims both the cell JSON and the claims-store file; a second claimant on the SAME cell gets typed CLAIMED naming the winner + expiry, and the cell is untouched', async () => {
+  addCell(root, makeCell('claimx-1'));
+  const first = claimCellCrossSession(root, { sessionId: 'sess-x1', worker: 'worker-x1', cellId: 'claimx-1' });
+  assert(first.ok === true, `first claimant should win, got ${JSON.stringify(first)}`);
+  assert(first.cell.status === 'claimed' && first.cell.trace.worker === 'worker-x1', 'cell JSON reflects the winner');
+  assert(first.claim.session === 'sess-x1', 'claims-store file belongs to the winner');
+  assert(readCell(root, 'claimx-1').status === 'claimed', 'on-disk cell is claimed');
+
+  const second = claimCellCrossSession(root, { sessionId: 'sess-x2', worker: 'worker-x2', cellId: 'claimx-1' });
+  assert(second.ok === false && second.code === 'CLAIMED', `second claimant must lose with typed CLAIMED, got ${JSON.stringify(second)}`);
+  assert(second.reason.includes('sess-x1'), 'refusal names the actual owner');
+  assert(/expir/i.test(second.reason), 'refusal names the expiry');
+  assert(readCell(root, 'claimx-1').trace.worker === 'worker-x1', 'the losing attempt never touched the cell JSON');
+});
+
+await check('claimCellCrossSession with sessionId null/undefined is a legal sessionless claim — the claim file omits "session" entirely; single-session flow (no env id) still claims successfully', async () => {
+  addCell(root, makeCell('claimx-2'));
+  const result = claimCellCrossSession(root, { sessionId: null, worker: 'worker-sessionless', cellId: 'claimx-2' });
+  assert(result.ok === true, `a null sessionId must still succeed, got ${JSON.stringify(result)}`);
+  assert(!('session' in result.claim), 'the sessionless claim record omits "session" entirely');
+  assert(result.cell.status === 'claimed', 'the cell is claimed regardless of session');
+});
+
 // ─── cells: verify-gated capping ────────────────────────────────────────────
 
 await check('capCell refuses without a passing verify result', async () => {
@@ -895,12 +945,225 @@ await check('blockCell records the reason', async () => {
   assert(readCell(root, 'blk-1').status === 'blocked', 'blk-1 blocked');
 });
 
+// ─── D1 Δ2-amendment: EVERY claim-clearing transition releases the claim
+// file — cap, unclaim, block, drop, reopen — not only the claim-next unwind.
+// Without this a same-session round trip through one of these verbs would
+// self-refuse CLAIMED for the claim's full TTL (block/reopen's round trip is
+// covered end-to-end by scripts/test_claim_race.mjs scenario (c); this covers
+// cap/unclaim/drop directly at the lib level).
+
+await check('capCell releases the claim file on cap (D1 Δ2)', async () => {
+  addCell(root, makeCell('rel-cap-1'));
+  claimCellCrossSession(root, { sessionId: 'sess-rel-cap', worker: 'w', cellId: 'rel-cap-1' });
+  assert(readClaim(root, 'rel-cap-1') !== null, 'precondition: claim file exists after claim');
+  // D4 (msh-4): the owning session must now authenticate its own mutations —
+  // recordVerify/capCell run AS 'sess-rel-cap', the session that claimed it.
+  recordVerify(root, 'rel-cap-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: 'sess-rel-cap' });
+  capCell(root, 'rel-cap-1', { files_changed: ['a.js'], outcome: 'done', sessionId: 'sess-rel-cap' });
+  assert(readClaim(root, 'rel-cap-1') === null, 'cap must release the claim file');
+});
+
+await check('unclaimCell releases the claim file, and the cell is re-claimable by the SAME session with no self-refusal (D1 Δ2)', async () => {
+  addCell(root, makeCell('rel-unclaim-1'));
+  claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
+  assert(readClaim(root, 'rel-unclaim-1') !== null, 'precondition: claim file exists after claim');
+  // D4 (msh-4): unclaim as the owning session — single-session use never refuses.
+  unclaimCell(root, 'rel-unclaim-1', { sessionId: 'sess-rel-unclaim' });
+  assert(readClaim(root, 'rel-unclaim-1') === null, 'unclaim must release the claim file');
+  const reclaimed = claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
+  assert(reclaimed.ok === true, `same-session re-claim after unclaim must not self-refuse, got ${JSON.stringify(reclaimed)}`);
+});
+
+await check('dropCell releases the claim file (D1 Δ2)', async () => {
+  addCell(root, makeCell('rel-drop-1'));
+  claimCellCrossSession(root, { sessionId: 'sess-rel-drop', worker: 'w', cellId: 'rel-drop-1' });
+  assert(readClaim(root, 'rel-drop-1') !== null, 'precondition: claim file exists after claim');
+  dropCell(root, 'rel-drop-1', 'no longer needed');
+  assert(readClaim(root, 'rel-drop-1') === null, 'drop must release the claim file');
+});
+
+await check('capCell/unclaimCell/blockCell/dropCell/reopenCell never fail when there is no claim file to release (cells claimed before msh-2, or never claimed)', async () => {
+  addCell(root, makeCell('rel-none-1'));
+  assert(readClaim(root, 'rel-none-1') === null, 'precondition: no claim file (never claimed via claimCellCrossSession)');
+  claimCell(root, 'rel-none-1', 'worker-plain'); // the bare, file-less claim path
+  recordVerify(root, 'rel-none-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  const capped = capCell(root, 'rel-none-1', { files_changed: ['a.js'], outcome: 'done' });
+  assert(capped.status === 'capped', 'cap succeeds cleanly with no claim file to release');
+});
+
+// ─── D4 (msh-4): claim-ownership check on cell mutators + audited force
+// door. recordVerify/capCell/blockCell/unclaimCell/reopenCell now read the
+// live claim file: a LIVE claim carrying a session that differs from the
+// caller's resolved session refuses (typed, names owner + expiry); an
+// expired claim, an absent claim, a sessionless claim, or a matching session
+// proceeds unchanged (dropCell stays untouched — CONTEXT D4 names only
+// verify/cap/block/unclaim/reopen).
+
+await check('a live claim mismatch refuses recordVerify/capCell/blockCell/unclaimCell, naming owner and expiry', async () => {
+  addCell(root, makeCell('own-mismatch-1'));
+  claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-mismatch-1' });
+  assertThrows(
+    () =>
+      recordVerify(root, 'own-mismatch-1', {
+        command: 'node -e "process.exit(0)"',
+        output: 'ok',
+        passed: true,
+        sessionId: 'sess-intruder',
+      }),
+    'sess-owner',
+    'recordVerify refuses a mismatched session',
+  );
+  assertThrows(
+    () =>
+      recordVerify(root, 'own-mismatch-1', {
+        command: 'node -e "process.exit(0)"',
+        output: 'ok',
+        passed: true,
+        sessionId: 'sess-intruder',
+      }),
+    'expires',
+    'the refusal names the expiry too',
+  );
+  assertThrows(
+    () => capCell(root, 'own-mismatch-1', { files_changed: ['a.js'], outcome: 'done', sessionId: 'sess-intruder' }),
+    'sess-owner',
+    'capCell refuses a mismatched session',
+  );
+  assertThrows(
+    () => blockCell(root, 'own-mismatch-1', 'stuck', { sessionId: 'sess-intruder' }),
+    'sess-owner',
+    'blockCell refuses a mismatched session',
+  );
+  assertThrows(
+    () => unclaimCell(root, 'own-mismatch-1', { sessionId: 'sess-intruder' }),
+    'sess-owner',
+    'unclaimCell refuses a mismatched session',
+  );
+  const cell = readCell(root, 'own-mismatch-1');
+  assert(cell.status === 'claimed', 'every refusal above left the cell untouched — still claimed');
+  assert(cell.trace.verify_passed !== true, 'the refused recordVerify never landed a partial write');
+});
+
+await check('reopenCell also refuses a live-claim mismatch, naming owner and expiry', async () => {
+  addCell(root, makeCell('own-mismatch-reopen', { status: 'blocked' }));
+  claimCellFile(root, 'sess-owner', 'own-mismatch-reopen', 3600); // a lingering live claim on an already-blocked cell
+  assertThrows(
+    () => reopenCell(root, 'own-mismatch-reopen', 'retry', { sessionId: 'sess-intruder' }),
+    'sess-owner',
+    'reopenCell refuses a mismatched session',
+  );
+  assert(readCell(root, 'own-mismatch-reopen').status === 'blocked', 'reopenCell refusal leaves status untouched');
+});
+
+await check('an expired claim proceeds unchanged for verify/cap (rescue stays possible)', async () => {
+  addCell(root, makeCell('own-expired-1'));
+  claimCell(root, 'own-expired-1', 'worker-x'); // bare claim (status only)
+  writeJsonAtomic(claimPath(root, 'own-expired-1'), {
+    cell: 'own-expired-1',
+    session: 'sess-gone',
+    claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
+    ttl_seconds: 60,
+  });
+  recordVerify(root, 'own-expired-1', {
+    command: 'node -e "process.exit(0)"',
+    output: 'ok',
+    passed: true,
+    sessionId: 'sess-rescuer',
+  });
+  const capped = capCell(root, 'own-expired-1', { files_changed: ['a.js'], outcome: 'done', sessionId: 'sess-rescuer' });
+  assert(capped.status === 'capped', 'cap proceeds through an expired claim without refusal');
+});
+
+await check('a sessionless claim proceeds unchanged — single-session use never hits a refusal', async () => {
+  addCell(root, makeCell('own-sessionless-1'));
+  claimCellCrossSession(root, { sessionId: null, worker: 'w', cellId: 'own-sessionless-1' });
+  assert(readClaim(root, 'own-sessionless-1').session === undefined, 'precondition: sessionless claim omits the session key');
+  recordVerify(root, 'own-sessionless-1', {
+    command: 'node -e "process.exit(0)"',
+    output: 'ok',
+    passed: true,
+    sessionId: 'sess-anyone',
+  });
+  const capped = capCell(root, 'own-sessionless-1', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    sessionId: 'sess-anyone',
+  });
+  assert(capped.status === 'capped', 'cap proceeds through a sessionless claim regardless of caller session');
+});
+
+await check(
+  '--force-ownership bypasses a live-claim mismatch and appends an audited trace.ownership_overrides row (never trace.deviations) that survives the subsequent cap',
+  async () => {
+    addCell(root, makeCell('own-force-1'));
+    claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-force-1' });
+    recordVerify(root, 'own-force-1', {
+      command: 'node -e "process.exit(0)"',
+      output: 'ok',
+      passed: true,
+      sessionId: 'sess-forcer',
+      forceOwnership: true,
+    });
+    const afterVerify = readCell(root, 'own-force-1');
+    assert(
+      Array.isArray(afterVerify.trace.ownership_overrides) && afterVerify.trace.ownership_overrides.length === 1,
+      `recordVerify force appends one override row, got ${JSON.stringify(afterVerify.trace.ownership_overrides)}`,
+    );
+    const row = afterVerify.trace.ownership_overrides[0];
+    assert(
+      row.verb === 'recordVerify' && row.forced_by === 'sess-forcer' && row.owner_bypassed === 'sess-owner',
+      `override row names forcer and bypassed owner, got ${JSON.stringify(row)}`,
+    );
+    assert(
+      !Array.isArray(afterVerify.trace.deviations) || afterVerify.trace.deviations.length === 0,
+      'the force audit never lands in trace.deviations (Δ5) — cap has not run yet to even populate it',
+    );
+
+    const capped = capCell(root, 'own-force-1', {
+      files_changed: ['a.js'],
+      outcome: 'forced cap',
+      deviations: ['unrelated planning deviation'], // capCell REPLACES deviations wholesale — proves ownership_overrides survives that wipe
+      sessionId: 'sess-forcer',
+      forceOwnership: true,
+    });
+    assert(
+      capped.trace.ownership_overrides.length === 2,
+      `cap force appends a SECOND row (append-only), got ${JSON.stringify(capped.trace.ownership_overrides)}`,
+    );
+    assert(capped.trace.ownership_overrides[1].verb === 'capCell', 'the second row is capCell\'s own audit line');
+    assert(
+      capped.trace.deviations.length === 1 && capped.trace.deviations[0] === 'unrelated planning deviation',
+      'trace.deviations still holds only the cap-time deviations — the ownership audit key is untouched by capCell wholesale-replacing deviations',
+    );
+  },
+);
+
+await check(
+  "a forced unclaim past another session's live claim still clears the claim file, so the forced-open cell is claimable by a new session (D4 Δ5)",
+  async () => {
+    addCell(root, makeCell('own-force-unclaim-1'));
+    claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-force-unclaim-1' });
+    unclaimCell(root, 'own-force-unclaim-1', { sessionId: 'sess-rescuer', forceOwnership: true });
+    assert(
+      readClaim(root, 'own-force-unclaim-1') === null,
+      'forced unclaim releases the claim file — the cell must not stay self-refusing',
+    );
+    const reclaimed = claimCellCrossSession(root, { sessionId: 'sess-rescuer', worker: 'w2', cellId: 'own-force-unclaim-1' });
+    assert(reclaimed.ok === true, `the forced-open cell is claimable by the rescuing session, got ${JSON.stringify(reclaimed)}`);
+    const afterReclaim = readCell(root, 'own-force-unclaim-1');
+    assert(
+      afterReclaim.trace.ownership_overrides.length === 1 && afterReclaim.trace.ownership_overrides[0].verb === 'unclaimCell',
+      `the unclaim force audit row survives the reclaim, got ${JSON.stringify(afterReclaim.trace.ownership_overrides)}`,
+    );
+  },
+);
+
 // ─── reservations ───────────────────────────────────────────────────────────
 
 await check('reserve succeeds, then conflicts for another agent on the same path', async () => {
-  const first = reserve(root, { agent: 'worker-a', cell: 'demo-2', path: 'src/api/router.ts' });
+  const first = await reserve(root, { agent: 'worker-a', cell: 'demo-2', path: 'src/api/router.ts' });
   assert(first.ok === true, 'first reservation ok');
-  const second = reserve(root, { agent: 'worker-b', cell: 'blk-1', path: 'src/api/router.ts' });
+  const second = await reserve(root, { agent: 'worker-b', cell: 'blk-1', path: 'src/api/router.ts' });
   assert(second.ok === false, 'second reservation should conflict');
   assert(second.conflicts.length === 1 && second.conflicts[0].agent === 'worker-a', 'conflict names holder');
 });
@@ -913,8 +1176,8 @@ await check('same agent does not conflict with itself; directory prefix overlaps
 });
 
 await check('release frees the path for other agents', async () => {
-  release(root, { agent: 'worker-a', cell: 'demo-2' });
-  const retry = reserve(root, { agent: 'worker-b', cell: 'blk-1', path: 'src/api/router.ts' });
+  await release(root, { agent: 'worker-a', cell: 'demo-2' });
+  const retry = await reserve(root, { agent: 'worker-b', cell: 'blk-1', path: 'src/api/router.ts' });
   assert(retry.ok === true, 'released path can be reserved by another agent');
 });
 
@@ -925,7 +1188,7 @@ await check('sweepExpired releases TTL-expired reservations', async () => {
   active.reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
   active.ttl_seconds = 60;
   writeJsonAtomic(reservationsPath(root), store);
-  const swept = sweepExpired(root);
+  const swept = await sweepExpired(root);
   assert(swept >= 1, `expected at least one swept reservation, got ${swept}`);
   assert(listReservations(root, { activeOnly: true }).length === 0, 'no active reservations remain');
 });
@@ -935,17 +1198,29 @@ await check('sweepExpired releases TTL-expired reservations', async () => {
 // session-keyed sibling of findConflicts, exported for the write guard.
 
 await check('reserve without --session omits the field entirely (byte-identical shape to every pre-existing row); reserve WITH session stamps it', async () => {
-  const plain = reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/plain.ts' });
-  assert(plain.ok === true, 'plain reserve still succeeds');
-  assert(!('session' in plain.reservation), 'no session passed -> no session key on the record at all');
+  // D3: reserve() self-derives session from CLAUDE_CODE_SESSION_ID when no
+  // explicit flag is passed — "no session passed" only stays session-less
+  // when the env is ALSO absent, so this assertion clears env for the
+  // duration (same save/clear/restore pattern as the resolveSessionId check
+  // below), matching the running-as-a-live-session reality of a bee worker.
+  const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+    const plain = await reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/plain.ts' });
+    assert(plain.ok === true, 'plain reserve still succeeds');
+    assert(!('session' in plain.reservation), 'no session passed and no env -> no session key on the record at all');
+  } finally {
+    if (savedEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedEnv;
+  }
 
-  const owned = reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/owned.ts', session: 'sess-A' });
+  const owned = await reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/owned.ts', session: 'sess-A' });
   assert(owned.ok === true, 'session-owned reserve succeeds');
   assert(owned.reservation.session === 'sess-A', 'session id is stamped on the record');
 });
 
 await check('findSessionConflicts: a different session conflicts on an overlapping path; the owning session itself never conflicts; a legacy session-less row never conflicts for anybody', async () => {
-  reserve(root, { agent: 'worker-a', cell: 'sess-2', path: 'src/hold/shared.ts', session: 'sess-A' });
+  await reserve(root, { agent: 'worker-a', cell: 'sess-2', path: 'src/hold/shared.ts', session: 'sess-A' });
   const other = findSessionConflicts(root, 'sess-B', ['src/hold/shared.ts']);
   assert(other.length === 1 && other[0].session === 'sess-A', 'a different session sees the hold as a conflict');
 
@@ -958,7 +1233,7 @@ await check('findSessionConflicts: a different session conflicts on an overlappi
 });
 
 await check('findSessionConflicts: an expired session-owned hold never conflicts', async () => {
-  reserve(root, { agent: 'worker-c', cell: 'sess-3', path: 'src/hold/expiring.ts', session: 'sess-C', ttl: 60 });
+  await reserve(root, { agent: 'worker-c', cell: 'sess-3', path: 'src/hold/expiring.ts', session: 'sess-C', ttl: 60 });
   const store = readJson(reservationsPath(root), { reservations: [] });
   const row = store.reservations.find((r) => r.path === 'src/hold/expiring.ts' && r.session === 'sess-C');
   assert(row, 'precondition: the just-made hold exists');
@@ -1117,6 +1392,61 @@ await check('claimCellFile default TTL matches the exported constant; released c
   releaseClaim(claimsRoot, 'sess-b', 'cell-2');
 });
 
+// ─── D3: resolveSessionId — explicit flag -> CLAUDE_CODE_SESSION_ID env -> null ──
+
+await check('resolveSessionId: explicit flag wins over env; a blank flag falls through to env; neither present resolves null', async () => {
+  const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    process.env.CLAUDE_CODE_SESSION_ID = 'sess-from-env';
+    assert(resolveSessionId({ flag: 'sess-from-flag' }) === 'sess-from-flag', 'explicit flag takes precedence over env');
+    assert(resolveSessionId({ flag: '' }) === 'sess-from-env', 'a blank flag falls through to env, not treated as an explicit empty session');
+    assert(resolveSessionId({ flag: '   ' }) === 'sess-from-env', 'a whitespace-only flag falls through to env too');
+    assert(resolveSessionId({}) === 'sess-from-env', 'no flag at all resolves from env');
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+    assert(resolveSessionId({}) === null, 'neither flag nor env present resolves null');
+    assert(resolveSessionId() === null, 'called with no argument at all still resolves null, never throws');
+  } finally {
+    if (savedEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedEnv;
+  }
+});
+
+// ─── D1 Δ2: sessionless claims — claimCellFile/releaseClaim/clearClaim ─────
+
+await check('claimCellFile(root, null, ...): a sessionless claim omits the "session" key entirely (never null) and still race-serializes via O_EXCL', async () => {
+  const first = claimCellFile(claimsRoot, null, 'cell-sessionless', 60);
+  assert(first.ok === true, 'sessionless claim succeeds');
+  assert(!('session' in first.claim), 'the claim record omits "session" entirely rather than writing session:null');
+  const onDisk = readClaim(claimsRoot, 'cell-sessionless');
+  assert(!('session' in onDisk), 'the on-disk claim record also omits "session"');
+  const second = claimCellFile(claimsRoot, 'sess-intruder', 'cell-sessionless', 60);
+  assert(second.ok === false && second.code === 'CLAIMED', 'a second (session-bearing) claimant still loses to the sessionless winner');
+  assert(second.reason.includes('no session (sessionless claim)'), `CLAIMED reason should name the sessionless holder, got ${JSON.stringify(second.reason)}`);
+});
+
+await check('releaseClaim(root, null, ...) releases a sessionless claim; a real session cannot release someone else\'s sessionless claim', async () => {
+  const deniedByRealSession = releaseClaim(claimsRoot, 'sess-intruder', 'cell-sessionless');
+  assert(deniedByRealSession.ok === false && deniedByRealSession.code === 'NOT_OWNER', 'a real session id can never release a sessionless claim it does not own');
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-sessionless')), 'claim untouched by the denied release');
+  const released = releaseClaim(claimsRoot, null, 'cell-sessionless');
+  assert(released.ok === true, 'the sessionless owner (null) can release its own claim');
+  assert(!fs.existsSync(claimPath(claimsRoot, 'cell-sessionless')), 'claim file removed');
+});
+
+await check('clearClaim: unconditional removal regardless of owner; no-ops (ok:true, released:null) when there is no claim file; never leaks a gate file', async () => {
+  const noClaim = clearClaim(claimsRoot, 'cell-never-claimed');
+  assert(noClaim.ok === true && noClaim.released === null, `clearing a cell with no claim file must no-op, got ${JSON.stringify(noClaim)}`);
+
+  claimCellFile(claimsRoot, 'sess-owner', 'cell-to-clear', 60);
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-to-clear')), 'precondition: claim file exists');
+  // clearClaim needs no owner argument at all — a DIFFERENT actor (or none)
+  // still removes it; this is what cap/unclaim/block/drop/reopen rely on.
+  const cleared = clearClaim(claimsRoot, 'cell-to-clear');
+  assert(cleared.ok === true && cleared.released && cleared.released.session === 'sess-owner', `clearClaim must remove regardless of caller, got ${JSON.stringify(cleared)}`);
+  assert(!fs.existsSync(claimPath(claimsRoot, 'cell-to-clear')), 'claim file removed');
+  assert(!fs.existsSync(claimGatePath(claimsRoot, 'cell-to-clear')), 'no gate file leaked by clearClaim');
+});
+
 fs.rmSync(claimsRoot, { recursive: true, force: true });
 
 // ─── claims: concurrent Worker races (fsh-2) ───────────────────────────────
@@ -1246,7 +1576,7 @@ await check('checkWrite blocks source writes in a gated phase without execution 
 });
 
 await check('checkWrite blocks unreserved conflicting writes during swarming', async () => {
-  reserve(root, { agent: 'worker-a', cell: 'demo-2', path: 'src/core/engine.ts' });
+  await reserve(root, { agent: 'worker-a', cell: 'demo-2', path: 'src/core/engine.ts' });
   const state = { ...defaultState(), phase: 'swarming', approved_gates: { ...defaultState().approved_gates, execution: true } };
   const denied = checkWrite(root, state, 'src/core/engine.ts', 'worker-b');
   assert(denied.allow === false && denied.kind === 'reservation', 'reservation deny expected');
@@ -1411,7 +1741,7 @@ await check('reservation-conflict reason carries a FIX (reserve or [BLOCKED])', 
     assert(/\[BLOCKED\]|Reserve/i.test(res.reason), `conflict reason names the route, got: ${res.reason}`);
   } else {
     // no live reservation at this point in the suite — exercise the message via findConflicts path
-    reserve(root, { agent: 'worker-a', cell: 'msg-1', path: 'src/msg/locked.ts' });
+    await reserve(root, { agent: 'worker-a', cell: 'msg-1', path: 'src/msg/locked.ts' });
     const res2 = checkWrite(root, { phase: 'swarming', approved_gates: { execution: true } }, 'src/msg/locked.ts', 'worker-z');
     assert(res2.allow === false, 'conflicting write blocked');
     assert(/\[BLOCKED\]|Reserve/i.test(res2.reason), `conflict reason names the route, got: ${res2.reason}`);
@@ -4629,7 +4959,7 @@ await check('start-feature (lib): succeeds from idle with no leftover work, rese
       summary: 'prior',
       next_action: 'prior next',
     });
-    const state = startFeature(dir, { feature: 'new-feat', mode: 'standard', phase: 'exploring' });
+    const state = await startFeature(dir, { feature: 'new-feat', mode: 'standard', phase: 'exploring' });
     assert(state.feature === 'new-feat', `feature written, got ${state.feature}`);
     assert(state.mode === 'standard', `mode written, got ${state.mode}`);
     assert(state.phase === 'exploring', `phase written, got ${state.phase}`);
@@ -4656,7 +4986,7 @@ await check('start-feature (lib): a prior feature carrying approved gates never 
       approved_gates: { context: true, shape: true, execution: true, review: true },
       workers: [],
     });
-    const state = startFeature(dir, { feature: 'next-feat' });
+    const state = await startFeature(dir, { feature: 'next-feat' });
     assert(
       Object.values(state.approved_gates).every((v) => v === false),
       `no gate carried across features, got ${JSON.stringify(state.approved_gates)}`,
@@ -5072,7 +5402,7 @@ await check('lanes: startFeature lane mode creates the lane with all four gates 
     writeLaneFixture(dir, 'lane-other', { phase: 'planning' });
     const stateBefore = fs.readFileSync(statePath, 'utf8');
     const otherBefore = fs.readFileSync(laneFile(dir, 'lane-other'), 'utf8');
-    const record = startFeature(dir, { feature: 'lane-new', mode: 'high-risk', phase: 'exploring', lane: true });
+    const record = await startFeature(dir, { feature: 'lane-new', mode: 'high-risk', phase: 'exploring', lane: true });
     assert(record.feature === 'lane-new' && record.mode === 'high-risk' && record.phase === 'exploring', 'lane record carries feature/mode/phase');
     assert(Object.values(record.approved_gates).every((v) => v === false), `all four gates start false — a lane never inherits approvals, got ${JSON.stringify(record.approved_gates)}`);
     assert(typeof record.created_at === 'string' && !Number.isNaN(Date.parse(record.created_at)), 'created_at stamped');
@@ -5090,13 +5420,13 @@ await check('lanes: a lane start refuses while THIS feature has nonterminal cell
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'swarming', feature: 'default-feat', workers: [] });
     makeCellFile(dir, 'mine-1', { feature: 'lane-c', status: 'open' });
     makeCellFile(dir, 'other-1', { feature: 'elsewhere', status: 'claimed' });
-    assertThrows(
+    await assertRejects(
       () => startFeature(dir, { feature: 'lane-c', lane: true }),
       'mine-1',
       'a same-feature nonterminal cell refuses the lane start',
     );
     assert(!fs.existsSync(laneFile(dir, 'lane-c')), 'refusal writes nothing');
-    const record = startFeature(dir, { feature: 'lane-d', lane: true });
+    const record = await startFeature(dir, { feature: 'lane-d', lane: true });
     assert(record.feature === 'lane-d', 'another feature\'s nonterminal (even claimed) cell never blocks an unrelated lane start');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -5108,11 +5438,11 @@ await check('lanes: a global HANDOFF blocks a lane start only when its feature n
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
     writeJsonAtomic(path.join(dir, '.bee', 'HANDOFF.json'), { feature: 'lane-e', cell: 'x', done: [], remaining: [] });
-    assertThrows(() => startFeature(dir, { feature: 'lane-e', lane: true }), 'HANDOFF', 'a handoff naming THIS feature blocks its lane start');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-e', lane: true }), 'HANDOFF', 'a handoff naming THIS feature blocks its lane start');
     assert(!fs.existsSync(laneFile(dir, 'lane-e')), 'refusal writes nothing');
-    const unrelated = startFeature(dir, { feature: 'lane-f', lane: true });
+    const unrelated = await startFeature(dir, { feature: 'lane-f', lane: true });
     assert(unrelated.feature === 'lane-f', 'a handoff for another feature does not block this lane');
-    assertThrows(() => startFeature(dir, { feature: 'lane-g' }), 'HANDOFF', 'the default (non-lane) start keeps today\'s any-handoff-blocks semantics');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-g' }), 'HANDOFF', 'the default (non-lane) start keeps today\'s any-handoff-blocks semantics');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -5128,9 +5458,9 @@ await check('lanes: a registered worker blocks a lane start only when its cell d
       feature: 'default-feat',
       workers: [{ nickname: 'busy', cell: 'wcell-1', tier: 'generation', status: 'in-flight' }],
     });
-    assertThrows(() => startFeature(dir, { feature: 'lane-h', lane: true }), 'worker', 'a worker on this feature\'s cell blocks the lane start');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-h', lane: true }), 'worker', 'a worker on this feature\'s cell blocks the lane start');
     assert(!fs.existsSync(laneFile(dir, 'lane-h')), 'refusal writes nothing');
-    const unrelated = startFeature(dir, { feature: 'lane-i', lane: true });
+    const unrelated = await startFeature(dir, { feature: 'lane-i', lane: true });
     assert(unrelated.feature === 'lane-i', 'a worker on another feature\'s cell never blocks this lane');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -5146,16 +5476,16 @@ await check('lanes: a lane start declaring intended paths refuses on overlap wit
     makeCellFile(dir, 'held-cell', { feature: 'elsewhere', status: 'capped', files: ['src/app.ts'] });
     const held = claimCellFile(dir, 'sess-them', 'held-cell');
     assert(held.ok === true, 'precondition: another session holds a claim whose cell files include src/app.ts');
-    assertThrows(
+    await assertRejects(
       () => startFeature(dir, { feature: 'lane-j', lane: true, sessionId: 'sess-me', paths: ['src/app.ts'] }),
       'sess-them',
       'overlap with another session\'s claim-held files refuses, naming the holder',
     );
     assert(!fs.existsSync(laneFile(dir, 'lane-j')), 'refusal writes nothing');
-    const own = startFeature(dir, { feature: 'lane-k', lane: true, sessionId: 'sess-them', paths: ['src/app.ts'] });
+    const own = await startFeature(dir, { feature: 'lane-k', lane: true, sessionId: 'sess-them', paths: ['src/app.ts'] });
     assert(own.feature === 'lane-k', 'the holder\'s own session is never blocked by its own claim');
-    reserve(dir, { agent: 'worker-z', cell: 'z-1', path: 'src/lib/*' });
-    assertThrows(
+    await reserve(dir, { agent: 'worker-z', cell: 'z-1', path: 'src/lib/*' });
+    await assertRejects(
       () => startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] }),
       'worker-z',
       'overlap with an active reservation refuses, naming the holder',
@@ -5164,9 +5494,9 @@ await check('lanes: a lane start declaring intended paths refuses on overlap wit
     store.reservations[store.reservations.length - 1].reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
     store.reservations[store.reservations.length - 1].ttl_seconds = 60;
     writeJsonAtomic(reservationsPath(dir), store);
-    const expired = startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] });
+    const expired = await startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] });
     assert(expired.feature === 'lane-l', 'an expired hold never blocks');
-    const undeclared = startFeature(dir, { feature: 'lane-m', lane: true, sessionId: 'sess-me' });
+    const undeclared = await startFeature(dir, { feature: 'lane-m', lane: true, sessionId: 'sess-me' });
     assert(undeclared.feature === 'lane-m', 'no declared paths → the holds check is skipped by contract');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -5184,17 +5514,17 @@ await check('lanes: restarting a terminal lane resets exactly its four gates (cr
       approved_gates: { context: true, shape: true, execution: true, review: true },
       created_at: born,
     });
-    const restarted = startFeature(dir, { feature: 'lane-n', mode: 'tiny', phase: 'exploring', lane: true });
+    const restarted = await startFeature(dir, { feature: 'lane-n', mode: 'tiny', phase: 'exploring', lane: true });
     assert(Object.values(restarted.approved_gates).every((v) => v === false), 'restart resets all four gates — spec R1 applied per lane');
     assert(restarted.created_at === born, `created_at survives a restart, got ${restarted.created_at}`);
     assert(restarted.mode === 'tiny' && restarted.phase === 'exploring', 'mode/phase refreshed');
     writeLaneFixture(dir, 'lane-o', { phase: 'swarming' });
     const midBefore = fs.readFileSync(laneFile(dir, 'lane-o'), 'utf8');
-    assertThrows(() => startFeature(dir, { feature: 'lane-o', lane: true }), 'phase', 'a mid-flight lane refuses its own restart');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-o', lane: true }), 'phase', 'a mid-flight lane refuses its own restart');
     assert(fs.readFileSync(laneFile(dir, 'lane-o'), 'utf8') === midBefore, 'refusal leaves the lane untouched');
     fs.writeFileSync(laneFile(dir, 'lane-p'), '{ not json', 'utf8');
     const corruptBefore = fs.readFileSync(laneFile(dir, 'lane-p'), 'utf8');
-    assertThrows(() => startFeature(dir, { feature: 'lane-p', lane: true }), 'lane', 'a corrupt lane file refuses the mutation loudly');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-p', lane: true }), 'lane', 'a corrupt lane file refuses the mutation loudly');
     assert(fs.readFileSync(laneFile(dir, 'lane-p'), 'utf8') === corruptBefore, 'corrupt file untouched');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -5364,7 +5694,7 @@ await check("checkWrite: a cross-session hold denies another session's write in 
     laneBinding.bindSessionLane(dir, 'sess-hw', 'lane-hw');
     const state = readState(dir); // irrelevant here: the bound lane governs
 
-    reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/target.ts', session: 'sess-other' });
+    await reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/target.ts', session: 'sess-other' });
     const denied = checkWrite(dir, state, 'src/hold/target.ts', null, { sessionId: 'sess-hw' });
     assert(
       denied.allow === false && denied.kind === 'hold',
@@ -5377,12 +5707,12 @@ await check("checkWrite: a cross-session hold denies another session's write in 
     assert(/expires|no expiry/.test(denied.reason), `deny reason must carry an expiry, got: ${denied.reason}`);
 
     // the acting session's own hold on a different path never blocks itself
-    reserve(dir, { agent: 'me-agent', cell: 'hw-1', path: 'src/hold/mine.ts', session: 'sess-hw' });
+    await reserve(dir, { agent: 'me-agent', cell: 'hw-1', path: 'src/hold/mine.ts', session: 'sess-hw' });
     const ownOk = checkWrite(dir, state, 'src/hold/mine.ts', null, { sessionId: 'sess-hw' });
     assert(ownOk.allow === true, `the acting session's own hold must never block its own write, got ${JSON.stringify(ownOk)}`);
 
     // an expired hold never blocks, even from a different session
-    reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/stale.ts', session: 'sess-other', ttl: 60 });
+    await reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/stale.ts', session: 'sess-other', ttl: 60 });
     const store = readJson(reservationsPath(dir), { reservations: [] });
     const row = store.reservations.find((r) => r.path === 'src/hold/stale.ts');
     row.reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
@@ -5390,8 +5720,17 @@ await check("checkWrite: a cross-session hold denies another session's write in 
     const staleOk = checkWrite(dir, state, 'src/hold/stale.ts', null, { sessionId: 'sess-hw' });
     assert(staleOk.allow === true, `an expired hold must never block, got ${JSON.stringify(staleOk)}`);
 
-    // a legacy session-less reservation (today's exact shape) never blocks a bound session either
-    reserve(dir, { agent: 'legacy-agent', cell: 'hw-1', path: 'src/hold/legacy.ts' });
+    // a legacy session-less reservation (today's exact shape) never blocks a bound session either.
+    // D3: clear env for this one reserve() call so "no --session passed" stays
+    // genuinely session-less, matching a legacy row made before fsh-7/D3 existed.
+    const savedLegacyEnv = process.env.CLAUDE_CODE_SESSION_ID;
+    try {
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+      await reserve(dir, { agent: 'legacy-agent', cell: 'hw-1', path: 'src/hold/legacy.ts' });
+    } finally {
+      if (savedLegacyEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+      else process.env.CLAUDE_CODE_SESSION_ID = savedLegacyEnv;
+    }
     const legacyOk = checkWrite(dir, state, 'src/hold/legacy.ts', null, { sessionId: 'sess-hw' });
     assert(legacyOk.allow === true, `a session-less reservation row must never block a bound session's write, got ${JSON.stringify(legacyOk)}`);
   } finally {
@@ -5403,7 +5742,7 @@ await check("checkWrite: with NO sessionId, a session-owned hold on the target p
   const dir = makeStateRepo('bee-hold-no-session-');
   try {
     const state = { ...defaultState(), phase: 'swarming', approved_gates: { ...defaultState().approved_gates, execution: true } };
-    reserve(dir, { agent: 'other-agent', cell: 'hw-2', path: 'src/hold/no-session.ts', session: 'sess-somebody' });
+    await reserve(dir, { agent: 'other-agent', cell: 'hw-2', path: 'src/hold/no-session.ts', session: 'sess-somebody' });
     const noSessionArg = checkWrite(dir, state, 'src/hold/no-session.ts');
     assert(
       noSessionArg.allow === true,
@@ -6498,7 +6837,7 @@ await check(
       });
       makeCellFile(dir, 'held-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/held.ts'] });
       makeCellFile(dir, 'free-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/free.ts'] });
-      reserve(dir, { agent: 'other-worker', cell: 'other-cell', path: 'src/held.ts', session: 'sess-other' });
+      await reserve(dir, { agent: 'other-worker', cell: 'other-cell', path: 'src/held.ts', session: 'sess-other' });
 
       const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
       assert(result.ok === true && result.cell.id === 'free-1', `held-1 must be skipped for another session's hold, got ${JSON.stringify(result)}`);
@@ -6519,7 +6858,7 @@ await check("claimNextCell: the acting session's OWN active hold on a cell's fil
       workers: [],
     });
     makeCellFile(dir, 'own-hold-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/mine.ts'] });
-    reserve(dir, { agent: 'me-worker', cell: 'own-hold-1', path: 'src/mine.ts', session: 'sess-me' });
+    await reserve(dir, { agent: 'me-worker', cell: 'own-hold-1', path: 'src/mine.ts', session: 'sess-me' });
 
     const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
     assert(result.ok === true && result.cell.id === 'own-hold-1', `own hold must never exclude the cell, got ${JSON.stringify(result)}`);

@@ -29,6 +29,30 @@ async function main() {
     if (!state.hookEnabled(root, HOOK_NAME)) {
       return 0;
     }
+
+    // D5 — throttled heartbeat + claim/hold lease renewal. Session id comes
+    // straight off the hook payload (bee-session-init.mjs:49-51 pattern),
+    // never handed down. Wrapped in its OWN try/catch, separate from the
+    // reminder logic below: a throw here must never block the hook's
+    // primary job (printing the reminder) — the outer catch alone would
+    // abort that too if this ran unguarded inside it.
+    const sessionId =
+      typeof ctx.payload.session_id === "string" && ctx.payload.session_id.trim()
+        ? ctx.payload.session_id.trim()
+        : null;
+    if (sessionId) {
+      try {
+        const claims = await import(libModuleUrl(root, "claims.mjs"));
+        const touch = await claims.heartbeatTouch(root, sessionId);
+        if (touch && touch.touched) {
+          const reservations = await import(libModuleUrl(root, "reservations.mjs"));
+          await reservations.renewHoldsBySession(root, sessionId, { lockOptions: { maxAttempts: 1 } });
+        }
+      } catch (error) {
+        logCrash(root, HOOK_NAME, error, ctx.source);
+      }
+    }
+
     const inject = await import(libModuleUrl(root, "inject.mjs"));
     const reminder = inject.buildPromptReminder(root);
     if (!reminder || !reminder.text || !String(reminder.text).trim()) {

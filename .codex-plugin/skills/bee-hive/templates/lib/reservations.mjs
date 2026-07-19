@@ -3,6 +3,8 @@
 
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
+import { withStoreLock } from './lock.mjs';
+import { resolveSessionId } from './claims.mjs';
 
 const DEFAULT_TTL_SECONDS = 3600;
 
@@ -107,7 +109,20 @@ export function findSessionConflicts(root, sessionId, paths) {
   );
 }
 
-export function reserve(root, { agent, cell, path: reservedPath, ttl = DEFAULT_TTL_SECONDS, session = null }) {
+/**
+ * D2: the read-check-write body (conflict check + append + write) runs
+ * inside withStoreLock('reservations') so two concurrent reserves can no
+ * longer both pass the conflict check against the same snapshot and have
+ * the later write silently drop the earlier hold — the conflict check reads
+ * the store fresh under the lock, never a pre-lock snapshot.
+ *
+ * D3: when `session` is absent, it self-derives (explicit flag -> `resolve
+ * SessionId`'s own CLAUDE_CODE_SESSION_ID env fallback -> null), so a
+ * top-level-session reserve becomes cross-session-visible by default; a
+ * genuinely absent id (no flag, no env) still writes a session-less row,
+ * byte-identical to today's shape.
+ */
+export async function reserve(root, { agent, cell, path: reservedPath, ttl = DEFAULT_TTL_SECONDS, session = null }) {
   if (typeof agent !== 'string' || !agent.trim()) {
     throw new Error('reserve: agent is required.');
   }
@@ -117,57 +132,99 @@ export function reserve(root, { agent, cell, path: reservedPath, ttl = DEFAULT_T
   if (typeof reservedPath !== 'string' || !reservedPath.trim()) {
     throw new Error('reserve: path is required.');
   }
-  const conflicts = findConflicts(root, agent.trim(), [reservedPath]);
-  if (conflicts.length > 0) {
-    return { ok: false, conflicts };
-  }
-  const store = readStore(root);
-  const reservation = {
-    agent: agent.trim(),
-    cell: cell.trim(),
-    path: normalizePath(reservedPath),
-    ttl_seconds: Number.isFinite(ttl) && ttl > 0 ? Math.floor(ttl) : DEFAULT_TTL_SECONDS,
-    reserved_at: utcNow(),
-    released_at: null,
-    // session is OPTIONAL and OMITTED entirely when absent (mirrors claims.mjs's
-    // lane-omission pattern): every pre-existing row and every call that never
-    // passes `session` keeps today's exact shape, byte for byte.
-    ...(typeof session === 'string' && session.trim() ? { session: session.trim() } : {}),
-  };
-  store.reservations.push(reservation);
-  writeStore(root, store);
-  return { ok: true, reservation };
+  const resolvedSession = resolveSessionId({ flag: session });
+  return withStoreLock(root, 'reservations', () => {
+    const conflicts = findConflicts(root, agent.trim(), [reservedPath]);
+    if (conflicts.length > 0) {
+      return { ok: false, conflicts };
+    }
+    const store = readStore(root);
+    const reservation = {
+      agent: agent.trim(),
+      cell: cell.trim(),
+      path: normalizePath(reservedPath),
+      ttl_seconds: Number.isFinite(ttl) && ttl > 0 ? Math.floor(ttl) : DEFAULT_TTL_SECONDS,
+      reserved_at: utcNow(),
+      released_at: null,
+      // session is OPTIONAL and OMITTED entirely when absent (mirrors claims.mjs's
+      // lane-omission pattern): every pre-existing row and every call that never
+      // resolves a session keeps today's exact shape, byte for byte.
+      ...(resolvedSession ? { session: resolvedSession } : {}),
+    };
+    store.reservations.push(reservation);
+    writeStore(root, store);
+    return { ok: true, reservation };
+  });
 }
 
-export function release(root, { agent, cell = null }) {
+export async function release(root, { agent, cell = null }) {
   if (typeof agent !== 'string' || !agent.trim()) {
     throw new Error('release: agent is required.');
   }
-  const store = readStore(root);
-  const releasedAt = utcNow();
-  let released = 0;
-  for (const reservation of store.reservations) {
-    if (reservation.released_at != null) continue;
-    if (reservation.agent !== agent.trim()) continue;
-    if (cell && reservation.cell !== cell) continue;
-    reservation.released_at = releasedAt;
-    released += 1;
-  }
-  if (released > 0) writeStore(root, store);
-  return { released };
+  return withStoreLock(root, 'reservations', () => {
+    const store = readStore(root);
+    const releasedAt = utcNow();
+    let released = 0;
+    for (const reservation of store.reservations) {
+      if (reservation.released_at != null) continue;
+      if (reservation.agent !== agent.trim()) continue;
+      if (cell && reservation.cell !== cell) continue;
+      reservation.released_at = releasedAt;
+      released += 1;
+    }
+    if (released > 0) writeStore(root, store);
+    return { released };
+  });
 }
 
-export function sweepExpired(root) {
-  const store = readStore(root);
-  const nowMs = Date.now();
-  const releasedAt = utcNow();
-  let released = 0;
-  for (const reservation of store.reservations) {
-    if (reservation.released_at != null) continue;
-    if (!isExpired(reservation, nowMs)) continue;
-    reservation.released_at = releasedAt;
-    released += 1;
-  }
-  if (released > 0) writeStore(root, store);
-  return released;
+export async function sweepExpired(root) {
+  return withStoreLock(root, 'reservations', () => {
+    const store = readStore(root);
+    const nowMs = Date.now();
+    const releasedAt = utcNow();
+    let released = 0;
+    for (const reservation of store.reservations) {
+      if (reservation.released_at != null) continue;
+      if (!isExpired(reservation, nowMs)) continue;
+      reservation.released_at = releasedAt;
+      released += 1;
+    }
+    if (released > 0) writeStore(root, store);
+    return released;
+  });
+}
+
+/**
+ * D5 — same-session-only TTL renewal for this session's active holds (the
+ * reservations-side sibling of claims.mjs's renewClaimTTL): refreshes
+ * `reserved_at` — the expiry clock — for every non-released row owned by
+ * sessionId. Never touches another session's rows, never revives an
+ * already-released one (released_at != null is a hard skip, matching
+ * findConflicts/findSessionConflicts' own posture). Runs under the same
+ * store lock as reserve/release/sweepExpired so a renewal can never race a
+ * concurrent reservation mutation into a lost update; hook callers (D5 Δ3 —
+ * "hooks never wait on the lock") pass `{ maxAttempts: 1 }` through
+ * lockOptions unchanged, matching claims.mjs heartbeatTouch's own posture.
+ */
+export async function renewHoldsBySession(root, sessionId, { now = Date.now(), lockOptions } = {}) {
+  const session = typeof sessionId === 'string' ? sessionId.trim() : '';
+  if (!session) return { ok: true, renewed: 0 };
+  return withStoreLock(
+    root,
+    'reservations',
+    () => {
+      const store = readStore(root);
+      const nowIso = new Date(now).toISOString();
+      let renewed = 0;
+      for (const reservation of store.reservations) {
+        if (reservation.released_at != null) continue;
+        if (reservation.session !== session) continue;
+        reservation.reserved_at = nowIso;
+        renewed += 1;
+      }
+      if (renewed > 0) writeStore(root, store);
+      return { ok: true, renewed };
+    },
+    lockOptions,
+  );
 }
