@@ -163,6 +163,7 @@ export const COMMAND_REGISTRY = [
         passed: { type: 'boolean', description: 'Whether the verify run passed ("true" or "false").' },
         output: { type: 'string', description: 'What the verify command printed (inline). Mutually exclusive with --output-file.' },
         'output-file': { type: 'string', description: 'Path to a file holding the verify command\'s output, for long output.' },
+        signature: { type: 'string', description: 'D1: explicit failure_signature for the revision ledger, overriding the mechanical normalizer (ignored when --passed true).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['id', 'command', 'passed'],

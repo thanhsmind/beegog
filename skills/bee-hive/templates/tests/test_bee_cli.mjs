@@ -2174,6 +2174,34 @@ await check('bee cells verify --passed true (explicit "true" argument, not a bar
   assert(JSON.parse(result.stdout).trace.verify_passed === true, `expected verify_passed true, got ${result.stdout}`);
 });
 
+// D1: --signature threads from bee.mjs's CLI flag through recordVerify into
+// the trace.attempts ledger — the worker-suppliable override, end to end
+// through the dispatcher (not just the direct lib call already covered above).
+await check('bee cells verify --signature overrides the mechanical normalizer through the dispatcher, and a --passed false verify without --signature appends a ledger entry', async () => {
+  addCell(root2, {
+    id: 'ledger-cli-1',
+    feature: 'demo2',
+    title: 'CLI ledger fixture',
+    lane: 'small',
+    action: 'Exercise the --signature flag through the dispatcher.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const failed = await runBee([
+    'cells', 'verify', '--id', 'ledger-cli-1', '--command', 'npm test', '--output', 'FAIL from dispatcher', '--passed', 'false', '--signature', 'cli-custom-sig', '--json',
+  ]);
+  assert(failed.status === 0, `exit ${failed.status}: stdout=${failed.stdout} stderr=${failed.stderr}`);
+  const afterFail = JSON.parse(failed.stdout);
+  assert(afterFail.trace.attempts.length === 1, `expected 1 ledger entry, got ${JSON.stringify(afterFail.trace.attempts)}`);
+  assert(afterFail.trace.attempts[0].failure_signature === 'cli-custom-sig', `expected the CLI --signature to win, got ${afterFail.trace.attempts[0].failure_signature}`);
+
+  const passed = await runBee([
+    'cells', 'verify', '--id', 'ledger-cli-1', '--command', 'npm test', '--output', 'ok', '--passed', 'true', '--json',
+  ]);
+  const afterPass = JSON.parse(passed.stdout);
+  assert(afterPass.trace.attempts.length === 2, `expected 2 ledger entries after the passing verify, got ${afterPass.trace.attempts.length}`);
+  assert(afterPass.trace.attempts[1].verdict === 'pass' && afterPass.trace.attempts[1].failure_signature === null, 'the passing entry carries no failure_signature');
+});
+
 await check('bee cells cap --id demo-2 caps the cell', async () => {
   const result = await runBee(['cells', 'cap', '--id', 'demo-2', '--outcome', 'dispatcher test cap', '--files', 'cell-demo-2.json', '--json']);
   assert(JSON.parse(result.stdout).status === 'capped', `expected capped, got ${result.stdout}`);

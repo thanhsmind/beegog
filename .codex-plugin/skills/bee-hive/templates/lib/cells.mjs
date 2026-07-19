@@ -3,6 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 import {
   readState,
@@ -45,6 +46,71 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function utcNow() {
   return new Date().toISOString();
+}
+
+// D1 — deterministic failure-signature normalizer, exported so `cells verify`
+// (mechanical fallback) and any future caller share ONE definition of
+// "logically the same failure". Strips the noise that makes two runs of the
+// identical failure look different byte-for-byte — ISO timestamps, absolute
+// paths (never leaked into the signature even before hashing — prohibition
+// in CONTEXT D1), and hex-looking runs (commit SHAs, addresses) — then picks
+// the single most diagnostic line: the first line that reads as a failure
+// (`FAIL|Error|refus|denied`, case-insensitive), else the first non-empty
+// line, else "" for genuinely empty output. sha256 of that line, first 12
+// hex chars: short enough to eyeball in a ledger row, long enough that two
+// unrelated failures collide only by coincidence.
+const ISO_TIMESTAMP_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g;
+const WIN_ABS_PATH_RE = /[A-Za-z]:\\[^\s"'<>]*/g;
+// Requires at least two path segments (two slashes) so ordinary fraction-
+// shaped text ("3/45 passed") is never mistaken for a path.
+const UNIX_ABS_PATH_RE = /\/(?:[\w.-]+\/)+[\w.-]*/g;
+const HEX_RUN_RE = /\b[0-9a-fA-F]{6,}\b/g;
+const FAILING_LINE_RE = /FAIL|Error|refus|denied/i;
+
+export function normalizeFailureSignature(output) {
+  const text = typeof output === 'string' ? output : '';
+  const scrubbed = text
+    .replace(ISO_TIMESTAMP_RE, '<ts>')
+    .replace(WIN_ABS_PATH_RE, '<path>')
+    .replace(UNIX_ABS_PATH_RE, '<path>')
+    .replace(HEX_RUN_RE, '<hex>');
+  const lines = scrubbed.split(/\r?\n/).map((line) => line.trim());
+  const chosen = lines.find((line) => line && FAILING_LINE_RE.test(line)) || lines.find((line) => line) || '';
+  return crypto.createHash('sha256').update(chosen, 'utf8').digest('hex').slice(0, 12);
+}
+
+// D1 (+Δ1) — revision ledger: append-only per-cell attempt history, written
+// by every recordVerify outcome and by blockCell. Appended to
+// trace.attempts, NEVER trace.deviations (capCell REPLACES that key wholesale
+// from its own `deviations` argument — see appendOwnershipOverride's comment
+// above for the same trap with ownership_overrides). Every mutator's own
+// `...trace` spread is what keeps this array alive across later transitions;
+// no verb here ever rewrites or removes an existing entry.
+//
+// claim_session/claimed_at are read from the LIVE claim file (Δ1), not from
+// the cell's own trace.claimed_at (a separate, claim-time-only stamp) —
+// budget counting (D2) must key off exactly what claims.mjs itself considers
+// the current acquisition. A swept/absent/sessionless claim reads as
+// null/null; that undercount is conservative-safe (F2), never a refusal.
+function appendAttempt(root, id, trace, { verdict, failureSignature = null, note = null }) {
+  const attempts = Array.isArray(trace.attempts) ? trace.attempts : [];
+  const claim = readClaim(root, id);
+  return {
+    ...trace,
+    attempts: [
+      ...attempts,
+      {
+        n: attempts.length + 1,
+        at: utcNow(),
+        claim_session: claim && typeof claim.session === 'string' ? claim.session : null,
+        claimed_at: claim && typeof claim.claimed_at === 'string' ? claim.claimed_at : null,
+        worker: typeof trace.worker === 'string' ? trace.worker : null,
+        verdict,
+        failure_signature: failureSignature,
+        note,
+      },
+    ],
+  };
 }
 
 // D1 (Δ2-amended): release the O_EXCL claim file on EVERY claim-clearing
@@ -514,7 +580,11 @@ export function claimCell(root, id, worker) {
   return writeCell(root, cell);
 }
 
-export function recordVerify(root, id, { command, output = null, passed, sessionId, forceOwnership = false }) {
+export function recordVerify(
+  root,
+  id,
+  { command, output = null, passed, sessionId, forceOwnership = false, signature = null },
+) {
   const cell = readCell(root, id);
   if (!cell) throw new Error(`recordVerify: cell "${id}" not found.`);
   if (typeof command !== 'string' || !command.trim()) {
@@ -529,6 +599,14 @@ export function recordVerify(root, id, { command, output = null, passed, session
   trace.verify_output = output;
   trace.verify_passed = passed;
   trace.verified_at = utcNow();
+  // D1: worker-suppliable --signature wins over the mechanical fallback; a
+  // passing verify never carries a failure signature at all.
+  const failureSignature = passed
+    ? null
+    : typeof signature === 'string' && signature.trim()
+      ? signature.trim()
+      : normalizeFailureSignature(output);
+  trace = appendAttempt(root, id, trace, { verdict: passed ? 'pass' : 'fail', failureSignature });
   cell.trace = trace;
   return writeCell(root, cell);
 }
@@ -644,6 +722,13 @@ export function blockCell(root, id, reason, { sessionId, forceOwnership = false 
   if (!cell) throw new Error(`blockCell: cell "${id}" not found.`);
   let trace = { ...defaultTrace(), ...(cell.trace || {}) };
   trace = guardClaimOwnership(root, id, trace, 'blockCell', { sessionId, forceOwnership }); // D4
+  // D1: block has no verify output to normalize — the reason text itself is
+  // the closest analog, so it feeds both the ledger's note and its signature.
+  trace = appendAttempt(root, id, trace, {
+    verdict: 'blocked',
+    failureSignature: normalizeFailureSignature(reason),
+    note: reason,
+  });
   cell.status = 'blocked';
   cell.trace = { ...trace, blocked_reason: reason };
   const saved = writeCell(root, cell);

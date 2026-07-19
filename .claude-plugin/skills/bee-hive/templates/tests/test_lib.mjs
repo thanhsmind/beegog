@@ -73,6 +73,7 @@ import {
   FROZEN_JUDGE_PATTERNS,
   claimNextCell,
   claimCellCrossSession,
+  normalizeFailureSignature,
 } from '../lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
 import {
@@ -943,6 +944,113 @@ await check('blockCell records the reason', async () => {
   addCell(root, makeCell('blk-1'));
   blockCell(root, 'blk-1', 'reservation conflict');
   assert(readCell(root, 'blk-1').status === 'blocked', 'blk-1 blocked');
+});
+
+// ─── D1: revision ledger (trace.attempts) + failure-signature normalizer ──
+
+await check('normalizeFailureSignature is deterministic for the same logical failure under timestamp/path/hex noise, and differs for a different failure', async () => {
+  const a = 'FAIL 2026-07-19T10:22:03.451Z /home/alice/repo/src/foo.js assertion abc123def456 failed';
+  const b = 'FAIL 2026-07-20T02:11:59Z /Users/bob/work/src/foo.js assertion 9f8e7d6c5b4a failed';
+  const sigA = normalizeFailureSignature(a);
+  const sigB = normalizeFailureSignature(b);
+  assert(sigA === sigB, `same logical failure under timestamp/path/hex noise should normalize identically, got ${sigA} vs ${sigB}`);
+  assert(/^[0-9a-f]{12}$/.test(sigA), `signature should be 12 lowercase hex chars, got "${sigA}"`);
+  const different = normalizeFailureSignature('FAIL totally unrelated assertion blew up');
+  assert(different !== sigA, 'a genuinely different failure must normalize to a different signature');
+  const empty = normalizeFailureSignature(null);
+  assert(/^[0-9a-f]{12}$/.test(empty), `null output still normalizes to a stable 12-hex signature, got "${empty}"`);
+  assert(empty === normalizeFailureSignature(''), 'null and empty-string output normalize identically');
+});
+
+await check('normalizeFailureSignature prefers the first FAIL/Error/refus/denied line over surrounding noise', async () => {
+  const output = 'running suite...\n3/45 passed\nFAIL assertion mismatch on line 12\nmore trailing noise';
+  const sig = normalizeFailureSignature(output);
+  assert(sig === normalizeFailureSignature('other run\nFAIL assertion mismatch on line 12\ndone'), 'the picked diagnostic line ignores unrelated surrounding noise');
+});
+
+await check('recordVerify appends a ledger entry on every outcome — fail then fail then pass — with claim_session/claimed_at from the live claim file (D1+Δ1)', async () => {
+  addCell(root, makeCell('ledger-1'));
+  const claimed = claimCellCrossSession(root, { sessionId: 'sess-ledger-1', worker: 'worker-ledger', cellId: 'ledger-1' });
+  assert(claimed.ok === true, `precondition: claim should succeed, got ${JSON.stringify(claimed)}`);
+  const liveClaim = readClaim(root, 'ledger-1');
+
+  recordVerify(root, 'ledger-1', { command: 'npm test', output: 'FAIL first attempt', passed: false, sessionId: 'sess-ledger-1' });
+  const afterFail1 = readCell(root, 'ledger-1');
+  assert(Array.isArray(afterFail1.trace.attempts) && afterFail1.trace.attempts.length === 1, `expected 1 attempt, got ${JSON.stringify(afterFail1.trace.attempts)}`);
+  const entry1 = afterFail1.trace.attempts[0];
+  assert(entry1.n === 1, `first entry n should be 1, got ${entry1.n}`);
+  assert(entry1.verdict === 'fail', `first entry verdict should be fail, got ${entry1.verdict}`);
+  assert(entry1.claim_session === 'sess-ledger-1', `claim_session should come from the live claim, got ${entry1.claim_session}`);
+  assert(entry1.claimed_at === liveClaim.claimed_at, `claimed_at should be copied from the live claim file, got ${entry1.claimed_at} vs ${liveClaim.claimed_at}`);
+  assert(entry1.worker === 'worker-ledger', `worker should carry the claiming worker, got ${entry1.worker}`);
+  assert(typeof entry1.failure_signature === 'string' && entry1.failure_signature.length > 0, 'a failed attempt must carry a failure_signature');
+  assert('at' in entry1 && typeof entry1.at === 'string', 'entry carries its own timestamp');
+
+  recordVerify(root, 'ledger-1', { command: 'npm test', output: 'FAIL second attempt', passed: false, sessionId: 'sess-ledger-1' });
+  const afterFail2 = readCell(root, 'ledger-1');
+  assert(afterFail2.trace.attempts.length === 2, `expected 2 attempts, got ${afterFail2.trace.attempts.length}`);
+  assert(afterFail2.trace.attempts[0].failure_signature === entry1.failure_signature, 'the first entry is never rewritten by a later append');
+  assert(afterFail2.trace.attempts[1].n === 2, `second entry n should be 2, got ${afterFail2.trace.attempts[1].n}`);
+
+  recordVerify(root, 'ledger-1', { command: 'npm test', output: 'ok', passed: true, sessionId: 'sess-ledger-1' });
+  const afterPass = readCell(root, 'ledger-1');
+  assert(afterPass.trace.attempts.length === 3, `expected 3 attempts after the passing verify, got ${afterPass.trace.attempts.length}`);
+  const passEntry = afterPass.trace.attempts[2];
+  assert(passEntry.verdict === 'pass', `third entry verdict should be pass, got ${passEntry.verdict}`);
+  assert(passEntry.failure_signature === null, `a passing attempt must never carry a failure_signature, got ${passEntry.failure_signature}`);
+});
+
+await check('recordVerify --signature (worker-supplied) overrides the mechanical normalizer for a failed attempt', async () => {
+  addCell(root, makeCell('ledger-sig-1'));
+  claimCell(root, 'ledger-sig-1', 'worker-sig');
+  recordVerify(root, 'ledger-sig-1', { command: 'npm test', output: 'FAIL something', passed: false, signature: 'custom-sig-001' });
+  const entry = readCell(root, 'ledger-sig-1').trace.attempts[0];
+  assert(entry.failure_signature === 'custom-sig-001', `explicit --signature should win over the normalizer, got ${entry.failure_signature}`);
+});
+
+await check('blockCell appends a "blocked" ledger entry whose note is the block reason and whose failure_signature derives from it', async () => {
+  addCell(root, makeCell('ledger-block-1'));
+  claimCell(root, 'ledger-block-1', 'worker-block');
+  blockCell(root, 'ledger-block-1', 'reservation conflict on src/x.js');
+  const entry = readCell(root, 'ledger-block-1').trace.attempts[0];
+  assert(entry.verdict === 'blocked', `expected blocked verdict, got ${entry.verdict}`);
+  assert(entry.note === 'reservation conflict on src/x.js', `note should carry the block reason verbatim, got ${entry.note}`);
+  assert(entry.failure_signature === normalizeFailureSignature('reservation conflict on src/x.js'), 'blockCell signature derives from the reason via the same normalizer');
+});
+
+await check('a sessionless claim records claim_session null but still carries the live claim file\'s claimed_at (D1+Δ1 undercount-safe, F2)', async () => {
+  addCell(root, makeCell('ledger-sessionless-1'));
+  const claimed = claimCellCrossSession(root, { sessionId: null, worker: 'worker-sl', cellId: 'ledger-sessionless-1' });
+  assert(claimed.ok === true, `precondition: sessionless claim should succeed, got ${JSON.stringify(claimed)}`);
+  recordVerify(root, 'ledger-sessionless-1', { command: 'npm test', output: 'FAIL x', passed: false });
+  const entry = readCell(root, 'ledger-sessionless-1').trace.attempts[0];
+  assert(entry.claim_session === null, `sessionless claim must record claim_session null, got ${entry.claim_session}`);
+  assert(typeof entry.claimed_at === 'string' && entry.claimed_at.length > 0, 'claimed_at is still copied from the live (sessionless) claim file');
+});
+
+await check('trace.attempts entries survive capCell — appended to, never dropped by the trace spread', async () => {
+  addCell(root, makeCell('ledger-cap-1'));
+  claimCell(root, 'ledger-cap-1', 'worker-cap');
+  recordVerify(root, 'ledger-cap-1', { command: 'npm test', output: 'FAIL once', passed: false });
+  recordVerify(root, 'ledger-cap-1', { command: 'npm test', output: 'ok', passed: true });
+  const capped = capCell(root, 'ledger-cap-1', { files_changed: ['a.js'], outcome: 'done' });
+  assert(Array.isArray(capped.trace.attempts) && capped.trace.attempts.length === 2, `capCell must preserve every prior ledger entry, got ${JSON.stringify(capped.trace.attempts)}`);
+  assert(capped.trace.attempts[0].verdict === 'fail' && capped.trace.attempts[1].verdict === 'pass', 'entry order and verdicts survive cap byte-unchanged');
+});
+
+await check('updateCell refuses a {trace:{...}} patch on an open cell — the ledger cannot be edited around (D1+F1: trace is already frozen wholesale)', async () => {
+  addCell(root, makeCell('ledger-update-1'));
+  claimCell(root, 'ledger-update-1', 'worker-upd');
+  recordVerify(root, 'ledger-update-1', { command: 'npm test', output: 'FAIL', passed: false });
+  blockCell(root, 'ledger-update-1', 'stuck', { sessionId: undefined });
+  const file = path.join(root, '.bee', 'cells', 'ledger-update-1.json');
+  const before = fs.readFileSync(file, 'utf8');
+  assertThrows(
+    () => updateCell(root, 'ledger-update-1', { title: 'ok', trace: { attempts: [] } }),
+    'frozen',
+    'a patch attempting to touch trace.attempts must be refused wholesale, cell untouched',
+  );
+  assert(fs.readFileSync(file, 'utf8') === before, 'ledger-update-1 file byte-unchanged after the refused trace patch');
 });
 
 // ─── D1 Δ2-amendment: EVERY claim-clearing transition releases the claim

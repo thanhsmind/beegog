@@ -743,10 +743,15 @@ function handleCellsVerify(root, flags) {
     : flags.output
       ? String(flags.output)
       : null;
+  // D1: --signature is the worker-suppliable override for the ledger's
+  // failure_signature; omitted, recordVerify falls back to the mechanical
+  // normalizer on `output`.
+  const signature = flags.signature !== undefined ? String(flags.signature) : null;
   const cell = recordVerify(root, id, {
     command,
     output,
     passed: passedRaw === 'true',
+    signature,
     ...ownershipFlags(flags),
   });
   return { result: cell, text: `Recorded verify on ${cell.id}: passed=${cell.trace.verify_passed}.` };
