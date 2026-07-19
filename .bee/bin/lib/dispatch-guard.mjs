@@ -31,6 +31,52 @@ export const CODEX_SPAWN_WORKER_TYPE = 'worker';
 
 export const DISPATCH_TOOLS = new Set(['Agent', 'Task']);
 
+// Native transport capability classification (codex-native-transport D3,
+// advisor R3 — binding). PURE evidence -> classification mapping, zero I/O:
+// the version+config-scoped probe record this classification is read from
+// (validity legs, live re-checks, `codex features list` calls) lives in
+// bee.mjs (readNativeTransportClassification / writeNativeTransportProbe,
+// mirroring the g22-3 doctor-attest pattern) — this function only ever
+// judges the evidence object it is handed, so it stays as pure as every
+// other export in this file.
+export const NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE = 'native_model_override';
+export const NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY = 'native_budget_only';
+export const NATIVE_TRANSPORT_EXTERNAL_CLI_ONLY = 'external_cli_only';
+
+/**
+ * classifyNativeTransport(evidence) — D3a (authoritative, decision
+ * c0cba64e): classification is schema/behavior evidence, never version
+ * inference. `evidence` shape (all optional):
+ *   { multi_agent: boolean, multi_agent_v2: boolean, override_spawn_accepted: boolean }
+ * `multi_agent`/`multi_agent_v2` observed via the same `codex features list`
+ * read; `override_spawn_accepted` observed by the g22-6 canary harness's
+ * accepted-override-spawn probe under an isolated CODEX_HOME (D4: bee never
+ * enables the flags on the user's real config, only inside the canary's own
+ * per-run copy).
+ *
+ *   external_cli_only    <=> multi_agent === false (positive evidence the
+ *                            base spawn transport is OFF — the ONLY
+ *                            external trigger)
+ *   native_model_override <=> multi_agent !== false AND multi_agent_v2 ===
+ *                            true AND override_spawn_accepted === true
+ *   native_budget_only    <=> everything else (v2 off, override not
+ *                            accepted, partial/absent/unknown evidence) —
+ *                            the feature stays inert until proven on the
+ *                            host's actual build.
+ */
+export function classifyNativeTransport(evidence) {
+  if (!evidence || typeof evidence !== 'object') {
+    return NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY;
+  }
+  if (evidence.multi_agent === false) {
+    return NATIVE_TRANSPORT_EXTERNAL_CLI_ONLY;
+  }
+  if (evidence.multi_agent_v2 === true && evidence.override_spawn_accepted === true) {
+    return NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE;
+  }
+  return NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY;
+}
+
 // Anchored to the start of the string (leading whitespace allowed): the
 // marker must be the first thing in prompt/description/message, never merely
 // present somewhere inside it (P1-1 — no 500-char scan window, no mid-text
