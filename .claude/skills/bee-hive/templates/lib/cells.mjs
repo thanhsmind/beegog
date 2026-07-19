@@ -23,8 +23,13 @@ import {
   sweepExpiredClaims,
   claimCellFile,
   releaseClaim,
+  clearClaim,
   listSessionRecords,
   heartbeatStale,
+  readClaim,
+  isClaimActive,
+  claimExpiry,
+  resolveSessionId,
 } from './claims.mjs';
 import { findSessionConflicts } from './reservations.mjs';
 import { featureBacklogRank } from './backlog.mjs';
@@ -40,6 +45,92 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function utcNow() {
   return new Date().toISOString();
+}
+
+// D1 (Δ2-amended): release the O_EXCL claim file on EVERY claim-clearing
+// transition — cap, unclaim, block, drop, reopen — not only the claim-next
+// unwind path. Without this a same-session block -> reopen -> claim round
+// trip self-refuses CLAIMED for the claim's full TTL, since nothing else
+// ever removes the file the original claim created. Best-effort by design:
+// a rare GATE_HELD (another in-flight adopt/sweep on the SAME cell,
+// millisecond-scale) or an unexpected fs error here must never fail a cell
+// transition that has already been written to disk by the time this runs —
+// the claim file is a secondary, TTL-bounded artifact, never the source of
+// truth for cell status. Ownership checking on these verbs is a separate,
+// later concern (D4/msh-4); this only guarantees the claim file never
+// outlives the "claimed" status it was created for.
+function releaseClaimFileBestEffort(root, id) {
+  try {
+    clearClaim(root, id);
+  } catch {
+    // never let claim-file cleanup fail a cell transition that already committed
+  }
+}
+
+// D4 (msh-4) — typed ownership guard: composes readClaim/isClaimActive/
+// claimExpiry (never a new claims.mjs reader). Never throws for contention,
+// matching claims.mjs's own typed-failure convention (claimCellFile,
+// releaseClaim) — the mutators below are the guard-CONSUMED callers that turn
+// a refusal into their own thrown Error, the same style every other
+// cells.mjs refusal already uses.
+//
+// ok:true (proceed unchanged) when: no claim file, an expired claim (rescue
+// stays possible), a sessionless claim (single-session `cells claim` writes
+// exactly this shape — D1 Δ2 — so single-session use never reaches a
+// refusal), or the caller's resolved session (D3) matches the claim's. A
+// LIVE claim carrying a session that differs from the caller ⇒ typed
+// NOT_OWNER, naming owner + expiry in claimCellFile's own wording.
+function checkClaimOwnership(root, id, sessionId) {
+  const claim = readClaim(root, id);
+  if (!claim || !isClaimActive(claim)) return { ok: true };
+  const owner = claim.session;
+  if (!owner) return { ok: true };
+  const caller = resolveSessionId({ flag: sessionId });
+  if (caller === owner) return { ok: true };
+  return {
+    ok: false,
+    code: 'NOT_OWNER',
+    reason: `cell "${id}" is claimed by session "${owner}" (${claimExpiry(claim)}) — another session owns it. Pass --force-ownership to override (audited).`,
+    holder: owner,
+  };
+}
+
+// D4 Δ5-amended — the force-ownership audit is a DISTINCT append-only trace
+// key, trace.ownership_overrides, never trace.deviations: capCell REPLACES
+// trace.deviations wholesale from its own `deviations` argument, so an
+// append there would be silently wiped at the very next cap; the `...trace`
+// spread every mutator already does preserves this unknown key across every
+// transition. "Force always leaves an audit line" (must-have truth) — every
+// call made with forceOwnership true appends one row here, whether or not a
+// live conflicting claim actually existed to bypass (owner_bypassed is null
+// when there was nothing to bypass, so the line still tells the truth).
+function appendOwnershipOverride(trace, { verb, sessionId, ownership }) {
+  const overrides = Array.isArray(trace.ownership_overrides) ? trace.ownership_overrides : [];
+  return {
+    ...trace,
+    ownership_overrides: [
+      ...overrides,
+      {
+        verb,
+        forced_by: resolveSessionId({ flag: sessionId }),
+        owner_bypassed: ownership.ok ? null : ownership.holder,
+        at: utcNow(),
+      },
+    ],
+  };
+}
+
+// Shared guard entrypoint for every D4-covered mutator: runs the ownership
+// check, and either throws the typed refusal (no force) or returns the
+// possibly-audited trace to use going forward (force-ownership was passed).
+// `verb` names the caller for both the thrown message and the audit row.
+function guardClaimOwnership(root, id, trace, verb, { sessionId, forceOwnership = false } = {}) {
+  const ownership = checkClaimOwnership(root, id, sessionId);
+  if (!forceOwnership) {
+    if (!ownership.ok) throw new Error(`${verb}: ${ownership.reason}`);
+    return trace;
+  }
+  return appendOwnershipOverride(trace, { verb, sessionId, ownership });
 }
 
 function defaultTrace() {
@@ -423,7 +514,7 @@ export function claimCell(root, id, worker) {
   return writeCell(root, cell);
 }
 
-export function recordVerify(root, id, { command, output = null, passed }) {
+export function recordVerify(root, id, { command, output = null, passed, sessionId, forceOwnership = false }) {
   const cell = readCell(root, id);
   if (!cell) throw new Error(`recordVerify: cell "${id}" not found.`);
   if (typeof command !== 'string' || !command.trim()) {
@@ -432,11 +523,13 @@ export function recordVerify(root, id, { command, output = null, passed }) {
   if (typeof passed !== 'boolean') {
     throw new Error('recordVerify: passed must be true or false.');
   }
-  cell.trace = { ...defaultTrace(), ...(cell.trace || {}) };
-  cell.trace.verify_command = command;
-  cell.trace.verify_output = output;
-  cell.trace.verify_passed = passed;
-  cell.trace.verified_at = utcNow();
+  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+  trace = guardClaimOwnership(root, id, trace, 'recordVerify', { sessionId, forceOwnership }); // D4
+  trace.verify_command = command;
+  trace.verify_output = output;
+  trace.verify_passed = passed;
+  trace.verified_at = utcNow();
+  cell.trace = trace;
   return writeCell(root, cell);
 }
 
@@ -450,6 +543,8 @@ export function capCell(
     behavior_change,
     verification_evidence = null,
     outcome,
+    sessionId,
+    forceOwnership = false,
   } = {},
 ) {
   const cell = readCell(root, id);
@@ -462,7 +557,8 @@ export function capCell(
     behavior_change === undefined ? cell.behavior_change === true : behavior_change === true;
   if (cell.status === 'capped') throw new Error(`capCell: cell "${id}" is already capped.`);
   if (cell.status === 'dropped') throw new Error(`capCell: cell "${id}" was dropped.`);
-  const trace = { ...defaultTrace(), ...(cell.trace || {}) };
+  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+  trace = guardClaimOwnership(root, id, trace, 'capCell', { sessionId, forceOwnership }); // D4
   if (trace.verify_passed !== true) {
     throw new Error(
       `capCell: cell "${id}" has no passing verify result — run the cell's verify command and record it (bee.mjs cells verify --id ${id} --command CMD --passed true) before capping.`,
@@ -535,18 +631,24 @@ export function capCell(
     outcome: typeof outcome === 'string' && outcome.trim() ? outcome : trace.outcome,
     capped_at: utcNow(),
   };
-  return writeCell(root, cell);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: cap is a claim-clearing transition
+  return saved;
 }
 
-export function blockCell(root, id, reason) {
+export function blockCell(root, id, reason, { sessionId, forceOwnership = false } = {}) {
   if (typeof reason !== 'string' || !reason.trim()) {
     throw new Error('blockCell: a reason is required.');
   }
   const cell = readCell(root, id);
   if (!cell) throw new Error(`blockCell: cell "${id}" not found.`);
+  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+  trace = guardClaimOwnership(root, id, trace, 'blockCell', { sessionId, forceOwnership }); // D4
   cell.status = 'blocked';
-  cell.trace = { ...defaultTrace(), ...(cell.trace || {}), blocked_reason: reason };
-  return writeCell(root, cell);
+  cell.trace = { ...trace, blocked_reason: reason };
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: block is a claim-clearing transition
+  return saved;
 }
 
 export function dropCell(root, id, reason) {
@@ -557,7 +659,9 @@ export function dropCell(root, id, reason) {
   if (!cell) throw new Error(`dropCell: cell "${id}" not found.`);
   cell.status = 'dropped';
   cell.trace = { ...defaultTrace(), ...(cell.trace || {}), dropped_reason: reason };
-  return writeCell(root, cell);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: drop is a claim-clearing transition
+  return saved;
 }
 
 // Clear the claim and any recorded verify from a trace, so a cell returned to
@@ -578,7 +682,7 @@ function releaseTrace(existing) {
 // unclaimCell — the inverse of claim: a mis-claimed or abandoned "claimed" cell
 // goes back to "open" so another worker can pick it up. Refuses on any other
 // status (GitHub #12). Mirrors claimCell's own-status assertion shape.
-export function unclaimCell(root, id) {
+export function unclaimCell(root, id, { sessionId, forceOwnership = false } = {}) {
   const cell = readCell(root, id);
   if (!cell) throw new Error(`unclaimCell: cell "${id}" not found.`);
   if (cell.status !== 'claimed') {
@@ -586,16 +690,20 @@ export function unclaimCell(root, id) {
       `unclaimCell: cell "${id}" is "${cell.status}", not "claimed" — only a claimed cell can be unclaimed (returned to open). For a capped/blocked/dropped cell use bee.mjs cells reopen.`,
     );
   }
+  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+  trace = guardClaimOwnership(root, id, trace, 'unclaimCell', { sessionId, forceOwnership }); // D4
   cell.status = 'open';
-  cell.trace = releaseTrace(cell.trace);
-  return writeCell(root, cell);
+  cell.trace = releaseTrace(trace);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: unclaim is a claim-clearing transition (forced unclaim also clears — D4 Δ5)
+  return saved;
 }
 
 // reopenCell — bring a terminal cell (capped / blocked / dropped) back to "open"
 // for rework, recording why. Refuses on "open" (already there) and on "claimed"
 // (that is unclaim's job). Clears the recorded verify so the reopened cell must
 // prove itself again before capping (GitHub #12).
-export function reopenCell(root, id, reason) {
+export function reopenCell(root, id, reason, { sessionId, forceOwnership = false } = {}) {
   if (typeof reason !== 'string' || !reason.trim()) {
     throw new Error('reopenCell: a reason is required.');
   }
@@ -609,14 +717,18 @@ export function reopenCell(root, id, reason) {
       `reopenCell: cell "${id}" is "claimed" — use bee.mjs cells unclaim to release the claim back to open.`,
     );
   }
+  let guardedTrace = { ...defaultTrace(), ...(cell.trace || {}) };
+  guardedTrace = guardClaimOwnership(root, id, guardedTrace, 'reopenCell', { sessionId, forceOwnership }); // D4
   cell.status = 'open';
-  const trace = releaseTrace(cell.trace);
+  const trace = releaseTrace(guardedTrace);
   trace.blocked_reason = null;
   trace.dropped_reason = null;
   trace.reopened_at = utcNow();
   trace.reopened_reason = reason;
   cell.trace = trace;
-  return writeCell(root, cell);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: reopen is a claim-clearing transition
+  return saved;
 }
 
 // Decision 0016 — the orchestrator assesses a cell's difficulty at dispatch and
@@ -808,9 +920,17 @@ export function ceilingScarcityWarning(root) {
 // releaseClaim before surfacing a typed failure; this function itself never
 // throws for a claimCell failure, only for bad arguments (mirrors claims.mjs
 // requireId's bad-argument convention).
+//
+// D1/D3 (msh-2): sessionId is nullable — null/undefined is a legal
+// SESSIONLESS claim (this is now the CLI's `cells claim --id` path too, via
+// bee.mjs's handleCellsClaim, for single-user use with no
+// CLAUDE_CODE_SESSION_ID and no explicit --session-id). claimNextCell (the
+// only other caller) still enforces a non-empty sessionId at its OWN
+// boundary before ever reaching here, so the cross-session selection flow is
+// byte-unchanged for a real session id.
 export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } = {}) {
-  if (typeof sessionId !== 'string' || !sessionId.trim()) {
-    throw new Error('claimCellCrossSession: sessionId is required.');
+  if (sessionId !== null && sessionId !== undefined && (typeof sessionId !== 'string' || !sessionId.trim())) {
+    throw new Error('claimCellCrossSession: sessionId must be a non-empty string, or null/absent for a sessionless claim.');
   }
   if (typeof worker !== 'string' || !worker.trim()) {
     throw new Error('claimCellCrossSession: worker is required.');
@@ -818,7 +938,7 @@ export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } =
   if (typeof cellId !== 'string' || !cellId.trim()) {
     throw new Error('claimCellCrossSession: cellId is required.');
   }
-  const session = sessionId.trim();
+  const session = sessionId == null ? null : sessionId.trim();
   const id = cellId.trim();
 
   const fileClaim = claimCellFile(root, session, id, ttl);

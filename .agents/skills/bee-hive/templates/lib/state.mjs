@@ -5,15 +5,21 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 // Leaf-module imports only — no cycle: claims.mjs and reservations.mjs import
-// nothing but fsutil/node builtins (unlike cells.mjs, which imports THIS file).
+// only fsutil/lock.mjs/node builtins (unlike cells.mjs, which imports THIS
+// file) and never each other or this file, so composing both here stays
+// cycle-free (msh-5).
 import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './claims.mjs';
 import { pathsOverlap } from './reservations.mjs';
 import { readGrants } from './worktree-store.mjs';
+// D6 — startFeature's single read-check-write body runs inside this lock
+// (CLI verbs WAIT normally: no maxAttempts override here, unlike the hook-
+// driven touch path in claims.mjs/reservations.mjs).
+import { withStoreLock } from './lock.mjs';
 // decisions.mjs imports only node builtins + fsutil (no cycle back to this file);
 // advisorRefAnchors reads the newest active decision id through it (AO13).
 import { activeDecisions } from './decisions.mjs';
 
-export const BEE_VERSION = '1.6.2';
+export const BEE_VERSION = '1.7.0';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -1617,7 +1623,16 @@ function listActiveReservationsForStart(root) {
   });
 }
 
-export function startFeature(
+// D6 — async: the whole precondition-read-through-write body below runs
+// inside withStoreLock('state', ...) so a concurrent startFeature/set/gate/
+// worker/scribing-run CLI invocation can no longer race this function's
+// read-check-write into a lost update. Every caller now awaits it (bee.mjs's
+// handleStateStartFeature; direct unit callers in test_lib.mjs) — this is
+// the same async-ification msh-3 already did for reservations.mjs's
+// reserve/release/sweepExpired. CLI verbs WAIT normally (no maxAttempts
+// override): only the hook-driven heartbeat/lease-renewal touch path
+// (claims.mjs/reservations.mjs) uses try-once mode.
+export async function startFeature(
   root,
   { feature, mode = null, phase = 'exploring', lane = false, sessionId = null, paths = [] } = {},
 ) {
@@ -1631,85 +1646,87 @@ export function startFeature(
     );
   }
 
-  if (lane) {
-    return startLane(root, {
-      feature: requireLaneFeature(feature),
-      mode,
-      phase: phaseValue,
-      sessionId: typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null,
-      paths,
-    });
-  }
+  return withStoreLock(root, 'state', () => {
+    if (lane) {
+      return startLane(root, {
+        feature: requireLaneFeature(feature),
+        mode,
+        phase: phaseValue,
+        sessionId: typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null,
+        paths,
+      });
+    }
 
-  // Re-read immediately before any check (C1) — every read below happens
-  // before the single write at the end, so a refusal leaves zero mutations.
-  const state = readStateStrict(root);
+    // Re-read immediately before any check (C1) — every read below happens
+    // before the single write at the end, so a refusal leaves zero mutations.
+    const state = readStateStrict(root);
 
-  if (state.phase !== 'idle' && state.phase !== 'compounding-complete') {
-    throw new Error(
-      `startFeature: refused — current phase is "${state.phase}", not idle or the terminal alias "compounding-complete". A prior feature must finish or be explicitly wound down before a new feature starts. FIX: resume/close the current feature through its normal chain, or drop its remaining cells (bee.mjs cells drop), then retry.`,
-    );
-  }
-
-  const handoffFile = handoffPath(root);
-  if (fs.existsSync(handoffFile)) {
-    throw new Error(
-      'startFeature: refused — .bee/HANDOFF.json exists. A paused session must resume and clear the handoff before a new feature starts. FIX: resume the session (or explicitly delete HANDOFF.json once its work is truly abandoned), then retry.',
-    );
-  }
-
-  const workers = Array.isArray(state.workers) ? state.workers : [];
-  if (workers.length > 0) {
-    const names = workers.map((w) => (w && w.nickname) || '?').join(', ');
-    throw new Error(
-      `startFeature: refused — ${workers.length} registered worker(s) remain (${names}). FIX: clear them first (bee.mjs state worker remove --nickname N, or worker clear).`,
-    );
-  }
-
-  const activeReservations = listActiveReservationsForStart(root);
-  if (activeReservations.length > 0) {
-    throw new Error(
-      `startFeature: refused — ${activeReservations.length} active reservation(s) remain (${activeReservations
-        .map((r) => `${r.agent}:${r.path}`)
-        .join(', ')}). FIX: release them first (bee.mjs reservations release).`,
-    );
-  }
-
-  const cells = listAllCellsForStart(root);
-  const claimed = cells.filter((cell) => cell.status === 'claimed');
-  if (claimed.length > 0) {
-    throw new Error(
-      `startFeature: refused — claimed cell(s) remain: ${claimed.map((c) => c.id).join(', ')}. FIX: cap or drop them first (bee.mjs cells cap / bee.mjs cells drop).`,
-    );
-  }
-
-  const priorFeature = state.feature;
-  if (priorFeature) {
-    const nonterminal = cells.filter(
-      (cell) =>
-        cell.feature === priorFeature &&
-        (cell.status === 'open' || cell.status === 'claimed' || cell.status === 'blocked'),
-    );
-    if (nonterminal.length > 0) {
+    if (state.phase !== 'idle' && state.phase !== 'compounding-complete') {
       throw new Error(
-        `startFeature: refused — prior feature "${priorFeature}" has nonterminal cell(s): ${nonterminal
-          .map((c) => `${c.id}(${c.status})`)
-          .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee.mjs cells drop --id ID --reason R) — startFeature never auto-clears cells as cleanup. FIX: cap or drop each listed cell, then retry.`,
+        `startFeature: refused — current phase is "${state.phase}", not idle or the terminal alias "compounding-complete". A prior feature must finish or be explicitly wound down before a new feature starts. FIX: resume/close the current feature through its normal chain, or drop its remaining cells (bee.mjs cells drop), then retry.`,
       );
     }
-  }
 
-  // All preconditions hold — ONE atomic write: feature/mode/phase, reset all
-  // four gates, refreshed summary/next_action. A new feature never inherits
-  // approvals from whatever came before it.
-  state.feature = feature.trim();
-  state.mode = mode == null ? null : String(mode);
-  state.phase = phaseValue;
-  state.approved_gates = { context: false, shape: false, execution: false, review: false };
-  state.summary = `Feature "${state.feature}" started at phase "${phaseValue}".`;
-  state.next_action = `Invoke bee-hive for "${state.feature}" (phase: ${phaseValue}).`;
-  writeState(root, state);
-  return state;
+    const handoffFile = handoffPath(root);
+    if (fs.existsSync(handoffFile)) {
+      throw new Error(
+        'startFeature: refused — .bee/HANDOFF.json exists. A paused session must resume and clear the handoff before a new feature starts. FIX: resume the session (or explicitly delete HANDOFF.json once its work is truly abandoned), then retry.',
+      );
+    }
+
+    const workers = Array.isArray(state.workers) ? state.workers : [];
+    if (workers.length > 0) {
+      const names = workers.map((w) => (w && w.nickname) || '?').join(', ');
+      throw new Error(
+        `startFeature: refused — ${workers.length} registered worker(s) remain (${names}). FIX: clear them first (bee.mjs state worker remove --nickname N, or worker clear).`,
+      );
+    }
+
+    const activeReservations = listActiveReservationsForStart(root);
+    if (activeReservations.length > 0) {
+      throw new Error(
+        `startFeature: refused — ${activeReservations.length} active reservation(s) remain (${activeReservations
+          .map((r) => `${r.agent}:${r.path}`)
+          .join(', ')}). FIX: release them first (bee.mjs reservations release).`,
+      );
+    }
+
+    const cells = listAllCellsForStart(root);
+    const claimed = cells.filter((cell) => cell.status === 'claimed');
+    if (claimed.length > 0) {
+      throw new Error(
+        `startFeature: refused — claimed cell(s) remain: ${claimed.map((c) => c.id).join(', ')}. FIX: cap or drop them first (bee.mjs cells cap / bee.mjs cells drop).`,
+      );
+    }
+
+    const priorFeature = state.feature;
+    if (priorFeature) {
+      const nonterminal = cells.filter(
+        (cell) =>
+          cell.feature === priorFeature &&
+          (cell.status === 'open' || cell.status === 'claimed' || cell.status === 'blocked'),
+      );
+      if (nonterminal.length > 0) {
+        throw new Error(
+          `startFeature: refused — prior feature "${priorFeature}" has nonterminal cell(s): ${nonterminal
+            .map((c) => `${c.id}(${c.status})`)
+            .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee.mjs cells drop --id ID --reason R) — startFeature never auto-clears cells as cleanup. FIX: cap or drop each listed cell, then retry.`,
+        );
+      }
+    }
+
+    // All preconditions hold — ONE atomic write: feature/mode/phase, reset all
+    // four gates, refreshed summary/next_action. A new feature never inherits
+    // approvals from whatever came before it.
+    state.feature = feature.trim();
+    state.mode = mode == null ? null : String(mode);
+    state.phase = phaseValue;
+    state.approved_gates = { context: false, shape: false, execution: false, review: false };
+    state.summary = `Feature "${state.feature}" started at phase "${phaseValue}".`;
+    state.next_action = `Invoke bee-hive for "${state.feature}" (phase: ${phaseValue}).`;
+    writeState(root, state);
+    return state;
+  });
 }
 
 // Active claim holds by ANOTHER session whose claimed cell's files overlap the

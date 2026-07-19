@@ -18,21 +18,28 @@
   "verify": "node scripts/test_skill_render.mjs && node skills/bee-hive/scripts/test_plugin_distribution.mjs && node scripts/release_manifest.mjs --check",
   "behavior_change": false,
   "deps": [],
-  "status": "claimed",
+  "status": "capped",
   "decisions": [],
   "trace": {
     "worker": "orchestrator-merge",
     "outcome": null,
-    "files_changed": [],
+    "files_changed": [
+      "skills/bee-swarming/SKILL.md",
+      "docs/specs/workflow-state.md",
+      ".bee/cells",
+      ".claude-plugin/skills",
+      ".codex-plugin/skills",
+      "docs/history/codex-harness-hardening/release-manifest.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-19T17:48:38.417Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
+    "verify_output": "full merged commands.verify chain exit 0 (MERGE_VERIFY_GREEN, task bof472hn0): 33 suites incl. test_lib 365/0, plugin_distribution 40/40, conformance, census, all four race suites",
+    "verify_passed": true,
     "claimed_at": "2026-07-19T17:41:35.585Z",
-    "verify_command": null,
-    "verified_at": null
+    "verify_command": "bash -c \"$(node -e 'process.stdout.write(require(\"./.bee/config.json\").commands.verify)')\"",
+    "verified_at": "2026-07-19T17:48:38.364Z"
   }
 }

@@ -73,7 +73,7 @@ import {
 // stays out of this cell's file scope — these are already-exported read/
 // mutate primitives from fsh-3, composed here for presentation (session list)
 // and forwarded as-is (bind/unbind), never a second implementation.
-import { sessionsDir, readSession, bindSessionLane, unbindSessionLane } from './lib/claims.mjs';
+import { sessionsDir, readSession, bindSessionLane, unbindSessionLane, resolveSessionId } from './lib/claims.mjs';
 import {
   listCells,
   readyCells,
@@ -81,7 +81,7 @@ import {
   addCell,
   addCells,
   updateCell,
-  claimCell,
+  claimCellCrossSession,
   recordVerify,
   capCell,
   blockCell,
@@ -96,6 +96,11 @@ import {
   claimNextCell,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
+// D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
+// each wrap their read-check-write body in this lock (startFeature already
+// wraps its own body inside lib/state.mjs); CLI verbs WAIT normally, so no
+// maxAttempts override is ever passed here.
+import { withStoreLock } from './lib/lock.mjs';
 import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree } from './lib/worktree-store.mjs';
 import { prepareDispatch } from './lib/dispatch-prepare.mjs';
 import {
@@ -691,9 +696,39 @@ function handleCellsUpdate(root, flags) {
   };
 }
 
+// D1 (msh-2): re-backed by the same claims.mjs claim-file-first sequence
+// claim-next already uses (via claimCellCrossSession) — the claim file is
+// acquired BEFORE the cell JSON flips, so a losing concurrent claimant gets a
+// typed CLAIMED refusal naming the owner + expiry instead of silently
+// double-owning the cell. D3: --session-id is optional — resolveSessionId
+// falls back to CLAUDE_CODE_SESSION_ID, then to a legal sessionless claim
+// (single-session flow keeps working exactly as before, with no id at all).
 function handleCellsClaim(root, flags) {
-  const cell = claimCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'worker'));
-  return { result: cell, text: `Claimed ${cell.id} for ${cell.trace.worker}.` };
+  const id = requireFlag(flags, 'id');
+  const worker = requireFlag(flags, 'worker');
+  const sessionId = resolveSessionId({
+    flag: flags['session-id'] !== undefined ? String(flags['session-id']) : undefined,
+  });
+  const ttl = flags.ttl !== undefined ? Number.parseInt(String(flags.ttl), 10) : undefined;
+  if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
+    throw new Error('--ttl must be a positive integer (seconds).');
+  }
+  const result = claimCellCrossSession(root, { sessionId, worker, cellId: id, ttl });
+  if (!result.ok) {
+    throw new Error(`claim: ${result.code} — ${result.reason}`);
+  }
+  return { result: result.cell, text: `Claimed ${result.cell.id} for ${result.cell.trace.worker}.` };
+}
+
+// D4 (msh-4): the ownership pair shared by every claim-aware mutator below —
+// --session-id resolves like everywhere else (explicit flag, else
+// CLAUDE_CODE_SESSION_ID at the lib layer via resolveSessionId), and
+// --force-ownership is the audited rescue door (typed refusal otherwise).
+function ownershipFlags(flags) {
+  return {
+    sessionId: flags['session-id'] !== undefined ? String(flags['session-id']) : undefined,
+    forceOwnership: flags['force-ownership'] === true,
+  };
 }
 
 function handleCellsVerify(root, flags) {
@@ -708,7 +743,12 @@ function handleCellsVerify(root, flags) {
     : flags.output
       ? String(flags.output)
       : null;
-  const cell = recordVerify(root, id, { command, output, passed: passedRaw === 'true' });
+  const cell = recordVerify(root, id, {
+    command,
+    output,
+    passed: passedRaw === 'true',
+    ...ownershipFlags(flags),
+  });
   return { result: cell, text: `Recorded verify on ${cell.id}: passed=${cell.trace.verify_passed}.` };
 }
 
@@ -731,12 +771,13 @@ function handleCellsCap(root, flags) {
         : null,
     deviations,
     friction: flags.friction ? String(flags.friction) : null,
+    ...ownershipFlags(flags),
   });
   return { result: cell, text: `Capped ${cell.id} at ${cell.trace.capped_at}.` };
 }
 
 function handleCellsBlock(root, flags) {
-  const cell = blockCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
+  const cell = blockCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Blocked ${cell.id}.` };
 }
 
@@ -746,12 +787,12 @@ function handleCellsDrop(root, flags) {
 }
 
 function handleCellsUnclaim(root, flags) {
-  const cell = unclaimCell(root, requireFlag(flags, 'id'));
+  const cell = unclaimCell(root, requireFlag(flags, 'id'), ownershipFlags(flags));
   return { result: cell, text: `Unclaimed ${cell.id} — back to open.` };
 }
 
 function handleCellsReopen(root, flags) {
-  const cell = reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
+  const cell = reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Reopened ${cell.id} — back to open.` };
 }
 
@@ -777,7 +818,18 @@ function handleCellsJudge(root, flags) {
 // non-zero with the reason on stderr rather than a misleadingly "successful" exit.
 function handleCellsClaimNext(root, flags) {
   const worker = requireFlag(flags, 'worker');
-  const sessionId = requireFlag(flags, 'session-id');
+  // D3: --session-id keeps working exactly as before; it is now also
+  // resolvable from CLAUDE_CODE_SESSION_ID when the flag is omitted.
+  // claim-next's own cross-session selection logic still genuinely needs a
+  // session id (it resolves the acting session's bound lane), so — unlike
+  // the sessionless-claim relaxation in `cells claim` — neither source
+  // resolving is still a refusal, just from one of two places now.
+  const sessionId = resolveSessionId({
+    flag: flags['session-id'] !== undefined ? String(flags['session-id']) : undefined,
+  });
+  if (!sessionId) {
+    throw new Error('claim-next: --session-id or CLAUDE_CODE_SESSION_ID env is required.');
+  }
   const ttl = flags.ttl !== undefined ? Number.parseInt(String(flags.ttl), 10) : undefined;
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
@@ -820,12 +872,12 @@ function handleCellsSchedule(root, flags) {
   return { result: schedule, text: lines.join('\n') };
 }
 
-function handleReservationsReserve(root, flags) {
+async function handleReservationsReserve(root, flags) {
   const ttl = flags.ttl !== undefined ? Number.parseInt(String(flags.ttl), 10) : undefined;
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
   }
-  const result = reserve(root, {
+  const result = await reserve(root, {
     agent: requireFlag(flags, 'agent'),
     cell: requireFlag(flags, 'cell'),
     path: requireFlag(flags, 'path'),
@@ -841,8 +893,8 @@ function handleReservationsReserve(root, flags) {
   return { result, text, exitCode: result.ok ? 0 : 1 };
 }
 
-function handleReservationsRelease(root, flags) {
-  const result = release(root, {
+async function handleReservationsRelease(root, flags) {
+  const result = await release(root, {
     agent: requireFlag(flags, 'agent'),
     cell: flags.cell ? String(flags.cell) : null,
   });
@@ -862,8 +914,8 @@ function handleReservationsList(root, flags) {
   return { result: { reservations }, text };
 }
 
-function handleReservationsSweep(root) {
-  const released = sweepExpired(root);
+async function handleReservationsSweep(root) {
+  const released = await sweepExpired(root);
   return { result: { released }, text: `Swept ${released} expired reservation(s).` };
 }
 
@@ -987,7 +1039,12 @@ function resolveMutationTarget(root, laneFeature, verb) {
   return { record, write: (updated) => writeLane(root, updated) };
 }
 
-function handleStateSet(root, flags) {
+// D6 — async: the whole record-read through write() body runs inside
+// withStoreLock('state', ...) below so a concurrent set/gate/worker/
+// scribing-run/start-feature CLI invocation can no longer race this
+// function's read-check-write into a lost update. Argument-only validation
+// (no store I/O) stays outside the lock.
+async function handleStateSet(root, flags) {
   rejectDryRun(flags);
   if (flags.phase !== undefined) {
     const phase = String(flags.phase);
@@ -1014,59 +1071,66 @@ function handleStateSet(root, flags) {
       "set: --feature cannot be combined with --lane — a lane's feature is its identity (the lane record's filename), not a mutable field. FIX: omit --feature, or start a new lane instead.",
     );
   }
-  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'set');
-  // chain-integrity D1-REVISED / D2 — read `from` off the record actually being
-  // mutated (lanes included), never off global state.
-  let waived = null;
-  if (flags.phase !== undefined) {
-    const target = String(flags.phase);
-    const transition = checkPhaseTransition(state.phase, target);
-    if (!transition.ok) throw new Error(transition.reason);
-    if (target === 'compounding-complete') {
-      waived = closeGuardScribingDebt(root, flags);
+
+  const { state, changed, waived } = await withStoreLock(root, 'state', () => {
+    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'set');
+    // chain-integrity D1-REVISED / D2 — read `from` off the record actually being
+    // mutated (lanes included), never off global state.
+    let waived = null;
+    if (flags.phase !== undefined) {
+      const target = String(flags.phase);
+      const transition = checkPhaseTransition(state.phase, target);
+      if (!transition.ok) throw new Error(transition.reason);
+      if (target === 'compounding-complete') {
+        waived = closeGuardScribingDebt(root, flags);
+      }
     }
-  }
-  const selectedRecord = laneFeature ? `lane "${laneFeature}"` : 'default state';
-  if (!isKnownPhase(state.phase)) {
-    throw new Error(
-      `set: refused — selected ${selectedRecord} has missing or invalid pre-mutation phase "${state.phase ?? ''}". Ownership cannot be derived from a corrupt routing record, so nothing was written. FIX: restore a valid phase before retrying.`,
-    );
-  }
-  if (flags.owner === undefined || flags.owner === true || flags.owner === '') {
-    throw new Error(
-      `set: missing --owner — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}". FIX: retry with --owner ${state.phase}.`,
-    );
-  }
-  const owner = String(flags.owner);
-  if (owner !== state.phase) {
-    throw new Error(
-      `set: owner mismatch — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}", not "${owner}". FIX: retry with --owner ${state.phase}.`,
-    );
-  }
-  const changed = [];
-  if (flags.phase !== undefined) {
-    state.phase = String(flags.phase);
-    changed.push(`phase=${state.phase}`);
-  }
-  if (flags.mode !== undefined) {
-    state.mode = String(flags.mode);
-    changed.push(`mode=${state.mode}`);
-  }
-  if (flags.feature !== undefined) {
-    state.feature = String(flags.feature);
-    changed.push(`feature=${state.feature}`);
-  }
-  if (flags['next-action'] !== undefined) {
-    state.next_action = String(flags['next-action']);
-    changed.push('next_action');
-  }
-  if (flags.summary !== undefined) {
-    state.summary = String(flags.summary);
-    changed.push('summary');
-  }
-  write(state);
+    const selectedRecord = laneFeature ? `lane "${laneFeature}"` : 'default state';
+    if (!isKnownPhase(state.phase)) {
+      throw new Error(
+        `set: refused — selected ${selectedRecord} has missing or invalid pre-mutation phase "${state.phase ?? ''}". Ownership cannot be derived from a corrupt routing record, so nothing was written. FIX: restore a valid phase before retrying.`,
+      );
+    }
+    if (flags.owner === undefined || flags.owner === true || flags.owner === '') {
+      throw new Error(
+        `set: missing --owner — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}". FIX: retry with --owner ${state.phase}.`,
+      );
+    }
+    const owner = String(flags.owner);
+    if (owner !== state.phase) {
+      throw new Error(
+        `set: owner mismatch — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}", not "${owner}". FIX: retry with --owner ${state.phase}.`,
+      );
+    }
+    const changed = [];
+    if (flags.phase !== undefined) {
+      state.phase = String(flags.phase);
+      changed.push(`phase=${state.phase}`);
+    }
+    if (flags.mode !== undefined) {
+      state.mode = String(flags.mode);
+      changed.push(`mode=${state.mode}`);
+    }
+    if (flags.feature !== undefined) {
+      state.feature = String(flags.feature);
+      changed.push(`feature=${state.feature}`);
+    }
+    if (flags['next-action'] !== undefined) {
+      state.next_action = String(flags['next-action']);
+      changed.push('next_action');
+    }
+    if (flags.summary !== undefined) {
+      state.summary = String(flags.summary);
+      changed.push('summary');
+    }
+    write(state);
+    return { state, changed, waived };
+  });
+
   // D4 — the waiver is loud and attributable. Logged AFTER the write succeeds so
-  // a refused close never leaves a decision claiming one happened.
+  // a refused close never leaves a decision claiming one happened. decisions.jsonl
+  // is append-only and outside the 'state' lock's store scope, so this stays
+  // after the lock releases, unchanged from before.
   if (waived && waived.length > 0) {
     logDecision(root, {
       decision: `Closed feature "${state.feature}" with scribing debt WAIVED for ${waived.length} capped behavior_change cell(s): ${waived.join(', ')}. Their settled behavior is NOT in docs/specs/.`,
@@ -1102,7 +1166,8 @@ function closeGuardScribingDebt(root, flags) {
   );
 }
 
-function handleStateGate(root, flags) {
+// D6 — async: record-read through write() runs inside withStoreLock('state').
+async function handleStateGate(root, flags) {
   rejectDryRun(flags);
   if (flags.owner !== undefined) {
     throw new Error(
@@ -1117,45 +1182,53 @@ function handleStateGate(root, flags) {
   }
   const approved = requireBoolFlag(flags, 'approved');
   const laneFeature = optionalLaneFlag(flags, 'gate');
-  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'gate');
-  // Gate 3 advisor precondition (AO3/AO13): high-risk execution never opens
-  // without a non-stale advisor_ref. Computed BEFORE any write, so a refusal
-  // makes zero mutations. Bound to the SELECTED record's feature (M1): a lane
-  // approval checks the lane's own advisor_ref against the lane's plan.md.
-  if (name === 'execution' && approved === true && state.mode === 'high-risk') {
-    const staleness = advisorRefStale(root, state.advisor_ref, state);
-    if (staleness.stale) {
-      throw new Error(
-        `gate: execution approval refused for high-risk work — the advisor consult is missing or stale (AO3/AO13). ` +
-          `Reason(s): ${staleness.reasons.join('; ')}. ` +
-          `FIX: resolve the advisor from config (models.<runtime>.advisor), run it read-only with the evidence bundle on stdin, ` +
-          `then record the consult: bee state advisor-ref record --advisor "<identity>" --digest-file <path>` +
-          `${laneFeature ? ` --lane ${laneFeature}` : ''}. Nothing is written until a non-stale advisor_ref exists.`,
-      );
+
+  const state = await withStoreLock(root, 'state', () => {
+    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'gate');
+    // Gate 3 advisor precondition (AO3/AO13): high-risk execution never opens
+    // without a non-stale advisor_ref. Computed BEFORE any write, so a refusal
+    // makes zero mutations. Bound to the SELECTED record's feature (M1): a lane
+    // approval checks the lane's own advisor_ref against the lane's plan.md.
+    if (name === 'execution' && approved === true && state.mode === 'high-risk') {
+      const staleness = advisorRefStale(root, state.advisor_ref, state);
+      if (staleness.stale) {
+        throw new Error(
+          `gate: execution approval refused for high-risk work — the advisor consult is missing or stale (AO3/AO13). ` +
+            `Reason(s): ${staleness.reasons.join('; ')}. ` +
+            `FIX: resolve the advisor from config (models.<runtime>.advisor), run it read-only with the evidence bundle on stdin, ` +
+            `then record the consult: bee state advisor-ref record --advisor "<identity>" --digest-file <path>` +
+            `${laneFeature ? ` --lane ${laneFeature}` : ''}. Nothing is written until a non-stale advisor_ref exists.`,
+        );
+      }
     }
-  }
-  // Revocation tracking (AO13): stamp the execution revocation moment so a ref
-  // recorded before it reads stale. Only the execution gate is tracked — it is
-  // the only revocation the staleness rule needs.
-  if (name === 'execution' && approved === false) {
-    state.gate_revoked_at = { ...state.gate_revoked_at, execution: new Date().toISOString() };
-  }
-  state.approved_gates = { ...state.approved_gates, [name]: approved };
-  write(state);
+    // Revocation tracking (AO13): stamp the execution revocation moment so a ref
+    // recorded before it reads stale. Only the execution gate is tracked — it is
+    // the only revocation the staleness rule needs.
+    if (name === 'execution' && approved === false) {
+      state.gate_revoked_at = { ...state.gate_revoked_at, execution: new Date().toISOString() };
+    }
+    state.approved_gates = { ...state.approved_gates, [name]: approved };
+    write(state);
+    return state;
+  });
   return {
     result: state,
     text: `Gate "${name}" set to ${approved}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
   };
 }
 
-function stateWorkerMutate(root, flags, mutate, text) {
+// D6 — async: shared by worker add/update/remove/clear, so all four get the
+// lock for free. The read-check-write body runs inside withStoreLock('state').
+async function stateWorkerMutate(root, flags, mutate, text) {
   rejectDryRun(flags);
-  const state = readStateStrict(root);
-  const workers = Array.isArray(state.workers) ? [...state.workers] : [];
-  const resultText = mutate(workers);
-  state.workers = workers;
-  writeState(root, state);
-  return { result: state, text: text ?? resultText };
+  return withStoreLock(root, 'state', () => {
+    const state = readStateStrict(root);
+    const workers = Array.isArray(state.workers) ? [...state.workers] : [];
+    const resultText = mutate(workers);
+    state.workers = workers;
+    writeState(root, state);
+    return { result: state, text: text ?? resultText };
+  });
 }
 
 function handleStateWorkerAdd(root, flags) {
@@ -1307,7 +1380,8 @@ function handleStateWorkerPrune(root, flags) {
   return { result: { dry_run: dryRun, pruned, kept }, text };
 }
 
-function handleStateScribingRun(root, flags) {
+// D6 — async: record-read through write() runs inside withStoreLock('state').
+async function handleStateScribingRun(root, flags) {
   rejectDryRun(flags);
   const feature = requireFlag(flags, 'feature');
   const areas = splitList(requireFlag(flags, 'areas'));
@@ -1316,24 +1390,30 @@ function handleStateScribingRun(root, flags) {
   const at = now.toISOString();
   const date = at.slice(0, 10);
   const laneFeature = optionalLaneFlag(flags, 'scribing-run');
-  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
-  // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
-  // so it is also the door that must be guarded. It used to advance the phase
-  // from anywhere, with no check that execution had happened at all.
-  const phaseCheck = checkScribingRunPhase(state.phase);
-  if (!phaseCheck.ok) throw new Error(phaseCheck.reason);
-  state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
-  // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
-  state.phase = 'compounding';
-  state.next_action = nextAction;
-  write(state);
+
+  const state = await withStoreLock(root, 'state', () => {
+    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
+    // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
+    // so it is also the door that must be guarded. It used to advance the phase
+    // from anywhere, with no check that execution had happened at all.
+    const phaseCheck = checkScribingRunPhase(state.phase);
+    if (!phaseCheck.ok) throw new Error(phaseCheck.reason);
+    state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
+    // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
+    state.phase = 'compounding';
+    state.next_action = nextAction;
+    write(state);
+    return state;
+  });
   return {
     result: state,
     text: `Recorded scribing run for "${feature}" at ${at}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
   };
 }
 
-function handleStateStartFeature(root, flags) {
+// D6 — async: startFeature (lib/state.mjs) already wraps its own
+// read-check-write in withStoreLock('state'); this just awaits it.
+async function handleStateStartFeature(root, flags) {
   rejectDryRun(flags);
   const feature = requireFlag(flags, 'feature');
   const mode = flags.mode !== undefined ? String(flags.mode) : null;
@@ -1347,7 +1427,7 @@ function handleStateStartFeature(root, flags) {
   const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : null;
   const paths = flags.paths !== undefined ? splitList(flags.paths) : [];
   // startFeature() re-reads state and performs every precondition check (C1).
-  const state = startFeature(root, { feature, mode, phase, lane, sessionId, paths });
+  const state = await startFeature(root, { feature, mode, phase, lane, sessionId, paths });
   return {
     result: state,
     text: `Started feature "${state.feature}"${lane ? ' as a lane' : ''} at phase "${state.phase}" (mode ${state.mode ?? 'null'}); all four gates reset.`,
@@ -3604,7 +3684,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership']);
 
 export function splitCommandTokens(argv) {
   const leading = [];
@@ -3841,7 +3921,7 @@ function emitError(message, useJson) {
 
 // ─── main ───────────────────────────────────────────────────────────────────
 
-export function main(argv) {
+export async function main(argv) {
   if (argv[0] === '--help') {
     return handleHelp(argv.includes('--json'));
   }
@@ -3970,7 +4050,11 @@ export function main(argv) {
 
   const handler = HANDLERS[commandName];
   try {
-    const response = handler(root, parsed.flags);
+    // reservations.reserve/release/sweep (D2) run their read-check-write body
+    // under withStoreLock, which is async — `handler` may return a plain
+    // value or a Promise; `await` resolves either uniformly and still routes
+    // a rejection (e.g. LockBusyError) into this same catch, unchanged.
+    const response = await handler(root, parsed.flags);
     return emit(response, useJson, drift);
   } catch (error) {
     return emitError(error instanceof Error ? error.message : String(error), useJson);
@@ -3983,5 +4067,13 @@ export function main(argv) {
 // computeManifestHash, parseFlags, ...) must never trigger it as a side effect.
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {
-  process.exitCode = main(process.argv.slice(2));
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error) => {
+      process.stderr.write(`${error instanceof Error ? (error.stack || error.message) : String(error)}\n`);
+      process.exitCode = 1;
+    },
+  );
 }
