@@ -35,6 +35,8 @@ Scribing is bee's BA. It owns the state layer: `docs/specs/<area>.md` (one BA-gr
 
 Bootstrap is inventory, harvest is meaning: bootstrap writes only what code, tree, and verbatim README extracts prove, marks every meaning as an Open Gap (`coverage: partial`), and asks no interview questions — its loudly stated gaps are harvest's worklist.
 
+**Sync mode runs after goal-check, not instead of it:** `standard`/`high-risk` `behavior_change` cells are already judged by the semantic checklist judge (D4, table in `bee-hive/references/routing-and-contracts.md`) before scribing sees them — that judge is goal-check verification, not the separate user-invoked review session this mode's trigger already distinguishes.
+
 ## 1. Gather Sources — and What Each May Feed
 
 | Source | May feed | Never feeds |

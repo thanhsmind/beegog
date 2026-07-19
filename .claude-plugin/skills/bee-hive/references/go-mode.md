@@ -57,6 +57,8 @@ DONE — verified, unreviewed, development continues
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+Separately, `standard`/`high-risk` swarming waves also run a semantic checklist judge at goal-check time per capped `behavior_change` cell (D4, table in `bee-hive/references/routing-and-contracts.md`) — that is verification of the cell, not the boxed review flow above, and never triggers Gate 4 on its own.
+
 ## Pre-Pipeline: Bootstrap
 
 Before invoking `bee-exploring`:
