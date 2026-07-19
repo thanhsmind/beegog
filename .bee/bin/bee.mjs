@@ -715,6 +715,17 @@ function handleCellsClaim(root, flags) {
   return { result: result.cell, text: `Claimed ${result.cell.id} for ${result.cell.trace.worker}.` };
 }
 
+// D4 (msh-4): the ownership pair shared by every claim-aware mutator below —
+// --session-id resolves like everywhere else (explicit flag, else
+// CLAUDE_CODE_SESSION_ID at the lib layer via resolveSessionId), and
+// --force-ownership is the audited rescue door (typed refusal otherwise).
+function ownershipFlags(flags) {
+  return {
+    sessionId: flags['session-id'] !== undefined ? String(flags['session-id']) : undefined,
+    forceOwnership: flags['force-ownership'] === true,
+  };
+}
+
 function handleCellsVerify(root, flags) {
   const id = requireFlag(flags, 'id');
   const command = requireFlag(flags, 'command');
@@ -727,7 +738,12 @@ function handleCellsVerify(root, flags) {
     : flags.output
       ? String(flags.output)
       : null;
-  const cell = recordVerify(root, id, { command, output, passed: passedRaw === 'true' });
+  const cell = recordVerify(root, id, {
+    command,
+    output,
+    passed: passedRaw === 'true',
+    ...ownershipFlags(flags),
+  });
   return { result: cell, text: `Recorded verify on ${cell.id}: passed=${cell.trace.verify_passed}.` };
 }
 
@@ -750,12 +766,13 @@ function handleCellsCap(root, flags) {
         : null,
     deviations,
     friction: flags.friction ? String(flags.friction) : null,
+    ...ownershipFlags(flags),
   });
   return { result: cell, text: `Capped ${cell.id} at ${cell.trace.capped_at}.` };
 }
 
 function handleCellsBlock(root, flags) {
-  const cell = blockCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
+  const cell = blockCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Blocked ${cell.id}.` };
 }
 
@@ -765,12 +782,12 @@ function handleCellsDrop(root, flags) {
 }
 
 function handleCellsUnclaim(root, flags) {
-  const cell = unclaimCell(root, requireFlag(flags, 'id'));
+  const cell = unclaimCell(root, requireFlag(flags, 'id'), ownershipFlags(flags));
   return { result: cell, text: `Unclaimed ${cell.id} — back to open.` };
 }
 
 function handleCellsReopen(root, flags) {
-  const cell = reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
+  const cell = reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Reopened ${cell.id} — back to open.` };
 }
 
@@ -3634,7 +3651,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

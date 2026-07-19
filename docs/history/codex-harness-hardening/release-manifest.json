@@ -15,13 +15,13 @@
     },
     {
       "path": ".bee/bin/lib/cells.mjs",
-      "sha256": "de628f012c30e4cc97e57d07758d1c8c8ccc9244262400a2aded96d075596d5b",
+      "sha256": "bb98cfd93906286ec934a109e2a0d5366ca501ea90a7e0e3d409d1d062c8c520",
       "mode": "644",
       "role": "runtime_lib"
     },
     {
       "path": ".bee/bin/lib/claims.mjs",
-      "sha256": "d11fd2dac75c8590662beb4c91e451f4c6819a1c845a713bf8305f0975717783",
+      "sha256": "14eec14b4e602e25f6714d5d2b2b28df3d8e86595dfffcf8e1b2659f41b7b43e",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -2084,7 +2084,7 @@
     },
     {
       "path": "skills/bee-hive/templates/bee.mjs",
-      "sha256": "67a07944a430bf0dc434492f33ce86206e3c301fb1aae32095c3be47a882f5f3",
+      "sha256": "c5524f981f58d0c62712119d14c6adc9c3594c2702d5693ae701b6817a86043f",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/bee.mjs"
@@ -2105,14 +2105,14 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/cells.mjs",
-      "sha256": "de628f012c30e4cc97e57d07758d1c8c8ccc9244262400a2aded96d075596d5b",
+      "sha256": "bb98cfd93906286ec934a109e2a0d5366ca501ea90a7e0e3d409d1d062c8c520",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/cells.mjs"
     },
     {
       "path": "skills/bee-hive/templates/lib/claims.mjs",
-      "sha256": "d11fd2dac75c8590662beb4c91e451f4c6819a1c845a713bf8305f0975717783",
+      "sha256": "14eec14b4e602e25f6714d5d2b2b28df3d8e86595dfffcf8e1b2659f41b7b43e",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/claims.mjs"
@@ -2280,7 +2280,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_lib.mjs",
-      "sha256": "fd97b2675399f83bff4baf6981987c68bf3d995c9f641ca1f5f8afe7f2e5856b",
+      "sha256": "7b24b5ce4aa5c7f3dce30a16577de243b5f4fd2613cc94e005a2ef7c3bdece04",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_lib.mjs"

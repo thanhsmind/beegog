@@ -221,7 +221,10 @@ export function isClaimActive(claim, nowMs = Date.now()) {
   return !isClaimExpired(claim, nowMs);
 }
 
-function claimExpiry(claim) {
+// Exported for cells.mjs's D4 ownership guard (msh-4): reused verbatim so the
+// mutator refusal names owner + expiry in the exact same words claimCellFile
+// itself uses below — composing an existing reader, never a new one.
+export function claimExpiry(claim) {
   const claimedMs = Date.parse(claim?.claimed_at);
   const ttl = claim?.ttl_seconds;
   if (!Number.isFinite(claimedMs) || !Number.isFinite(ttl) || ttl <= 0) return 'no expiry';

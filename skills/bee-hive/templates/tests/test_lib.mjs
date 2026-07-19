@@ -939,8 +939,10 @@ await check('capCell releases the claim file on cap (D1 Δ2)', async () => {
   addCell(root, makeCell('rel-cap-1'));
   claimCellCrossSession(root, { sessionId: 'sess-rel-cap', worker: 'w', cellId: 'rel-cap-1' });
   assert(readClaim(root, 'rel-cap-1') !== null, 'precondition: claim file exists after claim');
-  recordVerify(root, 'rel-cap-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
-  capCell(root, 'rel-cap-1', { files_changed: ['a.js'], outcome: 'done' });
+  // D4 (msh-4): the owning session must now authenticate its own mutations —
+  // recordVerify/capCell run AS 'sess-rel-cap', the session that claimed it.
+  recordVerify(root, 'rel-cap-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: 'sess-rel-cap' });
+  capCell(root, 'rel-cap-1', { files_changed: ['a.js'], outcome: 'done', sessionId: 'sess-rel-cap' });
   assert(readClaim(root, 'rel-cap-1') === null, 'cap must release the claim file');
 });
 
@@ -948,7 +950,8 @@ await check('unclaimCell releases the claim file, and the cell is re-claimable b
   addCell(root, makeCell('rel-unclaim-1'));
   claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
   assert(readClaim(root, 'rel-unclaim-1') !== null, 'precondition: claim file exists after claim');
-  unclaimCell(root, 'rel-unclaim-1');
+  // D4 (msh-4): unclaim as the owning session — single-session use never refuses.
+  unclaimCell(root, 'rel-unclaim-1', { sessionId: 'sess-rel-unclaim' });
   assert(readClaim(root, 'rel-unclaim-1') === null, 'unclaim must release the claim file');
   const reclaimed = claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
   assert(reclaimed.ok === true, `same-session re-claim after unclaim must not self-refuse, got ${JSON.stringify(reclaimed)}`);
@@ -970,6 +973,173 @@ await check('capCell/unclaimCell/blockCell/dropCell/reopenCell never fail when t
   const capped = capCell(root, 'rel-none-1', { files_changed: ['a.js'], outcome: 'done' });
   assert(capped.status === 'capped', 'cap succeeds cleanly with no claim file to release');
 });
+
+// ─── D4 (msh-4): claim-ownership check on cell mutators + audited force
+// door. recordVerify/capCell/blockCell/unclaimCell/reopenCell now read the
+// live claim file: a LIVE claim carrying a session that differs from the
+// caller's resolved session refuses (typed, names owner + expiry); an
+// expired claim, an absent claim, a sessionless claim, or a matching session
+// proceeds unchanged (dropCell stays untouched — CONTEXT D4 names only
+// verify/cap/block/unclaim/reopen).
+
+await check('a live claim mismatch refuses recordVerify/capCell/blockCell/unclaimCell, naming owner and expiry', async () => {
+  addCell(root, makeCell('own-mismatch-1'));
+  claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-mismatch-1' });
+  assertThrows(
+    () =>
+      recordVerify(root, 'own-mismatch-1', {
+        command: 'node -e "process.exit(0)"',
+        output: 'ok',
+        passed: true,
+        sessionId: 'sess-intruder',
+      }),
+    'sess-owner',
+    'recordVerify refuses a mismatched session',
+  );
+  assertThrows(
+    () =>
+      recordVerify(root, 'own-mismatch-1', {
+        command: 'node -e "process.exit(0)"',
+        output: 'ok',
+        passed: true,
+        sessionId: 'sess-intruder',
+      }),
+    'expires',
+    'the refusal names the expiry too',
+  );
+  assertThrows(
+    () => capCell(root, 'own-mismatch-1', { files_changed: ['a.js'], outcome: 'done', sessionId: 'sess-intruder' }),
+    'sess-owner',
+    'capCell refuses a mismatched session',
+  );
+  assertThrows(
+    () => blockCell(root, 'own-mismatch-1', 'stuck', { sessionId: 'sess-intruder' }),
+    'sess-owner',
+    'blockCell refuses a mismatched session',
+  );
+  assertThrows(
+    () => unclaimCell(root, 'own-mismatch-1', { sessionId: 'sess-intruder' }),
+    'sess-owner',
+    'unclaimCell refuses a mismatched session',
+  );
+  const cell = readCell(root, 'own-mismatch-1');
+  assert(cell.status === 'claimed', 'every refusal above left the cell untouched — still claimed');
+  assert(cell.trace.verify_passed !== true, 'the refused recordVerify never landed a partial write');
+});
+
+await check('reopenCell also refuses a live-claim mismatch, naming owner and expiry', async () => {
+  addCell(root, makeCell('own-mismatch-reopen', { status: 'blocked' }));
+  claimCellFile(root, 'sess-owner', 'own-mismatch-reopen', 3600); // a lingering live claim on an already-blocked cell
+  assertThrows(
+    () => reopenCell(root, 'own-mismatch-reopen', 'retry', { sessionId: 'sess-intruder' }),
+    'sess-owner',
+    'reopenCell refuses a mismatched session',
+  );
+  assert(readCell(root, 'own-mismatch-reopen').status === 'blocked', 'reopenCell refusal leaves status untouched');
+});
+
+await check('an expired claim proceeds unchanged for verify/cap (rescue stays possible)', async () => {
+  addCell(root, makeCell('own-expired-1'));
+  claimCell(root, 'own-expired-1', 'worker-x'); // bare claim (status only)
+  writeJsonAtomic(claimPath(root, 'own-expired-1'), {
+    cell: 'own-expired-1',
+    session: 'sess-gone',
+    claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
+    ttl_seconds: 60,
+  });
+  recordVerify(root, 'own-expired-1', {
+    command: 'node -e "process.exit(0)"',
+    output: 'ok',
+    passed: true,
+    sessionId: 'sess-rescuer',
+  });
+  const capped = capCell(root, 'own-expired-1', { files_changed: ['a.js'], outcome: 'done', sessionId: 'sess-rescuer' });
+  assert(capped.status === 'capped', 'cap proceeds through an expired claim without refusal');
+});
+
+await check('a sessionless claim proceeds unchanged — single-session use never hits a refusal', async () => {
+  addCell(root, makeCell('own-sessionless-1'));
+  claimCellCrossSession(root, { sessionId: null, worker: 'w', cellId: 'own-sessionless-1' });
+  assert(readClaim(root, 'own-sessionless-1').session === undefined, 'precondition: sessionless claim omits the session key');
+  recordVerify(root, 'own-sessionless-1', {
+    command: 'node -e "process.exit(0)"',
+    output: 'ok',
+    passed: true,
+    sessionId: 'sess-anyone',
+  });
+  const capped = capCell(root, 'own-sessionless-1', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    sessionId: 'sess-anyone',
+  });
+  assert(capped.status === 'capped', 'cap proceeds through a sessionless claim regardless of caller session');
+});
+
+await check(
+  '--force-ownership bypasses a live-claim mismatch and appends an audited trace.ownership_overrides row (never trace.deviations) that survives the subsequent cap',
+  async () => {
+    addCell(root, makeCell('own-force-1'));
+    claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-force-1' });
+    recordVerify(root, 'own-force-1', {
+      command: 'node -e "process.exit(0)"',
+      output: 'ok',
+      passed: true,
+      sessionId: 'sess-forcer',
+      forceOwnership: true,
+    });
+    const afterVerify = readCell(root, 'own-force-1');
+    assert(
+      Array.isArray(afterVerify.trace.ownership_overrides) && afterVerify.trace.ownership_overrides.length === 1,
+      `recordVerify force appends one override row, got ${JSON.stringify(afterVerify.trace.ownership_overrides)}`,
+    );
+    const row = afterVerify.trace.ownership_overrides[0];
+    assert(
+      row.verb === 'recordVerify' && row.forced_by === 'sess-forcer' && row.owner_bypassed === 'sess-owner',
+      `override row names forcer and bypassed owner, got ${JSON.stringify(row)}`,
+    );
+    assert(
+      !Array.isArray(afterVerify.trace.deviations) || afterVerify.trace.deviations.length === 0,
+      'the force audit never lands in trace.deviations (Δ5) — cap has not run yet to even populate it',
+    );
+
+    const capped = capCell(root, 'own-force-1', {
+      files_changed: ['a.js'],
+      outcome: 'forced cap',
+      deviations: ['unrelated planning deviation'], // capCell REPLACES deviations wholesale — proves ownership_overrides survives that wipe
+      sessionId: 'sess-forcer',
+      forceOwnership: true,
+    });
+    assert(
+      capped.trace.ownership_overrides.length === 2,
+      `cap force appends a SECOND row (append-only), got ${JSON.stringify(capped.trace.ownership_overrides)}`,
+    );
+    assert(capped.trace.ownership_overrides[1].verb === 'capCell', 'the second row is capCell\'s own audit line');
+    assert(
+      capped.trace.deviations.length === 1 && capped.trace.deviations[0] === 'unrelated planning deviation',
+      'trace.deviations still holds only the cap-time deviations — the ownership audit key is untouched by capCell wholesale-replacing deviations',
+    );
+  },
+);
+
+await check(
+  "a forced unclaim past another session's live claim still clears the claim file, so the forced-open cell is claimable by a new session (D4 Δ5)",
+  async () => {
+    addCell(root, makeCell('own-force-unclaim-1'));
+    claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-force-unclaim-1' });
+    unclaimCell(root, 'own-force-unclaim-1', { sessionId: 'sess-rescuer', forceOwnership: true });
+    assert(
+      readClaim(root, 'own-force-unclaim-1') === null,
+      'forced unclaim releases the claim file — the cell must not stay self-refusing',
+    );
+    const reclaimed = claimCellCrossSession(root, { sessionId: 'sess-rescuer', worker: 'w2', cellId: 'own-force-unclaim-1' });
+    assert(reclaimed.ok === true, `the forced-open cell is claimable by the rescuing session, got ${JSON.stringify(reclaimed)}`);
+    const afterReclaim = readCell(root, 'own-force-unclaim-1');
+    assert(
+      afterReclaim.trace.ownership_overrides.length === 1 && afterReclaim.trace.ownership_overrides[0].verb === 'unclaimCell',
+      `the unclaim force audit row survives the reclaim, got ${JSON.stringify(afterReclaim.trace.ownership_overrides)}`,
+    );
+  },
+);
 
 // ─── reservations ───────────────────────────────────────────────────────────
 
