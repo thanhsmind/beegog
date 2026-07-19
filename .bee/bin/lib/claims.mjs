@@ -3,8 +3,10 @@
 //   .bee/sessions/<session-id>.json  { id, started_at, last_heartbeat, lane? }
 //                                    (lane is OPTIONAL and OMITTED while
 //                                     unbound — see bindSessionLane below)
-//   .bee/claims/<cell-id>.json       { cell, session, ttl_seconds, claimed_at,
+//   .bee/claims/<cell-id>.json       { cell, session?, ttl_seconds, claimed_at,
 //                                      adopted_from?, adopted_at? }
+//                                    (session is OMITTED, never null, for a
+//                                     sessionless single-user claim — D1 Δ2)
 //   .bee/claims/<cell-id>.adopting   exclusive per-claim gate (adopt/sweep/release)
 //
 // Claim creation is exclusive-create ('wx' → O_EXCL): the probe-proven
@@ -35,6 +37,21 @@ export const DEFAULT_HEARTBEAT_STALE_SECONDS = 900;
 
 function utcNow(nowMs) {
   return new Date(nowMs).toISOString();
+}
+
+/**
+ * D3 — session id is resolved at mutation time, never handed down: explicit
+ * flag (highest, for tests/CLI callers) -> CLAUDE_CODE_SESSION_ID env ->
+ * absent (null). A blank/whitespace-only flag or env value is treated as
+ * absent, same as omitting it. Callers that require a session (claim-next)
+ * still enforce non-null themselves; this helper only resolves, it never
+ * refuses.
+ */
+export function resolveSessionId({ flag } = {}) {
+  if (typeof flag === 'string' && flag.trim()) return flag.trim();
+  const env = process.env.CLAUDE_CODE_SESSION_ID;
+  if (typeof env === 'string' && env.trim()) return env.trim();
+  return null;
 }
 
 function requireId(value, label) {
@@ -233,14 +250,22 @@ function releaseGate(root, cellId) {
  * One winner per cell via exclusive create. Losing the race — including to a
  * TTL-expired claim, which only sweepExpiredClaims may reclaim — returns the
  * typed CLAIMED failure naming the holder and expiry.
+ *
+ * D1 (Δ2-amended): sessionId's requirement is deliberately relaxed — null or
+ * undefined is a legal SESSIONLESS claim (single-user use with no
+ * CLAUDE_CODE_SESSION_ID and no explicit --session-id): the claim file still
+ * gets created (the O_EXCL race-serialization still applies), it simply omits
+ * the `session` key entirely rather than writing a placeholder value. A
+ * non-null sessionId is still validated the same as before (a plain id, no
+ * path separators).
  */
 export function claimCellFile(root, sessionId, cellId, ttl = DEFAULT_CLAIM_TTL_SECONDS, { now = Date.now() } = {}) {
-  const session = requireId(sessionId, 'session id');
+  const session = sessionId == null ? null : requireId(sessionId, 'session id');
   const cell = requireId(cellId, 'cell id');
   ensureDir(claimsDir(root));
   const claim = {
     cell,
-    session,
+    ...(session ? { session } : {}),
     ttl_seconds: Number.isFinite(ttl) && ttl > 0 ? Math.floor(ttl) : DEFAULT_CLAIM_TTL_SECONDS,
     claimed_at: utcNow(now),
   };
@@ -252,7 +277,7 @@ export function claimCellFile(root, sessionId, cellId, ttl = DEFAULT_CLAIM_TTL_S
   } catch (error) {
     if (error && error.code === 'EEXIST') {
       const holder = readClaim(root, cell);
-      const owner = holder?.session ?? 'unknown session';
+      const owner = holder?.session ?? 'no session (sessionless claim)';
       return fail(
         'CLAIMED',
         `cell "${cell}" is already claimed by session "${owner}" (${claimExpiry(holder)}).`,
@@ -296,9 +321,14 @@ export function adoptClaim(root, cellId, newSessionId, { now = Date.now() } = {}
   }
 }
 
-/** Owner-only removal, under the same exclusive gate as adopt/sweep. */
+/**
+ * Owner-only removal, under the same exclusive gate as adopt/sweep. D1
+ * (Δ2-amended): sessionId is nullable — null/undefined means "release the
+ * sessionless claim", and matches only a claim record that itself carries no
+ * `session` key (claim.session ?? null === null).
+ */
 export function releaseClaim(root, sessionId, cellId) {
-  const session = requireId(sessionId, 'session id');
+  const session = sessionId == null ? null : requireId(sessionId, 'session id');
   const cell = requireId(cellId, 'cell id');
   if (!readClaim(root, cell)) {
     return fail('NOT_FOUND', `cell "${cell}" has no claim to release.`);
@@ -311,8 +341,45 @@ export function releaseClaim(root, sessionId, cellId) {
     if (!claim) {
       return fail('NOT_FOUND', `cell "${cell}" has no claim to release.`);
     }
-    if (claim.session !== session) {
-      return fail('NOT_OWNER', `cell "${cell}" is owned by session "${claim.session}", not "${session}".`);
+    const owner = claim.session ?? null;
+    if (owner !== session) {
+      return fail(
+        'NOT_OWNER',
+        `cell "${cell}" is owned by session "${owner ?? 'none (sessionless)'}", not "${session ?? 'none (sessionless)'}".`,
+      );
+    }
+    fs.rmSync(claimPath(root, cell), { force: true });
+    return { ok: true, released: claim };
+  } finally {
+    releaseGate(root, cell);
+  }
+}
+
+/**
+ * Unconditional claim-file removal for cell-mutator claim-clearing
+ * transitions (cap/unclaim/block/drop/reopen — D1 Δ2-amendment): these verbs
+ * already own the cell's lifecycle transition and, as of msh-2, do not yet
+ * check claim ownership (that check is D4/msh-4's job) — so clearing here is
+ * by cell id alone, regardless of which session (if any) holds the claim.
+ * Without this, a same-session block -> reopen -> claim round-trip would
+ * self-refuse CLAIMED for the claim's full TTL, since nothing ever removed
+ * the file the first claim created. No-ops (ok:true, released:null) when
+ * there is no claim file — most cells claimed before this change, or cells
+ * never claimed at all, have none. Gated the same as adopt/sweep/release so
+ * it can never race a concurrent adopt/sweep.
+ */
+export function clearClaim(root, cellId) {
+  const cell = requireId(cellId, 'cell id');
+  if (!readClaim(root, cell)) {
+    return { ok: true, released: null };
+  }
+  if (!acquireGate(root, cell, Date.now())) {
+    return fail('GATE_HELD', `claim "${cell}" is gated by another in-flight adopt/sweep — retry later, never wait on the gate.`);
+  }
+  try {
+    const claim = readClaim(root, cell); // re-read under the gate
+    if (!claim) {
+      return { ok: true, released: null };
     }
     fs.rmSync(claimPath(root, cell), { force: true });
     return { ok: true, released: claim };

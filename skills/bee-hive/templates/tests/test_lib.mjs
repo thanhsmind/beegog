@@ -63,6 +63,8 @@ import {
   capCell,
   blockCell,
   dropCell,
+  unclaimCell,
+  reopenCell,
   scribingDebt,
   tierMix,
   ceilingScarcityWarning,
@@ -80,12 +82,14 @@ import {
   claimCellFile,
   readClaim,
   releaseClaim,
+  clearClaim,
   adoptClaim,
   sweepExpiredClaims,
   isClaimActive,
   sessionPath,
   claimPath,
   claimGatePath,
+  resolveSessionId,
   DEFAULT_CLAIM_TTL_SECONDS,
   DEFAULT_HEARTBEAT_STALE_SECONDS,
 } from '../lib/claims.mjs';
@@ -788,6 +792,35 @@ await check('claimCell claims an open, dep-free cell', async () => {
   assert(cell.trace.worker === 'worker-a', 'worker recorded');
 });
 
+// ─── D1: claimCellCrossSession is the path `cells claim --id` now runs ────
+// through (bee.mjs handleCellsClaim) — the claim file is acquired BEFORE the
+// cell JSON flips, so a losing concurrent claimant gets a typed CLAIMED
+// refusal instead of silently double-claiming. D3: a null/absent sessionId is
+// a legal sessionless claim (single-session use is unaffected).
+
+await check('claimCellCrossSession backs "cells claim --id": winner claims both the cell JSON and the claims-store file; a second claimant on the SAME cell gets typed CLAIMED naming the winner + expiry, and the cell is untouched', async () => {
+  addCell(root, makeCell('claimx-1'));
+  const first = claimCellCrossSession(root, { sessionId: 'sess-x1', worker: 'worker-x1', cellId: 'claimx-1' });
+  assert(first.ok === true, `first claimant should win, got ${JSON.stringify(first)}`);
+  assert(first.cell.status === 'claimed' && first.cell.trace.worker === 'worker-x1', 'cell JSON reflects the winner');
+  assert(first.claim.session === 'sess-x1', 'claims-store file belongs to the winner');
+  assert(readCell(root, 'claimx-1').status === 'claimed', 'on-disk cell is claimed');
+
+  const second = claimCellCrossSession(root, { sessionId: 'sess-x2', worker: 'worker-x2', cellId: 'claimx-1' });
+  assert(second.ok === false && second.code === 'CLAIMED', `second claimant must lose with typed CLAIMED, got ${JSON.stringify(second)}`);
+  assert(second.reason.includes('sess-x1'), 'refusal names the actual owner');
+  assert(/expir/i.test(second.reason), 'refusal names the expiry');
+  assert(readCell(root, 'claimx-1').trace.worker === 'worker-x1', 'the losing attempt never touched the cell JSON');
+});
+
+await check('claimCellCrossSession with sessionId null/undefined is a legal sessionless claim — the claim file omits "session" entirely; single-session flow (no env id) still claims successfully', async () => {
+  addCell(root, makeCell('claimx-2'));
+  const result = claimCellCrossSession(root, { sessionId: null, worker: 'worker-sessionless', cellId: 'claimx-2' });
+  assert(result.ok === true, `a null sessionId must still succeed, got ${JSON.stringify(result)}`);
+  assert(!('session' in result.claim), 'the sessionless claim record omits "session" entirely');
+  assert(result.cell.status === 'claimed', 'the cell is claimed regardless of session');
+});
+
 // ─── cells: verify-gated capping ────────────────────────────────────────────
 
 await check('capCell refuses without a passing verify result', async () => {
@@ -893,6 +926,49 @@ await check('blockCell records the reason', async () => {
   addCell(root, makeCell('blk-1'));
   blockCell(root, 'blk-1', 'reservation conflict');
   assert(readCell(root, 'blk-1').status === 'blocked', 'blk-1 blocked');
+});
+
+// ─── D1 Δ2-amendment: EVERY claim-clearing transition releases the claim
+// file — cap, unclaim, block, drop, reopen — not only the claim-next unwind.
+// Without this a same-session round trip through one of these verbs would
+// self-refuse CLAIMED for the claim's full TTL (block/reopen's round trip is
+// covered end-to-end by scripts/test_claim_race.mjs scenario (c); this covers
+// cap/unclaim/drop directly at the lib level).
+
+await check('capCell releases the claim file on cap (D1 Δ2)', async () => {
+  addCell(root, makeCell('rel-cap-1'));
+  claimCellCrossSession(root, { sessionId: 'sess-rel-cap', worker: 'w', cellId: 'rel-cap-1' });
+  assert(readClaim(root, 'rel-cap-1') !== null, 'precondition: claim file exists after claim');
+  recordVerify(root, 'rel-cap-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  capCell(root, 'rel-cap-1', { files_changed: ['a.js'], outcome: 'done' });
+  assert(readClaim(root, 'rel-cap-1') === null, 'cap must release the claim file');
+});
+
+await check('unclaimCell releases the claim file, and the cell is re-claimable by the SAME session with no self-refusal (D1 Δ2)', async () => {
+  addCell(root, makeCell('rel-unclaim-1'));
+  claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
+  assert(readClaim(root, 'rel-unclaim-1') !== null, 'precondition: claim file exists after claim');
+  unclaimCell(root, 'rel-unclaim-1');
+  assert(readClaim(root, 'rel-unclaim-1') === null, 'unclaim must release the claim file');
+  const reclaimed = claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
+  assert(reclaimed.ok === true, `same-session re-claim after unclaim must not self-refuse, got ${JSON.stringify(reclaimed)}`);
+});
+
+await check('dropCell releases the claim file (D1 Δ2)', async () => {
+  addCell(root, makeCell('rel-drop-1'));
+  claimCellCrossSession(root, { sessionId: 'sess-rel-drop', worker: 'w', cellId: 'rel-drop-1' });
+  assert(readClaim(root, 'rel-drop-1') !== null, 'precondition: claim file exists after claim');
+  dropCell(root, 'rel-drop-1', 'no longer needed');
+  assert(readClaim(root, 'rel-drop-1') === null, 'drop must release the claim file');
+});
+
+await check('capCell/unclaimCell/blockCell/dropCell/reopenCell never fail when there is no claim file to release (cells claimed before msh-2, or never claimed)', async () => {
+  addCell(root, makeCell('rel-none-1'));
+  assert(readClaim(root, 'rel-none-1') === null, 'precondition: no claim file (never claimed via claimCellCrossSession)');
+  claimCell(root, 'rel-none-1', 'worker-plain'); // the bare, file-less claim path
+  recordVerify(root, 'rel-none-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  const capped = capCell(root, 'rel-none-1', { files_changed: ['a.js'], outcome: 'done' });
+  assert(capped.status === 'capped', 'cap succeeds cleanly with no claim file to release');
 });
 
 // ─── reservations ───────────────────────────────────────────────────────────
@@ -1115,6 +1191,61 @@ await check('claimCellFile default TTL matches the exported constant; released c
   assert(again.ok === true, 'released cell claimable again');
   assert(again.claim.ttl_seconds === DEFAULT_CLAIM_TTL_SECONDS, 'default ttl applied');
   releaseClaim(claimsRoot, 'sess-b', 'cell-2');
+});
+
+// ─── D3: resolveSessionId — explicit flag -> CLAUDE_CODE_SESSION_ID env -> null ──
+
+await check('resolveSessionId: explicit flag wins over env; a blank flag falls through to env; neither present resolves null', async () => {
+  const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    process.env.CLAUDE_CODE_SESSION_ID = 'sess-from-env';
+    assert(resolveSessionId({ flag: 'sess-from-flag' }) === 'sess-from-flag', 'explicit flag takes precedence over env');
+    assert(resolveSessionId({ flag: '' }) === 'sess-from-env', 'a blank flag falls through to env, not treated as an explicit empty session');
+    assert(resolveSessionId({ flag: '   ' }) === 'sess-from-env', 'a whitespace-only flag falls through to env too');
+    assert(resolveSessionId({}) === 'sess-from-env', 'no flag at all resolves from env');
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+    assert(resolveSessionId({}) === null, 'neither flag nor env present resolves null');
+    assert(resolveSessionId() === null, 'called with no argument at all still resolves null, never throws');
+  } finally {
+    if (savedEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedEnv;
+  }
+});
+
+// ─── D1 Δ2: sessionless claims — claimCellFile/releaseClaim/clearClaim ─────
+
+await check('claimCellFile(root, null, ...): a sessionless claim omits the "session" key entirely (never null) and still race-serializes via O_EXCL', async () => {
+  const first = claimCellFile(claimsRoot, null, 'cell-sessionless', 60);
+  assert(first.ok === true, 'sessionless claim succeeds');
+  assert(!('session' in first.claim), 'the claim record omits "session" entirely rather than writing session:null');
+  const onDisk = readClaim(claimsRoot, 'cell-sessionless');
+  assert(!('session' in onDisk), 'the on-disk claim record also omits "session"');
+  const second = claimCellFile(claimsRoot, 'sess-intruder', 'cell-sessionless', 60);
+  assert(second.ok === false && second.code === 'CLAIMED', 'a second (session-bearing) claimant still loses to the sessionless winner');
+  assert(second.reason.includes('no session (sessionless claim)'), `CLAIMED reason should name the sessionless holder, got ${JSON.stringify(second.reason)}`);
+});
+
+await check('releaseClaim(root, null, ...) releases a sessionless claim; a real session cannot release someone else\'s sessionless claim', async () => {
+  const deniedByRealSession = releaseClaim(claimsRoot, 'sess-intruder', 'cell-sessionless');
+  assert(deniedByRealSession.ok === false && deniedByRealSession.code === 'NOT_OWNER', 'a real session id can never release a sessionless claim it does not own');
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-sessionless')), 'claim untouched by the denied release');
+  const released = releaseClaim(claimsRoot, null, 'cell-sessionless');
+  assert(released.ok === true, 'the sessionless owner (null) can release its own claim');
+  assert(!fs.existsSync(claimPath(claimsRoot, 'cell-sessionless')), 'claim file removed');
+});
+
+await check('clearClaim: unconditional removal regardless of owner; no-ops (ok:true, released:null) when there is no claim file; never leaks a gate file', async () => {
+  const noClaim = clearClaim(claimsRoot, 'cell-never-claimed');
+  assert(noClaim.ok === true && noClaim.released === null, `clearing a cell with no claim file must no-op, got ${JSON.stringify(noClaim)}`);
+
+  claimCellFile(claimsRoot, 'sess-owner', 'cell-to-clear', 60);
+  assert(fs.existsSync(claimPath(claimsRoot, 'cell-to-clear')), 'precondition: claim file exists');
+  // clearClaim needs no owner argument at all — a DIFFERENT actor (or none)
+  // still removes it; this is what cap/unclaim/block/drop/reopen rely on.
+  const cleared = clearClaim(claimsRoot, 'cell-to-clear');
+  assert(cleared.ok === true && cleared.released && cleared.released.session === 'sess-owner', `clearClaim must remove regardless of caller, got ${JSON.stringify(cleared)}`);
+  assert(!fs.existsSync(claimPath(claimsRoot, 'cell-to-clear')), 'claim file removed');
+  assert(!fs.existsSync(claimGatePath(claimsRoot, 'cell-to-clear')), 'no gate file leaked by clearClaim');
 });
 
 fs.rmSync(claimsRoot, { recursive: true, force: true });

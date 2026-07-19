@@ -23,6 +23,7 @@ import {
   sweepExpiredClaims,
   claimCellFile,
   releaseClaim,
+  clearClaim,
   listSessionRecords,
   heartbeatStale,
 } from './claims.mjs';
@@ -40,6 +41,26 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function utcNow() {
   return new Date().toISOString();
+}
+
+// D1 (Δ2-amended): release the O_EXCL claim file on EVERY claim-clearing
+// transition — cap, unclaim, block, drop, reopen — not only the claim-next
+// unwind path. Without this a same-session block -> reopen -> claim round
+// trip self-refuses CLAIMED for the claim's full TTL, since nothing else
+// ever removes the file the original claim created. Best-effort by design:
+// a rare GATE_HELD (another in-flight adopt/sweep on the SAME cell,
+// millisecond-scale) or an unexpected fs error here must never fail a cell
+// transition that has already been written to disk by the time this runs —
+// the claim file is a secondary, TTL-bounded artifact, never the source of
+// truth for cell status. Ownership checking on these verbs is a separate,
+// later concern (D4/msh-4); this only guarantees the claim file never
+// outlives the "claimed" status it was created for.
+function releaseClaimFileBestEffort(root, id) {
+  try {
+    clearClaim(root, id);
+  } catch {
+    // never let claim-file cleanup fail a cell transition that already committed
+  }
 }
 
 function defaultTrace() {
@@ -535,7 +556,9 @@ export function capCell(
     outcome: typeof outcome === 'string' && outcome.trim() ? outcome : trace.outcome,
     capped_at: utcNow(),
   };
-  return writeCell(root, cell);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: cap is a claim-clearing transition
+  return saved;
 }
 
 export function blockCell(root, id, reason) {
@@ -546,7 +569,9 @@ export function blockCell(root, id, reason) {
   if (!cell) throw new Error(`blockCell: cell "${id}" not found.`);
   cell.status = 'blocked';
   cell.trace = { ...defaultTrace(), ...(cell.trace || {}), blocked_reason: reason };
-  return writeCell(root, cell);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: block is a claim-clearing transition
+  return saved;
 }
 
 export function dropCell(root, id, reason) {
@@ -557,7 +582,9 @@ export function dropCell(root, id, reason) {
   if (!cell) throw new Error(`dropCell: cell "${id}" not found.`);
   cell.status = 'dropped';
   cell.trace = { ...defaultTrace(), ...(cell.trace || {}), dropped_reason: reason };
-  return writeCell(root, cell);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: drop is a claim-clearing transition
+  return saved;
 }
 
 // Clear the claim and any recorded verify from a trace, so a cell returned to
@@ -588,7 +615,9 @@ export function unclaimCell(root, id) {
   }
   cell.status = 'open';
   cell.trace = releaseTrace(cell.trace);
-  return writeCell(root, cell);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: unclaim is a claim-clearing transition
+  return saved;
 }
 
 // reopenCell — bring a terminal cell (capped / blocked / dropped) back to "open"
@@ -616,7 +645,9 @@ export function reopenCell(root, id, reason) {
   trace.reopened_at = utcNow();
   trace.reopened_reason = reason;
   cell.trace = trace;
-  return writeCell(root, cell);
+  const saved = writeCell(root, cell);
+  releaseClaimFileBestEffort(root, id); // D1 Δ2: reopen is a claim-clearing transition
+  return saved;
 }
 
 // Decision 0016 — the orchestrator assesses a cell's difficulty at dispatch and
@@ -808,9 +839,17 @@ export function ceilingScarcityWarning(root) {
 // releaseClaim before surfacing a typed failure; this function itself never
 // throws for a claimCell failure, only for bad arguments (mirrors claims.mjs
 // requireId's bad-argument convention).
+//
+// D1/D3 (msh-2): sessionId is nullable — null/undefined is a legal
+// SESSIONLESS claim (this is now the CLI's `cells claim --id` path too, via
+// bee.mjs's handleCellsClaim, for single-user use with no
+// CLAUDE_CODE_SESSION_ID and no explicit --session-id). claimNextCell (the
+// only other caller) still enforces a non-empty sessionId at its OWN
+// boundary before ever reaching here, so the cross-session selection flow is
+// byte-unchanged for a real session id.
 export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } = {}) {
-  if (typeof sessionId !== 'string' || !sessionId.trim()) {
-    throw new Error('claimCellCrossSession: sessionId is required.');
+  if (sessionId !== null && sessionId !== undefined && (typeof sessionId !== 'string' || !sessionId.trim())) {
+    throw new Error('claimCellCrossSession: sessionId must be a non-empty string, or null/absent for a sessionless claim.');
   }
   if (typeof worker !== 'string' || !worker.trim()) {
     throw new Error('claimCellCrossSession: worker is required.');
@@ -818,7 +857,7 @@ export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } =
   if (typeof cellId !== 'string' || !cellId.trim()) {
     throw new Error('claimCellCrossSession: cellId is required.');
   }
-  const session = sessionId.trim();
+  const session = sessionId == null ? null : sessionId.trim();
   const id = cellId.trim();
 
   const fileClaim = claimCellFile(root, session, id, ttl);

@@ -73,7 +73,7 @@ import {
 // stays out of this cell's file scope — these are already-exported read/
 // mutate primitives from fsh-3, composed here for presentation (session list)
 // and forwarded as-is (bind/unbind), never a second implementation.
-import { sessionsDir, readSession, bindSessionLane, unbindSessionLane } from './lib/claims.mjs';
+import { sessionsDir, readSession, bindSessionLane, unbindSessionLane, resolveSessionId } from './lib/claims.mjs';
 import {
   listCells,
   readyCells,
@@ -81,7 +81,7 @@ import {
   addCell,
   addCells,
   updateCell,
-  claimCell,
+  claimCellCrossSession,
   recordVerify,
   capCell,
   blockCell,
@@ -691,9 +691,28 @@ function handleCellsUpdate(root, flags) {
   };
 }
 
+// D1 (msh-2): re-backed by the same claims.mjs claim-file-first sequence
+// claim-next already uses (via claimCellCrossSession) — the claim file is
+// acquired BEFORE the cell JSON flips, so a losing concurrent claimant gets a
+// typed CLAIMED refusal naming the owner + expiry instead of silently
+// double-owning the cell. D3: --session-id is optional — resolveSessionId
+// falls back to CLAUDE_CODE_SESSION_ID, then to a legal sessionless claim
+// (single-session flow keeps working exactly as before, with no id at all).
 function handleCellsClaim(root, flags) {
-  const cell = claimCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'worker'));
-  return { result: cell, text: `Claimed ${cell.id} for ${cell.trace.worker}.` };
+  const id = requireFlag(flags, 'id');
+  const worker = requireFlag(flags, 'worker');
+  const sessionId = resolveSessionId({
+    flag: flags['session-id'] !== undefined ? String(flags['session-id']) : undefined,
+  });
+  const ttl = flags.ttl !== undefined ? Number.parseInt(String(flags.ttl), 10) : undefined;
+  if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
+    throw new Error('--ttl must be a positive integer (seconds).');
+  }
+  const result = claimCellCrossSession(root, { sessionId, worker, cellId: id, ttl });
+  if (!result.ok) {
+    throw new Error(`claim: ${result.code} — ${result.reason}`);
+  }
+  return { result: result.cell, text: `Claimed ${result.cell.id} for ${result.cell.trace.worker}.` };
 }
 
 function handleCellsVerify(root, flags) {
@@ -777,7 +796,18 @@ function handleCellsJudge(root, flags) {
 // non-zero with the reason on stderr rather than a misleadingly "successful" exit.
 function handleCellsClaimNext(root, flags) {
   const worker = requireFlag(flags, 'worker');
-  const sessionId = requireFlag(flags, 'session-id');
+  // D3: --session-id keeps working exactly as before; it is now also
+  // resolvable from CLAUDE_CODE_SESSION_ID when the flag is omitted.
+  // claim-next's own cross-session selection logic still genuinely needs a
+  // session id (it resolves the acting session's bound lane), so — unlike
+  // the sessionless-claim relaxation in `cells claim` — neither source
+  // resolving is still a refusal, just from one of two places now.
+  const sessionId = resolveSessionId({
+    flag: flags['session-id'] !== undefined ? String(flags['session-id']) : undefined,
+  });
+  if (!sessionId) {
+    throw new Error('claim-next: --session-id or CLAUDE_CODE_SESSION_ID env is required.');
+  }
   const ttl = flags.ttl !== undefined ? Number.parseInt(String(flags.ttl), 10) : undefined;
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
