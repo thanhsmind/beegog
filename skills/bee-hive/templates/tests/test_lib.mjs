@@ -183,6 +183,23 @@ function assertThrows(fn, needle, message) {
   throw new Error(`${message} — expected an error, none thrown`);
 }
 
+// The async sibling of assertThrows (msh-5): startFeature (lib/state.mjs)
+// now wraps its body in withStoreLock, so its refusals reject a Promise
+// instead of throwing synchronously — same message-substring contract.
+async function assertRejects(fn, needle, message) {
+  try {
+    await fn();
+  } catch (error) {
+    const text = error instanceof Error ? error.message : String(error);
+    assert(
+      text.toLowerCase().includes(needle.toLowerCase()),
+      `${message} — threw, but message "${text}" does not mention "${needle}"`,
+    );
+    return;
+  }
+  throw new Error(`${message} — expected an error, none thrown`);
+}
+
 // ─── temp repo setup ────────────────────────────────────────────────────────
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-test-'));
@@ -4942,7 +4959,7 @@ await check('start-feature (lib): succeeds from idle with no leftover work, rese
       summary: 'prior',
       next_action: 'prior next',
     });
-    const state = startFeature(dir, { feature: 'new-feat', mode: 'standard', phase: 'exploring' });
+    const state = await startFeature(dir, { feature: 'new-feat', mode: 'standard', phase: 'exploring' });
     assert(state.feature === 'new-feat', `feature written, got ${state.feature}`);
     assert(state.mode === 'standard', `mode written, got ${state.mode}`);
     assert(state.phase === 'exploring', `phase written, got ${state.phase}`);
@@ -4969,7 +4986,7 @@ await check('start-feature (lib): a prior feature carrying approved gates never 
       approved_gates: { context: true, shape: true, execution: true, review: true },
       workers: [],
     });
-    const state = startFeature(dir, { feature: 'next-feat' });
+    const state = await startFeature(dir, { feature: 'next-feat' });
     assert(
       Object.values(state.approved_gates).every((v) => v === false),
       `no gate carried across features, got ${JSON.stringify(state.approved_gates)}`,
@@ -5385,7 +5402,7 @@ await check('lanes: startFeature lane mode creates the lane with all four gates 
     writeLaneFixture(dir, 'lane-other', { phase: 'planning' });
     const stateBefore = fs.readFileSync(statePath, 'utf8');
     const otherBefore = fs.readFileSync(laneFile(dir, 'lane-other'), 'utf8');
-    const record = startFeature(dir, { feature: 'lane-new', mode: 'high-risk', phase: 'exploring', lane: true });
+    const record = await startFeature(dir, { feature: 'lane-new', mode: 'high-risk', phase: 'exploring', lane: true });
     assert(record.feature === 'lane-new' && record.mode === 'high-risk' && record.phase === 'exploring', 'lane record carries feature/mode/phase');
     assert(Object.values(record.approved_gates).every((v) => v === false), `all four gates start false — a lane never inherits approvals, got ${JSON.stringify(record.approved_gates)}`);
     assert(typeof record.created_at === 'string' && !Number.isNaN(Date.parse(record.created_at)), 'created_at stamped');
@@ -5403,13 +5420,13 @@ await check('lanes: a lane start refuses while THIS feature has nonterminal cell
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'swarming', feature: 'default-feat', workers: [] });
     makeCellFile(dir, 'mine-1', { feature: 'lane-c', status: 'open' });
     makeCellFile(dir, 'other-1', { feature: 'elsewhere', status: 'claimed' });
-    assertThrows(
+    await assertRejects(
       () => startFeature(dir, { feature: 'lane-c', lane: true }),
       'mine-1',
       'a same-feature nonterminal cell refuses the lane start',
     );
     assert(!fs.existsSync(laneFile(dir, 'lane-c')), 'refusal writes nothing');
-    const record = startFeature(dir, { feature: 'lane-d', lane: true });
+    const record = await startFeature(dir, { feature: 'lane-d', lane: true });
     assert(record.feature === 'lane-d', 'another feature\'s nonterminal (even claimed) cell never blocks an unrelated lane start');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -5421,11 +5438,11 @@ await check('lanes: a global HANDOFF blocks a lane start only when its feature n
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
     writeJsonAtomic(path.join(dir, '.bee', 'HANDOFF.json'), { feature: 'lane-e', cell: 'x', done: [], remaining: [] });
-    assertThrows(() => startFeature(dir, { feature: 'lane-e', lane: true }), 'HANDOFF', 'a handoff naming THIS feature blocks its lane start');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-e', lane: true }), 'HANDOFF', 'a handoff naming THIS feature blocks its lane start');
     assert(!fs.existsSync(laneFile(dir, 'lane-e')), 'refusal writes nothing');
-    const unrelated = startFeature(dir, { feature: 'lane-f', lane: true });
+    const unrelated = await startFeature(dir, { feature: 'lane-f', lane: true });
     assert(unrelated.feature === 'lane-f', 'a handoff for another feature does not block this lane');
-    assertThrows(() => startFeature(dir, { feature: 'lane-g' }), 'HANDOFF', 'the default (non-lane) start keeps today\'s any-handoff-blocks semantics');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-g' }), 'HANDOFF', 'the default (non-lane) start keeps today\'s any-handoff-blocks semantics');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -5441,9 +5458,9 @@ await check('lanes: a registered worker blocks a lane start only when its cell d
       feature: 'default-feat',
       workers: [{ nickname: 'busy', cell: 'wcell-1', tier: 'generation', status: 'in-flight' }],
     });
-    assertThrows(() => startFeature(dir, { feature: 'lane-h', lane: true }), 'worker', 'a worker on this feature\'s cell blocks the lane start');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-h', lane: true }), 'worker', 'a worker on this feature\'s cell blocks the lane start');
     assert(!fs.existsSync(laneFile(dir, 'lane-h')), 'refusal writes nothing');
-    const unrelated = startFeature(dir, { feature: 'lane-i', lane: true });
+    const unrelated = await startFeature(dir, { feature: 'lane-i', lane: true });
     assert(unrelated.feature === 'lane-i', 'a worker on another feature\'s cell never blocks this lane');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -5459,16 +5476,16 @@ await check('lanes: a lane start declaring intended paths refuses on overlap wit
     makeCellFile(dir, 'held-cell', { feature: 'elsewhere', status: 'capped', files: ['src/app.ts'] });
     const held = claimCellFile(dir, 'sess-them', 'held-cell');
     assert(held.ok === true, 'precondition: another session holds a claim whose cell files include src/app.ts');
-    assertThrows(
+    await assertRejects(
       () => startFeature(dir, { feature: 'lane-j', lane: true, sessionId: 'sess-me', paths: ['src/app.ts'] }),
       'sess-them',
       'overlap with another session\'s claim-held files refuses, naming the holder',
     );
     assert(!fs.existsSync(laneFile(dir, 'lane-j')), 'refusal writes nothing');
-    const own = startFeature(dir, { feature: 'lane-k', lane: true, sessionId: 'sess-them', paths: ['src/app.ts'] });
+    const own = await startFeature(dir, { feature: 'lane-k', lane: true, sessionId: 'sess-them', paths: ['src/app.ts'] });
     assert(own.feature === 'lane-k', 'the holder\'s own session is never blocked by its own claim');
     await reserve(dir, { agent: 'worker-z', cell: 'z-1', path: 'src/lib/*' });
-    assertThrows(
+    await assertRejects(
       () => startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] }),
       'worker-z',
       'overlap with an active reservation refuses, naming the holder',
@@ -5477,9 +5494,9 @@ await check('lanes: a lane start declaring intended paths refuses on overlap wit
     store.reservations[store.reservations.length - 1].reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
     store.reservations[store.reservations.length - 1].ttl_seconds = 60;
     writeJsonAtomic(reservationsPath(dir), store);
-    const expired = startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] });
+    const expired = await startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] });
     assert(expired.feature === 'lane-l', 'an expired hold never blocks');
-    const undeclared = startFeature(dir, { feature: 'lane-m', lane: true, sessionId: 'sess-me' });
+    const undeclared = await startFeature(dir, { feature: 'lane-m', lane: true, sessionId: 'sess-me' });
     assert(undeclared.feature === 'lane-m', 'no declared paths → the holds check is skipped by contract');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -5497,17 +5514,17 @@ await check('lanes: restarting a terminal lane resets exactly its four gates (cr
       approved_gates: { context: true, shape: true, execution: true, review: true },
       created_at: born,
     });
-    const restarted = startFeature(dir, { feature: 'lane-n', mode: 'tiny', phase: 'exploring', lane: true });
+    const restarted = await startFeature(dir, { feature: 'lane-n', mode: 'tiny', phase: 'exploring', lane: true });
     assert(Object.values(restarted.approved_gates).every((v) => v === false), 'restart resets all four gates — spec R1 applied per lane');
     assert(restarted.created_at === born, `created_at survives a restart, got ${restarted.created_at}`);
     assert(restarted.mode === 'tiny' && restarted.phase === 'exploring', 'mode/phase refreshed');
     writeLaneFixture(dir, 'lane-o', { phase: 'swarming' });
     const midBefore = fs.readFileSync(laneFile(dir, 'lane-o'), 'utf8');
-    assertThrows(() => startFeature(dir, { feature: 'lane-o', lane: true }), 'phase', 'a mid-flight lane refuses its own restart');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-o', lane: true }), 'phase', 'a mid-flight lane refuses its own restart');
     assert(fs.readFileSync(laneFile(dir, 'lane-o'), 'utf8') === midBefore, 'refusal leaves the lane untouched');
     fs.writeFileSync(laneFile(dir, 'lane-p'), '{ not json', 'utf8');
     const corruptBefore = fs.readFileSync(laneFile(dir, 'lane-p'), 'utf8');
-    assertThrows(() => startFeature(dir, { feature: 'lane-p', lane: true }), 'lane', 'a corrupt lane file refuses the mutation loudly');
+    await assertRejects(() => startFeature(dir, { feature: 'lane-p', lane: true }), 'lane', 'a corrupt lane file refuses the mutation loudly');
     assert(fs.readFileSync(laneFile(dir, 'lane-p'), 'utf8') === corruptBefore, 'corrupt file untouched');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

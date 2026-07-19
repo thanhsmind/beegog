@@ -96,6 +96,11 @@ import {
   claimNextCell,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
+// D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
+// each wrap their read-check-write body in this lock (startFeature already
+// wraps its own body inside lib/state.mjs); CLI verbs WAIT normally, so no
+// maxAttempts override is ever passed here.
+import { withStoreLock } from './lib/lock.mjs';
 import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree } from './lib/worktree-store.mjs';
 import { prepareDispatch } from './lib/dispatch-prepare.mjs';
 import {
@@ -1034,7 +1039,12 @@ function resolveMutationTarget(root, laneFeature, verb) {
   return { record, write: (updated) => writeLane(root, updated) };
 }
 
-function handleStateSet(root, flags) {
+// D6 — async: the whole record-read through write() body runs inside
+// withStoreLock('state', ...) below so a concurrent set/gate/worker/
+// scribing-run/start-feature CLI invocation can no longer race this
+// function's read-check-write into a lost update. Argument-only validation
+// (no store I/O) stays outside the lock.
+async function handleStateSet(root, flags) {
   rejectDryRun(flags);
   if (flags.phase !== undefined) {
     const phase = String(flags.phase);
@@ -1061,59 +1071,66 @@ function handleStateSet(root, flags) {
       "set: --feature cannot be combined with --lane — a lane's feature is its identity (the lane record's filename), not a mutable field. FIX: omit --feature, or start a new lane instead.",
     );
   }
-  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'set');
-  // chain-integrity D1-REVISED / D2 — read `from` off the record actually being
-  // mutated (lanes included), never off global state.
-  let waived = null;
-  if (flags.phase !== undefined) {
-    const target = String(flags.phase);
-    const transition = checkPhaseTransition(state.phase, target);
-    if (!transition.ok) throw new Error(transition.reason);
-    if (target === 'compounding-complete') {
-      waived = closeGuardScribingDebt(root, flags);
+
+  const { state, changed, waived } = await withStoreLock(root, 'state', () => {
+    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'set');
+    // chain-integrity D1-REVISED / D2 — read `from` off the record actually being
+    // mutated (lanes included), never off global state.
+    let waived = null;
+    if (flags.phase !== undefined) {
+      const target = String(flags.phase);
+      const transition = checkPhaseTransition(state.phase, target);
+      if (!transition.ok) throw new Error(transition.reason);
+      if (target === 'compounding-complete') {
+        waived = closeGuardScribingDebt(root, flags);
+      }
     }
-  }
-  const selectedRecord = laneFeature ? `lane "${laneFeature}"` : 'default state';
-  if (!isKnownPhase(state.phase)) {
-    throw new Error(
-      `set: refused — selected ${selectedRecord} has missing or invalid pre-mutation phase "${state.phase ?? ''}". Ownership cannot be derived from a corrupt routing record, so nothing was written. FIX: restore a valid phase before retrying.`,
-    );
-  }
-  if (flags.owner === undefined || flags.owner === true || flags.owner === '') {
-    throw new Error(
-      `set: missing --owner — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}". FIX: retry with --owner ${state.phase}.`,
-    );
-  }
-  const owner = String(flags.owner);
-  if (owner !== state.phase) {
-    throw new Error(
-      `set: owner mismatch — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}", not "${owner}". FIX: retry with --owner ${state.phase}.`,
-    );
-  }
-  const changed = [];
-  if (flags.phase !== undefined) {
-    state.phase = String(flags.phase);
-    changed.push(`phase=${state.phase}`);
-  }
-  if (flags.mode !== undefined) {
-    state.mode = String(flags.mode);
-    changed.push(`mode=${state.mode}`);
-  }
-  if (flags.feature !== undefined) {
-    state.feature = String(flags.feature);
-    changed.push(`feature=${state.feature}`);
-  }
-  if (flags['next-action'] !== undefined) {
-    state.next_action = String(flags['next-action']);
-    changed.push('next_action');
-  }
-  if (flags.summary !== undefined) {
-    state.summary = String(flags.summary);
-    changed.push('summary');
-  }
-  write(state);
+    const selectedRecord = laneFeature ? `lane "${laneFeature}"` : 'default state';
+    if (!isKnownPhase(state.phase)) {
+      throw new Error(
+        `set: refused — selected ${selectedRecord} has missing or invalid pre-mutation phase "${state.phase ?? ''}". Ownership cannot be derived from a corrupt routing record, so nothing was written. FIX: restore a valid phase before retrying.`,
+      );
+    }
+    if (flags.owner === undefined || flags.owner === true || flags.owner === '') {
+      throw new Error(
+        `set: missing --owner — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}". FIX: retry with --owner ${state.phase}.`,
+      );
+    }
+    const owner = String(flags.owner);
+    if (owner !== state.phase) {
+      throw new Error(
+        `set: owner mismatch — selected ${selectedRecord}'s pre-mutation phase is "${state.phase}", not "${owner}". FIX: retry with --owner ${state.phase}.`,
+      );
+    }
+    const changed = [];
+    if (flags.phase !== undefined) {
+      state.phase = String(flags.phase);
+      changed.push(`phase=${state.phase}`);
+    }
+    if (flags.mode !== undefined) {
+      state.mode = String(flags.mode);
+      changed.push(`mode=${state.mode}`);
+    }
+    if (flags.feature !== undefined) {
+      state.feature = String(flags.feature);
+      changed.push(`feature=${state.feature}`);
+    }
+    if (flags['next-action'] !== undefined) {
+      state.next_action = String(flags['next-action']);
+      changed.push('next_action');
+    }
+    if (flags.summary !== undefined) {
+      state.summary = String(flags.summary);
+      changed.push('summary');
+    }
+    write(state);
+    return { state, changed, waived };
+  });
+
   // D4 — the waiver is loud and attributable. Logged AFTER the write succeeds so
-  // a refused close never leaves a decision claiming one happened.
+  // a refused close never leaves a decision claiming one happened. decisions.jsonl
+  // is append-only and outside the 'state' lock's store scope, so this stays
+  // after the lock releases, unchanged from before.
   if (waived && waived.length > 0) {
     logDecision(root, {
       decision: `Closed feature "${state.feature}" with scribing debt WAIVED for ${waived.length} capped behavior_change cell(s): ${waived.join(', ')}. Their settled behavior is NOT in docs/specs/.`,
@@ -1149,7 +1166,8 @@ function closeGuardScribingDebt(root, flags) {
   );
 }
 
-function handleStateGate(root, flags) {
+// D6 — async: record-read through write() runs inside withStoreLock('state').
+async function handleStateGate(root, flags) {
   rejectDryRun(flags);
   if (flags.owner !== undefined) {
     throw new Error(
@@ -1164,45 +1182,53 @@ function handleStateGate(root, flags) {
   }
   const approved = requireBoolFlag(flags, 'approved');
   const laneFeature = optionalLaneFlag(flags, 'gate');
-  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'gate');
-  // Gate 3 advisor precondition (AO3/AO13): high-risk execution never opens
-  // without a non-stale advisor_ref. Computed BEFORE any write, so a refusal
-  // makes zero mutations. Bound to the SELECTED record's feature (M1): a lane
-  // approval checks the lane's own advisor_ref against the lane's plan.md.
-  if (name === 'execution' && approved === true && state.mode === 'high-risk') {
-    const staleness = advisorRefStale(root, state.advisor_ref, state);
-    if (staleness.stale) {
-      throw new Error(
-        `gate: execution approval refused for high-risk work — the advisor consult is missing or stale (AO3/AO13). ` +
-          `Reason(s): ${staleness.reasons.join('; ')}. ` +
-          `FIX: resolve the advisor from config (models.<runtime>.advisor), run it read-only with the evidence bundle on stdin, ` +
-          `then record the consult: bee state advisor-ref record --advisor "<identity>" --digest-file <path>` +
-          `${laneFeature ? ` --lane ${laneFeature}` : ''}. Nothing is written until a non-stale advisor_ref exists.`,
-      );
+
+  const state = await withStoreLock(root, 'state', () => {
+    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'gate');
+    // Gate 3 advisor precondition (AO3/AO13): high-risk execution never opens
+    // without a non-stale advisor_ref. Computed BEFORE any write, so a refusal
+    // makes zero mutations. Bound to the SELECTED record's feature (M1): a lane
+    // approval checks the lane's own advisor_ref against the lane's plan.md.
+    if (name === 'execution' && approved === true && state.mode === 'high-risk') {
+      const staleness = advisorRefStale(root, state.advisor_ref, state);
+      if (staleness.stale) {
+        throw new Error(
+          `gate: execution approval refused for high-risk work — the advisor consult is missing or stale (AO3/AO13). ` +
+            `Reason(s): ${staleness.reasons.join('; ')}. ` +
+            `FIX: resolve the advisor from config (models.<runtime>.advisor), run it read-only with the evidence bundle on stdin, ` +
+            `then record the consult: bee state advisor-ref record --advisor "<identity>" --digest-file <path>` +
+            `${laneFeature ? ` --lane ${laneFeature}` : ''}. Nothing is written until a non-stale advisor_ref exists.`,
+        );
+      }
     }
-  }
-  // Revocation tracking (AO13): stamp the execution revocation moment so a ref
-  // recorded before it reads stale. Only the execution gate is tracked — it is
-  // the only revocation the staleness rule needs.
-  if (name === 'execution' && approved === false) {
-    state.gate_revoked_at = { ...state.gate_revoked_at, execution: new Date().toISOString() };
-  }
-  state.approved_gates = { ...state.approved_gates, [name]: approved };
-  write(state);
+    // Revocation tracking (AO13): stamp the execution revocation moment so a ref
+    // recorded before it reads stale. Only the execution gate is tracked — it is
+    // the only revocation the staleness rule needs.
+    if (name === 'execution' && approved === false) {
+      state.gate_revoked_at = { ...state.gate_revoked_at, execution: new Date().toISOString() };
+    }
+    state.approved_gates = { ...state.approved_gates, [name]: approved };
+    write(state);
+    return state;
+  });
   return {
     result: state,
     text: `Gate "${name}" set to ${approved}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
   };
 }
 
-function stateWorkerMutate(root, flags, mutate, text) {
+// D6 — async: shared by worker add/update/remove/clear, so all four get the
+// lock for free. The read-check-write body runs inside withStoreLock('state').
+async function stateWorkerMutate(root, flags, mutate, text) {
   rejectDryRun(flags);
-  const state = readStateStrict(root);
-  const workers = Array.isArray(state.workers) ? [...state.workers] : [];
-  const resultText = mutate(workers);
-  state.workers = workers;
-  writeState(root, state);
-  return { result: state, text: text ?? resultText };
+  return withStoreLock(root, 'state', () => {
+    const state = readStateStrict(root);
+    const workers = Array.isArray(state.workers) ? [...state.workers] : [];
+    const resultText = mutate(workers);
+    state.workers = workers;
+    writeState(root, state);
+    return { result: state, text: text ?? resultText };
+  });
 }
 
 function handleStateWorkerAdd(root, flags) {
@@ -1354,7 +1380,8 @@ function handleStateWorkerPrune(root, flags) {
   return { result: { dry_run: dryRun, pruned, kept }, text };
 }
 
-function handleStateScribingRun(root, flags) {
+// D6 — async: record-read through write() runs inside withStoreLock('state').
+async function handleStateScribingRun(root, flags) {
   rejectDryRun(flags);
   const feature = requireFlag(flags, 'feature');
   const areas = splitList(requireFlag(flags, 'areas'));
@@ -1363,24 +1390,30 @@ function handleStateScribingRun(root, flags) {
   const at = now.toISOString();
   const date = at.slice(0, 10);
   const laneFeature = optionalLaneFlag(flags, 'scribing-run');
-  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
-  // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
-  // so it is also the door that must be guarded. It used to advance the phase
-  // from anywhere, with no check that execution had happened at all.
-  const phaseCheck = checkScribingRunPhase(state.phase);
-  if (!phaseCheck.ok) throw new Error(phaseCheck.reason);
-  state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
-  // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
-  state.phase = 'compounding';
-  state.next_action = nextAction;
-  write(state);
+
+  const state = await withStoreLock(root, 'state', () => {
+    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
+    // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
+    // so it is also the door that must be guarded. It used to advance the phase
+    // from anywhere, with no check that execution had happened at all.
+    const phaseCheck = checkScribingRunPhase(state.phase);
+    if (!phaseCheck.ok) throw new Error(phaseCheck.reason);
+    state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
+    // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
+    state.phase = 'compounding';
+    state.next_action = nextAction;
+    write(state);
+    return state;
+  });
   return {
     result: state,
     text: `Recorded scribing run for "${feature}" at ${at}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
   };
 }
 
-function handleStateStartFeature(root, flags) {
+// D6 — async: startFeature (lib/state.mjs) already wraps its own
+// read-check-write in withStoreLock('state'); this just awaits it.
+async function handleStateStartFeature(root, flags) {
   rejectDryRun(flags);
   const feature = requireFlag(flags, 'feature');
   const mode = flags.mode !== undefined ? String(flags.mode) : null;
@@ -1394,7 +1427,7 @@ function handleStateStartFeature(root, flags) {
   const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : null;
   const paths = flags.paths !== undefined ? splitList(flags.paths) : [];
   // startFeature() re-reads state and performs every precondition check (C1).
-  const state = startFeature(root, { feature, mode, phase, lane, sessionId, paths });
+  const state = await startFeature(root, { feature, mode, phase, lane, sessionId, paths });
   return {
     result: state,
     text: `Started feature "${state.feature}"${lane ? ' as a lane' : ''} at phase "${state.phase}" (mode ${state.mode ?? 'null'}); all four gates reset.`,

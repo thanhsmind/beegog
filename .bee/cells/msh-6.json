@@ -1,0 +1,60 @@
+{
+  "id": "msh-6",
+  "lane": "high-risk",
+  "title": "doctrine sync: orchestrator-claims-before-spawn in skill text + final render/manifest (D1+D3 close)",
+  "feature": "multi-session-hardening",
+  "files": [
+    "skills/bee-executing/SKILL.md",
+    "skills/bee-executing/references/worker-details.md",
+    "skills/bee-swarming/SKILL.md",
+    "skills/bee-swarming/references/swarming-reference.md",
+    ".bee/config.json",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/multi-session-hardening/CONTEXT.md",
+    "skills/bee-executing/SKILL.md",
+    "skills/bee-swarming/references/swarming-reference.md"
+  ],
+  "action": "Per D1/D3: update worker + orchestrator skill text — orchestrator claims the cell (claim-next or cells claim --id, session id self-derived or explicit) BEFORE spawning; worker startup VALIDATES ownership via cells show and never runs cells claim; reservation instructions drop handed-down session ids (auto-derive; a worker may read its own CLAUDE_CODE_SESSION_ID). Keep AO14 single-execution-worker contract wording intact. Introduce NONE of the stale tokens census_stale_spawn_syntax pins (spawn_agent(agent_type / fork_context / re-spawn continuation). PLUS (plan-check C6): append the four new suites — test_store_lock, test_claim_race, test_reservation_race, test_heartbeat_touch — into .bee/config.json commands.verify so they survive as regression, not just cell caps. Final release_manifest --write + --check. Re-render skill projections only if test_skill_render demands. This cell is docs/skill-text/config only — no lib edits.",
+  "must_haves": {
+    "truths": [
+      "no skill text instructs a worker to run cells claim",
+      "no literal handed-down session id remains in worker templates",
+      "AO14 contract wording preserved"
+    ],
+    "artifacts": [
+      "conformance + census suites green"
+    ],
+    "key_links": [
+      "CONTEXT D1 D3",
+      "critical-patterns 20260719"
+    ],
+    "prohibitions": [
+      "no lib/source edits",
+      "no contract weakening for reservations"
+    ]
+  },
+  "verify": "node scripts/test_skill_render.mjs && node scripts/test_conformance.mjs && node scripts/census_stale_spawn_syntax.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "msh-2",
+    "msh-3",
+    "msh-4",
+    "msh-5"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

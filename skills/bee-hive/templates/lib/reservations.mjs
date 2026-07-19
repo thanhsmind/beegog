@@ -193,3 +193,38 @@ export async function sweepExpired(root) {
     return released;
   });
 }
+
+/**
+ * D5 — same-session-only TTL renewal for this session's active holds (the
+ * reservations-side sibling of claims.mjs's renewClaimTTL): refreshes
+ * `reserved_at` — the expiry clock — for every non-released row owned by
+ * sessionId. Never touches another session's rows, never revives an
+ * already-released one (released_at != null is a hard skip, matching
+ * findConflicts/findSessionConflicts' own posture). Runs under the same
+ * store lock as reserve/release/sweepExpired so a renewal can never race a
+ * concurrent reservation mutation into a lost update; hook callers (D5 Δ3 —
+ * "hooks never wait on the lock") pass `{ maxAttempts: 1 }` through
+ * lockOptions unchanged, matching claims.mjs heartbeatTouch's own posture.
+ */
+export async function renewHoldsBySession(root, sessionId, { now = Date.now(), lockOptions } = {}) {
+  const session = typeof sessionId === 'string' ? sessionId.trim() : '';
+  if (!session) return { ok: true, renewed: 0 };
+  return withStoreLock(
+    root,
+    'reservations',
+    () => {
+      const store = readStore(root);
+      const nowIso = new Date(now).toISOString();
+      let renewed = 0;
+      for (const reservation of store.reservations) {
+        if (reservation.released_at != null) continue;
+        if (reservation.session !== session) continue;
+        reservation.reserved_at = nowIso;
+        renewed += 1;
+      }
+      if (renewed > 0) writeStore(root, store);
+      return { ok: true, renewed };
+    },
+    lockOptions,
+  );
+}

@@ -98,8 +98,8 @@ function tryStaleTakeover(lockPath, nowMs) {
 }
 
 /**
- * withStoreLock(root, name, fn) — run fn() with .bee/locks/<name>.lock held
- * exclusively across processes. fn's return value/throw propagates
+ * withStoreLock(root, name, fn, options) — run fn() with .bee/locks/<name>.lock
+ * held exclusively across processes. fn's return value/throw propagates
  * unchanged. Always releases in `finally`, and release only ever removes a
  * lock THIS acquisition created (matched by pid + a per-call token) — never
  * someone else's, including one that took over after this call's own lock
@@ -111,18 +111,29 @@ function tryStaleTakeover(lockPath, nowMs) {
  * matching D3's "never handed down" posture even though full session-id
  * resolution (explicit flag -> env -> hook payload) is msh-2's helper.
  *
- * Timeout after ~MAX_ATTEMPTS * RETRY_DELAY_MS (~5s) throws LockBusyError
- * naming the current holder parsed from the lock body — never a fall-through
- * unlocked write.
+ * options.maxAttempts (default MAX_ATTEMPTS, ~100) lets a caller opt into a
+ * SINGLE attempt (msh-5, D5 Δ3-amended: "hooks never WAIT on the lock" —
+ * every store write on the hook-driven heartbeat/lease-renewal touch path
+ * passes {maxAttempts: 1} here instead of the CLI's normal ~5s retry
+ * budget). The retry/backoff SHAPE is otherwise byte-identical to before —
+ * a caller that omits options gets exactly the original ~100-try, ~5s-worst-
+ * case wait. The one deliberate behavior tweak (bug fix, not a race risk):
+ * the inter-attempt sleep only runs when another attempt will follow, so the
+ * final failing attempt no longer wastes one extra RETRY_DELAY_MS before
+ * throwing — shaving ~50ms off the existing timeout path, never adding any.
+ *
+ * Timeout after ~maxAttempts * retryDelayMs throws LockBusyError naming the
+ * current holder parsed from the lock body — never a fall-through unlocked
+ * write.
  */
-export async function withStoreLock(root, name, fn) {
+export async function withStoreLock(root, name, fn, { maxAttempts = MAX_ATTEMPTS, retryDelayMs = RETRY_DELAY_MS } = {}) {
   ensureDir(locksDir(root));
   const lockPath = lockFilePath(root, name);
   const token = crypto.randomBytes(8).toString('hex');
   const session = process.env.CLAUDE_CODE_SESSION_ID || null;
   let acquired = false;
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS && !acquired; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts && !acquired; attempt++) {
     const nowMs = Date.now();
     const body = { pid: process.pid, session, ts: new Date(nowMs).toISOString(), token };
     if (tryAcquire(lockPath, body)) {
@@ -139,7 +150,9 @@ export async function withStoreLock(root, name, fn) {
         break;
       }
     }
-    await sleep(RETRY_DELAY_MS);
+    if (attempt + 1 < maxAttempts) {
+      await sleep(retryDelayMs);
+    }
   }
 
   if (!acquired) {
