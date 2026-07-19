@@ -233,6 +233,111 @@ for (const token of ADVICE_CLASS_WRITABLE_TOKENS) {
   record('clean "-s read-only" advisor passes (no problems)', problems.length === 0, JSON.stringify(problems));
 }
 
+// ── native V2 model-override shapes (D2, codex-native-transport cnt-1) ──────
+// Detected BEFORE the looksLikeCli check (ADVISOR-R2 Δ1): {kind:'native'} would
+// otherwise be mis-flagged cli-malformed, and the composite (no top-level kind)
+// mis-flagged model-shape-malformed. Accept + reject rows for both.
+
+{
+  const problems = validateModelsConfig({
+    models: { codex: { generation: { kind: 'native', model: 'gpt-5.5', effort: 'high', fork_turns: 'none', agent_type: 'worker' } } },
+  });
+  record('valid native override {kind:"native",model,effort,fork_turns:"none"} passes clean', problems.length === 0, JSON.stringify(problems));
+}
+
+{
+  const problems = validateModelsConfig({
+    models: {
+      codex: {
+        advisor: {
+          primary: { kind: 'native', model: 'gpt-5.5', effort: 'high' },
+          fallback: { kind: 'cli', command: 'codex exec -m gpt-5.5 -s read-only -', promptVia: 'stdin' },
+          fallback_policy: 'explicit-only',
+        },
+      },
+    },
+  });
+  record('valid explicit-only composite {primary(native),fallback(cli),fallback_policy} passes clean', problems.length === 0, JSON.stringify(problems));
+}
+
+{
+  const problems = validateModelsConfig({
+    models: { codex: { generation: { kind: 'native' } } }, // no model
+  });
+  record(
+    'native override without a model is flagged native-model-missing (not cli-malformed)',
+    hasCode(problems, 'native-model-missing') && !hasCode(problems, 'cli-malformed'),
+    JSON.stringify(problems),
+  );
+}
+
+{
+  const problems = validateModelsConfig({
+    models: { codex: { generation: { kind: 'native', model: 'gpt-5.5', fork_turns: 'full' } } }, // full-history fork rejects overrides (E2)
+  });
+  record(
+    'native override with fork_turns other than "none" is flagged native-fork-turns-unknown',
+    hasCode(problems, 'native-fork-turns-unknown'),
+    JSON.stringify(problems),
+  );
+}
+
+{
+  const problems = validateModelsConfig({
+    models: {
+      codex: {
+        advisor: {
+          primary: { kind: 'native', model: 'gpt-5.5' },
+          fallback: { kind: 'cli', command: 'codex exec -m gpt-5.5 -s read-only -' },
+        },
+      },
+    }, // missing fallback_policy
+  });
+  record(
+    'composite without fallback_policy is flagged composite-fallback-policy-missing (silent native->cli fallback forbidden, D1)',
+    hasCode(problems, 'composite-fallback-policy-missing'),
+    JSON.stringify(problems),
+  );
+}
+
+{
+  const problems = validateModelsConfig({
+    models: {
+      codex: {
+        advisor: {
+          primary: { model: 'gpt-5.5' }, // not a native override (no kind:'native')
+          fallback: { kind: 'cli', command: 'x' },
+          fallback_policy: 'explicit-only',
+        },
+      },
+    },
+  });
+  record(
+    'composite whose primary is not a native override is flagged composite-primary-malformed',
+    hasCode(problems, 'composite-primary-malformed'),
+    JSON.stringify(problems),
+  );
+}
+
+{
+  const problems = validateModelsConfig({
+    models: {
+      codex: {
+        advisor: {
+          primary: { kind: 'native', model: 'gpt-5.5' },
+          fallback: { kind: 'cli' }, // fallback missing command
+          fallback_policy: 'explicit-only',
+        },
+      },
+    },
+  });
+  record(
+    'composite whose cli fallback is malformed is flagged composite-fallback-malformed',
+    hasCode(problems, 'composite-fallback-malformed'),
+    JSON.stringify(problems),
+  );
+}
+
 // ── malformed / null / wrong-type input never throws ───────────────────────
 
 {

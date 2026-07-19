@@ -45,16 +45,18 @@ You configure only `generation` and `extraction`, under **`models`**, keyed by r
 - **To change the worker models**, edit `models.claude.generation` / `extraction` (e.g. `"opus"` for a stronger worker tier). To change the **ceiling**, just run the session on a different model — there is no config for it.
 - **`review`** (decision 0021) is the model that reviews what `generation` implemented — an independent reviewer beats self-review, so a review slot stronger than generation is the point. `null` → the generation tier reviews.
 - **`advisor`** (advisor v1) is a *worker-level, on-failure consult*: a worker that has failed its verify calls the advisor once or twice before blocking, and takes advice only — it never gets authority. Unlike `review` it has **no fallback**: `null`, unset, or an advisor no stronger than the worker's own model simply means "no consult happens".
-- **The four value shapes** each slot accepts (decisions 0019/0021):
+- **The six value shapes** each slot accepts (decisions 0019/0021; native override D2, codex-native-transport):
 
   | shape | means |
   |---|---|
   | `"sonnet"` | the runtime's per-agent model switch |
   | `{ "model": "sonnet", "effort": "medium" }` | model + reasoning effort (`low` · `medium` · `high` · `xhigh` · `max`); the effort is applied where the runtime has a per-agent effort switch, recorded and ignored where it does not |
   | `{ "kind": "cli", "command": "codex exec -m … -s read-only -", "promptVia": "stdin" }` | an **external executor** — a separate CLI process dispatched under the same worker contract (effort rides inside the command); `promptVia` declares how the prompt reaches it, never sniffed from the command string |
+  | `{ "kind": "native", "model": "gpt-5.5", "effort": "high", "fork_turns": "none", "agent_type": "worker" }` | a **native V2 model override** (codex runtime) — a stronger model applied per-agent on the codex `spawn_agent` metadata, no separate process. `model` is the exact catalog model id. `fork_turns` must be `"none"` (a full-history fork rejects overrides) and defaults to `"none"`; `agent_type` defaults to `"worker"`. `effort` is optional. The route is inert until a capability probe confirms the host build accepts it (D3) |
+  | `{ "primary": { "kind": "native", "model": "gpt-5.5" }, "fallback": { "kind": "cli", "command": "codex exec … -s read-only -", "promptVia": "stdin" }, "fallback_policy": "explicit-only" }` | a **native primary with an opt-in cli fallback**. The fallback is taken **only** when `fallback_policy` is exactly `"explicit-only"`; without that string the fallback is dropped and never used — silent native→cli fallback is forbidden (D1) |
   | `null` | no per-agent switch: the tier is enforced via read budget + output cap in the prompt (for `review`: fall back to generation; for `advisor`: no advisor) |
 
-  Invalid shapes are ignored — the slot's default stands, nothing throws.
+  Invalid shapes are ignored — the slot's default stands, nothing throws. A native override missing its `model`, a `fork_turns` other than `"none"`, or a composite missing `fallback_policy` is flagged by config validation (`bee status`), never silently trusted.
 - **What the short names mean (important).** For Claude Code these are **family aliases**, not exact version strings. The value must be one of exactly `haiku` · `sonnet` · `opus` · `fable` — the Claude Code Agent tool accepts only these four. Each alias is resolved **by Claude Code (not by bee)** to the current model of that family on your account. So `"sonnet"` isn't "some random Sonnet" — it means "the Sonnet tier", and the harness uses the latest. Today they resolve to:
 
   | alias | resolves to (current) | model id |
