@@ -435,6 +435,14 @@ function deriveEconomics({ channel, tier = null, paramModel = null, resolved = n
 
 export { deriveEconomics };
 
+// D5 (self-correcting-loop) — the 'pinned' string deriveEconomics assigns to
+// effective_model_status, exported so judge.mjs's deriveModelIndependence
+// reuses the SAME vocabulary value rather than a second hand-rolled literal
+// that could silently drift from deriveEconomics' actual output (the "one
+// vocabulary" principle this module's dispatch-economics comment above
+// already documents for transport/enforcement).
+export const PINNED_MODEL_STATUS = 'pinned';
+
 /**
  * evaluateDispatch(toolName, toolInput, root) — the single decision function
  * both the guard hook and `bee dispatch prepare` call. `toolInput` is exactly

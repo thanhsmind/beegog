@@ -163,6 +163,7 @@ export const COMMAND_REGISTRY = [
         passed: { type: 'boolean', description: 'Whether the verify run passed ("true" or "false").' },
         output: { type: 'string', description: 'What the verify command printed (inline). Mutually exclusive with --output-file.' },
         'output-file': { type: 'string', description: 'Path to a file holding the verify command\'s output, for long output.' },
+        signature: { type: 'string', description: 'D1: explicit failure_signature for the revision ledger, overriding the mechanical normalizer (ignored when --passed true).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['id', 'command', 'passed'],
@@ -302,6 +303,45 @@ export const COMMAND_REGISTRY = [
       required: ['worker'],
     },
     examples: ['bee cells claim-next --worker worker-a --session-id sess-claim-next --json'],
+    deprecated: null,
+  },
+  {
+    name: 'cells.reset-budget',
+    invoke: 'bee cells reset-budget',
+    description:
+      'D2 (self-correcting-loop): the ONLY door that reopens a cell whose claim door is closed by CELL_BUDGET_EXHAUSTED or REPEATED_FAILURE. Requires --reason (audited), logs a decision, and appends {reset_at, reason, by_session} to the append-only trace.budget_resets — never rewrites or drops any trace.attempts ledger entry. gate_bypass never substitutes for this: the budget check itself never reads bypass config, so this verb is the only reopening path at any bypass level.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Cell id whose claim-lifetime budget door is closed.' },
+        reason: { type: 'string', description: 'Why a retry is warranted — required, logged to the decision log.' },
+        'session-id': { type: 'string', description: 'Resetting session identity, recorded as by_session. Optional — resolves from CLAUDE_CODE_SESSION_ID when omitted.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['id', 'reason'],
+    },
+    examples: ['bee cells reset-budget --id demo-1 --reason "manager approved a genuine retry after a real fix" --json'],
+    deprecated: null,
+  },
+  {
+    name: 'cells.judge-record',
+    invoke: 'bee cells judge-record',
+    description:
+      'D5 (self-correcting-loop): validates a judge-verdict/1 payload (--file) and appends it, stamped with model_independence, to the append-only trace.semantic_judge. Refuses (typed, non-zero exit) on free prose, an unknown verdict/status/fixability/confidence value, or a FAIL check missing failure_signature — never a silent pass. --builder-model/--judge-model (optional) mark that side PINNED for independence derivation: both present AND differing -> "confirmed"; both present AND equal -> "same-model" (honest — the judge still runs); either absent -> "unverified". Never reads .bee/logs/dispatch.jsonl (corroboration only, Δ6) — the models are caller-supplied from the orchestrator\'s own pinned dispatch params.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Cell id the verdict is being recorded against.' },
+        file: { type: 'string', description: 'Path to a judge-verdict/1 JSON payload: {schema, verdict, checks[], failure_signature?, fixability, confidence}.' },
+        'builder-model': { type: 'string', description: 'The resolved model name of the cell\'s builder dispatch, from the orchestrator\'s own pinned dispatch param. Omit when not pinned.' },
+        'judge-model': { type: 'string', description: 'The resolved model name of this judge dispatch, from the orchestrator\'s own pinned dispatch param. Omit when not pinned.' },
+        'session-id': { type: 'string', description: 'Recording session identity, for the claim-ownership guard. Optional — resolves from CLAUDE_CODE_SESSION_ID when omitted.' },
+        'force-ownership': { type: 'boolean', description: 'Override a live claim owned by a different session (audited).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['id', 'file'],
+    },
+    examples: ['bee cells judge-record --id demo-1 --file verdict-demo-1.json --builder-model sonnet --judge-model opus --json'],
     deprecated: null,
   },
   {

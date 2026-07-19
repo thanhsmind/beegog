@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bee status [--json]
-//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|schedule> ... [--json]
+//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|judge-record|schedule> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
@@ -94,6 +94,11 @@ import {
   tierMix,
   ceilingScarcityWarning,
   claimNextCell,
+  resetCellBudget,
+  deriveChangeClass,
+  parseVerificationEvidence,
+  evidenceRidesExceptionDoor,
+  recordJudgeVerdict,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 // D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
@@ -107,6 +112,7 @@ import {
   classifyNativeTransport,
   NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE,
   NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY,
+  PINNED_MODEL_STATUS,
 } from './lib/dispatch-guard.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
@@ -638,6 +644,97 @@ function emitManifestLintWarnings(cells) {
   }
 }
 
+// D3 (self-correcting-loop) — judge-standard sufficiency matrix (F4): advisory
+// WARNING at `cells add`/`cells update`, STDERR only, manifest-lint pattern
+// (pah-2 emitManifestLintWarnings precedent above) — NEVER folded into the
+// JSON result, NEVER a refusal at authoring (CONTEXT D3). change_class
+// resolution matches cells.mjs's own deriveChangeClass exactly: an
+// unclassified cell (no change_class, no behavior_change:true) gets no check
+// at all. Each class' minimum is checked against what is knowable at
+// authoring time — the cell's own `verify` string, or (for `behavior`) any
+// pre-attached verification_evidence; most `behavior` cells will warn at add
+// time since evidence is normally attached later at cap, which is expected
+// and harmless (advisory-only).
+// Plain case-insensitive substring checks, not \b-anchored regexes — verify
+// strings are free-form shell commands where the keyword often sits inside
+// an underscore-joined filename (e.g. "test_contract.mjs"), and \w includes
+// underscore, so a \b boundary silently fails to match right there. This is
+// an advisory heuristic (never a refusal), so a substring match is the right
+// amount of precision.
+function verifyMentions(cell, ...needles) {
+  const verify = String(cell.verify || '').toLowerCase();
+  return needles.some((needle) => verify.includes(needle));
+}
+
+const JUDGE_STANDARD_MINIMUMS = {
+  formatting: {
+    label: 'a lint/typecheck check present in verify',
+    test: (cell) => verifyMentions(cell, 'lint', 'typecheck', 'tsc'),
+  },
+  bugfix: {
+    label: 'verify names a test path',
+    test: (cell) => verifyMentions(cell, 'test', 'spec'),
+  },
+  behavior: {
+    label: 'red_failure_evidence attached (verification_evidence.red_failure_evidence)',
+    test: (cell) => {
+      const evidence = parseVerificationEvidence(cell.verification_evidence);
+      return typeof evidence.red_failure_evidence === 'string' && evidence.red_failure_evidence.trim().length > 0;
+    },
+  },
+  api: {
+    label: 'a contract/integration test named in verify',
+    test: (cell) => verifyMentions(cell, 'contract', 'integration'),
+  },
+  security: {
+    label: 'a negative-path/security test named in verify',
+    test: (cell) => verifyMentions(cell, 'security', 'negative'),
+  },
+  migration: {
+    label: 'forward + rollback checks named in verify',
+    test: (cell) => verifyMentions(cell, 'forward') && verifyMentions(cell, 'rollback', 'down', 'revert'),
+  },
+};
+
+// Tolerates every malformed shape silently, same discipline as
+// manifestLintWarning above — the advisory must never throw on a bad cell.
+export function judgeStandardWarning(cell) {
+  if (!cell || typeof cell !== 'object') return null;
+  const changeClass = deriveChangeClass(cell);
+  if (!changeClass) return null; // unclassified — no matrix check (CONTEXT D3)
+  const minimum = JUDGE_STANDARD_MINIMUMS[changeClass];
+  if (!minimum || minimum.test(cell)) return null;
+  const id = typeof cell.id === 'string' && cell.id ? cell.id : '(unknown id)';
+  return (
+    `JUDGE_STANDARD_INSUFFICIENT: cell "${id}" is change_class "${changeClass}" but is missing the matrix ` +
+    `minimum — ${minimum.label}. Advisory only (never a refusal at authoring); see CONTEXT.md D3 for the full matrix.`
+  );
+}
+
+function emitJudgeStandardWarnings(cells) {
+  for (const cell of Array.isArray(cells) ? cells : [cells]) {
+    const warning = judgeStandardWarning(cell);
+    if (warning) process.stderr.write(`${warning}\n`);
+  }
+}
+
+// F5: at CAP time (not authoring), a behavior-class cell that rode the
+// pre-existing deliberate_exceptions door skipped the D3 length/duplicate
+// floor entirely (capCell's own contract) — note that on STDERR so it is
+// never silent, without turning it into a refusal. Recomputed from the
+// returned (already-capped) cell, same recompute-not-side-channel discipline
+// as emitManifestLintWarnings/emitJudgeStandardWarnings above.
+function emitJudgeStandardCapAdvisory(cell) {
+  if (!cell || typeof cell !== 'object') return;
+  if (deriveChangeClass(cell) !== 'behavior') return;
+  const evidence = parseVerificationEvidence(cell.trace && cell.trace.verification_evidence);
+  if (!evidenceRidesExceptionDoor(evidence)) return;
+  process.stderr.write(
+    `JUDGE_STANDARD_INSUFFICIENT: behavior-class cell "${cell.id}" capped via the deliberate_exceptions door — ` +
+      `the D3 red_failure_evidence floor (>=80 chars, non-duplicate) was not enforced for this cap (F5).\n`,
+  );
+}
+
 function handleCellsAdd(root, flags) {
   let text;
   if (flags.stdin === true) text = fs.readFileSync(0, 'utf8');
@@ -656,6 +753,7 @@ function handleCellsAdd(root, flags) {
   if (Array.isArray(cell)) {
     const added = addCells(root, cell);
     emitManifestLintWarnings(added);
+    emitJudgeStandardWarnings(added);
     return {
       result: added,
       text: added.map((c) => `Added ${summarizeCell(c)}`).join('\n'),
@@ -663,6 +761,7 @@ function handleCellsAdd(root, flags) {
   }
   const added = addCell(root, cell);
   emitManifestLintWarnings(added);
+  emitJudgeStandardWarnings(added);
   return { result: added, text: `Added ${summarizeCell(added)}` };
 }
 
@@ -690,6 +789,7 @@ function handleCellsUpdate(root, flags) {
   // through the merge, and the trap is exactly as live post-update as it was
   // pre-update if the merged shape now qualifies.
   emitManifestLintWarnings(updated);
+  emitJudgeStandardWarnings(updated);
   return {
     result: updated,
     text: `Updated ${updated.id} (${Object.keys(patch).join(', ')}).`,
@@ -743,10 +843,15 @@ function handleCellsVerify(root, flags) {
     : flags.output
       ? String(flags.output)
       : null;
+  // D1: --signature is the worker-suppliable override for the ledger's
+  // failure_signature; omitted, recordVerify falls back to the mechanical
+  // normalizer on `output`.
+  const signature = flags.signature !== undefined ? String(flags.signature) : null;
   const cell = recordVerify(root, id, {
     command,
     output,
     passed: passedRaw === 'true',
+    signature,
     ...ownershipFlags(flags),
   });
   return { result: cell, text: `Recorded verify on ${cell.id}: passed=${cell.trace.verify_passed}.` };
@@ -773,6 +878,7 @@ function handleCellsCap(root, flags) {
     friction: flags.friction ? String(flags.friction) : null,
     ...ownershipFlags(flags),
   });
+  emitJudgeStandardCapAdvisory(cell); // F5
   return { result: cell, text: `Capped ${cell.id} at ${cell.trace.capped_at}.` };
 }
 
@@ -809,6 +915,59 @@ function handleCellsJudge(root, flags) {
         .join('; ')} — do not count this cell toward a clean wave; flag it for review (decision 0018).`
     : `Judge intact for ${verdict.id}: no undeclared test/CI/lockfile changes.`;
   return { result: verdict, text };
+}
+
+// D2 (self-correcting-loop): the audited reset door for a cell whose claim
+// door is closed by CELL_BUDGET_EXHAUSTED/REPEATED_FAILURE. --reason is
+// required at the lib layer (resetCellBudget throws otherwise); --session-id
+// follows the same optional/env-resolved convention as every other
+// ownership-aware verb, but resetCellBudget never enforces claim ownership
+// (a budget-exhausted cell has already been claim-cleared by the refusal
+// path — there is no live claim to own).
+function handleCellsResetBudget(root, flags) {
+  const id = requireFlag(flags, 'id');
+  const reason = requireFlag(flags, 'reason');
+  const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : undefined;
+  const cell = resetCellBudget(root, id, reason, { sessionId });
+  return { result: cell, text: `Reset the claim-lifetime budget door for ${cell.id}.` };
+}
+
+// D5 (self-correcting-loop): validates the --file payload against schema
+// judge-verdict/1 and appends the stamped result to trace.semantic_judge.
+// --builder-model/--judge-model presence is what marks that side PINNED —
+// the orchestrator only ever supplies a model name from its OWN pinned
+// dispatch param (Δ6; rule 13's mandatory transport means there is no code
+// path that would hand this flag an unverified guess) — so no separate
+// --*-status flag is needed at the CLI boundary; deriveModelIndependence
+// itself stays 4-arg/testable directly in test_lib.mjs regardless.
+// .bee/logs/dispatch.jsonl is never read here — Δ6: it is corroboration
+// only and must never feed a fail-closed guard.
+function handleCellsJudgeRecord(root, flags) {
+  const id = requireFlag(flags, 'id');
+  const raw = readFileText(String(requireFlag(flags, 'file')), 'judge verdict');
+  let verdict;
+  try {
+    verdict = JSON.parse(raw);
+  } catch {
+    // Free prose — validateJudgeVerdict rejects this with a typed error
+    // (never throws itself); recordJudgeVerdict surfaces that as a refusal.
+    verdict = raw;
+  }
+  const builderModel = flags['builder-model'] !== undefined ? String(flags['builder-model']) : null;
+  const judgeModel = flags['judge-model'] !== undefined ? String(flags['judge-model']) : null;
+  const cell = recordJudgeVerdict(root, id, verdict, {
+    builderModel,
+    builderStatus: builderModel ? PINNED_MODEL_STATUS : null,
+    judgeModel,
+    judgeStatus: judgeModel ? PINNED_MODEL_STATUS : null,
+    ...ownershipFlags(flags),
+  });
+  const entries = cell.trace.semantic_judge || [];
+  const latest = entries[entries.length - 1];
+  return {
+    result: cell,
+    text: `Recorded judge verdict on ${cell.id}: ${latest.verdict} (model_independence=${latest.model_independence}).`,
+  };
 }
 
 // fresh-session-handoff fsh-11 (D2/D4): typed refusals (NO_APPROVED_WORK,
@@ -3553,7 +3712,7 @@ function dispatchUsageFallback(leading) {
 // directly and parses this exact stderr line.
 function cellsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, schedule.`;
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, reset-budget, judge-record, schedule.`;
 }
 
 function reservationsUsageFallback(leading) {
@@ -3598,6 +3757,8 @@ const HANDLERS = {
   'cells.tier': handleCellsTier,
   'cells.judge': handleCellsJudge,
   'cells.claim-next': handleCellsClaimNext,
+  'cells.reset-budget': handleCellsResetBudget,
+  'cells.judge-record': handleCellsJudgeRecord,
   'cells.schedule': handleCellsSchedule,
   'reservations.reserve': handleReservationsReserve,
   'reservations.release': handleReservationsRelease,
