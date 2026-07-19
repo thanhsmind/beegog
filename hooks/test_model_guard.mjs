@@ -540,15 +540,18 @@ async function main() {
 
   // === 2A-iii rows: tier-first decision order (B4/B5/AO5) ==================
   // The enabled fixture carries the real config: extraction=haiku,
-  // generation=sonnet, review=opus → member set {haiku, opus, sonnet}.
+  // generation=sonnet, review=opus, advisor=fable → member set
+  // {haiku, opus, sonnet, fable} (advisor folded into the allowlist by cnt-7,
+  // advisor-digest R2 union).
 
   // --- 21. bare param NOT in the configured set (banana) -> deny -----------
   const r21 = await runHookPayload({ tool_name: "Agent", tool_input: { model: "banana" } }, enabledRoot);
   check(r21.status === 2, "row21: model:'banana' (non-member) is denied",
     `status=${r21.status} stderr=${r21.stderr}`);
   check(
-    r21.stderr.includes("sonnet") && r21.stderr.includes("haiku") && r21.stderr.includes("opus"),
-    "row21: banana FIX lists the configured models",
+    r21.stderr.includes("sonnet") && r21.stderr.includes("haiku") &&
+      r21.stderr.includes("opus") && r21.stderr.includes("fable"),
+    "row21: banana FIX lists the configured models incl. the advisor model (fable)",
     r21.stderr,
   );
   check(r21.stderr.includes("[bee-tier: ceiling]"), "row21: banana FIX teaches the ceiling marker route", r21.stderr);
@@ -560,15 +563,24 @@ async function main() {
     JSON.stringify(d21),
   );
 
-  // --- 22. bare param model:'fable' with no configured fable slot -> deny --
-  // (panel BLOCKER-1, accepted by design: the ceiling marker is the route.)
+  // --- 22. bare param model:'fable' IS the configured advisor model -> allow
+  // (cnt-7, advisor-digest R2 union — ORCHESTRATOR-CHARTERED UNFREEZE of the
+  // former BLOCKER-1 deny row, which encoded the live prepare/guard asymmetry:
+  // enabledRoot copies the repo's real config whose models.claude.advisor is
+  // 'fable', yet the guard's allowlist union excluded the advisor slot, so
+  // `bee dispatch prepare --runtime claude --kind advisor`'s own {model:'fable'}
+  // payload was denied 'param-not-configured'. With resolveAdvisor folded into
+  // configuredModelSet the advisor model is a member and its bare param is
+  // allowed, exactly like the tier models — never widening past the advisor
+  // slot's own resolved model.)
   const r22 = await runHookPayload({ tool_name: "Agent", tool_input: { model: "fable" } }, enabledRoot);
-  check(r22.status === 2, "row22: model:'fable' with no fable slot is denied (BLOCKER-1)",
+  check(r22.status === 0, "row22: model:'fable' (the configured advisor model) is allowed",
     `status=${r22.status} stderr=${r22.stderr}`);
+  const d22 = readLastJsonl(path.join(enabledRoot, ".bee", "logs", "dispatch.jsonl"));
   check(
-    r22.stderr.includes("[bee-tier: ceiling]"),
-    "row22: fable FIX teaches [bee-tier: ceiling] as the session-model route",
-    r22.stderr,
+    d22 && d22.transport === "model-param" && d22.model === "fable",
+    "row22: advisor-model param logged as model-param (not param-not-configured)",
+    JSON.stringify(d22),
   );
 
   // --- 23. bare param IS a configured member (haiku) -> allow -------------
