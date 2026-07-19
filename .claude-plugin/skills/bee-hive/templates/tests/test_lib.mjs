@@ -76,6 +76,8 @@ import {
   claimCellCrossSession,
   normalizeFailureSignature,
   resetCellBudget,
+  deriveChangeClass,
+  CHANGE_CLASSES,
 } from '../lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
 import {
@@ -864,7 +866,11 @@ await check('capCell refuses behavior_change without verification_evidence', asy
 await check('capCell caps with passing verify + evidence, and unlocks dependents', async () => {
   const cell = capCell(root, 'demo-1', {
     behavior_change: true,
-    verification_evidence: { tests_added: ['x.test.js'], red_failure_evidence: 'prior behavior seen failing', verification_run: 'npm test' },
+    verification_evidence: {
+      tests_added: ['x.test.js'],
+      red_failure_evidence: 'demo-1: prior behavior seen failing before this change — git-show of the old state, captured at cap time for the D3 anti-boilerplate floor.',
+      verification_run: 'npm test',
+    },
     files_changed: ['src/x.js'],
     outcome: 'done',
   });
@@ -931,7 +937,10 @@ await check('capCell honors the cell-declared behavior_change when the flag is o
   const capped = capCell(root, 'bc-decl', {
     files_changed: ['a.js'],
     outcome: 'done',
-    verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'npm test' },
+    verification_evidence: {
+      red_failure_evidence: 'bc-decl: prior behavior characterized here before this change, distinct from the demo-1 fixture text, meeting the D3 anti-boilerplate floor.',
+      verification_run: 'npm test',
+    },
   });
   assert(capped.trace.behavior_change === true, 'trace.behavior_change carried from the cell declaration');
 });
@@ -1246,6 +1255,159 @@ await check(
     }
   },
 );
+
+// ─── D3 (self-correcting-loop): judge-standard matrix — authoring advisory
+// (bee.mjs handler layer, tested in test_bee_cli.mjs alongside
+// manifestLintWarning) + mechanical behavior-class cap teeth (this lib,
+// tested here). change_class:'behavior' is used explicitly (rather than
+// behavior_change:true) in the cap-teeth rows below so the teeth are proven
+// gated on the DERIVED CLASS, not on the `bc` flag — CONTEXT: "additive to
+// today's rules", not a replacement for the pre-existing Decision 0009 check.
+
+await check('deriveChangeClass resolves explicit change_class, the sole behavior_change=>behavior derivation, and null otherwise — no other auto-derivation (D3)', async () => {
+  assert(deriveChangeClass({ change_class: 'api' }) === 'api', 'explicit change_class wins');
+  assert(deriveChangeClass({ change_class: 'api', behavior_change: true }) === 'api', 'explicit change_class wins even over behavior_change:true');
+  assert(deriveChangeClass({ behavior_change: true }) === 'behavior', 'absent change_class + behavior_change:true derives behavior');
+  assert(deriveChangeClass({ behavior_change: false }) === null, 'absent change_class + behavior_change:false is unclassified');
+  assert(deriveChangeClass({}) === null, 'absent change_class + absent behavior_change is unclassified');
+  assert(deriveChangeClass(null) === null, 'null cell tolerated, never throws');
+  assert(deriveChangeClass(undefined) === null, 'undefined cell tolerated, never throws');
+  assert(CHANGE_CLASSES.includes('behavior') && CHANGE_CLASSES.length === 6, `expected the 6-member enum, got ${JSON.stringify(CHANGE_CLASSES)}`);
+});
+
+await check('addCell validates optional change_class against the enum, naming CHANGE_CLASSES on refusal (D3)', async () => {
+  assertThrows(
+    () => addCell(root, makeCell('jsm-bad-class', { change_class: 'not-a-class' })),
+    'change_class',
+    'an invalid change_class must be refused',
+  );
+  const added = addCell(root, makeCell('jsm-good-class', { change_class: 'api' }));
+  assert(added.change_class === 'api', 'a valid change_class is persisted');
+});
+
+await check('updateCell validates change_class the same way, and accepts null to un-set it back to derivation (D3)', async () => {
+  assertThrows(
+    () => updateCell(root, 'jsm-good-class', { change_class: 'nonsense' }),
+    'change_class',
+    'update must refuse an invalid change_class',
+  );
+  const cleared = updateCell(root, 'jsm-good-class', { change_class: null });
+  assert(cleared.change_class === null, 'null un-sets change_class back to derivation');
+  const revalidated = updateCell(root, 'jsm-good-class', { change_class: 'security' });
+  assert(revalidated.change_class === 'security', 'a subsequent valid change_class still applies');
+});
+
+await check('capCell refuses a behavior-class cap with no red_failure_evidence at all, naming the missing minimum — gated on change_class, independent of the behavior_change flag (D3)', async () => {
+  addCell(root, makeCell('jsm-missing-1', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-missing-1', 'worker-jsm');
+  recordVerify(root, 'jsm-missing-1', { command: 'x', output: 'ok', passed: true });
+  assertThrows(
+    () => capCell(root, 'jsm-missing-1', { files_changed: ['a.js'], outcome: 'done' }),
+    'red_failure_evidence',
+    'a behavior-class cap with no evidence at all must be refused by the D3 teeth even when behavior_change is never set',
+  );
+});
+
+await check('capCell refuses a behavior-class cap whose red_failure_evidence is under 80 chars, naming the length floor (D3)', async () => {
+  addCell(root, makeCell('jsm-short-1', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-short-1', 'worker-jsm');
+  recordVerify(root, 'jsm-short-1', { command: 'x', output: 'ok', passed: true });
+  assertThrows(
+    () =>
+      capCell(root, 'jsm-short-1', {
+        files_changed: ['a.js'],
+        outcome: 'done',
+        verification_evidence: { red_failure_evidence: 'too short' },
+      }),
+    '80',
+    'short red_failure_evidence must be refused, naming the 80-char floor',
+  );
+});
+
+await check('capCell refuses a behavior-class cap whose red_failure_evidence is byte-identical to another cell\'s recorded evidence, naming the colliding cell id (D3+Δ5 anti-boilerplate)', async () => {
+  const sharedText =
+    'this exact red_failure_evidence text is reused verbatim across two different cells to trigger the D3 anti-boilerplate duplicate refusal.';
+  assert(sharedText.length >= 80, 'fixture text must clear the length floor on its own, so only the duplicate check fires');
+
+  addCell(root, makeCell('jsm-dup-a', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-dup-a', 'worker-jsm');
+  recordVerify(root, 'jsm-dup-a', { command: 'x', output: 'ok', passed: true });
+  capCell(root, 'jsm-dup-a', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    verification_evidence: { red_failure_evidence: sharedText },
+  });
+
+  addCell(root, makeCell('jsm-dup-b', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-dup-b', 'worker-jsm');
+  recordVerify(root, 'jsm-dup-b', { command: 'x', output: 'ok', passed: true });
+  assertThrows(
+    () =>
+      capCell(root, 'jsm-dup-b', {
+        files_changed: ['a.js'],
+        outcome: 'done',
+        verification_evidence: { red_failure_evidence: sharedText },
+      }),
+    'jsm-dup-a',
+    'a byte-identical red_failure_evidence must be refused, naming the colliding cell id',
+  );
+});
+
+await check('capCell caps a behavior-class cell whose red_failure_evidence clears the D3 floor and is unique (green row)', async () => {
+  addCell(root, makeCell('jsm-green-1', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-green-1', 'worker-jsm');
+  recordVerify(root, 'jsm-green-1', { command: 'x', output: 'ok', passed: true });
+  const capped = capCell(root, 'jsm-green-1', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    verification_evidence: {
+      red_failure_evidence:
+        'jsm-green-1: a genuinely unique characterization of the prior failing behavior before this change, clearing the D3 floor.',
+    },
+  });
+  assert(capped.status === 'capped', 'a sufficiently long, unique red_failure_evidence caps cleanly');
+});
+
+await check('capCell caps a behavior-class cell riding deliberate_exceptions without the D3 length/duplicate floor — today\'s contract unchanged (F5 passthrough)', async () => {
+  addCell(root, makeCell('jsm-exception-1', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-exception-1', 'worker-jsm');
+  recordVerify(root, 'jsm-exception-1', { command: 'x', output: 'ok', passed: true });
+  const capped = capCell(root, 'jsm-exception-1', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    verification_evidence: { deliberate_exceptions: ['brand-new surface, no prior behavior to characterize'] },
+  });
+  assert(capped.status === 'capped', 'the exception door still caps without any red_failure_evidence — the D3 floor never applies to it');
+});
+
+await check('capCell tolerates a corrupt sibling cell file during the D3 duplicate scan — never throws, just skips it (Δ5)', async () => {
+  const corruptPath = path.join(root, '.bee', 'cells', 'jsm-corrupt-sibling.json');
+  fs.writeFileSync(corruptPath, '{ not valid json', 'utf8');
+  try {
+    addCell(root, makeCell('jsm-corrupt-check', { change_class: 'behavior' }));
+    claimCell(root, 'jsm-corrupt-check', 'worker-jsm');
+    recordVerify(root, 'jsm-corrupt-check', { command: 'x', output: 'ok', passed: true });
+    const capped = capCell(root, 'jsm-corrupt-check', {
+      files_changed: ['a.js'],
+      outcome: 'done',
+      verification_evidence: {
+        red_failure_evidence:
+          'jsm-corrupt-check: unique red evidence text, long enough to clear the D3 anti-boilerplate floor despite a corrupt sibling cell file present on disk.',
+      },
+    });
+    assert(capped.status === 'capped', 'a corrupt sibling cell file must never crash or block the duplicate scan');
+  } finally {
+    fs.rmSync(corruptPath, { force: true });
+  }
+});
+
+await check('capCell applies NO teeth to non-behavior classes — an api-class cell caps normally without any verification_evidence (D3: only behavior gets hard teeth in v1)', async () => {
+  addCell(root, makeCell('jsm-api-1', { change_class: 'api' }));
+  claimCell(root, 'jsm-api-1', 'worker-jsm');
+  recordVerify(root, 'jsm-api-1', { command: 'x', output: 'ok', passed: true });
+  const capped = capCell(root, 'jsm-api-1', { files_changed: ['a.js'], outcome: 'done' });
+  assert(capped.status === 'capped', 'a non-behavior change_class never gets D3 cap teeth');
+});
 
 // ─── D1 Δ2-amendment: EVERY claim-clearing transition releases the claim
 // file — cap, unclaim, block, drop, reopen — not only the claim-next unwind.
@@ -2382,7 +2544,10 @@ await check('scribingDebt tracks behavior_change caps against the last scribing 
       behaviorChange
         ? {
             behavior_change: true,
-            verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'x' },
+            verification_evidence: {
+              red_failure_evidence: `prior behavior characterized for cell "${id}" before this fixture cap, unique per id, meeting the D3 anti-boilerplate floor (>=80 chars).`,
+              verification_run: 'x',
+            },
             files_changed: ['a.js'],
             outcome: 'done',
           }
@@ -7485,7 +7650,10 @@ function seedCappedCellWithEvidence(dir, id) {
   recordVerify(dir, id, { command: 'node -e 0', output: 'ok', passed: true });
   capCell(dir, id, {
     behavior_change: true,
-    verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'node -e 0' },
+    verification_evidence: {
+      red_failure_evidence: `prior behavior characterized for cell "${id}" before this reviews-fixture change, meeting the D3 anti-boilerplate floor (>=80 chars).`,
+      verification_run: 'node -e 0',
+    },
     files_changed: ['a.js'],
     outcome: 'done',
   });

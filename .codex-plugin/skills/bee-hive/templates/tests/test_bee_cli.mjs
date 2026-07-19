@@ -35,6 +35,7 @@ import {
   deprecatedRedirect,
   computeManifestHash,
   manifestLintWarning,
+  judgeStandardWarning,
 } from '../bee.mjs';
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -1058,7 +1059,11 @@ await check('reviews fixture setup: a capped behavior_change cell ("ok-1") with 
   const capped = await runModuleWorker(BEE_MJS, {
     args: ['cells', 'cap', '--id', 'ok-1', '--outcome', 'done', '--files', 'a.js', '--behavior-change', '--evidence-stdin', '--json'],
     cwd: rootReviewsFeedback,
-    input: JSON.stringify({ red_failure_evidence: 'prior behavior', verification_run: 'node -e 0' }),
+    input: JSON.stringify({
+      red_failure_evidence:
+        'ok-1: prior behavior characterized before this reviews-fixture change, meeting the D3 anti-boilerplate floor (>=80 chars).',
+      verification_run: 'node -e 0',
+    }),
   });
   assert(capped.status === 0, `cells cap setup failed: ${capped.status}: stdout=${capped.stdout} stderr=${capped.stderr}`);
   assert(JSON.parse(capped.stdout).trace.verification_evidence, 'ok-1 should carry recorded verification_evidence for the A10 preflight');
@@ -1950,6 +1955,59 @@ await check('manifestLintWarning tolerates malformed cell shapes without throwin
   );
 });
 
+// ─── judgeStandardWarning (D3, self-correcting-loop): pure-logic unit tests
+// for the advisory judge-standard sufficiency matrix (F4) — add/update never
+// refuse, see the CLI-level end-to-end rows further down for the through-the-
+// dispatcher coverage, mirroring manifestLintWarning's own H2 layout above.
+
+await check('judgeStandardWarning is silent for an unclassified cell — no change_class, no behavior_change:true (D3: no matrix check at all)', async () => {
+  assert(judgeStandardWarning({ id: 'jsw-1', verify: 'node -e 0' }) === null, 'unclassified cell must never warn');
+  assert(judgeStandardWarning({ id: 'jsw-2', verify: 'node -e 0', behavior_change: false }) === null, 'behavior_change:false stays unclassified');
+});
+
+await check('judgeStandardWarning fires per class when the verify string is missing that class\'s named minimum (formatting/bugfix/api/security/migration)', async () => {
+  const cases = [
+    ['formatting', { id: 'jsw-fmt', change_class: 'formatting', verify: 'node -e 0' }],
+    ['bugfix', { id: 'jsw-bug', change_class: 'bugfix', verify: 'node -e 0' }],
+    ['api', { id: 'jsw-api', change_class: 'api', verify: 'node -e 0' }],
+    ['security', { id: 'jsw-sec', change_class: 'security', verify: 'node -e 0' }],
+    ['migration', { id: 'jsw-mig', change_class: 'migration', verify: 'node -e 0' }],
+  ];
+  for (const [cls, cell] of cases) {
+    const warning = judgeStandardWarning(cell);
+    assert(warning && warning.includes('JUDGE_STANDARD_INSUFFICIENT'), `expected a JUDGE_STANDARD_INSUFFICIENT warning for class "${cls}", got: ${warning}`);
+    assert(warning.includes(cell.id), `expected the warning to name the cell id for class "${cls}", got: ${warning}`);
+    assert(warning.includes(cls), `expected the warning to name the class "${cls}", got: ${warning}`);
+  }
+});
+
+await check('judgeStandardWarning stays silent per class once verify names that class\'s minimum', async () => {
+  assert(judgeStandardWarning({ id: 'jsw-fmt-ok', change_class: 'formatting', verify: 'npm run lint && npm run typecheck' }) === null, 'formatting: lint/typecheck present');
+  assert(judgeStandardWarning({ id: 'jsw-bug-ok', change_class: 'bugfix', verify: 'node tests/test_foo.mjs' }) === null, 'bugfix: a test path named');
+  assert(judgeStandardWarning({ id: 'jsw-api-ok', change_class: 'api', verify: 'node tests/test_contract.mjs' }) === null, 'api: a contract test named');
+  assert(judgeStandardWarning({ id: 'jsw-sec-ok', change_class: 'security', verify: 'node tests/test_negative_path.mjs' }) === null, 'security: a negative-path test named');
+  assert(judgeStandardWarning({ id: 'jsw-mig-ok', change_class: 'migration', verify: 'node migrate.mjs forward && node migrate.mjs rollback' }) === null, 'migration: forward + rollback both named');
+});
+
+await check('judgeStandardWarning fires for a behavior-class cell with no pre-attached red_failure_evidence, and is silent once one is present', async () => {
+  const warning = judgeStandardWarning({ id: 'jsw-behavior-1', behavior_change: true, verify: 'node -e 0' });
+  assert(warning && warning.includes('jsw-behavior-1') && warning.includes('behavior'), `expected a behavior-class warning, got: ${warning}`);
+  const silent = judgeStandardWarning({
+    id: 'jsw-behavior-2',
+    behavior_change: true,
+    verify: 'node -e 0',
+    verification_evidence: { red_failure_evidence: 'a pre-attached characterization of the prior behavior' },
+  });
+  assert(silent === null, 'a cell already carrying red_failure_evidence at authoring time must not warn');
+});
+
+await check('judgeStandardWarning tolerates malformed cell shapes without throwing', async () => {
+  assert(judgeStandardWarning(null) === null, 'null cell must not throw');
+  assert(judgeStandardWarning(undefined) === null, 'undefined cell must not throw');
+  assert(judgeStandardWarning({}) === null, 'empty object (unclassified) must not throw');
+  assert(judgeStandardWarning({ id: 'jsw-bad', change_class: 'behavior', verify: null }) !== null, 'non-string verify must not throw, and behavior still warns without evidence');
+});
+
 // ─── end-to-end: --help / --help --json (D3 tool-schema manifest) ─────────
 
 await check('bee --help --json parses as valid JSON and lists every existing subcommand', async () => {
@@ -2092,6 +2150,138 @@ await check('bee cells update stays silent when the patched cell keeps the manif
   const result = await runBee(['cells', 'update', '--id', 'demo-2-lint-listed', '--file', 'cell-lint-update-listed.json', '--json']);
   assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
   assert(!/WARNING/.test(result.stderr), `expected no WARNING, got stderr=${result.stderr}`);
+});
+
+// ─── D3 judge-standard matrix, through the dispatcher: `cells add`/`cells
+// update` warn (stderr, JUDGE_STANDARD_INSUFFICIENT) on an under-specified
+// change_class shape but never refuse the write (F4); `cells cap` warns when
+// a behavior-class cap rides the deliberate_exceptions door (F5). Separate
+// fixture cells from demo-2 so this block never disturbs demo-2's own
+// claim/verify/cap lifecycle below (H2 layout precedent). ─────────────────
+
+await check('bee cells add fires JUDGE_STANDARD_INSUFFICIENT on an under-specified api-class cell and still succeeds', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-api',
+    feature: 'demo2',
+    title: 'D3 matrix fixture — api class, no contract/integration test named',
+    lane: 'small',
+    action: 'D3 matrix fixture only, never claimed/executed.',
+    verify: 'node -e "process.exit(0)"',
+    change_class: 'api',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-api.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-jsw-api.json', '--json']);
+  assert(result.status === 0, `the write must always succeed: exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(
+    /JUDGE_STANDARD_INSUFFICIENT/.test(result.stderr) && /demo-2-jsw-api/.test(result.stderr),
+    `expected a JUDGE_STANDARD_INSUFFICIENT warning naming the cell, got: ${result.stderr}`,
+  );
+});
+
+await check('bee cells add stays silent on the matrix when the verify already names the class minimum', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-api-ok',
+    feature: 'demo2',
+    title: 'D3 matrix fixture — api class, contract test named',
+    lane: 'small',
+    action: 'D3 matrix fixture only, never claimed/executed.',
+    verify: 'node tests/test_contract.mjs',
+    change_class: 'api',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-api-ok.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-jsw-api-ok.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(!/JUDGE_STANDARD_INSUFFICIENT/.test(result.stderr), `expected no JUDGE_STANDARD_INSUFFICIENT warning, got stderr=${result.stderr}`);
+});
+
+await check('bee cells add stays silent on the matrix for an unclassified cell (no change_class, no behavior_change:true)', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-unclassified',
+    feature: 'demo2',
+    title: 'D3 matrix fixture — unclassified',
+    lane: 'small',
+    action: 'D3 matrix fixture only, never claimed/executed.',
+    verify: 'node -e "process.exit(0)"',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-unclassified.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-jsw-unclassified.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(!/JUDGE_STANDARD_INSUFFICIENT/.test(result.stderr), `expected no warning for an unclassified cell, got stderr=${result.stderr}`);
+});
+
+await check('bee cells update fires JUDGE_STANDARD_INSUFFICIENT when a patch leaves the MERGED cell under-specified, and still succeeds', async () => {
+  const patch = { change_class: 'security' };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-update.json'), JSON.stringify(patch, null, 2), 'utf8');
+  const result = await runBee(['cells', 'update', '--id', 'demo-2-jsw-unclassified', '--file', 'cell-jsw-update.json', '--json']);
+  assert(result.status === 0, `the write must always succeed: exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(
+    /JUDGE_STANDARD_INSUFFICIENT/.test(result.stderr) && /demo-2-jsw-unclassified/.test(result.stderr),
+    `expected the warning naming the cell, got: ${result.stderr}`,
+  );
+});
+
+await check('bee cells cap fires JUDGE_STANDARD_INSUFFICIENT (F5) when a behavior-class cap rides deliberate_exceptions, but still succeeds', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-exception',
+    feature: 'demo2',
+    title: 'D3 F5 fixture — behavior class riding deliberate_exceptions',
+    lane: 'small',
+    action: 'D3 F5 fixture only.',
+    verify: 'node -e "process.exit(0)"',
+    change_class: 'behavior',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-exception.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const added = await runBee(['cells', 'add', '--file', 'cell-jsw-exception.json', '--json']);
+  assert(added.status === 0, `add setup failed: ${added.status}: stdout=${added.stdout} stderr=${added.stderr}`);
+  const claimed = await runBee(['cells', 'claim', '--id', 'demo-2-jsw-exception', '--worker', 'worker-jsw', '--json']);
+  assert(claimed.status === 0, `claim setup failed: ${claimed.status}: stdout=${claimed.stdout} stderr=${claimed.stderr}`);
+  const verified = await runBee([
+    'cells', 'verify', '--id', 'demo-2-jsw-exception', '--command', 'node -e 0', '--output', 'ok', '--passed', 'true', '--json',
+  ]);
+  assert(verified.status === 0, `verify setup failed: ${verified.status}: stdout=${verified.stdout} stderr=${verified.stderr}`);
+
+  const capped = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'cap', '--id', 'demo-2-jsw-exception', '--outcome', 'done', '--files', 'a.js', '--evidence-stdin', '--json'],
+    cwd: root2,
+    input: JSON.stringify({ deliberate_exceptions: ['brand-new surface, no prior behavior to characterize'] }),
+  });
+  assert(capped.status === 0, `cap must succeed: exit ${capped.status}: stdout=${capped.stdout} stderr=${capped.stderr}`);
+  assert(
+    /JUDGE_STANDARD_INSUFFICIENT/.test(capped.stderr) && /demo-2-jsw-exception/.test(capped.stderr) && /deliberate_exceptions/.test(capped.stderr),
+    `expected the F5 advisory naming the cell and the exception door, got stderr=${capped.stderr}`,
+  );
+});
+
+await check('bee cells cap stays silent on the F5 advisory for a green-row behavior-class cap (sufficient, unique red_failure_evidence)', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-green',
+    feature: 'demo2',
+    title: 'D3 F5 fixture — behavior class, sufficient evidence',
+    lane: 'small',
+    action: 'D3 F5 fixture only.',
+    verify: 'node -e "process.exit(0)"',
+    change_class: 'behavior',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-green.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const added = await runBee(['cells', 'add', '--file', 'cell-jsw-green.json', '--json']);
+  assert(added.status === 0, `add setup failed: ${added.status}: stdout=${added.stdout} stderr=${added.stderr}`);
+  const claimed = await runBee(['cells', 'claim', '--id', 'demo-2-jsw-green', '--worker', 'worker-jsw', '--json']);
+  assert(claimed.status === 0, `claim setup failed: ${claimed.status}: stdout=${claimed.stdout} stderr=${claimed.stderr}`);
+  const verified = await runBee([
+    'cells', 'verify', '--id', 'demo-2-jsw-green', '--command', 'node -e 0', '--output', 'ok', '--passed', 'true', '--json',
+  ]);
+  assert(verified.status === 0, `verify setup failed: ${verified.status}: stdout=${verified.stdout} stderr=${verified.stderr}`);
+
+  const capped = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'cap', '--id', 'demo-2-jsw-green', '--outcome', 'done', '--files', 'a.js', '--evidence-stdin', '--json'],
+    cwd: root2,
+    input: JSON.stringify({
+      red_failure_evidence:
+        'demo-2-jsw-green: a genuinely unique characterization of the prior failing behavior before this change, clearing the D3 floor.',
+    }),
+  });
+  assert(capped.status === 0, `cap must succeed: exit ${capped.status}: stdout=${capped.stdout} stderr=${capped.stderr}`);
+  assert(!/JUDGE_STANDARD_INSUFFICIENT/.test(capped.stderr), `expected no F5 advisory on a green-row cap, got stderr=${capped.stderr}`);
 });
 
 await check('bee cells claim --id demo-2 --worker claims it', async () => {

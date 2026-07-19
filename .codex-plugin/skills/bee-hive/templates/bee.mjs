@@ -95,6 +95,9 @@ import {
   ceilingScarcityWarning,
   claimNextCell,
   resetCellBudget,
+  deriveChangeClass,
+  parseVerificationEvidence,
+  evidenceRidesExceptionDoor,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 // D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
@@ -639,6 +642,97 @@ function emitManifestLintWarnings(cells) {
   }
 }
 
+// D3 (self-correcting-loop) — judge-standard sufficiency matrix (F4): advisory
+// WARNING at `cells add`/`cells update`, STDERR only, manifest-lint pattern
+// (pah-2 emitManifestLintWarnings precedent above) — NEVER folded into the
+// JSON result, NEVER a refusal at authoring (CONTEXT D3). change_class
+// resolution matches cells.mjs's own deriveChangeClass exactly: an
+// unclassified cell (no change_class, no behavior_change:true) gets no check
+// at all. Each class' minimum is checked against what is knowable at
+// authoring time — the cell's own `verify` string, or (for `behavior`) any
+// pre-attached verification_evidence; most `behavior` cells will warn at add
+// time since evidence is normally attached later at cap, which is expected
+// and harmless (advisory-only).
+// Plain case-insensitive substring checks, not \b-anchored regexes — verify
+// strings are free-form shell commands where the keyword often sits inside
+// an underscore-joined filename (e.g. "test_contract.mjs"), and \w includes
+// underscore, so a \b boundary silently fails to match right there. This is
+// an advisory heuristic (never a refusal), so a substring match is the right
+// amount of precision.
+function verifyMentions(cell, ...needles) {
+  const verify = String(cell.verify || '').toLowerCase();
+  return needles.some((needle) => verify.includes(needle));
+}
+
+const JUDGE_STANDARD_MINIMUMS = {
+  formatting: {
+    label: 'a lint/typecheck check present in verify',
+    test: (cell) => verifyMentions(cell, 'lint', 'typecheck', 'tsc'),
+  },
+  bugfix: {
+    label: 'verify names a test path',
+    test: (cell) => verifyMentions(cell, 'test', 'spec'),
+  },
+  behavior: {
+    label: 'red_failure_evidence attached (verification_evidence.red_failure_evidence)',
+    test: (cell) => {
+      const evidence = parseVerificationEvidence(cell.verification_evidence);
+      return typeof evidence.red_failure_evidence === 'string' && evidence.red_failure_evidence.trim().length > 0;
+    },
+  },
+  api: {
+    label: 'a contract/integration test named in verify',
+    test: (cell) => verifyMentions(cell, 'contract', 'integration'),
+  },
+  security: {
+    label: 'a negative-path/security test named in verify',
+    test: (cell) => verifyMentions(cell, 'security', 'negative'),
+  },
+  migration: {
+    label: 'forward + rollback checks named in verify',
+    test: (cell) => verifyMentions(cell, 'forward') && verifyMentions(cell, 'rollback', 'down', 'revert'),
+  },
+};
+
+// Tolerates every malformed shape silently, same discipline as
+// manifestLintWarning above — the advisory must never throw on a bad cell.
+export function judgeStandardWarning(cell) {
+  if (!cell || typeof cell !== 'object') return null;
+  const changeClass = deriveChangeClass(cell);
+  if (!changeClass) return null; // unclassified — no matrix check (CONTEXT D3)
+  const minimum = JUDGE_STANDARD_MINIMUMS[changeClass];
+  if (!minimum || minimum.test(cell)) return null;
+  const id = typeof cell.id === 'string' && cell.id ? cell.id : '(unknown id)';
+  return (
+    `JUDGE_STANDARD_INSUFFICIENT: cell "${id}" is change_class "${changeClass}" but is missing the matrix ` +
+    `minimum — ${minimum.label}. Advisory only (never a refusal at authoring); see CONTEXT.md D3 for the full matrix.`
+  );
+}
+
+function emitJudgeStandardWarnings(cells) {
+  for (const cell of Array.isArray(cells) ? cells : [cells]) {
+    const warning = judgeStandardWarning(cell);
+    if (warning) process.stderr.write(`${warning}\n`);
+  }
+}
+
+// F5: at CAP time (not authoring), a behavior-class cell that rode the
+// pre-existing deliberate_exceptions door skipped the D3 length/duplicate
+// floor entirely (capCell's own contract) — note that on STDERR so it is
+// never silent, without turning it into a refusal. Recomputed from the
+// returned (already-capped) cell, same recompute-not-side-channel discipline
+// as emitManifestLintWarnings/emitJudgeStandardWarnings above.
+function emitJudgeStandardCapAdvisory(cell) {
+  if (!cell || typeof cell !== 'object') return;
+  if (deriveChangeClass(cell) !== 'behavior') return;
+  const evidence = parseVerificationEvidence(cell.trace && cell.trace.verification_evidence);
+  if (!evidenceRidesExceptionDoor(evidence)) return;
+  process.stderr.write(
+    `JUDGE_STANDARD_INSUFFICIENT: behavior-class cell "${cell.id}" capped via the deliberate_exceptions door — ` +
+      `the D3 red_failure_evidence floor (>=80 chars, non-duplicate) was not enforced for this cap (F5).\n`,
+  );
+}
+
 function handleCellsAdd(root, flags) {
   let text;
   if (flags.stdin === true) text = fs.readFileSync(0, 'utf8');
@@ -657,6 +751,7 @@ function handleCellsAdd(root, flags) {
   if (Array.isArray(cell)) {
     const added = addCells(root, cell);
     emitManifestLintWarnings(added);
+    emitJudgeStandardWarnings(added);
     return {
       result: added,
       text: added.map((c) => `Added ${summarizeCell(c)}`).join('\n'),
@@ -664,6 +759,7 @@ function handleCellsAdd(root, flags) {
   }
   const added = addCell(root, cell);
   emitManifestLintWarnings(added);
+  emitJudgeStandardWarnings(added);
   return { result: added, text: `Added ${summarizeCell(added)}` };
 }
 
@@ -691,6 +787,7 @@ function handleCellsUpdate(root, flags) {
   // through the merge, and the trap is exactly as live post-update as it was
   // pre-update if the merged shape now qualifies.
   emitManifestLintWarnings(updated);
+  emitJudgeStandardWarnings(updated);
   return {
     result: updated,
     text: `Updated ${updated.id} (${Object.keys(patch).join(', ')}).`,
@@ -779,6 +876,7 @@ function handleCellsCap(root, flags) {
     friction: flags.friction ? String(flags.friction) : null,
     ...ownershipFlags(flags),
   });
+  emitJudgeStandardCapAdvisory(cell); // F5
   return { result: cell, text: `Capped ${cell.id} at ${cell.trace.capped_at}.` };
 }
 

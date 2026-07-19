@@ -47,6 +47,47 @@ import { detectCycles } from './schedule.mjs';
 
 export const LANES = ['tiny', 'small', 'standard', 'high-risk', 'spike'];
 
+// D3 (self-correcting-loop) — judge-standard change classification. Optional
+// cell field `change_class`; the ONLY auto-derivation this feature permits
+// (CONTEXT prohibition: "no auto-derivation beyond behavior_change=>behavior")
+// is absent field + `behavior_change:true` -> 'behavior'. Anything else
+// absent derives null ("unclassified" — no matrix advisory at authoring, no
+// cap teeth at cap; CONTEXT: "unclassified ⇒ no matrix check").
+export const CHANGE_CLASSES = ['formatting', 'bugfix', 'behavior', 'api', 'security', 'migration'];
+
+export function deriveChangeClass(cell) {
+  if (!cell || typeof cell !== 'object') return null;
+  if (typeof cell.change_class === 'string' && cell.change_class) return cell.change_class;
+  return cell.behavior_change === true ? 'behavior' : null;
+}
+
+// Tolerant parse of `verification_evidence` shared by the D3 cap teeth below
+// and by bee.mjs's own F5 STDERR advisory (recomputed from the returned cell,
+// pah-2 precedent — never a side channel). Never throws: a string that fails
+// to parse, or a non-object shape, degrades to {} so callers see "no
+// evidence" rather than crashing on a malformed cell.
+export function parseVerificationEvidence(raw) {
+  let evidence = raw;
+  if (typeof evidence === 'string') {
+    try {
+      evidence = JSON.parse(evidence);
+    } catch {
+      return {};
+    }
+  }
+  return evidence && typeof evidence === 'object' && !Array.isArray(evidence) ? evidence : {};
+}
+
+// F5: a behavior-class cap riding the pre-existing deliberate_exceptions door
+// keeps today's contract untouched (no length/duplicate floor) — this just
+// answers "did it ride that door", shared by the cap teeth and the advisory.
+export function evidenceRidesExceptionDoor(evidence) {
+  const exceptions = evidence && evidence.deliberate_exceptions;
+  return Array.isArray(exceptions)
+    ? exceptions.some((e) => typeof e === 'string' && e.trim().length > 0)
+    : typeof exceptions === 'string' && exceptions.trim().length > 0;
+}
+
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function utcNow() {
@@ -302,6 +343,18 @@ function validateNewCell(root, cell) {
       `addCell: optional "tier" must be one of ${MODEL_TIERS.join(', ')} when present.`,
     );
   }
+  // D3 (self-correcting-loop): optional judge-standard classification — the
+  // enum itself is a hard validation (same shape as tier/lane above); the
+  // MATRIX check that reads it is advisory-only and lives in bee.mjs (F4).
+  if (
+    cell.change_class !== undefined &&
+    cell.change_class !== null &&
+    !CHANGE_CLASSES.includes(cell.change_class)
+  ) {
+    throw new Error(
+      `addCell: optional "change_class" must be one of ${CHANGE_CLASSES.join(', ')} when present.`,
+    );
+  }
   if (readCell(root, cell.id)) {
     throw new Error(`addCell: cell "${cell.id}" already exists.`);
   }
@@ -412,6 +465,10 @@ const UPDATE_FIELD_VALIDATORS = {
   behavior_change: (v) => (typeof v === 'boolean' ? null : 'must be a boolean'),
   lane: (v) => (LANES.includes(v) ? null : `must be one of: ${LANES.join(', ')}`),
   pbi: (v) => (v === null || typeof v === 'string' ? null : 'must be a string or null'),
+  // D3: nullable so a cell can un-set an explicit change_class back to
+  // "derive from behavior_change" — same null-allowed shape as pbi above.
+  change_class: (v) =>
+    v === null || CHANGE_CLASSES.includes(v) ? null : `must be null or one of: ${CHANGE_CLASSES.join(', ')}`,
 };
 
 function isStringArray(value) {
@@ -616,6 +673,25 @@ export function recordVerify(
   return writeCell(root, cell);
 }
 
+// D3+Δ5 — the anti-boilerplate floor for behavior-class cap teeth: 80 chars,
+// and never byte-identical (sha256 of the trimmed text) to another cell's own
+// recorded red evidence. Reuses listCells' own tolerant readJson (Δ5: "the
+// cap-time duplicate scan tolerant-parses — skips unparseable sibling files,
+// never throws") instead of a second hand-rolled readdir/parse loop.
+const RED_EVIDENCE_MIN_CHARS = 80;
+
+function findDuplicateRedEvidence(root, id, trimmed) {
+  const hash = crypto.createHash('sha256').update(trimmed, 'utf8').digest('hex');
+  for (const sibling of listCells(root)) {
+    if (!sibling || sibling.id === id) continue;
+    const evidence = parseVerificationEvidence(sibling.trace && sibling.trace.verification_evidence);
+    const red = typeof evidence.red_failure_evidence === 'string' ? evidence.red_failure_evidence.trim() : '';
+    if (red.length < RED_EVIDENCE_MIN_CHARS) continue;
+    if (crypto.createHash('sha256').update(red, 'utf8').digest('hex') === hash) return sibling.id;
+  }
+  return null;
+}
+
 export function capCell(
   root,
   id,
@@ -676,6 +752,38 @@ export function capCell(
       if (!hasBefore && !hasException) {
         throw new Error(
           `capCell: behavior_change cell "${id}" needs a "before" characterization — set red_failure_evidence in the evidence (the prior behavior this change alters: a git-show of the old state, or a pre-change check that failed). If there is genuinely no prior behavior (a brand-new surface), say so in deliberate_exceptions. An assertion that the new behavior works is not evidence that behavior changed.`,
+        );
+      }
+    }
+  }
+  // D3 (self-correcting-loop) — behavior-class cap teeth, ADDITIVE to the
+  // Decision 0009 "before" check above. Gated on the cell's (derived or
+  // explicit) change_class, NOT on `bc` — an explicit change_class:"behavior"
+  // cell still gets the teeth even if it forgot --behavior-change; the common
+  // path (behavior_change:true, change_class absent) reaches here via the
+  // same derivation either way (CONTEXT D3 prohibition: no auto-derivation
+  // beyond behavior_change=>behavior). F5: a cap riding the deliberate_
+  // exceptions door keeps today's contract untouched — no length/duplicate
+  // floor; the STDERR advisory noting that lives in bee.mjs's handler layer
+  // (F4 precedent), recomputed from the returned cell post-cap.
+  if (deriveChangeClass({ ...cell, behavior_change: bc }) === 'behavior') {
+    const evidence = parseVerificationEvidence(verification_evidence);
+    if (!evidenceRidesExceptionDoor(evidence)) {
+      const before = typeof evidence.red_failure_evidence === 'string' ? evidence.red_failure_evidence.trim() : '';
+      if (!before) {
+        throw new Error(
+          `capCell: behavior-class cell "${id}" (D3 judge-standard matrix) is missing verification_evidence.red_failure_evidence — the matrix minimum for a "behavior" change. FIX: attach red_failure_evidence (>=${RED_EVIDENCE_MIN_CHARS} chars characterizing the prior behavior) or record deliberate_exceptions.`,
+        );
+      }
+      if (before.length < RED_EVIDENCE_MIN_CHARS) {
+        throw new Error(
+          `capCell: behavior-class cell "${id}" red_failure_evidence is only ${before.length} char(s) — the D3 judge-standard matrix requires >=${RED_EVIDENCE_MIN_CHARS} chars (anti-boilerplate floor). FIX: expand the evidence to genuinely characterize the prior behavior, or record deliberate_exceptions.`,
+        );
+      }
+      const collision = findDuplicateRedEvidence(root, id, before);
+      if (collision) {
+        throw new Error(
+          `capCell: behavior-class cell "${id}" red_failure_evidence is byte-identical to cell "${collision}"'s recorded evidence — the D3 judge-standard matrix refuses reused boilerplate. FIX: write evidence specific to this cell's own prior behavior.`,
         );
       }
     }
