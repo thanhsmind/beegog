@@ -20,7 +20,7 @@
 // used to call resolveTier()/modelForTier(), which read .bee/config.json
 // (a read, not a mutation). Callers own all side effects.
 
-import { resolveTier, modelForTier, CONFIGURABLE_SLOTS } from './state.mjs';
+import { resolveTier, resolveAdvisor, modelForTier, CONFIGURABLE_SLOTS } from './state.mjs';
 
 // Codex-native collaboration spawn (codex-native-runtime-v2 D4): Codex exposes
 // agent spawns through PreToolUse as tool_name "spawn_agent", with tool_input
@@ -131,6 +131,21 @@ function configuredModelSet(root) {
       models.add(m.trim());
     }
   }
+  // Fold the advisor slot into the union (cnt-7, advisor-digest R2). advisor is
+  // deliberately NOT a CONFIGURABLE_SLOTS member (state.mjs — decision 0015
+  // collision avoided), so the loop above never sees it; yet `bee dispatch
+  // prepare --runtime claude --kind advisor` emits {model: <advisor model>}
+  // through the SAME resolveAdvisor resolver, and the guard must recognize
+  // prepare's own payload or it denies bee's own advisor dispatches
+  // ('param-not-configured' — the live prepare/guard asymmetry this closes).
+  // Only a resolved {type:'model'} advisor contributes its model NAME; a
+  // cli/native/null advisor resolves to no name and adds nothing, exactly like
+  // a cli or null tier slot above — this widens the allowlist by the advisor
+  // slot's own configured model and nothing more.
+  const advisor = resolveAdvisor(root, 'claude');
+  if (advisor && advisor.type === 'model' && typeof advisor.model === 'string' && advisor.model.trim()) {
+    models.add(advisor.model.trim());
+  }
   return models;
 }
 
@@ -157,6 +172,24 @@ function denyResult(reason, transport, { tier = null, model = null, subagentType
 // Every UNOBSERVED shape is a no-opinion (allow, unlogged), never a deny —
 // the spike only ever captured agent_type "worker"; denying a shape it never
 // saw would guess at semantics the evidence does not support.
+//
+// D6 route-check gap (codex-native-transport, decision 350f1e82, bound to
+// cnt-4): CONTEXT.md's D6 calls for this function to validate an override-
+// carrying spawn's model/reasoning_effort/fork_turns against the configured
+// route once such a spawn is observed. That route-check is INTENTIONALLY
+// ABSENT here — this function never reads toolInput.model/reasoning_effort/
+// fork_turns at all — because the PreToolUse envelope it would validate
+// (V3) is terminal-UNOBSERVED on both codex builds probed to date: on
+// 0.144.4 the hook chain never fired for a successful override spawn (root
+// cause open); on 0.144.6 the override tool schema itself is REFUSED at the
+// API level before any spawn_agent call is attempted, so no envelope ever
+// reaches tool execution to inspect (full evidence:
+// docs/history/codex-native-transport/reports/probe-evidence.md). A spawn
+// that carries override fields therefore passes through exactly like one
+// that doesn't — evaluated on agent_type + message only — by design: this is
+// a defense-in-depth allow-hole (ADVISOR-R2 Δ3), not an oversight, and it
+// stays this way until a codex build lets V3 be observed and this comment
+// is replaced by the real route-check.
 function evaluateCodexSpawn(toolInput) {
   if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) {
     return noOpinion();
