@@ -45,7 +45,7 @@
     },
     {
       "path": ".bee/bin/lib/dispatch-guard.mjs",
-      "sha256": "8ea656eac3d529f72b1c5a5a13bf9edc649f2119ec46584f9d08de9e31350e96",
+      "sha256": "64ae0eb109d10ca97c80cabc0c213389c56ea6a6cede1fa8a2c7dcb00192f12b",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -1739,7 +1739,7 @@
     },
     {
       "path": "hooks/test_model_guard.mjs",
-      "sha256": "e7ceb54941c8a157ef2be3025aef9bdbb8476b0131f22858ea32a984501e6f0d",
+      "sha256": "4db76044f96971aaf9f6fa9b9719905916c700c0e2f818a47623853539c62b33",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/test_model_guard.mjs"
@@ -2134,7 +2134,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/dispatch-guard.mjs",
-      "sha256": "8ea656eac3d529f72b1c5a5a13bf9edc649f2119ec46584f9d08de9e31350e96",
+      "sha256": "64ae0eb109d10ca97c80cabc0c213389c56ea6a6cede1fa8a2c7dcb00192f12b",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/dispatch-guard.mjs"
