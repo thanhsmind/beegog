@@ -1485,10 +1485,18 @@ function buildDoctorFixture({ withHandlerFiles = true } = {}) {
     managed: { repo_hooks: { '.codex/hooks.json': hashFile(hooksJsonPath) } },
     agents_sync: { files: [] },
   });
+  // g22-4/D7: bee-render/2 with an empty skills[] — this fixture creates no
+  // actual bee-* skill dirs under either root, so the deep audit's expected
+  // set is trivially empty and skills_installed stays 'ok'/blocking, exactly
+  // like the old shallow v1 check did for every OTHER doctor test in this
+  // file that does not care about the skill-inventory audit itself (that
+  // audit gets its own dedicated fixture matrix in scripts/test_conformance.mjs
+  // scenarios 14/15 — deep-audit pass/missing/stray/drift, and legacy v1
+  // warn-not-block — against the real .bee/bin/bee.mjs binary).
   fs.mkdirSync(path.join(dir, '.agents', 'skills'), { recursive: true });
-  writeJsonAtomic(path.join(dir, '.agents', 'skills', '.bee-render.json'), { schema: 'bee-render/1', target_runtime: 'codex' });
+  writeJsonAtomic(path.join(dir, '.agents', 'skills', '.bee-render.json'), { schema: 'bee-render/2', target_runtime: 'codex', skills: [] });
   fs.mkdirSync(path.join(dir, '.claude', 'skills'), { recursive: true });
-  writeJsonAtomic(path.join(dir, '.claude', 'skills', '.bee-render.json'), { schema: 'bee-render/1', target_runtime: 'claude' });
+  writeJsonAtomic(path.join(dir, '.claude', 'skills', '.bee-render.json'), { schema: 'bee-render/2', target_runtime: 'claude', skills: [] });
   writeJsonAtomic(path.join(dir, '.claude', 'settings.json'), {
     permissions: { defaultMode: 'bypassPermissions' },
     hooks: {

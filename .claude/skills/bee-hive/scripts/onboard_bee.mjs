@@ -526,7 +526,7 @@ function versionLabel(v) {
 // target walks omit it (the installed tree already holds rendered bytes). With
 // no markers in any file, render is byte-identity, so every fingerprint is
 // exactly the pre-render one and the whole sync path is unchanged.
-function walkSkillTree(rootDir, transform) {
+export function walkSkillTree(rootDir, transform) {
   const files = new Map(); // rel path ("/"-joined) -> sha256
   const dirs = [];
   let blocked = null;
@@ -560,7 +560,7 @@ function walkSkillTree(rootDir, transform) {
   return { files, dirs, blocked };
 }
 
-function manifestFingerprint(files) {
+export function manifestFingerprint(files) {
   return JSON.stringify([...files.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)));
 }
 
@@ -580,12 +580,46 @@ function manifestFingerprint(files) {
 // marker at all is returned unchanged (BOM, CRLF, final-newline state, and
 // arbitrary bytes preserved), never decoded-and-re-encoded.
 export const RENDER_RUNTIMES = ["claude", "codex"];
-const RENDER_SCHEMA = "bee-render/1";
+// bee-render/2 (g22-4, decision D7 / advisor R5): the sidecar is now a full
+// inventory, not just a provenance stamp — {schema, target_runtime,
+// skills:[{name, sha256}]} where sha256 is a deterministic digest of that
+// skill's RENDERED file set (see skillDigest below). Single-sourced: this
+// constant plus buildRenderSidecar/skillDigest are the ONLY place the shape
+// or the hash algorithm is defined; every writer (render_plugin_skill_trees.mjs,
+// the onboarding managed-target sync below) imports them rather than
+// hand-building the object. doctor (bee.mjs, which cannot import this file -
+// see its own mirror-discipline note) duplicates the read-side algorithm by
+// hand and must be kept in lockstep with skillDigest/walkSkillTree here.
+export const RENDER_SCHEMA = "bee-render/2";
 // Provenance sidecar written at each rendered target's skills ROOT (a sibling
 // of the bee-* dirs, never inside one). source-identity classifies any skills
 // root carrying it as a rendered projection and refuses it as an onboarding
 // source for ANY target (D9 provenance).
 export const RENDER_SIDECAR = ".bee-render.json";
+
+// One skill's content digest: sha256 over manifestFingerprint's sorted
+// [relPath, sha256(fileBytes)] pairs, so it folds the same fingerprint
+// already used for drift detection (walkSkillTree + manifestFingerprint) into
+// one fixed-length hash per skill. `files` is a Map<relPath, sha256hex> (or
+// an iterable of entries) of ONE skill dir's RENDERED file tree - exactly
+// what walkSkillTree(dir, renderTransform).files already produces.
+export function skillDigest(files) {
+  const map = files instanceof Map ? files : new Map(files);
+  return sha256(manifestFingerprint(map));
+}
+
+// Builds the full bee-render/2 sidecar object (D7). `skillsDirEntries` is
+// [{name, files}] - one entry per bee-* skill dir at the rendered
+// target/tree, `files` being that skill's rendered file-hash Map (see
+// skillDigest above). Deterministic and target-independent given the same
+// (source content, runtime): callers stringify + write the result, never
+// hand-build the shape.
+export function buildRenderSidecar(targetRuntime, skillsDirEntries) {
+  const skills = skillsDirEntries
+    .map(({ name, files }) => ({ name, sha256: skillDigest(files) }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return { schema: RENDER_SCHEMA, target_runtime: targetRuntime, skills };
+}
 
 // A line that begins (indentation allowed, so a mis-indented marker is caught,
 // not silently ignored) with an HTML-comment bee marker. Any line matching this
@@ -808,6 +842,31 @@ function listBeeSkillEntries(root) {
     .readdirSync(root, { withFileTypes: true })
     .filter((entry) => SKILL_DIR_RE.test(entry.name))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+// Every plain bee-* skill dir directly under sourceRoot, rendered for
+// `runtime`, as [{name, files}] ready for buildRenderSidecar (D7). This is
+// the "should be installed" inventory: symlinked or otherwise-blocked source
+// skill dirs are excluded, because they are never synced to any target
+// either (computeSkillItems/applySyncSkill both refuse them the same way) -
+// a sidecar must never promise a skill that onboarding itself cannot write.
+// Target-independent for a given runtime (render(source, runtime) does not
+// vary per target root), so callers compute this once per runtime, not once
+// per target.
+export function sourceSkillDigestEntries(sourceRoot, runtime) {
+  const renderSource = (buf) => renderSkillBytes(buf, runtime);
+  const out = [];
+  for (const entry of listBeeSkillEntries(sourceRoot)) {
+    if (entry.isSymbolicLink() || !entry.isDirectory()) {
+      continue;
+    }
+    const walk = walkSkillTree(path.join(sourceRoot, entry.name), renderSource);
+    if (walk.blocked) {
+      continue;
+    }
+    out.push({ name: entry.name, files: walk.files });
+  }
+  return out;
 }
 
 // Canonical filesystem identity for case-alias detection (review P1-5): on a
@@ -3115,19 +3174,32 @@ function applyPlan(
     applied.push(item);
   }
 
-  // D9 provenance: stamp each rendered target's skills ROOT with the render
-  // sidecar so source-identity refuses it as an onboarding source for any
-  // target. Deterministic content (no timestamp) keeps re-applies idempotent.
+  // D9/D7 provenance: stamp each rendered target's skills ROOT with the
+  // bee-render/2 inventory sidecar (schema + target_runtime + per-skill
+  // sha256) so source-identity refuses it as an onboarding source for any
+  // target, AND doctor can deep-audit the installed skill set against it.
+  // Deterministic content (no timestamp) keeps re-applies idempotent.
   // `noop` targets are the running source itself (source === target) and are
   // NEVER stamped — that would poison the canonical source into a projection.
+  // Sidecar content is target-independent for a given runtime, so it is
+  // built once per runtime (not once per target) and reused across every
+  // target root that renders for that runtime.
   if (syncSkills) {
+    const sidecarByRuntime = new Map();
     for (const t of skillSync.targets) {
       if (t.blocked || (t.mode !== "sync" && t.mode !== "fresh")) {
         continue;
       }
+      const runtime = runtimeForTargetKind(t.kind);
+      if (!sidecarByRuntime.has(runtime)) {
+        sidecarByRuntime.set(
+          runtime,
+          buildRenderSidecar(runtime, sourceSkillDigestEntries(skillSync.source_root, runtime)),
+        );
+      }
       writeFileAtomic(
         path.join(t.target_root, RENDER_SIDECAR),
-        `${JSON.stringify({ schema: RENDER_SCHEMA, target_runtime: runtimeForTargetKind(t.kind) }, null, 2)}\n`,
+        `${JSON.stringify(sidecarByRuntime.get(runtime), null, 2)}\n`,
       );
     }
   }

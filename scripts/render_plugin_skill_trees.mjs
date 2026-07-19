@@ -18,6 +18,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -25,16 +26,13 @@ import {
   validateSkillMarkers,
   RENDER_RUNTIMES,
   RENDER_SIDECAR,
+  buildRenderSidecar,
 } from "../skills/bee-hive/scripts/onboard_bee.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
 const SOURCE_ROOT = path.join(REPO_ROOT, "skills");
 const SKILL_DIR_RE = /^bee-/;
-// Kept in lockstep with onboard_bee.mjs's own RENDER_SCHEMA constant (D9);
-// duplicated here because onboard_bee.mjs does not export it and this cell's
-// scope does not touch that file.
-const RENDER_SCHEMA = "bee-render/1";
 
 export const TARGET_ROOTS = {
   claude: path.join(REPO_ROOT, ".claude-plugin", "skills"),
@@ -101,8 +99,29 @@ export function renderTree(runtime, files) {
   return rendered;
 }
 
-export function sidecarBytes(runtime) {
-  return Buffer.from(`${JSON.stringify({ schema: RENDER_SCHEMA, target_runtime: runtime }, null, 2)}\n`, "utf8");
+// rendered: Map<"skillName/relPath", Buffer> (renderTree's output) -> one
+// buildRenderSidecar entry per skill: {name, files: Map<relPath, sha256hex>}.
+// Per-file hashes are sha256 of the RENDERED bytes already produced by
+// renderTree, so the sidecar reflects exactly what writeTree is about to put
+// on disk for this runtime (D7/D9).
+function groupRenderedBySkill(rendered) {
+  const bySkill = new Map();
+  for (const [skillRel, bytes] of rendered) {
+    const slash = skillRel.indexOf("/");
+    const name = skillRel.slice(0, slash);
+    const rel = skillRel.slice(slash + 1);
+    if (!bySkill.has(name)) bySkill.set(name, new Map());
+    bySkill.get(name).set(rel, crypto.createHash("sha256").update(bytes).digest("hex"));
+  }
+  return [...bySkill.entries()].map(([name, files]) => ({ name, files }));
+}
+
+export function sidecarObject(runtime, rendered) {
+  return buildRenderSidecar(runtime, groupRenderedBySkill(rendered));
+}
+
+export function sidecarBytes(runtime, rendered) {
+  return Buffer.from(`${JSON.stringify(sidecarObject(runtime, rendered), null, 2)}\n`, "utf8");
 }
 
 function writeTree(targetRoot, rendered, runtime) {
@@ -112,7 +131,7 @@ function writeTree(targetRoot, rendered, runtime) {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, bytes);
   }
-  fs.writeFileSync(path.join(targetRoot, RENDER_SIDECAR), sidecarBytes(runtime));
+  fs.writeFileSync(path.join(targetRoot, RENDER_SIDECAR), sidecarBytes(runtime, rendered));
 }
 
 function main() {
