@@ -32,9 +32,13 @@ Where things live. Read the touched area's spec before its code.
   (verified/unreviewed/in review/reviewed/review stale); also the unified nine-group
   command entry point and the worker adviser consult (a stuck worker asks a configured
   stronger model, on failure only, budgeted); plus the session-coordination
-  primitives — atomic single-winner claims with TTL + heartbeat, typed refusal
-  codes, gate-protected adoption/reclaim, plus pre-phase ownership for generic routing
-  changes and review isolation from active execution state; plus opt-in isolated
+  primitives — atomic single-winner claims with TTL + heartbeat on every claim path,
+  a self-derived session identity, ownership-checked claimed-unit mutation with an
+  audited force door, a serialized coordination-store lock behind concurrent
+  reservation/state writes, throttled self-renewing heartbeats and leases, typed
+  refusal codes, gate-protected adoption/reclaim, plus pre-phase ownership for
+  generic routing changes and review isolation from active execution state; plus
+  opt-in isolated
   worktree dispatch with one validated main coordination store, canonical contained
   reservation checks, and transactional merge/revert/preservation rules
   (`coverage: partial`).
