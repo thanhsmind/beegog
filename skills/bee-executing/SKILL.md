@@ -36,7 +36,7 @@ Open `references/worker-details.md` only for expanded commands, trace tiers, fri
 - Require exactly **one** assigned cell id from the parent. Never choose work yourself — do not browse `ready` or `list` for candidates.
 - No assigned cell id, or the cell is missing/already capped → return `[NOOP]`.
 - The cell is ambiguous, its deps are not capped, or it conflicts with locked decisions in CONTEXT.md → return `[BLOCKED]`. Never reinterpret a locked decision to make the cell fit.
-- Claim it: `node .bee/bin/bee.mjs cells claim --id <id> --worker "<name>"`
+- **Validate, never claim (D1):** the orchestrator already claimed this cell (`cells claim --id` or `claim-next`) before spawning you. Confirm it: `node .bee/bin/bee.mjs cells show --id <id>` must show `status: "claimed"` with `trace.worker` matching your nickname. A worker never runs `cells claim` itself — anything else (open, claimed by a different worker, missing, capped) is not yours to touch → return `[BLOCKED]` (or `[NOOP]` per the rule above), never claim it yourself to make the cell fit.
 
 ## 3. Reserve
 

@@ -1909,14 +1909,14 @@
     },
     {
       "path": "skills/bee-executing/references/worker-details.md",
-      "sha256": "55ab35d36e43850cf1a0534a96eb814c84c219766ffe91aad4e79956c6fd4218",
+      "sha256": "3b93e0bdc1e2229bb2a8d17df15462a3a1594b115dc26ecc9a90a33f34720f69",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-executing/references/worker-details.md"
     },
     {
       "path": "skills/bee-executing/SKILL.md",
-      "sha256": "af3cd093a58a81b62c0e06bdd3c3f067030e599e91f514b146ad620abc1253c4",
+      "sha256": "f48cab439818abd99fa56069ae540bacebb74a5dd3c2089bc80d03a945981ee4",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-executing/SKILL.md"
@@ -2399,14 +2399,14 @@
     },
     {
       "path": "skills/bee-swarming/references/swarming-reference.md",
-      "sha256": "7d128f1e0c3ec170029a3863d816a4c7446a4937b678f7bb1fa0bd89c8d40bc2",
+      "sha256": "3eff3d17f86e602d6410fab9f592fd90cafb71196c17ce2f398b84caa1672969",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-swarming/references/swarming-reference.md"
     },
     {
       "path": "skills/bee-swarming/SKILL.md",
-      "sha256": "8d855cb58b429f8724b09baf8005ebbe68ed98209a0d31e50c73de70c1f9900d",
+      "sha256": "834a1e50e87d4e2e0798648adfbdb78599b53443a4584366a0b1964f3db54527",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-swarming/SKILL.md"
