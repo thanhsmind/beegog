@@ -34,6 +34,11 @@ import {
 } from './claims.mjs';
 import { findSessionConflicts } from './reservations.mjs';
 import { featureBacklogRank } from './backlog.mjs';
+// D2 (self-correcting-loop) — resetCellBudget logs a decision through the
+// SAME event-sourced log every other decision-logging verb uses (bee-bypass-
+// gate toggles, etc.). decisions.mjs imports only fsutil/node builtins, so
+// this creates no import cycle.
+import { logDecision } from './decisions.mjs';
 // parallel-scheduler D2: cycle refusal at every dep-mutating write reuses the
 // SAME structural check schedule.mjs runs for diagnostics (one algorithm, one
 // definition of "cycle") — cells.mjs -> schedule.mjs stays one-directional
@@ -987,6 +992,144 @@ export function ceilingScarcityWarning(root) {
   return { pct: Math.round(mix.ceilingShare * 100), ceiling: mix.counts.ceiling, tiered: mix.tiered };
 }
 
+// ─── D2 (self-correcting-loop): cell-lifetime budgets at the claim door ────
+// Closes gap #1 of the Builder-Judge-Manager assessment: budgets reset per
+// claim by design (rescue rung 1 grants a fresh consult budget), so a
+// claim -> block -> re-dispatch cycle could loop indefinitely at cell
+// lifetime with no ceiling. `budgets` is an optional cell field; absent
+// falls back to DEFAULT_BUDGETS (D6: additive, existing single-claim single-
+// attempt cells behave byte-identically until a cell actually loops).
+const DEFAULT_BUDGETS = { max_claims: 3, max_failed_attempts: 4, max_same_signature: 2 };
+
+function resolveCellBudgets(cell) {
+  const declared =
+    cell && typeof cell.budgets === 'object' && cell.budgets && !Array.isArray(cell.budgets)
+      ? cell.budgets
+      : {};
+  const pick = (key) =>
+    Number.isFinite(declared[key]) && declared[key] > 0 ? declared[key] : DEFAULT_BUDGETS[key];
+  return {
+    max_claims: pick('max_claims'),
+    max_failed_attempts: pick('max_failed_attempts'),
+    max_same_signature: pick('max_same_signature'),
+  };
+}
+
+// D2+Δ1: counters restart after the latest trace.budget_resets marker — an
+// append-only audit array written ONLY by resetCellBudget below. Lexical
+// (string) comparison is safe here because every `at`/`reset_at` value is
+// the same utcNow() ISO-8601 shape, which sorts lexicographically exactly
+// like it sorts chronologically.
+function attemptsSinceBudgetReset(cell) {
+  const trace = cell.trace || {};
+  const attempts = Array.isArray(trace.attempts) ? trace.attempts : [];
+  const resets = Array.isArray(trace.budget_resets) ? trace.budget_resets : [];
+  const marker = resets.length > 0 ? resets[resets.length - 1].reset_at : null;
+  if (typeof marker !== 'string' || !marker) return attempts;
+  return attempts.filter((a) => a && typeof a.at === 'string' && a.at > marker);
+}
+
+function budgetExhaustedRefusal(id, name, limit, used, relevant) {
+  const failed = relevant.filter((a) => a.verdict === 'fail' || a.verdict === 'blocked').length;
+  const passed = relevant.filter((a) => a.verdict === 'pass').length;
+  return {
+    ok: false,
+    code: 'CELL_BUDGET_EXHAUSTED',
+    reason: `cell "${id}" exhausted its "${name}" budget (limit ${limit}, used ${used}) — the claim door is closed until an audited reset.`,
+    budget: { name, limit },
+    used,
+    history_summary: `${relevant.length} attempt(s) recorded since the last reset (${failed} failed/blocked, ${passed} passed).`,
+    fix: `bee.mjs cells reset-budget --id ${id} --reason "<why a retry is warranted>" — audited (logs a decision), never rewrites the attempt ledger.`,
+  };
+}
+
+// D2+Δ2: the STRUCTURAL loop-safety check — deliberately never imports or
+// reads gate_bypass/config.json (bypassLevel/readConfig never appear in this
+// function). CELL_BUDGET_EXHAUSTED and REPEATED_FAILURE are not approval
+// gates a human can wave through; the only door back open is
+// resetCellBudget's audited reset below. Returns {ok:true} when the cell may
+// proceed, else the typed refusal — surfaced as-is by claimCellCrossSession
+// (direct `cells claim --id`) or used as a selection filter by
+// claimNextCell (Δ3/F3: a bricked candidate is skipped, never surfaced).
+function checkCellBudgets(cell) {
+  const budgets = resolveCellBudgets(cell);
+  const relevant = attemptsSinceBudgetReset(cell);
+
+  // D2+Δ1: claims_used = distinct (claim_session, claimed_at) pairs, +1 for
+  // the acquisition currently being attempted (it has no ledger entry yet —
+  // nothing has been verified/blocked under it). A legacy cell with no
+  // ledger reads as 0 pairs, so its first claim is exactly 1 — byte-
+  // identical to today (D6).
+  const pairs = new Set();
+  for (const a of relevant) {
+    pairs.add(`${a.claim_session ?? ''} ${a.claimed_at ?? ''}`);
+  }
+  const claimsUsed = pairs.size + 1;
+  if (claimsUsed > budgets.max_claims) {
+    return budgetExhaustedRefusal(cell.id, 'max_claims', budgets.max_claims, claimsUsed, relevant);
+  }
+
+  const failedAttempts = relevant.filter((a) => a.verdict === 'fail' || a.verdict === 'blocked').length;
+  if (failedAttempts >= budgets.max_failed_attempts) {
+    return budgetExhaustedRefusal(cell.id, 'max_failed_attempts', budgets.max_failed_attempts, failedAttempts, relevant);
+  }
+
+  // Same-signature: two (or budgets.max_same_signature) fail/blocked entries
+  // sharing an identical failure_signature mean the Manager is re-running
+  // the exact same fix rather than changing approach — a distinct refusal
+  // from generic exhaustion, so it is checked independently of max_claims/
+  // max_failed_attempts above.
+  const signatureCounts = new Map();
+  for (const a of relevant) {
+    if (a.verdict !== 'fail' && a.verdict !== 'blocked') continue;
+    if (typeof a.failure_signature !== 'string' || !a.failure_signature) continue;
+    signatureCounts.set(a.failure_signature, (signatureCounts.get(a.failure_signature) || 0) + 1);
+  }
+  for (const [signature, count] of signatureCounts) {
+    if (count >= budgets.max_same_signature) {
+      return {
+        ok: false,
+        code: 'REPEATED_FAILURE',
+        reason: `cell "${cell.id}" failed ${count} time(s) with the identical signature "${signature}" — change approach or escalate, this is not a re-run.`,
+        signature,
+        fix: `bee.mjs cells reset-budget --id ${cell.id} --reason "<why a retry is warranted>" — audited (logs a decision), never rewrites the attempt ledger.`,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+// D2: the ONLY door that reopens a budget-exhausted or repeated-failure
+// cell. Requires a reason (audited), logs a decision, and appends to the
+// append-only trace.budget_resets — it NEVER touches trace.attempts, so the
+// full attempt history the marker is scoped against stays intact for
+// post-hoc review (mirrors trace.ownership_overrides' append-only shape).
+export function resetCellBudget(root, id, reason, { sessionId } = {}) {
+  if (typeof reason !== 'string' || !reason.trim()) {
+    throw new Error('resetCellBudget: a reason is required.');
+  }
+  const cell = readCell(root, id);
+  if (!cell) throw new Error(`resetCellBudget: cell "${id}" not found.`);
+  const reasonText = reason.trim();
+  const trace = { ...defaultTrace(), ...(cell.trace || {}) };
+  const resets = Array.isArray(trace.budget_resets) ? trace.budget_resets : [];
+  const bySession = resolveSessionId({ flag: sessionId }) || null;
+  cell.trace = {
+    ...trace,
+    budget_resets: [...resets, { reset_at: utcNow(), reason: reasonText, by_session: bySession }],
+  };
+  const saved = writeCell(root, cell);
+  logDecision(root, {
+    decision: `«cells reset-budget: cell "${id}" claim-lifetime budget reset — ${reasonText}»`,
+    rationale:
+      'Audited reopening of a D2 loop-safety door (self-correcting-loop); the attempt ledger itself is never rewritten, only a budget_resets marker appended.',
+    scope: 'repo',
+    source: 'user',
+  });
+  return saved;
+}
+
 // ─── claim-next: cross-session selection + throw-safe two-store claim ──────
 // (fresh-session-handoff fsh-11, D2/D4).
 
@@ -1028,6 +1171,27 @@ export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } =
 
   const fileClaim = claimCellFile(root, session, id, ttl);
   if (!fileClaim.ok) return fileClaim; // typed CLAIMED failure, propagated as-is
+
+  // D2+Δ2: budget check runs INSIDE the O_EXCL critical section — only after
+  // claimCellFile's atomic acquisition succeeded, so the count below can
+  // never be raced by a concurrent claimant (TOCTOU-safe by construction:
+  // claimCellFile's O_EXCL is the only door anyone can win). A missing cell
+  // is left to claimCell's own not-found error a few lines down, unchanged.
+  // A refusal here unwinds the just-acquired claim file via releaseClaim —
+  // same precedent as the CLAIM_CELL_FAILED unwind below — so a refused
+  // acquisition never orphans a claims-store file. Enforcement therefore
+  // lands at the NEXT claim attempt; this claim's own bounded overrun (the
+  // O_EXCL file briefly existed for one refusal-length window) is the
+  // documented tradeoff over a pre-acquire check, which would be TOCTOU-racy
+  // against a concurrent claim-fail-release.
+  const cellForBudget = readCell(root, id);
+  if (cellForBudget) {
+    const budgetCheck = checkCellBudgets(cellForBudget);
+    if (!budgetCheck.ok) {
+      releaseClaim(root, session, id);
+      return budgetCheck;
+    }
+  }
 
   try {
     const cell = claimCell(root, id, worker);
@@ -1108,10 +1272,15 @@ export function claimNextCell(root, { sessionId, worker, ttl } = {}) {
     const files = Array.isArray(cell.files) ? cell.files : [];
     return files.length === 0 || findSessionConflicts(root, session, files).length === 0;
   };
+  // D2 Δ3/F3: a budget-exhausted or repeated-failure candidate is skipped at
+  // SELECTION (reads the candidate's own ledger cheaply, no extra I/O) so a
+  // single bricked cell never bricks the whole pool — only a direct
+  // `cells claim --id` surfaces the typed refusal.
+  const candidateOk = (cell) => holdFree(cell) && checkCellBudgets(cell).ok;
 
   let candidate = null;
   if (ownFeature && gateApproved(resolved.record, 'execution')) {
-    candidate = readyCells(root, ownFeature).find(holdFree) || null;
+    candidate = readyCells(root, ownFeature).find(candidateOk) || null;
   }
 
   if (!candidate) {
@@ -1154,7 +1323,7 @@ export function claimNextCell(root, { sessionId, worker, ttl } = {}) {
     for (const [feature, meta] of pipelines) {
       if (!meta.approved) continue; // D2: an unapproved lane is never touched
       for (const cell of readyCells(root, feature)) {
-        if (holdFree(cell)) pool.push({ cell, feature, meta });
+        if (candidateOk(cell)) pool.push({ cell, feature, meta });
       }
     }
     pool.sort((a, b) => {

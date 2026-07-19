@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bee status [--json]
-//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|schedule> ... [--json]
+//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|schedule> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
@@ -94,6 +94,7 @@ import {
   tierMix,
   ceilingScarcityWarning,
   claimNextCell,
+  resetCellBudget,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 // D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
@@ -814,6 +815,21 @@ function handleCellsJudge(root, flags) {
         .join('; ')} — do not count this cell toward a clean wave; flag it for review (decision 0018).`
     : `Judge intact for ${verdict.id}: no undeclared test/CI/lockfile changes.`;
   return { result: verdict, text };
+}
+
+// D2 (self-correcting-loop): the audited reset door for a cell whose claim
+// door is closed by CELL_BUDGET_EXHAUSTED/REPEATED_FAILURE. --reason is
+// required at the lib layer (resetCellBudget throws otherwise); --session-id
+// follows the same optional/env-resolved convention as every other
+// ownership-aware verb, but resetCellBudget never enforces claim ownership
+// (a budget-exhausted cell has already been claim-cleared by the refusal
+// path — there is no live claim to own).
+function handleCellsResetBudget(root, flags) {
+  const id = requireFlag(flags, 'id');
+  const reason = requireFlag(flags, 'reason');
+  const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : undefined;
+  const cell = resetCellBudget(root, id, reason, { sessionId });
+  return { result: cell, text: `Reset the claim-lifetime budget door for ${cell.id}.` };
 }
 
 // fresh-session-handoff fsh-11 (D2/D4): typed refusals (NO_APPROVED_WORK,
@@ -3558,7 +3574,7 @@ function dispatchUsageFallback(leading) {
 // directly and parses this exact stderr line.
 function cellsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, schedule.`;
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, reset-budget, schedule.`;
 }
 
 function reservationsUsageFallback(leading) {
@@ -3603,6 +3619,7 @@ const HANDLERS = {
   'cells.tier': handleCellsTier,
   'cells.judge': handleCellsJudge,
   'cells.claim-next': handleCellsClaimNext,
+  'cells.reset-budget': handleCellsResetBudget,
   'cells.schedule': handleCellsSchedule,
   'reservations.reserve': handleReservationsReserve,
   'reservations.release': handleReservationsRelease,

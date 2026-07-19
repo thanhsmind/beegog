@@ -489,6 +489,21 @@ await check('cells.unclaim example runs through the real dispatcher (claimed -> 
   assert(!cell.trace.worker, 'unclaim must release the worker');
 });
 
+// D2 (self-correcting-loop): cells.reset-budget's registry example, run
+// against demo-1 (open, no exhausted budget) purely to exercise the
+// dispatcher wiring (registry -> handler -> resetCellBudget) — the actual
+// exhaustion/refusal/reopen behavior is covered end to end above and in
+// test_lib.mjs.
+await check('cells.reset-budget example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.reset-budget');
+  const cell = JSON.parse(result.stdout);
+  assert(cell.id === 'demo-1', `expected demo-1, got ${result.stdout}`);
+  assert(
+    Array.isArray(cell.trace.budget_resets) && cell.trace.budget_resets.length === 1,
+    `expected one budget_resets entry, got ${JSON.stringify(cell.trace.budget_resets)}`,
+  );
+});
+
 await check('reservations.reserve example runs through the real dispatcher', async () => {
   const result = await assertExampleOk('reservations.reserve');
   assert(JSON.parse(result.stdout).ok === true, 'reserve should succeed on a fresh path');
@@ -2215,6 +2230,61 @@ await check('bee cells judge --id demo-2 reports no frozen-judge hits', async ()
 await check('bee cells tier --id demo-2 --tier generation sets the tier', async () => {
   const result = await runBee(['cells', 'tier', '--id', 'demo-2', '--tier', 'generation', '--json']);
   assert(JSON.parse(result.stdout).tier === 'generation', `expected generation, got ${result.stdout}`);
+});
+
+// D2 (self-correcting-loop): `cells reset-budget` end to end through the
+// real dispatcher — the audited door that reopens a budget-exhausted or
+// repeated-failure cell. Full exhaustion/refusal coverage lives at the lib
+// level (test_lib.mjs); this proves the CLI wiring (registry + handler +
+// dispatch table) threads --id/--reason into resetCellBudget correctly.
+await check('bee cells reset-budget --id --reason runs through the dispatcher: appends a budget_resets entry and the reason round-trips verbatim (D2)', async () => {
+  addCell(root2, {
+    id: 'budget-cli-1',
+    feature: 'demo2',
+    title: 'CLI budget-reset fixture',
+    lane: 'small',
+    action: 'Exercise cells reset-budget through the dispatcher.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const result = await runBee(['cells', 'reset-budget', '--id', 'budget-cli-1', '--reason', 'dispatcher smoke test', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const cell = JSON.parse(result.stdout);
+  assert(Array.isArray(cell.trace.budget_resets) && cell.trace.budget_resets.length === 1, `expected one budget_resets entry, got ${JSON.stringify(cell.trace.budget_resets)}`);
+  assert(cell.trace.budget_resets[0].reason === 'dispatcher smoke test', `reason should round-trip verbatim, got ${JSON.stringify(cell.trace.budget_resets[0])}`);
+});
+
+await check('bee cells reset-budget --id X refuses without --reason', async () => {
+  const result = await runBee(['cells', 'reset-budget', '--id', 'budget-cli-1']);
+  assert(result.status !== 0, 'reset-budget without --reason must refuse');
+});
+
+await check('bee cells claim --id refuses with typed CELL_BUDGET_EXHAUSTED once the default max_claims budget is spent, through the real dispatcher (D2)', async () => {
+  addCell(root2, {
+    id: 'budget-cli-2',
+    feature: 'demo2',
+    title: 'CLI budget-exhaustion fixture',
+    lane: 'small',
+    action: 'Exercise the claim-door budget refusal through the dispatcher.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  for (let i = 0; i < 3; i += 1) {
+    const claimed = await runBee(['cells', 'claim', '--id', 'budget-cli-2', '--worker', 'w', '--session-id', `sess-cli-budget-${i}`, '--json']);
+    assert(claimed.status === 0, `claim #${i + 1} should succeed: ${claimed.stderr}`);
+    await runBee(['cells', 'verify', '--id', 'budget-cli-2', '--command', 'node -e ok', '--output', 'ok', '--passed', 'true', '--session-id', `sess-cli-budget-${i}`, '--json']);
+    await runBee(['cells', 'unclaim', '--id', 'budget-cli-2', '--session-id', `sess-cli-budget-${i}`, '--json']);
+  }
+  // No --json here (matches the CLAIMED-refusal precedent above): the CLI's
+  // own error() helper writes plain text to stderr only in the non-JSON
+  // branch — with --json the same error object is written to STDOUT instead
+  // (bee.mjs line ~3939), so a JSON-flagged refusal must be read from stdout.
+  const fourth = await runBee(['cells', 'claim', '--id', 'budget-cli-2', '--worker', 'w', '--session-id', 'sess-cli-budget-3']);
+  assert(fourth.status !== 0, 'the 4th claim must refuse');
+  assert(/CELL_BUDGET_EXHAUSTED/.test(fourth.stderr), `refusal should name CELL_BUDGET_EXHAUSTED, got ${fourth.stderr}`);
+
+  const reset = await runBee(['cells', 'reset-budget', '--id', 'budget-cli-2', '--reason', 'CLI test: reopening after exhaustion', '--json']);
+  assert(reset.status === 0, `reset-budget should succeed: ${reset.stderr}`);
+  const reopened = await runBee(['cells', 'claim', '--id', 'budget-cli-2', '--worker', 'w', '--session-id', 'sess-cli-budget-4', '--json']);
+  assert(reopened.status === 0, `claim after reset should succeed: ${reopened.stderr}`);
 });
 
 await check('bee cells block --id demo-2 --reason blocks the cell', async () => {

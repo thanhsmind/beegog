@@ -39,6 +39,7 @@ import {
   RUNTIMES,
   resolveTier,
   startFeature,
+  bypassLevel,
 } from '../lib/state.mjs';
 import { detectCommands } from '../lib/commands_detect.mjs';
 import { classifySource } from '../lib/source-identity.mjs';
@@ -74,6 +75,7 @@ import {
   claimNextCell,
   claimCellCrossSession,
   normalizeFailureSignature,
+  resetCellBudget,
 } from '../lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
 import {
@@ -1052,6 +1054,198 @@ await check('updateCell refuses a {trace:{...}} patch on an open cell — the le
   );
   assert(fs.readFileSync(file, 'utf8') === before, 'ledger-update-1 file byte-unchanged after the refused trace patch');
 });
+
+// ─── D2 (self-correcting-loop): cell-lifetime budgets at the claim door ────
+// max_claims/max_failed_attempts/max_same_signature enforced INSIDE the
+// O_EXCL critical section of claimCellCrossSession, typed CELL_BUDGET_
+// EXHAUSTED/REPEATED_FAILURE refusals, an audited reset-budget door, and
+// claim-next SELECTION skipping bricked candidates (Δ3/F3) so the pool
+// never bricks.
+
+await check('claimCellCrossSession: a fresh cell with no attempts ledger claims exactly as today — D2 defaults never bite on a first claim (D6 compatibility floor)', async () => {
+  addCell(root, makeCell('budget-fresh-1'));
+  const result = claimCellCrossSession(root, { sessionId: 'sess-budget-fresh', worker: 'w', cellId: 'budget-fresh-1' });
+  assert(result.ok === true, `first claim on a fresh cell must succeed under default budgets, got ${JSON.stringify(result)}`);
+});
+
+await check('claimCellCrossSession: 3 claims exhaust the default max_claims budget — a 4th claim is refused typed CELL_BUDGET_EXHAUSTED naming the budget, and the just-acquired claim file is unwound (D2+Δ2)', async () => {
+  addCell(root, makeCell('budget-claims-1'));
+  for (let i = 0; i < 3; i += 1) {
+    const claimed = claimCellCrossSession(root, { sessionId: `sess-budget-claims-${i}`, worker: 'w', cellId: 'budget-claims-1' });
+    assert(claimed.ok === true, `claim #${i + 1} should succeed under the default budget of 3, got ${JSON.stringify(claimed)}`);
+    recordVerify(root, 'budget-claims-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-budget-claims-${i}` });
+    unclaimCell(root, 'budget-claims-1', { sessionId: `sess-budget-claims-${i}` });
+  }
+  const fourth = claimCellCrossSession(root, { sessionId: 'sess-budget-claims-3', worker: 'w', cellId: 'budget-claims-1' });
+  assert(fourth.ok === false, `the 4th claim must be refused, got ${JSON.stringify(fourth)}`);
+  assert(fourth.code === 'CELL_BUDGET_EXHAUSTED', `expected CELL_BUDGET_EXHAUSTED, got ${fourth.code}`);
+  assert(fourth.budget && fourth.budget.name === 'max_claims', `refusal must name the exhausted budget, got ${JSON.stringify(fourth.budget)}`);
+  assert(typeof fourth.fix === 'string' && fourth.fix.includes('reset-budget'), `refusal must name the reset door, got ${fourth.fix}`);
+  assert(readClaim(root, 'budget-claims-1') === null, 'a refused claim must not leave an orphaned claim file behind (Δ2 unwind precedent cells.mjs:951)');
+  assert(readCell(root, 'budget-claims-1').status === 'open', 'the cell itself stays untouched on a refused claim — only the transient claim-file acquisition was unwound');
+});
+
+await check('claimCellCrossSession: two failed attempts sharing an identical failure_signature refuse the NEXT claim typed REPEATED_FAILURE, independent of the max_claims/max_failed_attempts budgets (D2 same-signature)', async () => {
+  addCell(root, makeCell('budget-sig-1'));
+  for (let i = 0; i < 2; i += 1) {
+    claimCellCrossSession(root, { sessionId: `sess-budget-sig-${i}`, worker: 'w', cellId: 'budget-sig-1' });
+    recordVerify(root, 'budget-sig-1', { command: 'npm test', output: 'FAIL identical assertion', passed: false, sessionId: `sess-budget-sig-${i}` });
+    unclaimCell(root, 'budget-sig-1', { sessionId: `sess-budget-sig-${i}` });
+  }
+  const third = claimCellCrossSession(root, { sessionId: 'sess-budget-sig-2', worker: 'w', cellId: 'budget-sig-1' });
+  assert(third.ok === false, `a claim after 2 identical-signature fails must refuse, got ${JSON.stringify(third)}`);
+  assert(third.code === 'REPEATED_FAILURE', `expected REPEATED_FAILURE, got ${third.code}`);
+  assert(third.signature === normalizeFailureSignature('FAIL identical assertion'), `refusal must name the repeated signature, got ${third.signature}`);
+  assert(typeof third.fix === 'string' && third.fix.includes('reset-budget'), `refusal must name the reset door, got ${third.fix}`);
+});
+
+await check('claimCellCrossSession: an explicit per-cell budgets override is honored over the defaults (D2)', async () => {
+  addCell(root, makeCell('budget-custom-1', { budgets: { max_claims: 1, max_failed_attempts: 4, max_same_signature: 2 } }));
+  const first = claimCellCrossSession(root, { sessionId: 'sess-budget-custom-0', worker: 'w', cellId: 'budget-custom-1' });
+  assert(first.ok === true, `first claim under a custom max_claims:1 should succeed, got ${JSON.stringify(first)}`);
+  recordVerify(root, 'budget-custom-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: 'sess-budget-custom-0' });
+  unclaimCell(root, 'budget-custom-1', { sessionId: 'sess-budget-custom-0' });
+  const second = claimCellCrossSession(root, { sessionId: 'sess-budget-custom-1', worker: 'w', cellId: 'budget-custom-1' });
+  assert(second.ok === false && second.code === 'CELL_BUDGET_EXHAUSTED', `a 2nd claim under a custom max_claims:1 must refuse, got ${JSON.stringify(second)}`);
+  assert(second.budget.limit === 1, `refusal must reflect the cell's own override, not the default, got ${JSON.stringify(second.budget)}`);
+});
+
+await check('resetCellBudget: audited reset appends a budget_resets marker, logs a decision, never touches attempts, and reopens the claim door (D2)', async () => {
+  addCell(root, makeCell('budget-reset-1'));
+  for (let i = 0; i < 3; i += 1) {
+    claimCellCrossSession(root, { sessionId: `sess-budget-reset-${i}`, worker: 'w', cellId: 'budget-reset-1' });
+    recordVerify(root, 'budget-reset-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-budget-reset-${i}` });
+    unclaimCell(root, 'budget-reset-1', { sessionId: `sess-budget-reset-${i}` });
+  }
+  const blocked = claimCellCrossSession(root, { sessionId: 'sess-budget-reset-3', worker: 'w', cellId: 'budget-reset-1' });
+  assert(blocked.ok === false && blocked.code === 'CELL_BUDGET_EXHAUSTED', `precondition: the door should be exhausted, got ${JSON.stringify(blocked)}`);
+  const attemptsBefore = readCell(root, 'budget-reset-1').trace.attempts.length;
+
+  const reset = resetCellBudget(root, 'budget-reset-1', 'manager approved a genuine retry');
+  assert(Array.isArray(reset.trace.budget_resets) && reset.trace.budget_resets.length === 1, `reset must append exactly one budget_resets entry, got ${JSON.stringify(reset.trace.budget_resets)}`);
+  assert(reset.trace.budget_resets[0].reason === 'manager approved a genuine retry', 'the reset reason is recorded verbatim');
+  assert(reset.trace.attempts.length === attemptsBefore, 'reset never rewrites or drops any attempts ledger entry');
+
+  const decisions = activeDecisions(root, { recent: 1 });
+  assert(decisions.length > 0 && decisions[0].decision.includes('budget-reset-1'), `resetCellBudget must log a decision naming the cell, got ${JSON.stringify(decisions)}`);
+
+  const reopened = claimCellCrossSession(root, { sessionId: 'sess-budget-reset-4', worker: 'w', cellId: 'budget-reset-1' });
+  assert(reopened.ok === true, `after reset the door must reopen for a fresh claim, got ${JSON.stringify(reopened)}`);
+});
+
+await check('resetCellBudget requires a non-empty reason, and refuses an unknown cell id', async () => {
+  addCell(root, makeCell('budget-reset-noreason-1'));
+  assertThrows(() => resetCellBudget(root, 'budget-reset-noreason-1', ''), 'reason', 'resetCellBudget must refuse an empty reason');
+  assertThrows(() => resetCellBudget(root, 'budget-reset-noreason-1', '   '), 'reason', 'resetCellBudget must refuse a whitespace-only reason');
+  assertThrows(() => resetCellBudget(root, 'no-such-cell-budget', 'a reason'), 'not found', 'resetCellBudget must refuse an unknown cell id');
+});
+
+await check(
+  'gate_bypass="total" does NOT bypass CELL_BUDGET_EXHAUSTED or REPEATED_FAILURE — the budget check never reads bypass config at all; these are structural loop-safety stops, not approval gates (D2 explicit test row)',
+  async () => {
+    const dir = makeStateRepo('bee-budget-bypass-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        mode: 'standard',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      writeJsonAtomic(path.join(dir, '.bee', 'config.json'), { gate_bypass: 'total' });
+      assert(bypassLevel(dir) === 'total', 'precondition: bypass level resolves to total');
+
+      const oldAttempts = [0, 1, 2].map((i) => ({
+        n: i + 1,
+        at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        claim_session: `sess-old-${i}`,
+        claimed_at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        worker: 'w',
+        verdict: 'pass',
+        failure_signature: null,
+        note: null,
+      }));
+      makeCellFile(dir, 'bypass-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
+
+      const result = claimCellCrossSession(dir, { sessionId: 'sess-bypass-total', worker: 'w', cellId: 'bypass-1' });
+      assert(result.ok === false && result.code === 'CELL_BUDGET_EXHAUSTED', `gate_bypass=total must NOT bypass the budget refusal, got ${JSON.stringify(result)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  'claimNextCell: SELECTION skips a budget-exhausted candidate — the pool still finds another ready cell instead of surfacing the refusal (D2 Δ3/F3)',
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-budget-skip-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        mode: 'standard',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      const oldAttempts = [0, 1, 2].map((i) => ({
+        n: i + 1,
+        at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        claim_session: `sess-old-${i}`,
+        claimed_at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        worker: 'w',
+        verdict: 'pass',
+        failure_signature: null,
+        note: null,
+      }));
+      makeCellFile(dir, 'exhausted-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
+      makeCellFile(dir, 'healthy-1', { feature: 'demo-feat', status: 'open', deps: [] });
+
+      const result = claimNextCell(dir, { sessionId: 'sess-selector', worker: 'w' });
+      assert(result.ok === true, `expected a healthy cell to be selected, got ${JSON.stringify(result)}`);
+      assert(result.cell.id === 'healthy-1', `the budget-exhausted candidate must be skipped by selection, got ${result.cell.id}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  'claimNextCell: when the ONLY ready candidate is budget-exhausted, selection returns typed NO_APPROVED_WORK rather than surfacing CELL_BUDGET_EXHAUSTED — only a direct `cells claim --id` surfaces that refusal (D2 Δ3/F3)',
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-budget-only-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        mode: 'standard',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      const oldAttempts = [0, 1, 2].map((i) => ({
+        n: i + 1,
+        at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        claim_session: `sess-old-${i}`,
+        claimed_at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        worker: 'w',
+        verdict: 'pass',
+        failure_signature: null,
+        note: null,
+      }));
+      makeCellFile(dir, 'exhausted-only-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
+
+      const result = claimNextCell(dir, { sessionId: 'sess-selector-2', worker: 'w' });
+      assert(result.ok === false && result.code === 'NO_APPROVED_WORK', `expected NO_APPROVED_WORK when the only candidate is bricked, got ${JSON.stringify(result)}`);
+
+      const direct = claimCellCrossSession(dir, { sessionId: 'sess-selector-2', worker: 'w', cellId: 'exhausted-only-1' });
+      assert(direct.ok === false && direct.code === 'CELL_BUDGET_EXHAUSTED', `direct claim --id must still surface the typed refusal, got ${JSON.stringify(direct)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 // ─── D1 Δ2-amendment: EVERY claim-clearing transition releases the claim
 // file — cap, unclaim, block, drop, reopen — not only the claim-next unwind.

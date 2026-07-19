@@ -37,6 +37,23 @@
 //       block and reopen both release the claim file (D1 Δ2-amendment: else
 //       the claim file created by the first claim would still exist and the
 //       second claim would lose to itself for the full TTL).
+//   (d) BUDGET RACER (self-correcting-loop D2+Δ2) — N racers on a cell whose
+//       trace.attempts ledger is PRE-SEEDED at exactly its max_claims budget
+//       (3 distinct claim epochs already recorded), so the very next claim
+//       must refuse. Because the budget check runs INSIDE claimCellCrossSession's
+//       O_EXCL critical section, real OS-process scheduling interleaves two
+//       distinct losing shapes: a racer that wins the transient O_EXCL file
+//       gets refused CELL_BUDGET_EXHAUSTED (then unwinds it); a racer that
+//       attempts DURING another racer's brief file-holding window gets the
+//       ordinary typed CLAIMED (same as scenario (a) — it never even reaches
+//       the budget check). Both are legitimate "never wins" outcomes; the
+//       invariants this proves are (1) zero winners ever (the ledger never
+//       changes mid-race, so nobody's claim can succeed), (2) at least one
+//       racer actually hit CELL_BUDGET_EXHAUSTED (the budget path is genuinely
+//       exercised, not just accidentally missed by timing), and (3) zero
+//       orphaned claim-store files survive (every refused racer's unwind —
+//       Δ2 on the budget path, the ordinary loss path on the CLAIMED one —
+//       actually runs, so the O_EXCL file never leaks held-forever).
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -101,6 +118,18 @@ async function runWorker(workerRole) {
         writeJsonAtomic(cellPath, fresh);
       }
       process.stdout.write(`${JSON.stringify({ sawOpen, id })}\n`);
+      process.exit(0);
+    } else if (workerRole === 'budget-racer') {
+      const root = argVal('--root');
+      const cellId = argVal('--cell');
+      const id = argVal('--id');
+      const { claimCellCrossSession } = await import(CELLS_LIB_PATH);
+      const result = claimCellCrossSession(root, {
+        sessionId: `sess-budget-${id}`,
+        worker: `worker-budget-${id}`,
+        cellId,
+      });
+      process.stdout.write(`${JSON.stringify(result)}\n`);
       process.exit(0);
     } else {
       throw new Error(`unknown role: ${workerRole}`);
@@ -176,6 +205,38 @@ async function makeCell(dir, id) {
     action: 'race target',
     verify: 'node -e "process.exit(0)"',
     trace: {},
+  };
+  writeJsonAtomic(path.join(dir, '.bee', 'cells', `${id}.json`), cell);
+  return cell;
+}
+
+// D2 (self-correcting-loop): a cell whose ledger already sits at exactly the
+// default max_claims budget (3 distinct claim epochs, all "pass" so
+// max_failed_attempts/max_same_signature never also trigger — isolates the
+// scenario to max_claims alone). The next claim, from anyone, must refuse.
+async function makeBudgetExhaustedCell(dir, id) {
+  const { writeJsonAtomic } = await import(FSUTIL_LIB_PATH);
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  const attempts = [0, 1, 2].map((i) => ({
+    n: i + 1,
+    at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+    claim_session: `sess-prior-${i}`,
+    claimed_at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+    worker: 'worker-prior',
+    verdict: 'pass',
+    failure_signature: null,
+    note: null,
+  }));
+  const cell = {
+    id,
+    feature: 'race-feat',
+    title: `Cell ${id}`,
+    lane: 'tiny',
+    status: 'open',
+    deps: [],
+    action: 'race target',
+    verify: 'node -e "process.exit(0)"',
+    trace: { attempts },
   };
   writeJsonAtomic(path.join(dir, '.bee', 'cells', `${id}.json`), cell);
   return cell;
@@ -323,6 +384,73 @@ async function runOrchestrator() {
     }
   }
 
+  // (d) BUDGET RACER — N racers on a cell whose ledger is pre-seeded at
+  // exactly the max_claims budget: zero winners, every racer refused typed
+  // CELL_BUDGET_EXHAUSTED, and no orphaned claim-store file survives the race
+  // (D2+Δ2's unwind-inside-critical-section must hold under real contention,
+  // not just a single sequential call).
+  {
+    const dir = makeRoot();
+    try {
+      await writeApprovedState(dir);
+      await makeBudgetExhaustedCell(dir, 'race-d');
+
+      const results = await spawnRacers(RACERS, (i) => [
+        '--role=budget-racer',
+        `--root=${dir}`,
+        '--cell=race-d',
+        `--id=${i}`,
+      ]);
+      const crashed = results.filter((r) => r.code !== 0);
+      if (crashed.length) {
+        failures.push(
+          `(d) ${crashed.length}/${RACERS} budget racer(s) crashed:\n` +
+            crashed.map((c) => `  exit=${c.code} stderr=${c.stderr.trim()}`).join('\n'),
+        );
+      }
+      const parsed = results.map((r) => lastJsonLine(r.stdout));
+      const winners = parsed.filter((p) => p && p.ok === true);
+      const losers = parsed.filter((p) => p && p.ok === false);
+
+      if (winners.length !== 0) {
+        failures.push(`(d) expected 0 winners against an already-exhausted budget, got ${winners.length}: ${JSON.stringify(winners)}`);
+      }
+      if (losers.length !== RACERS) {
+        failures.push(`(d) expected all ${RACERS} racers refused, got ${losers.length}: ${JSON.stringify(parsed)}`);
+      }
+      // Real OS scheduling interleaves two legitimate loss shapes here (see
+      // the file-header comment): a racer that actually wins the O_EXCL file
+      // gets CELL_BUDGET_EXHAUSTED; a racer that attempts during another's
+      // brief hold gets the ordinary CLAIMED without ever reaching the budget
+      // check. Both are "never wins"; only an unrecognized code is a failure.
+      for (const loser of losers) {
+        if (loser.code !== 'CELL_BUDGET_EXHAUSTED' && loser.code !== 'CLAIMED') {
+          failures.push(`(d) every racer's refusal should be typed CELL_BUDGET_EXHAUSTED or CLAIMED, got ${JSON.stringify(loser)}`);
+        }
+      }
+      const budgetRefusals = losers.filter((l) => l.code === 'CELL_BUDGET_EXHAUSTED');
+      if (budgetRefusals.length === 0) {
+        failures.push(`(d) the budget path was never actually exercised — every racer lost to CLAIMED instead: ${JSON.stringify(losers)}`);
+      }
+
+      const finalCell = readJson(path.join(dir, '.bee', 'cells', 'race-d.json'), null);
+      if (!finalCell || finalCell.status !== 'open') {
+        failures.push(`(d) an exhausted-budget cell must stay "open" — nobody may claim it, got ${JSON.stringify(finalCell)}`);
+      }
+      if (finalCell && Array.isArray(finalCell.trace.attempts) && finalCell.trace.attempts.length !== 3) {
+        failures.push(`(d) the pre-seeded ledger must be untouched by refused claims, got ${JSON.stringify(finalCell.trace.attempts)}`);
+      }
+      if (readClaim(dir, 'race-d') !== null) {
+        failures.push('(d) no claim-store file may survive the race — every refused racer must unwind its own O_EXCL acquisition (Δ2)');
+      }
+      if (fs.existsSync(claimGatePath(dir, 'race-d'))) {
+        failures.push('(d) no gate file should leak after the race settles');
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   if (failures.length) {
     console.error('FAIL test_claim_race:');
     for (const f of failures) console.error(`  - ${f}`);
@@ -333,6 +461,7 @@ async function runOrchestrator() {
     `PASS test_claim_race: (a) ${RACERS} real-path racers on one cell -> exactly 1 winner, ${RACERS - 1} typed CLAIMED ` +
       "refusals naming the winner's session + expiry; (b) deliberate-red unguarded proxy showed multiple racers " +
       'believing they won (detector bites); (c) claim -> block -> reopen -> claim same-session round trip succeeded ' +
-      'with no self-refusal.',
+      `with no self-refusal; (d) ${RACERS} racers against an already-exhausted budget -> 0 winners, every loss typed ` +
+      'CELL_BUDGET_EXHAUSTED or CLAIMED, no orphaned claim-store file (D2+Δ2 unwind holds under real concurrency).',
   );
 }
