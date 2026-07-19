@@ -94,6 +94,61 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "fresh-cell-claims-as-today",
+            "status": "PASS",
+            "evidence": "checkCellBudgets in skills/bee-hive/templates/lib/cells.mjs (commit 0192893) yields claimsUsed=1 / 0 failed / no signatures for an empty ledger, returning {ok:true} — legacy cells behave identically (D6)"
+          },
+          {
+            "id": "refusals-name-budget-and-door",
+            "status": "PASS",
+            "evidence": "budgetExhaustedRefusal returns budget:{name,limit} plus fix=bee.mjs cells reset-budget --id ... --reason, and the REPEATED_FAILURE branch names signature + the same reset door (cells.mjs D2 block)"
+          },
+          {
+            "id": "reset-preserves-ledger",
+            "status": "PASS",
+            "evidence": "resetCellBudget only appends {reset_at,reason,by_session} to trace.budget_resets via spread of existing trace, never mutating trace.attempts (cells.mjs, resetCellBudget)"
+          },
+          {
+            "id": "delta1-pair-counting",
+            "status": "PASS",
+            "evidence": "attemptsSinceBudgetReset filters attempts with a.at > latest reset_at marker; checkCellBudgets builds a Set of (claim_session, claimed_at) +1 for the current acquisition — matches D2+Δ1 distinct-pair counting"
+          },
+          {
+            "id": "delta2-oexcl-and-unwind",
+            "status": "PASS",
+            "evidence": "claimCellCrossSession runs checkCellBudgets after claimCellFile succeeds and calls releaseClaim(root,session,id) before returning the refusal — inside the O_EXCL section per Δ2"
+          },
+          {
+            "id": "delta3-claim-next-skips",
+            "status": "PASS",
+            "evidence": "claimNextCell candidateOk = holdFree(cell) && checkCellBudgets(cell).ok gates both the own-feature find and the cross-feature pool push, skipping exhausted candidates per Δ3/F3"
+          },
+          {
+            "id": "bypass-immunity-structural",
+            "status": "PASS",
+            "evidence": "checkCellBudgets reads no config: no readConfig/bypassLevel reference in the function, so gate_bypass=total cannot reach the refusal (structural, matches D2)"
+          },
+          {
+            "id": "task-to-diff-alignment",
+            "status": "PASS",
+            "evidence": "diff adds budget enforcement at the claim door (claimCellCrossSession) + audited reset verb, exactly the D2 assignment, not a neighboring concern"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-19T21:09:53.330Z"
+      }
     ]
   },
   "tier": "generation"

@@ -16,7 +16,7 @@
   "verify": "node scripts/test_release_tuple.mjs && node scripts/test_bump_version.mjs",
   "behavior_change": false,
   "deps": [],
-  "status": "claimed",
+  "status": "dropped",
   "decisions": [],
   "trace": {
     "worker": "orchestrator-release",
@@ -29,6 +29,7 @@
     "verification_evidence": null,
     "verify_output": null,
     "verify_passed": null,
-    "claimed_at": "2026-07-19T18:53:44.359Z"
+    "claimed_at": "2026-07-19T18:53:44.359Z",
+    "dropped_reason": "worktree store copy is the pre-cap committed snapshot; the authoritative capped record lives in main's store (release done, 9a75754 + tag pushed)"
   }
 }
