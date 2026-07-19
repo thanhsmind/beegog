@@ -505,6 +505,42 @@ await check('cells.reset-budget example runs through the real dispatcher', async
   );
 });
 
+// D5 (self-correcting-loop): cells.judge-record's registry example, run
+// against demo-1 with --builder-model/--judge-model both present and
+// differing — exercises the full dispatcher wiring (registry -> handler ->
+// recordJudgeVerdict -> validateJudgeVerdict/deriveModelIndependence) and
+// proves the CLI's "flag presence implies pinned" derivation end to end;
+// the pure-function accept/reject/independence rows are covered exhaustively
+// in test_lib.mjs.
+await check('cells.judge-record example runs through the real dispatcher, validates the --file payload, and stamps model_independence from --builder-model/--judge-model presence', async () => {
+  const verdict = {
+    schema: 'judge-verdict/1',
+    verdict: 'PASS',
+    checks: [{ id: 'must_haves', status: 'PASS', evidence: 'diff matches CONTEXT D5 citations' }],
+    fixability: 'automatic',
+    confidence: 'high',
+  };
+  fs.writeFileSync(path.join(root, 'verdict-demo-1.json'), JSON.stringify(verdict), 'utf8');
+  const result = await assertExampleOk('cells.judge-record');
+  const cell = JSON.parse(result.stdout);
+  assert(cell.id === 'demo-1', `expected demo-1, got ${result.stdout}`);
+  const entries = cell.trace.semantic_judge;
+  assert(Array.isArray(entries) && entries.length === 1, `expected one semantic_judge entry, got ${JSON.stringify(entries)}`);
+  assert(entries[0].builder_model === 'sonnet' && entries[0].judge_model === 'opus', `expected the --builder-model/--judge-model flags stored verbatim, got ${JSON.stringify(entries[0])}`);
+  assert(entries[0].model_independence === 'confirmed', `two differing --*-model flags must derive confirmed (CLI-level pinned-by-presence), got ${entries[0].model_independence}`);
+});
+
+await check('cells.judge-record refuses (non-zero exit) a free-prose --file payload, and leaves the ledger untouched', async () => {
+  fs.writeFileSync(path.join(root, 'verdict-demo-1-bad.json'), 'looks fine to me', 'utf8');
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'judge-record', '--id', 'demo-1', '--file', 'verdict-demo-1-bad.json', '--json'],
+    cwd: root,
+  });
+  assert(result.status !== 0, `a free-prose verdict payload must be refused, got exit ${result.status}: stdout=${result.stdout}`);
+  // --json routes a thrown error's message to stdout as {"error": "..."} (emitError), not stderr.
+  assert(/verdict rejected/i.test(result.stdout), `expected a "verdict rejected" refusal, got stdout=${result.stdout} stderr=${result.stderr}`);
+});
+
 await check('reservations.reserve example runs through the real dispatcher', async () => {
   const result = await assertExampleOk('reservations.reserve');
   assert(JSON.parse(result.stdout).ok === true, 'reserve should succeed on a fresh path');

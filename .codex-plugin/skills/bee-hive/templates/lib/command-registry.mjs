@@ -324,6 +324,27 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
   {
+    name: 'cells.judge-record',
+    invoke: 'bee cells judge-record',
+    description:
+      'D5 (self-correcting-loop): validates a judge-verdict/1 payload (--file) and appends it, stamped with model_independence, to the append-only trace.semantic_judge. Refuses (typed, non-zero exit) on free prose, an unknown verdict/status/fixability/confidence value, or a FAIL check missing failure_signature — never a silent pass. --builder-model/--judge-model (optional) mark that side PINNED for independence derivation: both present AND differing -> "confirmed"; both present AND equal -> "same-model" (honest — the judge still runs); either absent -> "unverified". Never reads .bee/logs/dispatch.jsonl (corroboration only, Δ6) — the models are caller-supplied from the orchestrator\'s own pinned dispatch params.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Cell id the verdict is being recorded against.' },
+        file: { type: 'string', description: 'Path to a judge-verdict/1 JSON payload: {schema, verdict, checks[], failure_signature?, fixability, confidence}.' },
+        'builder-model': { type: 'string', description: 'The resolved model name of the cell\'s builder dispatch, from the orchestrator\'s own pinned dispatch param. Omit when not pinned.' },
+        'judge-model': { type: 'string', description: 'The resolved model name of this judge dispatch, from the orchestrator\'s own pinned dispatch param. Omit when not pinned.' },
+        'session-id': { type: 'string', description: 'Recording session identity, for the claim-ownership guard. Optional — resolves from CLAUDE_CODE_SESSION_ID when omitted.' },
+        'force-ownership': { type: 'boolean', description: 'Override a live claim owned by a different session (audited).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['id', 'file'],
+    },
+    examples: ['bee cells judge-record --id demo-1 --file verdict-demo-1.json --builder-model sonnet --judge-model opus --json'],
+    deprecated: null,
+  },
+  {
     name: 'cells.schedule',
     invoke: 'bee cells schedule',
     description:

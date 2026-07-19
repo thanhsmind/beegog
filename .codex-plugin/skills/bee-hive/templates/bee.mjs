@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bee status [--json]
-//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|schedule> ... [--json]
+//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|judge-record|schedule> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
@@ -98,6 +98,7 @@ import {
   deriveChangeClass,
   parseVerificationEvidence,
   evidenceRidesExceptionDoor,
+  recordJudgeVerdict,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 // D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
@@ -111,6 +112,7 @@ import {
   classifyNativeTransport,
   NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE,
   NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY,
+  PINNED_MODEL_STATUS,
 } from './lib/dispatch-guard.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
 import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
@@ -928,6 +930,44 @@ function handleCellsResetBudget(root, flags) {
   const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : undefined;
   const cell = resetCellBudget(root, id, reason, { sessionId });
   return { result: cell, text: `Reset the claim-lifetime budget door for ${cell.id}.` };
+}
+
+// D5 (self-correcting-loop): validates the --file payload against schema
+// judge-verdict/1 and appends the stamped result to trace.semantic_judge.
+// --builder-model/--judge-model presence is what marks that side PINNED —
+// the orchestrator only ever supplies a model name from its OWN pinned
+// dispatch param (Δ6; rule 13's mandatory transport means there is no code
+// path that would hand this flag an unverified guess) — so no separate
+// --*-status flag is needed at the CLI boundary; deriveModelIndependence
+// itself stays 4-arg/testable directly in test_lib.mjs regardless.
+// .bee/logs/dispatch.jsonl is never read here — Δ6: it is corroboration
+// only and must never feed a fail-closed guard.
+function handleCellsJudgeRecord(root, flags) {
+  const id = requireFlag(flags, 'id');
+  const raw = readFileText(String(requireFlag(flags, 'file')), 'judge verdict');
+  let verdict;
+  try {
+    verdict = JSON.parse(raw);
+  } catch {
+    // Free prose — validateJudgeVerdict rejects this with a typed error
+    // (never throws itself); recordJudgeVerdict surfaces that as a refusal.
+    verdict = raw;
+  }
+  const builderModel = flags['builder-model'] !== undefined ? String(flags['builder-model']) : null;
+  const judgeModel = flags['judge-model'] !== undefined ? String(flags['judge-model']) : null;
+  const cell = recordJudgeVerdict(root, id, verdict, {
+    builderModel,
+    builderStatus: builderModel ? PINNED_MODEL_STATUS : null,
+    judgeModel,
+    judgeStatus: judgeModel ? PINNED_MODEL_STATUS : null,
+    ...ownershipFlags(flags),
+  });
+  const entries = cell.trace.semantic_judge || [];
+  const latest = entries[entries.length - 1];
+  return {
+    result: cell,
+    text: `Recorded judge verdict on ${cell.id}: ${latest.verdict} (model_independence=${latest.model_independence}).`,
+  };
 }
 
 // fresh-session-handoff fsh-11 (D2/D4): typed refusals (NO_APPROVED_WORK,
@@ -3672,7 +3712,7 @@ function dispatchUsageFallback(leading) {
 // directly and parses this exact stderr line.
 function cellsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, reset-budget, schedule.`;
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, reset-budget, judge-record, schedule.`;
 }
 
 function reservationsUsageFallback(leading) {
@@ -3718,6 +3758,7 @@ const HANDLERS = {
   'cells.judge': handleCellsJudge,
   'cells.claim-next': handleCellsClaimNext,
   'cells.reset-budget': handleCellsResetBudget,
+  'cells.judge-record': handleCellsJudgeRecord,
   'cells.schedule': handleCellsSchedule,
   'reservations.reserve': handleReservationsReserve,
   'reservations.release': handleReservationsRelease,

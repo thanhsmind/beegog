@@ -78,7 +78,10 @@ import {
   resetCellBudget,
   deriveChangeClass,
   CHANGE_CLASSES,
+  recordJudgeVerdict,
 } from '../lib/cells.mjs';
+import { validateJudgeVerdict, deriveModelIndependence, JUDGE_VERDICT_SCHEMA } from '../lib/judge.mjs';
+import { PINNED_MODEL_STATUS } from '../lib/dispatch-guard.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
 import {
   createSession,
@@ -9713,6 +9716,143 @@ await check('census: the Delegation contract carries the cli gather branch (plan
       `${rel} must carry the cli-gather transport rider on critical rule 13: when the generation tier is cli-shaped, the gather runs through the configured external command per the Delegation contract's cli gather branch, not an Agent dispatch`,
     );
   }
+});
+
+// ─── D5 (self-correcting-loop): judge-verdict/1 schema validator, model
+// independence derivation, and trace.semantic_judge (recordJudgeVerdict) ───
+
+const VALID_VERDICT = {
+  schema: JUDGE_VERDICT_SCHEMA,
+  verdict: 'PASS',
+  checks: [{ id: 'must_haves', status: 'PASS', evidence: "diff matches CONTEXT D5's truths line-for-line" }],
+  fixability: 'automatic',
+  confidence: 'high',
+};
+
+await check('validateJudgeVerdict accepts a well-formed judge-verdict/1 payload', async () => {
+  const { ok, errors } = validateJudgeVerdict(VALID_VERDICT);
+  assert(ok === true && errors.length === 0, `expected ok:true, got ${JSON.stringify({ ok, errors })}`);
+});
+
+await check('validateJudgeVerdict rejects free prose (a non-object) as a failed judge run, and NEVER throws on any input shape (D5 must-have)', async () => {
+  const { ok, errors } = validateJudgeVerdict('the change looks fine to me');
+  assert(ok === false, 'free prose must not validate ok');
+  assert(errors.some((e) => e.includes('free prose')), `expected a free-prose error, got ${JSON.stringify(errors)}`);
+  for (const bogus of [null, undefined, [], 42, true]) {
+    const result = validateJudgeVerdict(bogus);
+    assert(
+      result && result.ok === false && Array.isArray(result.errors),
+      `validateJudgeVerdict must degrade to {ok:false,errors} for ${JSON.stringify(bogus)}, never throw`,
+    );
+  }
+});
+
+await check('validateJudgeVerdict rejects an unknown verdict value with a typed error', async () => {
+  const { ok, errors } = validateJudgeVerdict({ ...VALID_VERDICT, verdict: 'MAYBE' });
+  assert(ok === false, 'unknown verdict must not validate ok');
+  assert(errors.some((e) => e.includes('verdict must be one of')), `expected a verdict-enum error, got ${JSON.stringify(errors)}`);
+});
+
+await check('validateJudgeVerdict requires failure_signature when any check FAILs, and tolerates its absence when every check PASSes', async () => {
+  const failing = {
+    schema: JUDGE_VERDICT_SCHEMA,
+    verdict: 'NEEDS_REVISION',
+    checks: [{ id: 'diff-scope', status: 'FAIL', evidence: "touched a file outside the cell's declared scope" }],
+    fixability: 'automatic',
+    confidence: 'medium',
+  };
+  const missing = validateJudgeVerdict(failing);
+  assert(
+    missing.ok === false && missing.errors.some((e) => e.includes('failure_signature')),
+    `a FAIL check with no failure_signature must be refused, got ${JSON.stringify(missing)}`,
+  );
+  const withSignature = validateJudgeVerdict({ ...failing, failure_signature: 'out-of-scope-file-touch' });
+  assert(withSignature.ok === true, `a FAIL check WITH failure_signature must validate, got ${JSON.stringify(withSignature)}`);
+  assert(validateJudgeVerdict(VALID_VERDICT).ok === true, 'an all-PASS verdict needs no failure_signature');
+});
+
+await check('validateJudgeVerdict rejects empty/missing checks[].evidence, an empty checks array, and unknown fixability/confidence values', async () => {
+  assert(validateJudgeVerdict({ ...VALID_VERDICT, checks: [{ id: 'a', status: 'PASS', evidence: '' }] }).ok === false, 'empty evidence must be refused');
+  assert(validateJudgeVerdict({ ...VALID_VERDICT, checks: [] }).ok === false, 'an empty checks array must be refused');
+  assert(validateJudgeVerdict({ ...VALID_VERDICT, fixability: 'maybe' }).ok === false, 'unknown fixability must be refused');
+  assert(validateJudgeVerdict({ ...VALID_VERDICT, confidence: 'super-high' }).ok === false, 'unknown confidence must be refused');
+});
+
+await check(
+  'deriveModelIndependence: both pinned + differing names -> confirmed; both pinned + equal names -> same-model (honest, not a refusal); an unpinned or unnamed side -> unverified (D5 must-have: never confirmed without two pinned, differing, named models)',
+  async () => {
+    assert(deriveModelIndependence('sonnet', PINNED_MODEL_STATUS, 'opus', PINNED_MODEL_STATUS) === 'confirmed', 'pinned + differing must be confirmed');
+    assert(deriveModelIndependence('sonnet', PINNED_MODEL_STATUS, 'sonnet', PINNED_MODEL_STATUS) === 'same-model', 'pinned + equal must be same-model, not confirmed');
+    assert(deriveModelIndependence('sonnet', 'unverified', 'opus', PINNED_MODEL_STATUS) === 'unverified', 'one side unpinned must be unverified');
+    assert(deriveModelIndependence(null, null, null, null) === 'unverified', 'absent models/status (no dispatch.jsonl corroboration, Δ6) must be unverified, never a refusal');
+    assert(deriveModelIndependence('sonnet', PINNED_MODEL_STATUS, null, PINNED_MODEL_STATUS) === 'unverified', 'a pinned status with no model name must be unverified, not a guess');
+  },
+);
+
+await check('recordJudgeVerdict appends a stamped entry to append-only trace.semantic_judge, and refuses an invalid verdict with a typed error naming the cell', async () => {
+  addCell(root, makeCell('jr-1'));
+  const afterFirst = recordJudgeVerdict(root, 'jr-1', VALID_VERDICT, {
+    builderModel: 'sonnet',
+    builderStatus: PINNED_MODEL_STATUS,
+    judgeModel: 'opus',
+    judgeStatus: PINNED_MODEL_STATUS,
+  });
+  const entries1 = afterFirst.trace.semantic_judge;
+  assert(Array.isArray(entries1) && entries1.length === 1, `expected one semantic_judge entry, got ${JSON.stringify(entries1)}`);
+  assert(entries1[0].model_independence === 'confirmed', `two pinned, differing models must derive confirmed, got ${entries1[0].model_independence}`);
+  assert(entries1[0].schema === JUDGE_VERDICT_SCHEMA && entries1[0].verdict === 'PASS', 'the raw verdict fields are stored verbatim');
+
+  const afterSecond = recordJudgeVerdict(root, 'jr-1', { ...VALID_VERDICT, confidence: 'medium' }, {});
+  const entries2 = afterSecond.trace.semantic_judge;
+  assert(entries2.length === 2, `append-only: a second record must ADD an entry, not replace the first, got ${JSON.stringify(entries2)}`);
+  assert(entries2[0].confidence === 'high' && entries2[1].confidence === 'medium', 'earlier entries are never rewritten');
+  assert(entries2[1].model_independence === 'unverified', 'no model/status supplied -> unverified, never a refusal');
+
+  assertThrows(
+    () => recordJudgeVerdict(root, 'jr-1', 'free prose from a confused judge', {}),
+    'verdict rejected',
+    'an invalid verdict must be refused with a typed error, not silently stored',
+  );
+  assertThrows(() => recordJudgeVerdict(root, 'no-such-cell-jr', VALID_VERDICT, {}), 'not found', 'an unknown cell id must be refused');
+  const untouched = readCell(root, 'jr-1');
+  assert(untouched.trace.semantic_judge.length === 2, 'a refused record must leave the ledger untouched');
+});
+
+await check('trace.semantic_judge entries survive cap and resist updateCell (append-only, frozen like trace.attempts) — D5 must-have', async () => {
+  addCell(root, makeCell('jr-2'));
+  recordJudgeVerdict(root, 'jr-2', VALID_VERDICT, {
+    builderModel: 'sonnet',
+    builderStatus: PINNED_MODEL_STATUS,
+    judgeModel: 'sonnet',
+    judgeStatus: PINNED_MODEL_STATUS,
+  });
+  const state = readState(root);
+  state.phase = 'swarming';
+  state.approved_gates.execution = true;
+  writeState(root, state);
+  claimCell(root, 'jr-2', 'worker-a');
+  recordVerify(root, 'jr-2', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  const capped = capCell(root, 'jr-2', { files_changed: ['a.js'], outcome: 'shipped' });
+  assert(
+    Array.isArray(capped.trace.semantic_judge) && capped.trace.semantic_judge.length === 1,
+    `semantic_judge recorded before cap must survive capCell's own trace assembly, got ${JSON.stringify(capped.trace.semantic_judge)}`,
+  );
+  assert(capped.trace.semantic_judge[0].model_independence === 'same-model', 'equal pinned names must read same-model, honestly, even post-cap');
+
+  // Recording AFTER cap (the realistic D4 goal-check ordering — the judge
+  // runs on an already-capped behavior_change cell) must also work:
+  // recordJudgeVerdict never gates on cell status (D5 prohibition: no
+  // dispatching logic, validation only — status transitions are scl-5's
+  // doctrine-only concern).
+  const postCap = recordJudgeVerdict(root, 'jr-2', { ...VALID_VERDICT, confidence: 'low' }, {});
+  assert(postCap.trace.semantic_judge.length === 2, 'recording after cap must append, not refuse');
+  assert(postCap.status === 'capped', 'recordJudgeVerdict never mutates cell status');
+
+  assertThrows(
+    () => updateCell(root, 'jr-2', { trace: { semantic_judge: [] } }),
+    'frozen',
+    'trace stays frozen wholesale at updateCell (F1 precedent) — semantic_judge cannot be wiped through the update door',
+  );
 });
 
 fs.rmSync(detectRoot, { recursive: true, force: true });

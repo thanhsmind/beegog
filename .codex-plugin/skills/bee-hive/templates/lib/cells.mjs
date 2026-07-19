@@ -44,6 +44,11 @@ import { logDecision } from './decisions.mjs';
 // definition of "cycle") — cells.mjs -> schedule.mjs stays one-directional
 // (schedule.mjs never imports cells.mjs back).
 import { detectCycles } from './schedule.mjs';
+// D5 (self-correcting-loop) — validateJudgeVerdict/deriveModelIndependence
+// are pure, zero-I/O (judge.mjs imports only dispatch-guard.mjs's
+// PINNED_MODEL_STATUS, no cycle back to cells.mjs); recordJudgeVerdict below
+// is the sole mutator that turns a validated verdict into a trace entry.
+import { validateJudgeVerdict, deriveModelIndependence } from './judge.mjs';
 
 export const LANES = ['tiny', 'small', 'standard', 'high-risk', 'spike'];
 
@@ -1236,6 +1241,60 @@ export function resetCellBudget(root, id, reason, { sessionId } = {}) {
     source: 'user',
   });
   return saved;
+}
+
+// ─── D5 (self-correcting-loop): trace.semantic_judge — one structured judge
+// verdict schema, append-only, stamped with honest model independence ──────
+// validateJudgeVerdict/deriveModelIndependence live in judge.mjs (pure, zero
+// I/O — CONTEXT D5 prohibition "no dispatching logic in lib, validation
+// only"); recordJudgeVerdict is the sole mutator that turns a validated
+// verdict into a trace entry, mirroring appendAttempt's append-only
+// discipline (D1) and resetCellBudget's own dedicated-trace-key split (D2).
+// semantic_judge is its OWN append-only array, never folded into
+// trace.attempts or trace.deviations (capCell REPLACES deviations wholesale
+// on every cap — the same trap appendOwnershipOverride's own comment names
+// above); the `...trace` spread every mutator already does is what keeps
+// semantic_judge alive across a LATER verify/cap/block on the same cell.
+//
+// Δ6: builder_model/judge_model are CALLER-supplied (the orchestrator's own
+// pinned dispatch params at record time) — this function never reads
+// .bee/logs/dispatch.jsonl itself; that fail-open audit log is corroboration
+// only and must never feed a fail-closed guard (a missing/absent log here
+// simply means the caller passed no model, which already degrades
+// model_independence to 'unverified' via deriveModelIndependence — never a
+// refusal).
+export function recordJudgeVerdict(
+  root,
+  id,
+  verdictInput,
+  { builderModel = null, builderStatus = null, judgeModel = null, judgeStatus = null, sessionId, forceOwnership = false } = {},
+) {
+  const cell = readCell(root, id);
+  if (!cell) throw new Error(`recordJudgeVerdict: cell "${id}" not found.`);
+  const { ok, errors } = validateJudgeVerdict(verdictInput);
+  if (!ok) {
+    throw new Error(
+      `recordJudgeVerdict: cell "${id}" verdict rejected against schema "judge-verdict/1" — ${errors.join(' ')} FIX: the judge dispatch must return the schema verbatim (never free prose); re-dispatch once, then record model_independence "unverified" if it fails again (D5).`,
+    );
+  }
+  const independence = deriveModelIndependence(builderModel, builderStatus, judgeModel, judgeStatus);
+  const entry = {
+    schema: verdictInput.schema,
+    verdict: verdictInput.verdict,
+    checks: verdictInput.checks,
+    failure_signature: verdictInput.failure_signature ?? null,
+    fixability: verdictInput.fixability,
+    confidence: verdictInput.confidence,
+    builder_model: typeof builderModel === 'string' && builderModel.trim() ? builderModel : null,
+    judge_model: typeof judgeModel === 'string' && judgeModel.trim() ? judgeModel : null,
+    model_independence: independence,
+    recorded_at: utcNow(),
+  };
+  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+  trace = guardClaimOwnership(root, id, trace, 'recordJudgeVerdict', { sessionId, forceOwnership });
+  const existing = Array.isArray(trace.semantic_judge) ? trace.semantic_judge : [];
+  cell.trace = { ...trace, semantic_judge: [...existing, entry] };
+  return writeCell(root, cell);
 }
 
 // ─── claim-next: cross-session selection + throw-safe two-store claim ──────
