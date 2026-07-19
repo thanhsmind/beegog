@@ -36,7 +36,7 @@ Everything below this section is the multi-worker wave protocol for `standard`/`
 
 1. **Wave analysis.** Run `node .bee/bin/bee.mjs cells schedule --json`: the computed waves are the **default** dispatch order — override only with a stated reason recorded in the swarm report. Refuse to dispatch when diagnostics report cycles. Two ready cells sharing a file means fix the reservations or split the cell scope — never "spawn both and be careful"; the schedule already auto-serializes file overlap into a later wave rather than refusing it. The schedule computation and verify-output capture delegate as extraction-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`); judgment (assignment, tier choice, goal-check verdicts, override decisions) stays on the orchestrator.
 2. **Assign.** The orchestrator picks exactly **one cell per worker**. Workers never self-select, browse the ready list, or take a second cell.
-3. **Spawn with the isolation contract.** Each worker prompt contains: the cell id, the path to `docs/history/<feature>/CONTEXT.md` and `docs/history/<feature>/plan.md`, the global constraints, its reservation identity (agent nickname), and the status-token protocol (`[DONE] [BLOCKED] [HANDOFF] [NOOP]`) — **nothing else, never session history**. Use the template in `references/swarming-reference.md`.
+3. **Spawn with the isolation contract.** Each worker prompt contains: the cell id, the path to `docs/history/<feature>/CONTEXT.md`, and — when the lane has one — `docs/history/<feature>/plan.md`; for `tiny`/`small` (no `plan.md`, D3/D4) cite the cell itself as the work spec instead. Also include the global constraints, its reservation identity (agent nickname), and the status-token protocol (`[DONE] [BLOCKED] [HANDOFF] [NOOP]`) — **nothing else, never session history**. Use the template in `references/swarming-reference.md`.
    Codex has no per-agent `subagent_type` equivalent (AO11 asymmetry) — its tier stays enforced as a read budget + output cap only, exactly as before.
    NEVER spawn any OTHER plugin's agent type, even when the name matches the role: a same-named agent carries a different contract and makes the run depend on what happens to be installed.
 4. **Judge each cell's model tier at dispatch** — you (the orchestrator) assess the task in front of you and pick the fitting tier; it is NOT fixed by planning (a planning `tier` is at most a hint you may override; decision 0016). Rubric from the cell's lane + action + must_haves + files:
@@ -83,7 +83,7 @@ At roughly 65% context, write `.bee/HANDOFF.json` (phase, feature, mode, cells_i
 
 Swarming is complete when either:
 
-- the current slice is executed and more approved work remains → return to bee-planning for the next slice, or
+- the current slice (the feature's open cells, D2 — not a plan section) is executed and more approved work remains → return to bee-planning for the **next batch of cells**; any `plan.md` the feature has is unchanged (D1's freeze holds — planning shapes the next batch, it never re-opens the frozen plan), or
 - the final slice is executed → tell the user: `Swarm execution complete for the final slice. Invoke bee-scribing.` Implementation is verified; independent review runs only on user request (R1).
 
 Before declaring completion: all wave cells capped or explicitly blocked/dropped, `node .bee/bin/bee.mjs reservations list --active-only` is empty, and `.bee/state.json` `workers` is cleared.

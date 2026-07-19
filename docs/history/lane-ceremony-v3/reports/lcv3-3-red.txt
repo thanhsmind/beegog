@@ -1,0 +1,40 @@
+ok    skills/bee-exploring/SKILL.md (Gate 1): level-aware bypass carve-out present, no stale floor phrasing
+ok    skills/bee-planning/SKILL.md (Gate 2): level-aware bypass carve-out present, no stale floor phrasing
+ok    skills/bee-validating/SKILL.md (Gate 3): level-aware bypass carve-out present, no stale floor phrasing
+ok    skills/bee-hive/references/go-mode.md (go mode): level-aware bypass carve-out present, no stale floor phrasing
+ok    skills/bee-exploring/SKILL.md: info-vs-approval refinement present (asks for information, not approval, under bypass)
+ok    skills/bee-planning/SKILL.md (D1): retired in-place enrichment instruction absent
+ok    skills/bee-planning/SKILL.md (D1): "frozen at Gate 2" present
+ok    skills/bee-planning/SKILL.md (D1): "approval stamp" present
+ok    skills/bee-planning/SKILL.md (D8): "intake classification" present
+ok    skills/bee-planning/SKILL.md (D3): "request + one cell" present
+ok    skills/bee-planning/SKILL.md (D4): "scoping synthesis" present
+ok    skills/bee-planning/SKILL.md (D4): "plan.md is opt-in" present
+ok    skills/bee-planning/SKILL.md (D5): "never persist-then-preview" present
+ok    skills/bee-hive/SKILL.md (D7): retired flag wording "existing covered behavior" absent
+ok    skills/bee-hive/SKILL.md (D7): retired flag wording "weak proof around the area" absent
+ok    skills/bee-hive/SKILL.md (D7): narrowed flag wording "changes behavior an existing test asserts" present
+ok    skills/bee-hive/SKILL.md (D7): narrowed flag wording "weakening, deleting, or replacing existing proof" present
+ok    skills/bee-hive/SKILL.md (D6): "product files only" carve-out present
+ok    skills/bee-hive/SKILL.md (D3): "cell is the micro-plan" present
+ok    skills/bee-hive/SKILL.md (D4): "plan.md is opt-in" present
+ok    skills/bee-hive/SKILL.md (D4): "logged scoping synthesis" present
+ok    skills/bee-hive/references/go-mode.md (D5): fast-path line describes preview-before-persist
+ok    skills/bee-hive/references/go-mode.md (AO14): retired "solo in-session execution" wording absent
+ok    skills/bee-hive/references/go-mode.md (AO14): "one dispatched execution worker" present
+ok    skills/bee-hive/references/go-mode.md (D1): retired "plan.md enriched to implementation-ready" wording absent
+ok    skills/bee-hive/references/go-mode.md (D1): retired "still requirements-only" wording absent
+ok    skills/bee-hive/references/routing-and-contracts.md (D1): retired "requirements-only → implementation-ready" arrow absent
+ok    skills/bee-hive/references/routing-and-contracts.md (D1): "frozen at Gate 2" wording present
+FAIL  skills/bee-validating/SKILL.md (D1/D2): still carries the retired `artifact_readiness` gate-in condition — validating now gates in on the frozen plan.md + current-slice cells
+FAIL  skills/bee-validating/SKILL.md (D1): missing required gate-in wording "frozen at Gate 2" — validating requires the plan approved and frozen, not "enriched"
+FAIL  skills/bee-validating/SKILL.md (D2): missing required gate-in wording "current-slice cells exist" — validating requires the current-slice cells to exist (cells are the slice, not a plan section)
+ok    skills/bee-validating/SKILL.md (D1/D2): refusal-to-bee-planning wording present (gate-in renamed, not weakened)
+FAIL  skills/bee-briefing/SKILL.md (D9): drift rule missing "cell changes only" — since D1 freezes plan.md, drift now fires only when cells change
+FAIL  skills/bee-swarming/SKILL.md (D3/D4): worker-prompt line missing "cite the cell" — tiny/small lanes have no plan.md, so the prompt must cite the cell as the work spec
+FAIL  skills/bee-swarming/SKILL.md (D2): completion wording missing "next batch of cells" — the current slice is the feature's open cells, not a plan section
+ok    skills/bee-swarming/SKILL.md (AO14): "one dispatched execution worker" present
+ok    skills/bee-swarming/SKILL.md (AO14): "never implement cells yourself" present
+ok    sentinel: a non-compliant gate surface is correctly flagged (checker bites)
+
+FAIL - gate-bypass doctrine: 6 failure(s)

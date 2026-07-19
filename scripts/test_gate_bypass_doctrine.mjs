@@ -245,6 +245,95 @@ for (const { file, gate, tokens } of GATE_SKILLS) {
   }
 }
 
+// Lane-ceremony-v3 doctrine (D1/D2/D9): the chain skills (bee-validating,
+// bee-briefing, bee-swarming) must gate-in on the frozen plan.md + current-slice
+// cells (D1/D2) instead of the retired `artifact_readiness` field, and
+// briefing's drift rule must fire on cell changes only, since D1 freezes
+// plan.md content after Gate 2 (D9) — the plan itself can no longer drift.
+{
+  const validatingAbs = path.join(REPO_ROOT, 'skills/bee-validating/SKILL.md');
+  const briefingAbs = path.join(REPO_ROOT, 'skills/bee-briefing/SKILL.md');
+  const swarmingAbs = path.join(REPO_ROOT, 'skills/bee-swarming/SKILL.md');
+  let validatingText = '';
+  let briefingText = '';
+  let swarmingText = '';
+  try {
+    validatingText = fs.readFileSync(validatingAbs, 'utf8');
+  } catch {
+    fail('skills/bee-validating/SKILL.md: unreadable — lane-ceremony-v3 validating doctrine lives here');
+  }
+  try {
+    briefingText = fs.readFileSync(briefingAbs, 'utf8');
+  } catch {
+    fail('skills/bee-briefing/SKILL.md: unreadable — lane-ceremony-v3 briefing doctrine lives here');
+  }
+  try {
+    swarmingText = fs.readFileSync(swarmingAbs, 'utf8');
+  } catch {
+    fail('skills/bee-swarming/SKILL.md: unreadable — lane-ceremony-v3 swarming doctrine lives here');
+  }
+
+  // (a) D1/D2: the retired `artifact_readiness` gate-in condition must be gone
+  // from bee-validating; gate-in must key off the frozen plan + existing cells.
+  if (validatingText.includes('artifact_readiness')) {
+    fail('skills/bee-validating/SKILL.md (D1/D2): still carries the retired `artifact_readiness` gate-in condition — validating now gates in on the frozen plan.md + current-slice cells');
+  } else {
+    ok('skills/bee-validating/SKILL.md (D1/D2): retired `artifact_readiness` gate-in condition absent');
+  }
+  const REQUIRED_VALIDATING = [
+    { token: 'frozen at Gate 2', d: 'D1', why: 'validating requires the plan approved and frozen, not "enriched"' },
+    { token: 'current-slice cells exist', d: 'D2', why: 'validating requires the current-slice cells to exist (cells are the slice, not a plan section)' },
+  ];
+  for (const { token, d, why } of REQUIRED_VALIDATING) {
+    if (!validatingText.includes(token)) {
+      fail(`skills/bee-validating/SKILL.md (${d}): missing required gate-in wording "${token}" — ${why}`);
+    } else {
+      ok(`skills/bee-validating/SKILL.md (${d}): "${token}" present`);
+    }
+  }
+  // Validating still refuses when the plan is unapproved or cells are missing —
+  // the gate-in check is renamed, never weakened.
+  if (!validatingText.includes('stop and return to bee-planning')) {
+    fail('skills/bee-validating/SKILL.md (D1/D2): missing the refusal wording — validating must still stop and return to bee-planning when the plan is unapproved or cells are missing');
+  } else {
+    ok('skills/bee-validating/SKILL.md (D1/D2): refusal-to-bee-planning wording present (gate-in renamed, not weakened)');
+  }
+
+  // (b) D9: briefing's drift rule fires on cell changes only — the plan can no
+  // longer drift after Gate 2 approval (D1), so briefing's drift trigger narrows.
+  if (!briefingText.includes('cell changes only')) {
+    fail('skills/bee-briefing/SKILL.md (D9): drift rule missing "cell changes only" — since D1 freezes plan.md, drift now fires only when cells change');
+  } else {
+    ok('skills/bee-briefing/SKILL.md (D9): drift rule fires on "cell changes only"');
+  }
+
+  // (c) D3/D4: swarming's worker-prompt line covers the tiny/small no-plan case
+  // — cite the cell as the work spec when the lane has no plan.md.
+  if (!swarmingText.includes('cite the cell')) {
+    fail('skills/bee-swarming/SKILL.md (D3/D4): worker-prompt line missing "cite the cell" — tiny/small lanes have no plan.md, so the prompt must cite the cell as the work spec');
+  } else {
+    ok('skills/bee-swarming/SKILL.md (D3/D4): worker-prompt line cites the cell for the no-plan case');
+  }
+
+  // (d) D2: next-slice completion wording names the next batch of cells, not a
+  // plan-document slice — the current slice lives only in cells (D2).
+  if (!swarmingText.includes('next batch of cells')) {
+    fail("skills/bee-swarming/SKILL.md (D2): completion wording missing \"next batch of cells\" — the current slice is the feature's open cells, not a plan section");
+  } else {
+    ok('skills/bee-swarming/SKILL.md (D2): completion wording names the "next batch of cells"');
+  }
+
+  // AO14 single-worker + orchestrator-never-implements rules must survive.
+  const AO14_TOKENS = ['one dispatched execution worker', 'never implement cells yourself'];
+  for (const token of AO14_TOKENS) {
+    if (!swarmingText.includes(token)) {
+      fail(`skills/bee-swarming/SKILL.md (AO14): missing required survival wording "${token}"`);
+    } else {
+      ok(`skills/bee-swarming/SKILL.md (AO14): "${token}" present`);
+    }
+  }
+}
+
 // Sentinel: prove the checker bites. A synthetic gate surface missing the tokens
 // (and carrying a banned phrase) MUST be flagged by the same predicates.
 const sentinelBad = 'Present Gate X, then verbatim ask. The safety floor is absolute.';
