@@ -1,8 +1,8 @@
 ---
 area: hook-runtime
 updated: 2026-07-19
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19)]
-decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated); codex-native-transport D3-D5 (3ceba8f5, D3a c0cba64e, Δ2-amended 760e9b05)]
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19)]
+decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated); codex-native-transport D3-D5 (3ceba8f5, D3a c0cba64e, Δ2-amended 760e9b05); 350f1e82 (codex-native-transport cnt-4 rescope — override-field route-check deferred to a documented pass-through-open gap, pending observed evidence)]
 coverage: partial
 ---
 
@@ -287,6 +287,24 @@ the status snapshot and the configuration check (never a refusal — the
 dispatch-time agreement rules already protect the dispatch itself). No claim
 is made that any of this reduces cost; it makes the tier decision auditable.
 
+**B19 — The Codex native spawn checkpoint deliberately does not judge an
+override an anchored spawn carries.** When a marker-anchored native spawn
+also names a per-agent model, effort level, or fork-turn count, the
+checkpoint's decision is unchanged from a spawn without those fields: a valid
+marker still allows, an unmarked message still denies, and the named fields
+themselves are never read or compared against anything. This is a
+deliberate defense-in-depth allow-hole, not an oversight — validating those
+fields against the configured route was locked as a future rule, but no
+observed client input has ever carried them into the checkpoint yet on any
+version checked, so implementing the check now would mean denying against
+assumed rather than observed shape. It stays this way until the capability
+probe (native-transport probe record, above) observes that envelope on a
+client version — only then does the route-check activate. Proven by an
+allow/deny row pair: a marker-anchored spawn with override fields that
+mismatch any plausible configured route is still allowed, unaffected; the
+identical override fields on an unmarked message are still denied,
+unaffected (codex-native-transport D6; decision 350f1e82).
+
 **B17 — A passive usage log records every tool call, and enforces nothing.**
 After every tool the assistant runs — any tool, both runtimes — a checkpoint
 appends one line to a machine-local usage log: timestamp, the tool's name, and
@@ -402,6 +420,11 @@ that it reduces anything.
   cf511ff3).
 - R17 — Codex native-subagent audit is bounded, audit-only, and post-start. It
   never claims pre-spawn authority and never records arbitrary event content.
+- R18 — The Codex native spawn checkpoint never judges a per-agent model,
+  effort, or fork-turn override by name until the capability probe has
+  observed that field arrive on some client version; until then, a
+  marker-anchored spawn carrying such fields decides exactly as it would
+  without them (B19; codex-native-transport D6, decision 350f1e82).
 
 ## Edge Cases Settled
 
@@ -479,7 +502,22 @@ that it reduces anything.
   confirmed and the installed binary ships the flag; the row is never
   blocking and never degrading, and bee never flips the flag in the user's
   real configuration itself (a canary probe may only do so inside its own
-  isolated per-run home) (codex-native-transport D3/D4).
+  isolated per-run home) (codex-native-transport D3/D4). The probe's live
+  check leg runs entirely inside that isolated per-run home — never the
+  user's real configuration — and the isolation is independently verified
+  byte-identical before and after each run, not merely asserted; it records
+  whatever it observes, including a refused or absent outcome, into both the
+  scoped machine record and a human-readable evidence report, and a separate
+  offline self-check exercises the same isolation invariant without needing
+  the client installed at all, so automated verification stays green when the
+  client binary is absent (codex-native-transport D3/D4).
+- A capability probe's live check observed a real cross-build regression, not
+  a hypothetical one: an override surface confirmed accepted on one client
+  version was refused outright on the very next patch version, with no
+  advance signal available to the workflow. This is exactly the scenario the
+  classification's version-validity leg exists to catch, and the disagreement
+  between the two live runs proves that leg load-bearing rather than
+  defensive programming (codex-native-transport D3).
 - The second-runtime branch of the anchored tier-marker check alone
   recognizes an advisor role token in addition to the existing tier names
   (the first runtime's branch is byte-unchanged); before this, a confirmed
@@ -524,6 +562,15 @@ that it reduces anything.
   Windows-specific command field. This is undeclared today, not merely
   deferred — a Windows or non-POSIX-login-shell (e.g., fish, nu) session has
   no working fallback checkpoint.
+- The Codex native spawn checkpoint's override-field route-check (validating
+  a spawn's requested model/effort/fork-count against the configured route,
+  per B19) is written as a design intent only. No client version checked so
+  far has ever carried those fields into the checkpoint's real input, so
+  there is nothing observed to validate against yet; implementing the check
+  before that evidence exists would deny based on assumed rather than
+  observed shape. It activates once the capability probe observes that
+  envelope on some client version (codex-native-transport D6; decision
+  350f1e82).
 - Recorded tradeoff (bee-footprint P3): the workflow's disposable-experiment
   subfolder is both always-writable and excluded from version control, so its
   contents never appear in a change listing. This is deliberate, not a defect
@@ -586,3 +633,12 @@ that it reduces anything.
   codex branch: `ANCHORED_CODEX_TIER_MARKER_RE` in `dispatch-guard.mjs`.
   Evidence: `.bee/cells/cnt-2.json`, `.bee/cells/cnt-3.json`,
   `docs/history/codex-native-transport/`.
+- Override-field pass-through gap (B19): documented inline above
+  `evaluateCodexSpawn` in `skills/bee-hive/templates/lib/dispatch-guard.mjs`
+  (mirrored in `.bee/bin/lib/dispatch-guard.mjs`); canary rows
+  `hooks/test_model_guard.mjs` rows 56-57. Evidence: `.bee/cells/cnt-4.json`,
+  `docs/history/codex-native-transport/reports/cnt-4.md`.
+- Capability probe live leg + offline self-check: `scripts/canary_codex.mjs`
+  `--probe` / `--probe-selftest`; probe leg protocol recorded in
+  `docs/decisions/ab-tiny-protocol.md`. Evidence: `.bee/cells/cnt-5.json`,
+  `docs/history/codex-native-transport/reports/probe-evidence.md`.
