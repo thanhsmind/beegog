@@ -570,6 +570,23 @@ that exercises the same surface — grep the tests for the functions it edits at
 artifacts — a suite that runs only at its birth cell's cap is orphaned from regression the day
 that cell closes, and the wiring run itself is a detector (concurrency of truths, not ceremony).
 
+## [20260720] A structural review never satisfies the adversarial obligation for an abuse-stopping rule
+**Category:** process
+**Feature:** self-correcting-loop
+**Tags:** [validation, counting-rules, adversarial-review, budgets]
+
+A claim-counting rule whose entire purpose was stopping a named abuse (a solo session
+re-claiming the same cell in a loop) passed CONTEXT lock AND a thorough structural plan-check —
+and still missed that exact abuse: counting "session transitions" can never see a
+same-session re-claim. It was caught pre-code only by a fresh-context adversarial pass that ran
+the abuse scenario against the rule (fix: distinct (claim_session, claimed_at) pairs).
+**Rule:** when validating any counting/budget/limit invariant that exists to stop a named
+pattern, the validating pass must include "run the exact abuse scenario against the rule as
+written" as its own step — schema/consistency/freeze review does not substitute, regardless of
+reviewer strength. Corollary: when two validators propose different fixes for one critical
+path, CONTEXT records both and why one lost (the Δ2 inside-critical-section-vs-pre-acquire
+record is the template) — an unrecorded resolution is a future re-litigation.
+
 ## [20260716] A cell dependency in the wrong field name is silently ignored — verify the wave, not the write
 **Category:** failure
 **Feature:** perf-log

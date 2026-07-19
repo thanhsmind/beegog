@@ -42,7 +42,13 @@ Where things live. Read the touched area's spec before its code.
   generic routing changes and review isolation from active execution state; plus
   opt-in isolated
   worktree dispatch with one validated main coordination store, canonical contained
-  reservation checks, and transactional merge/revert/preservation rules
+  reservation checks, and transactional merge/revert/preservation rules; plus a
+  self-correcting loop over each unit of work — an append-only attempt history,
+  lifetime claim/failure budgets enforced at the claim door with an audited reset
+  door, authoring-time change classification with a behavior-class completion
+  floor on proof-of-red evidence, an append-only structured judge verdict with an
+  honest model-independence stamp, and a goal-check judge that scales with lane
+  risk without touching the user-invoked review gate
   (`coverage: partial`).
 
 ## Not yet specced

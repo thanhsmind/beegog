@@ -39,6 +39,7 @@ import {
   RUNTIMES,
   resolveTier,
   startFeature,
+  bypassLevel,
 } from '../lib/state.mjs';
 import { detectCommands } from '../lib/commands_detect.mjs';
 import { classifySource } from '../lib/source-identity.mjs';
@@ -73,7 +74,14 @@ import {
   FROZEN_JUDGE_PATTERNS,
   claimNextCell,
   claimCellCrossSession,
+  normalizeFailureSignature,
+  resetCellBudget,
+  deriveChangeClass,
+  CHANGE_CLASSES,
+  recordJudgeVerdict,
 } from '../lib/cells.mjs';
+import { validateJudgeVerdict, deriveModelIndependence, JUDGE_VERDICT_SCHEMA } from '../lib/judge.mjs';
+import { PINNED_MODEL_STATUS } from '../lib/dispatch-guard.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
 import {
   createSession,
@@ -861,7 +869,11 @@ await check('capCell refuses behavior_change without verification_evidence', asy
 await check('capCell caps with passing verify + evidence, and unlocks dependents', async () => {
   const cell = capCell(root, 'demo-1', {
     behavior_change: true,
-    verification_evidence: { tests_added: ['x.test.js'], red_failure_evidence: 'prior behavior seen failing', verification_run: 'npm test' },
+    verification_evidence: {
+      tests_added: ['x.test.js'],
+      red_failure_evidence: 'demo-1: prior behavior seen failing before this change — git-show of the old state, captured at cap time for the D3 anti-boilerplate floor.',
+      verification_run: 'npm test',
+    },
     files_changed: ['src/x.js'],
     outcome: 'done',
   });
@@ -928,7 +940,10 @@ await check('capCell honors the cell-declared behavior_change when the flag is o
   const capped = capCell(root, 'bc-decl', {
     files_changed: ['a.js'],
     outcome: 'done',
-    verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'npm test' },
+    verification_evidence: {
+      red_failure_evidence: 'bc-decl: prior behavior characterized here before this change, distinct from the demo-1 fixture text, meeting the D3 anti-boilerplate floor.',
+      verification_run: 'npm test',
+    },
   });
   assert(capped.trace.behavior_change === true, 'trace.behavior_change carried from the cell declaration');
 });
@@ -943,6 +958,458 @@ await check('blockCell records the reason', async () => {
   addCell(root, makeCell('blk-1'));
   blockCell(root, 'blk-1', 'reservation conflict');
   assert(readCell(root, 'blk-1').status === 'blocked', 'blk-1 blocked');
+});
+
+// ─── D1: revision ledger (trace.attempts) + failure-signature normalizer ──
+
+await check('normalizeFailureSignature is deterministic for the same logical failure under timestamp/path/hex noise, and differs for a different failure', async () => {
+  const a = 'FAIL 2026-07-19T10:22:03.451Z /home/alice/repo/src/foo.js assertion abc123def456 failed';
+  const b = 'FAIL 2026-07-20T02:11:59Z /Users/bob/work/src/foo.js assertion 9f8e7d6c5b4a failed';
+  const sigA = normalizeFailureSignature(a);
+  const sigB = normalizeFailureSignature(b);
+  assert(sigA === sigB, `same logical failure under timestamp/path/hex noise should normalize identically, got ${sigA} vs ${sigB}`);
+  assert(/^[0-9a-f]{12}$/.test(sigA), `signature should be 12 lowercase hex chars, got "${sigA}"`);
+  const different = normalizeFailureSignature('FAIL totally unrelated assertion blew up');
+  assert(different !== sigA, 'a genuinely different failure must normalize to a different signature');
+  const empty = normalizeFailureSignature(null);
+  assert(/^[0-9a-f]{12}$/.test(empty), `null output still normalizes to a stable 12-hex signature, got "${empty}"`);
+  assert(empty === normalizeFailureSignature(''), 'null and empty-string output normalize identically');
+});
+
+await check('normalizeFailureSignature prefers the first FAIL/Error/refus/denied line over surrounding noise', async () => {
+  const output = 'running suite...\n3/45 passed\nFAIL assertion mismatch on line 12\nmore trailing noise';
+  const sig = normalizeFailureSignature(output);
+  assert(sig === normalizeFailureSignature('other run\nFAIL assertion mismatch on line 12\ndone'), 'the picked diagnostic line ignores unrelated surrounding noise');
+});
+
+await check('recordVerify appends a ledger entry on every outcome — fail then fail then pass — with claim_session/claimed_at from the live claim file (D1+Δ1)', async () => {
+  addCell(root, makeCell('ledger-1'));
+  const claimed = claimCellCrossSession(root, { sessionId: 'sess-ledger-1', worker: 'worker-ledger', cellId: 'ledger-1' });
+  assert(claimed.ok === true, `precondition: claim should succeed, got ${JSON.stringify(claimed)}`);
+  const liveClaim = readClaim(root, 'ledger-1');
+
+  recordVerify(root, 'ledger-1', { command: 'npm test', output: 'FAIL first attempt', passed: false, sessionId: 'sess-ledger-1' });
+  const afterFail1 = readCell(root, 'ledger-1');
+  assert(Array.isArray(afterFail1.trace.attempts) && afterFail1.trace.attempts.length === 1, `expected 1 attempt, got ${JSON.stringify(afterFail1.trace.attempts)}`);
+  const entry1 = afterFail1.trace.attempts[0];
+  assert(entry1.n === 1, `first entry n should be 1, got ${entry1.n}`);
+  assert(entry1.verdict === 'fail', `first entry verdict should be fail, got ${entry1.verdict}`);
+  assert(entry1.claim_session === 'sess-ledger-1', `claim_session should come from the live claim, got ${entry1.claim_session}`);
+  assert(entry1.claimed_at === liveClaim.claimed_at, `claimed_at should be copied from the live claim file, got ${entry1.claimed_at} vs ${liveClaim.claimed_at}`);
+  assert(entry1.worker === 'worker-ledger', `worker should carry the claiming worker, got ${entry1.worker}`);
+  assert(typeof entry1.failure_signature === 'string' && entry1.failure_signature.length > 0, 'a failed attempt must carry a failure_signature');
+  assert('at' in entry1 && typeof entry1.at === 'string', 'entry carries its own timestamp');
+
+  recordVerify(root, 'ledger-1', { command: 'npm test', output: 'FAIL second attempt', passed: false, sessionId: 'sess-ledger-1' });
+  const afterFail2 = readCell(root, 'ledger-1');
+  assert(afterFail2.trace.attempts.length === 2, `expected 2 attempts, got ${afterFail2.trace.attempts.length}`);
+  assert(afterFail2.trace.attempts[0].failure_signature === entry1.failure_signature, 'the first entry is never rewritten by a later append');
+  assert(afterFail2.trace.attempts[1].n === 2, `second entry n should be 2, got ${afterFail2.trace.attempts[1].n}`);
+
+  recordVerify(root, 'ledger-1', { command: 'npm test', output: 'ok', passed: true, sessionId: 'sess-ledger-1' });
+  const afterPass = readCell(root, 'ledger-1');
+  assert(afterPass.trace.attempts.length === 3, `expected 3 attempts after the passing verify, got ${afterPass.trace.attempts.length}`);
+  const passEntry = afterPass.trace.attempts[2];
+  assert(passEntry.verdict === 'pass', `third entry verdict should be pass, got ${passEntry.verdict}`);
+  assert(passEntry.failure_signature === null, `a passing attempt must never carry a failure_signature, got ${passEntry.failure_signature}`);
+});
+
+await check('recordVerify --signature (worker-supplied) overrides the mechanical normalizer for a failed attempt', async () => {
+  addCell(root, makeCell('ledger-sig-1'));
+  claimCell(root, 'ledger-sig-1', 'worker-sig');
+  recordVerify(root, 'ledger-sig-1', { command: 'npm test', output: 'FAIL something', passed: false, signature: 'custom-sig-001' });
+  const entry = readCell(root, 'ledger-sig-1').trace.attempts[0];
+  assert(entry.failure_signature === 'custom-sig-001', `explicit --signature should win over the normalizer, got ${entry.failure_signature}`);
+});
+
+await check('blockCell appends a "blocked" ledger entry whose note is the block reason and whose failure_signature derives from it', async () => {
+  addCell(root, makeCell('ledger-block-1'));
+  claimCell(root, 'ledger-block-1', 'worker-block');
+  blockCell(root, 'ledger-block-1', 'reservation conflict on src/x.js');
+  const entry = readCell(root, 'ledger-block-1').trace.attempts[0];
+  assert(entry.verdict === 'blocked', `expected blocked verdict, got ${entry.verdict}`);
+  assert(entry.note === 'reservation conflict on src/x.js', `note should carry the block reason verbatim, got ${entry.note}`);
+  assert(entry.failure_signature === normalizeFailureSignature('reservation conflict on src/x.js'), 'blockCell signature derives from the reason via the same normalizer');
+});
+
+await check('a sessionless claim records claim_session null but still carries the live claim file\'s claimed_at (D1+Δ1 undercount-safe, F2)', async () => {
+  addCell(root, makeCell('ledger-sessionless-1'));
+  const claimed = claimCellCrossSession(root, { sessionId: null, worker: 'worker-sl', cellId: 'ledger-sessionless-1' });
+  assert(claimed.ok === true, `precondition: sessionless claim should succeed, got ${JSON.stringify(claimed)}`);
+  recordVerify(root, 'ledger-sessionless-1', { command: 'npm test', output: 'FAIL x', passed: false });
+  const entry = readCell(root, 'ledger-sessionless-1').trace.attempts[0];
+  assert(entry.claim_session === null, `sessionless claim must record claim_session null, got ${entry.claim_session}`);
+  assert(typeof entry.claimed_at === 'string' && entry.claimed_at.length > 0, 'claimed_at is still copied from the live (sessionless) claim file');
+});
+
+await check('trace.attempts entries survive capCell — appended to, never dropped by the trace spread', async () => {
+  addCell(root, makeCell('ledger-cap-1'));
+  claimCell(root, 'ledger-cap-1', 'worker-cap');
+  recordVerify(root, 'ledger-cap-1', { command: 'npm test', output: 'FAIL once', passed: false });
+  recordVerify(root, 'ledger-cap-1', { command: 'npm test', output: 'ok', passed: true });
+  const capped = capCell(root, 'ledger-cap-1', { files_changed: ['a.js'], outcome: 'done' });
+  assert(Array.isArray(capped.trace.attempts) && capped.trace.attempts.length === 2, `capCell must preserve every prior ledger entry, got ${JSON.stringify(capped.trace.attempts)}`);
+  assert(capped.trace.attempts[0].verdict === 'fail' && capped.trace.attempts[1].verdict === 'pass', 'entry order and verdicts survive cap byte-unchanged');
+});
+
+await check('updateCell refuses a {trace:{...}} patch on an open cell — the ledger cannot be edited around (D1+F1: trace is already frozen wholesale)', async () => {
+  addCell(root, makeCell('ledger-update-1'));
+  claimCell(root, 'ledger-update-1', 'worker-upd');
+  recordVerify(root, 'ledger-update-1', { command: 'npm test', output: 'FAIL', passed: false });
+  blockCell(root, 'ledger-update-1', 'stuck', { sessionId: undefined });
+  const file = path.join(root, '.bee', 'cells', 'ledger-update-1.json');
+  const before = fs.readFileSync(file, 'utf8');
+  assertThrows(
+    () => updateCell(root, 'ledger-update-1', { title: 'ok', trace: { attempts: [] } }),
+    'frozen',
+    'a patch attempting to touch trace.attempts must be refused wholesale, cell untouched',
+  );
+  assert(fs.readFileSync(file, 'utf8') === before, 'ledger-update-1 file byte-unchanged after the refused trace patch');
+});
+
+// ─── D2 (self-correcting-loop): cell-lifetime budgets at the claim door ────
+// max_claims/max_failed_attempts/max_same_signature enforced INSIDE the
+// O_EXCL critical section of claimCellCrossSession, typed CELL_BUDGET_
+// EXHAUSTED/REPEATED_FAILURE refusals, an audited reset-budget door, and
+// claim-next SELECTION skipping bricked candidates (Δ3/F3) so the pool
+// never bricks.
+
+await check('claimCellCrossSession: a fresh cell with no attempts ledger claims exactly as today — D2 defaults never bite on a first claim (D6 compatibility floor)', async () => {
+  addCell(root, makeCell('budget-fresh-1'));
+  const result = claimCellCrossSession(root, { sessionId: 'sess-budget-fresh', worker: 'w', cellId: 'budget-fresh-1' });
+  assert(result.ok === true, `first claim on a fresh cell must succeed under default budgets, got ${JSON.stringify(result)}`);
+});
+
+await check('claimCellCrossSession: 3 claims exhaust the default max_claims budget — a 4th claim is refused typed CELL_BUDGET_EXHAUSTED naming the budget, and the just-acquired claim file is unwound (D2+Δ2)', async () => {
+  addCell(root, makeCell('budget-claims-1'));
+  for (let i = 0; i < 3; i += 1) {
+    const claimed = claimCellCrossSession(root, { sessionId: `sess-budget-claims-${i}`, worker: 'w', cellId: 'budget-claims-1' });
+    assert(claimed.ok === true, `claim #${i + 1} should succeed under the default budget of 3, got ${JSON.stringify(claimed)}`);
+    recordVerify(root, 'budget-claims-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-budget-claims-${i}` });
+    unclaimCell(root, 'budget-claims-1', { sessionId: `sess-budget-claims-${i}` });
+  }
+  const fourth = claimCellCrossSession(root, { sessionId: 'sess-budget-claims-3', worker: 'w', cellId: 'budget-claims-1' });
+  assert(fourth.ok === false, `the 4th claim must be refused, got ${JSON.stringify(fourth)}`);
+  assert(fourth.code === 'CELL_BUDGET_EXHAUSTED', `expected CELL_BUDGET_EXHAUSTED, got ${fourth.code}`);
+  assert(fourth.budget && fourth.budget.name === 'max_claims', `refusal must name the exhausted budget, got ${JSON.stringify(fourth.budget)}`);
+  assert(typeof fourth.fix === 'string' && fourth.fix.includes('reset-budget'), `refusal must name the reset door, got ${fourth.fix}`);
+  assert(readClaim(root, 'budget-claims-1') === null, 'a refused claim must not leave an orphaned claim file behind (Δ2 unwind precedent cells.mjs:951)');
+  assert(readCell(root, 'budget-claims-1').status === 'open', 'the cell itself stays untouched on a refused claim — only the transient claim-file acquisition was unwound');
+});
+
+await check('claimCellCrossSession: two failed attempts sharing an identical failure_signature refuse the NEXT claim typed REPEATED_FAILURE, independent of the max_claims/max_failed_attempts budgets (D2 same-signature)', async () => {
+  addCell(root, makeCell('budget-sig-1'));
+  for (let i = 0; i < 2; i += 1) {
+    claimCellCrossSession(root, { sessionId: `sess-budget-sig-${i}`, worker: 'w', cellId: 'budget-sig-1' });
+    recordVerify(root, 'budget-sig-1', { command: 'npm test', output: 'FAIL identical assertion', passed: false, sessionId: `sess-budget-sig-${i}` });
+    unclaimCell(root, 'budget-sig-1', { sessionId: `sess-budget-sig-${i}` });
+  }
+  const third = claimCellCrossSession(root, { sessionId: 'sess-budget-sig-2', worker: 'w', cellId: 'budget-sig-1' });
+  assert(third.ok === false, `a claim after 2 identical-signature fails must refuse, got ${JSON.stringify(third)}`);
+  assert(third.code === 'REPEATED_FAILURE', `expected REPEATED_FAILURE, got ${third.code}`);
+  assert(third.signature === normalizeFailureSignature('FAIL identical assertion'), `refusal must name the repeated signature, got ${third.signature}`);
+  assert(typeof third.fix === 'string' && third.fix.includes('reset-budget'), `refusal must name the reset door, got ${third.fix}`);
+});
+
+await check('claimCellCrossSession: an explicit per-cell budgets override is honored over the defaults (D2)', async () => {
+  addCell(root, makeCell('budget-custom-1', { budgets: { max_claims: 1, max_failed_attempts: 4, max_same_signature: 2 } }));
+  const first = claimCellCrossSession(root, { sessionId: 'sess-budget-custom-0', worker: 'w', cellId: 'budget-custom-1' });
+  assert(first.ok === true, `first claim under a custom max_claims:1 should succeed, got ${JSON.stringify(first)}`);
+  recordVerify(root, 'budget-custom-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: 'sess-budget-custom-0' });
+  unclaimCell(root, 'budget-custom-1', { sessionId: 'sess-budget-custom-0' });
+  const second = claimCellCrossSession(root, { sessionId: 'sess-budget-custom-1', worker: 'w', cellId: 'budget-custom-1' });
+  assert(second.ok === false && second.code === 'CELL_BUDGET_EXHAUSTED', `a 2nd claim under a custom max_claims:1 must refuse, got ${JSON.stringify(second)}`);
+  assert(second.budget.limit === 1, `refusal must reflect the cell's own override, not the default, got ${JSON.stringify(second.budget)}`);
+});
+
+await check('resetCellBudget: audited reset appends a budget_resets marker, logs a decision, never touches attempts, and reopens the claim door (D2)', async () => {
+  addCell(root, makeCell('budget-reset-1'));
+  for (let i = 0; i < 3; i += 1) {
+    claimCellCrossSession(root, { sessionId: `sess-budget-reset-${i}`, worker: 'w', cellId: 'budget-reset-1' });
+    recordVerify(root, 'budget-reset-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-budget-reset-${i}` });
+    unclaimCell(root, 'budget-reset-1', { sessionId: `sess-budget-reset-${i}` });
+  }
+  const blocked = claimCellCrossSession(root, { sessionId: 'sess-budget-reset-3', worker: 'w', cellId: 'budget-reset-1' });
+  assert(blocked.ok === false && blocked.code === 'CELL_BUDGET_EXHAUSTED', `precondition: the door should be exhausted, got ${JSON.stringify(blocked)}`);
+  const attemptsBefore = readCell(root, 'budget-reset-1').trace.attempts.length;
+
+  const reset = resetCellBudget(root, 'budget-reset-1', 'manager approved a genuine retry');
+  assert(Array.isArray(reset.trace.budget_resets) && reset.trace.budget_resets.length === 1, `reset must append exactly one budget_resets entry, got ${JSON.stringify(reset.trace.budget_resets)}`);
+  assert(reset.trace.budget_resets[0].reason === 'manager approved a genuine retry', 'the reset reason is recorded verbatim');
+  assert(reset.trace.attempts.length === attemptsBefore, 'reset never rewrites or drops any attempts ledger entry');
+
+  const decisions = activeDecisions(root, { recent: 1 });
+  assert(decisions.length > 0 && decisions[0].decision.includes('budget-reset-1'), `resetCellBudget must log a decision naming the cell, got ${JSON.stringify(decisions)}`);
+
+  const reopened = claimCellCrossSession(root, { sessionId: 'sess-budget-reset-4', worker: 'w', cellId: 'budget-reset-1' });
+  assert(reopened.ok === true, `after reset the door must reopen for a fresh claim, got ${JSON.stringify(reopened)}`);
+});
+
+await check('resetCellBudget requires a non-empty reason, and refuses an unknown cell id', async () => {
+  addCell(root, makeCell('budget-reset-noreason-1'));
+  assertThrows(() => resetCellBudget(root, 'budget-reset-noreason-1', ''), 'reason', 'resetCellBudget must refuse an empty reason');
+  assertThrows(() => resetCellBudget(root, 'budget-reset-noreason-1', '   '), 'reason', 'resetCellBudget must refuse a whitespace-only reason');
+  assertThrows(() => resetCellBudget(root, 'no-such-cell-budget', 'a reason'), 'not found', 'resetCellBudget must refuse an unknown cell id');
+});
+
+await check(
+  'gate_bypass="total" does NOT bypass CELL_BUDGET_EXHAUSTED or REPEATED_FAILURE — the budget check never reads bypass config at all; these are structural loop-safety stops, not approval gates (D2 explicit test row)',
+  async () => {
+    const dir = makeStateRepo('bee-budget-bypass-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        mode: 'standard',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      writeJsonAtomic(path.join(dir, '.bee', 'config.json'), { gate_bypass: 'total' });
+      assert(bypassLevel(dir) === 'total', 'precondition: bypass level resolves to total');
+
+      const oldAttempts = [0, 1, 2].map((i) => ({
+        n: i + 1,
+        at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        claim_session: `sess-old-${i}`,
+        claimed_at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        worker: 'w',
+        verdict: 'pass',
+        failure_signature: null,
+        note: null,
+      }));
+      makeCellFile(dir, 'bypass-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
+
+      const result = claimCellCrossSession(dir, { sessionId: 'sess-bypass-total', worker: 'w', cellId: 'bypass-1' });
+      assert(result.ok === false && result.code === 'CELL_BUDGET_EXHAUSTED', `gate_bypass=total must NOT bypass the budget refusal, got ${JSON.stringify(result)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  'claimNextCell: SELECTION skips a budget-exhausted candidate — the pool still finds another ready cell instead of surfacing the refusal (D2 Δ3/F3)',
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-budget-skip-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        mode: 'standard',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      const oldAttempts = [0, 1, 2].map((i) => ({
+        n: i + 1,
+        at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        claim_session: `sess-old-${i}`,
+        claimed_at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        worker: 'w',
+        verdict: 'pass',
+        failure_signature: null,
+        note: null,
+      }));
+      makeCellFile(dir, 'exhausted-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
+      makeCellFile(dir, 'healthy-1', { feature: 'demo-feat', status: 'open', deps: [] });
+
+      const result = claimNextCell(dir, { sessionId: 'sess-selector', worker: 'w' });
+      assert(result.ok === true, `expected a healthy cell to be selected, got ${JSON.stringify(result)}`);
+      assert(result.cell.id === 'healthy-1', `the budget-exhausted candidate must be skipped by selection, got ${result.cell.id}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  'claimNextCell: when the ONLY ready candidate is budget-exhausted, selection returns typed NO_APPROVED_WORK rather than surfacing CELL_BUDGET_EXHAUSTED — only a direct `cells claim --id` surfaces that refusal (D2 Δ3/F3)',
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-budget-only-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        mode: 'standard',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      const oldAttempts = [0, 1, 2].map((i) => ({
+        n: i + 1,
+        at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        claim_session: `sess-old-${i}`,
+        claimed_at: new Date(Date.now() - (10 - i) * 1000).toISOString(),
+        worker: 'w',
+        verdict: 'pass',
+        failure_signature: null,
+        note: null,
+      }));
+      makeCellFile(dir, 'exhausted-only-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
+
+      const result = claimNextCell(dir, { sessionId: 'sess-selector-2', worker: 'w' });
+      assert(result.ok === false && result.code === 'NO_APPROVED_WORK', `expected NO_APPROVED_WORK when the only candidate is bricked, got ${JSON.stringify(result)}`);
+
+      const direct = claimCellCrossSession(dir, { sessionId: 'sess-selector-2', worker: 'w', cellId: 'exhausted-only-1' });
+      assert(direct.ok === false && direct.code === 'CELL_BUDGET_EXHAUSTED', `direct claim --id must still surface the typed refusal, got ${JSON.stringify(direct)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+// ─── D3 (self-correcting-loop): judge-standard matrix — authoring advisory
+// (bee.mjs handler layer, tested in test_bee_cli.mjs alongside
+// manifestLintWarning) + mechanical behavior-class cap teeth (this lib,
+// tested here). change_class:'behavior' is used explicitly (rather than
+// behavior_change:true) in the cap-teeth rows below so the teeth are proven
+// gated on the DERIVED CLASS, not on the `bc` flag — CONTEXT: "additive to
+// today's rules", not a replacement for the pre-existing Decision 0009 check.
+
+await check('deriveChangeClass resolves explicit change_class, the sole behavior_change=>behavior derivation, and null otherwise — no other auto-derivation (D3)', async () => {
+  assert(deriveChangeClass({ change_class: 'api' }) === 'api', 'explicit change_class wins');
+  assert(deriveChangeClass({ change_class: 'api', behavior_change: true }) === 'api', 'explicit change_class wins even over behavior_change:true');
+  assert(deriveChangeClass({ behavior_change: true }) === 'behavior', 'absent change_class + behavior_change:true derives behavior');
+  assert(deriveChangeClass({ behavior_change: false }) === null, 'absent change_class + behavior_change:false is unclassified');
+  assert(deriveChangeClass({}) === null, 'absent change_class + absent behavior_change is unclassified');
+  assert(deriveChangeClass(null) === null, 'null cell tolerated, never throws');
+  assert(deriveChangeClass(undefined) === null, 'undefined cell tolerated, never throws');
+  assert(CHANGE_CLASSES.includes('behavior') && CHANGE_CLASSES.length === 6, `expected the 6-member enum, got ${JSON.stringify(CHANGE_CLASSES)}`);
+});
+
+await check('addCell validates optional change_class against the enum, naming CHANGE_CLASSES on refusal (D3)', async () => {
+  assertThrows(
+    () => addCell(root, makeCell('jsm-bad-class', { change_class: 'not-a-class' })),
+    'change_class',
+    'an invalid change_class must be refused',
+  );
+  const added = addCell(root, makeCell('jsm-good-class', { change_class: 'api' }));
+  assert(added.change_class === 'api', 'a valid change_class is persisted');
+});
+
+await check('updateCell validates change_class the same way, and accepts null to un-set it back to derivation (D3)', async () => {
+  assertThrows(
+    () => updateCell(root, 'jsm-good-class', { change_class: 'nonsense' }),
+    'change_class',
+    'update must refuse an invalid change_class',
+  );
+  const cleared = updateCell(root, 'jsm-good-class', { change_class: null });
+  assert(cleared.change_class === null, 'null un-sets change_class back to derivation');
+  const revalidated = updateCell(root, 'jsm-good-class', { change_class: 'security' });
+  assert(revalidated.change_class === 'security', 'a subsequent valid change_class still applies');
+});
+
+await check('capCell refuses a behavior-class cap with no red_failure_evidence at all, naming the missing minimum — gated on change_class, independent of the behavior_change flag (D3)', async () => {
+  addCell(root, makeCell('jsm-missing-1', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-missing-1', 'worker-jsm');
+  recordVerify(root, 'jsm-missing-1', { command: 'x', output: 'ok', passed: true });
+  assertThrows(
+    () => capCell(root, 'jsm-missing-1', { files_changed: ['a.js'], outcome: 'done' }),
+    'red_failure_evidence',
+    'a behavior-class cap with no evidence at all must be refused by the D3 teeth even when behavior_change is never set',
+  );
+});
+
+await check('capCell refuses a behavior-class cap whose red_failure_evidence is under 80 chars, naming the length floor (D3)', async () => {
+  addCell(root, makeCell('jsm-short-1', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-short-1', 'worker-jsm');
+  recordVerify(root, 'jsm-short-1', { command: 'x', output: 'ok', passed: true });
+  assertThrows(
+    () =>
+      capCell(root, 'jsm-short-1', {
+        files_changed: ['a.js'],
+        outcome: 'done',
+        verification_evidence: { red_failure_evidence: 'too short' },
+      }),
+    '80',
+    'short red_failure_evidence must be refused, naming the 80-char floor',
+  );
+});
+
+await check('capCell refuses a behavior-class cap whose red_failure_evidence is byte-identical to another cell\'s recorded evidence, naming the colliding cell id (D3+Δ5 anti-boilerplate)', async () => {
+  const sharedText =
+    'this exact red_failure_evidence text is reused verbatim across two different cells to trigger the D3 anti-boilerplate duplicate refusal.';
+  assert(sharedText.length >= 80, 'fixture text must clear the length floor on its own, so only the duplicate check fires');
+
+  addCell(root, makeCell('jsm-dup-a', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-dup-a', 'worker-jsm');
+  recordVerify(root, 'jsm-dup-a', { command: 'x', output: 'ok', passed: true });
+  capCell(root, 'jsm-dup-a', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    verification_evidence: { red_failure_evidence: sharedText },
+  });
+
+  addCell(root, makeCell('jsm-dup-b', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-dup-b', 'worker-jsm');
+  recordVerify(root, 'jsm-dup-b', { command: 'x', output: 'ok', passed: true });
+  assertThrows(
+    () =>
+      capCell(root, 'jsm-dup-b', {
+        files_changed: ['a.js'],
+        outcome: 'done',
+        verification_evidence: { red_failure_evidence: sharedText },
+      }),
+    'jsm-dup-a',
+    'a byte-identical red_failure_evidence must be refused, naming the colliding cell id',
+  );
+});
+
+await check('capCell caps a behavior-class cell whose red_failure_evidence clears the D3 floor and is unique (green row)', async () => {
+  addCell(root, makeCell('jsm-green-1', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-green-1', 'worker-jsm');
+  recordVerify(root, 'jsm-green-1', { command: 'x', output: 'ok', passed: true });
+  const capped = capCell(root, 'jsm-green-1', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    verification_evidence: {
+      red_failure_evidence:
+        'jsm-green-1: a genuinely unique characterization of the prior failing behavior before this change, clearing the D3 floor.',
+    },
+  });
+  assert(capped.status === 'capped', 'a sufficiently long, unique red_failure_evidence caps cleanly');
+});
+
+await check('capCell caps a behavior-class cell riding deliberate_exceptions without the D3 length/duplicate floor — today\'s contract unchanged (F5 passthrough)', async () => {
+  addCell(root, makeCell('jsm-exception-1', { change_class: 'behavior' }));
+  claimCell(root, 'jsm-exception-1', 'worker-jsm');
+  recordVerify(root, 'jsm-exception-1', { command: 'x', output: 'ok', passed: true });
+  const capped = capCell(root, 'jsm-exception-1', {
+    files_changed: ['a.js'],
+    outcome: 'done',
+    verification_evidence: { deliberate_exceptions: ['brand-new surface, no prior behavior to characterize'] },
+  });
+  assert(capped.status === 'capped', 'the exception door still caps without any red_failure_evidence — the D3 floor never applies to it');
+});
+
+await check('capCell tolerates a corrupt sibling cell file during the D3 duplicate scan — never throws, just skips it (Δ5)', async () => {
+  const corruptPath = path.join(root, '.bee', 'cells', 'jsm-corrupt-sibling.json');
+  fs.writeFileSync(corruptPath, '{ not valid json', 'utf8');
+  try {
+    addCell(root, makeCell('jsm-corrupt-check', { change_class: 'behavior' }));
+    claimCell(root, 'jsm-corrupt-check', 'worker-jsm');
+    recordVerify(root, 'jsm-corrupt-check', { command: 'x', output: 'ok', passed: true });
+    const capped = capCell(root, 'jsm-corrupt-check', {
+      files_changed: ['a.js'],
+      outcome: 'done',
+      verification_evidence: {
+        red_failure_evidence:
+          'jsm-corrupt-check: unique red evidence text, long enough to clear the D3 anti-boilerplate floor despite a corrupt sibling cell file present on disk.',
+      },
+    });
+    assert(capped.status === 'capped', 'a corrupt sibling cell file must never crash or block the duplicate scan');
+  } finally {
+    fs.rmSync(corruptPath, { force: true });
+  }
+});
+
+await check('capCell applies NO teeth to non-behavior classes — an api-class cell caps normally without any verification_evidence (D3: only behavior gets hard teeth in v1)', async () => {
+  addCell(root, makeCell('jsm-api-1', { change_class: 'api' }));
+  claimCell(root, 'jsm-api-1', 'worker-jsm');
+  recordVerify(root, 'jsm-api-1', { command: 'x', output: 'ok', passed: true });
+  const capped = capCell(root, 'jsm-api-1', { files_changed: ['a.js'], outcome: 'done' });
+  assert(capped.status === 'capped', 'a non-behavior change_class never gets D3 cap teeth');
 });
 
 // ─── D1 Δ2-amendment: EVERY claim-clearing transition releases the claim
@@ -2080,7 +2547,10 @@ await check('scribingDebt tracks behavior_change caps against the last scribing 
       behaviorChange
         ? {
             behavior_change: true,
-            verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'x' },
+            verification_evidence: {
+              red_failure_evidence: `prior behavior characterized for cell "${id}" before this fixture cap, unique per id, meeting the D3 anti-boilerplate floor (>=80 chars).`,
+              verification_run: 'x',
+            },
             files_changed: ['a.js'],
             outcome: 'done',
           }
@@ -7183,7 +7653,10 @@ function seedCappedCellWithEvidence(dir, id) {
   recordVerify(dir, id, { command: 'node -e 0', output: 'ok', passed: true });
   capCell(dir, id, {
     behavior_change: true,
-    verification_evidence: { red_failure_evidence: 'prior behavior', verification_run: 'node -e 0' },
+    verification_evidence: {
+      red_failure_evidence: `prior behavior characterized for cell "${id}" before this reviews-fixture change, meeting the D3 anti-boilerplate floor (>=80 chars).`,
+      verification_run: 'node -e 0',
+    },
     files_changed: ['a.js'],
     outcome: 'done',
   });
@@ -9243,6 +9716,143 @@ await check('census: the Delegation contract carries the cli gather branch (plan
       `${rel} must carry the cli-gather transport rider on critical rule 13: when the generation tier is cli-shaped, the gather runs through the configured external command per the Delegation contract's cli gather branch, not an Agent dispatch`,
     );
   }
+});
+
+// ─── D5 (self-correcting-loop): judge-verdict/1 schema validator, model
+// independence derivation, and trace.semantic_judge (recordJudgeVerdict) ───
+
+const VALID_VERDICT = {
+  schema: JUDGE_VERDICT_SCHEMA,
+  verdict: 'PASS',
+  checks: [{ id: 'must_haves', status: 'PASS', evidence: "diff matches CONTEXT D5's truths line-for-line" }],
+  fixability: 'automatic',
+  confidence: 'high',
+};
+
+await check('validateJudgeVerdict accepts a well-formed judge-verdict/1 payload', async () => {
+  const { ok, errors } = validateJudgeVerdict(VALID_VERDICT);
+  assert(ok === true && errors.length === 0, `expected ok:true, got ${JSON.stringify({ ok, errors })}`);
+});
+
+await check('validateJudgeVerdict rejects free prose (a non-object) as a failed judge run, and NEVER throws on any input shape (D5 must-have)', async () => {
+  const { ok, errors } = validateJudgeVerdict('the change looks fine to me');
+  assert(ok === false, 'free prose must not validate ok');
+  assert(errors.some((e) => e.includes('free prose')), `expected a free-prose error, got ${JSON.stringify(errors)}`);
+  for (const bogus of [null, undefined, [], 42, true]) {
+    const result = validateJudgeVerdict(bogus);
+    assert(
+      result && result.ok === false && Array.isArray(result.errors),
+      `validateJudgeVerdict must degrade to {ok:false,errors} for ${JSON.stringify(bogus)}, never throw`,
+    );
+  }
+});
+
+await check('validateJudgeVerdict rejects an unknown verdict value with a typed error', async () => {
+  const { ok, errors } = validateJudgeVerdict({ ...VALID_VERDICT, verdict: 'MAYBE' });
+  assert(ok === false, 'unknown verdict must not validate ok');
+  assert(errors.some((e) => e.includes('verdict must be one of')), `expected a verdict-enum error, got ${JSON.stringify(errors)}`);
+});
+
+await check('validateJudgeVerdict requires failure_signature when any check FAILs, and tolerates its absence when every check PASSes', async () => {
+  const failing = {
+    schema: JUDGE_VERDICT_SCHEMA,
+    verdict: 'NEEDS_REVISION',
+    checks: [{ id: 'diff-scope', status: 'FAIL', evidence: "touched a file outside the cell's declared scope" }],
+    fixability: 'automatic',
+    confidence: 'medium',
+  };
+  const missing = validateJudgeVerdict(failing);
+  assert(
+    missing.ok === false && missing.errors.some((e) => e.includes('failure_signature')),
+    `a FAIL check with no failure_signature must be refused, got ${JSON.stringify(missing)}`,
+  );
+  const withSignature = validateJudgeVerdict({ ...failing, failure_signature: 'out-of-scope-file-touch' });
+  assert(withSignature.ok === true, `a FAIL check WITH failure_signature must validate, got ${JSON.stringify(withSignature)}`);
+  assert(validateJudgeVerdict(VALID_VERDICT).ok === true, 'an all-PASS verdict needs no failure_signature');
+});
+
+await check('validateJudgeVerdict rejects empty/missing checks[].evidence, an empty checks array, and unknown fixability/confidence values', async () => {
+  assert(validateJudgeVerdict({ ...VALID_VERDICT, checks: [{ id: 'a', status: 'PASS', evidence: '' }] }).ok === false, 'empty evidence must be refused');
+  assert(validateJudgeVerdict({ ...VALID_VERDICT, checks: [] }).ok === false, 'an empty checks array must be refused');
+  assert(validateJudgeVerdict({ ...VALID_VERDICT, fixability: 'maybe' }).ok === false, 'unknown fixability must be refused');
+  assert(validateJudgeVerdict({ ...VALID_VERDICT, confidence: 'super-high' }).ok === false, 'unknown confidence must be refused');
+});
+
+await check(
+  'deriveModelIndependence: both pinned + differing names -> confirmed; both pinned + equal names -> same-model (honest, not a refusal); an unpinned or unnamed side -> unverified (D5 must-have: never confirmed without two pinned, differing, named models)',
+  async () => {
+    assert(deriveModelIndependence('sonnet', PINNED_MODEL_STATUS, 'opus', PINNED_MODEL_STATUS) === 'confirmed', 'pinned + differing must be confirmed');
+    assert(deriveModelIndependence('sonnet', PINNED_MODEL_STATUS, 'sonnet', PINNED_MODEL_STATUS) === 'same-model', 'pinned + equal must be same-model, not confirmed');
+    assert(deriveModelIndependence('sonnet', 'unverified', 'opus', PINNED_MODEL_STATUS) === 'unverified', 'one side unpinned must be unverified');
+    assert(deriveModelIndependence(null, null, null, null) === 'unverified', 'absent models/status (no dispatch.jsonl corroboration, Δ6) must be unverified, never a refusal');
+    assert(deriveModelIndependence('sonnet', PINNED_MODEL_STATUS, null, PINNED_MODEL_STATUS) === 'unverified', 'a pinned status with no model name must be unverified, not a guess');
+  },
+);
+
+await check('recordJudgeVerdict appends a stamped entry to append-only trace.semantic_judge, and refuses an invalid verdict with a typed error naming the cell', async () => {
+  addCell(root, makeCell('jr-1'));
+  const afterFirst = recordJudgeVerdict(root, 'jr-1', VALID_VERDICT, {
+    builderModel: 'sonnet',
+    builderStatus: PINNED_MODEL_STATUS,
+    judgeModel: 'opus',
+    judgeStatus: PINNED_MODEL_STATUS,
+  });
+  const entries1 = afterFirst.trace.semantic_judge;
+  assert(Array.isArray(entries1) && entries1.length === 1, `expected one semantic_judge entry, got ${JSON.stringify(entries1)}`);
+  assert(entries1[0].model_independence === 'confirmed', `two pinned, differing models must derive confirmed, got ${entries1[0].model_independence}`);
+  assert(entries1[0].schema === JUDGE_VERDICT_SCHEMA && entries1[0].verdict === 'PASS', 'the raw verdict fields are stored verbatim');
+
+  const afterSecond = recordJudgeVerdict(root, 'jr-1', { ...VALID_VERDICT, confidence: 'medium' }, {});
+  const entries2 = afterSecond.trace.semantic_judge;
+  assert(entries2.length === 2, `append-only: a second record must ADD an entry, not replace the first, got ${JSON.stringify(entries2)}`);
+  assert(entries2[0].confidence === 'high' && entries2[1].confidence === 'medium', 'earlier entries are never rewritten');
+  assert(entries2[1].model_independence === 'unverified', 'no model/status supplied -> unverified, never a refusal');
+
+  assertThrows(
+    () => recordJudgeVerdict(root, 'jr-1', 'free prose from a confused judge', {}),
+    'verdict rejected',
+    'an invalid verdict must be refused with a typed error, not silently stored',
+  );
+  assertThrows(() => recordJudgeVerdict(root, 'no-such-cell-jr', VALID_VERDICT, {}), 'not found', 'an unknown cell id must be refused');
+  const untouched = readCell(root, 'jr-1');
+  assert(untouched.trace.semantic_judge.length === 2, 'a refused record must leave the ledger untouched');
+});
+
+await check('trace.semantic_judge entries survive cap and resist updateCell (append-only, frozen like trace.attempts) — D5 must-have', async () => {
+  addCell(root, makeCell('jr-2'));
+  recordJudgeVerdict(root, 'jr-2', VALID_VERDICT, {
+    builderModel: 'sonnet',
+    builderStatus: PINNED_MODEL_STATUS,
+    judgeModel: 'sonnet',
+    judgeStatus: PINNED_MODEL_STATUS,
+  });
+  const state = readState(root);
+  state.phase = 'swarming';
+  state.approved_gates.execution = true;
+  writeState(root, state);
+  claimCell(root, 'jr-2', 'worker-a');
+  recordVerify(root, 'jr-2', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  const capped = capCell(root, 'jr-2', { files_changed: ['a.js'], outcome: 'shipped' });
+  assert(
+    Array.isArray(capped.trace.semantic_judge) && capped.trace.semantic_judge.length === 1,
+    `semantic_judge recorded before cap must survive capCell's own trace assembly, got ${JSON.stringify(capped.trace.semantic_judge)}`,
+  );
+  assert(capped.trace.semantic_judge[0].model_independence === 'same-model', 'equal pinned names must read same-model, honestly, even post-cap');
+
+  // Recording AFTER cap (the realistic D4 goal-check ordering — the judge
+  // runs on an already-capped behavior_change cell) must also work:
+  // recordJudgeVerdict never gates on cell status (D5 prohibition: no
+  // dispatching logic, validation only — status transitions are scl-5's
+  // doctrine-only concern).
+  const postCap = recordJudgeVerdict(root, 'jr-2', { ...VALID_VERDICT, confidence: 'low' }, {});
+  assert(postCap.trace.semantic_judge.length === 2, 'recording after cap must append, not refuse');
+  assert(postCap.status === 'capped', 'recordJudgeVerdict never mutates cell status');
+
+  assertThrows(
+    () => updateCell(root, 'jr-2', { trace: { semantic_judge: [] } }),
+    'frozen',
+    'trace stays frozen wholesale at updateCell (F1 precedent) — semantic_judge cannot be wiped through the update door',
+  );
 });
 
 fs.rmSync(detectRoot, { recursive: true, force: true });

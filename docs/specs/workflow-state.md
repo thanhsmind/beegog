@@ -3,8 +3,8 @@ area: workflow-state
 updated: 2026-07-20
 parity_sources: [codex-hook-state-parity cell codex-hook-state-parity-1 (pre-phase routing ownership and review isolation; report and capped trace, 2026-07-16)]
 parity_decisions: [codex-hook-state-parity D4-D6]
-sources: [lane-ceremony-v3 cells lcv3-1..lcv3-5 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan document frozen at shape approval, slice-in-units, close-out full-chain evidence); worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..5 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15/16 — computed schedule, cycle refusal, schedule query verb, orchestration prose; -5: review fix scoping refusal to introduced/participating cycles), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times), advisor-and-orchestration Slice 2B cells ao-2b-1/ao-2b-2 (AO5 adviser form — ladder and ceiling-skip removed, same-model no-op only; advice-class write-token refusal + promptVia migration; traces in .bee/cells/, reports docs/history/advisor-and-orchestration/reports/, 2026-07-17); advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17); post-advisor-hardening cell pah-2 (cells add/update manifest-lint advisory, 2026-07-18); multi-session-hardening cells msh-1..7 (traces in .bee/cells/, reports docs/history/multi-session-hardening/reports/, 2026-07-19 — coordination lock primitive, every-claim-path exclusivity, session self-derivation, mutator ownership guard, throttled heartbeat/lease renewal, orchestrator-claims-before-spawn doctrine sync)]
-decisions: [lane-ceremony-v3 D1/D2/D9 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19); worktree-isolation D1-D4 (docs/history/worktree-isolation/CONTEXT.md; logged 58c56bb6/5de1fd36/8cc1bde1/b24a2efc); a83a3613 (shared isolated runner plus real external command status/output grading); parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable), 72f3d6dd (AO5 config is the authority — adviser strength ladder removed, cells ao-2b-1/ao-2b-2 2026-07-17), AO3/AO13 (Gate 3 adviser precondition, event-based staleness, never a TTL — cells ao-4-1/ao-4-2 2026-07-17), multi-session-hardening D1-D7 with Δ1-Δ6 amendments (docs/history/multi-session-hardening/CONTEXT.md; audit 12f54e88, locked 17a624dc)]
+sources: [self-correcting-loop cells scl-1..scl-5 (traces in .bee/cells/, reports docs/history/self-correcting-loop/reports/, 2026-07-19 — append-only attempt ledger, claim-door lifetime budgets, change-classification advisory + behavior-class completion teeth, judge-verdict schema, risk-scaled goal-check judge); lane-ceremony-v3 cells lcv3-1..lcv3-5 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan document frozen at shape approval, slice-in-units, close-out full-chain evidence); worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..5 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15/16 — computed schedule, cycle refusal, schedule query verb, orchestration prose; -5: review fix scoping refusal to introduced/participating cycles), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times), advisor-and-orchestration Slice 2B cells ao-2b-1/ao-2b-2 (AO5 adviser form — ladder and ceiling-skip removed, same-model no-op only; advice-class write-token refusal + promptVia migration; traces in .bee/cells/, reports docs/history/advisor-and-orchestration/reports/, 2026-07-17); advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17); post-advisor-hardening cell pah-2 (cells add/update manifest-lint advisory, 2026-07-18); multi-session-hardening cells msh-1..7 (traces in .bee/cells/, reports docs/history/multi-session-hardening/reports/, 2026-07-19 — coordination lock primitive, every-claim-path exclusivity, session self-derivation, mutator ownership guard, throttled heartbeat/lease renewal, orchestrator-claims-before-spawn doctrine sync)]
+decisions: [self-correcting-loop D1-D6 with Validating amendments Δ1-Δ6 (docs/history/self-correcting-loop/CONTEXT.md; locked 84e49851, amendments folded 1cb27fbf); lane-ceremony-v3 D1/D2/D9 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19); worktree-isolation D1-D4 (docs/history/worktree-isolation/CONTEXT.md; logged 58c56bb6/5de1fd36/8cc1bde1/b24a2efc); a83a3613 (shared isolated runner plus real external command status/output grading); parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable), 72f3d6dd (AO5 config is the authority — adviser strength ladder removed, cells ao-2b-1/ao-2b-2 2026-07-17), AO3/AO13 (Gate 3 adviser precondition, event-based staleness, never a TTL — cells ao-4-1/ao-4-2 2026-07-17), multi-session-hardening D1-D7 with Δ1-Δ6 amendments (docs/history/multi-session-hardening/CONTEXT.md; audit 12f54e88, locked 17a624dc)]
 coverage: partial
 ---
 
@@ -79,6 +79,16 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | merge-back | The orchestrator-owned transaction that integrates an attested worker revision into main, verifies committed main with provenance, and disposes of clean reachable worker state or preserves its recovery identity. |
 | auto-serialize | The scheduler's answer to a legal collision: the colliding unit moves to a later wave. Overlap is never refused and never dispatched concurrently "carefully". |
 | unsatisfiable dependency | A declared dependency that can never be satisfied as things stand: it names a unit that does not exist (`missing`), or one that is `blocked` or `dropped`. The dependent unit is excluded from every wave and reported in diagnostics with its reason — never a crash, never silently scheduled. |
+| attempt history | An append-only record on a unit of work: every verification (pass or fail) and every block appends one entry — a sequence number, when it happened, the owning session and the moment it acquired its claim, the worker, the outcome, and a failure signature. Entries survive completion and can never be edited or removed by any update path; a unit with no history yet (every legacy unit) behaves exactly as before. |
+| failure signature | A short fingerprint of a failure: either supplied directly by the worker or derived mechanically from the recorded verification output, with timestamps, absolute paths, and hex runs stripped before fingerprinting, so two runs of the same underlying failure produce the same signature. |
+| lifetime budget | A unit of work's ceiling — on how many times it may be claimed, how many verification attempts may fail, and how many of those failures may share an identical failure signature — measured over the unit's whole life, never reset by a fresh claim. Unstated defaults (3 claims, 4 failed attempts, 2 identical-signature failures) apply whenever a unit declares none of its own. |
+| budget exhaustion | The typed refusal a claim attempt receives once a unit's lifetime budget is spent, naming which budget ran out, a summary of the attempt history, and the one sanctioned door back in. Two failed attempts sharing an identical failure signature exhaust a unit immediately, regardless of the claim-count budget — the signal is that the approach must change, not that another try is warranted. |
+| budget reset | The one audited door that reopens an exhausted unit: it requires a stated reason, records a durable decision, and appends a reset marker to the unit's own record — it never edits or removes a prior attempt-history entry. |
+| change classification | The category of change a unit of work makes — formatting, bug fix, behavior change, API change, security change, or migration — set explicitly at authoring or, when absent, derived only from the behavior-change flag (a behavior-changing unit is classified as a behavior change; anything else is left unclassified). |
+| minimum verification standard | An advisory expectation of what "enough" verification looks like for each change classification, checked at authoring time and reported as a warning naming the missing minimum — never a refusal, and never folded into the machine-parseable result of the write. |
+| proof-of-red requirement | The one classification with teeth at completion: a behavior-changing unit's recorded proof that the change actually fixed something real must be substantial (not a token placeholder) and must not duplicate another unit's recorded proof word-for-word; falling short refuses completion, naming the missing minimum or the colliding unit. A unit riding the existing deliberate-exceptions door keeps that door's original contract, with an advisory noting it took that door instead. |
+| judge verdict | A structured record — pass or needs-revision, with one entry per checked truth and its evidence, whether a needs-revision finding looks automatically fixable or needs a person, and how confident the judge is — attached append-only to a unit of work. It stamps which model built the change and which model judged it, and an honest independence status: `confirmed` only when both models were pinned to a specific identity and genuinely differ, `same-model` when they match, `unverified` otherwise — never a guess. Free-form prose is not a verdict; it is a failed judge run, re-dispatched once, then recorded `unverified`. |
+| goal-check judge | A read-only semantic check dispatched during the swarming goal-check, scaled by the lane's risk: tiny and small lanes stay mechanical-only; standard lanes get one judge per completed behavior-changing unit, checking its claimed truths against the actual change, its cited decisions, and whether the task and the change actually match; high-risk lanes get the same judge with a preference for a model independent from the builder, recording the outcome honestly either way. This judge is part of finishing a unit, never the user-invoked independent review — it can never open, approve, or substitute for a review session. |
 
 ## Behaviors & Operations
 
@@ -567,6 +577,106 @@ work units change, never because the plan moved after its gate. Lanes without a
 plan document (tiny always; small by default) are untouched by this rule: their
 work shape is the unit itself (doctrine-layer R13).
 
+**B26 — Every verification or block appends one entry to a unit's attempt
+history.** Trigger: recording a verification result (pass or fail) or blocking
+a unit of work. What happens: exactly one entry is appended — a sequence
+number, when, the owning session and the moment it acquired its claim, the
+worker, the outcome, a failure signature (worker-supplied or mechanically
+derived from the verification output), and an optional note. The history is
+append-only: no revision path may edit or remove an entry, and entries survive
+completion — the same execution-trace freeze that already refuses a plan
+revision touching the trace (B7) covers the whole history. What each actor
+observes: a unit with no history yet (every legacy unit) behaves exactly as it
+always did (self-correcting-loop D1, Δ1).
+
+**B27 — A unit's lifetime budget is enforced at the moment of claiming, inside
+the same exclusive operation that decides ownership (B11).** Trigger: a
+session claims a unit, whether by identity or through the automatic picker.
+What happens: the claim is granted first, then its budgets are checked against
+the attempt history; exceeding the claim-count or failed-attempt ceiling, or
+two failed attempts sharing an identical failure signature, refuses the claim
+and releases the just-granted claim in the same operation, so the caller never
+ends up holding a claim it was refused — the enforcement therefore lands at
+the very next claim attempt, bounded to at most one attempt of overrun. The
+refusal names the exhausted budget (or the repeated signature), a summary of
+the attempt history, and the sanctioned door (a budget reset). The automatic
+work picker skips a budget-exhausted or repeated-failure unit when selecting
+the next unit, so one looping unit never bricks the whole pool of ready work —
+only claiming a unit by its identity surfaces the refusal directly. No
+autopilot level ever overrides either refusal: these are loop-safety stops on
+a unit's own history, not human approval gates, and they answer the same "no"
+whether a human or the agent is driving. A unit with no attempt history
+(legacy) is measured against the unstated defaults and behaves exactly as
+before until it actually starts looping. What each actor observes: normal
+single-attempt work is unaffected; a unit that keeps failing the same way
+stops being reclaimable until someone explicitly resets it with a reason
+(self-correcting-loop D2, Δ1-Δ3).
+
+**B28 — A budget reset is the sole door back into an exhausted unit, and it is
+never silent.** Trigger: an operator decides a unit's approach has genuinely
+changed and it deserves a fresh budget. What happens: the reset requires a
+reason, records a durable decision, and appends a reset marker to the unit's
+own record; it never rewrites or removes a prior attempt-history entry. What
+each actor observes: after a reset, lifetime-budget accounting (B27) resumes
+counting from the marker forward, so attempts before the reset stop being held
+against the unit's new attempts (self-correcting-loop D2).
+
+**B29 — Authoring a unit of work classifies its change, and an insufficient
+verification plan is a warning, never a block.** Trigger: creating or revising
+a unit of work. What happens: the unit's change classification is set
+explicitly or derived only from the behavior-change flag; the recorded
+verification plan is checked against that classification's minimum standard
+and, if it falls short, a warning names the missing minimum on the same
+advisory channel authoring warnings already use — it never fails the write and
+never appears in the machine-parseable result. What each actor observes:
+authoring behavior is otherwise unchanged; an author who ignores the warning
+is informed, not stopped (self-correcting-loop D3, Δ4).
+
+**B30 — Completing a behavior-changing unit requires substantial,
+non-duplicated proof that the bug was real.** Trigger: completing a unit
+classified as a behavior change. What happens: the recorded proof-of-red
+evidence must exist, be long enough to be a real account rather than a
+placeholder, and must not be identical to another unit's recorded proof;
+falling short refuses completion, naming the missing minimum or the colliding
+unit — the duplicate check tolerates an unreadable sibling record by skipping
+it rather than failing the whole scan. A unit riding the existing
+deliberate-exceptions door keeps that door's contract unchanged, with an
+advisory noting it took that door instead. What each actor observes: every
+other change classification stays advisory-only in this version — only a
+behavior change gets a hard door at completion (self-correcting-loop D3, Δ5).
+
+**B31 — A judge verdict is a structured, append-only record with an honest
+independence stamp.** Trigger: a judge examines a unit of work and renders a
+verdict. What happens: the verdict is validated against one fixed shape before
+it is accepted — free-form prose is not a verdict and is treated as a failed
+judge run, re-dispatched once and then recorded as unverified rather than
+accepted as free text. A valid verdict is appended to the unit's own record,
+stamped with the builder's and judge's models as supplied by the dispatching
+orchestrator at record time, and an independence status: `confirmed` only when
+both models were pinned and genuinely differ, `same-model` when they match,
+`unverified` otherwise — never a guess. What each actor observes: the verdict
+history on a unit only ever grows; a malformed verdict never corrupts the
+record, it simply fails validation with a named reason (self-correcting-loop
+D5, Δ6).
+
+**B32 — The goal-check's semantic judge scales with the lane's risk, and stays
+inside the loop that finishes a unit, never the review gate.** Trigger: the
+swarming goal-check evaluates a completed unit of work. What happens: tiny and
+small lanes run mechanical checks only, unchanged; standard lanes dispatch one
+judge per completed behavior-changing unit; high-risk lanes dispatch the same
+judge with a preference for model independence from the builder, recording the
+outcome honestly either way (B31). A needs-revision verdict whose finding
+looks automatically fixable means the unit is not yet done — it is
+re-dispatched with the exact failing checks, and the attempt history (B26)
+gains a failed entry carrying the judge's failure signature; a needs-revision
+verdict that needs a person escalates to the human instead of looping. What
+each actor observes: this judge never creates, approves, or substitutes for
+the user-invoked review session (R4/R11); the review gate, the
+review-candidates ledger, and the "review runs only on request" rule are all
+untouched — a unit can be judged clean here and still show up as `unreviewed`
+until someone asks for a review (self-correcting-loop D4, Δ6; decision
+565e68d0 unchanged).
+
 ## Actors & Access
 
 - **The agent** runs every verb itself; the human never runs workflow
@@ -792,6 +902,44 @@ work shape is the unit itself (doctrine-layer R13).
   dispatching orchestrator wins the claim before the worker starts, and the
   worker only validates the ownership it was handed (multi-session-hardening
   D1 worker-execution-contract amendment).
+- R41 — A unit's lifetime budget is checked inside the same exclusive
+  operation that grants its claim, not before or after it; exceeding it
+  releases the just-granted claim in the same step and answers with a typed
+  refusal naming the exhausted budget, the attempt history, and the reset
+  door — enforcement is therefore bounded to at most one attempt of overrun
+  (self-correcting-loop D2, Δ2).
+- R42 — Two failed attempts sharing an identical failure signature exhaust a
+  unit immediately: the signal is that the approach must change, not that
+  another try is warranted (self-correcting-loop D2).
+- R43 — The automatic work picker skips a budget-exhausted or
+  repeated-failure unit rather than surfacing the refusal, so one looping
+  unit never bricks the pool of ready work; only claiming a unit by identity
+  gets the typed refusal directly (self-correcting-loop D2, Δ3).
+- R44 — No autopilot level ever overrides a budget or repeated-failure
+  refusal: these are loop-safety stops on a unit's own history, not human
+  approval gates (self-correcting-loop D2).
+- R45 — A budget reset is the only door back into an exhausted unit: it
+  requires a stated reason, records a durable decision, and appends a marker
+  without ever touching the attempt history itself (self-correcting-loop D2).
+- R46 — A unit's change classification is set explicitly or derived only from
+  the behavior-change flag — never any richer auto-derivation — and an
+  insufficient verification plan is reported as an authoring-time warning on
+  the advisory channel, never a refusal (self-correcting-loop D3, Δ4).
+- R47 — A behavior-changing unit's completion requires substantial (not
+  placeholder), non-duplicated proof-of-red evidence; every other change
+  classification stays advisory-only in this version (self-correcting-loop D3).
+- R48 — A judge verdict is accepted only in its one structured shape;
+  free-form prose is a failed judge run, re-dispatched once, then recorded
+  unverified — never accepted as the verdict itself (self-correcting-loop D5).
+- R49 — A verdict's model-independence status is derived, never asserted:
+  `confirmed` requires both models pinned and different; anything else is
+  recorded honestly as `same-model` or `unverified` (self-correcting-loop D5,
+  Δ6).
+- R50 — The goal-check's semantic judge is verification inside the loop that
+  finishes a unit, scaled by lane risk — it is never the user-invoked
+  independent review, never opens or approves a review session, and never
+  touches the review-candidates ledger or Gate 4 (self-correcting-loop D4;
+  decision 565e68d0-327f-404e-b49e-d1c61ba81bfd unchanged).
 
 ## Edge Cases Settled
 
@@ -861,6 +1009,16 @@ work shape is the unit itself (doctrine-layer R13).
   environment behaves exactly as before: claims and holds are recorded
   ownerless, and the new ownership check never fires against an ownerless
   claim (multi-session-hardening D3/D4).
+- A unit with no attempt history yet (every legacy unit) is measured against
+  the default lifetime budgets and behaves exactly as it always did — until it
+  actually loops (self-correcting-loop D2, D6).
+- An autopilot level set to `total` still does not waive a budget or
+  repeated-failure refusal — proven by a dedicated test row exercising that
+  exact combination (self-correcting-loop D2).
+- A behavior-changing unit riding the existing deliberate-exceptions door for
+  its proof-of-red keeps that door's original contract untouched, with an
+  advisory noting it took that door instead of meeting the length/duplicate
+  floor (self-correcting-loop D3, Δ5).
 
 ## Open Gaps
 
@@ -886,6 +1044,9 @@ work shape is the unit itself (doctrine-layer R13).
   fix, batch cumulative-diff mechanics) is contract-specced in the reviewing
   skill's own reference, not here; this area owns only the records and their
   derived truth.
+- No wall-clock ceiling exists on a unit's lifetime yet — attempts are the
+  only budget unit for now, deferred until a reliable clock source is chosen
+  (self-correcting-loop non-goal).
 
 ## Pointers (implementation)
 
@@ -1039,3 +1200,28 @@ work shape is the unit itself (doctrine-layer R13).
   `templates/tests/test_lib.mjs` (321 passing), verb example in
   `templates/tests/test_bee_cli.mjs` (132 passing). Evidence: commits 390165a,
   9e2156e, 5003503, 79217ae; traces `.bee/cells/parallel-scheduler-{1..4}.json`.
+- Self-correcting loop (B26-B32, R41-R50): attempt ledger `appendAttempt` /
+  exported `normalizeFailureSignature` in
+  `skills/bee-hive/templates/lib/cells.mjs` (byte-mirrored to `.bee/bin/lib/`),
+  invoked from `recordVerify` (both outcomes) and `blockCell`; lifetime
+  budgets `checkCellBudgets` runs inside `claimCellCrossSession`'s O_EXCL
+  critical section with unwind-on-refusal, typed `CELL_BUDGET_EXHAUSTED` /
+  `REPEATED_FAILURE`, skip-on-select wired into `claimNextCell`, reset verb
+  `resetCellBudget` / CLI `cells reset-budget --id --reason`; change
+  classification `deriveChangeClass`, authoring advisory
+  `JUDGE_STANDARD_INSUFFICIENT` (STDERR only via the `bee.mjs` handler layer,
+  pah-2 precedent), behavior-class completion teeth (evidence length +
+  tolerant duplicate scan) in `capCell`; judge-verdict schema
+  `validateJudgeVerdict` / `deriveModelIndependence` in new
+  `skills/bee-hive/templates/lib/judge.mjs` (byte-mirrored to
+  `.bee/bin/lib/`), recorder `recordJudgeVerdict` in `cells.mjs`, CLI verb
+  `cells judge-record --id --file <verdict.json> [--builder-model]
+  [--judge-model]`; goal-check judge-tier table single-homed in
+  `skills/bee-hive/references/routing-and-contracts.md` with a one-line
+  565e68d0-scoping clause mirrored onto the seven adjacent surfaces
+  (`bee-swarming` SKILL + reference, `bee-hive` SKILL x2 sites, go-mode,
+  `AGENTS.md` + `templates/AGENTS.block.md`, `bee-scribing` SKILL). Evidence:
+  `docs/history/self-correcting-loop/CONTEXT.md` (D1-D6, Validating
+  amendments Δ1-Δ6, decisions 84e49851/1cb27fbf); traces
+  `.bee/cells/scl-{1..5}.json`; reports
+  `docs/history/self-correcting-loop/reports/scl-{1..5}.md`.

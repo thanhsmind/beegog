@@ -114,7 +114,7 @@ Use the least workflow that honestly protects the work. A tiny fix wearing epic 
 
 **Ceremony scales with the lane (lanes scale ceremony, never memory):**
 
-Review is on demand (SPEC R1/R3/R8, decision 565e68d0): no lane auto-dispatches a reviewer wave or asks Gate 4 after execution. Every lane below closes through scribing/compounding as `unreviewed`; a review session — and its Gate 4 — happens only when the user asks, over whatever scope they choose.
+Review is on demand (SPEC R1/R3/R8, decision 565e68d0): no lane auto-dispatches a reviewer wave or asks Gate 4 after execution. Every lane below closes through scribing/compounding as `unreviewed`; a review session — and its Gate 4 — happens only when the user asks, over whatever scope they choose. Separately, `standard`/`high-risk` goal-checks also run a semantic checklist judge per capped `behavior_change` cell (D4, table in `references/routing-and-contracts.md`) — that is verification of the cell, not this on-demand review session.
 
 | Lane | Plan | Validate | Execute | Review | Human stops |
 |---|---|---|---|---|---|
@@ -139,7 +139,7 @@ Never skipped, never batched, never self-approved — including go mode and head
 - **Gate 3:** "Feasibility validated. Approve execution?"
 - **Gate 4:** P1 > 0 → "P1 findings block merge. Fix before proceeding?" ; P1 = 0 → "Review complete. Approve merge?"
 
-**Gate 4 lives only inside a user-invoked review session (SPEC R8, decision 565e68d0).** It is asked when the user has explicitly called for independent review over a scope, never automatically after any lane's execution completes and never after an unreviewed feature close. Gate bypass never *creates* a review session at any level. Under `normal`/`full`, even inside a running session Gate 4's UAT items and any P1 always stop for the human; only `total` auto-proceeds on them (the human chose zero stops).
+**Gate 4 lives only inside a user-invoked review session (SPEC R8, decision 565e68d0).** It is asked when the user has explicitly called for independent review over a scope, never automatically after any lane's execution completes and never after an unreviewed feature close. Gate bypass never *creates* a review session at any level. Under `normal`/`full`, even inside a running session Gate 4's UAT items and any P1 always stop for the human; only `total` auto-proceeds on them (the human chose zero stops). The goal-check semantic judge (D4, `references/routing-and-contracts.md`) is a distinct, earlier verification step — it never substitutes for, and never triggers, this gate.
 
 Lane exceptions (Modes and Lanes table): `docs` lane has no gates; `tiny` and `small` merge Gates 2+3 into one shape+execution question. Gates 1-3 are otherwise unchanged and asked one at a time; Gate 4 is never part of a lane's default chain for any lane, `tiny` through `high-risk` — it exists only inside an on-demand review session.
 

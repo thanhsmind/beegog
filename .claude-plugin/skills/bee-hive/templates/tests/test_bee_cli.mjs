@@ -35,6 +35,7 @@ import {
   deprecatedRedirect,
   computeManifestHash,
   manifestLintWarning,
+  judgeStandardWarning,
 } from '../bee.mjs';
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -487,6 +488,57 @@ await check('cells.unclaim example runs through the real dispatcher (claimed -> 
   const cell = JSON.parse(result.stdout);
   assert(cell.status === 'open', `demo-1 should be open after unclaim, got ${cell.status}`);
   assert(!cell.trace.worker, 'unclaim must release the worker');
+});
+
+// D2 (self-correcting-loop): cells.reset-budget's registry example, run
+// against demo-1 (open, no exhausted budget) purely to exercise the
+// dispatcher wiring (registry -> handler -> resetCellBudget) — the actual
+// exhaustion/refusal/reopen behavior is covered end to end above and in
+// test_lib.mjs.
+await check('cells.reset-budget example runs through the real dispatcher', async () => {
+  const result = await assertExampleOk('cells.reset-budget');
+  const cell = JSON.parse(result.stdout);
+  assert(cell.id === 'demo-1', `expected demo-1, got ${result.stdout}`);
+  assert(
+    Array.isArray(cell.trace.budget_resets) && cell.trace.budget_resets.length === 1,
+    `expected one budget_resets entry, got ${JSON.stringify(cell.trace.budget_resets)}`,
+  );
+});
+
+// D5 (self-correcting-loop): cells.judge-record's registry example, run
+// against demo-1 with --builder-model/--judge-model both present and
+// differing — exercises the full dispatcher wiring (registry -> handler ->
+// recordJudgeVerdict -> validateJudgeVerdict/deriveModelIndependence) and
+// proves the CLI's "flag presence implies pinned" derivation end to end;
+// the pure-function accept/reject/independence rows are covered exhaustively
+// in test_lib.mjs.
+await check('cells.judge-record example runs through the real dispatcher, validates the --file payload, and stamps model_independence from --builder-model/--judge-model presence', async () => {
+  const verdict = {
+    schema: 'judge-verdict/1',
+    verdict: 'PASS',
+    checks: [{ id: 'must_haves', status: 'PASS', evidence: 'diff matches CONTEXT D5 citations' }],
+    fixability: 'automatic',
+    confidence: 'high',
+  };
+  fs.writeFileSync(path.join(root, 'verdict-demo-1.json'), JSON.stringify(verdict), 'utf8');
+  const result = await assertExampleOk('cells.judge-record');
+  const cell = JSON.parse(result.stdout);
+  assert(cell.id === 'demo-1', `expected demo-1, got ${result.stdout}`);
+  const entries = cell.trace.semantic_judge;
+  assert(Array.isArray(entries) && entries.length === 1, `expected one semantic_judge entry, got ${JSON.stringify(entries)}`);
+  assert(entries[0].builder_model === 'sonnet' && entries[0].judge_model === 'opus', `expected the --builder-model/--judge-model flags stored verbatim, got ${JSON.stringify(entries[0])}`);
+  assert(entries[0].model_independence === 'confirmed', `two differing --*-model flags must derive confirmed (CLI-level pinned-by-presence), got ${entries[0].model_independence}`);
+});
+
+await check('cells.judge-record refuses (non-zero exit) a free-prose --file payload, and leaves the ledger untouched', async () => {
+  fs.writeFileSync(path.join(root, 'verdict-demo-1-bad.json'), 'looks fine to me', 'utf8');
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'judge-record', '--id', 'demo-1', '--file', 'verdict-demo-1-bad.json', '--json'],
+    cwd: root,
+  });
+  assert(result.status !== 0, `a free-prose verdict payload must be refused, got exit ${result.status}: stdout=${result.stdout}`);
+  // --json routes a thrown error's message to stdout as {"error": "..."} (emitError), not stderr.
+  assert(/verdict rejected/i.test(result.stdout), `expected a "verdict rejected" refusal, got stdout=${result.stdout} stderr=${result.stderr}`);
 });
 
 await check('reservations.reserve example runs through the real dispatcher', async () => {
@@ -1043,7 +1095,11 @@ await check('reviews fixture setup: a capped behavior_change cell ("ok-1") with 
   const capped = await runModuleWorker(BEE_MJS, {
     args: ['cells', 'cap', '--id', 'ok-1', '--outcome', 'done', '--files', 'a.js', '--behavior-change', '--evidence-stdin', '--json'],
     cwd: rootReviewsFeedback,
-    input: JSON.stringify({ red_failure_evidence: 'prior behavior', verification_run: 'node -e 0' }),
+    input: JSON.stringify({
+      red_failure_evidence:
+        'ok-1: prior behavior characterized before this reviews-fixture change, meeting the D3 anti-boilerplate floor (>=80 chars).',
+      verification_run: 'node -e 0',
+    }),
   });
   assert(capped.status === 0, `cells cap setup failed: ${capped.status}: stdout=${capped.stdout} stderr=${capped.stderr}`);
   assert(JSON.parse(capped.stdout).trace.verification_evidence, 'ok-1 should carry recorded verification_evidence for the A10 preflight');
@@ -1935,6 +1991,59 @@ await check('manifestLintWarning tolerates malformed cell shapes without throwin
   );
 });
 
+// ─── judgeStandardWarning (D3, self-correcting-loop): pure-logic unit tests
+// for the advisory judge-standard sufficiency matrix (F4) — add/update never
+// refuse, see the CLI-level end-to-end rows further down for the through-the-
+// dispatcher coverage, mirroring manifestLintWarning's own H2 layout above.
+
+await check('judgeStandardWarning is silent for an unclassified cell — no change_class, no behavior_change:true (D3: no matrix check at all)', async () => {
+  assert(judgeStandardWarning({ id: 'jsw-1', verify: 'node -e 0' }) === null, 'unclassified cell must never warn');
+  assert(judgeStandardWarning({ id: 'jsw-2', verify: 'node -e 0', behavior_change: false }) === null, 'behavior_change:false stays unclassified');
+});
+
+await check('judgeStandardWarning fires per class when the verify string is missing that class\'s named minimum (formatting/bugfix/api/security/migration)', async () => {
+  const cases = [
+    ['formatting', { id: 'jsw-fmt', change_class: 'formatting', verify: 'node -e 0' }],
+    ['bugfix', { id: 'jsw-bug', change_class: 'bugfix', verify: 'node -e 0' }],
+    ['api', { id: 'jsw-api', change_class: 'api', verify: 'node -e 0' }],
+    ['security', { id: 'jsw-sec', change_class: 'security', verify: 'node -e 0' }],
+    ['migration', { id: 'jsw-mig', change_class: 'migration', verify: 'node -e 0' }],
+  ];
+  for (const [cls, cell] of cases) {
+    const warning = judgeStandardWarning(cell);
+    assert(warning && warning.includes('JUDGE_STANDARD_INSUFFICIENT'), `expected a JUDGE_STANDARD_INSUFFICIENT warning for class "${cls}", got: ${warning}`);
+    assert(warning.includes(cell.id), `expected the warning to name the cell id for class "${cls}", got: ${warning}`);
+    assert(warning.includes(cls), `expected the warning to name the class "${cls}", got: ${warning}`);
+  }
+});
+
+await check('judgeStandardWarning stays silent per class once verify names that class\'s minimum', async () => {
+  assert(judgeStandardWarning({ id: 'jsw-fmt-ok', change_class: 'formatting', verify: 'npm run lint && npm run typecheck' }) === null, 'formatting: lint/typecheck present');
+  assert(judgeStandardWarning({ id: 'jsw-bug-ok', change_class: 'bugfix', verify: 'node tests/test_foo.mjs' }) === null, 'bugfix: a test path named');
+  assert(judgeStandardWarning({ id: 'jsw-api-ok', change_class: 'api', verify: 'node tests/test_contract.mjs' }) === null, 'api: a contract test named');
+  assert(judgeStandardWarning({ id: 'jsw-sec-ok', change_class: 'security', verify: 'node tests/test_negative_path.mjs' }) === null, 'security: a negative-path test named');
+  assert(judgeStandardWarning({ id: 'jsw-mig-ok', change_class: 'migration', verify: 'node migrate.mjs forward && node migrate.mjs rollback' }) === null, 'migration: forward + rollback both named');
+});
+
+await check('judgeStandardWarning fires for a behavior-class cell with no pre-attached red_failure_evidence, and is silent once one is present', async () => {
+  const warning = judgeStandardWarning({ id: 'jsw-behavior-1', behavior_change: true, verify: 'node -e 0' });
+  assert(warning && warning.includes('jsw-behavior-1') && warning.includes('behavior'), `expected a behavior-class warning, got: ${warning}`);
+  const silent = judgeStandardWarning({
+    id: 'jsw-behavior-2',
+    behavior_change: true,
+    verify: 'node -e 0',
+    verification_evidence: { red_failure_evidence: 'a pre-attached characterization of the prior behavior' },
+  });
+  assert(silent === null, 'a cell already carrying red_failure_evidence at authoring time must not warn');
+});
+
+await check('judgeStandardWarning tolerates malformed cell shapes without throwing', async () => {
+  assert(judgeStandardWarning(null) === null, 'null cell must not throw');
+  assert(judgeStandardWarning(undefined) === null, 'undefined cell must not throw');
+  assert(judgeStandardWarning({}) === null, 'empty object (unclassified) must not throw');
+  assert(judgeStandardWarning({ id: 'jsw-bad', change_class: 'behavior', verify: null }) !== null, 'non-string verify must not throw, and behavior still warns without evidence');
+});
+
 // ─── end-to-end: --help / --help --json (D3 tool-schema manifest) ─────────
 
 await check('bee --help --json parses as valid JSON and lists every existing subcommand', async () => {
@@ -2079,6 +2188,138 @@ await check('bee cells update stays silent when the patched cell keeps the manif
   assert(!/WARNING/.test(result.stderr), `expected no WARNING, got stderr=${result.stderr}`);
 });
 
+// ─── D3 judge-standard matrix, through the dispatcher: `cells add`/`cells
+// update` warn (stderr, JUDGE_STANDARD_INSUFFICIENT) on an under-specified
+// change_class shape but never refuse the write (F4); `cells cap` warns when
+// a behavior-class cap rides the deliberate_exceptions door (F5). Separate
+// fixture cells from demo-2 so this block never disturbs demo-2's own
+// claim/verify/cap lifecycle below (H2 layout precedent). ─────────────────
+
+await check('bee cells add fires JUDGE_STANDARD_INSUFFICIENT on an under-specified api-class cell and still succeeds', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-api',
+    feature: 'demo2',
+    title: 'D3 matrix fixture — api class, no contract/integration test named',
+    lane: 'small',
+    action: 'D3 matrix fixture only, never claimed/executed.',
+    verify: 'node -e "process.exit(0)"',
+    change_class: 'api',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-api.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-jsw-api.json', '--json']);
+  assert(result.status === 0, `the write must always succeed: exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(
+    /JUDGE_STANDARD_INSUFFICIENT/.test(result.stderr) && /demo-2-jsw-api/.test(result.stderr),
+    `expected a JUDGE_STANDARD_INSUFFICIENT warning naming the cell, got: ${result.stderr}`,
+  );
+});
+
+await check('bee cells add stays silent on the matrix when the verify already names the class minimum', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-api-ok',
+    feature: 'demo2',
+    title: 'D3 matrix fixture — api class, contract test named',
+    lane: 'small',
+    action: 'D3 matrix fixture only, never claimed/executed.',
+    verify: 'node tests/test_contract.mjs',
+    change_class: 'api',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-api-ok.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-jsw-api-ok.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(!/JUDGE_STANDARD_INSUFFICIENT/.test(result.stderr), `expected no JUDGE_STANDARD_INSUFFICIENT warning, got stderr=${result.stderr}`);
+});
+
+await check('bee cells add stays silent on the matrix for an unclassified cell (no change_class, no behavior_change:true)', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-unclassified',
+    feature: 'demo2',
+    title: 'D3 matrix fixture — unclassified',
+    lane: 'small',
+    action: 'D3 matrix fixture only, never claimed/executed.',
+    verify: 'node -e "process.exit(0)"',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-unclassified.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const result = await runBee(['cells', 'add', '--file', 'cell-jsw-unclassified.json', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(!/JUDGE_STANDARD_INSUFFICIENT/.test(result.stderr), `expected no warning for an unclassified cell, got stderr=${result.stderr}`);
+});
+
+await check('bee cells update fires JUDGE_STANDARD_INSUFFICIENT when a patch leaves the MERGED cell under-specified, and still succeeds', async () => {
+  const patch = { change_class: 'security' };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-update.json'), JSON.stringify(patch, null, 2), 'utf8');
+  const result = await runBee(['cells', 'update', '--id', 'demo-2-jsw-unclassified', '--file', 'cell-jsw-update.json', '--json']);
+  assert(result.status === 0, `the write must always succeed: exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  assert(
+    /JUDGE_STANDARD_INSUFFICIENT/.test(result.stderr) && /demo-2-jsw-unclassified/.test(result.stderr),
+    `expected the warning naming the cell, got: ${result.stderr}`,
+  );
+});
+
+await check('bee cells cap fires JUDGE_STANDARD_INSUFFICIENT (F5) when a behavior-class cap rides deliberate_exceptions, but still succeeds', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-exception',
+    feature: 'demo2',
+    title: 'D3 F5 fixture — behavior class riding deliberate_exceptions',
+    lane: 'small',
+    action: 'D3 F5 fixture only.',
+    verify: 'node -e "process.exit(0)"',
+    change_class: 'behavior',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-exception.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const added = await runBee(['cells', 'add', '--file', 'cell-jsw-exception.json', '--json']);
+  assert(added.status === 0, `add setup failed: ${added.status}: stdout=${added.stdout} stderr=${added.stderr}`);
+  const claimed = await runBee(['cells', 'claim', '--id', 'demo-2-jsw-exception', '--worker', 'worker-jsw', '--json']);
+  assert(claimed.status === 0, `claim setup failed: ${claimed.status}: stdout=${claimed.stdout} stderr=${claimed.stderr}`);
+  const verified = await runBee([
+    'cells', 'verify', '--id', 'demo-2-jsw-exception', '--command', 'node -e 0', '--output', 'ok', '--passed', 'true', '--json',
+  ]);
+  assert(verified.status === 0, `verify setup failed: ${verified.status}: stdout=${verified.stdout} stderr=${verified.stderr}`);
+
+  const capped = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'cap', '--id', 'demo-2-jsw-exception', '--outcome', 'done', '--files', 'a.js', '--evidence-stdin', '--json'],
+    cwd: root2,
+    input: JSON.stringify({ deliberate_exceptions: ['brand-new surface, no prior behavior to characterize'] }),
+  });
+  assert(capped.status === 0, `cap must succeed: exit ${capped.status}: stdout=${capped.stdout} stderr=${capped.stderr}`);
+  assert(
+    /JUDGE_STANDARD_INSUFFICIENT/.test(capped.stderr) && /demo-2-jsw-exception/.test(capped.stderr) && /deliberate_exceptions/.test(capped.stderr),
+    `expected the F5 advisory naming the cell and the exception door, got stderr=${capped.stderr}`,
+  );
+});
+
+await check('bee cells cap stays silent on the F5 advisory for a green-row behavior-class cap (sufficient, unique red_failure_evidence)', async () => {
+  const cellFixture = {
+    id: 'demo-2-jsw-green',
+    feature: 'demo2',
+    title: 'D3 F5 fixture — behavior class, sufficient evidence',
+    lane: 'small',
+    action: 'D3 F5 fixture only.',
+    verify: 'node -e "process.exit(0)"',
+    change_class: 'behavior',
+  };
+  fs.writeFileSync(path.join(root2, 'cell-jsw-green.json'), JSON.stringify(cellFixture, null, 2), 'utf8');
+  const added = await runBee(['cells', 'add', '--file', 'cell-jsw-green.json', '--json']);
+  assert(added.status === 0, `add setup failed: ${added.status}: stdout=${added.stdout} stderr=${added.stderr}`);
+  const claimed = await runBee(['cells', 'claim', '--id', 'demo-2-jsw-green', '--worker', 'worker-jsw', '--json']);
+  assert(claimed.status === 0, `claim setup failed: ${claimed.status}: stdout=${claimed.stdout} stderr=${claimed.stderr}`);
+  const verified = await runBee([
+    'cells', 'verify', '--id', 'demo-2-jsw-green', '--command', 'node -e 0', '--output', 'ok', '--passed', 'true', '--json',
+  ]);
+  assert(verified.status === 0, `verify setup failed: ${verified.status}: stdout=${verified.stdout} stderr=${verified.stderr}`);
+
+  const capped = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'cap', '--id', 'demo-2-jsw-green', '--outcome', 'done', '--files', 'a.js', '--evidence-stdin', '--json'],
+    cwd: root2,
+    input: JSON.stringify({
+      red_failure_evidence:
+        'demo-2-jsw-green: a genuinely unique characterization of the prior failing behavior before this change, clearing the D3 floor.',
+    }),
+  });
+  assert(capped.status === 0, `cap must succeed: exit ${capped.status}: stdout=${capped.stdout} stderr=${capped.stderr}`);
+  assert(!/JUDGE_STANDARD_INSUFFICIENT/.test(capped.stderr), `expected no F5 advisory on a green-row cap, got stderr=${capped.stderr}`);
+});
+
 await check('bee cells claim --id demo-2 --worker claims it', async () => {
   const result = await runBee(['cells', 'claim', '--id', 'demo-2', '--worker', 'worker-test', '--json']);
   assert(JSON.parse(result.stdout).status === 'claimed', `expected claimed, got ${result.stdout}`);
@@ -2174,6 +2415,34 @@ await check('bee cells verify --passed true (explicit "true" argument, not a bar
   assert(JSON.parse(result.stdout).trace.verify_passed === true, `expected verify_passed true, got ${result.stdout}`);
 });
 
+// D1: --signature threads from bee.mjs's CLI flag through recordVerify into
+// the trace.attempts ledger — the worker-suppliable override, end to end
+// through the dispatcher (not just the direct lib call already covered above).
+await check('bee cells verify --signature overrides the mechanical normalizer through the dispatcher, and a --passed false verify without --signature appends a ledger entry', async () => {
+  addCell(root2, {
+    id: 'ledger-cli-1',
+    feature: 'demo2',
+    title: 'CLI ledger fixture',
+    lane: 'small',
+    action: 'Exercise the --signature flag through the dispatcher.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const failed = await runBee([
+    'cells', 'verify', '--id', 'ledger-cli-1', '--command', 'npm test', '--output', 'FAIL from dispatcher', '--passed', 'false', '--signature', 'cli-custom-sig', '--json',
+  ]);
+  assert(failed.status === 0, `exit ${failed.status}: stdout=${failed.stdout} stderr=${failed.stderr}`);
+  const afterFail = JSON.parse(failed.stdout);
+  assert(afterFail.trace.attempts.length === 1, `expected 1 ledger entry, got ${JSON.stringify(afterFail.trace.attempts)}`);
+  assert(afterFail.trace.attempts[0].failure_signature === 'cli-custom-sig', `expected the CLI --signature to win, got ${afterFail.trace.attempts[0].failure_signature}`);
+
+  const passed = await runBee([
+    'cells', 'verify', '--id', 'ledger-cli-1', '--command', 'npm test', '--output', 'ok', '--passed', 'true', '--json',
+  ]);
+  const afterPass = JSON.parse(passed.stdout);
+  assert(afterPass.trace.attempts.length === 2, `expected 2 ledger entries after the passing verify, got ${afterPass.trace.attempts.length}`);
+  assert(afterPass.trace.attempts[1].verdict === 'pass' && afterPass.trace.attempts[1].failure_signature === null, 'the passing entry carries no failure_signature');
+});
+
 await check('bee cells cap --id demo-2 caps the cell', async () => {
   const result = await runBee(['cells', 'cap', '--id', 'demo-2', '--outcome', 'dispatcher test cap', '--files', 'cell-demo-2.json', '--json']);
   assert(JSON.parse(result.stdout).status === 'capped', `expected capped, got ${result.stdout}`);
@@ -2187,6 +2456,61 @@ await check('bee cells judge --id demo-2 reports no frozen-judge hits', async ()
 await check('bee cells tier --id demo-2 --tier generation sets the tier', async () => {
   const result = await runBee(['cells', 'tier', '--id', 'demo-2', '--tier', 'generation', '--json']);
   assert(JSON.parse(result.stdout).tier === 'generation', `expected generation, got ${result.stdout}`);
+});
+
+// D2 (self-correcting-loop): `cells reset-budget` end to end through the
+// real dispatcher — the audited door that reopens a budget-exhausted or
+// repeated-failure cell. Full exhaustion/refusal coverage lives at the lib
+// level (test_lib.mjs); this proves the CLI wiring (registry + handler +
+// dispatch table) threads --id/--reason into resetCellBudget correctly.
+await check('bee cells reset-budget --id --reason runs through the dispatcher: appends a budget_resets entry and the reason round-trips verbatim (D2)', async () => {
+  addCell(root2, {
+    id: 'budget-cli-1',
+    feature: 'demo2',
+    title: 'CLI budget-reset fixture',
+    lane: 'small',
+    action: 'Exercise cells reset-budget through the dispatcher.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const result = await runBee(['cells', 'reset-budget', '--id', 'budget-cli-1', '--reason', 'dispatcher smoke test', '--json']);
+  assert(result.status === 0, `exit ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const cell = JSON.parse(result.stdout);
+  assert(Array.isArray(cell.trace.budget_resets) && cell.trace.budget_resets.length === 1, `expected one budget_resets entry, got ${JSON.stringify(cell.trace.budget_resets)}`);
+  assert(cell.trace.budget_resets[0].reason === 'dispatcher smoke test', `reason should round-trip verbatim, got ${JSON.stringify(cell.trace.budget_resets[0])}`);
+});
+
+await check('bee cells reset-budget --id X refuses without --reason', async () => {
+  const result = await runBee(['cells', 'reset-budget', '--id', 'budget-cli-1']);
+  assert(result.status !== 0, 'reset-budget without --reason must refuse');
+});
+
+await check('bee cells claim --id refuses with typed CELL_BUDGET_EXHAUSTED once the default max_claims budget is spent, through the real dispatcher (D2)', async () => {
+  addCell(root2, {
+    id: 'budget-cli-2',
+    feature: 'demo2',
+    title: 'CLI budget-exhaustion fixture',
+    lane: 'small',
+    action: 'Exercise the claim-door budget refusal through the dispatcher.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  for (let i = 0; i < 3; i += 1) {
+    const claimed = await runBee(['cells', 'claim', '--id', 'budget-cli-2', '--worker', 'w', '--session-id', `sess-cli-budget-${i}`, '--json']);
+    assert(claimed.status === 0, `claim #${i + 1} should succeed: ${claimed.stderr}`);
+    await runBee(['cells', 'verify', '--id', 'budget-cli-2', '--command', 'node -e ok', '--output', 'ok', '--passed', 'true', '--session-id', `sess-cli-budget-${i}`, '--json']);
+    await runBee(['cells', 'unclaim', '--id', 'budget-cli-2', '--session-id', `sess-cli-budget-${i}`, '--json']);
+  }
+  // No --json here (matches the CLAIMED-refusal precedent above): the CLI's
+  // own error() helper writes plain text to stderr only in the non-JSON
+  // branch — with --json the same error object is written to STDOUT instead
+  // (bee.mjs line ~3939), so a JSON-flagged refusal must be read from stdout.
+  const fourth = await runBee(['cells', 'claim', '--id', 'budget-cli-2', '--worker', 'w', '--session-id', 'sess-cli-budget-3']);
+  assert(fourth.status !== 0, 'the 4th claim must refuse');
+  assert(/CELL_BUDGET_EXHAUSTED/.test(fourth.stderr), `refusal should name CELL_BUDGET_EXHAUSTED, got ${fourth.stderr}`);
+
+  const reset = await runBee(['cells', 'reset-budget', '--id', 'budget-cli-2', '--reason', 'CLI test: reopening after exhaustion', '--json']);
+  assert(reset.status === 0, `reset-budget should succeed: ${reset.stderr}`);
+  const reopened = await runBee(['cells', 'claim', '--id', 'budget-cli-2', '--worker', 'w', '--session-id', 'sess-cli-budget-4', '--json']);
+  assert(reopened.status === 0, `claim after reset should succeed: ${reopened.stderr}`);
 });
 
 await check('bee cells block --id demo-2 --reason blocks the cell', async () => {
