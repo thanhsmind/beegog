@@ -3313,11 +3313,22 @@ export function doctorNativeTransportUnlock(root, liveFeatures) {
 // (a bad --runtime/--kind or a missing --cell throws; a cli-shaped cell
 // resolution or an unconfigured advisor slot is a typed {ok:false} result,
 // not a throw — same discipline as reservations.reserve's conflict result).
+// Native-transport classification (codex-native-transport D1/D3, R3 —
+// binding): this handler is the ONE place that reads
+// readNativeTransportClassification(root) and hands its `.classification`
+// string into prepareDispatch — dispatch-prepare.mjs (lib) deliberately never
+// imports that reader itself (it lives here, in the bin layer; a lib module
+// reaching back into bin would invert the repo's bin->lib import direction —
+// see prepareDispatch's own docstring). Only the codex runtime ever carries a
+// native-transport probe; every other runtime passes classification
+// undefined, which prepareDispatch treats exactly like an unprobed host (D3:
+// "unprobed/unknown => native_budget_only") — inert for every non-native slot.
 function handleDispatchPrepare(root, flags) {
   const runtime = requireFlag(flags, 'runtime');
   const kind = requireFlag(flags, 'kind');
   const cellId = typeof flags.cell === 'string' && flags.cell ? flags.cell : null;
-  const out = prepareDispatch(root, { runtime, kind, cell: cellId });
+  const classification = runtime === 'codex' ? readNativeTransportClassification(root).classification : undefined;
+  const out = prepareDispatch(root, { runtime, kind, cell: cellId, classification });
   return { result: out, text: JSON.stringify(out, null, 2) };
 }
 

@@ -2456,6 +2456,131 @@ await check('resolveAdvisor: unset -> null, string/object/cli shapes resolve, ne
   }
 });
 
+// ─── GOLDEN FREEZE (cnt-1, critical-patterns 20260716): every PRE-EXISTING
+// models.<runtime>.<slot> shape resolves byte-identically. Frozen GREEN against
+// the unmodified resolver BEFORE the kind:'native' + composite branches (D2)
+// are added, and must stay GREEN after — that byte-stability is the proof of
+// zero regression, not an assertion. Exact JSON equality is deliberate: an
+// EXISTING shape gaining a new resolved field WOULD be the regression, so
+// unlike a tolerant field-net this pins the whole resolved object.
+await check('cnt-1 golden freeze: pre-existing slot shapes resolve byte-identically (string/{model,effort}/cli/null/unknown)', async () => {
+  const gRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cnt1-golden-'));
+  fs.mkdirSync(path.join(gRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  const { resolveTier, resolveAdvisor } = stateModuleExports;
+  const j = (v) => JSON.stringify(v);
+  const cfg = (models) => writeJsonAtomic(path.join(gRoot, '.bee', 'config.json'), { models });
+  try {
+    // (1) string shape
+    cfg({ claude: { generation: 'sonnet', extraction: 'haiku', review: 'opus', advisor: 'opus' } });
+    assert(j(resolveTier(gRoot, 'generation')) === j({ type: 'model', model: 'sonnet' }), `string generation frozen — got ${j(resolveTier(gRoot, 'generation'))}`);
+    assert(j(resolveTier(gRoot, 'extraction')) === j({ type: 'model', model: 'haiku' }), 'string extraction frozen');
+    assert(j(resolveTier(gRoot, 'review')) === j({ type: 'model', model: 'opus' }), 'string review frozen');
+    assert(j(resolveAdvisor(gRoot)) === j({ type: 'model', model: 'opus' }), 'string advisor frozen');
+
+    // (2) {model, effort} shape
+    cfg({ claude: { generation: { model: 'sonnet', effort: 'medium' }, advisor: { model: 'opus', effort: 'xhigh' } } });
+    assert(j(resolveTier(gRoot, 'generation')) === j({ type: 'model', model: 'sonnet', effort: 'medium' }), '{model,effort} generation frozen');
+    assert(j(resolveAdvisor(gRoot)) === j({ type: 'model', model: 'opus', effort: 'xhigh' }), '{model,effort} advisor frozen');
+
+    // (3) {kind:'cli'} shape — refused for cell, {type:'cli'} for gather; advisor cli
+    cfg({ claude: { generation: { kind: 'cli', command: 'codex exec -m gpt-5.5 gather' }, advisor: { kind: 'cli', command: 'codex exec -m gpt-5.5 advisor' } } });
+    assert(resolveTier(gRoot, 'generation').type === 'refused' && resolveTier(gRoot, 'generation').reason === 'cli_tier_gather_only', 'cli generation refuses for cell (frozen)');
+    assert(j(resolveTier(gRoot, 'generation', 'claude', { for: 'gather' })) === j({ type: 'cli', command: 'codex exec -m gpt-5.5 gather' }), 'cli generation for gather frozen');
+    assert(j(resolveAdvisor(gRoot)) === j({ type: 'cli', command: 'codex exec -m gpt-5.5 advisor' }), 'cli advisor frozen');
+
+    // (4) null shape — review falls back to generation; advisor -> null; codex budget
+    cfg({ claude: { generation: 'sonnet', review: null, advisor: null } });
+    assert(j(resolveTier(gRoot, 'review')) === j({ type: 'model', model: 'sonnet' }), 'null review falls back to generation (frozen)');
+    assert(resolveAdvisor(gRoot) === null, 'null advisor -> null (frozen)');
+    assert(resolveTier(gRoot, 'generation', 'codex').type === 'budget', 'codex null generation -> budget (frozen)');
+
+    // (5) unknown/invalid object shapes -> the slot default survives; advisor -> null
+    cfg({ claude: { generation: { kind: 'http', command: 'x' }, advisor: {} } });
+    assert(resolveTier(gRoot, 'generation').type === 'model' && resolveTier(gRoot, 'generation').model === 'sonnet', 'unknown-kind generation keeps default model (frozen)');
+    assert(resolveAdvisor(gRoot) === null, 'junk advisor -> null (frozen)');
+  } finally {
+    fs.rmSync(gRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── native V2 model-override slot shape + explicit-fallback composite (D2,
+// codex-native-transport cnt-1). NEW shapes — RED before the resolver/normalize
+// branches exist (they resolve to budget/default/null until implemented), GREEN
+// after. The kind:'native' branch is inserted BEFORE the generic value.model
+// string branch in both resolvers (plan cnt-1 note).
+await check('cnt-1 native override: {kind:"native"} + composite {primary,fallback,fallback_policy} resolve in resolveTier and resolveAdvisor (D2)', async () => {
+  const nRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cnt1-native-'));
+  fs.mkdirSync(path.join(nRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(nRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  const { resolveTier, resolveAdvisor } = stateModuleExports;
+  const cfg = (models) => writeJsonAtomic(path.join(nRoot, '.bee', 'config.json'), { models });
+  try {
+    // (a) bare native leaf: defaults fork_turns:'none', agent_type:'worker'
+    cfg({ codex: { generation: { kind: 'native', model: 'gpt-5.5' } } });
+    const bare = resolveTier(nRoot, 'generation', 'codex');
+    assert(
+      bare.type === 'native' && bare.model === 'gpt-5.5' && bare.fork_turns === 'none' && bare.agent_type === 'worker',
+      `bare native leaf resolves with fork_turns/agent_type defaults — got ${JSON.stringify(bare)}`,
+    );
+    assert(bare.effort === undefined, `no effort key when unset — got ${JSON.stringify(bare)}`);
+
+    // (b) native leaf carrying effort + explicit agent_type + fork_turns:'none'
+    cfg({ codex: { review: { kind: 'native', model: 'gpt-5.5', effort: 'high', agent_type: 'explorer', fork_turns: 'none' } } });
+    const rev = resolveTier(nRoot, 'review', 'codex');
+    assert(
+      rev.type === 'native' && rev.model === 'gpt-5.5' && rev.effort === 'high' && rev.agent_type === 'explorer' && rev.fork_turns === 'none',
+      `native review carries effort + agent_type — got ${JSON.stringify(rev)}`,
+    );
+
+    // (c) advisor slot native (resolveAdvisor, not resolveTier)
+    cfg({ codex: { advisor: { kind: 'native', model: 'gpt-5.5', effort: 'high' } } });
+    const adv = resolveAdvisor(nRoot, 'codex');
+    assert(
+      adv && adv.type === 'native' && adv.model === 'gpt-5.5' && adv.effort === 'high' && adv.fork_turns === 'none' && adv.agent_type === 'worker',
+      `native advisor resolves — got ${JSON.stringify(adv)}`,
+    );
+
+    // (d) composite with explicit-only fallback -> native + fallback:{type:'cli'}
+    cfg({ codex: { advisor: {
+      primary: { kind: 'native', model: 'gpt-5.5', effort: 'high' },
+      fallback: { kind: 'cli', command: 'codex exec -m gpt-5.5 -s read-only -' },
+      fallback_policy: 'explicit-only',
+    } } });
+    const comp = resolveAdvisor(nRoot, 'codex');
+    assert(comp && comp.type === 'native' && comp.model === 'gpt-5.5' && comp.effort === 'high', `composite resolves its native primary — got ${JSON.stringify(comp)}`);
+    assert(
+      comp.fallback && comp.fallback.type === 'cli' && comp.fallback.command === 'codex exec -m gpt-5.5 -s read-only -',
+      `explicit-only composite exposes the cli fallback — got ${JSON.stringify(comp)}`,
+    );
+
+    // (e) composite WITHOUT explicit fallback_policy NEVER exposes a fallback (must_have / D1)
+    cfg({ codex: { advisor: {
+      primary: { kind: 'native', model: 'gpt-5.5' },
+      fallback: { kind: 'cli', command: 'codex exec -m gpt-5.5 -s read-only -' },
+    } } });
+    const noPolicy = resolveAdvisor(nRoot, 'codex');
+    assert(noPolicy && noPolicy.type === 'native' && noPolicy.model === 'gpt-5.5', `composite without policy still resolves the native primary — got ${JSON.stringify(noPolicy)}`);
+    assert(noPolicy.fallback === undefined, `composite WITHOUT fallback_policy:'explicit-only' NEVER exposes a fallback (D1) — got ${JSON.stringify(noPolicy)}`);
+
+    // (f) composite resolves in resolveTier too, not just resolveAdvisor
+    cfg({ codex: { generation: {
+      primary: { kind: 'native', model: 'gpt-5.5' },
+      fallback: { kind: 'cli', command: 'codex exec -m gpt-5.5 -s read-only -' },
+      fallback_policy: 'explicit-only',
+    } } });
+    const genComp = resolveTier(nRoot, 'generation', 'codex');
+    assert(genComp.type === 'native' && genComp.fallback && genComp.fallback.type === 'cli', `resolveTier resolves composite with explicit fallback — got ${JSON.stringify(genComp)}`);
+
+    // (g) invalid native (no model) -> resolveTier budget, resolveAdvisor null (never a bogus native)
+    cfg({ codex: { generation: { kind: 'native' }, advisor: { kind: 'native' } } });
+    assert(resolveTier(nRoot, 'generation', 'codex').type === 'budget', `native without model -> budget in resolveTier — got ${JSON.stringify(resolveTier(nRoot, 'generation', 'codex'))}`);
+    assert(resolveAdvisor(nRoot, 'codex') === null, `native without model -> null in resolveAdvisor — got ${JSON.stringify(resolveAdvisor(nRoot, 'codex'))}`);
+  } finally {
+    fs.rmSync(nRoot, { recursive: true, force: true });
+  }
+});
+
 await check('advisor slot vs top-level stale advisor key: the nested models.<runtime>.advisor slot resolves normally while a stale TOP-LEVEL advisor key is independently warned', async () => {
   const bRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-advisor-stale-'));
   fs.mkdirSync(path.join(bRoot, '.bee'), { recursive: true });

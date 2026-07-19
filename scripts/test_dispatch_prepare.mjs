@@ -22,6 +22,22 @@ const REPO_ROOT = path.dirname(path.dirname(SCRIPT_PATH));
 const TEMPLATES_LIB = path.join(REPO_ROOT, "skills", "bee-hive", "templates", "lib");
 const BEE_MJS = path.join(REPO_ROOT, "skills", "bee-hive", "templates", "bee.mjs");
 
+// Direct lib imports (codex-native-transport cnt-3): the native-override
+// branch needs a `classification` value prepareDispatch never derives itself
+// (see its docstring) — calling it directly, bypassing the real
+// readNativeTransportClassification probe/CLI round-trip, is the only way to
+// exercise a CONFIRMED native_model_override golden row deterministically,
+// since no real host in this environment ships multi_agent_v2 (E3: "under
+// development" everywhere as of codex-cli 0.144.4) for the real reader to
+// ever confirm.
+const {
+  evaluateDispatch,
+  NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE,
+  NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY,
+  NATIVE_TRANSPORT_EXTERNAL_CLI_ONLY,
+} = await import(pathToFileURL(path.join(TEMPLATES_LIB, "dispatch-guard.mjs")).href);
+const { prepareDispatch } = await import(pathToFileURL(path.join(TEMPLATES_LIB, "dispatch-prepare.mjs")).href);
+
 let passed = 0;
 let failed = 0;
 
@@ -357,6 +373,136 @@ await check("prepare-time dispatch record for kind cell carries the cell id", as
   await prepareOk(["--runtime", "claude", "--kind", "cell", "--cell", "demo-9"], root);
   const line = readLastJsonl(path.join(root, ".bee", "logs", "dispatch.jsonl"));
   assert(line && line.cell === "demo-9", `expected cell demo-9 recorded, got ${JSON.stringify(line)}`);
+});
+
+// ─── native-transport (codex-native-transport D1/D3/D7, R1/R3/R5) ─────────
+// prepareDispatch's `classification` param is caller-supplied (see its
+// docstring) — these tests call it directly rather than through the real
+// CLI's readNativeTransportClassification probe, so a CONFIRMED
+// native_model_override golden row is deterministic on every host,
+// regardless of whether the locally installed codex-cli actually ships
+// multi_agent_v2 (it does not, anywhere, per E3 as of 0.144.4).
+
+function nativeConfig(advisorSlot) {
+  return { codex: { extraction: null, generation: null, review: null, advisor: advisorSlot } };
+}
+
+await check("R1 golden row: a confirmed native_model_override advisor payload round-trips ALLOW through the real evaluateDispatch", async () => {
+  const root = mkFixture("dispatch-prepare-native-golden-");
+  writeConfig(root, nativeConfig({ kind: "native", model: "gpt-5.5-high", effort: "high" }));
+
+  const out = prepareDispatch(root, { runtime: "codex", kind: "advisor", classification: NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE });
+  assert(out.tool === "spawn_agent", `expected tool spawn_agent, got ${JSON.stringify(out)}`);
+  assert(out.payload.agent_type === "worker", `expected agent_type worker, got ${JSON.stringify(out.payload)}`);
+  assert(out.payload.model === "gpt-5.5-high", `expected model gpt-5.5-high on the payload, got ${JSON.stringify(out.payload)}`);
+  assert(out.payload.reasoning_effort === "high", `expected reasoning_effort high, got ${JSON.stringify(out.payload)}`);
+  assert(out.payload.fork_turns === "none", `expected fork_turns "none" (E2 validity precondition), got ${JSON.stringify(out.payload)}`);
+  assert(
+    /^\[bee-tier: advisor\]/.test(out.payload.message),
+    `expected message to open with the advisor marker, got ${JSON.stringify(out.payload.message)}`,
+  );
+  assert(out.transport === "native-override", `expected transport native-override, got ${JSON.stringify(out)}`);
+
+  const allowed = evaluateDispatch("spawn_agent", out.payload, root);
+  assert(allowed.decision === "allow", `expected ALLOW for the confirmed native advisor payload, got ${JSON.stringify(allowed)}`);
+  assert(allowed.transport === "codex-spawn-marker" && allowed.tier === "advisor", `expected codex-spawn-marker/advisor, got ${JSON.stringify(allowed)}`);
+
+  const stripped = { ...out.payload, message: out.payload.message.replace(/^\[bee-tier: advisor\]\n/, "") };
+  const denied = evaluateDispatch("spawn_agent", stripped, root);
+  assert(denied.decision === "deny" && denied.transport === "codex-spawn-unmarked", `expected DENY once the marker is stripped, got ${JSON.stringify(denied)}`);
+});
+
+await check("native economics: confirmed override reports native-requested status, effective_model null, requested_model the native model", async () => {
+  const root = mkFixture("dispatch-prepare-native-economics-");
+  writeConfig(root, nativeConfig({ kind: "native", model: "gpt-5.5-high" }));
+
+  const out = prepareDispatch(root, { runtime: "codex", kind: "advisor", classification: NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE });
+  assert(out.economics.channel === "codex-native", `expected channel codex-native, got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.enforcement === "native-model-param", `expected enforcement native-model-param, got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.effective_model_status === "native-requested", `expected native-requested status, got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.effective_model === null, `effective_model must stay null (D7: catalog-accepted is not runtime-confirmed), got ${JSON.stringify(out.economics)}`);
+  assert(out.economics.requested_model === "gpt-5.5-high", `expected requested_model gpt-5.5-high, got ${JSON.stringify(out.economics)}`);
+});
+
+await check("D1: native route not confirmed, with an explicit-only cli fallback configured -> Bash payload + recorded reason, never silent", async () => {
+  const root = mkFixture("dispatch-prepare-native-fallback-");
+  writeConfig(
+    root,
+    nativeConfig({
+      primary: { kind: "native", model: "gpt-5.5-high" },
+      fallback: { kind: "cli", command: "codex exec -m gpt-5.5 -s read-only -" },
+      fallback_policy: "explicit-only",
+    }),
+  );
+
+  const out = prepareDispatch(root, { runtime: "codex", kind: "advisor", classification: NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY });
+  assert(out.tool === "Bash", `expected tool Bash (the explicit fallback), got ${JSON.stringify(out)}`);
+  assert(out.payload.command === "codex exec -m gpt-5.5 -s read-only -", `expected the configured fallback command verbatim, got ${JSON.stringify(out.payload)}`);
+  assert(out.fallback_reason === "native_unavailable", `expected a recorded fallback_reason, got ${JSON.stringify(out)}`);
+  assert(out.economics.channel === "cli-exec", `expected channel cli-exec, got ${JSON.stringify(out.economics)}`);
+
+  const line = readLastJsonl(path.join(root, ".bee", "logs", "dispatch.jsonl"));
+  assert(line.native_fallback_reason === "native_unavailable", `expected the fallback reason recorded in the dispatch log, got ${JSON.stringify(line)}`);
+  assert(line.native_classification === NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY, `expected the blocking classification recorded, got ${JSON.stringify(line)}`);
+});
+
+await check("D1: native route not confirmed, no fallback configured -> typed native_unavailable refusal naming the classification, never a payload", async () => {
+  const root = mkFixture("dispatch-prepare-native-refused-");
+  writeConfig(root, nativeConfig({ kind: "native", model: "gpt-5.5-high" }));
+
+  const out = prepareDispatch(root, { runtime: "codex", kind: "advisor", classification: NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY });
+  assert(out.ok === false && out.type === "refused" && out.reason === "native_unavailable", `expected the typed native_unavailable refusal, got ${JSON.stringify(out)}`);
+  assert(out.detail === NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY, `expected detail to name the blocking classification, got ${JSON.stringify(out)}`);
+  assert(!("tool" in out) && !("payload" in out), `a refusal must never carry a payload, got ${JSON.stringify(out)}`);
+});
+
+await check("D3a coupling: external_cli_only classification on a bare native slot (no fallback) also refuses — never an invented cli command, never a silent budget fallback", async () => {
+  const root = mkFixture("dispatch-prepare-native-external-cli-only-");
+  writeConfig(root, nativeConfig({ kind: "native", model: "gpt-5.5-high" }));
+
+  const out = prepareDispatch(root, { runtime: "codex", kind: "advisor", classification: NATIVE_TRANSPORT_EXTERNAL_CLI_ONLY });
+  assert(out.ok === false && out.reason === "native_unavailable" && out.detail === NATIVE_TRANSPORT_EXTERNAL_CLI_ONLY, `expected a typed refusal naming external_cli_only, got ${JSON.stringify(out)}`);
+});
+
+await check("a composite native slot whose fallback_policy is NOT explicit-only never silently falls back to cli — refuses instead", async () => {
+  const root = mkFixture("dispatch-prepare-native-no-explicit-policy-");
+  writeConfig(
+    root,
+    nativeConfig({
+      primary: { kind: "native", model: "gpt-5.5-high" },
+      fallback: { kind: "cli", command: "codex exec -m gpt-5.5 -s read-only -" },
+      // fallback_policy intentionally omitted — normalizeTierValue (state.mjs)
+      // strips the fallback leg entirely unless it is exactly "explicit-only".
+    }),
+  );
+
+  const out = prepareDispatch(root, { runtime: "codex", kind: "advisor", classification: NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY });
+  assert(out.ok === false && out.reason === "native_unavailable", `expected a typed refusal (no implicit fallback), got ${JSON.stringify(out)}`);
+});
+
+await check("native routing is inert when classification is omitted — every non-native caller (incl. every earlier test in this file) stays byte-identical", async () => {
+  const root = mkFixture("dispatch-prepare-native-omitted-classification-");
+  writeConfig(root, { codex: { extraction: "gpt-5.5", generation: "gpt-5.5", review: null } });
+
+  const out = prepareDispatch(root, { runtime: "codex", kind: "gather" });
+  assert(out.tool === "spawn_agent" && !("model" in out.payload), `expected the ordinary budget-only spawn_agent payload, got ${JSON.stringify(out)}`);
+  assert(out.economics.effective_model_status === "inherited-or-unknown", `expected inherited-or-unknown (no native slot configured at all), got ${JSON.stringify(out.economics)}`);
+  assert(!("transport" in out) && !("fallback_reason" in out), `a non-native payload must never carry the native-only envelope extras, got ${JSON.stringify(out)}`);
+});
+
+await check("end-to-end via the real CLI: a native-configured advisor slot with no probe file on disk refuses through the real readNativeTransportClassification wiring", async () => {
+  const root = mkFixture("dispatch-prepare-native-e2e-");
+  writeConfig(root, nativeConfig({ kind: "native", model: "gpt-5.5-high" }));
+  // No .bee/native-transport-probe.json written — readNativeTransportClassification
+  // must fall back to native_budget_only (reason: no_probe_record, D3), and
+  // handleDispatchPrepare (bee.mjs) must pass that through to prepareDispatch
+  // exactly as this test's direct-call siblings above assert.
+
+  const result = await runBee(["dispatch", "prepare", "--runtime", "codex", "--kind", "advisor", "--json"], root);
+  assert(result.status === 0, `expected exit 0 (a typed refusal is not a crash), got ${result.status}: ${result.stderr}`);
+  const out = JSON.parse(result.stdout);
+  assert(out.ok === false && out.reason === "native_unavailable", `expected the typed native_unavailable refusal from the real CLI wiring, got ${JSON.stringify(out)}`);
+  assert(out.detail === NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY, `expected detail native_budget_only (unprobed host, D3), got ${JSON.stringify(out)}`);
 });
 
 // ─── bad --runtime / --kind refuse loudly ──────────────────────────────────

@@ -167,6 +167,53 @@ function normalizeTierValue(value) {
     if (value.kind === 'cli' && typeof value.command === 'string' && value.command.trim()) {
       return { kind: 'cli', command: value.command.trim() };
     }
+    // Native V2 model-override leaf (D2, codex-native-transport): a per-agent
+    // model switch that rides on codex spawn_agent metadata. Preserved through
+    // normalize (a shape normalizeTierValue does not keep is stripped, which
+    // would make the resolver branch dead code). Invalid fork_turns/effort are
+    // silently dropped here exactly as an invalid effort is on {model,effort};
+    // validateModelsConfig is the loud layer that flags them.
+    if (value.kind === 'native' && typeof value.model === 'string' && value.model.trim()) {
+      const out = { kind: 'native', model: value.model.trim() };
+      if (typeof value.effort === 'string' && EFFORT_LEVELS.includes(value.effort.trim())) {
+        out.effort = value.effort.trim();
+      }
+      if (typeof value.fork_turns === 'string' && value.fork_turns.trim() === 'none') {
+        out.fork_turns = 'none';
+      }
+      if (typeof value.agent_type === 'string' && value.agent_type.trim()) {
+        out.agent_type = value.agent_type.trim();
+      }
+      return out;
+    }
+    // Explicit-fallback composite (D1/D2): a native primary plus an opt-in cli
+    // fallback. The fallback is kept ONLY when fallback_policy is exactly
+    // 'explicit-only' — a composite missing that policy string normalizes to the
+    // native primary alone, so no silent native->cli fallback can ever surface.
+    if (
+      value.primary &&
+      typeof value.primary === 'object' &&
+      !Array.isArray(value.primary) &&
+      value.primary.kind === 'native' &&
+      typeof value.primary.model === 'string' &&
+      value.primary.model.trim()
+    ) {
+      const out = { primary: normalizeTierValue(value.primary) };
+      if (value.fallback_policy === 'explicit-only') {
+        out.fallback_policy = 'explicit-only';
+        if (
+          value.fallback &&
+          typeof value.fallback === 'object' &&
+          !Array.isArray(value.fallback) &&
+          value.fallback.kind === 'cli' &&
+          typeof value.fallback.command === 'string' &&
+          value.fallback.command.trim()
+        ) {
+          out.fallback = { kind: 'cli', command: value.fallback.command.trim() };
+        }
+      }
+      return out;
+    }
     if (value.kind === undefined && typeof value.model === 'string' && value.model.trim()) {
       const out = { model: value.model.trim() };
       if (typeof value.effort === 'string' && EFFORT_LEVELS.includes(value.effort.trim())) {
@@ -361,6 +408,86 @@ export function validateModelsConfig(config) {
           slot,
           message: `models.${rt}.${slot} is not a string, object, or null — ignored; defaults apply.`,
         });
+        continue;
+      }
+      // Native V2 model-override shapes (D2, codex-native-transport) — detected
+      // BEFORE looksLikeCli (ADVISOR-R2 Δ1). {kind:'native'} carries a `kind`
+      // key so it would be mis-flagged cli-malformed; the composite carries no
+      // top-level kind/command/model so it would be mis-flagged
+      // model-shape-malformed. Each gets its own reject codes.
+      const isComposite = 'primary' in value || 'fallback' in value || 'fallback_policy' in value;
+      if (isComposite) {
+        const primary = value.primary;
+        const primaryOk =
+          primary &&
+          typeof primary === 'object' &&
+          !Array.isArray(primary) &&
+          primary.kind === 'native' &&
+          typeof primary.model === 'string' &&
+          primary.model.trim().length > 0;
+        if (!primaryOk) {
+          problems.push({
+            code: 'composite-primary-malformed',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} is a composite (primary/fallback) but its primary is not a valid native override {kind:"native", model} — ignored; today this silently reverts to the seeded default (D2).`,
+          });
+          continue;
+        }
+        if (primary.fork_turns !== undefined && primary.fork_turns !== 'none') {
+          problems.push({
+            code: 'native-fork-turns-unknown',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} composite primary has fork_turns:${JSON.stringify(primary.fork_turns)} — only "none" is valid; a full-history fork rejects model overrides (E2/D2).`,
+          });
+        }
+        if (value.fallback_policy !== 'explicit-only') {
+          problems.push({
+            code: 'composite-fallback-policy-missing',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} is a composite but has no fallback_policy:"explicit-only" — its cli fallback is silently dropped and no fallback is ever taken; silent native->cli fallback is forbidden (D1). Set fallback_policy:"explicit-only" to opt in.`,
+          });
+          continue;
+        }
+        const fb = value.fallback;
+        const fbOk =
+          fb &&
+          typeof fb === 'object' &&
+          !Array.isArray(fb) &&
+          fb.kind === 'cli' &&
+          typeof fb.command === 'string' &&
+          fb.command.trim().length > 0;
+        if (!fbOk) {
+          problems.push({
+            code: 'composite-fallback-malformed',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} composite declares fallback_policy:"explicit-only" but its fallback is not a valid cli executor {kind:"cli", command} — the fallback is silently dropped; fix or remove it (D2).`,
+          });
+        }
+        continue;
+      }
+      if (value.kind === 'native') {
+        const modelOk = typeof value.model === 'string' && value.model.trim().length > 0;
+        if (!modelOk) {
+          problems.push({
+            code: 'native-model-missing',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} is a native override (kind:"native") but has no non-empty model — the exact catalog model id is required; today this silently reverts to the seeded default (D2).`,
+          });
+          continue;
+        }
+        if (value.fork_turns !== undefined && value.fork_turns !== 'none') {
+          problems.push({
+            code: 'native-fork-turns-unknown',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} native override has fork_turns:${JSON.stringify(value.fork_turns)} — only "none" is valid; a full-history fork rejects model overrides (E2/D2).`,
+          });
+        }
         continue;
       }
       const looksLikeCli = 'kind' in value || 'command' in value;
@@ -1267,6 +1394,17 @@ export function resolveTier(root, slot, runtime = 'claude', purpose) {
     }
     return { type: 'cli', command: value.command };
   }
+  // Native V2 model-override (D2, codex-native-transport) — inserted BEFORE the
+  // generic value.model branch (plan cnt-1 note) so a native leaf is never
+  // mis-read as a plain {model} shape. normalize guarantees a valid model here.
+  if (value.kind === 'native') return nativeResolved(value);
+  if (value.primary && typeof value.primary === 'object' && !Array.isArray(value.primary)) {
+    const resolved = nativeResolved(value.primary);
+    if (value.fallback_policy === 'explicit-only' && value.fallback && value.fallback.kind === 'cli' && typeof value.fallback.command === 'string') {
+      resolved.fallback = { type: 'cli', command: value.fallback.command };
+    }
+    return resolved;
+  }
   if (typeof value.model === 'string') {
     return value.effort
       ? { type: 'model', model: value.model, effort: value.effort }
@@ -1294,12 +1432,40 @@ export function resolveAdvisor(root, runtime = 'claude') {
   if (value == null) return null; // unset, absent runtime, or explicit null -> no advisor
   if (typeof value === 'string') return { type: 'model', model: value };
   if (value.kind === 'cli') return { type: 'cli', command: value.command };
+  // Native V2 model-override + explicit-fallback composite (D2), inserted BEFORE
+  // the generic value.model branch (plan cnt-1 note). An invalid native shape
+  // is stripped by normalize before it reaches here, so resolveAdvisor never
+  // returns a bogus native — it falls through to null, exactly like a cli slot
+  // missing its command.
+  if (value.kind === 'native') return nativeResolved(value);
+  if (value.primary && typeof value.primary === 'object' && !Array.isArray(value.primary)) {
+    const resolved = nativeResolved(value.primary);
+    if (value.fallback_policy === 'explicit-only' && value.fallback && value.fallback.kind === 'cli' && typeof value.fallback.command === 'string') {
+      resolved.fallback = { type: 'cli', command: value.fallback.command };
+    }
+    return resolved;
+  }
   if (typeof value.model === 'string') {
     return value.effort
       ? { type: 'model', model: value.model, effort: value.effort }
       : { type: 'model', model: value.model };
   }
   return null;
+}
+
+// Shared resolution of a normalized native V2 model-override leaf
+// ({kind:'native', model, effort?, fork_turns?, agent_type?}) into a resolved
+// {type:'native', ...} record (D2). Called by resolveTier and resolveAdvisor;
+// a function declaration so it is hoisted above both. normalize has already
+// trimmed the fields and dropped any invalid ones, so this only applies the
+// resolved defaults: fork_turns:'none' (overrides require it, E2) and
+// agent_type:'worker'.
+function nativeResolved(value) {
+  const out = { type: 'native', model: value.model };
+  if (value.effort != null) out.effort = value.effort;
+  out.fork_turns = value.fork_turns != null ? value.fork_turns : 'none';
+  out.agent_type = value.agent_type != null ? value.agent_type : 'worker';
+  return out;
 }
 
 // ─── advisor_ref staleness anchors + check (AO3/AO13, Slice 4) ──────────────

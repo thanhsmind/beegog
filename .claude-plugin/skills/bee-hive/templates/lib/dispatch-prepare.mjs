@@ -34,7 +34,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveTier, resolveAdvisor } from './state.mjs';
 import { readCell } from './cells.mjs';
-import { PINNED_AGENT_TYPE, deriveEconomics } from './dispatch-guard.mjs';
+import {
+  PINNED_AGENT_TYPE,
+  deriveEconomics,
+  NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE,
+  NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY,
+} from './dispatch-guard.mjs';
 
 export const DISPATCH_RUNTIMES = ['codex', 'claude'];
 export const DISPATCH_KINDS = ['cell', 'gather', 'reviewer', 'advisor'];
@@ -43,9 +48,13 @@ export const DISPATCH_KINDS = ['cell', 'gather', 'reviewer', 'advisor'];
 // economics.logical_tier. cell/gather both resolve the 'generation' slot;
 // reviewer resolves 'review'. advisor has no resolveTier slot at all (it is
 // deliberately excluded from CONFIGURABLE_SLOTS) — 'advisor' is a label, not
-// a token dispatch-guard.mjs's ANCHORED_TIER_MARKER_RE recognizes today; an
-// advisor-kind payload is therefore not expected to pass the guard's marker
-// branches the way cell/gather/reviewer payloads do.
+// a token the CLAUDE branch's ANCHORED_TIER_MARKER_RE recognizes (R1: that
+// regex stays byte-unchanged), so a claude advisor-kind payload still never
+// passes evaluateClaudeDispatch's marker branches. The CODEX branch's own
+// ANCHORED_CODEX_TIER_MARKER_RE (native-transport R1) does recognize
+// `advisor` — a confirmed-native codex advisor payload is expected to, and
+// must, pass evaluateDispatch's codex branch (dispatch-prepare's own golden
+// row, native-transport cnt-3).
 function slotForKind(kind) {
   if (kind === 'cell' || kind === 'gather') return 'generation';
   if (kind === 'reviewer') return 'review';
@@ -129,13 +138,27 @@ function appendPrepareRecord(root, record) {
 }
 
 /**
- * prepareDispatch(root, {runtime, kind, cell, json}) -> the payload envelope,
- * or a typed refusal ({ok:false, ...}). Throws only on a malformed CALL
- * (bad runtime/kind, missing/unknown --cell for kind 'cell') — never on a
- * legitimate cli-shaped or unconfigured-advisor resolution, which are typed
- * refusals returned to the caller, not exceptions.
+ * prepareDispatch(root, {runtime, kind, cell, classification}) -> the payload
+ * envelope, or a typed refusal ({ok:false, ...}). Throws only on a malformed
+ * CALL (bad runtime/kind, missing/unknown --cell for kind 'cell') — never on
+ * a legitimate cli-shaped, unconfigured-advisor, or native-unavailable
+ * resolution, which are typed refusals returned to the caller, not
+ * exceptions.
+ *
+ * `classification` (codex-native-transport D1/D3/R3-R5, binding) is the
+ * caller-supplied verdict of `readNativeTransportClassification(root)` —
+ * this lib module deliberately never imports or calls that reader itself
+ * (it lives in bee.mjs, the bin layer; a lib module reaching back into bin
+ * would invert the repo's bin->lib import direction). bee.mjs's own
+ * `dispatch prepare` handler is the one production caller that reads the
+ * live probe and passes its `.classification` string through; every other
+ * caller (including every test in this repo) that omits `classification`
+ * gets exactly D3's documented "unprobed/unknown ⇒ native_budget_only"
+ * behavior — which, for a non-native-shaped slot, is simply inert (only
+ * `resolved.type === 'native'` ever reads this parameter at all), so every
+ * existing budget-only/model/cli/refused caller stays byte-identical.
  */
-export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
+export function prepareDispatch(root, { runtime, kind, cell: cellId, classification } = {}) {
   if (!DISPATCH_RUNTIMES.includes(runtime)) {
     throw new Error(`dispatch prepare: --runtime must be one of ${DISPATCH_RUNTIMES.join('|')}, got "${runtime}".`);
   }
@@ -181,8 +204,69 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
   let tool;
   let payload;
   let channel;
+  // Native-override-only extras (codex-native-transport D1/D3a, R5): never
+  // populated on any other path, so every non-native envelope/log line below
+  // stays byte-identical to what it was before this branch existed.
+  let refusal = null;
+  let nativeConfirmed = false;
+  let envelopeExtra = {};
 
-  if (resolved.type === 'cli') {
+  if (resolved.type === 'native') {
+    // Native V2 model-override routing (D1/D5/D7, native-transport R3/R5):
+    // `resolved` here is state.mjs's {type:'native', model, effort?,
+    // fork_turns, agent_type, fallback?} — a CONFIG-time decision (a slot is
+    // shaped {kind:'native',...}). Whether the client can actually accept an
+    // override spawn is a separate RUNTIME fact — `classification`, gated
+    // strictly on the reader this module never calls directly (see the
+    // docstring above). D1: a native route that is requested but
+    // unavailable/refused reports its reason and falls back to CLI only when
+    // config explicitly permits it — silent native->CLI switching is
+    // forbidden, and so is silently downgrading to a marker-only budget spawn.
+    nativeConfirmed = classification === NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE;
+    if (nativeConfirmed) {
+      tool = 'spawn_agent';
+      payload = {
+        agent_type: resolved.agent_type || 'worker',
+        // Marker at the very start of message — the exact anchored position
+        // every other codex spawn_agent payload uses (D5: the marker anchor
+        // never moves for a native-override payload either).
+        message: `[bee-tier: ${tierToken}]\n${promptBody}`,
+        model: resolved.model,
+        // E2/D2: a full-history fork rejects model overrides — 'none' is a
+        // VALIDITY precondition for an override spawn, never merely context
+        // hygiene, so this is hardcoded rather than trusted to whatever
+        // resolved.fork_turns happens to carry.
+        fork_turns: 'none',
+      };
+      if (resolved.effort != null) {
+        payload.reasoning_effort = resolved.effort;
+      }
+      channel = 'codex-native';
+      envelopeExtra = { transport: 'native-override' };
+    } else if (resolved.fallback && resolved.fallback.type === 'cli' && typeof resolved.fallback.command === 'string' && resolved.fallback.command) {
+      // D1 explicit-only fallback + D3a coupling (decision c0cba64e): only
+      // ever the slot's OWN configured fallback command — this branch is the
+      // one legitimate route to CLI from a native slot; nothing here invents
+      // a command from anywhere else, and a classification of
+      // external_cli_only is treated identically to native_budget_only (both
+      // are simply "not confirmed native_model_override").
+      tool = 'Bash';
+      payload = { command: resolved.fallback.command, stdin: promptBody };
+      channel = 'cli-exec';
+      envelopeExtra = { fallback_reason: 'native_unavailable' };
+    } else {
+      // No confirmed override and no explicit fallback configured on this
+      // slot: D1's "never silent" — a typed refusal naming the classification
+      // that blocked it, never an invented CLI command, never a silent
+      // downgrade to a marker-only budget spawn (D3a coupling).
+      refusal = {
+        ok: false,
+        type: 'refused',
+        reason: 'native_unavailable',
+        detail: classification || NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY,
+      };
+    }
+  } else if (resolved.type === 'cli') {
     // External-executor dispatch (swarming-reference.md "External Executors"):
     // never an Agent/spawn_agent tool call — an in-family subagent cannot BE
     // the external CLI. The prompt is carried on stdin, matching the
@@ -199,10 +283,16 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
       message: `[bee-tier: ${tierToken}]\n${promptBody}`,
     };
     channel = 'codex-native';
-    // Codex's spawn_agent tool has no per-agent model field at all (P14/P17,
-    // "Codex has no per-agent model selection today"): the tier is enforced
-    // as a read budget + output cap stated in the prompt, never a structural
-    // param, regardless of whether resolveTier resolved a model name.
+    // Codex's Multi-Agent V2 spawn_agent DOES accept a per-agent model
+    // override (model/reasoning_effort/fork_turns) — real and catalog-
+    // validated, but hidden from the visible tool schema by default
+    // (hide_spawn_agent_metadata=true, E1/E6, codex-native-transport). This
+    // branch is the path taken whenever no confirmed native override applies
+    // (no native slot configured for this tier, or one is configured but
+    // `classification` above did not confirm override acceptance on this
+    // host): the tier is enforced as a read budget + output cap stated in
+    // the prompt, never a structural param — exactly the same budget-only
+    // shape this branch has always produced.
   } else {
     tool = 'Agent';
     payload = {
@@ -216,16 +306,24 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
     channel = 'claude-agent';
   }
 
-  // Shared derivation (g22-2, GH #22 P1-6 D3): the honest pinned/unverified/
-  // inherited-or-unknown split now lives ONCE in dispatch-guard.mjs's
-  // deriveEconomics, so this module's economics block and the enforcement
-  // hook's dispatch-log economics can never independently drift. A
-  // structural `model` param exists here ONLY on the claude-agent channel
-  // when resolved.type === 'model' (the exact condition, above, that set
-  // payload.model) — codex-native's spawn_agent has no such field, and
-  // cli-exec's Bash payload names its own model outside this vocabulary.
+  if (refusal) {
+    return refusal;
+  }
+
+  // Shared derivation (g22-2, GH #22 P1-6 D3; extended native-transport R5):
+  // the honest pinned/unverified/inherited-or-unknown/native-requested split
+  // now lives ONCE in dispatch-guard.mjs's deriveEconomics, so this module's
+  // economics block and the enforcement hook's dispatch-log economics can
+  // never independently drift. A structural `model` param exists here ONLY
+  // on the claude-agent channel when resolved.type === 'model' (the exact
+  // condition, above, that set payload.model) — a confirmed native override
+  // carries its own structural `model` field but through the SEPARATE
+  // `nativeConfirmed` flag, never through `paramModel` (that stays a
+  // claude-agent-only concept); codex-native's budget-only spawn has no
+  // model field at all, and cli-exec's Bash payload names its own model
+  // outside this vocabulary.
   const paramModel = channel === 'claude-agent' && resolved.type === 'model' ? resolved.model : null;
-  const economics = deriveEconomics({ channel, tier: tierToken, paramModel, resolved });
+  const economics = deriveEconomics({ channel, tier: tierToken, paramModel, resolved, nativeConfirmed });
 
   const dispatch_id = crypto.randomUUID();
 
@@ -234,8 +332,10 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId } = {}) {
     kind,
     cell: cell ? cell.id : null,
     runtime,
+    ...(envelopeExtra.fallback_reason ? { native_fallback_reason: envelopeExtra.fallback_reason, native_classification: classification || null } : {}),
+    ...(envelopeExtra.transport ? { native_classification: classification || null } : {}),
     ...economics,
   });
 
-  return { tool, payload, dispatch_id, economics };
+  return { tool, payload, dispatch_id, economics, ...envelopeExtra };
 }
