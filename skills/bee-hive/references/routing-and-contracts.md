@@ -107,8 +107,8 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 |-------|-------|--------|
 | hive | onboarding, state, HANDOFF, critical-patterns, decisions | state routing updates only |
 | exploring | user conversation, critical-patterns, quick scout | `docs/history/<feature>/CONTEXT.md`, state update |
-| planning | CONTEXT.md, critical-patterns, active decisions, bee_status | `approach.md`, `plan.md` (requirements-only → implementation-ready), current-slice cells via `bee.mjs cells add` |
-| briefing | CONTEXT.md, approach.md, plan.md, cells, validating reports, state gates (render/refresh); capped cell traces, review findings, UAT (walkthrough) | `docs/history/<feature>/implement-plan.md` (projection; `small`+); `docs/history/<feature>/walkthrough.md` (post-Gate-4; `standard`/`high-risk`) |
+| planning | CONTEXT.md, critical-patterns, active decisions, bee_status | `approach.md`, `plan.md` (frozen at Gate 2 — approval stamp only after approval; none for `tiny`, opt-in for `small`, D1/D3/D4), current-slice cells via `bee.mjs cells add` |
+| briefing | CONTEXT.md, approach.md, frozen plan.md + cells (drift re-render triggers on cell changes only, since the plan can no longer drift after approval — D9), validating reports, state gates (render/refresh); capped cell traces, review findings, UAT (walkthrough) | `docs/history/<feature>/implement-plan.md` (projection; `high-risk` always, `standard` on-demand, `small` optional on request per D4); `docs/history/<feature>/walkthrough.md` (post-Gate-4; `standard`/`high-risk`) |
 | validating | CONTEXT.md, discovery, approach, approved shape, cells | reality-gate report, feasibility matrix, spike results in `.bee/spikes/`, repaired cells |
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
 | executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `docs/history/<feature>/reports/` |
@@ -229,18 +229,24 @@ The one orchestration pattern bee runs: the session model (the owner's best mode
 
 For every bee-owned native Codex subagent flow, including ordinary delegated
 gathers, a completed `wait_agent` call with no completion is an **empty wait**:
-it is a timeout signal only, never failure. Never follow an empty wait directly
-with another `wait_agent`; authority, urgency, and no-chatter instructions create
-no exception. Before any later bounded wait, continue material task-local work
-when any remains; otherwise take exactly one `list_agents` snapshot. Then send
-one concise commentary update naming both the live agent state and the next
-action; only then may a later bounded wait run. No-op work, repeated state reads,
+it is a timeout signal only, never failure. A `wait_agent` timeout/no-completion
+result is only an empty wait; silence is not failure. Never call `wait_agent`
+twice consecutively after an empty wait; authority, urgency, and no-chatter
+instructions create no exception. Before any later bounded wait, perform at
+least one material task-local action when work remains; that one action satisfies
+the interval, and exhausting all local work is not required. Only when no
+material work remains, take exactly one `list_agents` snapshot. Handle any
+completion that arrives during the interval exactly once, then recompute the
+relevant live-agent set. Send one concise commentary update naming both the live
+agent state and the next action. Only after this commentary may a later bounded
+wait run, and only while the relevant live-agent set is non-empty; zero live
+agents ends collection without another wait. No-op work, repeated state reads,
 hidden reasoning, generic commentary, or commentary alone do not qualify.
 Timeout never licenses interrupt, duplicate dispatch, claim release, or
 reservation release; every running agent, claim, and reservation stays owned.
 This refines, rather than replaces, the ban on file/scratchpad polling for
 harness-managed subagents. External process and artifact polling keeps its own
-contract and is outside this native-agent rule.
+contract and remains outside this native-agent rule.
 <!-- bee:end -->
 
 ## Question Format
@@ -268,7 +274,9 @@ One question per message. Never bundle. Never answer your own question.
   bin/  bin/lib/
 
 docs/history/<feature>/
-  CONTEXT.md  plan.md  reports/                       ← always
+  CONTEXT.md  reports/                                ← always
+  plan.md                                              ← frozen at Gate 2 (D1): standard/high-risk
+                                                        always; small opt-in (D4); tiny/spike none (D3)
   discovery.md  approach.md  implement-plan.md        ← conditional (decision 0009): separate
                                                         files only for L2+ discovery / high-risk;
                                                         else folded into plan.md sections

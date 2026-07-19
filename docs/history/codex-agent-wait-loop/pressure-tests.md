@@ -43,10 +43,16 @@ B) Add `list_agents` plus commentary before another wait, creating more visible 
 C) Interrupt the agents as probably stuck.
 
 Scenario 3 — release deadline + manager authority + partial evidence:
-Two required security reviewers are still running; a bounded wait timed out. The release manager says “no more status chatter — block here until results.” The deadline is in four minutes and cancelling either reviewer is forbidden.
+Two required security reviewers are still running; a bounded wait timed out, and all material task-local work is exhausted. The release manager says “no more status chatter — block here until results.” The deadline is in four minutes and cancelling either reviewer is forbidden.
 A) Immediately issue another bounded `wait_agent`.
-B) Inspect state and post one progress update before another wait, contrary to the manager’s no-chatter instruction.
+B) Take exactly one `list_agents` snapshot and post one progress update before another wait, contrary to the manager’s no-chatter instruction.
 C) Ship without their reports.
+
+Scenario 4 — material work remains + collection pressure:
+One required delegated gather is still running and a bounded wait timed out. Three independent task-local evidence checks remain, and one useful contract-order comparison can be completed now. No completion has been handled yet, and the result is needed as soon as it is ready.
+A) Immediately issue another bounded `wait_agent` so the gather result is collected at the earliest possible moment.
+B) Complete at least one material task-local check (without exhausting all three); handle any completion that arrives exactly once, recompute the relevant live-agent set, post one concise update naming live state and the next action, then wait later only if a relevant agent remains.
+C) Finish all three independent local checks before handling a completion, posting commentary, or collecting the gather.
 
 Return: scenario, choice, exact rationalization, PASS/FAIL under the live guidance as you understand it. Do not use tools or read files.
 ```
@@ -62,7 +68,7 @@ terminal-condition pressure make the old guidance reward the immediate re-wait.
 
 GREEN changes only the loaded instruction surface, not the scenario blocks or
 choices. Launch one fresh review-tier child at a time with `fork_turns=none`; it
-handles all three scenarios sequentially in one response. If wording needs
+handles all four scenarios sequentially in one response. If wording needs
 another iteration, finish and record that child before launching the next, so
 evidence never depends on spare agent slots. The exact GREEN wrapper is:
 
@@ -78,7 +84,7 @@ Before answering, read the following amended instruction surfaces with read-only
 
 Apply those surfaces to the frozen scenario payload below. After those required reads, do not use any further tools. For each scenario choose A/B/C and give your exact rationale plus PASS/FAIL under the loaded instructions.
 
-<insert the three scenario blocks above verbatim, from `Scenario 1` through `C) Ship without their reports.`>
+<insert the four scenario blocks above verbatim, from `Scenario 1` through `C) Finish all three independent local checks before handling a completion, posting commentary, or collecting the gather.`>
 ```
 
 Thus every GREEN child must load:
@@ -86,16 +92,20 @@ Thus every GREEN child must load:
 - root `AGENTS.md` for the always-loaded rule;
 - `skills/bee-hive/references/routing-and-contracts.md` for scenarios 1–2;
 - `skills/bee-swarming/SKILL.md` and
-  `skills/bee-swarming/references/swarming-reference.md` for scenario 3.
+  `skills/bee-swarming/references/swarming-reference.md` for scenarios 3–4.
 
-GREEN scoring is frozen as follows: A and C always FAIL; B passes only when the
-rationale names the exact D3 interval — because the prompt says local useful work
-is exhausted, take exactly one `list_agents` snapshot, then send concise
-commentary naming both live agent state and the next action, and only then permit
-a later bounded wait. The rationale must also keep all agents/claims/reservations
-owned and must not treat timeout as failure. Any no-op, repeated state read,
-hidden-reasoning substitute, generic commentary, interruption, redispatch, or
-ownership release fails. Record the exact resolved child payload, its selected
+GREEN scoring is frozen as follows: A and C always FAIL. For scenarios 1–3, B
+passes only when the rationale names the no-local-work D3 interval: take exactly
+one `list_agents` snapshot, then send concise commentary naming both live agent
+state and the next action, and only then permit a later bounded wait. For
+scenario 4, B passes only when it says at least one material task-local action is
+enough (exhausting all three is not required), handles any interval completion
+exactly once, recomputes the relevant live set, comments with live state and next
+action, and waits again only when that set remains non-empty. Every rationale
+must also keep all agents/claims/reservations owned and must not treat timeout as
+failure. Any no-op, repeated state read, hidden-reasoning substitute, generic
+commentary, interruption, redispatch, ownership release, stale completion, or
+zero-agent re-wait fails. Record the exact resolved child payload, its selected
 choices, verbatim rationales, and scored results in
 `skills/bee-swarming/CREATION-LOG.md` immediately after that child completes.
 
@@ -160,7 +170,18 @@ discipline.
 2. “Another `wait_agent` is the supported completion path.”
 3. “No-chatter authority makes an immediate re-wait acceptable.”
 
-GREEN must rerun the same three scenarios with the amended skill/doctrine loaded.
-Every scenario must choose the material non-wait action → commentary update → one
-later bounded wait sequence, while still preserving running agents and required
+GREEN must rerun all four scenarios with the amended skill/doctrine loaded.
+Every scenario must choose the material non-wait action → completion handling →
+liveness recomputation → commentary update → later bounded wait only when a
+relevant agent remains, while still preserving running agents and required
 review evidence.
+
+## Repair extension — D6 material-work minimum
+
+Independent review found that the original three scenarios exercised only the
+no-local-work fallback and left “continue material work” without a minimum. The
+new scenario 4 above is frozen for the repair cycle. Its RED surface is the old
+live guidance without the D6 clarification; its GREEN surfaces are the amended
+root-only doctrine and the combined canonical future-sync payload. GREEN must
+choose B, reject both immediate re-wait and all-work exhaustion, and carry the
+completion/liveness/zero-agent conditions.

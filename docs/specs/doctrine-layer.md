@@ -1,8 +1,8 @@
 ---
 area: doctrine-layer
-updated: 2026-07-17
-sources: [fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cell codex-agent-wait-loop-2, 2026-07-15); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17); advisor-and-orchestration Slice 2A-iii (cells ao-2aiii-1/ao-2aiii-2 — dispatch-boundary enforcement + gather-purpose routing prose, 2026-07-17); advisor-and-orchestration Slice 5 (cell ao-5-1 — execution-worker class, tiny/small single-worker execution, AO14, 2026-07-17)]
-decisions: [ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface); 040f8ef0 (read-only analyst spawn + partial-return fan-out, B7/R11)]
+updated: 2026-07-19
+sources: [lane-ceremony-v3 cells lcv3-1..lcv3-4 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan freeze, lane work-packet shapes, product-file caps, test-anchored flags, intake-first classification; each RED-first against the doctrine assertion suite); fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cells codex-agent-wait-loop-2/codex-agent-wait-loop-3, 2026-07-15/2026-07-19 — native wait rule plus independently reviewed D6/D7 repair); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17); advisor-and-orchestration Slice 2A-iii (cells ao-2aiii-1/ao-2aiii-2 — dispatch-boundary enforcement + gather-purpose routing prose, 2026-07-17); advisor-and-orchestration Slice 5 (cell ao-5-1 — execution-worker class, tiny/small single-worker execution, AO14, 2026-07-17)]
+decisions: [lane-ceremony-v3 D1-D10 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19); ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface); 040f8ef0 (read-only analyst spawn + partial-return fan-out, B7/R11)]
 coverage: partial
 ---
 
@@ -48,7 +48,7 @@ it is kept from silently emptying out.
 | **Decide-altitude** | Work that requires judgment the orchestrating model must not hand off: approval gates, the mode decision, synthesis of findings, accepting or rejecting a helper's result, durable state writes, and conversation with the human. |
 | **Gather-altitude** | Mechanical work whose output the orchestrator needs only as a summary: file hunts, codebase scans, multi-file inventories, routine rendering. |
 | **Empty wait** | A native Codex `wait_agent` call that returns timeout or no completed agent. It reports only that no completion arrived in that interval; it is not a worker failure or ownership signal. |
-| **Progress interval** | Before another bounded native wait: continue material task-local work if any remains, otherwise take exactly one `list_agents` snapshot; then send concise commentary naming both the live agent state and the next action. |
+| **Progress interval** | Before another bounded native wait: perform at least one material task-local action if work remains (without needing to exhaust it), otherwise take exactly one `list_agents` snapshot; handle any completion exactly once, recompute relevant liveness, then send concise commentary naming both the live agent state and the next action. Zero live agents ends collection. |
 
 ## Behaviors & Operations
 
@@ -256,6 +256,39 @@ route to the external path until it earns its own proof (decisions 34398e69,
   message routing to the gather path, and the routing procedures teach the
   explicit gather-purpose form as the documented way to reach the command
   (2A-iii, 6b155218).
+- **R13** — Small work starts from an executable work packet, never a shrunken
+  feature plan (lane-ceremony-v3 D3/D4/D5). The tiny lane's complete work shape
+  is the request plus one work unit — the unit is the micro-plan, carrying the
+  touched paths, the directive, the acceptance contract, the verification
+  command, and the classification record (flag count, product-file count, lane);
+  no plan document exists. The small lane's default shape is a short scoping
+  synthesis logged through the decision log plus one-to-three units; a plan
+  document is opt-in, written only when a durable multi-slice strategy genuinely
+  needs one. In both lanes the approval order is fixed: draft unit(s) are
+  previewed in the approval message, the inline reality check runs, THEN the one
+  merged shape+execution approval is asked (or auto-recorded under bypass), and
+  only after approval are units persisted and claimed — execution approval is
+  never granted before the execution package exists, and never
+  persist-then-preview.
+- **R14** — Lane caps count product files only (lane-ceremony-v3 D6):
+  production source, tests, and runtime configuration the behavior change
+  itself must touch. Workflow bookkeeping, history and specification documents,
+  plans/briefs/reports, and generated projections or manifests never count
+  toward a lane cap — the workflow's own artifacts can never promote a change
+  out of its honest lane.
+- **R15** — The two experience-based risk flags are test-anchored
+  (lane-ceremony-v3 D7): "changes behavior an existing test asserts (a covered
+  contract must change)" and "the change requires weakening, deleting, or
+  replacing existing proof". A covered bugfix that keeps existing tests green
+  and adds a new one scores zero on both. The remaining flags and the
+  2-3→standard / 4+→high-risk thresholds are unchanged.
+- **R16** — Classification precedes context loading (lane-ceremony-v3 D8): the
+  planning stage classifies the lane first from the request plus at most two
+  targeted reads, then loads context scaled to the lane — targeted reads only
+  for tiny, bounded for small, full bootstrap for standard and high-risk. The
+  critical-patterns digest stays mandatory in every lane (it already rides the
+  session preamble at zero extra cost). The lane decision re-runs upward any
+  time evidence demands escalation; de-escalation requires cited evidence.
 
 ## Edge Cases Settled
 

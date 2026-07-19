@@ -4,7 +4,7 @@ Load this when executing go mode. Go mode is the full bee pipeline from raw feat
 
 Trigger: `/go [feature]`, "run the full pipeline", or "go mode".
 
-**Lane fast paths short-circuit this diagram** (bee-hive Modes and Lanes): `docs` lane skips the pipeline entirely (announce → write → format-check → capture). `tiny`/`small` collapse Steps 2–5 into: short plan.md → inline reality check → **one merged shape+execution gate** → solo in-session execution → self-review (`tiny`) or one correctness reviewer (`small`) → scribing. The full diagram below is the `standard`/`high-risk` pipeline.
+**Lane fast paths short-circuit this diagram** (bee-hive Modes and Lanes): `docs` lane skips the pipeline entirely (announce → write → format-check → capture). `tiny`/`small` collapse Steps 2–5 into: no plan.md (`tiny`, D3) or an opt-in scoping synthesis + plan.md (`small`, D4) → draft cell(s) previewed before persist, inline reality check → **one merged shape+execution gate** → one dispatched execution worker (AO14) → orchestrator-authored done-report → scribing. The full diagram below is the `standard`/`high-risk` pipeline.
 
 ```text
 User: "/go [feature]"
@@ -17,13 +17,13 @@ User: "/go [feature]"
        ▼
 [GATE 1] ← HARD STOP
        ▼
-[STEP 2] bee-planning (shape) → plan.md (requirements-only); discovery.md/approach.md
+[STEP 2] bee-planning (shape) → plan.md (frozen at Gate 2 once approved, D1); discovery.md/approach.md
                                  only for L2+ discovery or high-risk, else plan.md sections (D0009)
          bee-briefing (render) → implement-plan.md  (high-risk always; standard/small on-demand)
        ▼
 [GATE 2] ← HARD STOP (review the implement plan, or plan.md when no brief was rendered)
        ▼
-[STEP 3] bee-planning (prep)  → plan.md enriched to implementation-ready, current-slice cells
+[STEP 3] bee-planning (prep)  → current-slice cells only (D2) — plan.md is frozen, never rewritten (D1)
          bee-briefing (refresh) → implement-plan.md Affected Files + Steps re-projected
        ▼
 [STEP 4] bee-validating       → reality gate, feasibility matrix, spikes, plan-checker, cell review
@@ -103,7 +103,7 @@ Full plan: docs/history/<feature>/plan.md
 Work shape is ready. Approve before current-work preparation? (yes / revise / show full plan.md)
 ```
 
-Revise → return to the shape pass, update `plan.md` (still `requirements-only`), re-present.
+Revise → return to the shape pass, update `plan.md` content (unapproved — pre-Gate-2 content edits are allowed; frozen only once `approved_gates.shape` is set, D1), re-present.
 
 **GATE 3** — after validating:
 

@@ -2084,6 +2084,88 @@ await check('bee cells claim --id demo-2 --worker claims it', async () => {
   assert(JSON.parse(result.stdout).status === 'claimed', `expected claimed, got ${result.stdout}`);
 });
 
+// D1 (msh-2): `cells claim --id` is re-backed by the same O_EXCL claim file
+// claim-next uses — a second claim on the SAME cell must refuse loudly
+// (typed CLAIMED, non-zero exit) instead of silently double-claiming.
+await check('bee cells claim --id twice on the same cell: the second call refuses with a typed CLAIMED error, non-zero exit, cell untouched by the loser', async () => {
+  addCell(root2, {
+    id: 'claim-race-cli-1',
+    feature: 'demo2',
+    title: 'CLI claim-race fixture',
+    lane: 'small',
+    action: 'Exercise the double-claim refusal.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const first = await runBee(['cells', 'claim', '--id', 'claim-race-cli-1', '--worker', 'worker-first', '--session-id', 'sess-cli-first', '--json']);
+  assert(first.status === 0 && JSON.parse(first.stdout).status === 'claimed', `first claim should succeed, got status=${first.status} stdout=${first.stdout}`);
+
+  const second = await runBee(['cells', 'claim', '--id', 'claim-race-cli-1', '--worker', 'worker-second', '--session-id', 'sess-cli-second']);
+  assert(second.status !== 0, `second claim on the same cell must exit non-zero, got ${second.status}`);
+  assert(/CLAIMED/.test(second.stderr), `expected a typed CLAIMED refusal on stderr, got ${second.stderr}`);
+  assert(/sess-cli-first/.test(second.stderr), `refusal should name the actual owner, got ${second.stderr}`);
+});
+
+// D3: --session-id is optional on `cells claim --id` — a call with neither
+// flag nor CLAUDE_CODE_SESSION_ID env still claims cleanly (sessionless).
+await check('bee cells claim --id with no --session-id and no CLAUDE_CODE_SESSION_ID env still claims cleanly (single-session flow unaffected)', async () => {
+  addCell(root2, {
+    id: 'claim-sessionless-cli-1',
+    feature: 'demo2',
+    title: 'CLI sessionless-claim fixture',
+    lane: 'small',
+    action: 'Exercise the sessionless claim path.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const { CLAUDE_CODE_SESSION_ID: _drop, ...envNoSession } = process.env;
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'claim', '--id', 'claim-sessionless-cli-1', '--worker', 'worker-sessionless', '--json'],
+    cwd: root2,
+    env: envNoSession,
+  });
+  assert(result.status === 0, `sessionless claim should succeed, got ${result.status}: ${result.stderr}`);
+  assert(JSON.parse(result.stdout).status === 'claimed', `expected claimed, got ${result.stdout}`);
+});
+
+// D3: claim-next's --session-id keeps working exactly as before; it now also
+// resolves from CLAUDE_CODE_SESSION_ID, and a call with neither is refused
+// by the handler (not silently treated as sessionless — claim-next's own
+// cross-session selection genuinely needs a session id).
+await check('bee cells claim-next: --session-id omitted resolves from CLAUDE_CODE_SESSION_ID env; omitted with no env at all is refused with a clear message', async () => {
+  addCell(root2, {
+    id: 'claim-next-env-1',
+    feature: 'demo2',
+    title: 'CLI claim-next env-fallback fixture',
+    lane: 'small',
+    action: 'Exercise the claim-next session-id env fallback.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const withEnv = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'claim-next', '--worker', 'worker-env', '--json'],
+    cwd: root2,
+    env: { ...process.env, CLAUDE_CODE_SESSION_ID: 'sess-from-env-cli' },
+  });
+  assert(withEnv.status === 0, `claim-next with only the env session id should succeed, got ${withEnv.status}: ${withEnv.stderr}`);
+  const parsed = JSON.parse(withEnv.stdout);
+  assert(parsed.ok === true && parsed.cell.id === 'claim-next-env-1', `expected claim-next-env-1 claimed, got ${withEnv.stdout}`);
+
+  addCell(root2, {
+    id: 'claim-next-noenv-1',
+    feature: 'demo2',
+    title: 'CLI claim-next no-session fixture',
+    lane: 'small',
+    action: 'Exercise the claim-next refusal with no session source at all.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const { CLAUDE_CODE_SESSION_ID: _drop2, ...envNoSession2 } = process.env;
+  const withoutEnv = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'claim-next', '--worker', 'worker-noenv'], // no --json: refusal lands on stderr as plain text
+    cwd: root2,
+    env: envNoSession2,
+  });
+  assert(withoutEnv.status !== 0, 'claim-next with neither --session-id nor env must refuse');
+  assert(/session-id|CLAUDE_CODE_SESSION_ID/.test(withoutEnv.stderr), `refusal should name the missing session source, got ${withoutEnv.stderr}`);
+});
+
 await check('bee cells verify --passed true (explicit "true" argument, not a bare flag) records a passing verify', async () => {
   const result = await runBee([
     'cells', 'verify', '--id', 'demo-2', '--command', 'manual check', '--output', '0 failing', '--passed', 'true', '--json',

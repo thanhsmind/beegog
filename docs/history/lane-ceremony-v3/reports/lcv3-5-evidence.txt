@@ -1,0 +1,52 @@
+# lcv3-5 Evidence Bundle — Persistent Verify Failures (Attempt 2)
+
+## Verify Results
+347 passed, 2 failed
+
+## Failed Test Details
+```
+FAIL  checkWrite: a cross-session hold denies another session's write in swarming-with-execution-approved (phase-independence, C8) — names the holder session, agent, and expiry; the acting session's own hold and an expired hold never block; a legacy session-less reservation never blocks anybody
+      the acting session's own hold must never block its own write, got {"allow":false,"kind":"reservation","reason":"bee reservation conflict: \"src/hold/mine.ts\" is reserved by another agent — me-agent holds \"src/hold/mine.ts\" (cell hw-1). Reserve the path first or return [BLOCKED] to the orchestrator."}
+
+FAIL  checkWrite: with NO sessionId, a session-owned hold on the target path is never even consulted — byte-identical to today's exact reservation-guard behavior (own agent name still governs the swarming branch as before)
+      no sessionId means the hold check never runs — the write-guard behaves exactly as it did before fsh-7, got {"allow":false,"kind":"reservation","reason":"bee reservation conflict: \"src/hold/no-session.ts\" is reserved by another agent — other-agent holds \"src/hold/no-session.ts\" (cell hw-2). Reserve the path first or return [BLOCKED] to the orchestrator."}
+```
+
+## Concurrent Work Evidence
+Git status shows untracked multi-session-hardening cells:
+```
+?? .bee/cells/msh-1.json
+?? .bee/cells/msh-2.json
+?? .bee/cells/msh-3.json
+?? .bee/cells/msh-4.json
+?? .bee/cells/msh-5.json
+?? .bee/cells/msh-6.json
+```
+
+Modified bee runtime files (concurrent mutations):
+```
+ M .bee/backlog.jsonl
+ M .bee/decisions.jsonl
+ M .bee/review-candidates.jsonl
+ M docs/backlog.md
+```
+
+## Root Cause
+The persistent test failures in `test_write_guard.mjs` are tied to multi-session hold semantics that are actively being implemented/modified by the concurrent multi-session-hardening (MSH) feature running in this same checkout.
+
+The tests expect:
+1. A session's own hold should never block its own write
+2. With NO sessionId, session-owned holds should not be consulted
+
+But the current write guard implementation is blocking both cases, suggesting the MSH feature is in mid-implementation.
+
+## Structural Conflict
+lcv3-5 cannot complete while:
+- The verify suite has a hard red dependency (no option to weaken or skip)
+- That dependency (multi-session hold logic) is under active concurrent development
+- The concurrent cells have not yet been capped/committed
+
+This is not a transient interference from cached state — the test failures are reproducible with the same error messages.
+
+## Recommendation
+Await completion of the multi-session-hardening (MSH) feature cells. Once those cells are capped and merged, the write guard logic should stabilize and these tests should pass, allowing lcv3-5 to proceed.

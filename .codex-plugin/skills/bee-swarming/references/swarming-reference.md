@@ -28,17 +28,23 @@ On both runtimes the integrity rails are identical because they live in the help
 ### Native Codex timeout interval
 
 A `wait_agent` result with no completion is an **empty wait**, not a worker
-failure. Never follow an empty wait directly with `wait_agent`; authority,
-urgency, and no-chatter instructions create no exception. Before a later bounded
-wait, continue material task-local work when any remains; otherwise take exactly
-one `list_agents` snapshot. Then send one concise commentary update naming both
-the live agent state and the next action; only then may a later bounded wait run.
-No-op work, repeated state reads, hidden reasoning, generic commentary, or
+failure. A `wait_agent` timeout/no-completion result is only an empty wait;
+silence is not failure. Never call `wait_agent` twice consecutively after an
+empty wait; authority, urgency, and no-chatter instructions create no exception.
+Before any later bounded wait, perform at least one material task-local action
+when work remains; that one action satisfies the interval, and exhausting all
+local work is not required. Only when no material work remains, take exactly one
+`list_agents` snapshot. Handle any completion that arrives during the interval
+exactly once, then recompute the relevant live-agent set. Send one concise
+commentary update naming both the live agent state and the next action. Only
+after this commentary may a later bounded wait run, and only while the relevant
+live-agent set is non-empty; zero live agents ends collection without another
+wait. No-op work, repeated state reads, hidden reasoning, generic commentary, or
 commentary alone do not qualify. The timeout never licenses interrupt, duplicate
 dispatch, claim release, or reservation release: every running agent, claim, and
 reservation stays owned. Do not poll files or scratchpads for harness-managed
 native agents. External process and artifact polling stays governed by External
-Executors below and is outside this native-agent rule.
+Executors below and remains outside this native-agent rule.
 
 ## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
 

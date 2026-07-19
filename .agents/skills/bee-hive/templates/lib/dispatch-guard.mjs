@@ -20,7 +20,7 @@
 // used to call resolveTier()/modelForTier(), which read .bee/config.json
 // (a read, not a mutation). Callers own all side effects.
 
-import { resolveTier, modelForTier, CONFIGURABLE_SLOTS } from './state.mjs';
+import { resolveTier, resolveAdvisor, modelForTier, CONFIGURABLE_SLOTS } from './state.mjs';
 
 // Codex-native collaboration spawn (codex-native-runtime-v2 D4): Codex exposes
 // agent spawns through PreToolUse as tool_name "spawn_agent", with tool_input
@@ -31,11 +31,67 @@ export const CODEX_SPAWN_WORKER_TYPE = 'worker';
 
 export const DISPATCH_TOOLS = new Set(['Agent', 'Task']);
 
+// Native transport capability classification (codex-native-transport D3,
+// advisor R3 — binding). PURE evidence -> classification mapping, zero I/O:
+// the version+config-scoped probe record this classification is read from
+// (validity legs, live re-checks, `codex features list` calls) lives in
+// bee.mjs (readNativeTransportClassification / writeNativeTransportProbe,
+// mirroring the g22-3 doctor-attest pattern) — this function only ever
+// judges the evidence object it is handed, so it stays as pure as every
+// other export in this file.
+export const NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE = 'native_model_override';
+export const NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY = 'native_budget_only';
+export const NATIVE_TRANSPORT_EXTERNAL_CLI_ONLY = 'external_cli_only';
+
+/**
+ * classifyNativeTransport(evidence) — D3a (authoritative, decision
+ * c0cba64e): classification is schema/behavior evidence, never version
+ * inference. `evidence` shape (all optional):
+ *   { multi_agent: boolean, multi_agent_v2: boolean, override_spawn_accepted: boolean }
+ * `multi_agent`/`multi_agent_v2` observed via the same `codex features list`
+ * read; `override_spawn_accepted` observed by the g22-6 canary harness's
+ * accepted-override-spawn probe under an isolated CODEX_HOME (D4: bee never
+ * enables the flags on the user's real config, only inside the canary's own
+ * per-run copy).
+ *
+ *   external_cli_only    <=> multi_agent === false (positive evidence the
+ *                            base spawn transport is OFF — the ONLY
+ *                            external trigger)
+ *   native_model_override <=> multi_agent !== false AND multi_agent_v2 ===
+ *                            true AND override_spawn_accepted === true
+ *   native_budget_only    <=> everything else (v2 off, override not
+ *                            accepted, partial/absent/unknown evidence) —
+ *                            the feature stays inert until proven on the
+ *                            host's actual build.
+ */
+export function classifyNativeTransport(evidence) {
+  if (!evidence || typeof evidence !== 'object') {
+    return NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY;
+  }
+  if (evidence.multi_agent === false) {
+    return NATIVE_TRANSPORT_EXTERNAL_CLI_ONLY;
+  }
+  if (evidence.multi_agent_v2 === true && evidence.override_spawn_accepted === true) {
+    return NATIVE_TRANSPORT_NATIVE_MODEL_OVERRIDE;
+  }
+  return NATIVE_TRANSPORT_NATIVE_BUDGET_ONLY;
+}
+
 // Anchored to the start of the string (leading whitespace allowed): the
 // marker must be the first thing in prompt/description/message, never merely
 // present somewhere inside it (P1-1 — no 500-char scan window, no mid-text
 // match).
 export const ANCHORED_TIER_MARKER_RE = /^\s*\[bee-tier:\s*(ceiling|generation|extraction|review)\]/i;
+
+// Codex-branch-only marker regex (codex-native-transport R1, cnt-3/cnt-4
+// split — binding): additionally recognizes an `advisor` marker. `advisor`
+// is a native-transport-only slot label (dispatch-prepare.mjs's
+// slotForKind), never a CONFIGURABLE_SLOTS member — the claude branch's own
+// ANCHORED_TIER_MARKER_RE above is deliberately left byte-unchanged (R1: "claude
+// branch regex untouched"), so a claude dispatch can never forge an advisor
+// tier through this widened set, and resolveTier's generation-coercion trap
+// (state.mjs CONFIGURABLE_SLOTS comment) stays exactly as guarded as before.
+export const ANCHORED_CODEX_TIER_MARKER_RE = /^\s*\[bee-tier:\s*(ceiling|generation|extraction|review|advisor)\]/i;
 
 // W3 pinned-type rule (plan.md Slice 3B item 3, AO5/AO10/AO11): the three
 // model-backed tiers each get a rendered bee agent definition
@@ -47,11 +103,11 @@ export const PINNED_AGENT_TYPE = {
   review: 'bee-review',
 };
 
-function startsWithTierMarker(text) {
+function startsWithTierMarker(text, re = ANCHORED_TIER_MARKER_RE) {
   if (typeof text !== 'string') {
     return null;
   }
-  const match = ANCHORED_TIER_MARKER_RE.exec(text);
+  const match = re.exec(text);
   return match ? match[1].toLowerCase() : null;
 }
 
@@ -74,6 +130,21 @@ function configuredModelSet(root) {
     if (typeof m === 'string' && m.trim()) {
       models.add(m.trim());
     }
+  }
+  // Fold the advisor slot into the union (cnt-7, advisor-digest R2). advisor is
+  // deliberately NOT a CONFIGURABLE_SLOTS member (state.mjs — decision 0015
+  // collision avoided), so the loop above never sees it; yet `bee dispatch
+  // prepare --runtime claude --kind advisor` emits {model: <advisor model>}
+  // through the SAME resolveAdvisor resolver, and the guard must recognize
+  // prepare's own payload or it denies bee's own advisor dispatches
+  // ('param-not-configured' — the live prepare/guard asymmetry this closes).
+  // Only a resolved {type:'model'} advisor contributes its model NAME; a
+  // cli/native/null advisor resolves to no name and adds nothing, exactly like
+  // a cli or null tier slot above — this widens the allowlist by the advisor
+  // slot's own configured model and nothing more.
+  const advisor = resolveAdvisor(root, 'claude');
+  if (advisor && advisor.type === 'model' && typeof advisor.model === 'string' && advisor.model.trim()) {
+    models.add(advisor.model.trim());
   }
   return models;
 }
@@ -101,6 +172,24 @@ function denyResult(reason, transport, { tier = null, model = null, subagentType
 // Every UNOBSERVED shape is a no-opinion (allow, unlogged), never a deny —
 // the spike only ever captured agent_type "worker"; denying a shape it never
 // saw would guess at semantics the evidence does not support.
+//
+// D6 route-check gap (codex-native-transport, decision 350f1e82, bound to
+// cnt-4): CONTEXT.md's D6 calls for this function to validate an override-
+// carrying spawn's model/reasoning_effort/fork_turns against the configured
+// route once such a spawn is observed. That route-check is INTENTIONALLY
+// ABSENT here — this function never reads toolInput.model/reasoning_effort/
+// fork_turns at all — because the PreToolUse envelope it would validate
+// (V3) is terminal-UNOBSERVED on both codex builds probed to date: on
+// 0.144.4 the hook chain never fired for a successful override spawn (root
+// cause open); on 0.144.6 the override tool schema itself is REFUSED at the
+// API level before any spawn_agent call is attempted, so no envelope ever
+// reaches tool execution to inspect (full evidence:
+// docs/history/codex-native-transport/reports/probe-evidence.md). A spawn
+// that carries override fields therefore passes through exactly like one
+// that doesn't — evaluated on agent_type + message only — by design: this is
+// a defense-in-depth allow-hole (ADVISOR-R2 Δ3), not an oversight, and it
+// stays this way until a codex build lets V3 be observed and this comment
+// is replaced by the real route-check.
 function evaluateCodexSpawn(toolInput) {
   if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) {
     return noOpinion();
@@ -112,7 +201,7 @@ function evaluateCodexSpawn(toolInput) {
   if (typeof message !== 'string' || message === '') {
     return noOpinion();
   }
-  const tier = startsWithTierMarker(message);
+  const tier = startsWithTierMarker(message, ANCHORED_CODEX_TIER_MARKER_RE);
   if (tier) {
     return allowResult('codex-spawn-marker', { tier });
   }
@@ -123,7 +212,7 @@ function evaluateCodexSpawn(toolInput) {
     "message does not count, and a marker in any other field is ignored; without " +
     "one the spawned worker silently inherits the session model.\n" +
     "FIX: begin the spawn message with the marker, e.g. " +
-    '"[bee-tier: generation] <task>" (tiers: ceiling/generation/extraction/review).';
+    '"[bee-tier: generation] <task>" (tiers: ceiling/generation/extraction/review/advisor).';
   return denyResult(reason, 'codex-spawn-unmarked');
 }
 
@@ -269,22 +358,41 @@ function evaluateClaudeDispatch(rawToolInput, root) {
 //   - claude-agent + tier/budget only, no param        -> 'unverified'; we
 //     know what SHOULD run (requested_model, if the tier resolves to a named
 //     model) but never observe a structural pin, so we cannot claim more.
-//   - codex-native (spawn_agent)                       -> 'inherited-or-
-//     unknown', ALWAYS — codex-cli 0.144.4 has no per-agent model selection
+//   - codex-native (spawn_agent), NOT a confirmed native override -> 'inherited-
+//     or-unknown', ALWAYS — codex-cli 0.144.4 has no per-agent model selection
 //     at all (P14/P17), so claiming 'pinned' or even 'unverified' here would
 //     imply a verification path that does not exist. This status never
-//     changes based on tier/model inputs; only a future capability probe
-//     proving per-agent selection would justify moving it.
+//     changes based on tier/model inputs; only a confirmed native override
+//     (below) justifies moving it.
+//   - codex-native + a CONFIRMED native V2 model override (codex-native-
+//     transport D1/D7, native-transport R5) -> 'native-requested': the tool
+//     call itself carries a structural model param AND the live capability
+//     probe (readNativeTransportClassification) has classified this host as
+//     native_model_override, so codex's own catalog validation is a real
+//     acceptance signal — a stronger claim than 'inherited-or-unknown', but
+//     still short of 'pinned': catalog-accepted is not runtime-confirmed
+//     (D7 — effective_model stays null; a child's self-report is never
+//     evidence). Keyed strictly on `nativeConfirmed` — the caller decides
+//     confirmation from resolved.type==='native' + a classification-confirmed
+//     probe (R5); this function itself never re-derives that judgment.
 //   - cli-exec (external executor payloads)             -> 'unverified'; the
 //     cli command names its own model in its own argv, so requested_model is
 //     always null here (nothing in bee's config vocabulary to report) even
 //     when the resolved slot happens to carry cli metadata.
-function deriveEconomics({ channel, tier = null, paramModel = null, resolved = null } = {}) {
-  const resolvedModel = resolved && resolved.type === 'model' ? resolved.model : null;
+function deriveEconomics({ channel, tier = null, paramModel = null, resolved = null, nativeConfirmed = false } = {}) {
+  const isNativeConfirmed = channel === 'codex-native' && resolved != null && resolved.type === 'native' && nativeConfirmed === true;
+  const resolvedModel = resolved && (resolved.type === 'model' || resolved.type === 'native') ? resolved.model : null;
 
   let enforcement;
   if (channel === 'cli-exec') {
     enforcement = 'cli-command';
+  } else if (isNativeConfirmed) {
+    // A confirmed native override carries the model as a REAL structural
+    // field on the spawn_agent payload (dispatch-prepare.mjs's `model`),
+    // never merely a prompt-stated read budget — 'prompt-budget' would
+    // misdescribe it exactly the way it never has for the claude-agent
+    // model-param case.
+    enforcement = 'native-model-param';
   } else if (channel === 'codex-native') {
     enforcement = 'prompt-budget';
   } else {
@@ -296,7 +404,9 @@ function deriveEconomics({ channel, tier = null, paramModel = null, resolved = n
 
   let effectiveModel = null;
   let effectiveModelStatus;
-  if (channel === 'codex-native') {
+  if (isNativeConfirmed) {
+    effectiveModelStatus = 'native-requested';
+  } else if (channel === 'codex-native') {
     effectiveModelStatus = 'inherited-or-unknown';
   } else if (channel === 'cli-exec') {
     effectiveModelStatus = 'unverified';
@@ -309,7 +419,8 @@ function deriveEconomics({ channel, tier = null, paramModel = null, resolved = n
 
   // cli-exec never reports a requested_model (the command names its own,
   // outside bee's config vocabulary); every other channel prefers the actual
-  // param when present, else falls back to what config would have named.
+  // param when present, else falls back to what config would have named
+  // (a native slot's model counts here too — informational either way, D7).
   const requestedModel = channel === 'cli-exec' ? null : paramModel || resolvedModel || null;
 
   return {

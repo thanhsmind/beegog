@@ -5,15 +5,21 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 // Leaf-module imports only — no cycle: claims.mjs and reservations.mjs import
-// nothing but fsutil/node builtins (unlike cells.mjs, which imports THIS file).
+// only fsutil/lock.mjs/node builtins (unlike cells.mjs, which imports THIS
+// file) and never each other or this file, so composing both here stays
+// cycle-free (msh-5).
 import { readSession, readClaim, isClaimActive, claimsDir, adoptClaim } from './claims.mjs';
 import { pathsOverlap } from './reservations.mjs';
 import { readGrants } from './worktree-store.mjs';
+// D6 — startFeature's single read-check-write body runs inside this lock
+// (CLI verbs WAIT normally: no maxAttempts override here, unlike the hook-
+// driven touch path in claims.mjs/reservations.mjs).
+import { withStoreLock } from './lock.mjs';
 // decisions.mjs imports only node builtins + fsutil (no cycle back to this file);
 // advisorRefAnchors reads the newest active decision id through it (AO13).
 import { activeDecisions } from './decisions.mjs';
 
-export const BEE_VERSION = '1.6.2';
+export const BEE_VERSION = '1.7.0';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -166,6 +172,53 @@ function normalizeTierValue(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     if (value.kind === 'cli' && typeof value.command === 'string' && value.command.trim()) {
       return { kind: 'cli', command: value.command.trim() };
+    }
+    // Native V2 model-override leaf (D2, codex-native-transport): a per-agent
+    // model switch that rides on codex spawn_agent metadata. Preserved through
+    // normalize (a shape normalizeTierValue does not keep is stripped, which
+    // would make the resolver branch dead code). Invalid fork_turns/effort are
+    // silently dropped here exactly as an invalid effort is on {model,effort};
+    // validateModelsConfig is the loud layer that flags them.
+    if (value.kind === 'native' && typeof value.model === 'string' && value.model.trim()) {
+      const out = { kind: 'native', model: value.model.trim() };
+      if (typeof value.effort === 'string' && EFFORT_LEVELS.includes(value.effort.trim())) {
+        out.effort = value.effort.trim();
+      }
+      if (typeof value.fork_turns === 'string' && value.fork_turns.trim() === 'none') {
+        out.fork_turns = 'none';
+      }
+      if (typeof value.agent_type === 'string' && value.agent_type.trim()) {
+        out.agent_type = value.agent_type.trim();
+      }
+      return out;
+    }
+    // Explicit-fallback composite (D1/D2): a native primary plus an opt-in cli
+    // fallback. The fallback is kept ONLY when fallback_policy is exactly
+    // 'explicit-only' — a composite missing that policy string normalizes to the
+    // native primary alone, so no silent native->cli fallback can ever surface.
+    if (
+      value.primary &&
+      typeof value.primary === 'object' &&
+      !Array.isArray(value.primary) &&
+      value.primary.kind === 'native' &&
+      typeof value.primary.model === 'string' &&
+      value.primary.model.trim()
+    ) {
+      const out = { primary: normalizeTierValue(value.primary) };
+      if (value.fallback_policy === 'explicit-only') {
+        out.fallback_policy = 'explicit-only';
+        if (
+          value.fallback &&
+          typeof value.fallback === 'object' &&
+          !Array.isArray(value.fallback) &&
+          value.fallback.kind === 'cli' &&
+          typeof value.fallback.command === 'string' &&
+          value.fallback.command.trim()
+        ) {
+          out.fallback = { kind: 'cli', command: value.fallback.command.trim() };
+        }
+      }
+      return out;
     }
     if (value.kind === undefined && typeof value.model === 'string' && value.model.trim()) {
       const out = { model: value.model.trim() };
@@ -361,6 +414,86 @@ export function validateModelsConfig(config) {
           slot,
           message: `models.${rt}.${slot} is not a string, object, or null — ignored; defaults apply.`,
         });
+        continue;
+      }
+      // Native V2 model-override shapes (D2, codex-native-transport) — detected
+      // BEFORE looksLikeCli (ADVISOR-R2 Δ1). {kind:'native'} carries a `kind`
+      // key so it would be mis-flagged cli-malformed; the composite carries no
+      // top-level kind/command/model so it would be mis-flagged
+      // model-shape-malformed. Each gets its own reject codes.
+      const isComposite = 'primary' in value || 'fallback' in value || 'fallback_policy' in value;
+      if (isComposite) {
+        const primary = value.primary;
+        const primaryOk =
+          primary &&
+          typeof primary === 'object' &&
+          !Array.isArray(primary) &&
+          primary.kind === 'native' &&
+          typeof primary.model === 'string' &&
+          primary.model.trim().length > 0;
+        if (!primaryOk) {
+          problems.push({
+            code: 'composite-primary-malformed',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} is a composite (primary/fallback) but its primary is not a valid native override {kind:"native", model} — ignored; today this silently reverts to the seeded default (D2).`,
+          });
+          continue;
+        }
+        if (primary.fork_turns !== undefined && primary.fork_turns !== 'none') {
+          problems.push({
+            code: 'native-fork-turns-unknown',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} composite primary has fork_turns:${JSON.stringify(primary.fork_turns)} — only "none" is valid; a full-history fork rejects model overrides (E2/D2).`,
+          });
+        }
+        if (value.fallback_policy !== 'explicit-only') {
+          problems.push({
+            code: 'composite-fallback-policy-missing',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} is a composite but has no fallback_policy:"explicit-only" — its cli fallback is silently dropped and no fallback is ever taken; silent native->cli fallback is forbidden (D1). Set fallback_policy:"explicit-only" to opt in.`,
+          });
+          continue;
+        }
+        const fb = value.fallback;
+        const fbOk =
+          fb &&
+          typeof fb === 'object' &&
+          !Array.isArray(fb) &&
+          fb.kind === 'cli' &&
+          typeof fb.command === 'string' &&
+          fb.command.trim().length > 0;
+        if (!fbOk) {
+          problems.push({
+            code: 'composite-fallback-malformed',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} composite declares fallback_policy:"explicit-only" but its fallback is not a valid cli executor {kind:"cli", command} — the fallback is silently dropped; fix or remove it (D2).`,
+          });
+        }
+        continue;
+      }
+      if (value.kind === 'native') {
+        const modelOk = typeof value.model === 'string' && value.model.trim().length > 0;
+        if (!modelOk) {
+          problems.push({
+            code: 'native-model-missing',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} is a native override (kind:"native") but has no non-empty model — the exact catalog model id is required; today this silently reverts to the seeded default (D2).`,
+          });
+          continue;
+        }
+        if (value.fork_turns !== undefined && value.fork_turns !== 'none') {
+          problems.push({
+            code: 'native-fork-turns-unknown',
+            runtime: rt,
+            slot,
+            message: `models.${rt}.${slot} native override has fork_turns:${JSON.stringify(value.fork_turns)} — only "none" is valid; a full-history fork rejects model overrides (E2/D2).`,
+          });
+        }
         continue;
       }
       const looksLikeCli = 'kind' in value || 'command' in value;
@@ -1267,6 +1400,17 @@ export function resolveTier(root, slot, runtime = 'claude', purpose) {
     }
     return { type: 'cli', command: value.command };
   }
+  // Native V2 model-override (D2, codex-native-transport) — inserted BEFORE the
+  // generic value.model branch (plan cnt-1 note) so a native leaf is never
+  // mis-read as a plain {model} shape. normalize guarantees a valid model here.
+  if (value.kind === 'native') return nativeResolved(value);
+  if (value.primary && typeof value.primary === 'object' && !Array.isArray(value.primary)) {
+    const resolved = nativeResolved(value.primary);
+    if (value.fallback_policy === 'explicit-only' && value.fallback && value.fallback.kind === 'cli' && typeof value.fallback.command === 'string') {
+      resolved.fallback = { type: 'cli', command: value.fallback.command };
+    }
+    return resolved;
+  }
   if (typeof value.model === 'string') {
     return value.effort
       ? { type: 'model', model: value.model, effort: value.effort }
@@ -1294,12 +1438,40 @@ export function resolveAdvisor(root, runtime = 'claude') {
   if (value == null) return null; // unset, absent runtime, or explicit null -> no advisor
   if (typeof value === 'string') return { type: 'model', model: value };
   if (value.kind === 'cli') return { type: 'cli', command: value.command };
+  // Native V2 model-override + explicit-fallback composite (D2), inserted BEFORE
+  // the generic value.model branch (plan cnt-1 note). An invalid native shape
+  // is stripped by normalize before it reaches here, so resolveAdvisor never
+  // returns a bogus native — it falls through to null, exactly like a cli slot
+  // missing its command.
+  if (value.kind === 'native') return nativeResolved(value);
+  if (value.primary && typeof value.primary === 'object' && !Array.isArray(value.primary)) {
+    const resolved = nativeResolved(value.primary);
+    if (value.fallback_policy === 'explicit-only' && value.fallback && value.fallback.kind === 'cli' && typeof value.fallback.command === 'string') {
+      resolved.fallback = { type: 'cli', command: value.fallback.command };
+    }
+    return resolved;
+  }
   if (typeof value.model === 'string') {
     return value.effort
       ? { type: 'model', model: value.model, effort: value.effort }
       : { type: 'model', model: value.model };
   }
   return null;
+}
+
+// Shared resolution of a normalized native V2 model-override leaf
+// ({kind:'native', model, effort?, fork_turns?, agent_type?}) into a resolved
+// {type:'native', ...} record (D2). Called by resolveTier and resolveAdvisor;
+// a function declaration so it is hoisted above both. normalize has already
+// trimmed the fields and dropped any invalid ones, so this only applies the
+// resolved defaults: fork_turns:'none' (overrides require it, E2) and
+// agent_type:'worker'.
+function nativeResolved(value) {
+  const out = { type: 'native', model: value.model };
+  if (value.effort != null) out.effort = value.effort;
+  out.fork_turns = value.fork_turns != null ? value.fork_turns : 'none';
+  out.agent_type = value.agent_type != null ? value.agent_type : 'worker';
+  return out;
 }
 
 // ─── advisor_ref staleness anchors + check (AO3/AO13, Slice 4) ──────────────
@@ -1451,7 +1623,16 @@ function listActiveReservationsForStart(root) {
   });
 }
 
-export function startFeature(
+// D6 — async: the whole precondition-read-through-write body below runs
+// inside withStoreLock('state', ...) so a concurrent startFeature/set/gate/
+// worker/scribing-run CLI invocation can no longer race this function's
+// read-check-write into a lost update. Every caller now awaits it (bee.mjs's
+// handleStateStartFeature; direct unit callers in test_lib.mjs) — this is
+// the same async-ification msh-3 already did for reservations.mjs's
+// reserve/release/sweepExpired. CLI verbs WAIT normally (no maxAttempts
+// override): only the hook-driven heartbeat/lease-renewal touch path
+// (claims.mjs/reservations.mjs) uses try-once mode.
+export async function startFeature(
   root,
   { feature, mode = null, phase = 'exploring', lane = false, sessionId = null, paths = [] } = {},
 ) {
@@ -1465,85 +1646,87 @@ export function startFeature(
     );
   }
 
-  if (lane) {
-    return startLane(root, {
-      feature: requireLaneFeature(feature),
-      mode,
-      phase: phaseValue,
-      sessionId: typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null,
-      paths,
-    });
-  }
+  return withStoreLock(root, 'state', () => {
+    if (lane) {
+      return startLane(root, {
+        feature: requireLaneFeature(feature),
+        mode,
+        phase: phaseValue,
+        sessionId: typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null,
+        paths,
+      });
+    }
 
-  // Re-read immediately before any check (C1) — every read below happens
-  // before the single write at the end, so a refusal leaves zero mutations.
-  const state = readStateStrict(root);
+    // Re-read immediately before any check (C1) — every read below happens
+    // before the single write at the end, so a refusal leaves zero mutations.
+    const state = readStateStrict(root);
 
-  if (state.phase !== 'idle' && state.phase !== 'compounding-complete') {
-    throw new Error(
-      `startFeature: refused — current phase is "${state.phase}", not idle or the terminal alias "compounding-complete". A prior feature must finish or be explicitly wound down before a new feature starts. FIX: resume/close the current feature through its normal chain, or drop its remaining cells (bee.mjs cells drop), then retry.`,
-    );
-  }
-
-  const handoffFile = handoffPath(root);
-  if (fs.existsSync(handoffFile)) {
-    throw new Error(
-      'startFeature: refused — .bee/HANDOFF.json exists. A paused session must resume and clear the handoff before a new feature starts. FIX: resume the session (or explicitly delete HANDOFF.json once its work is truly abandoned), then retry.',
-    );
-  }
-
-  const workers = Array.isArray(state.workers) ? state.workers : [];
-  if (workers.length > 0) {
-    const names = workers.map((w) => (w && w.nickname) || '?').join(', ');
-    throw new Error(
-      `startFeature: refused — ${workers.length} registered worker(s) remain (${names}). FIX: clear them first (bee.mjs state worker remove --nickname N, or worker clear).`,
-    );
-  }
-
-  const activeReservations = listActiveReservationsForStart(root);
-  if (activeReservations.length > 0) {
-    throw new Error(
-      `startFeature: refused — ${activeReservations.length} active reservation(s) remain (${activeReservations
-        .map((r) => `${r.agent}:${r.path}`)
-        .join(', ')}). FIX: release them first (bee.mjs reservations release).`,
-    );
-  }
-
-  const cells = listAllCellsForStart(root);
-  const claimed = cells.filter((cell) => cell.status === 'claimed');
-  if (claimed.length > 0) {
-    throw new Error(
-      `startFeature: refused — claimed cell(s) remain: ${claimed.map((c) => c.id).join(', ')}. FIX: cap or drop them first (bee.mjs cells cap / bee.mjs cells drop).`,
-    );
-  }
-
-  const priorFeature = state.feature;
-  if (priorFeature) {
-    const nonterminal = cells.filter(
-      (cell) =>
-        cell.feature === priorFeature &&
-        (cell.status === 'open' || cell.status === 'claimed' || cell.status === 'blocked'),
-    );
-    if (nonterminal.length > 0) {
+    if (state.phase !== 'idle' && state.phase !== 'compounding-complete') {
       throw new Error(
-        `startFeature: refused — prior feature "${priorFeature}" has nonterminal cell(s): ${nonterminal
-          .map((c) => `${c.id}(${c.status})`)
-          .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee.mjs cells drop --id ID --reason R) — startFeature never auto-clears cells as cleanup. FIX: cap or drop each listed cell, then retry.`,
+        `startFeature: refused — current phase is "${state.phase}", not idle or the terminal alias "compounding-complete". A prior feature must finish or be explicitly wound down before a new feature starts. FIX: resume/close the current feature through its normal chain, or drop its remaining cells (bee.mjs cells drop), then retry.`,
       );
     }
-  }
 
-  // All preconditions hold — ONE atomic write: feature/mode/phase, reset all
-  // four gates, refreshed summary/next_action. A new feature never inherits
-  // approvals from whatever came before it.
-  state.feature = feature.trim();
-  state.mode = mode == null ? null : String(mode);
-  state.phase = phaseValue;
-  state.approved_gates = { context: false, shape: false, execution: false, review: false };
-  state.summary = `Feature "${state.feature}" started at phase "${phaseValue}".`;
-  state.next_action = `Invoke bee-hive for "${state.feature}" (phase: ${phaseValue}).`;
-  writeState(root, state);
-  return state;
+    const handoffFile = handoffPath(root);
+    if (fs.existsSync(handoffFile)) {
+      throw new Error(
+        'startFeature: refused — .bee/HANDOFF.json exists. A paused session must resume and clear the handoff before a new feature starts. FIX: resume the session (or explicitly delete HANDOFF.json once its work is truly abandoned), then retry.',
+      );
+    }
+
+    const workers = Array.isArray(state.workers) ? state.workers : [];
+    if (workers.length > 0) {
+      const names = workers.map((w) => (w && w.nickname) || '?').join(', ');
+      throw new Error(
+        `startFeature: refused — ${workers.length} registered worker(s) remain (${names}). FIX: clear them first (bee.mjs state worker remove --nickname N, or worker clear).`,
+      );
+    }
+
+    const activeReservations = listActiveReservationsForStart(root);
+    if (activeReservations.length > 0) {
+      throw new Error(
+        `startFeature: refused — ${activeReservations.length} active reservation(s) remain (${activeReservations
+          .map((r) => `${r.agent}:${r.path}`)
+          .join(', ')}). FIX: release them first (bee.mjs reservations release).`,
+      );
+    }
+
+    const cells = listAllCellsForStart(root);
+    const claimed = cells.filter((cell) => cell.status === 'claimed');
+    if (claimed.length > 0) {
+      throw new Error(
+        `startFeature: refused — claimed cell(s) remain: ${claimed.map((c) => c.id).join(', ')}. FIX: cap or drop them first (bee.mjs cells cap / bee.mjs cells drop).`,
+      );
+    }
+
+    const priorFeature = state.feature;
+    if (priorFeature) {
+      const nonterminal = cells.filter(
+        (cell) =>
+          cell.feature === priorFeature &&
+          (cell.status === 'open' || cell.status === 'claimed' || cell.status === 'blocked'),
+      );
+      if (nonterminal.length > 0) {
+        throw new Error(
+          `startFeature: refused — prior feature "${priorFeature}" has nonterminal cell(s): ${nonterminal
+            .map((c) => `${c.id}(${c.status})`)
+            .join(', ')}. An abandoned cell must first be resolved through the existing drop verb (bee.mjs cells drop --id ID --reason R) — startFeature never auto-clears cells as cleanup. FIX: cap or drop each listed cell, then retry.`,
+        );
+      }
+    }
+
+    // All preconditions hold — ONE atomic write: feature/mode/phase, reset all
+    // four gates, refreshed summary/next_action. A new feature never inherits
+    // approvals from whatever came before it.
+    state.feature = feature.trim();
+    state.mode = mode == null ? null : String(mode);
+    state.phase = phaseValue;
+    state.approved_gates = { context: false, shape: false, execution: false, review: false };
+    state.summary = `Feature "${state.feature}" started at phase "${phaseValue}".`;
+    state.next_action = `Invoke bee-hive for "${state.feature}" (phase: ${phaseValue}).`;
+    writeState(root, state);
+    return state;
+  });
 }
 
 // Active claim holds by ANOTHER session whose claimed cell's files overlap the

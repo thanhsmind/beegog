@@ -135,12 +135,15 @@ export const COMMAND_REGISTRY = [
   {
     name: 'cells.claim',
     invoke: 'bee cells claim',
-    description: 'Claim an open, dep-free cell for a worker. Refuses while Gate 3 (execution) is unapproved or deps are uncapped.',
+    description:
+      'Claim an open, dep-free cell for a worker. Refuses while Gate 3 (execution) is unapproved or deps are uncapped. D1 (msh-2): re-backed by the same O_EXCL claim file claim-next uses (claims.mjs claimCellFile, acquired before the cell JSON flips) — a losing concurrent claimant gets a typed CLAIMED refusal naming the owner + expiry instead of silently double-owning the cell. D3: --session-id is optional — resolves from CLAUDE_CODE_SESSION_ID when omitted, and falls back to a legal sessionless claim when neither is present (single-session use is unaffected).',
     parameters: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Cell id to claim.' },
         worker: { type: 'string', description: 'Reservation identity of the claiming worker.' },
+        'session-id': { type: 'string', description: 'Claiming session identity (claims.mjs). Optional — resolves from CLAUDE_CODE_SESSION_ID, then falls back to a sessionless claim.' },
+        ttl: { type: 'number', description: 'Claim TTL in seconds (default 3600).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['id', 'worker'],
@@ -287,16 +290,16 @@ export const COMMAND_REGISTRY = [
     name: 'cells.claim-next',
     invoke: 'bee cells claim-next',
     description:
-      "Cross-session selection + claim (fresh-session-handoff fsh-11, D2/D4): sweeps stale claims (TTL expired AND heartbeat stale) in-pass first — this IS sweepExpiredClaims's production trigger — then picks the next open cell to claim: the acting session's own bound lane (or the default pipeline when unbound) first, ONLY when its execution gate is approved; empty or unapproved falls back to every OTHER pipeline whose OWN execution gate is approved (an unapproved lane is never touched), ordered by backlog rank then lane created_at. Cells whose files intersect another session's active reservation hold are skipped (the acting session's own holds never exclude a cell). Claims via the two-store sequence (claims.mjs claimCellFile then cells.mjs claimCell, unwound with a claim-file release on any claimCell throw). Refuses (non-zero exit) when nothing is claimable (NO_APPROVED_WORK), the claims-store race is lost (CLAIMED), or the session's lane binding is broken (LANE_INVALID/LANE_MISSING/LANE_CORRUPT).",
+      "Cross-session selection + claim (fresh-session-handoff fsh-11, D2/D4): sweeps stale claims (TTL expired AND heartbeat stale) in-pass first — this IS sweepExpiredClaims's production trigger — then picks the next open cell to claim: the acting session's own bound lane (or the default pipeline when unbound) first, ONLY when its execution gate is approved; empty or unapproved falls back to every OTHER pipeline whose OWN execution gate is approved (an unapproved lane is never touched), ordered by backlog rank then lane created_at. Cells whose files intersect another session's active reservation hold are skipped (the acting session's own holds never exclude a cell). Claims via the two-store sequence (claims.mjs claimCellFile then cells.mjs claimCell, unwound with a claim-file release on any claimCell throw). Refuses (non-zero exit) when nothing is claimable (NO_APPROVED_WORK), the claims-store race is lost (CLAIMED), or the session's lane binding is broken (LANE_INVALID/LANE_MISSING/LANE_CORRUPT). D3 (msh-2): --session-id is no longer required at the schema level — omit it and it resolves from CLAUDE_CODE_SESSION_ID instead; a session id is still functionally required (claim-next resolves the acting session's own lane from it), so a call with neither still refuses, just from the handler rather than arg validation.",
     parameters: {
       type: 'object',
       properties: {
         worker: { type: 'string', description: 'Reservation identity of the claiming worker.' },
-        'session-id': { type: 'string', description: "Acting session's cross-session identity (claims.mjs) — resolves its bound lane, if any." },
+        'session-id': { type: 'string', description: "Acting session's cross-session identity (claims.mjs) — resolves its bound lane, if any. Optional — falls back to CLAUDE_CODE_SESSION_ID; a call with neither is refused by the handler." },
         ttl: { type: 'number', description: 'Claim TTL in seconds (default 3600).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
-      required: ['worker', 'session-id'],
+      required: ['worker'],
     },
     examples: ['bee cells claim-next --worker worker-a --session-id sess-claim-next --json'],
     deprecated: null,

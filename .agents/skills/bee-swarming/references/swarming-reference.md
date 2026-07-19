@@ -28,17 +28,23 @@ On both runtimes the integrity rails are identical because they live in the help
 ### Native Codex timeout interval
 
 A `wait_agent` result with no completion is an **empty wait**, not a worker
-failure. Never follow an empty wait directly with `wait_agent`; authority,
-urgency, and no-chatter instructions create no exception. Before a later bounded
-wait, continue material task-local work when any remains; otherwise take exactly
-one `list_agents` snapshot. Then send one concise commentary update naming both
-the live agent state and the next action; only then may a later bounded wait run.
-No-op work, repeated state reads, hidden reasoning, generic commentary, or
+failure. A `wait_agent` timeout/no-completion result is only an empty wait;
+silence is not failure. Never call `wait_agent` twice consecutively after an
+empty wait; authority, urgency, and no-chatter instructions create no exception.
+Before any later bounded wait, perform at least one material task-local action
+when work remains; that one action satisfies the interval, and exhausting all
+local work is not required. Only when no material work remains, take exactly one
+`list_agents` snapshot. Handle any completion that arrives during the interval
+exactly once, then recompute the relevant live-agent set. Send one concise
+commentary update naming both the live agent state and the next action. Only
+after this commentary may a later bounded wait run, and only while the relevant
+live-agent set is non-empty; zero live agents ends collection without another
+wait. No-op work, repeated state reads, hidden reasoning, generic commentary, or
 commentary alone do not qualify. The timeout never licenses interrupt, duplicate
 dispatch, claim release, or reservation release: every running agent, claim, and
 reservation stays owned. Do not poll files or scratchpads for harness-managed
 native agents. External process and artifact polling stays governed by External
-Executors below and is outside this native-agent rule.
+Executors below and remains outside this native-agent rule.
 
 ## Model Tiers — Config-Driven, Runtime-Keyed (decision 0012)
 
@@ -123,7 +129,7 @@ You are a bee worker subagent.
 
 Identity:
 - Agent nickname (reservation identity): <NICKNAME>
-- Assigned cell id: <CELL_ID>
+- Assigned cell id: <CELL_ID> (ALREADY CLAIMED for you by the orchestrator before dispatch, per D1 — do NOT run `cells claim`; validate via `cells show`: status claimed, worker <NICKNAME>)
 - Feature: <FEATURE>
 - Model tier: <extraction|generation|ceiling> (model: <MODEL_NAME>)
 - Advisor (optional — present only when the advisor resolves and is not the worker's own model, the same-model no-op, AO4/AO5): <ADVISOR_MODEL_OR_CLI_COMMAND> — consult via <TRANSPORT>
@@ -135,8 +141,8 @@ Inputs — read these; nothing else will be provided:
 
 Contract:
 - Load the bee-executing skill immediately and follow its loop exactly.
-- Execute only the assigned cell. Do not select or accept other work.
-- Reserve every file before writing, under your nickname.
+- Execute only the assigned cell — it is already claimed under your nickname; never run `cells claim` yourself, never select or accept other work.
+- Reserve every file before writing, under your nickname; never pass a session id you were handed — reservation and claim verbs auto-derive one from your own environment when needed (D3).
 - Prefix write-heavy shell commands with BEE_AGENT_NAME="<NICKNAME>".
 - Return exactly one final status token: [DONE], [BLOCKED], [HANDOFF], or [NOOP],
   followed by the result fields, and write a report to docs/history/<FEATURE>/reports/.
@@ -144,7 +150,7 @@ Contract:
 Startup:
 1. Read AGENTS.md.
 2. Run node .bee/bin/bee.mjs status --json
-3. Read docs/history/<FEATURE>/CONTEXT.md, then run node .bee/bin/bee.mjs cells show --id <CELL_ID>
+3. Validate ownership: node .bee/bin/bee.mjs cells show --id <CELL_ID> (confirm status claimed, worker <NICKNAME>), then read docs/history/<FEATURE>/CONTEXT.md.
 4. Reserve, implement, verify, cap, release, report.
 ```
 

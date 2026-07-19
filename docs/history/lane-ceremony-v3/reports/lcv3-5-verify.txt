@@ -1,0 +1,45 @@
+PASS  codex channel economics: prompt-budget enforcement, inherited-or-unknown status, no model field on the payload
+PASS  prepare-time dispatch record is appended to .bee/logs/dispatch.jsonl with economics + dispatch_id
+PASS  prepare-time dispatch record for kind cell carries the cell id
+PASS  R1 golden row: a confirmed native_model_override advisor payload round-trips ALLOW through the real evaluateDispatch
+PASS  native economics: confirmed override reports native-requested status, effective_model null, requested_model the native model
+PASS  D1: native route not confirmed, with an explicit-only cli fallback configured -> Bash payload + recorded reason, never silent
+PASS  D1: native route not confirmed, no fallback configured -> typed native_unavailable refusal naming the classification, never a payload
+PASS  D3a coupling: external_cli_only classification on a bare native slot (no fallback) also refuses — never an invented cli command, never a silent budget fallback
+PASS  a composite native slot whose fallback_policy is NOT explicit-only never silently falls back to cli — refuses instead
+PASS  native routing is inert when classification is omitted — every non-native caller (incl. every earlier test in this file) stays byte-identical
+PASS  end-to-end via the real CLI: a native-configured advisor slot with no probe file on disk refuses through the real readNativeTransportClassification wiring
+PASS  an unknown --runtime is refused (non-zero exit)
+PASS  an unknown --kind is refused (non-zero exit)
+
+ALL PASS (25 passed, 0 failed)
+PASS test_native_probe: classifyNativeTransport(undefined) -> native_budget_only (unknown/absent evidence stays inert)
+PASS test_native_probe: classifyNativeTransport(null) -> native_budget_only
+PASS test_native_probe: classifyNativeTransport(malformed non-object) -> native_budget_only
+PASS test_native_probe: classifyNativeTransport({}) -> native_budget_only (no signal at all)
+PASS test_native_probe: classifyNativeTransport({multi_agent:true}) -> native_budget_only (E3: multi_agent stable, v2/override unproven)
+PASS test_native_probe: classifyNativeTransport({multi_agent:false}) -> external_cli_only (D3a: the ONLY external trigger)
+PASS test_native_probe: classifyNativeTransport({multi_agent:true, multi_agent_v2:true, override_spawn_accepted:true}) -> native_model_override (D3a: all three conditions)
+PASS test_native_probe: multi_agent_v2 true but override NOT accepted -> native_budget_only (all three conditions required)
+PASS test_native_probe: override accepted but multi_agent_v2 NOT enabled -> native_budget_only (all three conditions required)
+PASS test_native_probe: multi_agent:false wins even if v2+override look positive (D3a: external_cli_only is the ONLY multi_agent:false outcome — evidence, not inference)
+PASS test_native_probe: multi_agent absent (not === false) + v2 + override accepted -> native_model_override (D3a: multi_agent !== false, not 'multi_agent === true')
+PASS test_native_probe: no probe record on disk -> native_budget_only, reason no_probe_record
+PASS test_native_probe: a probe record copied into a different repo checkout invalidates -> reason identity_changed
+PASS test_native_probe: a recorded codex_version that no longer matches the live binary invalidates -> reason version_changed
+PASS test_native_probe: a config_scope_hash that no longer matches the recorded config_scope invalidates -> reason config_scope_corrupt
+PASS test_native_probe: a hash-consistent config_scope that disagrees with the LIVE codex features list invalidates -> reason flag_state_changed
+PASS test_native_probe: every validity leg matching live state -> valid:true, classification round-trips the writer's verdict
+PASS test_native_probe: the round-tripped classification for {multi_agent:true, no v2/override} is native_budget_only (D3a default, matches E3 on 0.144.4)
+PASS test_native_probe: config_scope carries all four verdict-determining flags (Δ2-amended), hash matches the stored scope
+PASS test_native_probe: writer: multi_agent+multi_agent_v2+override_spawn_accepted evidence classifies as native_model_override
+PASS test_native_probe: writer: multi_agent:false evidence classifies as external_cli_only
+PASS test_native_probe: nativeTransportConfigScopeHash is key-order independent (stable hash for a stable key set)
+PASS test_native_probe: nativeTransportConfigScopeHash changes when a value changes
+PASS test_native_probe: doctorNativeTransportUnlock returns a well-formed row (native_budget_only + flag shipped)
+PASS test_native_probe: the unlock row NAMES both flags (features.multi_agent_v2, hide_spawn_agent_metadata) when the build ships the flag
+PASS test_native_probe: the unlock row is never blocking and never degrading (D4: informational only, never load-bearing)
+PASS test_native_probe: when the codex build does not ship the flag at all, the row says there is nothing to unlock
+SKIP test_native_probe: doctorNativeTransportUnlock 'no unlock needed' branch — live multi_agent_v2 is not enabled on this build
+PASS test_native_probe: .bee/bin/bee.mjs (the runtime copy) exports the same native-transport-probe functions as skills/bee-hive/templates/bee.mjs
+PASS test_native_probe: all checks green
