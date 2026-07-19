@@ -13,4 +13,5 @@
 .bee/claims/
 .bee/runtime/
 .bee/cache/
+.bee/doctor-attest.json
 # BEE:END

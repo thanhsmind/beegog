@@ -1374,6 +1374,7 @@ try {
     ".bee/claims/",
     ".bee/runtime/",
     ".bee/cache/",
+    ".bee/doctor-attest.json",
   ];
   const expectedGitignoreBlockSource =
     `# BEE:START\n${GITIGNORE_PATTERNS_FOR_HASH.join("\n")}\n# BEE:END\n`;

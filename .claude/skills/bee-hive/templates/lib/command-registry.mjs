@@ -1443,7 +1443,7 @@ export const COMMAND_REGISTRY = [
     name: 'doctor',
     invoke: 'bee doctor',
     description:
-      'Fail-closed runtime health report: never "ready" from file presence alone. --runtime codex reports hooks-file presence, capability-baseline byte match against the recorded onboarding hash, hook-handler resolvability, and the hook-discovery/trust/project-trust/pending-review rows that are structurally unknown on codex-cli 0.144.4 and BLOCK readiness (capability matrix row F1); --runtime claude reports hook wiring, handler resolvability, model-guard entry presence, installed skills/rendered agents, and permission mode. Performs zero writes anywhere, including the dispatcher\'s own pre-routing manifest-hash cache.',
+      'Fail-closed runtime health report, a THREE-state verdict (g22-3, D4): overall_status is "blocked" when any mechanical row (hooks-file presence, capability-baseline byte match, hook-handler resolvability, skills-installed) is not ok; "degraded" when every mechanical row is ok but codex\'s hook-discovery/trust/project-trust/pending-review rows are still structurally unknown (capability matrix row F1) and no valid attestation covers them; "ready" only with mechanical rows all ok AND, on codex, a currently-valid attestation (see "doctor attest") — claude has no trust-unknown rows, so mechanical green alone reaches ready there, no attestation required. Trust-row wording is version-scoped (D6): a live codex --version other than the probed one reports "unprobed_version" instead of asserting the probed conclusions. Never "ready" from file presence alone. Performs zero writes anywhere, including the dispatcher\'s own pre-routing manifest-hash cache.',
     parameters: {
       type: 'object',
       properties: {
@@ -1453,6 +1453,23 @@ export const COMMAND_REGISTRY = [
       required: ['runtime'],
     },
     examples: ['bee doctor --runtime codex --json', 'bee doctor --runtime claude --json'],
+    deprecated: null,
+  },
+  {
+    name: 'doctor.attest',
+    invoke: 'bee doctor attest',
+    description:
+      'Record a static attestation (g22-3, D5-REVISED) that codex trust state was reviewed via the interactive /hooks TUI for THIS exact pairing of .codex/hooks.json content, codex --version, and repo identity. Written to the gitignored .bee/doctor-attest.json (never tracked state). "bee doctor --runtime codex" treats the attestation as valid only while all three legs still match the live state; any single drifted leg makes it inert and doctor reports "degraded" naming the stale reason (hash_changed / version_changed / identity_changed / no_attestation). --runtime codex only — claude has no trust-unknown rows to attest. No liveness leg exists: codex exposes no hook-fire event surface to observe, so this is a static record, not a health probe.',
+    parameters: {
+      type: 'object',
+      properties: {
+        runtime: { type: 'string', description: 'Must be "codex" — claude has no attestation model.', enum: ['codex'] },
+        session: { type: 'string', description: 'Optional session id to record alongside the attestation; defaults to $CODEX_SESSION_ID or $CLAUDE_SESSION_ID when unset.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['runtime'],
+    },
+    examples: ['bee doctor attest --runtime codex --json'],
     deprecated: null,
   },
 ];

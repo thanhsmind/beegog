@@ -118,6 +118,11 @@ const GITIGNORE_BLOCK_PATTERNS = [
   ".bee/claims/",
   ".bee/runtime/",
   ".bee/cache/",
+  // Static "doctor attest" record (g22-3, D5-REVISED): hash/version/identity
+  // pairing a human vouched for via `bee doctor attest --runtime codex` —
+  // machine-local runtime state, never tracked (a different checkout or a
+  // re-clone must re-attest, never inherit someone else's attestation).
+  ".bee/doctor-attest.json",
 ];
 
 const HOOK_FILENAMES = [
