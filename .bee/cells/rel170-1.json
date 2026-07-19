@@ -16,19 +16,27 @@
   "verify": "node scripts/test_release_tuple.mjs && node scripts/test_bump_version.mjs",
   "behavior_change": false,
   "deps": [],
-  "status": "claimed",
+  "status": "capped",
   "decisions": [],
   "trace": {
     "worker": "orchestrator-release",
     "outcome": null,
-    "files_changed": [],
+    "files_changed": [
+      "package.json",
+      ".claude-plugin",
+      ".codex-plugin",
+      ".bee",
+      "docs/history/codex-harness-hardening/release-manifest.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-19T18:58:57.775Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claimed_at": "2026-07-19T18:53:44.359Z"
+    "verify_output": "exit=0 ALL PASS (release-verify2.log); release tuple 1.7.0 agreed across 4 components; plugin_distribution 40/40; manifest 366 match; pushed 9a75754 + tag v1.7.0",
+    "verify_passed": true,
+    "claimed_at": "2026-07-19T18:53:44.359Z",
+    "verify_command": "full configured verify chain (33 suites)",
+    "verified_at": "2026-07-19T18:58:57.720Z"
   }
 }
