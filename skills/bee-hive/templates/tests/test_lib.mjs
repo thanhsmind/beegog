@@ -974,9 +974,9 @@ await check('capCell/unclaimCell/blockCell/dropCell/reopenCell never fail when t
 // ─── reservations ───────────────────────────────────────────────────────────
 
 await check('reserve succeeds, then conflicts for another agent on the same path', async () => {
-  const first = reserve(root, { agent: 'worker-a', cell: 'demo-2', path: 'src/api/router.ts' });
+  const first = await reserve(root, { agent: 'worker-a', cell: 'demo-2', path: 'src/api/router.ts' });
   assert(first.ok === true, 'first reservation ok');
-  const second = reserve(root, { agent: 'worker-b', cell: 'blk-1', path: 'src/api/router.ts' });
+  const second = await reserve(root, { agent: 'worker-b', cell: 'blk-1', path: 'src/api/router.ts' });
   assert(second.ok === false, 'second reservation should conflict');
   assert(second.conflicts.length === 1 && second.conflicts[0].agent === 'worker-a', 'conflict names holder');
 });
@@ -989,8 +989,8 @@ await check('same agent does not conflict with itself; directory prefix overlaps
 });
 
 await check('release frees the path for other agents', async () => {
-  release(root, { agent: 'worker-a', cell: 'demo-2' });
-  const retry = reserve(root, { agent: 'worker-b', cell: 'blk-1', path: 'src/api/router.ts' });
+  await release(root, { agent: 'worker-a', cell: 'demo-2' });
+  const retry = await reserve(root, { agent: 'worker-b', cell: 'blk-1', path: 'src/api/router.ts' });
   assert(retry.ok === true, 'released path can be reserved by another agent');
 });
 
@@ -1001,7 +1001,7 @@ await check('sweepExpired releases TTL-expired reservations', async () => {
   active.reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
   active.ttl_seconds = 60;
   writeJsonAtomic(reservationsPath(root), store);
-  const swept = sweepExpired(root);
+  const swept = await sweepExpired(root);
   assert(swept >= 1, `expected at least one swept reservation, got ${swept}`);
   assert(listReservations(root, { activeOnly: true }).length === 0, 'no active reservations remain');
 });
@@ -1011,17 +1011,29 @@ await check('sweepExpired releases TTL-expired reservations', async () => {
 // session-keyed sibling of findConflicts, exported for the write guard.
 
 await check('reserve without --session omits the field entirely (byte-identical shape to every pre-existing row); reserve WITH session stamps it', async () => {
-  const plain = reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/plain.ts' });
-  assert(plain.ok === true, 'plain reserve still succeeds');
-  assert(!('session' in plain.reservation), 'no session passed -> no session key on the record at all');
+  // D3: reserve() self-derives session from CLAUDE_CODE_SESSION_ID when no
+  // explicit flag is passed — "no session passed" only stays session-less
+  // when the env is ALSO absent, so this assertion clears env for the
+  // duration (same save/clear/restore pattern as the resolveSessionId check
+  // below), matching the running-as-a-live-session reality of a bee worker.
+  const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+    const plain = await reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/plain.ts' });
+    assert(plain.ok === true, 'plain reserve still succeeds');
+    assert(!('session' in plain.reservation), 'no session passed and no env -> no session key on the record at all');
+  } finally {
+    if (savedEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedEnv;
+  }
 
-  const owned = reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/owned.ts', session: 'sess-A' });
+  const owned = await reserve(root, { agent: 'worker-a', cell: 'sess-1', path: 'src/hold/owned.ts', session: 'sess-A' });
   assert(owned.ok === true, 'session-owned reserve succeeds');
   assert(owned.reservation.session === 'sess-A', 'session id is stamped on the record');
 });
 
 await check('findSessionConflicts: a different session conflicts on an overlapping path; the owning session itself never conflicts; a legacy session-less row never conflicts for anybody', async () => {
-  reserve(root, { agent: 'worker-a', cell: 'sess-2', path: 'src/hold/shared.ts', session: 'sess-A' });
+  await reserve(root, { agent: 'worker-a', cell: 'sess-2', path: 'src/hold/shared.ts', session: 'sess-A' });
   const other = findSessionConflicts(root, 'sess-B', ['src/hold/shared.ts']);
   assert(other.length === 1 && other[0].session === 'sess-A', 'a different session sees the hold as a conflict');
 
@@ -1034,7 +1046,7 @@ await check('findSessionConflicts: a different session conflicts on an overlappi
 });
 
 await check('findSessionConflicts: an expired session-owned hold never conflicts', async () => {
-  reserve(root, { agent: 'worker-c', cell: 'sess-3', path: 'src/hold/expiring.ts', session: 'sess-C', ttl: 60 });
+  await reserve(root, { agent: 'worker-c', cell: 'sess-3', path: 'src/hold/expiring.ts', session: 'sess-C', ttl: 60 });
   const store = readJson(reservationsPath(root), { reservations: [] });
   const row = store.reservations.find((r) => r.path === 'src/hold/expiring.ts' && r.session === 'sess-C');
   assert(row, 'precondition: the just-made hold exists');
@@ -1377,7 +1389,7 @@ await check('checkWrite blocks source writes in a gated phase without execution 
 });
 
 await check('checkWrite blocks unreserved conflicting writes during swarming', async () => {
-  reserve(root, { agent: 'worker-a', cell: 'demo-2', path: 'src/core/engine.ts' });
+  await reserve(root, { agent: 'worker-a', cell: 'demo-2', path: 'src/core/engine.ts' });
   const state = { ...defaultState(), phase: 'swarming', approved_gates: { ...defaultState().approved_gates, execution: true } };
   const denied = checkWrite(root, state, 'src/core/engine.ts', 'worker-b');
   assert(denied.allow === false && denied.kind === 'reservation', 'reservation deny expected');
@@ -1542,7 +1554,7 @@ await check('reservation-conflict reason carries a FIX (reserve or [BLOCKED])', 
     assert(/\[BLOCKED\]|Reserve/i.test(res.reason), `conflict reason names the route, got: ${res.reason}`);
   } else {
     // no live reservation at this point in the suite — exercise the message via findConflicts path
-    reserve(root, { agent: 'worker-a', cell: 'msg-1', path: 'src/msg/locked.ts' });
+    await reserve(root, { agent: 'worker-a', cell: 'msg-1', path: 'src/msg/locked.ts' });
     const res2 = checkWrite(root, { phase: 'swarming', approved_gates: { execution: true } }, 'src/msg/locked.ts', 'worker-z');
     assert(res2.allow === false, 'conflicting write blocked');
     assert(/\[BLOCKED\]|Reserve/i.test(res2.reason), `conflict reason names the route, got: ${res2.reason}`);
@@ -5285,7 +5297,7 @@ await check('lanes: a lane start declaring intended paths refuses on overlap wit
     assert(!fs.existsSync(laneFile(dir, 'lane-j')), 'refusal writes nothing');
     const own = startFeature(dir, { feature: 'lane-k', lane: true, sessionId: 'sess-them', paths: ['src/app.ts'] });
     assert(own.feature === 'lane-k', 'the holder\'s own session is never blocked by its own claim');
-    reserve(dir, { agent: 'worker-z', cell: 'z-1', path: 'src/lib/*' });
+    await reserve(dir, { agent: 'worker-z', cell: 'z-1', path: 'src/lib/*' });
     assertThrows(
       () => startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] }),
       'worker-z',
@@ -5495,7 +5507,7 @@ await check("checkWrite: a cross-session hold denies another session's write in 
     laneBinding.bindSessionLane(dir, 'sess-hw', 'lane-hw');
     const state = readState(dir); // irrelevant here: the bound lane governs
 
-    reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/target.ts', session: 'sess-other' });
+    await reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/target.ts', session: 'sess-other' });
     const denied = checkWrite(dir, state, 'src/hold/target.ts', null, { sessionId: 'sess-hw' });
     assert(
       denied.allow === false && denied.kind === 'hold',
@@ -5508,12 +5520,12 @@ await check("checkWrite: a cross-session hold denies another session's write in 
     assert(/expires|no expiry/.test(denied.reason), `deny reason must carry an expiry, got: ${denied.reason}`);
 
     // the acting session's own hold on a different path never blocks itself
-    reserve(dir, { agent: 'me-agent', cell: 'hw-1', path: 'src/hold/mine.ts', session: 'sess-hw' });
+    await reserve(dir, { agent: 'me-agent', cell: 'hw-1', path: 'src/hold/mine.ts', session: 'sess-hw' });
     const ownOk = checkWrite(dir, state, 'src/hold/mine.ts', null, { sessionId: 'sess-hw' });
     assert(ownOk.allow === true, `the acting session's own hold must never block its own write, got ${JSON.stringify(ownOk)}`);
 
     // an expired hold never blocks, even from a different session
-    reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/stale.ts', session: 'sess-other', ttl: 60 });
+    await reserve(dir, { agent: 'other-agent', cell: 'hw-1', path: 'src/hold/stale.ts', session: 'sess-other', ttl: 60 });
     const store = readJson(reservationsPath(dir), { reservations: [] });
     const row = store.reservations.find((r) => r.path === 'src/hold/stale.ts');
     row.reserved_at = new Date(Date.now() - 7200 * 1000).toISOString();
@@ -5521,8 +5533,17 @@ await check("checkWrite: a cross-session hold denies another session's write in 
     const staleOk = checkWrite(dir, state, 'src/hold/stale.ts', null, { sessionId: 'sess-hw' });
     assert(staleOk.allow === true, `an expired hold must never block, got ${JSON.stringify(staleOk)}`);
 
-    // a legacy session-less reservation (today's exact shape) never blocks a bound session either
-    reserve(dir, { agent: 'legacy-agent', cell: 'hw-1', path: 'src/hold/legacy.ts' });
+    // a legacy session-less reservation (today's exact shape) never blocks a bound session either.
+    // D3: clear env for this one reserve() call so "no --session passed" stays
+    // genuinely session-less, matching a legacy row made before fsh-7/D3 existed.
+    const savedLegacyEnv = process.env.CLAUDE_CODE_SESSION_ID;
+    try {
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+      await reserve(dir, { agent: 'legacy-agent', cell: 'hw-1', path: 'src/hold/legacy.ts' });
+    } finally {
+      if (savedLegacyEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+      else process.env.CLAUDE_CODE_SESSION_ID = savedLegacyEnv;
+    }
     const legacyOk = checkWrite(dir, state, 'src/hold/legacy.ts', null, { sessionId: 'sess-hw' });
     assert(legacyOk.allow === true, `a session-less reservation row must never block a bound session's write, got ${JSON.stringify(legacyOk)}`);
   } finally {
@@ -5534,7 +5555,7 @@ await check("checkWrite: with NO sessionId, a session-owned hold on the target p
   const dir = makeStateRepo('bee-hold-no-session-');
   try {
     const state = { ...defaultState(), phase: 'swarming', approved_gates: { ...defaultState().approved_gates, execution: true } };
-    reserve(dir, { agent: 'other-agent', cell: 'hw-2', path: 'src/hold/no-session.ts', session: 'sess-somebody' });
+    await reserve(dir, { agent: 'other-agent', cell: 'hw-2', path: 'src/hold/no-session.ts', session: 'sess-somebody' });
     const noSessionArg = checkWrite(dir, state, 'src/hold/no-session.ts');
     assert(
       noSessionArg.allow === true,
@@ -6629,7 +6650,7 @@ await check(
       });
       makeCellFile(dir, 'held-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/held.ts'] });
       makeCellFile(dir, 'free-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/free.ts'] });
-      reserve(dir, { agent: 'other-worker', cell: 'other-cell', path: 'src/held.ts', session: 'sess-other' });
+      await reserve(dir, { agent: 'other-worker', cell: 'other-cell', path: 'src/held.ts', session: 'sess-other' });
 
       const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
       assert(result.ok === true && result.cell.id === 'free-1', `held-1 must be skipped for another session's hold, got ${JSON.stringify(result)}`);
@@ -6650,7 +6671,7 @@ await check("claimNextCell: the acting session's OWN active hold on a cell's fil
       workers: [],
     });
     makeCellFile(dir, 'own-hold-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/mine.ts'] });
-    reserve(dir, { agent: 'me-worker', cell: 'own-hold-1', path: 'src/mine.ts', session: 'sess-me' });
+    await reserve(dir, { agent: 'me-worker', cell: 'own-hold-1', path: 'src/mine.ts', session: 'sess-me' });
 
     const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
     assert(result.ok === true && result.cell.id === 'own-hold-1', `own hold must never exclude the cell, got ${JSON.stringify(result)}`);

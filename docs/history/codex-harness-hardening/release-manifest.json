@@ -93,7 +93,7 @@
     },
     {
       "path": ".bee/bin/lib/reservations.mjs",
-      "sha256": "4643ef572599f1439504741499f3ec982c4344e1e3551052c2d27e66617fec86",
+      "sha256": "49ba76178a889ee636eac72639534059515fcd31eb3631333f4d3d91fcf57330",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -2084,7 +2084,7 @@
     },
     {
       "path": "skills/bee-hive/templates/bee.mjs",
-      "sha256": "bcdf093d9bd9aa50ff8fb9148f934d4228865c56dd0ccc0ac73cffdccf9ff0ed",
+      "sha256": "67a07944a430bf0dc434492f33ce86206e3c301fb1aae32095c3be47a882f5f3",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/bee.mjs"
@@ -2196,7 +2196,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/reservations.mjs",
-      "sha256": "4643ef572599f1439504741499f3ec982c4344e1e3551052c2d27e66617fec86",
+      "sha256": "49ba76178a889ee636eac72639534059515fcd31eb3631333f4d3d91fcf57330",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/reservations.mjs"
@@ -2280,7 +2280,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_lib.mjs",
-      "sha256": "be870581658162ccba630af6c8d685836d5ed8bf0ca6b1cee088c58e2ebfd6ff",
+      "sha256": "fd97b2675399f83bff4baf6981987c68bf3d995c9f641ca1f5f8afe7f2e5856b",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_lib.mjs"

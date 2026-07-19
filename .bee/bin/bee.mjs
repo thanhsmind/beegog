@@ -850,12 +850,12 @@ function handleCellsSchedule(root, flags) {
   return { result: schedule, text: lines.join('\n') };
 }
 
-function handleReservationsReserve(root, flags) {
+async function handleReservationsReserve(root, flags) {
   const ttl = flags.ttl !== undefined ? Number.parseInt(String(flags.ttl), 10) : undefined;
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
   }
-  const result = reserve(root, {
+  const result = await reserve(root, {
     agent: requireFlag(flags, 'agent'),
     cell: requireFlag(flags, 'cell'),
     path: requireFlag(flags, 'path'),
@@ -871,8 +871,8 @@ function handleReservationsReserve(root, flags) {
   return { result, text, exitCode: result.ok ? 0 : 1 };
 }
 
-function handleReservationsRelease(root, flags) {
-  const result = release(root, {
+async function handleReservationsRelease(root, flags) {
+  const result = await release(root, {
     agent: requireFlag(flags, 'agent'),
     cell: flags.cell ? String(flags.cell) : null,
   });
@@ -892,8 +892,8 @@ function handleReservationsList(root, flags) {
   return { result: { reservations }, text };
 }
 
-function handleReservationsSweep(root) {
-  const released = sweepExpired(root);
+async function handleReservationsSweep(root) {
+  const released = await sweepExpired(root);
   return { result: { released }, text: `Swept ${released} expired reservation(s).` };
 }
 
@@ -3871,7 +3871,7 @@ function emitError(message, useJson) {
 
 // ─── main ───────────────────────────────────────────────────────────────────
 
-export function main(argv) {
+export async function main(argv) {
   if (argv[0] === '--help') {
     return handleHelp(argv.includes('--json'));
   }
@@ -4000,7 +4000,11 @@ export function main(argv) {
 
   const handler = HANDLERS[commandName];
   try {
-    const response = handler(root, parsed.flags);
+    // reservations.reserve/release/sweep (D2) run their read-check-write body
+    // under withStoreLock, which is async — `handler` may return a plain
+    // value or a Promise; `await` resolves either uniformly and still routes
+    // a rejection (e.g. LockBusyError) into this same catch, unchanged.
+    const response = await handler(root, parsed.flags);
     return emit(response, useJson, drift);
   } catch (error) {
     return emitError(error instanceof Error ? error.message : String(error), useJson);
@@ -4013,5 +4017,13 @@ export function main(argv) {
 // computeManifestHash, parseFlags, ...) must never trigger it as a side effect.
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {
-  process.exitCode = main(process.argv.slice(2));
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error) => {
+      process.stderr.write(`${error instanceof Error ? (error.stack || error.message) : String(error)}\n`);
+      process.exitCode = 1;
+    },
+  );
 }
