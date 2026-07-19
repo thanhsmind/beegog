@@ -100,6 +100,24 @@ privileges at configuration checking.
 - R6 — Advice never approves, never overrides, never writes; consults never
   substitute for the orchestrator's own verification re-run.
 - R7 — The worker budget is two per claim; exhaustion returns blocked.
+- R8 — **Dispatch payloads have one source of truth** (gh22-completion g22-1):
+  `bee dispatch prepare --runtime <r> --kind cell|gather|reviewer|advisor`
+  emits the guard-conformant payload (tier marker anchored exactly where the
+  guard checks; pinned agent types from the guard's own map), a dispatch id,
+  and the economics block. The guard's decision core is an exported pure
+  function (`evaluateDispatch`) shared by the hook and prepare's tests —
+  prepare's output is proven against the real guard, never a copied regex.
+  Prepare surfaces tier refusals verbatim (a cli-shaped slot stays
+  gather-only); the advisor kind resolves its model through the advisor
+  resolver, never the generation slot.
+- R9 — **Dispatch records tell the economic truth** (gh22-completion g22-2):
+  every record carries logical_tier, requested_model, effective_model,
+  effective_model_status, channel, enforcement (additive; the legacy
+  transport key is untouched). A model-param dispatch is `pinned`; a
+  bare-marker budget dispatch is `unverified`; a second-runtime native spawn
+  is ALWAYS `inherited-or-unknown` with `prompt-budget` enforcement until a
+  capability probe proves per-agent model selection — config names the
+  requested model, the log never claims it took effect.
 
 ## Edge Cases Settled
 

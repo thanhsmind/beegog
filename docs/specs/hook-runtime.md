@@ -431,13 +431,40 @@ that it reduces anything.
   between full read-modify-write cycles remains a named, accepted limitation
   (codex-native-runtime-v2, cnr2-5).
 - A read-only, fail-closed doctor command reports per-runtime health: every row
-  carries value + evidence + ok/warn/unknown/unsupported; trust and discovery
-  surfaces the runtime does not expose are structurally `unknown` and BLOCK
-  readiness (never guessed, never inferred from recent logs without a session
-  boundary); capability verdicts are version-scoped; a drifted hooks file is
-  `not_ready` with per-row FIX lines; the command performs zero writes,
-  including the dispatcher's manifest-hash cache (codex-native-runtime-v2,
-  cnr2-13).
+  carries value + evidence + ok/warn/unknown/unsupported; capability verdicts
+  are version-scoped; the command performs zero writes, including the
+  dispatcher's manifest-hash cache (codex-native-runtime-v2, cnr2-13).
+- Doctor's overall verdict is THREE-STATE (gh22-completion g22-3, supersedes
+  the binary ready/not_ready): `blocked` = a mechanical blocking row is
+  not-ok (hooks file missing, baseline drift, handlers unresolvable, skills
+  missing/drifted); `degraded` = mechanical green but trust surfaces the
+  runtime cannot expose are structurally unknown (the user is pointed at
+  /hooks); `ready` = mechanical green plus, on the second runtime, a VALID
+  static attestation. `bee doctor attest --runtime codex` records
+  {hooks-file sha256, CLI version, repo identity} into gitignored runtime
+  state; validity = all three match live state (no liveness leg — the runtime
+  exposes no hook-fire event surface, and the reason text says so honestly);
+  any drift names its reason (hash_changed/version_changed/identity_changed/
+  no_attestation) and the verdict falls back to degraded. Trust wording is
+  probe-version-scoped: a CLI version other than the probed one reads
+  `unprobed_version` (re-probe suggested), never a blanket "unsupported".
+- Doctor resolves hook handlers at HOST topology: each handler filename is
+  checked at both `.bee/bin/hooks/` and `hooks/` (dual-location, evidence
+  names which resolved) — a normal host repo without the dev repo's root
+  hooks/ dir is judged correctly (pre-162-fixes p162-1).
+- Skill install checks are a DEEP INVENTORY audit (gh22-completion g22-4):
+  the render sidecar is `bee-render/2` `{schema, target_runtime,
+  skills:[{name, sha256}]}` with per-skill digests over the rendered
+  per-runtime bytes, single-sourced beside the renderer; doctor recomputes
+  and names missing/stray/drifted skills (blocking); a legacy `bee-render/1`
+  sidecar degrades to a non-blocking "inventory unavailable" warn.
+- A scripted canary drives the REAL second-runtime CLI against a throwaway
+  fixture (isolated CODEX_HOME so trust writes never touch the user's real
+  config; per-hook trust bypass does NOT bypass per-project trust — both must
+  be seeded in the fixture): session-init fires end-to-end, and the installed
+  guard chain is proven via synthetic envelopes through the installed hook
+  files (spawn deny/allow, state-sync, intake deny). Skip-guarded; nightly /
+  manual only, never a push gate (gh22-completion g22-6).
 - A scripted conformance suite drives the guard and CLI binaries as
   subprocesses against isolated fixtures with negative-state assertions
   (denied action changed nothing); agent-behavior scenarios live in a manual
