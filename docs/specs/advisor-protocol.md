@@ -128,7 +128,11 @@ privileges at configuration checking.
   `native-requested` status with `native-model-param` enforcement, the
   requested model/effort on the payload, and `effective_model` still null (the
   probe proves the client *accepted* the request, never that the runtime *ran*
-  on it; a child's self-report is still never evidence). A route that resolves
+  on it; a child's self-report is still never evidence). The stronger claim has
+  its own reserved status name — `used-and-confirmed` — which no record may
+  carry today: it becomes writable only if the runtime one day exposes
+  confirmed effective-model metadata in its response, keeping the two trust
+  stages non-synonymous by construction. A route that resolves
   native but the probe has not confirmed falls back to an explicitly
   configured CLI command with the reason recorded, or — with no such fallback
   configured — returns a typed refusal naming the classification that blocked
