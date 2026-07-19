@@ -1,7 +1,7 @@
 ---
 area: hook-runtime
 updated: 2026-07-19
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19)]
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19); codex-native-transport cell cnt-7 (Claude model-param guard allowlist folds a configured model-shaped adviser's own model, closing a live adviser-dispatch refusal, allow-only-widening; trace in .bee/cells/, report docs/history/codex-native-transport/reports/cnt-7.md, 2026-07-19)]
 decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated); codex-native-transport D3-D5 (3ceba8f5, D3a c0cba64e, Δ2-amended 760e9b05); 350f1e82 (codex-native-transport cnt-4 rescope — override-field route-check deferred to a documented pass-through-open gap, pending observed evidence)]
 coverage: partial
 ---
@@ -247,11 +247,19 @@ built-in list of acceptable models.
   carry an explicit model choice at all — the label would enter the audit
   record while the dispatch actually ran on the choice.
 - *Choice only:* the model must be one of the models configured across the
-  runtime's tier slots. An unconfigured name is refused, and the corrective
-  message teaches every legitimate route: the configured models, the
-  session-model marker for a dispatch meant to run at the session's own model,
-  and adding the model to a configured tier slot. A workspace with no
-  configured tiers is not checked (fail-open, unchanged behavior).
+  runtime's tier slots. On Claude, that configured set also includes a
+  configured model-shaped adviser's own model — an adviser-kind dispatch is
+  judged against the same resolved name the adviser protocol already offers,
+  not left out of the allowlist just because the adviser slot is not itself a
+  tier slot; a cli-shaped, native, or unconfigured adviser contributes nothing
+  to the set. This can only turn a refusal into an allowance, never the
+  reverse, and it closed a live gap where a correctly-shaped adviser dispatch
+  was still refused as unconfigured (codex-native-transport cnt-7). An
+  unconfigured name is refused, and the corrective message teaches every
+  legitimate route: the configured models, the session-model marker for a
+  dispatch meant to run at the session's own model, and adding the model to a
+  configured tier slot. A workspace with no configured tiers is not checked
+  (fail-open, unchanged behavior).
 - *Tier only:* tiers resolving to a model, a budget, or session-inherit are
   permitted as before. A tier backed by an external command is refused — an
   in-family helper cannot *be* the external command — and the corrective
@@ -642,3 +650,9 @@ that it reduces anything.
   `--probe` / `--probe-selftest`; probe leg protocol recorded in
   `docs/decisions/ab-tiny-protocol.md`. Evidence: `.bee/cells/cnt-5.json`,
   `docs/history/codex-native-transport/reports/probe-evidence.md`.
+- Claude model-param allowlist advisor fold (B16, "Choice only"):
+  `configuredModelSet` in `skills/bee-hive/templates/lib/dispatch-guard.mjs`
+  (mirrored in `.bee/bin/lib/dispatch-guard.mjs`), folding
+  `resolveAdvisor(root, 'claude')` into the union. Canary rows:
+  `hooks/test_model_guard.mjs` rows 21-22. Evidence: `.bee/cells/cnt-7.json`,
+  `docs/history/codex-native-transport/reports/cnt-7.md`.
