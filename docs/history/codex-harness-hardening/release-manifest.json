@@ -80,6 +80,12 @@
       "role": "runtime_lib"
     },
     {
+      "path": ".bee/bin/lib/lock.mjs",
+      "sha256": "0ea02b7787fc68cf8fc7c28f8657e34646b224f91c27862f54d3ad3aa4374706",
+      "mode": "644",
+      "role": "runtime_lib"
+    },
+    {
       "path": ".bee/bin/lib/perf.mjs",
       "sha256": "b3e64c2f2c8889751196662351d4b4acb0f22f6e58ad0c243fffce40b07754dd",
       "mode": "644",
@@ -2173,6 +2179,13 @@
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/inject.mjs"
+    },
+    {
+      "path": "skills/bee-hive/templates/lib/lock.mjs",
+      "sha256": "0ea02b7787fc68cf8fc7c28f8657e34646b224f91c27862f54d3ad3aa4374706",
+      "mode": "644",
+      "role": "plugin_skill",
+      "packagePath": "skills/bee-hive/templates/lib/lock.mjs"
     },
     {
       "path": "skills/bee-hive/templates/lib/perf.mjs",
