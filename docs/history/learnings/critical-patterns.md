@@ -522,6 +522,31 @@ never discovered at the close verify. Same rule generalized: before capping a sl
 standing repo-wide guards (manifest, mirror, census) hash the files you touched, and run their
 regen/check inside the slice. (Filed friction to mechanize the hint.)
 
+**Recurred 2026-07-19 (cnt-3):** the cell regenerated rendered plugin trees, deferred the
+manifest regen to "the slice-closing cell", and its own cell verify ran neither check — it
+capped green while the shared baseline sat red for every concurrent session until a fix-first
+cell (cnt-6) repaired it. Prose alone did not hold under a multi-session checkout;
+mechanization (manifest check derived into the verify of any cell whose files hit rendered
+trees or `lib/`) is now the recorded fix direction, not a nice-to-have.
+
+## [20260719] With concurrent sessions possible, the claim precedes the spawn — and session ids are self-derived, never handed down
+**Category:** process
+**Feature:** codex-native-transport
+**Tags:** [multi-session, claims, atomicity, heartbeat, dispatch]
+
+Three near-misses in one feature traced to claims arriving AFTER dispatch: two sessions built
+cnt-1/cnt-2 in parallel (~2 worker runs discarded), and a second session's worker tried to claim
+a cell the first session's worker already held. The one cell claimed atomically BEFORE its worker
+was spawned (`cells claim-next --session-id ...` from the orchestrator, worker told to validate
+— never `cells claim`) absorbed the concurrent attempt with zero duplicated work. **Two rules
+until multi-session-hardening lands (backlog, 2×P1):** (1) the orchestrator wins the cell first,
+then spawns — a worker-side `cells claim` is a non-atomic read-modify-write and its refusal is
+the safety net, not the mechanism; (2) any session id attached to reservations/holds is read from
+the worker's own runtime env at reserve time — an orchestrator-handed id in the prompt denied a
+worker's own write as a "cross-session" conflict this feature. Corollary: a live session reads as
+stale after 15 min (heartbeat refreshes only at session start), so liveness signals are advisory
+— check for commits/holds before treating a lane owner as dead.
+
 ## [20260716] A cell dependency in the wrong field name is silently ignored — verify the wave, not the write
 **Category:** failure
 **Feature:** perf-log
