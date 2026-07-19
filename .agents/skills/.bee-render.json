@@ -1,4 +1,66 @@
 {
-  "schema": "bee-render/1",
-  "target_runtime": "codex"
+  "schema": "bee-render/2",
+  "target_runtime": "codex",
+  "skills": [
+    {
+      "name": "bee-briefing",
+      "sha256": "c04ca6f53300fe8111c9251fb60d7480281f05b9067b295399e834e035837fa8"
+    },
+    {
+      "name": "bee-bypass-gate",
+      "sha256": "be871eec8d36cf6b14ec8ba73326899d190229d66547c92ebf8b564810472572"
+    },
+    {
+      "name": "bee-compounding",
+      "sha256": "618dedaac8719882e25dc86084f191344e254e90e09d4e0a326a3daf0de08cff"
+    },
+    {
+      "name": "bee-evolving",
+      "sha256": "4a6f6e0a1b44c21f52326d653f02afa0e02f446896cf869f0b8ca5a3945087cc"
+    },
+    {
+      "name": "bee-executing",
+      "sha256": "b32dfa90a919a9fa1fb68b64143fdc784bcda43848ac822ba3bd66596aed2b23"
+    },
+    {
+      "name": "bee-exploring",
+      "sha256": "33876ad4e02769b37966b1eb5293731faa404a09d90812d23adfbd6a751d5486"
+    },
+    {
+      "name": "bee-grooming",
+      "sha256": "01d1b7af08b2d864b079363d30aaa4f83122a57b1edbc0be8aabc6f5a64b63a5"
+    },
+    {
+      "name": "bee-hive",
+      "sha256": "3bce2dc24737fa3dd210395d25fd97202c7eb1656293300fbda6539af8b7c1be"
+    },
+    {
+      "name": "bee-planning",
+      "sha256": "a6cef215e08e01172b85d8620f4800bb897790100b3b7629dbf609614ddc4d1f"
+    },
+    {
+      "name": "bee-reviewing",
+      "sha256": "58f0783a9fdc00d4b05582abe23cc40b82b42aebdfb16259876f97047504e773"
+    },
+    {
+      "name": "bee-scribing",
+      "sha256": "b9df4431fa5e93f1600a837c9c06ee4cd1cff8afdcc7cb94a0ae678b0ad407a8"
+    },
+    {
+      "name": "bee-swarming",
+      "sha256": "43812d5885451cf692cce09a1dfdd5ab04e9499e7fe812352d4f6cfc282de700"
+    },
+    {
+      "name": "bee-validating",
+      "sha256": "69be40c907534cbe322003ff2e2a29a2a267367697a8553007e96488f1f9eb62"
+    },
+    {
+      "name": "bee-writing-skills",
+      "sha256": "a861035ccbe55da9b544901e53362924ca71ff55acb8a83988713a6e2cb9de7f"
+    },
+    {
+      "name": "bee-xia",
+      "sha256": "7031633fc885b2f7dec5290469940a0e1f52dfdecb8c985584b2a09ec38a0961"
+    }
+  ]
 }

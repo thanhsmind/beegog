@@ -15,7 +15,7 @@ import {
   proveInstalledPackage,
   provePluginInactive,
 } from "./plugin_distribution.mjs";
-import { renderSkillBytes, RENDER_RUNTIMES, RENDER_SIDECAR } from "./onboard_bee.mjs";
+import { renderSkillBytes, RENDER_RUNTIMES, RENDER_SIDECAR, walkSkillTree, skillDigest } from "./onboard_bee.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "../../..");
@@ -328,10 +328,30 @@ for (const runtime of RENDER_RUNTIMES) {
     }
   });
 
-  check(`plugin skill tree (${runtime}): carries the D9 render provenance sidecar`, () => {
+  check(`plugin skill tree (${runtime}): carries the D9/D7 render inventory sidecar (bee-render/2)`, () => {
     const sidecar = JSON.parse(fs.readFileSync(path.join(PLUGIN_RENDER_ROOTS[runtime], RENDER_SIDECAR), "utf8"));
     assert.equal(sidecar.target_runtime, runtime);
-    assert.equal(sidecar.schema, "bee-render/1");
+    assert.equal(sidecar.schema, "bee-render/2");
+    assert.ok(Array.isArray(sidecar.skills) && sidecar.skills.length > 0, "sidecar must list at least one skill");
+    const names = sidecar.skills.map((s) => s.name);
+    assert.deepEqual(names, [...names].sort(), "skills[] must be sorted by name");
+    for (const s of sidecar.skills) {
+      assert.match(s.sha256, /^[0-9a-f]{64}$/, `${s.name} sha256 must be a hex digest`);
+    }
+  });
+
+  check(`plugin skill tree (${runtime}): sidecar sha256 recomputes from the committed rendered files (drift pin)`, () => {
+    const targetRoot = PLUGIN_RENDER_ROOTS[runtime];
+    const sidecar = JSON.parse(fs.readFileSync(path.join(targetRoot, RENDER_SIDECAR), "utf8"));
+    for (const { name, sha256: expected } of sidecar.skills) {
+      const walk = walkSkillTree(path.join(targetRoot, name));
+      assert.equal(walk.blocked, null, `${runtime}/${name} unexpectedly blocked: ${JSON.stringify(walk.blocked)}`);
+      assert.equal(
+        skillDigest(walk.files),
+        expected,
+        `${runtime}/${name} sidecar sha256 must match the digest recomputed from the committed rendered files`,
+      );
+    }
   });
 }
 

@@ -34,6 +34,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 import { runModuleWorker } from "./lib/run-module-worker.mjs";
@@ -233,9 +234,11 @@ async function scenario12() {
     fs.writeFileSync(path.join(dir, "hooks", "bee-model-guard.mjs"), "// stub\n", "utf8");
     fs.writeFileSync(path.join(dir, "hooks", "bee-state-sync.mjs"), "// stub\n", "utf8");
     fs.writeFileSync(path.join(dir, ".codex", "config.toml"), 'approval_policy = "never"\n', "utf8");
-    // skills_installed is one of D4's mechanical blocking rows — a realistic
-    // clean install has this, and this scenario is testing the trust-row
-    // degrade, not a skills gap, so give it a sidecar like a real install.
+    // skills_installed is one of D4's mechanical blocking rows, but this
+    // scenario is testing the trust-row degrade, not a skills gap — give it
+    // a (deliberately legacy v1) sidecar so the row reads 'warn'/non-blocking
+    // (g22-4/D7) rather than pulling in the full deep-audit machinery that
+    // scenario 14/15 below exercise directly.
     fs.mkdirSync(path.join(dir, ".agents", "skills"), { recursive: true });
     fs.writeFileSync(
       path.join(dir, ".agents", "skills", ".bee-render.json"),
@@ -470,6 +473,139 @@ async function adapterRegressionSpawnGuard() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+// Scenario 14 — doctor deep skill-inventory audit (g22-4, D7 / advisor R5): a
+// bee-render/2 sidecar drives a DEEP audit (present + recomputed content-hash
+// match) of every expected skill dir, not the old shallow "dir count +
+// provenance present" check. One fixture sequence pins all three mechanical
+// mismatch facts named by the evidence string: deleting an expected skill
+// dir -> "missing: <name>"; an unexpected plain bee-* dir -> "stray: <name>";
+// flipping a byte inside a rendered file, sidecar untouched -> "drifted:
+// <name>". A clean install passes ('ok'); each mutation is restored before
+// the next so failures never compound across cases.
+// ═════════════════════════════════════════════════════════════════════════
+
+function skillDirDigest(files) {
+  // files: { relPath: utf8 content } for ONE skill dir — mirrors bee.mjs's
+  // doctorWalkSkillDir / onboard_bee.mjs's skillDigest fold exactly: sha256
+  // of each file's raw bytes, sorted by relPath, folded into one sha256 over
+  // the sorted [relPath, hash] JSON array.
+  const hashed = Object.entries(files)
+    .map(([rel, content]) => [rel, createHash("sha256").update(Buffer.from(content, "utf8")).digest("hex")])
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return createHash("sha256").update(JSON.stringify(hashed)).digest("hex");
+}
+
+function writeSkillDir(skillsRoot, name, files) {
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = path.join(skillsRoot, name, ...rel.split("/"));
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content, "utf8");
+  }
+}
+
+async function scenario14() {
+  const dir = mkFixture("bee-conformance-s14-");
+  try {
+    fs.mkdirSync(path.join(dir, ".bee"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, ".bee", "onboarding.json"),
+      `${JSON.stringify({ schema_version: "1.0", bee_version: "0.1.0", managed: {}, agents_sync: { files: [] } }, null, 2)}\n`,
+      "utf8",
+    );
+    const skillsRoot = path.join(dir, ".agents", "skills");
+    const alpha = { "SKILL.md": "# alpha\n" };
+    const beta = { "SKILL.md": "# beta\n", "references/notes.md": "beta notes\n" };
+    writeSkillDir(skillsRoot, "bee-alpha", alpha);
+    writeSkillDir(skillsRoot, "bee-beta", beta);
+    const sidecar = {
+      schema: "bee-render/2",
+      target_runtime: "codex",
+      skills: [
+        { name: "bee-alpha", sha256: skillDirDigest(alpha) },
+        { name: "bee-beta", sha256: skillDirDigest(beta) },
+      ],
+    };
+    fs.writeFileSync(path.join(skillsRoot, ".bee-render.json"), `${JSON.stringify(sidecar, null, 2)}\n`, "utf8");
+
+    async function skillsRow() {
+      const res = await runBee(dir, ["doctor", "--runtime", "codex", "--json"]);
+      const parsed = res.status === 0 ? JSON.parse(res.stdout) : null;
+      return parsed && parsed.rows.find((r) => r.row === "skills_installed");
+    }
+
+    const passRow = await skillsRow();
+    const passOk = passRow && passRow.status === "ok" && passRow.blocking === true;
+
+    fs.rmSync(path.join(skillsRoot, "bee-beta"), { recursive: true, force: true });
+    const missingRow = await skillsRow();
+    const missingNamed = missingRow && missingRow.status === "warn" && /missing: bee-beta/.test(missingRow.evidence);
+    writeSkillDir(skillsRoot, "bee-beta", beta); // restore before the next case
+
+    writeSkillDir(skillsRoot, "bee-fake", { "SKILL.md": "# fake\n" });
+    const strayRow = await skillsRow();
+    const strayNamed = strayRow && strayRow.status === "warn" && /stray: bee-fake/.test(strayRow.evidence);
+    fs.rmSync(path.join(skillsRoot, "bee-fake"), { recursive: true, force: true }); // restore
+
+    fs.writeFileSync(path.join(skillsRoot, "bee-alpha", "SKILL.md"), "# ALPHA (one byte flipped)\n", "utf8");
+    const driftRow = await skillsRow();
+    const driftNamed = driftRow && driftRow.status === "warn" && /drifted: bee-alpha/.test(driftRow.evidence);
+    fs.writeFileSync(path.join(skillsRoot, "bee-alpha", "SKILL.md"), "# alpha\n", "utf8"); // restore
+
+    const restoredRow = await skillsRow();
+    const restored = restoredRow && restoredRow.status === "ok";
+
+    record(
+      "scenario-14",
+      "doctor's skills_installed deep-audits a bee-render/2 sidecar via the public entrypoint: a matching install passes, a deleted skill is named missing, an unexpected bee-* dir is named stray, and a one-byte content drift is named drifted",
+      passOk && missingNamed && strayNamed && driftNamed && restored,
+      `pass=${JSON.stringify(passRow)}; missing=${JSON.stringify(missingRow)}; stray=${JSON.stringify(strayRow)}; drift=${JSON.stringify(driftRow)}; restored=${JSON.stringify(restoredRow)}`,
+    );
+  } finally {
+    rm(dir);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// Scenario 15 — legacy bee-render/1 sidecar warns, never blocks (g22-4, D7):
+// a pre-D7 install carrying only the shallow provenance stamp must stay
+// usable — deep inventory is simply unavailable, which is a warn, not a
+// mechanical failure. Distinct from scenario 14's v2 mismatches, which DO
+// block (D4 three-state).
+// ═════════════════════════════════════════════════════════════════════════
+
+async function scenario15() {
+  const dir = mkFixture("bee-conformance-s15-");
+  try {
+    fs.mkdirSync(path.join(dir, ".bee"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, ".bee", "onboarding.json"),
+      `${JSON.stringify({ schema_version: "1.0", bee_version: "0.1.0", managed: {}, agents_sync: { files: [] } }, null, 2)}\n`,
+      "utf8",
+    );
+    const skillsRoot = path.join(dir, ".agents", "skills");
+    writeSkillDir(skillsRoot, "bee-alpha", { "SKILL.md": "# alpha\n" });
+    fs.writeFileSync(
+      path.join(skillsRoot, ".bee-render.json"),
+      `${JSON.stringify({ schema: "bee-render/1", target_runtime: "codex" }, null, 2)}\n`,
+      "utf8",
+    );
+    const res = await runBee(dir, ["doctor", "--runtime", "codex", "--json"]);
+    const parsed = res.status === 0 ? JSON.parse(res.stdout) : null;
+    const row = parsed && parsed.rows.find((r) => r.row === "skills_installed");
+    const warnsNotBlocks =
+      row && row.status === "warn" && row.blocking === false && /bee-render\/1/.test(row.evidence);
+    record(
+      "scenario-15",
+      "doctor's skills_installed on a legacy bee-render/1 sidecar warns (inventory unavailable, re-run onboarding/render to upgrade) but never blocks readiness",
+      warnsNotBlocks,
+      `status=${res.status} row=${JSON.stringify(row)}`,
+    );
+  } finally {
+    rm(dir);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 
 async function main() {
   await scenario3();
@@ -477,6 +613,8 @@ async function main() {
   await scenario5a();
   await scenario12();
   await scenario13();
+  await scenario14();
+  await scenario15();
   adapterRegressionMatcherSuperset();
   await adapterRegressionSpawnGuard();
 

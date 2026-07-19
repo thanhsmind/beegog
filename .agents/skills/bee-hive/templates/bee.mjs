@@ -2726,20 +2726,142 @@ function doctorHookSourcesCodex(root) {
   );
 }
 
+// D7/g22-4: the bee-render/2 sidecar schema this deep audit expects. bee.mjs
+// cannot import skills/bee-hive/scripts/onboard_bee.mjs (separate
+// distribution target — templates/bee.mjs and .bee/bin/bee.mjs ship without
+// the scripts/ tree; see the mirror-discipline note at the top of this
+// file), so this literal and the digest algorithm below are hand-mirrors of
+// onboard_bee.mjs's RENDER_SCHEMA / skillDigest / walkSkillTree — keep them
+// in lockstep by hand when either side changes.
+const SKILL_RENDER_SCHEMA_V2 = 'bee-render/2';
+
+// Walks one installed skill dir exactly like onboard_bee.mjs's
+// walkSkillTree(dir) (no transform — reading already-rendered bytes off
+// disk): a symlink or unsupported entry anywhere blocks the whole walk
+// (never partially hashed), every plain file is hashed by its raw bytes.
+// Returns { blocked } or { sha256 } — sha256 is
+// sha256(JSON.stringify(sorted [relPath, sha256(fileBytes)] pairs)), the
+// same fold onboard_bee.mjs's skillDigest(manifestFingerprint(files)) uses.
+function doctorWalkSkillDir(dirAbs) {
+  const files = [];
+  let blocked = null;
+  const walk = (dir, relPrefix) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      blocked = { path: relPrefix || '.', reason: 'unreadable directory' };
+      return;
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (blocked) return;
+      const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      const abs = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        blocked = { path: rel, reason: 'symlink' };
+        return;
+      }
+      if (entry.isDirectory()) {
+        walk(abs, rel);
+      } else if (entry.isFile()) {
+        files.push([rel, crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex')]);
+      } else {
+        blocked = { path: rel, reason: 'unsupported entry type' };
+        return;
+      }
+    }
+  };
+  walk(dirAbs, '');
+  if (blocked) return { blocked };
+  files.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return { sha256: crypto.createHash('sha256').update(JSON.stringify(files)).digest('hex') };
+}
+
+// Deep-audits the installed skill set at `dir` against a bee-render/2
+// sidecar: every expected skill dir (sidecar.skills[]) must be present, no
+// unexpected plain bee-* stray dir may exist, and every expected skill's
+// recomputed content digest must match. A blocked walk (e.g. a symlink
+// inside an installed skill dir) counts as drifted — it can never be proven
+// to match.
+function doctorDeepAuditSkills(dir, sidecar) {
+  const expected = new Map((Array.isArray(sidecar.skills) ? sidecar.skills : []).map((s) => [s.name, s.sha256]));
+  const installedNames = fs.existsSync(dir)
+    ? fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && /^bee-/.test(e.name))
+        .map((e) => e.name)
+    : [];
+  const installed = new Set(installedNames);
+  const missing = [...expected.keys()].filter((name) => !installed.has(name)).sort();
+  const stray = installedNames.filter((name) => !expected.has(name)).sort();
+  const drifted = [];
+  for (const [name, expectedHash] of expected) {
+    if (!installed.has(name)) continue; // already reported as missing
+    const walk = doctorWalkSkillDir(path.join(dir, name));
+    if (walk.blocked || walk.sha256 !== expectedHash) {
+      drifted.push(name);
+    }
+  }
+  drifted.sort();
+  return { ok: missing.length === 0 && stray.length === 0 && drifted.length === 0, missing, stray, drifted };
+}
+
 // Mechanical/blocking (D4) — shared by both runtimes (codex's .agents/skills,
-// claude's .claude/skills).
+// claude's .claude/skills). g22-4/D7: a v2 sidecar drives a DEEP audit
+// (missing/stray/hash-drift, all mechanical/blocking — a drifted skill makes
+// doctor `blocked`, which is correct: g22-3's three-state has no room for a
+// silently-wrong installed skill tree). A v1 sidecar (pre-D7) or a missing
+// sidecar both fall back to the shallow "dir count + provenance present"
+// check that shipped before this cell — v1 additionally warns that deep
+// inventory is unavailable, but per decision it must NEVER block (legacy
+// hosts stay usable until they re-onboard); a missing sidecar keeps its
+// original blocking behavior unchanged.
 function doctorSkillsInstalled(root, skillsDir) {
   const dir = path.join(root, skillsDir);
   const sidecar = doctorSafeReadJson(path.join(dir, '.bee-render.json'));
   const exists = fs.existsSync(dir);
   const entries = exists ? fs.readdirSync(dir).filter((n) => !n.startsWith('.')) : [];
+  if (!exists) {
+    return doctorRow('skills_installed', 'warn', { count: 0, provenance: null }, `${skillsDir}/ is absent.`, { blocking: true });
+  }
+  if (!sidecar) {
+    return doctorRow(
+      'skills_installed',
+      'warn',
+      { count: entries.length, provenance: null },
+      `${entries.length} skill dir(s) under ${skillsDir}/, provenance sidecar MISSING; runtime-side discovery has no machine-readable surface to confirm against.`,
+      { blocking: true },
+    );
+  }
+  if (sidecar.schema !== SKILL_RENDER_SCHEMA_V2) {
+    return doctorRow(
+      'skills_installed',
+      'warn',
+      { count: entries.length, provenance: sidecar },
+      `${entries.length} skill dir(s) under ${skillsDir}/, provenance sidecar present (${sidecar.schema || '(unversioned)'}) — inventory unavailable (bee-render/1) — re-run onboarding/render to upgrade.`,
+      { blocking: false },
+    );
+  }
+  const audit = doctorDeepAuditSkills(dir, sidecar);
+  if (!audit.ok) {
+    const parts = [];
+    if (audit.missing.length) parts.push(`missing: ${audit.missing.join(', ')}`);
+    if (audit.stray.length) parts.push(`stray: ${audit.stray.join(', ')}`);
+    if (audit.drifted.length) parts.push(`drifted: ${audit.drifted.join(', ')}`);
+    return doctorRow(
+      'skills_installed',
+      'warn',
+      { count: entries.length, provenance: sidecar, audit },
+      `${entries.length} skill dir(s) under ${skillsDir}/ do not match the bee-render/2 sidecar inventory — ${parts.join('; ')}.`,
+      { blocking: true, fix: 'Re-render via self-onboard sync: node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply' },
+    );
+  }
   return doctorRow(
     'skills_installed',
-    exists && sidecar ? 'ok' : 'warn',
+    'ok',
     { count: entries.length, provenance: sidecar },
-    exists
-      ? `${entries.length} skill dir(s) under ${skillsDir}/, provenance sidecar ${sidecar ? 'present' : 'MISSING'}; runtime-side discovery has no machine-readable surface to confirm against.`
-      : `${skillsDir}/ is absent.`,
+    `${entries.length} skill dir(s) under ${skillsDir}/ match the bee-render/2 sidecar inventory (deep audit: every skill's content digest verified).`,
     { blocking: true },
   );
 }

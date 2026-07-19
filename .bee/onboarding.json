@@ -3,18 +3,20 @@
   "bee_version": "1.6.2",
   "managed": {
     "agents_block": "a0d7e964a8205188a27ae56911646565a150be6c54afe34e0f25068be9a78b07",
-    "gitignore_block": "b39fe93c0e919a6bc424f80fcc4a9f791579fbc75bb11956f0cb037848f6a0b8",
+    "gitignore_block": "cacee240c38f485e9a46ae14aa95f13ef8b2be88493274fc59b06c8af8d28782",
     "helpers": {
-      "bee.mjs": "da9edd3fd1af54209970f54efcd8a06e9dbe5b0bf06a1cd23a2c68527bae4c55"
+      "bee.mjs": "4f1c0d0458a8708f0c27ced75df9f13f5f7f5f12fee9d22ff2fc5bda1bec5b0b"
     },
     "lib": {
       "backlog.mjs": "9e5b852c7b72fdb1d5d2f530e32cdc63a8271a83dba09d6407b30900d58990cd",
       "capture.mjs": "6ce4fa5947a015f156468aa5bc40e264a9d7a170744e8700de1d90b969b3908c",
       "cells.mjs": "8846ed07a9fb72d04e23d7dcd2de3cd22e2e18324b5928ee2e988333ae771273",
       "claims.mjs": "58d57e69849867dbeeb9ac1c69408f54f7a7bbf33f72716169e0f89dedac81e0",
-      "command-registry.mjs": "ae4d00d4f53695eec12d2bd0f72adc2daf821f3f3aa32d07e1c568d317f43d0f",
+      "command-registry.mjs": "a5b3883b277cfe07399be88b19583799de18c4efab9f64bb66a470272ab697f5",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
+      "dispatch-guard.mjs": "643188a1db0f849336dc731e5d1e412451101fbc5db765da1e13b863025bfbcc",
+      "dispatch-prepare.mjs": "66c8c3a29a2968ee8f02f894eb7af199cd2c463c35fa62ad76faa644a962f313",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
       "fsutil.mjs": "d3c90d70f48bf3a4fde33fff164248b3813103bad175a9c9a5c545b13374773e",
       "guards.mjs": "e3c56b9e1669a10c48685efaae045b2c0f4d4d292ce8cdf19cdfeacfe6663aef",
@@ -37,7 +39,7 @@
       "bee-state-sync.mjs": "d2cd7739174199dc4ce0f11ddbaf76f5896e2f35c57f4996abd0c47353f1c0ce",
       "bee-chain-nudge.mjs": "0520c71fad2513d93666ad4c3353b7196faeeac382430b1e1395fabd0febd9cb",
       "bee-session-close.mjs": "201073ddce795525ee6ec7bab0297f4adef01830bac8935b528b694e03dea2e6",
-      "bee-model-guard.mjs": "c1aaa0de945dbc80a5966230ec82be014f3a9c9dae5ec17ab32490c687af3a95",
+      "bee-model-guard.mjs": "07c22de49b17c6d349bc2ae94ad35721471fd1437a49cdc0feaad3b2d061e829",
       "bee-tools-logger.mjs": "668634222153c37d858bd5cb8ac5183507bc0da643ef78929219dcf810a39224",
       ".codex/hooks.json": "6f2f2610cbb249dc9dd340c6b945218b5f3f39474f5323ad1a47fd5015aaf047"
     },
@@ -64,5 +66,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-18T21:09:20.587Z"
+  "updated_at": "2026-07-19T00:18:03.621Z"
 }
