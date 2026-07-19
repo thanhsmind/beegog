@@ -1,8 +1,8 @@
 ---
 area: advisor-protocol
-updated: 2026-07-17
-sources: [advisor cells adv-1..adv-3 (worker consult loop, 2026-07-13); advisor-and-orchestration Slices 2A-i..2A-iv, 2B, 3A, 3B, 4, 5 (cells ao-2ai-1..ao-5-1, traces in .bee/cells/, reports docs/history/advisor-and-orchestration/reports/, 2026-07-17); dogfood run .bee/spikes/advisor-and-orchestration/2aiv-cli-gather-dogfood.md; first live orchestrator consult digest .bee/spikes/advisor-and-orchestration/slice5-advisor-digest.txt]
-decisions: [advisor D1-D3; 72f3d6dd (AO5 — config is the authority, no strength test, same-model no-op only); AO8 (advice-class slots read-only); AO2(b)/AO3/AO13 (one orchestrator trigger; Gate 3 precondition; event-based staleness, never a TTL); AO4 (call paths split by trigger class); f1ca79b9 (AO15 — attribution fields); 0019 + 2A-iv GO (external gather proven through config); AO14 (execution-worker class); 126412b9 (precondition keys on the selected record's mode)]
+updated: 2026-07-19
+sources: [advisor cells adv-1..adv-3 (worker consult loop, 2026-07-13); advisor-and-orchestration Slices 2A-i..2A-iv, 2B, 3A, 3B, 4, 5 (cells ao-2ai-1..ao-5-1, traces in .bee/cells/, reports docs/history/advisor-and-orchestration/reports/, 2026-07-17); dogfood run .bee/spikes/advisor-and-orchestration/2aiv-cli-gather-dogfood.md; first live orchestrator consult digest .bee/spikes/advisor-and-orchestration/slice5-advisor-digest.txt; codex-native-transport cells cnt-1/cnt-2/cnt-3 (resolver + config native slot shape, capability classification, dispatch-prepare native branch + honest economics; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19)]
+decisions: [advisor D1-D3; 72f3d6dd (AO5 — config is the authority, no strength test, same-model no-op only); AO8 (advice-class slots read-only); AO2(b)/AO3/AO13 (one orchestrator trigger; Gate 3 precondition; event-based staleness, never a TTL); AO4 (call paths split by trigger class); f1ca79b9 (AO15 — attribution fields); 0019 + 2A-iv GO (external gather proven through config); AO14 (execution-worker class); 126412b9 (precondition keys on the selected record's mode); codex-native-transport D1-D3, D5, D7 (3ceba8f5, cnt advisor conditions 69513d80, D3a c0cba64e)]
 coverage: full
 ---
 
@@ -109,15 +109,31 @@ privileges at configuration checking.
   prepare's output is proven against the real guard, never a copied regex.
   Prepare surfaces tier refusals verbatim (a cli-shaped slot stays
   gather-only); the advisor kind resolves its model through the advisor
-  resolver, never the generation slot.
-- R9 — **Dispatch records tell the economic truth** (gh22-completion g22-2):
-  every record carries logical_tier, requested_model, effective_model,
-  effective_model_status, channel, enforcement (additive; the legacy
-  transport key is untouched). A model-param dispatch is `pinned`; a
-  bare-marker budget dispatch is `unverified`; a second-runtime native spawn
-  is ALWAYS `inherited-or-unknown` with `prompt-budget` enforcement until a
-  capability probe proves per-agent model selection — config names the
-  requested model, the log never claims it took effect.
+  resolver, never the generation slot. The same resolvers additionally accept,
+  on any slot including advisor, a native model-override leaf and an
+  explicit-fallback composite (codex-native-transport D2); the composite
+  exposes its CLI fallback leg only when its fallback policy is stated
+  explicitly (D1) — a bare native leaf or an unconfigured slot never invents a
+  fallback command, and every pre-existing slot shape keeps resolving
+  byte-identically.
+- R9 — **Dispatch records tell the economic truth** (gh22-completion g22-2;
+  refined by codex-native-transport D1/D3/D7): every record carries
+  logical_tier, requested_model, effective_model, effective_model_status,
+  channel, enforcement (additive; the legacy transport key is untouched). A
+  model-param dispatch is `pinned`; a bare-marker budget dispatch is
+  `unverified`. A second-runtime native spawn stays `inherited-or-unknown`
+  with `prompt-budget` enforcement UNLESS a version- and configuration-scoped
+  capability probe has classified the client as accepting a native model
+  override for the resolved route — only then does the record carry
+  `native-requested` status with `native-model-param` enforcement, the
+  requested model/effort on the payload, and `effective_model` still null (the
+  probe proves the client *accepted* the request, never that the runtime *ran*
+  on it; a child's self-report is still never evidence). A route that resolves
+  native but the probe has not confirmed falls back to an explicitly
+  configured CLI command with the reason recorded, or — with no such fallback
+  configured — returns a typed refusal naming the classification that blocked
+  it; config names the requested model, the log never silently claims it took
+  effect.
 
 ## Edge Cases Settled
 
@@ -130,6 +146,10 @@ privileges at configuration checking.
   crashes; the approval refuses with the standard message.
 - Execution gate revoked after a consult → the old consult is stale by rule;
   re-approval requires a fresh consult.
+- A native-override route whose capability probe has not (yet) confirmed the
+  client, and whose slot carries no explicit fallback policy, refuses the
+  dispatch by name rather than silently downgrading to the budget-only path
+  or inventing a CLI command (codex-native-transport D1/D3a).
 
 ## Open Gaps
 
@@ -154,3 +174,11 @@ privileges at configuration checking.
   `skills/bee-hive/references/routing-and-contracts.md` (cli gather branch)
   and `docs/specs/doctrine-layer.md` B8/R12.
 - Gate precondition spec detail: `docs/specs/workflow-state.md` B9/B9a.
+- Native-override transport (config shape, capability probe, dispatch
+  prepare's native branch): capability classification and the doctor unlock
+  row are specced in `docs/specs/hook-runtime.md`; the resolver's native leaf
+  and explicit-fallback composite sit beside `resolveAdvisor`/`resolveTier`
+  above (`skills/bee-hive/templates/lib/state.mjs`); `prepareDispatch`'s
+  native branch and `deriveEconomics`'s `native-requested` status share
+  `skills/bee-hive/templates/lib/dispatch-prepare.mjs` with R8's
+  `evaluateDispatch`.

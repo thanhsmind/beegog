@@ -1,8 +1,9 @@
 ---
 area: onboarding
-updated: 2026-07-16
+updated: 2026-07-19
 coverage: partial
 sources:
+  - capture stub b57f6470-bac2-422a-9dea-1bb4cc93bc0e (shipped config sample carries a per-surface doc block, all model-slot shapes, gate-bypass levels, hook toggles, and the external-command tier's gather-only contract; flushed 2026-07-19)
   - installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; D1/D3 verified in-engine with plugin-first coverage, D7 managed-set cleanup fencing, D2/D8 Linux Bash E2E shipped — cells -4/-2/-3, 2026-07-16; field fix cell -5: plugin CLI mutation verbs take NO --json (only `plugin list` does — real codex/claude contract), rollback reconciles the probed current state against the pre-run snapshot and reports failure only when restoring a previously-present plugin genuinely fails (a transition that died before installing anything rolls back as a no-op success), and the E2E fake CLIs reject --json on mutations so the wrong-flag contract can never test green again; field fix cell -6: legacy global skill copies (the pre-1.0 `~/.claude/skills` layout) are refreshed IN PLACE on every onboard — refresh-only over managed bee-* dirs that already exist there (never create, never delete, non-managed dirs untouched, resolved-newer global never downgraded, self/overlap sources skipped), reported as `refresh_legacy_global_skill` plan items that never drive `up_to_date`/blocked-first aggregation — closing the two-version skill inconsistency where a repo at the current release coexisted with a stale global copy both loaded by the runtime)
   - codex-sandbox-baseline cells codex-sandbox-baseline-1/codex-sandbox-baseline-2 (real onboarding entrypoint through the shared isolated test runner; full onboarding suite green, 2026-07-16)
   - codex-hook-state-parity cells 2, 3, 5 (paired Codex lifecycle audit, exclusive plugin-first/repo-copy distribution, and fresh-host handler delivery; capped traces and reports, 2026-07-16)
@@ -44,6 +45,7 @@ decisions:
   - 26203bd3 (managed ignore-list section; machine-local vs team-durable split)
   - de967733 (advisor mode removed; stale config key warned-and-ignored)
   - 9927fafb (a switch that narrows what an upgrade compares must equally narrow what it claims; repo-hook opt-in is sticky)
+  - capture flush b57f6470 (shipped configuration sample is the annotated reference; 2026-07-19)
 ---
 
 # Onboarding
@@ -570,6 +572,14 @@ landing page from day one in every onboarded project.
   host's version-control index → the report warns and names the exact
   one-time untrack command; onboarding never runs it itself (feature
   bee-footprint, decision 26203bd3).
+- The shipped configuration sample is annotated, not silent: every top-level
+  surface carries an explanatory block alongside its example values —
+  covering every hook's kill switch, every supported model-slot shape (a
+  plain model name, model-plus-effort, an external-command executor, and an
+  unset/budget slot), all four gate-bypass levels, and the external-command
+  tier's gather-only contract. It is the same copyable reference an operator
+  starts from and the one this document's own contracts are checked against
+  (capture flush b57f6470, 2026-07-19).
 
 ## Open Gaps
 
@@ -639,6 +649,10 @@ landing page from day one in every onboarded project.
   pseudo-entry in `buildManagedVersions`; `READING_MAP_STUB`/
   `SYSTEM_OVERVIEW_STUB` + `create_specs_stub` (create-only) — host contract:
   `.codex/hooks.json`, `docs/specs/reading-map.md`, `docs/specs/system-overview.md`.
+- `.bee/config-sample.json` — the annotated, copyable configuration reference
+  (`_doc` block per top-level key); `.bee/config-sample-cli-executors.json` —
+  full external-command executor examples; `scripts/test_config_samples_safe.mjs`
+  keeps both inert (never diffs against the live `.bee/config.json`).
 - `skills/bee-hive/scripts/onboard_bee.mjs` — `GITIGNORE_MARKER_START`/`_END`,
   `GITIGNORE_START_RE`/`_END_RE` (marker-resemblance guard),
   `gitignoreBlockPresent`, `normalizeGitignoreForCompare` (CRLF tolerance),
