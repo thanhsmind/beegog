@@ -157,6 +157,24 @@ function denyResult(reason, transport, { tier = null, model = null, subagentType
 // Every UNOBSERVED shape is a no-opinion (allow, unlogged), never a deny —
 // the spike only ever captured agent_type "worker"; denying a shape it never
 // saw would guess at semantics the evidence does not support.
+//
+// D6 route-check gap (codex-native-transport, decision 350f1e82, bound to
+// cnt-4): CONTEXT.md's D6 calls for this function to validate an override-
+// carrying spawn's model/reasoning_effort/fork_turns against the configured
+// route once such a spawn is observed. That route-check is INTENTIONALLY
+// ABSENT here — this function never reads toolInput.model/reasoning_effort/
+// fork_turns at all — because the PreToolUse envelope it would validate
+// (V3) is terminal-UNOBSERVED on both codex builds probed to date: on
+// 0.144.4 the hook chain never fired for a successful override spawn (root
+// cause open); on 0.144.6 the override tool schema itself is REFUSED at the
+// API level before any spawn_agent call is attempted, so no envelope ever
+// reaches tool execution to inspect (full evidence:
+// docs/history/codex-native-transport/reports/probe-evidence.md). A spawn
+// that carries override fields therefore passes through exactly like one
+// that doesn't — evaluated on agent_type + message only — by design: this is
+// a defense-in-depth allow-hole (ADVISOR-R2 Δ3), not an oversight, and it
+// stays this way until a codex build lets V3 be observed and this comment
+// is replaced by the real route-check.
 function evaluateCodexSpawn(toolInput) {
   if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) {
     return noOpinion();

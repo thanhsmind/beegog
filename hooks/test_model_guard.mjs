@@ -936,6 +936,63 @@ async function main() {
     c43.stderr,
   );
 
+  // === D6 route-check gap rows (codex-native-transport cnt-4, decision
+  // 350f1e82) =================================================================
+  // V3 (the PreToolUse envelope carrying override fields) is terminal-
+  // UNOBSERVED on both probed codex builds (reports/probe-evidence.md), so
+  // evaluateCodexSpawn has no observed envelope to validate override values
+  // against. These rows prove the resulting shape is pass-through-open, not
+  // a silent oversight: an override-carrying spawn is judged on agent_type +
+  // message exactly like one without overrides.
+
+  // --- 56. anchored marker + override fields (model/reasoning_effort/
+  // fork_turns), deliberately MISMATCHED against any plausible configured
+  // route -> still allowed. The mismatch is intentional: this row is a
+  // canary for the gap, not just a happy-path smoke test — it would start
+  // failing (denied) the moment a real D6 route-check lands, which is
+  // exactly the point of proving the pass-through is real and exercised.
+  const c56 = await runHookPayload(
+    {
+      tool_name: "spawn_agent",
+      tool_input: {
+        agent_type: "worker",
+        message: "[bee-tier: advisor] consult on the failing verify",
+        model: "totally-different-model",
+        reasoning_effort: "extreme",
+        fork_turns: "full",
+      },
+    },
+    enabledRoot,
+  );
+  check(c56.status === 0, "row56: override-carrying spawn with anchored marker passes through open (D6 gap, decision 350f1e82)",
+    `status=${c56.status} stderr=${c56.stderr}`);
+  const d56 = readLastJsonl(codexDispatchLog);
+  check(
+    d56 && d56.transport === "codex-spawn-marker" && d56.tier === "advisor",
+    "row56: pass-through-open spawn still logged as codex-spawn-marker with the extracted tier",
+    JSON.stringify(d56),
+  );
+
+  // --- 57. same override fields, but the message is unmarked -> still
+  // denied. The D6 gap only concerns the route-check on override VALUES —
+  // the marker-presence requirement itself stays fully enforced regardless
+  // of which fields ride alongside it.
+  const c57 = await runHookPayload(
+    {
+      tool_name: "spawn_agent",
+      tool_input: {
+        agent_type: "worker",
+        message: "no marker here at all",
+        model: "totally-different-model",
+        reasoning_effort: "extreme",
+        fork_turns: "full",
+      },
+    },
+    enabledRoot,
+  );
+  check(c57.status === 2, "row57: override fields present but unmarked message still denied (marker rule unaffected by the D6 gap)",
+    `status=${c57.status} stderr=${c57.stderr}`);
+
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }
