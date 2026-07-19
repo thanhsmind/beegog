@@ -1,11 +1,41 @@
 {
+  "_doc": {
+    "what": "Annotated sample for .bee/config.json — copy the sections you need; every key here is optional (missing keys fall back to safe defaults). JSON has no comments, so this _doc block is the documentation; bee ignores unknown top-level keys, but remove _doc from your real config to keep it lean.",
+    "hooks": "Per-hook kill switches. All nine ship enabled; set one to false only to debug that hook. Names match the hook files: session-init, prompt-context, write-guard, model-guard, state-sync, chain-nudge, session-close, tools-logger, codex-subagent-audit.",
+    "guards": "idle_gate=true blocks source edits when no bee work is active (phase idle / compounding-complete). Disable per-repo only if you accept unrouted edits: bee config set --key guards.idle_gate --value false.",
+    "commands": "The host project's own lifecycle commands. verify is the load-bearing one: it gates cell capping, merge-back semantic checks, and the session baseline. Record real runnable commands, not descriptions.",
+    "gate_bypass": {
+      "values": "false | \"normal\" | \"full\" | \"total\" (legacy true = normal). Set via the bee-bypass-gate skill, not by hand.",
+      "false": "default — every gate stops for the human.",
+      "normal": "auto-approves Gates 1-3 for tiny/small/standard work; high-risk/hard-gate work, secret reads, and review-P1 still stop.",
+      "full": "also auto-approves high-risk/hard-gate Gates 1-3; only secret reads and a review P1 still stop.",
+      "total": "zero stops: every gate, secret reads, and review P1 findings auto-proceed. The loud session banner reminds you it is on."
+    },
+    "models": {
+      "what": "Only the CHEAPER tiers are configured, keyed by runtime (claude | codex) then slot (extraction | generation | review | advisor). The ceiling is never configured — it is always the session model. A missing/null slot = prompt-budget tier (the marker alone carries the tier; the subagent inherits the session model).",
+      "slot_shapes": {
+        "string": "\"haiku\" — plain model name; dispatches carry it as the model param (economics: effective_model_status=pinned on claude).",
+        "object_model": "{ \"model\": \"sonnet\", \"effort\": \"medium\" } — model plus reasoning-effort hint.",
+        "object_cli": "{ \"kind\": \"cli\", \"command\": \"...\", \"promptVia\": \"stdin\" } — external CLI executor. GATHER-ONLY by design: cell execution against a cli-shaped slot is refused (cli_tier_gather_only); gathers/reviewers/advisors run through it with the prompt piped via stdin. See config-sample-cli-executors.json for full examples.",
+        "null": "slot unset — prompt-budget tier; on codex-native transport the effective model is inherited-or-unknown (the dispatch log records the honest split)."
+      },
+      "advisor": "The AO3/AO13 Gate-3 consult identity for high-risk work. Claude default: fable (the session-class model). Set null to skip the advisor line in worker prompts when no advisor resolves.",
+      "codex_note": "On codex-cli 0.144.4 native subagents cannot pin a per-agent model — a string here records the REQUESTED model; the dispatch log will still say effective_model_status=inherited-or-unknown until a capability probe proves per-agent selection."
+    },
+    "lanes": "Reserved per-repo lane config overrides; leave {} unless a bee release documents a key.",
+    "capabilities": "Reserved capability flags; leave {} unless a bee release documents a key.",
+    "dogfood_repos": "Only used in bee's own source repo (self-improvement loops); host projects can omit or leave []."
+  },
   "hooks": {
     "session-init": true,
     "prompt-context": true,
     "write-guard": true,
+    "model-guard": true,
     "state-sync": true,
     "chain-nudge": true,
-    "session-close": true
+    "session-close": true,
+    "tools-logger": true,
+    "codex-subagent-audit": true
   },
   "guards": {
     "idle_gate": true
@@ -16,7 +46,7 @@
     "setup": "npm install",
     "start": "npm run dev",
     "test": "npm test",
-    "verify": "npm run build"
+    "verify": "npm run build && npm test"
   },
   "gate_bypass": false,
   "models": {
@@ -30,11 +60,11 @@
       "advisor": "fable"
     },
     "codex": {
-      "extraction": null,
-      "generation": null,
+      "extraction": "gpt-5.5",
+      "generation": "gpt-5.5",
       "review": {
         "kind": "cli",
-        "command": "codex exec -m gpt-5.6-sol -s read-only -c model_reasoning_effort=\"high\" -",
+        "command": "codex exec -m gpt-5.5 -s read-only -c model_reasoning_effort=\"high\" -",
         "promptVia": "stdin"
       },
       "advisor": null

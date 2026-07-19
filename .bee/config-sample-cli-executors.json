@@ -1,11 +1,30 @@
 {
+  "_doc": {
+    "what": "Variant of config-sample.json showing EXTERNAL CLI EXECUTORS: any tier slot can point at a command-line agent (another vendor's CLI) instead of a native model name. Read config-sample.json first for the full key guide.",
+    "contract": "A cli-shaped slot is GATHER-ONLY (cli_tier_gather_only): file hunts, scans, reviews, advisor consults run through it; cell execution never does. The prompt is piped via stdin (promptVia defaults to stdin); the command's stdout IS the digest, framed by the BEE_DIGEST delimiters per the Delegation contract's cli gather branch.",
+    "command_rules": [
+      "The command must read the prompt from stdin (trailing '-' for codex exec, \"$(cat)\" for CLIs that only take argv prompts).",
+      "Prefer read-only/sandboxed flags (-s read-only, --sandbox, --mode plan) — a gather must not mutate the repo.",
+      "Long-running CLIs need their own timeout flags; bee does not babysit them.",
+      "Quote carefully: the command runs through a shell; bash -lc '...' keeps quoting sane for $(cat)."
+    ],
+    "mixing": "You can mix shapes freely per slot: here claude.extraction stays a native model (cheap + fast), while generation/review fan out to external CLIs, and codex.review uses the codex CLI itself. null slots stay prompt-budget.",
+    "examples_shown": {
+      "claude.generation": "Gemini via the agy CLI, plan mode, sandboxed, 30m print timeout.",
+      "claude.review": "Claude Opus via the opencode CLI, plan agent.",
+      "codex.review": "codex exec read-only with high reasoning effort, prompt from stdin ('-')."
+    }
+  },
   "hooks": {
     "session-init": true,
     "prompt-context": true,
     "write-guard": true,
+    "model-guard": true,
     "state-sync": true,
     "chain-nudge": true,
-    "session-close": true
+    "session-close": true,
+    "tools-logger": true,
+    "codex-subagent-audit": true
   },
   "guards": {
     "idle_gate": true
@@ -16,7 +35,7 @@
     "setup": "npm install",
     "start": "npm run dev",
     "test": "npm test",
-    "verify": "npm run build"
+    "verify": "npm run build && npm test"
   },
   "gate_bypass": false,
   "models": {
@@ -24,11 +43,13 @@
       "extraction": "haiku",
       "generation": {
         "kind": "cli",
-        "command": "bash -lc 'agy -p \"$(cat)\" --model \"Gemini 3.5 Flash (High)\" --sandbox --mode plan --print-timeout 30m'"
+        "command": "bash -lc 'agy -p \"$(cat)\" --model \"Gemini 3.5 Flash (High)\" --sandbox --mode plan --print-timeout 30m'",
+        "promptVia": "stdin"
       },
       "review": {
         "kind": "cli",
-        "command": "bash -lc 'opencode run --agent plan -m anthropic/claude-opus-4-6 \"$(cat)\"'"
+        "command": "bash -lc 'opencode run --agent plan -m anthropic/claude-opus-4-6 \"$(cat)\"'",
+        "promptVia": "stdin"
       },
       "advisor": null
     },
@@ -37,7 +58,8 @@
       "generation": null,
       "review": {
         "kind": "cli",
-        "command": "codex exec --skip-git-repo-check -s read-only -c model_reasoning_effort=xhigh -"
+        "command": "codex exec --skip-git-repo-check -s read-only -c model_reasoning_effort=xhigh -",
+        "promptVia": "stdin"
       },
       "advisor": null
     }
