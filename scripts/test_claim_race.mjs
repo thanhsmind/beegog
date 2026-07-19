@@ -298,12 +298,12 @@ async function runOrchestrator() {
       const firstClaim = claimCellCrossSession(dir, { sessionId: 'sess-roundtrip', worker: 'worker-rt', cellId: 'race-c' });
       if (!firstClaim.ok) failures.push(`(c) first claim should succeed, got ${JSON.stringify(firstClaim)}`);
 
-      blockCell(dir, 'race-c', 'round-trip test block');
+      blockCell(dir, 'race-c', 'round-trip test block', { sessionId: 'sess-roundtrip' });
       if (readClaim(dir, 'race-c') !== null) {
         failures.push('(c) block must release the claim file (D1 Δ2)');
       }
 
-      reopenCell(dir, 'race-c', 'round-trip test reopen');
+      reopenCell(dir, 'race-c', 'round-trip test reopen', { sessionId: 'sess-roundtrip' });
       if (readClaim(dir, 'race-c') !== null) {
         failures.push('(c) reopen must release the claim file (D1 Δ2)');
       }
