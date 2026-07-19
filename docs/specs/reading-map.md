@@ -19,8 +19,10 @@ Where things live. Read the touched area's spec before its code.
   carries: what belongs on the always-loaded sheet versus a stage's procedure reference (a rule
   needed when no stage is running is silently absent from every such turn if buried in a
   reference), how doctrine reaches every project by copy, the delegation threshold
-  (gather delegates, deciding never does), and the anchor tests that keep a rule from
-  drifting back out of the layer (`coverage: partial`).
+  (gather delegates, deciding never does), the lane-ceremony contract (work-packet-first
+  tiny/small shapes, product-file-only caps, test-anchored risk flags, intake-first
+  classification), and the anchor tests that keep a rule from drifting back out of the
+  layer (`coverage: partial`).
 - [`advisor-protocol.md`](./advisor-protocol.md) — second opinions for workers and the
   orchestrator: who may consult the configured adviser, the mandatory pre-approval consult
   for high-risk work with event-based staleness, the read-only rule, and what advice may
