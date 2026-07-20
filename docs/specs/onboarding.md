@@ -4,6 +4,7 @@ updated: 2026-07-20
 coverage: partial
 sources:
   - gh-issue-fixes-172 cell ghf-2 (GH #26: Windows staged source carries the full release identity — sparse checkout includes both package manifests; absent-package removal probed before attempted; trace in .bee/cells/, 2026-07-20)
+  - installer-probe-quiet cells installer-probe-quiet-1/-2 (tolerated runtime-CLI probe failures — captured stderr, one condensed warning per broken tool, repo-copy proceeds / plugin-first names the broken tool; reports docs/history/installer-probe-quiet/, 2026-07-20)
   - capture stub b57f6470-bac2-422a-9dea-1bb4cc93bc0e (shipped config sample carries a per-surface doc block, all model-slot shapes, gate-bypass levels, hook toggles, and the external-command tier's gather-only contract; flushed 2026-07-19)
   - installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; D1/D3 verified in-engine with plugin-first coverage, D7 managed-set cleanup fencing, D2/D8 Linux Bash E2E shipped — cells -4/-2/-3, 2026-07-16; field fix cell -5: plugin CLI mutation verbs take NO --json (only `plugin list` does — real codex/claude contract), rollback reconciles the probed current state against the pre-run snapshot and reports failure only when restoring a previously-present plugin genuinely fails (a transition that died before installing anything rolls back as a no-op success), and the E2E fake CLIs reject --json on mutations so the wrong-flag contract can never test green again; field fix cell -6: legacy global skill copies (the pre-1.0 `~/.claude/skills` layout) are refreshed IN PLACE on every onboard — refresh-only over managed bee-* dirs that already exist there (never create, never delete, non-managed dirs untouched, resolved-newer global never downgraded, self/overlap sources skipped), reported as `refresh_legacy_global_skill` plan items that never drive `up_to_date`/blocked-first aggregation — closing the two-version skill inconsistency where a repo at the current release coexisted with a stale global copy both loaded by the runtime)
   - codex-sandbox-baseline cells codex-sandbox-baseline-1/codex-sandbox-baseline-2 (real onboarding entrypoint through the shared isolated test runner; full onboarding suite green, 2026-07-16)
@@ -528,6 +529,21 @@ landing page from day one in every onboarded project.
   preview is exact: forcing applies precisely the enumerated runtime set, no
   more, no fewer (PBI P49, v1.1.0 review P2; advisor-consulted; cell
   p49-force-downgrade-blast-radius-1).
+- **R27** — A runtime whose command-line tool is present on the path but not
+  actually runnable (its capability probe exits with an error) does not by
+  itself fail a repository-copy install: the probe result is treated as "no
+  packaged capability found", the install proceeds, and the user sees exactly
+  one short warning line per broken tool — never the tool's raw error output
+  streamed through. A package-first install still refuses when its required
+  tool is broken, but the refusal names the specific broken tool, shows its
+  captured error, and states the concrete ways forward (repair the tool, choose
+  the repository-copy source, or exclude that runtime). The tolerance and the
+  one-warning-per-tool discipline apply identically to every supported runtime
+  and on every platform. On platforms whose shell turns a native command's
+  error stream into its own failure, the probe captures that stream through a
+  guarded helper rather than a bare redirection, so a broken tool never crashes
+  the installer (installer-probe-quiet-1 4799236 + release 1.7.5 c46a9e4;
+  supersedes the earlier "probe failure is fatal" reading, 2026-07-20).
 
 ## Edge Cases Settled
 
