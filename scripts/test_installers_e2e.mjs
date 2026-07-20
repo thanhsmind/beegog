@@ -36,6 +36,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const INSTALL_SH = path.join(REPO_ROOT, "scripts", "install.sh");
+const INSTALL_PS1 = path.join(REPO_ROOT, "scripts", "install.ps1");
 const SOURCE_VERSION = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, ".claude-plugin/plugin.json"), "utf8")).version;
 
 // A clean PATH: node's own dir plus the standard bins. It deliberately OMITS the
@@ -303,6 +304,21 @@ if (spawnSync("bash", ["-n", INSTALL_SH], { encoding: "utf8" }).status !== 0) {
 }
 
 console.log(`test_installers_e2e --installer bash (source version ${SOURCE_VERSION})\n`);
+
+// Regression guard (install-ps1-hooks-1): the Windows installer's sparse
+// checkout MUST fetch every top-level tree onboard_bee.mjs reads from
+// PLUGIN_ROOT. `hooks/` was omitted, so listPluginHooks() saw an absent dir,
+// vendored zero hooks into .bee/bin/hooks/, yet .codex/hooks.json was still
+// written full (hardcoded render) -> every Codex hook MODULE_NOT_FOUND.
+check("install.ps1 sparse-checkout set fetches every tree onboarding reads (incl. hooks)", () => {
+  const ps1 = fs.readFileSync(INSTALL_PS1, "utf8");
+  const m = ps1.match(/sparse-checkout set ([^\r\n]+)/);
+  assert.ok(m, "install.ps1 must contain a `sparse-checkout set` line");
+  const roots = m[1].trim().split(/\s+/);
+  for (const required of ["skills", "hooks", ".claude-plugin", ".codex-plugin", "docs/history/codex-harness-hardening"]) {
+    assert.ok(roots.includes(required), `sparse-checkout set must include ${required} (got: ${roots.join(" ")})`);
+  }
+});
 
 // ── 1. greenfield MISSING target: dir created, one exact version, up_to_date ──
 check("greenfield missing target: creates dir, one exact version, complete onboarding, no drift", () => {
