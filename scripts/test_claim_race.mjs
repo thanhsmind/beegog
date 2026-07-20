@@ -131,6 +131,47 @@ async function runWorker(workerRole) {
       });
       process.stdout.write(`${JSON.stringify(result)}\n`);
       process.exit(0);
+    } else if (workerRole === 'verify-racer') {
+      // Real path: N racers calling the ACTUAL recordVerify (cells.mjs) on
+      // ONE cell. Pre-fix (no lock around its read-mutate-write body), real
+      // OS-process scheduling around the sub-millisecond critical section can
+      // silently drop a trace.attempts entry (GH #27). Post-fix, withStoreLock
+      // makes this deterministic with zero loss — same "no artificial
+      // widening needed once exclusion is structural" shape as scenario (a).
+      const root = argVal('--root');
+      const cellId = argVal('--cell');
+      const id = argVal('--id');
+      const { recordVerify } = await import(CELLS_LIB_PATH);
+      try {
+        const cell = await recordVerify(root, cellId, { command: 'x', output: `racer-${id}`, passed: true });
+        process.stdout.write(`${JSON.stringify({ ok: true, id, attempts: cell.trace.attempts.length })}\n`);
+      } catch (err) {
+        process.stdout.write(`${JSON.stringify({ ok: false, id, error: String((err && err.message) || err) })}\n`);
+      }
+      process.exit(0);
+    } else if (workerRole === 'verify-racer-unsafe') {
+      // Test-owned proxy mimicking recordVerify's PRE-FIX read-mutate-write
+      // shape (read cell, WIDEN the window, append based on the STALE
+      // snapshot, write) with no lock in front of it — same discipline as
+      // the existing 'unsafe-racer' role above: proves the ledger-loss
+      // hazard class is real independent of whether the real function
+      // happens to race under ordinary OS timing.
+      const root = argVal('--root');
+      const cellId = argVal('--cell');
+      const id = argVal('--id');
+      const { readJson, writeJsonAtomic } = await import(FSUTIL_LIB_PATH);
+      const cellPath = path.join(root, '.bee', 'cells', `${cellId}.json`);
+      const seen = readJson(cellPath, null);
+      const staleAttempts = Array.isArray(seen && seen.trace && seen.trace.attempts) ? seen.trace.attempts : [];
+      await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      const fresh = readJson(cellPath, seen);
+      fresh.trace = {
+        ...(fresh.trace || {}),
+        attempts: [...staleAttempts, { n: staleAttempts.length + 1, note: `unsafe-${id}` }],
+      };
+      writeJsonAtomic(cellPath, fresh);
+      process.stdout.write(`${JSON.stringify({ id })}\n`);
+      process.exit(0);
     } else {
       throw new Error(`unknown role: ${workerRole}`);
     }
@@ -359,7 +400,7 @@ async function runOrchestrator() {
       const firstClaim = claimCellCrossSession(dir, { sessionId: 'sess-roundtrip', worker: 'worker-rt', cellId: 'race-c' });
       if (!firstClaim.ok) failures.push(`(c) first claim should succeed, got ${JSON.stringify(firstClaim)}`);
 
-      blockCell(dir, 'race-c', 'round-trip test block', { sessionId: 'sess-roundtrip' });
+      await blockCell(dir, 'race-c', 'round-trip test block', { sessionId: 'sess-roundtrip' });
       if (readClaim(dir, 'race-c') !== null) {
         failures.push('(c) block must release the claim file (D1 Δ2)');
       }
@@ -451,6 +492,92 @@ async function runOrchestrator() {
     }
   }
 
+  // (e) LEDGER-LOCK — real path: N racers calling the ACTUAL recordVerify on
+  // ONE cell (GH #27.2, cell ghf-4). Every racer must succeed and every one
+  // of its trace.attempts entries must survive — zero lost updates. Post-fix
+  // this is deterministic (withStoreLock serializes the read-mutate-write
+  // body), same "no artificial widening needed" shape as scenario (a)'s real
+  // O_EXCL exclusion.
+  {
+    const dir = makeRoot();
+    try {
+      await writeApprovedState(dir);
+      await makeCell(dir, 'race-e');
+
+      const results = await spawnRacers(RACERS, (i) => [
+        '--role=verify-racer',
+        `--root=${dir}`,
+        '--cell=race-e',
+        `--id=${i}`,
+      ]);
+      const crashed = results.filter((r) => r.code !== 0);
+      if (crashed.length) {
+        failures.push(
+          `(e) ${crashed.length}/${RACERS} verify racer(s) crashed:\n` +
+            crashed.map((c) => `  exit=${c.code} stderr=${c.stderr.trim()}`).join('\n'),
+        );
+      }
+      const parsed = results.map((r) => lastJsonLine(r.stdout));
+      const errored = parsed.filter((p) => !p || p.ok !== true);
+      if (errored.length) {
+        failures.push(`(e) every recordVerify racer should succeed, got failure(s): ${JSON.stringify(errored)}`);
+      }
+      const finalCell = readJson(path.join(dir, '.bee', 'cells', 'race-e.json'), null);
+      const finalAttempts = finalCell && Array.isArray(finalCell.trace.attempts) ? finalCell.trace.attempts : [];
+      if (finalAttempts.length !== RACERS) {
+        failures.push(
+          `(e) expected exactly ${RACERS} trace.attempts entries (one per racer, zero lost), got ${finalAttempts.length}: ` +
+            `${JSON.stringify(finalAttempts)}`,
+        );
+      }
+      const ns = finalAttempts.map((a) => a.n);
+      const uniqueNs = new Set(ns);
+      if (uniqueNs.size !== finalAttempts.length) {
+        failures.push(`(e) trace.attempts has duplicate/clobbered "n" values (a lost-update fingerprint): ${JSON.stringify(ns)}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // (f) DELIBERATE RED (falsifiability) — a test-owned proxy mimicking
+  // recordVerify's PRE-FIX read-mutate-write shape (no lock, widened window)
+  // proves the ledger-loss hazard class scenario (e) guards against is real,
+  // independent of whether the real function happens to race under ordinary
+  // OS timing. Same negative-control discipline as scenario (b).
+  {
+    const dir = makeRoot();
+    try {
+      await writeApprovedState(dir);
+      await makeCell(dir, 'race-f');
+
+      const results = await spawnRacers(RACERS, (i) => [
+        '--role=verify-racer-unsafe',
+        `--root=${dir}`,
+        '--cell=race-f',
+        `--id=${i}`,
+      ]);
+      const crashed = results.filter((r) => r.code !== 0);
+      if (crashed.length) {
+        failures.push(
+          `(f) ${crashed.length}/${RACERS} unsafe verify racer(s) crashed:\n` +
+            crashed.map((c) => `  exit=${c.code} stderr=${c.stderr.trim()}`).join('\n'),
+        );
+      }
+      const finalCell = readJson(path.join(dir, '.bee', 'cells', 'race-f.json'), null);
+      const finalAttempts = finalCell && Array.isArray(finalCell.trace.attempts) ? finalCell.trace.attempts : [];
+      if (finalAttempts.length >= RACERS) {
+        failures.push(
+          `(f) DETECTOR DID NOT BITE: unsafe proxy recorded ${finalAttempts.length}/${RACERS} entries — this negative ` +
+            'control must demonstrate lost updates (last-writer-wins clobbering the stale-snapshot appends), or the ' +
+            '(e) green result proves nothing.',
+        );
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   if (failures.length) {
     console.error('FAIL test_claim_race:');
     for (const f of failures) console.error(`  - ${f}`);
@@ -462,6 +589,8 @@ async function runOrchestrator() {
       "refusals naming the winner's session + expiry; (b) deliberate-red unguarded proxy showed multiple racers " +
       'believing they won (detector bites); (c) claim -> block -> reopen -> claim same-session round trip succeeded ' +
       `with no self-refusal; (d) ${RACERS} racers against an already-exhausted budget -> 0 winners, every loss typed ` +
-      'CELL_BUDGET_EXHAUSTED or CLAIMED, no orphaned claim-store file (D2+Δ2 unwind holds under real concurrency).',
+      'CELL_BUDGET_EXHAUSTED or CLAIMED, no orphaned claim-store file (D2+Δ2 unwind holds under real concurrency); ' +
+      `(e) ${RACERS} real recordVerify racers on one cell -> zero lost trace.attempts entries (GH #27.2 ledger lock); ` +
+      '(f) deliberate-red unsafe proxy demonstrated lost updates (detector bites).',
   );
 }

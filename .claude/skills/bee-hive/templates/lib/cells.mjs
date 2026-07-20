@@ -49,6 +49,16 @@ import { detectCycles } from './schedule.mjs';
 // PINNED_MODEL_STATUS, no cycle back to cells.mjs); recordJudgeVerdict below
 // is the sole mutator that turns a validated verdict into a trace entry.
 import { validateJudgeVerdict, deriveModelIndependence } from './judge.mjs';
+// GH #27.2 (cell ghf-4) — the attempt ledger's read-mutate-write mutators
+// below (recordVerify/capCell/blockCell/resetCellBudget) are wrapped in
+// withStoreLock('cells:<id>', ...) so two concurrent verify/cap/block calls
+// on the SAME cell can no longer both read the same trace.attempts snapshot
+// and have the later write silently drop the earlier append — same
+// discipline reservations.mjs's reserve/release and state.mjs's startFeature
+// already use. The lock key includes the cell id (not a single 'cells' name)
+// so distinct cells never serialize against each other. Pure readers
+// (readCell, listCells, etc.) stay lock-free.
+import { withStoreLock } from './lock.mjs';
 
 export const LANES = ['tiny', 'small', 'standard', 'high-risk', 'spike'];
 
@@ -659,35 +669,37 @@ export function claimCell(root, id, worker) {
   return writeCell(root, cell);
 }
 
-export function recordVerify(
+export async function recordVerify(
   root,
   id,
   { command, output = null, passed, sessionId, forceOwnership = false, signature = null },
 ) {
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`recordVerify: cell "${id}" not found.`);
   if (typeof command !== 'string' || !command.trim()) {
     throw new Error('recordVerify: command is required.');
   }
   if (typeof passed !== 'boolean') {
     throw new Error('recordVerify: passed must be true or false.');
   }
-  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
-  trace = guardClaimOwnership(root, id, trace, 'recordVerify', { sessionId, forceOwnership }); // D4
-  trace.verify_command = command;
-  trace.verify_output = output;
-  trace.verify_passed = passed;
-  trace.verified_at = utcNow();
-  // D1: worker-suppliable --signature wins over the mechanical fallback; a
-  // passing verify never carries a failure signature at all.
-  const failureSignature = passed
-    ? null
-    : typeof signature === 'string' && signature.trim()
-      ? signature.trim()
-      : normalizeFailureSignature(output);
-  trace = appendAttempt(root, id, trace, { verdict: passed ? 'pass' : 'fail', failureSignature });
-  cell.trace = trace;
-  return writeCell(root, cell);
+  return withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`recordVerify: cell "${id}" not found.`);
+    let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+    trace = guardClaimOwnership(root, id, trace, 'recordVerify', { sessionId, forceOwnership }); // D4
+    trace.verify_command = command;
+    trace.verify_output = output;
+    trace.verify_passed = passed;
+    trace.verified_at = utcNow();
+    // D1: worker-suppliable --signature wins over the mechanical fallback; a
+    // passing verify never carries a failure signature at all.
+    const failureSignature = passed
+      ? null
+      : typeof signature === 'string' && signature.trim()
+        ? signature.trim()
+        : normalizeFailureSignature(output);
+    trace = appendAttempt(root, id, trace, { verdict: passed ? 'pass' : 'fail', failureSignature });
+    cell.trace = trace;
+    return writeCell(root, cell);
+  });
 }
 
 // D3+Δ5 — the anti-boilerplate floor for behavior-class cap teeth: 80 chars,
@@ -709,7 +721,7 @@ function findDuplicateRedEvidence(root, id, trimmed) {
   return null;
 }
 
-export function capCell(
+export async function capCell(
   root,
   id,
   {
@@ -723,145 +735,149 @@ export function capCell(
     forceOwnership = false,
   } = {},
 ) {
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`capCell: cell "${id}" not found.`);
-  // Honor the cell's declared behavior_change when the caller omits it — the CLI
-  // flag is opt-in, so a cell planned as behavior_change must not silently lose
-  // its evidence/before-state guards (and its scribing debt) at cap just because
-  // --behavior-change was not repeated. Explicit false/true from the caller wins.
-  const bc =
-    behavior_change === undefined ? cell.behavior_change === true : behavior_change === true;
-  if (cell.status === 'capped') throw new Error(`capCell: cell "${id}" is already capped.`);
-  if (cell.status === 'dropped') throw new Error(`capCell: cell "${id}" was dropped.`);
-  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
-  trace = guardClaimOwnership(root, id, trace, 'capCell', { sessionId, forceOwnership }); // D4
-  if (trace.verify_passed !== true) {
-    throw new Error(
-      `capCell: cell "${id}" has no passing verify result — run the cell's verify command and record it (bee.mjs cells verify --id ${id} --command CMD --passed true) before capping.`,
-    );
-  }
-  if (bc && !verification_evidence) {
-    throw new Error(
-      `capCell: cell "${id}" declares behavior_change but provides no verification_evidence — attach evidence (--evidence-file) or drop the behavior_change flag.`,
-    );
-  }
-  // Decision 0009: a behavior_change cell must record the "before" it changed —
-  // a characterization of prior behavior — not just an assertion that the new
-  // behavior works. This blocks assertion-capping at the source (worker must
-  // capture the git-show / failing pre-change check at cap time) instead of
-  // letting reviewing catch it later and spawn a whole evidence-backfill cell.
-  if (bc && verification_evidence) {
-    let evidence = verification_evidence;
-    if (typeof evidence === 'string') {
-      try {
-        evidence = JSON.parse(evidence);
-      } catch {
-        evidence = null; // freeform evidence — the non-empty check above already applies
-      }
-    }
-    if (evidence && typeof evidence === 'object' && !Array.isArray(evidence)) {
-      const before = evidence.red_failure_evidence;
-      const hasBefore = typeof before === 'string' && before.trim().length > 0;
-      const exceptions = evidence.deliberate_exceptions;
-      const hasException = Array.isArray(exceptions)
-        ? exceptions.some((e) => typeof e === 'string' && e.trim().length > 0)
-        : typeof exceptions === 'string' && exceptions.trim().length > 0;
-      if (!hasBefore && !hasException) {
-        throw new Error(
-          `capCell: behavior_change cell "${id}" needs a "before" characterization — set red_failure_evidence in the evidence (the prior behavior this change alters: a git-show of the old state, or a pre-change check that failed). If there is genuinely no prior behavior (a brand-new surface), say so in deliberate_exceptions. An assertion that the new behavior works is not evidence that behavior changed.`,
-        );
-      }
-    }
-  }
-  // D3 (self-correcting-loop) — behavior-class cap teeth, ADDITIVE to the
-  // Decision 0009 "before" check above. Gated on the cell's (derived or
-  // explicit) change_class, NOT on `bc` — an explicit change_class:"behavior"
-  // cell still gets the teeth even if it forgot --behavior-change; the common
-  // path (behavior_change:true, change_class absent) reaches here via the
-  // same derivation either way (CONTEXT D3 prohibition: no auto-derivation
-  // beyond behavior_change=>behavior). F5: a cap riding the deliberate_
-  // exceptions door keeps today's contract untouched — no length/duplicate
-  // floor; the STDERR advisory noting that lives in bee.mjs's handler layer
-  // (F4 precedent), recomputed from the returned cell post-cap.
-  if (deriveChangeClass({ ...cell, behavior_change: bc }) === 'behavior') {
-    const evidence = parseVerificationEvidence(verification_evidence);
-    if (!evidenceRidesExceptionDoor(evidence)) {
-      const before = typeof evidence.red_failure_evidence === 'string' ? evidence.red_failure_evidence.trim() : '';
-      if (!before) {
-        throw new Error(
-          `capCell: behavior-class cell "${id}" (D3 judge-standard matrix) is missing verification_evidence.red_failure_evidence — the matrix minimum for a "behavior" change. FIX: attach red_failure_evidence (>=${RED_EVIDENCE_MIN_CHARS} chars characterizing the prior behavior) or record deliberate_exceptions.`,
-        );
-      }
-      if (before.length < RED_EVIDENCE_MIN_CHARS) {
-        throw new Error(
-          `capCell: behavior-class cell "${id}" red_failure_evidence is only ${before.length} char(s) — the D3 judge-standard matrix requires >=${RED_EVIDENCE_MIN_CHARS} chars (anti-boilerplate floor). FIX: expand the evidence to genuinely characterize the prior behavior, or record deliberate_exceptions.`,
-        );
-      }
-      const collision = findDuplicateRedEvidence(root, id, before);
-      if (collision) {
-        throw new Error(
-          `capCell: behavior-class cell "${id}" red_failure_evidence is byte-identical to cell "${collision}"'s recorded evidence — the D3 judge-standard matrix refuses reused boilerplate. FIX: write evidence specific to this cell's own prior behavior.`,
-        );
-      }
-    }
-  }
-  // Decision 0004: small+ lanes cap only on recorded proof, never on an assertion.
-  if (cell.lane === 'small' || cell.lane === 'standard' || cell.lane === 'high-risk') {
-    const output = trace.verify_output;
-    const hasOutput = typeof output === 'string' ? output.trim().length > 0 : output != null;
-    const hasEvidence =
-      verification_evidence != null &&
-      (typeof verification_evidence !== 'string' || verification_evidence.trim().length > 0);
-    if (!hasOutput && !hasEvidence) {
+  const saved = await withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`capCell: cell "${id}" not found.`);
+    // Honor the cell's declared behavior_change when the caller omits it — the CLI
+    // flag is opt-in, so a cell planned as behavior_change must not silently lose
+    // its evidence/before-state guards (and its scribing debt) at cap just because
+    // --behavior-change was not repeated. Explicit false/true from the caller wins.
+    const bc =
+      behavior_change === undefined ? cell.behavior_change === true : behavior_change === true;
+    if (cell.status === 'capped') throw new Error(`capCell: cell "${id}" is already capped.`);
+    if (cell.status === 'dropped') throw new Error(`capCell: cell "${id}" was dropped.`);
+    let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+    trace = guardClaimOwnership(root, id, trace, 'capCell', { sessionId, forceOwnership }); // D4
+    if (trace.verify_passed !== true) {
       throw new Error(
-        `capCell: lane "${cell.lane}" cell "${id}" has a passing verify flag but no recorded proof — re-record the verify with its output (bee.mjs cells verify --id ${id} --command CMD --output "..." --passed true) or attach verification_evidence (--evidence-file). An assertion is not evidence.`,
+        `capCell: cell "${id}" has no passing verify result — run the cell's verify command and record it (bee.mjs cells verify --id ${id} --command CMD --passed true) before capping.`,
       );
     }
-    if (!Array.isArray(files_changed) || files_changed.length === 0) {
+    if (bc && !verification_evidence) {
       throw new Error(
-        `capCell: lane "${cell.lane}" cell "${id}" requires non-empty files_changed (--files a.js,b.js) — record what the worker actually touched. A cell that changed nothing is a drop or a NOOP, not a cap.`,
+        `capCell: cell "${id}" declares behavior_change but provides no verification_evidence — attach evidence (--evidence-file) or drop the behavior_change flag.`,
       );
     }
-  }
-  if (cell.lane === 'high-risk') {
-    if (typeof outcome !== 'string' || !outcome.trim()) {
-      throw new Error(`capCell: high-risk cell "${id}" requires an outcome summary.`);
+    // Decision 0009: a behavior_change cell must record the "before" it changed —
+    // a characterization of prior behavior — not just an assertion that the new
+    // behavior works. This blocks assertion-capping at the source (worker must
+    // capture the git-show / failing pre-change check at cap time) instead of
+    // letting reviewing catch it later and spawn a whole evidence-backfill cell.
+    if (bc && verification_evidence) {
+      let evidence = verification_evidence;
+      if (typeof evidence === 'string') {
+        try {
+          evidence = JSON.parse(evidence);
+        } catch {
+          evidence = null; // freeform evidence — the non-empty check above already applies
+        }
+      }
+      if (evidence && typeof evidence === 'object' && !Array.isArray(evidence)) {
+        const before = evidence.red_failure_evidence;
+        const hasBefore = typeof before === 'string' && before.trim().length > 0;
+        const exceptions = evidence.deliberate_exceptions;
+        const hasException = Array.isArray(exceptions)
+          ? exceptions.some((e) => typeof e === 'string' && e.trim().length > 0)
+          : typeof exceptions === 'string' && exceptions.trim().length > 0;
+        if (!hasBefore && !hasException) {
+          throw new Error(
+            `capCell: behavior_change cell "${id}" needs a "before" characterization — set red_failure_evidence in the evidence (the prior behavior this change alters: a git-show of the old state, or a pre-change check that failed). If there is genuinely no prior behavior (a brand-new surface), say so in deliberate_exceptions. An assertion that the new behavior works is not evidence that behavior changed.`,
+          );
+        }
+      }
     }
-  }
-  cell.status = 'capped';
-  cell.trace = {
-    ...trace,
-    files_changed: Array.isArray(files_changed) ? files_changed : [],
-    deviations: Array.isArray(deviations) ? deviations : [],
-    friction: friction ?? null,
-    behavior_change: bc,
-    verification_evidence: verification_evidence ?? null,
-    outcome: typeof outcome === 'string' && outcome.trim() ? outcome : trace.outcome,
-    capped_at: utcNow(),
-  };
-  const saved = writeCell(root, cell);
+    // D3 (self-correcting-loop) — behavior-class cap teeth, ADDITIVE to the
+    // Decision 0009 "before" check above. Gated on the cell's (derived or
+    // explicit) change_class, NOT on `bc` — an explicit change_class:"behavior"
+    // cell still gets the teeth even if it forgot --behavior-change; the common
+    // path (behavior_change:true, change_class absent) reaches here via the
+    // same derivation either way (CONTEXT D3 prohibition: no auto-derivation
+    // beyond behavior_change=>behavior). F5: a cap riding the deliberate_
+    // exceptions door keeps today's contract untouched — no length/duplicate
+    // floor; the STDERR advisory noting that lives in bee.mjs's handler layer
+    // (F4 precedent), recomputed from the returned cell post-cap.
+    if (deriveChangeClass({ ...cell, behavior_change: bc }) === 'behavior') {
+      const evidence = parseVerificationEvidence(verification_evidence);
+      if (!evidenceRidesExceptionDoor(evidence)) {
+        const before = typeof evidence.red_failure_evidence === 'string' ? evidence.red_failure_evidence.trim() : '';
+        if (!before) {
+          throw new Error(
+            `capCell: behavior-class cell "${id}" (D3 judge-standard matrix) is missing verification_evidence.red_failure_evidence — the matrix minimum for a "behavior" change. FIX: attach red_failure_evidence (>=${RED_EVIDENCE_MIN_CHARS} chars characterizing the prior behavior) or record deliberate_exceptions.`,
+          );
+        }
+        if (before.length < RED_EVIDENCE_MIN_CHARS) {
+          throw new Error(
+            `capCell: behavior-class cell "${id}" red_failure_evidence is only ${before.length} char(s) — the D3 judge-standard matrix requires >=${RED_EVIDENCE_MIN_CHARS} chars (anti-boilerplate floor). FIX: expand the evidence to genuinely characterize the prior behavior, or record deliberate_exceptions.`,
+          );
+        }
+        const collision = findDuplicateRedEvidence(root, id, before);
+        if (collision) {
+          throw new Error(
+            `capCell: behavior-class cell "${id}" red_failure_evidence is byte-identical to cell "${collision}"'s recorded evidence — the D3 judge-standard matrix refuses reused boilerplate. FIX: write evidence specific to this cell's own prior behavior.`,
+          );
+        }
+      }
+    }
+    // Decision 0004: small+ lanes cap only on recorded proof, never on an assertion.
+    if (cell.lane === 'small' || cell.lane === 'standard' || cell.lane === 'high-risk') {
+      const output = trace.verify_output;
+      const hasOutput = typeof output === 'string' ? output.trim().length > 0 : output != null;
+      const hasEvidence =
+        verification_evidence != null &&
+        (typeof verification_evidence !== 'string' || verification_evidence.trim().length > 0);
+      if (!hasOutput && !hasEvidence) {
+        throw new Error(
+          `capCell: lane "${cell.lane}" cell "${id}" has a passing verify flag but no recorded proof — re-record the verify with its output (bee.mjs cells verify --id ${id} --command CMD --output "..." --passed true) or attach verification_evidence (--evidence-file). An assertion is not evidence.`,
+        );
+      }
+      if (!Array.isArray(files_changed) || files_changed.length === 0) {
+        throw new Error(
+          `capCell: lane "${cell.lane}" cell "${id}" requires non-empty files_changed (--files a.js,b.js) — record what the worker actually touched. A cell that changed nothing is a drop or a NOOP, not a cap.`,
+        );
+      }
+    }
+    if (cell.lane === 'high-risk') {
+      if (typeof outcome !== 'string' || !outcome.trim()) {
+        throw new Error(`capCell: high-risk cell "${id}" requires an outcome summary.`);
+      }
+    }
+    cell.status = 'capped';
+    cell.trace = {
+      ...trace,
+      files_changed: Array.isArray(files_changed) ? files_changed : [],
+      deviations: Array.isArray(deviations) ? deviations : [],
+      friction: friction ?? null,
+      behavior_change: bc,
+      verification_evidence: verification_evidence ?? null,
+      outcome: typeof outcome === 'string' && outcome.trim() ? outcome : trace.outcome,
+      capped_at: utcNow(),
+    };
+    return writeCell(root, cell);
+  });
   releaseClaimFileBestEffort(root, id); // D1 Δ2: cap is a claim-clearing transition
   return saved;
 }
 
-export function blockCell(root, id, reason, { sessionId, forceOwnership = false } = {}) {
+export async function blockCell(root, id, reason, { sessionId, forceOwnership = false } = {}) {
   if (typeof reason !== 'string' || !reason.trim()) {
     throw new Error('blockCell: a reason is required.');
   }
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`blockCell: cell "${id}" not found.`);
-  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
-  trace = guardClaimOwnership(root, id, trace, 'blockCell', { sessionId, forceOwnership }); // D4
-  // D1: block has no verify output to normalize — the reason text itself is
-  // the closest analog, so it feeds both the ledger's note and its signature.
-  trace = appendAttempt(root, id, trace, {
-    verdict: 'blocked',
-    failureSignature: normalizeFailureSignature(reason),
-    note: reason,
+  const saved = await withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`blockCell: cell "${id}" not found.`);
+    let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+    trace = guardClaimOwnership(root, id, trace, 'blockCell', { sessionId, forceOwnership }); // D4
+    // D1: block has no verify output to normalize — the reason text itself is
+    // the closest analog, so it feeds both the ledger's note and its signature.
+    trace = appendAttempt(root, id, trace, {
+      verdict: 'blocked',
+      failureSignature: normalizeFailureSignature(reason),
+      note: reason,
+    });
+    cell.status = 'blocked';
+    cell.trace = { ...trace, blocked_reason: reason };
+    return writeCell(root, cell);
   });
-  cell.status = 'blocked';
-  cell.trace = { ...trace, blocked_reason: reason };
-  const saved = writeCell(root, cell);
   releaseClaimFileBestEffort(root, id); // D1 Δ2: block is a claim-clearing transition
   return saved;
 }
@@ -1237,21 +1253,23 @@ export function checkCellBudgets(cell) {
 // append-only trace.budget_resets — it NEVER touches trace.attempts, so the
 // full attempt history the marker is scoped against stays intact for
 // post-hoc review (mirrors trace.ownership_overrides' append-only shape).
-export function resetCellBudget(root, id, reason, { sessionId } = {}) {
+export async function resetCellBudget(root, id, reason, { sessionId } = {}) {
   if (typeof reason !== 'string' || !reason.trim()) {
     throw new Error('resetCellBudget: a reason is required.');
   }
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`resetCellBudget: cell "${id}" not found.`);
   const reasonText = reason.trim();
-  const trace = { ...defaultTrace(), ...(cell.trace || {}) };
-  const resets = Array.isArray(trace.budget_resets) ? trace.budget_resets : [];
   const bySession = resolveSessionId({ flag: sessionId }) || null;
-  cell.trace = {
-    ...trace,
-    budget_resets: [...resets, { reset_at: utcNow(), reason: reasonText, by_session: bySession }],
-  };
-  const saved = writeCell(root, cell);
+  const saved = await withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`resetCellBudget: cell "${id}" not found.`);
+    const trace = { ...defaultTrace(), ...(cell.trace || {}) };
+    const resets = Array.isArray(trace.budget_resets) ? trace.budget_resets : [];
+    cell.trace = {
+      ...trace,
+      budget_resets: [...resets, { reset_at: utcNow(), reason: reasonText, by_session: bySession }],
+    };
+    return writeCell(root, cell);
+  });
   logDecision(root, {
     decision: `«cells reset-budget: cell "${id}" claim-lifetime budget reset — ${reasonText}»`,
     rationale:

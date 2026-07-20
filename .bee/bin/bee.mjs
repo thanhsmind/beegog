@@ -831,7 +831,7 @@ function ownershipFlags(flags) {
   };
 }
 
-function handleCellsVerify(root, flags) {
+async function handleCellsVerify(root, flags) {
   const id = requireFlag(flags, 'id');
   const command = requireFlag(flags, 'command');
   const passedRaw = requireFlag(flags, 'passed');
@@ -847,7 +847,10 @@ function handleCellsVerify(root, flags) {
   // failure_signature; omitted, recordVerify falls back to the mechanical
   // normalizer on `output`.
   const signature = flags.signature !== undefined ? String(flags.signature) : null;
-  const cell = recordVerify(root, id, {
+  // GH #27.2 (ghf-4): recordVerify's read-mutate-write body now runs under
+  // withStoreLock, so it is async — every handler below awaits it (dispatch
+  // already does `await handler(...)`, so this only needed the local await).
+  const cell = await recordVerify(root, id, {
     command,
     output,
     passed: passedRaw === 'true',
@@ -857,10 +860,10 @@ function handleCellsVerify(root, flags) {
   return { result: cell, text: `Recorded verify on ${cell.id}: passed=${cell.trace.verify_passed}.` };
 }
 
-function handleCellsCap(root, flags) {
+async function handleCellsCap(root, flags) {
   const id = requireFlag(flags, 'id');
   const deviations = flags['deviations-file'] ? parseDeviationsFile(String(flags['deviations-file'])) : [];
-  const cell = capCell(root, id, {
+  const cell = await capCell(root, id, {
     outcome: flags.outcome ? String(flags.outcome) : undefined,
     files_changed: flags.files
       ? String(flags.files)
@@ -882,8 +885,8 @@ function handleCellsCap(root, flags) {
   return { result: cell, text: `Capped ${cell.id} at ${cell.trace.capped_at}.` };
 }
 
-function handleCellsBlock(root, flags) {
-  const cell = blockCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
+async function handleCellsBlock(root, flags) {
+  const cell = await blockCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Blocked ${cell.id}.` };
 }
 
@@ -924,11 +927,11 @@ function handleCellsJudge(root, flags) {
 // ownership-aware verb, but resetCellBudget never enforces claim ownership
 // (a budget-exhausted cell has already been claim-cleared by the refusal
 // path — there is no live claim to own).
-function handleCellsResetBudget(root, flags) {
+async function handleCellsResetBudget(root, flags) {
   const id = requireFlag(flags, 'id');
   const reason = requireFlag(flags, 'reason');
   const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : undefined;
-  const cell = resetCellBudget(root, id, reason, { sessionId });
+  const cell = await resetCellBudget(root, id, reason, { sessionId });
   return { result: cell, text: `Reset the claim-lifetime budget door for ${cell.id}.` };
 }
 

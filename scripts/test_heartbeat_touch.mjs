@@ -493,7 +493,7 @@ function record(name, pass, note) {
   const claimed = claimCellCrossSession(root, { sessionId, worker: "worker-hb", cellId });
   record("hb-budget:claim-ok", Boolean(claimed.ok), `claimed=${JSON.stringify(claimed)}`);
 
-  recordVerify(root, cellId, {
+  await recordVerify(root, cellId, {
     command: "node fail-1.mjs",
     output: "fail one",
     passed: false,
@@ -504,7 +504,7 @@ function record(name, pass, note) {
   const heartbeat = renewClaimTTL(root, sessionId, { now: Date.now() + 90_000 });
   record("hb-budget:heartbeat-renewed", heartbeat.renewed.includes(cellId), `heartbeat=${JSON.stringify(heartbeat)}`);
 
-  recordVerify(root, cellId, {
+  await recordVerify(root, cellId, {
     command: "node fail-2.mjs",
     output: "fail two",
     passed: false,
