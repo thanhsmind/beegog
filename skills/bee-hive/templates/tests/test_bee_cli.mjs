@@ -566,6 +566,74 @@ await check('cells.judge-record refuses (non-zero exit) a free-prose --file payl
   assert(/verdict rejected/i.test(result.stdout), `expected a "verdict rejected" refusal, got stdout=${result.stdout} stderr=${result.stderr}`);
 });
 
+// cells-archive-2: cells.archive / cells.unarchive round trip. Uses its OWN
+// feature ("demo-archive", distinct from the fixture repo's active "demo"
+// feature) with two directly-added, already-terminal cells (one capped, one
+// dropped — addCell accepts an explicit status, skipping the claim/verify/cap
+// dance this fixture does not need) so the archive precondition ("every cell
+// capped or dropped") is met without disturbing the demo-1/demo-2 chain above.
+await check('cells.archive / cells.unarchive round trip through the real dispatcher (archive-aware CLI)', async () => {
+  const archFeature = 'demo-archive';
+  addCell(root, {
+    id: 'archv-1',
+    feature: archFeature,
+    title: 'Archive fixture cell 1 (capped)',
+    lane: 'small',
+    action: 'Fixture cell for the cells.archive/unarchive round trip.',
+    verify: 'node -e "process.exit(0)"',
+    status: 'capped',
+  });
+  addCell(root, {
+    id: 'archv-2',
+    feature: archFeature,
+    title: 'Archive fixture cell 2 (dropped)',
+    lane: 'small',
+    action: 'Fixture cell for the cells.archive/unarchive round trip.',
+    verify: 'node -e "process.exit(0)"',
+    status: 'dropped',
+  });
+  assert(fs.existsSync(path.join(root, '.bee', 'cells', 'archv-1.json')), 'archv-1 should exist in the active dir before archiving');
+  assert(fs.existsSync(path.join(root, '.bee', 'cells', 'archv-2.json')), 'archv-2 should exist in the active dir before archiving');
+
+  const archiveResult = await assertExampleOk('cells.archive');
+  const archived = JSON.parse(archiveResult.stdout);
+  assert(archived.feature === archFeature, `expected feature "${archFeature}", got ${archiveResult.stdout}`);
+  assert(
+    [...archived.moved].sort().join(',') === 'archv-1,archv-2',
+    `expected both fixture cells moved, got ${JSON.stringify(archived.moved)}`,
+  );
+  assert(archived.counts.capped === 1 && archived.counts.dropped === 1, `expected counts capped=1 dropped=1, got ${JSON.stringify(archived.counts)}`);
+  assert(!fs.existsSync(path.join(root, '.bee', 'cells', 'archv-1.json')), 'archv-1 should be moved out of the active dir');
+  assert(!fs.existsSync(path.join(root, '.bee', 'cells', 'archv-2.json')), 'archv-2 should be moved out of the active dir');
+  assert(fs.existsSync(path.join(root, '.bee', 'cells', 'archive', archFeature, 'archv-1.json')), 'archv-1 should now live under .bee/cells/archive/demo-archive/');
+  assert(fs.existsSync(path.join(root, '.bee', 'cells', 'archive', archFeature, 'archv-2.json')), 'archv-2 should now live under .bee/cells/archive/demo-archive/');
+
+  const statusAfterArchive = await runModuleWorker(BEE_MJS, { args: ['status', '--json'], cwd: root });
+  assert(statusAfterArchive.status === 0, `status after archive should exit 0, got ${statusAfterArchive.status}: ${statusAfterArchive.stderr}`);
+  const statusParsed = JSON.parse(statusAfterArchive.stdout);
+  assert(
+    statusParsed.cells.archived && statusParsed.cells.archived.capped >= 1 && statusParsed.cells.archived.dropped >= 1,
+    `expected an honest archived figure sourced from the summary ledger (no dir scan), got ${JSON.stringify(statusParsed.cells)}`,
+  );
+
+  const activeArchiveOnDemo = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'archive', '--feature', 'demo', '--json'],
+    cwd: root,
+  });
+  assert(activeArchiveOnDemo.status !== 0, `archiving the ACTIVE feature ("demo") must be refused, got exit ${activeArchiveOnDemo.status}`);
+
+  const unarchiveResult = await assertExampleOk('cells.unarchive');
+  const unarchived = JSON.parse(unarchiveResult.stdout);
+  assert(unarchived.feature === archFeature, `expected feature "${archFeature}", got ${unarchiveResult.stdout}`);
+  assert(
+    [...unarchived.moved].sort().join(',') === 'archv-1,archv-2',
+    `expected both fixture cells restored, got ${JSON.stringify(unarchived.moved)}`,
+  );
+  assert(fs.existsSync(path.join(root, '.bee', 'cells', 'archv-1.json')), 'archv-1 should be restored to the active dir');
+  assert(fs.existsSync(path.join(root, '.bee', 'cells', 'archv-2.json')), 'archv-2 should be restored to the active dir');
+  assert(!fs.existsSync(path.join(root, '.bee', 'cells', 'archive', archFeature)), 'the now-empty archive/demo-archive dir should be removed after unarchive');
+});
+
 await check('reservations.reserve example runs through the real dispatcher', async () => {
   const result = await assertExampleOk('reservations.reserve');
   assert(JSON.parse(result.stdout).ok === true, 'reserve should succeed on a fresh path');

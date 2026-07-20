@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { readJson, writeJsonAtomic } from './fsutil.mjs';
+import { readJson, writeJsonAtomic, ensureDir } from './fsutil.mjs';
 import {
   readState,
   gateApproved,
@@ -291,34 +291,248 @@ export function cellsDir(root) {
   return path.join(root, '.bee', 'cells');
 }
 
+// ARCHIVE_DIR_NAME is a reserved child of cellsDir — never a cell id, so the
+// default listCells scan below must skip it explicitly (a directory entry
+// fails the `.json` filter anyway, but the guard stays explicit per the
+// cells-archive-1 must-have: verify, don't assume, that the filter excludes it).
+const ARCHIVE_DIR_NAME = 'archive';
+
+// cellsArchiveDir(root, feature) — the feature-scoped archive tree closed
+// features' cells move into, out of the hot .bee/cells/ scan path. Pure path
+// composition; creating/writing the directory is a later cell's job (this
+// cell adds only the lookup primitive layer).
+export function cellsArchiveDir(root, feature) {
+  return path.join(cellsDir(root), ARCHIVE_DIR_NAME, feature);
+}
+
 function cellFile(root, id) {
   return path.join(cellsDir(root), `${id}.json`);
 }
 
-export function listCells(root, { feature = null, status = null } = {}) {
+// resolveCellFile(root, id) — the REAL on-disk path for a cell, active or
+// archived. Unlike cellFile (always the active path, meaning unchanged for
+// every existing caller), this searches .bee/cells/archive/*/<id>.json when
+// the active file is absent, so a caller that needs to actually read/stat the
+// file (not just resolve through readCell) gets the true location. Returns
+// null if the cell exists in neither place. Never throws: a missing/absent
+// archive root degrades to "not found there", same as every other tolerant
+// reader in this file.
+export function resolveCellFile(root, id) {
+  if (!id || !ID_PATTERN.test(String(id))) return null;
+  const active = cellFile(root, id);
+  if (fs.existsSync(active)) return active;
+  const archiveRoot = path.join(cellsDir(root), ARCHIVE_DIR_NAME);
+  let featureDirs;
+  try {
+    featureDirs = fs.readdirSync(archiveRoot, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of featureDirs) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(archiveRoot, entry.name, `${id}.json`);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+// listCells(root, {feature, status, includeArchived}) — default scans ONLY
+// the active .bee/cells/ dir (the hot-path speedup this feature exists for),
+// explicitly skipping the reserved `archive` child directory so it is never
+// mistaken for a cell entry. includeArchived:true additionally folds in every
+// .bee/cells/archive/*/*.json, same tolerant per-file readJson, same sorted-
+// by-id shape. When no archive dir exists (today's repos), includeArchived
+// has nothing to fold in and the output is byte-identical to the pre-archive
+// behavior either way.
+export function listCells(root, { feature = null, status = null, includeArchived = false } = {}) {
   const dir = cellsDir(root);
   let entries;
   try {
-    entries = fs.readdirSync(dir);
+    entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
-    return [];
+    entries = [];
   }
   const cells = [];
   for (const entry of entries) {
-    if (!entry.endsWith('.json')) continue;
-    const cell = readJson(path.join(dir, entry), null);
+    if (entry.isDirectory()) continue; // explicit guard: `archive` (or any dir) is never a cell
+    if (!entry.name.endsWith('.json')) continue;
+    const cell = readJson(path.join(dir, entry.name), null);
     if (!cell || typeof cell !== 'object') continue;
     if (feature && cell.feature !== feature) continue;
     if (status && cell.status !== status) continue;
     cells.push(cell);
   }
+  if (includeArchived) {
+    const archiveRoot = path.join(dir, ARCHIVE_DIR_NAME);
+    let featureDirs;
+    try {
+      featureDirs = fs.readdirSync(archiveRoot, { withFileTypes: true });
+    } catch {
+      featureDirs = [];
+    }
+    for (const featureDir of featureDirs) {
+      if (!featureDir.isDirectory()) continue;
+      const featureRoot = path.join(archiveRoot, featureDir.name);
+      let files;
+      try {
+        files = fs.readdirSync(featureRoot);
+      } catch {
+        continue;
+      }
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        const cell = readJson(path.join(featureRoot, file), null);
+        if (!cell || typeof cell !== 'object') continue;
+        if (feature && cell.feature !== feature) continue;
+        if (status && cell.status !== status) continue;
+        cells.push(cell);
+      }
+    }
+  }
   cells.sort((a, b) => String(a.id).localeCompare(String(b.id), 'en', { numeric: true }));
   return cells;
 }
 
+// readCell(root, id) — resolves the active cell first (byte-identical fast
+// path to today, including when no archive dir exists at all: readJson on a
+// missing active file returns null exactly as before, and the archive
+// readdir below then also fails closed to null, no throw, no behavior
+// change). Only when the active file is genuinely absent does it fall back to
+// searching .bee/cells/archive/*/<id>.json, so dep-resolution (depsAllCapped)
+// and any other readCell caller transparently see archived capped cells.
 export function readCell(root, id) {
   if (!id || !ID_PATTERN.test(String(id))) return null;
-  return readJson(cellFile(root, id), null);
+  const active = readJson(cellFile(root, id), null);
+  if (active !== null) return active;
+  const archiveRoot = path.join(cellsDir(root), ARCHIVE_DIR_NAME);
+  let featureDirs;
+  try {
+    featureDirs = fs.readdirSync(archiveRoot, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of featureDirs) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(archiveRoot, entry.name, `${id}.json`);
+    const archived = readJson(candidate, null);
+    if (archived !== null) return archived;
+  }
+  return null;
+}
+
+function archiveSummaryFile(root) {
+  return path.join(cellsDir(root), ARCHIVE_DIR_NAME, 'summary.json');
+}
+
+// archivedSummary(root) — the on-disk archive ledger: {feature: {capped,
+// dropped, archived_at}}. Absent file reads as {} (a fresh repo, or one that
+// has never archived anything, is never a crash). This is the ONLY read
+// status/buildStatus should use for archived figures — never a directory
+// scan of .bee/cells/archive/ (that is exactly the hot-path cost archiving
+// exists to avoid).
+export function archivedSummary(root) {
+  const summary = readJson(archiveSummaryFile(root), {});
+  return summary && typeof summary === 'object' && !Array.isArray(summary) ? summary : {};
+}
+
+// archivedTotals(root) — {capped, dropped, total} summed across every
+// archived feature's summary entry. Tolerant of a partially-shaped entry
+// (missing/non-numeric capped/dropped reads as 0, never throws/NaNs).
+export function archivedTotals(root) {
+  const summary = archivedSummary(root);
+  let capped = 0;
+  let dropped = 0;
+  for (const entry of Object.values(summary)) {
+    if (!entry || typeof entry !== 'object') continue;
+    capped += Number.isFinite(entry.capped) ? entry.capped : 0;
+    dropped += Number.isFinite(entry.dropped) ? entry.dropped : 0;
+  }
+  return { capped, dropped, total: capped + dropped };
+}
+
+// archiveFeature(root, feature) — moves every cell of a fully-terminal
+// feature (every cell capped or dropped — no open/claimed cell survives)
+// from the hot .bee/cells/ scan path into .bee/cells/archive/<feature>/,
+// out of listCells' default (non-includeArchived) scan. The caller (bee.mjs
+// handler) is responsible for refusing when `feature` is the active
+// state.feature — this primitive has no access to state.json and does not
+// duplicate that check.
+//
+// Refuses (throws) on: no feature, zero cells for the feature (nothing to
+// archive — named), or any open/claimed cell (named) — archiving is an
+// all-terminal-or-nothing operation, never a partial move that could hide a
+// still-live cell from the hot scan.
+export function archiveFeature(root, feature) {
+  if (typeof feature !== 'string' || !feature.trim()) {
+    throw new Error('archiveFeature: feature is required.');
+  }
+  const cells = listCells(root, { feature });
+  if (cells.length === 0) {
+    throw new Error(`archiveFeature: no cells found for feature "${feature}" — nothing to archive.`);
+  }
+  const nonTerminal = cells.filter((cell) => cell.status === 'open' || cell.status === 'claimed');
+  if (nonTerminal.length > 0) {
+    throw new Error(
+      `archiveFeature: feature "${feature}" has non-terminal cell(s) — ${nonTerminal
+        .map((cell) => `${cell.id} (${cell.status})`)
+        .join(', ')} — only a feature whose cells are ALL capped/dropped can be archived.`,
+    );
+  }
+  const archiveDir = cellsArchiveDir(root, feature);
+  ensureDir(archiveDir);
+  const moved = [];
+  let capped = 0;
+  let dropped = 0;
+  for (const cell of cells) {
+    fs.renameSync(cellFile(root, cell.id), path.join(archiveDir, `${cell.id}.json`));
+    moved.push(cell.id);
+    if (cell.status === 'capped') capped += 1;
+    else if (cell.status === 'dropped') dropped += 1;
+  }
+  const summary = archivedSummary(root);
+  const counts = { capped, dropped };
+  summary[feature] = { ...counts, archived_at: utcNow() };
+  writeJsonAtomic(archiveSummaryFile(root), summary);
+  return { feature, moved, counts };
+}
+
+// unarchiveFeature(root, feature) — the reverse of archiveFeature: moves
+// every .bee/cells/archive/<feature>/*.json cell back to the active
+// .bee/cells/ dir, drops that feature's summary.json entry, and removes the
+// now-empty archive/<feature> dir (best-effort — a leftover non-.json file
+// left by something else never blocks the unarchive itself). Refuses
+// (throws) when the feature has nothing archived.
+export function unarchiveFeature(root, feature) {
+  if (typeof feature !== 'string' || !feature.trim()) {
+    throw new Error('unarchiveFeature: feature is required.');
+  }
+  const archiveDir = cellsArchiveDir(root, feature);
+  let files;
+  try {
+    files = fs.readdirSync(archiveDir);
+  } catch {
+    throw new Error(`unarchiveFeature: no archived cells found for feature "${feature}".`);
+  }
+  const jsonFiles = files.filter((file) => file.endsWith('.json'));
+  if (jsonFiles.length === 0) {
+    throw new Error(`unarchiveFeature: no archived cells found for feature "${feature}".`);
+  }
+  const moved = [];
+  for (const file of jsonFiles) {
+    fs.renameSync(path.join(archiveDir, file), path.join(cellsDir(root), file));
+    moved.push(file.slice(0, -'.json'.length));
+  }
+  try {
+    fs.rmdirSync(archiveDir);
+  } catch {
+    // best-effort: a non-.json leftover (or a concurrent write) keeps the
+    // dir non-empty — the cells themselves are already moved back, which is
+    // the part that matters.
+  }
+  const summary = archivedSummary(root);
+  delete summary[feature];
+  writeJsonAtomic(archiveSummaryFile(root), summary);
+  return moved;
 }
 
 export function writeCell(root, cell) {

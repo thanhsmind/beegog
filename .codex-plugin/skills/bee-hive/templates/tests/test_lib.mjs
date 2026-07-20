@@ -58,6 +58,9 @@ import {
   addCells,
   updateCell,
   readCell,
+  listCells,
+  cellsArchiveDir,
+  resolveCellFile,
   readyCells,
   claimCell,
   recordVerify,
@@ -803,6 +806,166 @@ await check('readyCells excludes cells with uncapped deps', async () => {
   const ids = ready.map((cell) => cell.id);
   assert(ids.includes('demo-1'), 'demo-1 should be ready');
   assert(!ids.includes('demo-2'), 'demo-2 depends on uncapped demo-1');
+});
+
+// ─── cells-archive-1: regression net pinning CURRENT listCells/readCell/ ───
+// readyCells/depsAllCapped behavior over an isolated fixture, GREEN BEFORE any
+// archive-fallback changes land (crit-pattern 20260714: net first). depsAllCapped
+// itself is unexported — exercised indirectly through readyCells, its only caller
+// besides claimCell. Every case below must stay byte-identical once the archive
+// lookup lands (no archive dir exists in these fixtures).
+
+await check('listCells (pre-archive baseline): sorted by id, feature/status filters, tolerant of an unparseable sibling file', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-net-list-'));
+  try {
+    addCell(aRoot, makeCell('arc-b', { feature: 'arc-feat' }));
+    addCell(aRoot, makeCell('arc-a', { feature: 'arc-feat' }));
+    addCell(aRoot, makeCell('arc-c', { feature: 'other-feat' }));
+    // A non-JSON sibling and an unparseable .json sibling must both be skipped
+    // tolerantly, never thrown.
+    fs.writeFileSync(path.join(aRoot, '.bee', 'cells', 'garbage.json'), '{ not json');
+    fs.writeFileSync(path.join(aRoot, '.bee', 'cells', 'notes.txt'), 'not a cell');
+    const all = listCells(aRoot);
+    assert(
+      all.map((c) => c.id).join(',') === 'arc-a,arc-b,arc-c',
+      `sorted by id, unparseable siblings skipped, got ${all.map((c) => c.id).join(',')}`,
+    );
+    const byFeature = listCells(aRoot, { feature: 'arc-feat' });
+    assert(byFeature.map((c) => c.id).join(',') === 'arc-a,arc-b', 'feature filter narrows and stays sorted');
+    const byStatus = listCells(aRoot, { status: 'open' });
+    assert(byStatus.length === 3, 'status filter matches the all-open fixture');
+    assert(listCells(aRoot, { status: 'capped' }).length === 0, 'status filter excludes non-matching cells');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('readCell (pre-archive baseline): returns the cell object for an existing id, null for a missing id', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-net-readcell-'));
+  try {
+    addCell(aRoot, makeCell('arc-rd-1'));
+    const got = readCell(aRoot, 'arc-rd-1');
+    assert(got && got.id === 'arc-rd-1', 'existing cell returned');
+    assert(readCell(aRoot, 'arc-rd-missing') === null, 'missing cell returns null, not a throw');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('readyCells/depsAllCapped (pre-archive baseline): excludes an open cell whose dep is not capped or is missing; includes it once the dep is capped', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-net-ready-'));
+  try {
+    addCell(aRoot, makeCell('arc-dep-base', { feature: 'arc-ready' }));
+    addCell(aRoot, makeCell('arc-dep-child', { feature: 'arc-ready', deps: ['arc-dep-base'] }));
+    addCell(
+      aRoot,
+      makeCell('arc-dep-missing-child', { feature: 'arc-ready', deps: ['arc-dep-nope'] }),
+    );
+    let ready = readyCells(aRoot, 'arc-ready').map((c) => c.id);
+    assert(ready.includes('arc-dep-base'), 'base cell (no deps) is ready');
+    assert(!ready.includes('arc-dep-child'), 'child excluded — its dep is not capped');
+    assert(!ready.includes('arc-dep-missing-child'), 'child with a missing dep excluded too');
+
+    const state = readState(aRoot);
+    state.approved_gates.execution = true;
+    writeState(aRoot, state);
+    claimCell(aRoot, 'arc-dep-base', 'worker-arc');
+    await recordVerify(aRoot, 'arc-dep-base', { command: 'true', output: 'ok', passed: true });
+    await capCell(aRoot, 'arc-dep-base', { files_changed: ['x.txt'], outcome: 'done' });
+
+    ready = readyCells(aRoot, 'arc-ready').map((c) => c.id);
+    assert(ready.includes('arc-dep-child'), 'child now ready — its dep is capped');
+    assert(!ready.includes('arc-dep-missing-child'), 'still excluded — its dep is still missing');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── cells-archive-1: archive-aware lookup (cellsArchiveDir, readCell/────────
+// resolveCellFile fallback, listCells includeArchived) — the actual new
+// behavior, layered on top of the pinned baseline above.
+
+await check('cellsArchiveDir composes .bee/cells/archive/<feature>/, and readCell/resolveCellFile fall back there when the active file is absent', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-net-fallback-'));
+  try {
+    assert(
+      cellsArchiveDir(aRoot, 'shipped-feat') === path.join(aRoot, '.bee', 'cells', 'archive', 'shipped-feat'),
+      'cellsArchiveDir composes the expected path',
+    );
+    // A cell that exists ONLY under the archive tree (simulating a later
+    // archive-move cell), never written to the active .bee/cells/ dir.
+    const archived = makeCell('arc-fb-1', { feature: 'shipped-feat', status: 'capped' });
+    const archiveDir = cellsArchiveDir(aRoot, 'shipped-feat');
+    // recursive:true also creates the .bee/cells/ parent — no active file for
+    // arc-fb-1 exists anywhere under it, only this archived one.
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.writeFileSync(path.join(archiveDir, 'arc-fb-1.json'), JSON.stringify(archived));
+
+    const found = readCell(aRoot, 'arc-fb-1');
+    assert(found && found.id === 'arc-fb-1' && found.status === 'capped', 'readCell falls back to the archive tree once .bee/cells/ exists');
+    assert(readCell(aRoot, 'arc-fb-missing') === null, 'a truly nonexistent id (active nor archived) still returns null');
+
+    const resolved = resolveCellFile(aRoot, 'arc-fb-1');
+    assert(resolved === path.join(archiveDir, 'arc-fb-1.json'), 'resolveCellFile names the REAL archive path for an archived-only cell');
+    assert(resolveCellFile(aRoot, 'arc-fb-missing') === null, 'resolveCellFile returns null for a cell in neither tree');
+
+    // cellFile's own meaning (the active path) is unchanged — adding the
+    // active-side cell now must make readCell/resolveCellFile prefer it.
+    addCell(aRoot, makeCell('arc-fb-2', { feature: 'shipped-feat' }));
+    assert(resolveCellFile(aRoot, 'arc-fb-2') === path.join(aRoot, '.bee', 'cells', 'arc-fb-2.json'), 'resolveCellFile prefers the active file when present');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('readCell fallback is byte-identical to today when no archive dir exists at all (no throw, missing stays null)', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-net-none-'));
+  try {
+    addCell(aRoot, makeCell('arc-noarc-1'));
+    assert(readCell(aRoot, 'arc-noarc-1') !== null, 'active cell still resolves with no archive dir present');
+    assert(readCell(aRoot, 'arc-noarc-missing') === null, 'missing cell returns null, not a throw, with no archive dir present');
+    assert(resolveCellFile(aRoot, 'arc-noarc-missing') === null, 'resolveCellFile also returns null, never throws, with no archive dir present');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('listCells default scans ONLY the active .bee/cells/ dir (skips archive/), includeArchived:true folds in archived cells too, same sorted shape', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-net-listarchived-'));
+  try {
+    addCell(aRoot, makeCell('arc-lst-b', { feature: 'arc-lst-feat' }));
+    addCell(aRoot, makeCell('arc-lst-d', { feature: 'arc-lst-feat' }));
+    const archiveDir = cellsArchiveDir(aRoot, 'arc-lst-feat');
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(archiveDir, 'arc-lst-a.json'),
+      JSON.stringify(makeCell('arc-lst-a', { feature: 'arc-lst-feat', status: 'capped' })),
+    );
+    fs.writeFileSync(
+      path.join(archiveDir, 'arc-lst-c.json'),
+      JSON.stringify(makeCell('arc-lst-c', { feature: 'arc-lst-feat', status: 'capped' })),
+    );
+
+    const activeOnly = listCells(aRoot, { feature: 'arc-lst-feat' });
+    assert(
+      activeOnly.map((c) => c.id).join(',') === 'arc-lst-b,arc-lst-d',
+      `default listCells must skip archive/ entirely, got ${activeOnly.map((c) => c.id).join(',')}`,
+    );
+
+    const withArchived = listCells(aRoot, { feature: 'arc-lst-feat', includeArchived: true });
+    assert(
+      withArchived.map((c) => c.id).join(',') === 'arc-lst-a,arc-lst-b,arc-lst-c,arc-lst-d',
+      `includeArchived:true folds in archived cells, same sorted-by-id shape, got ${withArchived.map((c) => c.id).join(',')}`,
+    );
+
+    const archivedCappedOnly = listCells(aRoot, { feature: 'arc-lst-feat', includeArchived: true, status: 'capped' });
+    assert(
+      archivedCappedOnly.map((c) => c.id).join(',') === 'arc-lst-a,arc-lst-c',
+      'status filter applies to archived cells too',
+    );
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
 });
 
 await check('claimCell refuses a cell with uncapped deps even after gate approval', async () => {

@@ -14,7 +14,7 @@
 //
 // Usage:
 //   bee status [--json]
-//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|judge-record|schedule> ... [--json]
+//   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|judge-record|schedule|archive|unarchive> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
 //   bee decisions <log|supersede|redact|active|search> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
@@ -99,6 +99,9 @@ import {
   parseVerificationEvidence,
   evidenceRidesExceptionDoor,
   recordJudgeVerdict,
+  archiveFeature,
+  unarchiveFeature,
+  archivedTotals,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
 // D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
@@ -388,6 +391,12 @@ function buildStatus(root) {
   for (const cell of cells) {
     if (counts[cell.status] !== undefined) counts[cell.status] += 1;
   }
+  // cells-archive-2: sourced from the archive summary ledger (archivedSummary
+  // via archivedTotals), NEVER a directory scan of .bee/cells/archive/ — that
+  // scan is exactly the hot-path cost archiving exists to avoid. The active
+  // counts above stay untouched (still one fast readdir of .bee/cells/), so
+  // `capped + archived.capped` is the honest grand total across both stores.
+  const archived = archivedTotals(root);
   const allReservations = listReservations(root);
   const active = listReservations(root, { activeOnly: true });
   const expiredUnreleased = allReservations.filter(
@@ -491,7 +500,7 @@ function buildStatus(root) {
     tier_mix: tierMix(root, { feature: state.feature || null }),
     ceiling_scarcity: ceilingScarcityWarning(root),
     handoff,
-    cells: counts,
+    cells: { ...counts, archived },
     lanes: buildLaneRows(root),
     review,
     recovery,
@@ -536,7 +545,7 @@ function renderStatusText(status) {
       ? [bypassBanner(status.gate_bypass_level)]
       : []),
     `Handoff: ${status.handoff ? 'PRESENT — surface it and WAIT' : 'none'}`,
-    `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked}`,
+    `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked} archived=${status.cells.archived.total} (total capped=${status.cells.capped + status.cells.archived.capped})`,
     // Lanes (fsh-6, D4): additive — zero lanes on disk renders no line at
     // all, keeping every zero-lane text render byte-identical to today.
     ...(status.lanes && status.lanes.length > 0
@@ -931,6 +940,35 @@ function handleCellsUnclaim(root, flags) {
 function handleCellsReopen(root, flags) {
   const cell = reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Reopened ${cell.id} — back to open.` };
+}
+
+// cells-archive-2: moves a fully-terminal feature's cells out of the hot
+// .bee/cells/ scan path into .bee/cells/archive/<feature>/. The active-
+// feature guard lives HERE (not in archiveFeature itself, which has no
+// access to state.json) — archiving the feature currently in flight would
+// hide its own cells from readyCells/claim-next mid-swarm.
+function handleCellsArchive(root, flags) {
+  const feature = requireFlag(flags, 'feature');
+  const state = readState(root);
+  if (state.feature && state.feature === feature) {
+    throw new Error(
+      `cells archive: feature "${feature}" is the active feature (state.feature) — only a closed/inactive feature can be archived. Switch or clear state.feature first, or archive a different feature.`,
+    );
+  }
+  const result = archiveFeature(root, feature);
+  return {
+    result,
+    text: `Archived feature "${result.feature}": ${result.moved.length} cell(s) moved (capped=${result.counts.capped} dropped=${result.counts.dropped}).`,
+  };
+}
+
+function handleCellsUnarchive(root, flags) {
+  const feature = requireFlag(flags, 'feature');
+  const moved = unarchiveFeature(root, feature);
+  return {
+    result: { feature, moved },
+    text: `Unarchived feature "${feature}": ${moved.length} cell(s) restored to .bee/cells/.`,
+  };
 }
 
 function handleCellsTier(root, flags) {
@@ -3820,7 +3858,7 @@ function recoveryUsageFallback(leading) {
 // directly and parses this exact stderr line.
 function cellsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, reset-budget, judge-record, schedule.`;
+  return `Unknown command "${verb || '(missing)'}". Use: list, ready, show, add, update, claim, verify, cap, block, drop, unclaim, reopen, tier, judge, claim-next, reset-budget, judge-record, schedule, archive, unarchive.`;
 }
 
 function reservationsUsageFallback(leading) {
@@ -3869,6 +3907,8 @@ const HANDLERS = {
   'cells.reset-budget': handleCellsResetBudget,
   'cells.judge-record': handleCellsJudgeRecord,
   'cells.schedule': handleCellsSchedule,
+  'cells.archive': handleCellsArchive,
+  'cells.unarchive': handleCellsUnarchive,
   'reservations.reserve': handleReservationsReserve,
   'reservations.release': handleReservationsRelease,
   'reservations.list': handleReservationsList,
