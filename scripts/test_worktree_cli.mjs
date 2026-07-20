@@ -798,7 +798,11 @@ try {
   {
     let caught = null;
     try {
-      mergeFeatureWorktree(ownCreated.worktreeRoot, { id: ownCreated.id });
+      // xwh-2: mergeFeatureWorktree is now async (its --cleanup path awaits
+      // releaseAllForHolder) — every early, zero-mutation refusal (this one
+      // included) now rejects instead of throwing synchronously, so this
+      // needs an await in front of it to still land in the catch below.
+      await mergeFeatureWorktree(ownCreated.worktreeRoot, { id: ownCreated.id });
     } catch (error) {
       caught = error;
     }

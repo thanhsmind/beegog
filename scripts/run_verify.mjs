@@ -62,6 +62,7 @@ export const SUITES = [
   ["scripts/test_worktree_store.mjs"],
   ["scripts/test_worktree_grant_resolve.mjs"],
   ["scripts/test_worktree_cli.mjs"],
+  ["scripts/test_worktree_holds.mjs"],
   ["scripts/test_config_validate.mjs"],
   ["scripts/test_dispatch_prepare.mjs"],
   ["scripts/test_native_probe.mjs"],

@@ -104,6 +104,11 @@ import {
   archivedTotals,
 } from './lib/cells.mjs';
 import { reserve, release, listReservations, sweepExpired } from './lib/reservations.mjs';
+// xwh-2: wires the cross-worktree holds ledger (xwh-1, worktree-holds.mjs)
+// into the reservation seam below (handleReservationsReserve/Release/Sweep/
+// List) — see resolveHoldTopology's own comment for the holder/mainRoot
+// resolution this relies on.
+import { mirrorHold, findForeignHolds, releaseHolds, sweepExpiredHolds } from './lib/worktree-holds.mjs';
 // D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
 // each wrap their read-check-write body in this lock (startFeature already
 // wraps its own body inside lib/state.mjs); CLI verbs WAIT normally, so no
@@ -1111,10 +1116,39 @@ async function handleReservationsReserve(root, flags) {
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
   }
+  const requestedPath = requireFlag(flags, 'path');
+
+  // xwh-2: BEFORE the local reserve, check the shared cross-worktree ledger
+  // for a hold on this path owned by a DIFFERENT checkout — a typed refusal,
+  // not a crash, and it fires before any local reservation row is written
+  // (topology === null, e.g. an ungranted linked worktree or a repo with no
+  // worktrees at all, skips this entirely: byte-identical to today).
+  const topology = resolveHoldTopology(root);
+  if (topology) {
+    const foreignHolds = findForeignHolds(topology.mainRoot, topology.holder, [requestedPath]);
+    if (foreignHolds.length > 0) {
+      const hold = foreignHolds[0];
+      const result = {
+        ok: false,
+        code: 'FOREIGN_HOLD',
+        holder: hold.holder,
+        feature: hold.feature,
+        cell: hold.cell,
+        path: hold.path,
+        expires: holdForeignExpiry(hold),
+      };
+      const text =
+        `bee cross-worktree hold: "${hold.path}" is held by checkout "${hold.holder}" ` +
+        `(feature ${hold.feature || 'unknown'}, cell ${hold.cell || 'unknown'}), ${holdForeignExpiry(hold)}. ` +
+        'Wait for the hold to expire or coordinate with that checkout — a cross-worktree hold is a hard block.';
+      return { result, text, exitCode: 1 };
+    }
+  }
+
   const result = await reserve(root, {
     agent: requireFlag(flags, 'agent'),
     cell: requireFlag(flags, 'cell'),
-    path: requireFlag(flags, 'path'),
+    path: requestedPath,
     ...(ttl !== undefined ? { ttl } : {}),
     ...(flags.session ? { session: String(flags.session) } : {}),
   });
@@ -1124,33 +1158,98 @@ async function handleReservationsReserve(root, flags) {
         'Reservation CONFLICT — return [BLOCKED] to the orchestrator:',
         ...result.conflicts.map((c) => `- ${c.agent} holds "${c.path}" (cell ${c.cell})`),
       ].join('\n');
+
+  // xwh-2: mirror the SAME successful reservation into the shared ledger so
+  // a different checkout can see it as a foreign hold, per the same
+  // topology check above. Runs AFTER the local reserve succeeds, never
+  // before — a conflict inside THIS store must never leave a mirrored row
+  // behind for a reservation that was never actually granted.
+  if (result.ok && topology) {
+    await mirrorHold(topology.mainRoot, {
+      path: result.reservation.path,
+      holder: topology.holder,
+      session: result.reservation.session || null,
+      cell: result.reservation.cell,
+      ttl: result.reservation.ttl_seconds,
+    });
+  }
+
   return { result, text, exitCode: result.ok ? 0 : 1 };
 }
 
 async function handleReservationsRelease(root, flags) {
+  const cell = flags.cell ? String(flags.cell) : null;
   const result = await release(root, {
     agent: requireFlag(flags, 'agent'),
-    cell: flags.cell ? String(flags.cell) : null,
+    cell,
   });
-  return { result, text: `Released ${result.released} reservation(s).` };
+
+  // xwh-2: also clear this checkout's mirrored entries in the shared ledger
+  // — same topology as the reserve side, so a release never leaves a stale
+  // mirrored hold behind for a checkout that only ever mirrored via reserve.
+  const topology = resolveHoldTopology(root);
+  let holdsReleased = 0;
+  if (topology) {
+    const holdsResult = await releaseHolds(topology.mainRoot, { holder: topology.holder, cell });
+    holdsReleased = holdsResult.released;
+  }
+
+  return {
+    result: { ...result, holds_released: holdsReleased },
+    text: `Released ${result.released} reservation(s)${holdsReleased ? ` and ${holdsReleased} cross-worktree hold(s)` : ''}.`,
+  };
 }
 
 function handleReservationsList(root, flags) {
   const reservations = listReservations(root, { activeOnly: flags['active-only'] === true });
-  const text = reservations.length
-    ? reservations
-        .map(
-          (r) =>
-            `${r.agent} | cell ${r.cell} | ${r.path} | reserved ${r.reserved_at} | ${r.released_at ? `released ${r.released_at}` : 'active/expired by TTL'}`,
-        )
-        .join('\n')
-    : 'No reservations.';
-  return { result: { reservations }, text };
+
+  // xwh-2: also surface active cross-worktree ledger entries. Reuses
+  // findForeignHolds (worktree-holds.mjs's only read query) with a synthetic
+  // acting holder that can never match a real one and a bare '*' path
+  // (pathsOverlap's own documented "bare '*' covers everything" rule) rather
+  // than adding a second, near-duplicate "list all" export to that module —
+  // this cell's file list does not include worktree-holds.mjs. A missing/no
+  // ledger reads as an empty list, same fail-open posture as reservations.
+  const mainRoot = resolveMainRoot(root);
+  const crossWorktree = findForeignHolds(mainRoot, LIST_ALL_HOLDS_SENTINEL, ['*']);
+
+  const lines = [];
+  lines.push(
+    reservations.length
+      ? reservations
+          .map(
+            (r) =>
+              `${r.agent} | cell ${r.cell} | ${r.path} | reserved ${r.reserved_at} | ${r.released_at ? `released ${r.released_at}` : 'active/expired by TTL'}`,
+          )
+          .join('\n')
+      : 'No reservations.',
+  );
+  if (crossWorktree.length) {
+    lines.push('cross_worktree:');
+    lines.push(
+      ...crossWorktree.map(
+        (h) => `${h.holder} | cell ${h.cell || 'unknown'} | ${h.path} | mirrored ${h.mirrored_at} | ${holdForeignExpiry(h)}`,
+      ),
+    );
+  }
+  return { result: { reservations, cross_worktree: crossWorktree }, text: lines.join('\n') };
 }
 
 async function handleReservationsSweep(root) {
   const released = await sweepExpired(root);
-  return { result: { released }, text: `Swept ${released} expired reservation(s).` };
+
+  // xwh-2: also prune TTL-expired entries in the shared cross-worktree
+  // ledger — sweepExpiredHolds resolves its own empty/missing ledger, so
+  // this is safe to call unconditionally (no topology gate needed: sweeping
+  // an empty or absent ledger is a no-op, mirroring sweepExpired's own
+  // posture for reservations.json).
+  const mainRoot = resolveMainRoot(root);
+  const holdsReleased = await sweepExpiredHolds(mainRoot);
+
+  return {
+    result: { released, holds_released: holdsReleased },
+    text: `Swept ${released} expired reservation(s) and ${holdsReleased} expired cross-worktree hold(s).`,
+  };
 }
 
 function handleDecisionsLog(root, flags) {
@@ -2473,6 +2572,59 @@ function resolveMainRoot(root) {
   return root;
 }
 
+// xwh-2: a synthetic "acting holder" for findForeignHolds' list-all reuse in
+// handleReservationsList — control-char-wrapped so it can never collide with
+// a real holder value (either the literal string 'main' or a git-verified
+// worktree id, itself always a plain directory basename): findForeignHolds
+// only ever excludes entries whose `holder` equals this string, and nothing
+// ever mirrors a hold under it.
+const LIST_ALL_HOLDS_SENTINEL = '\u0000bee-reservations-list-all\u0000';
+
+// xwh-2: resolves the cross-worktree HOLD topology for a reservation call —
+// distinct from resolveMainRoot above (which only ever answers "where is the
+// main store"). Returns `{ mainRoot, holder }` for the two topologies the
+// cell's action names as hold-worthy:
+//   - an ORDINARY checkout: holder = 'main', mainRoot = the checkout itself.
+//   - a GRANTED linked worktree (its own storeRoot === its own worktreeRoot,
+//     i.e. resolveRoots did NOT fall back to main): holder = its
+//     git-verified id, mainRoot = resolveRoots' own `mainRoot`.
+// Returns `null` for every other case — an UNGRANTED linked worktree
+// (storeRoot === mainRoot: `root` here already IS the shared main store, so
+// mirroring it again under a synthetic identity would just be a duplicate
+// entry for a reservation the shared store already carries directly) and an
+// unresolvable/invalid checkout (resolveRoots threw) both fall through to
+// `null`, which callers treat as "skip the cross-worktree wiring entirely,
+// exactly like before this cell" — never a refusal on its own.
+function resolveHoldTopology(root) {
+  let resolution;
+  try {
+    resolution = resolveRoots(process.cwd());
+  } catch {
+    return null;
+  }
+  if (resolution.worktreeResolution === 'ordinary') {
+    return { mainRoot: resolution.workRoot || root, holder: 'main' };
+  }
+  if (resolution.worktreeResolution === 'linked-valid' && resolution.mainRoot && resolution.id) {
+    const granted = resolution.storeRoot && resolution.worktreeRoot && path.resolve(resolution.storeRoot) === path.resolve(resolution.worktreeRoot);
+    if (granted) {
+      return { mainRoot: resolution.mainRoot, holder: resolution.id };
+    }
+  }
+  return null;
+}
+
+/** Same expiry-string convention as guards.mjs's private `holdExpiry`
+ * (reservations), rebased on a ledger hold's `mirrored_at`/`ttl_seconds`
+ * fields instead of a reservation's `reserved_at`/`ttl_seconds` — kept as its
+ * own tiny helper rather than importing guards.mjs's unexported one. */
+function holdForeignExpiry(hold) {
+  const mirroredMs = Date.parse(hold?.mirrored_at);
+  const ttl = hold?.ttl_seconds;
+  if (!Number.isFinite(mirroredMs) || !Number.isFinite(ttl) || ttl <= 0) return 'no expiry';
+  return `expires ${new Date(mirroredMs + ttl * 1000).toISOString()}`;
+}
+
 function handleWorktreeRegister(_root, flags) {
   const feature = requireFlag(flags, 'feature');
   let resolution;
@@ -2560,7 +2712,7 @@ function handleWorktreeNew(_root, flags) {
 // verifyCommand is resolved HERE (readConfig(mainRoot).commands.verify) and
 // passed down as a plain option, per worktree-store.mjs's zero-deps-beyond-
 // node-builtins module contract (see mergeFeatureWorktree's header comment).
-function handleWorktreeMerge(_root, flags) {
+async function handleWorktreeMerge(_root, flags) {
   const id = requireFlag(flags, 'id');
   const cleanup = flags.cleanup === true;
   let resolution;
@@ -2578,7 +2730,10 @@ function handleWorktreeMerge(_root, flags) {
   }
   const mainRoot = resolution.workRoot;
   const verifyCommand = readConfig(mainRoot).commands.verify || undefined;
-  const mergeResultValue = mergeFeatureWorktree(mainRoot, { id, cleanup, verifyCommand });
+  // xwh-2: mergeFeatureWorktree is now async (its --cleanup path awaits
+  // releaseAllForHolder) — the dispatcher already does `await handler(...)`
+  // for every command, so this only needed the local await.
+  const mergeResultValue = await mergeFeatureWorktree(mainRoot, { id, cleanup, verifyCommand });
 
   const lines = [];
   if (mergeResultValue.ok && mergeResultValue.code === 'ALREADY_UP_TO_DATE') {

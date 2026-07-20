@@ -13,11 +13,17 @@
 //   const grants = readGrants(path.join(mainRoot, '.bee'));
 //   const decision = decideWorktreeStore(classification, { grants });
 //
-// Zero deps beyond node: built-ins. Node 18+.
+// Zero deps beyond node: built-ins, EXCEPT `releaseAllForHolder` (xwh-2,
+// imported below from worktree-holds.mjs) — the one intentional exception,
+// wired into performCleanup below so a removed worktree's mirrored
+// cross-worktree holds are released alongside its grant. No cycle:
+// worktree-holds.mjs only imports fsutil.mjs/lock.mjs/reservations.mjs, none
+// of which import this module. Node 18+.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { releaseAllForHolder } from './worktree-holds.mjs';
 
 // ---------------------------------------------------------------------------
 // readGrants — load the MAIN store's grant registry.
@@ -725,8 +731,18 @@ function resolveWorktreeById(mainRoot, id) {
  * list` pointing at a directory that no longer exists (best-effort: a grant
  * removal failure does not turn an otherwise-successful cleanup into a
  * failure, since the worktree and branch are already gone by that point).
+ *
+ * xwh-2: ALSO releases every mirrored cross-worktree hold for this id
+ * (releaseAllForHolder, best-effort, same try/catch posture as the
+ * removeGrant call right above it) — a removed worktree must never leave a
+ * stale entry in the shared ledger claiming a since-gone checkout still
+ * holds a path. `releaseAllForHolder` is async (withStoreLock-backed), which
+ * is why this function — and its two callers, `attachCleanupOutcome` and
+ * `mergeFeatureWorktree` itself — are async now (xwh-2): a CLI process must
+ * not exit before this write actually lands, so it has to be awaited, not
+ * fired-and-forgotten.
  */
-function performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped = false }) {
+async function performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped = false }) {
   let status;
   try {
     status = gitStatusPorcelain(worktreeRoot);
@@ -767,6 +783,14 @@ function performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped = fa
     // best-effort — the worktree and branch are already gone either way.
   }
 
+  try {
+    await releaseAllForHolder(mainRoot, id);
+  } catch {
+    // best-effort — same posture as the removeGrant call above: a ledger
+    // release failure does not turn an otherwise-successful cleanup into a
+    // failure, since the worktree and branch are already gone either way.
+  }
+
   const outcome = { ok: true, removed: true, branch_deleted: true };
   if (verifySkipped) {
     // D8 only names "verify green" for the unconditional --cleanup trigger;
@@ -786,12 +810,12 @@ function performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped = fa
  * earlier in `mergeFeatureWorktree` and never call this). Without the flag,
  * attaches the suggested command instead of running anything (decision D8b:
  * "never prompt" — the suggestion is informational, not a question). */
-function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify }) {
+async function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify }) {
   if (!cleanup) {
     result.cleanup_suggested_command = `bee worktree merge --id ${id} --cleanup --json`;
     return;
   }
-  result.cleanup = performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped: verify === 'skipped' });
+  result.cleanup = await performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped: verify === 'skipped' });
 }
 
 /**
@@ -864,8 +888,18 @@ function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, clea
  * `.git` is a file, never a directory, so `isOrdinaryCheckout(mainRoot)` is
  * already false); there is deliberately no second, distinct code for this
  * (decision D8 / advisor R5 belt-and-braces framing, not a separate rule).
+ *
+ * xwh-2: this function is now `async` (previously fully synchronous) purely
+ * because `--cleanup`'s path awaits `attachCleanupOutcome` -> `performCleanup`
+ * -> `releaseAllForHolder`, which is itself async (withStoreLock-backed) —
+ * every early, zero-mutation `WorktreeMergeError` throw above (unknown id,
+ * not-ordinary caller, dirty tree, detached HEAD, branch mismatch) still
+ * throws exactly as before, just as a REJECTED PROMISE now instead of a
+ * synchronous throw, since the whole function body runs inside the implicit
+ * async wrapper — callers must `await`/`.catch()` it, not wrap it in a bare
+ * synchronous `try { } catch { }`.
  */
-export function mergeFeatureWorktree(mainRoot, options = {}) {
+export async function mergeFeatureWorktree(mainRoot, options = {}) {
   const { id, cleanup = false, verifyCommand } = options;
 
   if (typeof id !== 'string' || !id) {
@@ -1034,7 +1068,7 @@ export function mergeFeatureWorktree(mainRoot, options = {}) {
       };
     }
 
-    attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify: result.verify });
+    await attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify: result.verify });
     return result;
   } finally {
     if (!committed && fs.existsSync(mergeHeadFile)) {
