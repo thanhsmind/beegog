@@ -387,6 +387,37 @@ function readRawConfigForValidation(root) {
   return fs.existsSync(file) ? readJson(file, null) : undefined;
 }
 
+// GH #30: `root` here is main()'s already-resolved storeRoot, which for an
+// UNGRANTED linked worktree already fell back to the main store (P40
+// default, resolveRoots' own comment at its definition) — so a plain read of
+// `root` cannot tell "ordinary checkout" apart from "ungranted linked
+// worktree quietly sharing main's store". Re-resolving process.cwd() here
+// (same pattern as resolveMainRoot/resolveHoldTopology below) recovers the
+// worktree identity resolveRoots already computed once inside main()'s own
+// findRepoRoot call. Messaging only — this NEVER changes storeRoot selection
+// or grant semantics, it only decides whether to print a notice about the
+// selection main() already made.
+function ungrantedWorktreeNotice(root) {
+  let resolution;
+  try {
+    resolution = resolveRoots(process.cwd());
+  } catch {
+    return null;
+  }
+  if (resolution.worktreeResolution !== 'linked-valid' || !resolution.storeRoot || !resolution.mainRoot) {
+    return null;
+  }
+  const ungranted = path.resolve(resolution.storeRoot) === path.resolve(resolution.mainRoot);
+  if (!ungranted) return null;
+  return (
+    `⚠ This linked worktree is UNGRANTED — it SHARES the main checkout's store ` +
+    `(same feature/phase/claims; no isolation). To work an isolated feature: run ` +
+    `"bee worktree new --feature <slug>" from the main checkout. To grant isolation ` +
+    `to THIS existing worktree instead: run "bee worktree register --feature <slug>" ` +
+    `from inside it.`
+  );
+}
+
 function buildStatus(root) {
   const state = readState(root);
   const onboardingRaw = readOnboarding(root);
@@ -484,6 +515,7 @@ function buildStatus(root) {
   const sourceId = repoHive
     ? classifySource({ hiveDir: repoHive, homeDir: os.homedir() })
     : { kind: 'unknown', root: null };
+  const worktreeNotice = ungrantedWorktreeNotice(root);
   return {
     onboarding: {
       installed: Boolean(onboardingRaw),
@@ -529,6 +561,11 @@ function buildStatus(root) {
     })),
     staleness_warnings: staleness,
     recommended_next: recommended,
+    // GH #30 (messaging only, wux-1): omitted entirely (not even `null`) for
+    // an ordinary checkout or a GRANTED linked worktree — those two cases
+    // must stay byte-identical to pre-cell output; the field only appears at
+    // all when the current checkout is an ungranted linked worktree.
+    ...(worktreeNotice ? { worktree_notice: worktreeNotice } : {}),
   };
 }
 
@@ -542,6 +579,11 @@ function formatSlot(value) {
 
 function renderStatusText(status) {
   const lines = [
+    // GH #30 (wux-1): prepended ONLY when buildStatus set the field (ungranted
+    // linked worktree) — an ordinary checkout or a granted linked worktree has
+    // no `worktree_notice` key at all, so this line is simply absent and every
+    // line below stays byte-identical to pre-cell output.
+    ...(status.worktree_notice ? [status.worktree_notice] : []),
     `bee status (plugin v${BEE_VERSION})`,
     `Onboarding: ${status.onboarding.installed ? `installed (bee ${status.onboarding.bee_version})` : 'MISSING'}${status.onboarding.drift ? ` [drift${status.onboarding.drift_detail ? `: ${status.onboarding.drift_detail.length} file(s)` : ''}]` : ''}`,
     `Phase: ${status.phase} | Mode: ${status.mode ?? 'none'} | Feature: ${status.feature ?? 'none'}`,
@@ -2708,12 +2750,18 @@ function handleWorktreeNew(_root, flags) {
   }
   const mainRoot = resolution.workRoot;
   const created = createFeatureWorktree(mainRoot, { feature, baseRef });
+  // GH #31 (wux-1, messaging only): the explicit session-boundary next-step —
+  // this session (in mainRoot) never cd's into the new worktree itself, so
+  // the success output has to say so plainly: open a NEW session there, and
+  // name the merge-back command up front so it isn't rediscovered later.
+  const nextStep = `Open a new session with cwd=${created.worktreeRoot} to work the "${feature}" feature there — this session stays on main. Merge back later with "bee worktree merge --id ${created.id}".`;
   const result = {
     id: created.id,
     worktreeRoot: created.worktreeRoot,
     branch: created.branch,
     baseRef: created.baseRef,
     baseRefSha: created.baseRefSha,
+    next_step: nextStep,
   };
   const text = [
     `Created worktree for feature "${feature}": ${created.worktreeRoot}`,
@@ -2723,7 +2771,7 @@ function handleWorktreeNew(_root, flags) {
     created.bootstrap.created
       ? `  bootstrapped ${created.bootstrap.worktreeStoreRoot} (phase idle, gates unapproved).`
       : `  worktree .bee/state.json already existed — left untouched (${created.bootstrap.reason}).`,
-    `Open your next session in ${created.worktreeRoot} to work this feature.`,
+    nextStep,
   ].join('\n');
   return { result, text };
 }

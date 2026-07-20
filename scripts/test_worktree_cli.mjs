@@ -239,6 +239,84 @@ try {
     record('explicit --id unregister removed the grant', ok, JSON.stringify(grants));
   }
 
+  // ── GH #30 (wux-1): `bee status` inside an UNGRANTED linked worktree
+  // (resolveRoots reports 'linked-valid' with storeRoot falling back to
+  // mainRoot — exactly `wt`'s state right now, confirmed above) prints a loud
+  // shares-main-store notice, in BOTH text and --json (`worktree_notice`
+  // field). An ORDINARY checkout (main) and a GRANTED linked worktree must
+  // show NO such notice at all — byte-identical to pre-cell output. ────────
+  {
+    const ordinaryStatusResult = bee(main, ['status', '--json']);
+    let ordinaryStatusJson = null;
+    try {
+      ordinaryStatusJson = JSON.parse(ordinaryStatusResult.stdout);
+    } catch {
+      /* checked below */
+    }
+    const ok = ordinaryStatusResult.status === 0 && ordinaryStatusJson && !('worktree_notice' in ordinaryStatusJson);
+    record('bee status --json from the ordinary (main) checkout has NO worktree_notice field', ok, ordinaryStatusResult.stdout);
+
+    const ordinaryStatusText = bee(main, ['status']);
+    const textOk = ordinaryStatusText.status === 0 && !/UNGRANTED/.test(ordinaryStatusText.stdout);
+    record('bee status text from the ordinary (main) checkout has NO ungranted-worktree notice', textOk, ordinaryStatusText.stdout);
+  }
+  {
+    const ungrantedStatusResult = bee(wt, ['status', '--json']);
+    let ungrantedStatusJson = null;
+    try {
+      ungrantedStatusJson = JSON.parse(ungrantedStatusResult.stdout);
+    } catch {
+      /* checked below */
+    }
+    const ok =
+      ungrantedStatusResult.status === 0 &&
+      ungrantedStatusJson &&
+      typeof ungrantedStatusJson.worktree_notice === 'string' &&
+      /UNGRANTED/.test(ungrantedStatusJson.worktree_notice) &&
+      /SHARES the main checkout's store/.test(ungrantedStatusJson.worktree_notice) &&
+      /bee worktree new --feature/.test(ungrantedStatusJson.worktree_notice) &&
+      /bee worktree register/.test(ungrantedStatusJson.worktree_notice);
+    record(
+      'bee status --json from an UNGRANTED linked worktree carries worktree_notice naming both remedies',
+      ok,
+      ungrantedStatusResult.stdout,
+    );
+
+    const ungrantedStatusText = bee(wt, ['status']);
+    const textOk =
+      ungrantedStatusText.status === 0 &&
+      /UNGRANTED/.test(ungrantedStatusText.stdout) &&
+      /SHARES the main checkout's store/.test(ungrantedStatusText.stdout) &&
+      /bee worktree new --feature/.test(ungrantedStatusText.stdout) &&
+      /bee worktree register/.test(ungrantedStatusText.stdout);
+    record('bee status text from an UNGRANTED linked worktree prints the same notice', textOk, ungrantedStatusText.stdout);
+  }
+  {
+    // grant `wt` so the SAME worktree, now granted, proves the notice is
+    // grant-state-driven, not path-driven — then restore ungranted (matches
+    // the invariant already established above, for whatever runs next).
+    const grantResult = bee(wt, ['worktree', 'register', '--feature', 'wux-status-check', '--json']);
+    const grantOk = grantResult.status === 0;
+    record('(setup) re-registering wt to prove the granted case exits 0', grantOk, `status=${grantResult.status} stderr=${grantResult.stderr}`);
+
+    const grantedStatusResult = bee(wt, ['status', '--json']);
+    let grantedStatusJson = null;
+    try {
+      grantedStatusJson = JSON.parse(grantedStatusResult.stdout);
+    } catch {
+      /* checked below */
+    }
+    const ok = grantedStatusResult.status === 0 && grantedStatusJson && !('worktree_notice' in grantedStatusJson);
+    record('bee status --json from a GRANTED linked worktree has NO worktree_notice field', ok, grantedStatusResult.stdout);
+
+    const grantedStatusText = bee(wt, ['status']);
+    const textOk = grantedStatusText.status === 0 && !/UNGRANTED/.test(grantedStatusText.stdout);
+    record('bee status text from a GRANTED linked worktree has NO ungranted-worktree notice', textOk, grantedStatusText.stdout);
+
+    const unregisterBackResult = bee(main, ['worktree', 'unregister', '--id', id, '--json']);
+    record('(teardown) unregistering wt back to ungranted exits 0', unregisterBackResult.status === 0, `status=${unregisterBackResult.status} stderr=${unregisterBackResult.stderr}`);
+  }
+
   // ── worktree new: create + register in one move (wsr-1, GH #21) ──────────
   const newFeature = 'wsr-new-demo';
   const newSibling = path.join(tmp, `${path.basename(main)}--wt--${newFeature}`);
@@ -260,6 +338,32 @@ try {
     const ok = newJson && typeof newJson.id === 'string' && newJson.worktreeRoot && newJson.branch === newBranch;
     newId = newJson && newJson.id;
     record('worktree new --json reports id, worktreeRoot, and branch "wt/<feature>"', ok, newResult.stdout);
+  }
+  // ── GH #31 (wux-1): success output names the explicit next step — open a
+  // NEW session cwd'd into the created worktree; this session stays on main;
+  // merge back later with the exact "bee worktree merge --id <id>" command.
+  // Both the --json `next_step` field and the text output carry it. ────────
+  {
+    const ok =
+      newJson &&
+      typeof newJson.next_step === 'string' &&
+      newJson.next_step.includes(newJson.worktreeRoot) &&
+      /open a new session/i.test(newJson.next_step) &&
+      /stays on main/.test(newJson.next_step) &&
+      newJson.next_step.includes(`bee worktree merge --id ${newJson.id}`);
+    record('worktree new --json reports a next_step naming the worktree path and the merge-back command', ok, newResult.stdout);
+  }
+  {
+    const newTextFeature = `${newFeature}-text`;
+    const newTextSibling = path.join(tmp, `${path.basename(main)}--wt--${newTextFeature}`);
+    const newTextResult = bee(main, ['worktree', 'new', '--feature', newTextFeature]);
+    const textOk =
+      newTextResult.status === 0 &&
+      newTextResult.stdout.includes(newTextSibling) &&
+      /open a new session/i.test(newTextResult.stdout) &&
+      /stays on main/.test(newTextResult.stdout) &&
+      /bee worktree merge --id /.test(newTextResult.stdout);
+    record('worktree new text output names the next step (open a session, stays on main, merge-back command)', textOk, newTextResult.stdout);
   }
   {
     const ok = fs.existsSync(newSibling);
