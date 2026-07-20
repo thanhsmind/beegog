@@ -110,7 +110,7 @@ try {
     # sparse-checkout needs git 2.25+; on older git it exits non-zero and the checkout
     # below is simply a full one (which may still trip over an invalid path; the probe
     # is what turns that into an honest error instead of a silent empty source).
-    git -C $clonePath sparse-checkout set skills .claude-plugin docs/history/codex-harness-hardening
+    git -C $clonePath sparse-checkout set skills .claude-plugin .codex-plugin docs/history/codex-harness-hardening
     git -C $clonePath checkout --quiet HEAD
 
     $beeSrc = $clonePath
@@ -205,7 +205,10 @@ try {
             & codex plugin add 'bee@bee' | Out-Null
             if ($LASTEXITCODE -ne 0) { Fail 'Codex bee plugin install failed' }
           } else {
-            & codex plugin remove 'bee@bee' | Out-Null
+            $codexProbe = & codex plugin list --json
+            if ($LASTEXITCODE -eq 0 -and ($codexProbe -join '') -match 'bee@bee') {
+              & codex plugin remove 'bee@bee' | Out-Null
+            }
           }
         }
         $codexList = & codex plugin list --json
@@ -224,7 +227,10 @@ try {
             & claude plugin install 'bee@bee' | Out-Null
             if ($LASTEXITCODE -ne 0) { Fail 'Claude bee plugin install failed' }
           } else {
-            & claude plugin uninstall 'bee@bee' | Out-Null
+            $claudeProbe = & claude plugin list --json
+            if ($LASTEXITCODE -eq 0 -and ($claudeProbe -join '') -match 'bee@bee') {
+              & claude plugin uninstall 'bee@bee' | Out-Null
+            }
           }
         }
         $claudeList = & claude plugin list --json
