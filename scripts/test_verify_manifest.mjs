@@ -22,6 +22,11 @@ const RUNNER_PATH = path.join(REPO_ROOT, "scripts", "run_verify.mjs");
 // The suites that MUST always run as part of commands.verify.
 const MANDATORY_SUITES = [
   "test_lib",
+  "test_cells",
+  "test_reservations",
+  "test_claims",
+  "test_feedback",
+  "test_reviews",
   "test_skill_render",
   "test_onboard_bee",
   "test_plugin_distribution",

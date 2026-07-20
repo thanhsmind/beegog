@@ -31,6 +31,11 @@ const REPO_ROOT = path.join(__dirname, "..");
 // Each entry is [script, ...args].
 export const SUITES = [
   ["skills/bee-hive/templates/tests/test_lib.mjs"],
+  ["skills/bee-hive/templates/tests/test_cells.mjs"],
+  ["skills/bee-hive/templates/tests/test_reservations.mjs"],
+  ["skills/bee-hive/templates/tests/test_claims.mjs"],
+  ["skills/bee-hive/templates/tests/test_feedback.mjs"],
+  ["skills/bee-hive/templates/tests/test_reviews.mjs"],
   ["scripts/test_skill_render.mjs"],
   ["skills/bee-hive/scripts/test_onboard_bee.mjs"],
   ["skills/bee-hive/scripts/test_plugin_distribution.mjs"],
