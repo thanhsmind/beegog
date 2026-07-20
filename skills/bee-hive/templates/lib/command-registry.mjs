@@ -1454,6 +1454,45 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
 
+  // ─── recovery (transcript-recovery D1-D6, docs/history/transcript-recovery/
+  // CONTEXT.md) — crash-candidate detection + bounded mining-window math.
+  // Schemas only: this file must NOT import lib/recovery.mjs (the perf-import
+  // discipline extended to the recovery module — see recovery.mjs's own file
+  // header). Mining itself never runs inside the CLI (D4): `recovery window`
+  // only emits the down-tier worker's prompt; the orchestrator dispatches it.
+  // `recovery scan` never auto-triggers mining (D2). ─────────────────────────
+  {
+    name: 'recovery.scan',
+    invoke: 'bee recovery scan',
+    description:
+      'Detect recoverable crash candidates (D1): sessions whose heartbeat is stale, whose transcript exists and lacks the clean-end trio, and that show a work signal (bound lane in a non-terminal phase, an active claimed cell, or transcript activity newer than the last durable settlement). Cheap and side-effect-free — never triggers mining (D2).',
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line-per-candidate summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee recovery scan --json'],
+    deprecated: null,
+  },
+  {
+    name: 'recovery.window',
+    invoke: 'bee recovery window',
+    description:
+      "For one crash-candidate session id, re-derive the bounded mining window (D3) and the down-tier miner prompt (D4): resolves the session's transcript, computes the window start from the last durable settlement (lane-scoped, global fallback, or the session's own started_at when nothing settled), applies the hard event cap, and returns {transcript, since_ts, event_count, window_truncated, prompt}. Never calls an LLM itself — the orchestrator dispatches the returned prompt to a down-tier worker.",
+    parameters: {
+      type: 'object',
+      properties: {
+        session: { type: 'string', description: 'The crash-candidate session id, from `recovery scan`.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of printing the prompt text.' },
+      },
+      required: ['session'],
+    },
+    examples: ['bee recovery window --session sess-recovery-demo --json'],
+    deprecated: null,
+  },
+
   // ─── doctor (codex-native-runtime-v2 D11) — fail-closed runtime health
   // report. Reuses the onboarding-recorded hash baseline for drift (never a
   // second hash implementation) and cites the capability matrix

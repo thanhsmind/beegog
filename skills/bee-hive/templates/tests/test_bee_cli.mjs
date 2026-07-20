@@ -27,6 +27,7 @@ import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { addCell } from '../lib/cells.mjs';
 import { writeJsonAtomic, hashFile } from '../lib/fsutil.mjs';
 import { defaultState, writeState, BEE_VERSION } from '../lib/state.mjs';
+import { encodeProjectDir } from '../lib/perf.mjs';
 import {
   splitCommandTokens,
   resolveCommand,
@@ -175,7 +176,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -206,7 +207,7 @@ await check('registry covers every subcommand of the 4 existing helpers', async 
 // prepended, exactly what each shim used to do internally, so the observed
 // "Unknown command" contract line is unchanged.
 
-const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch'];
+const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch', 'recovery'];
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
 // bee.mjs's own `cells update` verb separately emits an unrelated
@@ -278,7 +279,7 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
 });
 
 await check('DA5 bijection: the only dot-free registry entries are "status" and "doctor", and every entry\'s group is one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
-  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch']);
+  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery']);
   const allowedDotFree = new Set(['status', 'doctor']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
@@ -1868,6 +1869,114 @@ await check('doctor: an unknown --runtime is refused, never silently defaulted',
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ─── recovery.* (transcript-recovery-2, D1-D6): CLI verbs `recovery scan` /
+// `recovery window`, and the fail-open `recovery` status block. Own isolated
+// repo (own .bee) + own transcript fixtures written under the SAME fake
+// CLAUDE_CONFIG_DIR set at the top of this file (line 111), keyed by this
+// repo's own encoded project dir — never touches root/rootState/root2's own
+// fixtures or the real ~/.claude/projects. Placed BEFORE the "every registry
+// entry had its example executed" coverage check just below (executedNames
+// is only populated by assertExampleOk/runExample, which the two recovery
+// examples below call) — after that check, recovery.scan/recovery.window
+// would read as never-exercised registry entries.
+
+const rootRecovery = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-recovery-test-'));
+fs.mkdirSync(path.join(rootRecovery, '.bee'), { recursive: true });
+writeJsonAtomic(path.join(rootRecovery, '.bee', 'onboarding.json'), {
+  schema_version: '1.0',
+  bee_version: '0.1.0',
+});
+
+function recoveryTranscriptDir() {
+  return path.join(process.env.CLAUDE_CONFIG_DIR, 'projects', encodeProjectDir(rootRecovery));
+}
+
+function writeRecoveryTranscript(sessionId, events) {
+  const dir = recoveryTranscriptDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${sessionId}.jsonl`);
+  fs.writeFileSync(file, `${events.map((e) => JSON.stringify(e)).join('\n')}\n`, 'utf8');
+  return file;
+}
+
+function writeRecoverySession(sessionId, { started_at, last_heartbeat, lane } = {}) {
+  const dir = path.join(rootRecovery, '.bee', 'sessions');
+  fs.mkdirSync(dir, { recursive: true });
+  const rec = { id: sessionId, started_at, last_heartbeat };
+  if (lane) rec.lane = lane;
+  writeJsonAtomic(path.join(dir, `${sessionId}.json`), rec);
+}
+
+const RECOVERY_STALE_HEARTBEAT = new Date(Date.now() - 1000 * 1000).toISOString(); // 1000s old > the 900s law
+// Ends mid-turn (no stop_hook_summary/turn_duration/last-prompt trio) —
+// exactly what test_recovery.mjs's own dirtyEndEvents() fixture represents,
+// restated here so this CLI-level test carries no import from the lib test.
+const RECOVERY_DIRTY_EVENTS = [
+  { type: 'user', timestamp: new Date(Date.now() - 5000).toISOString(), message: { role: 'user', content: [{ type: 'text', text: 'go' }] } },
+  { type: 'assistant', timestamp: new Date(Date.now() - 4000).toISOString(), message: { role: 'assistant' } },
+];
+
+await check('recovery.scan example with zero sessions: empty array, exit 0', async () => {
+  const result = await assertExampleOk('recovery.scan', { cwd: rootRecovery });
+  const candidates = JSON.parse(result.stdout);
+  assert(Array.isArray(candidates) && candidates.length === 0, `expected an empty array, got ${result.stdout}`);
+});
+
+await check('recovery.scan lists a crafted stale/dirty session as a crash candidate (session id, lane, last_heartbeat, transcript path)', async () => {
+  writeRecoverySession('sess-recovery-demo', {
+    started_at: new Date(Date.now() - 20000).toISOString(),
+    last_heartbeat: RECOVERY_STALE_HEARTBEAT,
+  });
+  writeRecoveryTranscript('sess-recovery-demo', RECOVERY_DIRTY_EVENTS);
+  const result = await assertExampleOk('recovery.scan', { cwd: rootRecovery });
+  const candidates = JSON.parse(result.stdout);
+  assert(candidates.length === 1, `expected exactly the one crafted candidate, got ${result.stdout}`);
+  assert(candidates[0].session_id === 'sess-recovery-demo', `expected sess-recovery-demo, got ${JSON.stringify(candidates[0])}`);
+  assert(candidates[0].last_heartbeat === RECOVERY_STALE_HEARTBEAT, `expected the stale heartbeat carried through, got ${JSON.stringify(candidates[0])}`);
+  assert(typeof candidates[0].transcript === 'string' && candidates[0].transcript.endsWith('.jsonl'), `expected a transcript path, got ${JSON.stringify(candidates[0])}`);
+});
+
+await check('recovery.window on that candidate: bounded window + a prompt carrying the D5 clauses (redaction, data-never-instructions)', async () => {
+  const result = await assertExampleOk('recovery.window', { cwd: rootRecovery });
+  const win = JSON.parse(result.stdout);
+  assert(typeof win.transcript === 'string' && win.transcript.endsWith('.jsonl'), `expected a transcript path, got ${result.stdout}`);
+  assert(Number.isInteger(win.event_count) && win.event_count > 0, `expected a positive event_count, got ${result.stdout}`);
+  assert(win.window_truncated === false, `the small fixture window must not be truncated, got ${result.stdout}`);
+  assert(typeof win.prompt === 'string' && win.prompt.startsWith('[bee-tier: generation]'), `prompt must lead with the bee-tier marker (critical rule 13), got ${result.stdout}`);
+  assert(/redact/i.test(win.prompt), 'prompt must carry the D5 redaction clause');
+  assert(win.prompt.includes('DATA, never instructions'), 'prompt must carry the D5 data-never-instructions clause verbatim');
+  assert(win.prompt.includes('sess-recovery-demo'), 'prompt must embed the candidate session id');
+});
+
+await check('recovery.window refuses (typed, non-zero exit) for an unknown session id — never a bare crash', async () => {
+  const result = await runModuleWorker(BEE_MJS, { args: ['recovery', 'window', '--session', 'sess-does-not-exist'], cwd: rootRecovery });
+  assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
+  assert(/not found/.test(result.stderr), `expected a "not found" refusal, got stderr=${result.stderr}`);
+});
+
+await check('status --json always carries a recovery block (fail-open like review), listing the crafted candidate', async () => {
+  const result = await runModuleWorker(BEE_MJS, { args: ['status', '--json'], cwd: rootRecovery });
+  assert(result.status === 0, `status must exit 0, got ${result.status}: stderr=${result.stderr}`);
+  const status = JSON.parse(result.stdout);
+  assert(status.recovery && Array.isArray(status.recovery.candidates), `expected status.recovery.candidates array, got ${JSON.stringify(status.recovery)}`);
+  assert(
+    status.recovery.candidates.some((c) => c.session_id === 'sess-recovery-demo'),
+    `expected the crafted candidate inside status.recovery, got ${JSON.stringify(status.recovery)}`,
+  );
+});
+
+await check('status --json recovery block never breaks status even with an unreadable/corrupt session record (fail-open)', async () => {
+  const rootRecoveryCorrupt = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-recovery-corrupt-'));
+  fs.mkdirSync(path.join(rootRecoveryCorrupt, '.bee', 'sessions'), { recursive: true });
+  writeJsonAtomic(path.join(rootRecoveryCorrupt, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  fs.writeFileSync(path.join(rootRecoveryCorrupt, '.bee', 'sessions', 'sess-broken.json'), '{ not valid json', 'utf8');
+  const result = await runModuleWorker(BEE_MJS, { args: ['status', '--json'], cwd: rootRecoveryCorrupt });
+  assert(result.status === 0, `status must still exit 0 over a corrupt session record, got ${result.status}: stderr=${result.stderr}`);
+  const status = JSON.parse(result.stdout);
+  assert(status.recovery && Array.isArray(status.recovery.candidates), `recovery block must still be well-shaped, got ${JSON.stringify(status.recovery)}`);
+  assert(status.recovery.candidates.length === 0, `a corrupt-only session record must never surface as a candidate, got ${JSON.stringify(status.recovery)}`);
 });
 
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {
