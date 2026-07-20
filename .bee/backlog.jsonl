@@ -270,3 +270,4 @@
 {"ts":"2026-07-20T03:52:44.823Z","type":"friction","title":"dispatch prepare --kind cell emits read-only bee-gather agent type for execution cells (GH #27 item 5 confirmed live 2026-07-20)","detail":"","severity":"P2","layer":"dispatch","feature":""}
 {"ts":"2026-07-20T03:52:44.874Z","type":"friction","title":"template changes need render_plugin_skill_trees + manifest --write mid-feature or verify goes red (bit gh-issue-fixes-172); fold render into onboard --apply?","detail":"","severity":"P3","layer":"release","feature":""}
 {"ts":"2026-07-20T03:52:44.922Z","type":"friction","title":"write-guard CLI-shape check intercepts mutating-verb --help before the new group-help path answers (found dogfooding GH #23 fix)","detail":"","severity":"P3","layer":"hooks","feature":""}
+{"ts":"2026-07-20T05:32:07.625Z","type":"friction","title":"bump_version omits plugin-tree render (6th recurrence)","detail":"","severity":"P2","layer":"release","feature":""}
