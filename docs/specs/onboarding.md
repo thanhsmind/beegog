@@ -1,8 +1,9 @@
 ---
 area: onboarding
-updated: 2026-07-19
+updated: 2026-07-20
 coverage: partial
 sources:
+  - gh-issue-fixes-172 cell ghf-2 (GH #26: Windows staged source carries the full release identity — sparse checkout includes both package manifests; absent-package removal probed before attempted; trace in .bee/cells/, 2026-07-20)
   - capture stub b57f6470-bac2-422a-9dea-1bb4cc93bc0e (shipped config sample carries a per-surface doc block, all model-slot shapes, gate-bypass levels, hook toggles, and the external-command tier's gather-only contract; flushed 2026-07-19)
   - installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; D1/D3 verified in-engine with plugin-first coverage, D7 managed-set cleanup fencing, D2/D8 Linux Bash E2E shipped — cells -4/-2/-3, 2026-07-16; field fix cell -5: plugin CLI mutation verbs take NO --json (only `plugin list` does — real codex/claude contract), rollback reconciles the probed current state against the pre-run snapshot and reports failure only when restoring a previously-present plugin genuinely fails (a transition that died before installing anything rolls back as a no-op success), and the E2E fake CLIs reject --json on mutations so the wrong-flag contract can never test green again; field fix cell -6: legacy global skill copies (the pre-1.0 `~/.claude/skills` layout) are refreshed IN PLACE on every onboard — refresh-only over managed bee-* dirs that already exist there (never create, never delete, non-managed dirs untouched, resolved-newer global never downgraded, self/overlap sources skipped), reported as `refresh_legacy_global_skill` plan items that never drive `up_to_date`/blocked-first aggregation — closing the two-version skill inconsistency where a repo at the current release coexisted with a stale global copy both loaded by the runtime)
   - codex-sandbox-baseline cells codex-sandbox-baseline-1/codex-sandbox-baseline-2 (real onboarding entrypoint through the shared isolated test runner; full onboarding suite green, 2026-07-16)
@@ -473,6 +474,17 @@ landing page from day one in every onboarded project.
 - **R20** — Immediately before the first mutation, the installer revalidates a
   whole-run snapshot. Any path, symlink, alias, package, inventory, ledger, or
   hook-shape mismatch aborts the transaction with zero writes.
+- **R20b** — The staged source copy an installer fetches always contains the
+  COMPLETE release identity: every version-marker file the onboarding
+  release-tuple check requires (both assistant-package manifests included) is
+  part of what gets staged, on every platform — a partial staging that passes
+  its own probe but fails the tuple check downstream is the defect this rule
+  bans (GH #26: the Windows entry point staged one manifest but not the other,
+  producing `blocked_no_source` on an otherwise healthy install). Removal of a
+  previously installed package during a fallback install is attempted only when
+  a status probe shows the package actually present — attempting removal of an
+  absent package, even harmlessly, must not surface an error line to the user
+  (gh-issue-fixes-172 cell ghf-2, 2026-07-20).
 - **R21 (not yet implemented — installer-version-parity-1-3-1)** — An install
   has one release version across its authoritative source, enabled package,
   project runtime, and every project-local assistant capability copy. Every

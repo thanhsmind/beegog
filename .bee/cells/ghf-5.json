@@ -71,6 +71,51 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "hard-clamp-no-raise",
+            "status": "PASS",
+            "evidence": "pick()=Math.min(value, BUDGET_HARD_MAX[key]) for valid int>=1; hard max {9,12,6}; authoring refuses >hardMax"
+          },
+          {
+            "id": "authoring-refusal",
+            "status": "PASS",
+            "evidence": "validateNewCell cells.mjs:385-410 refuses non-object, unknown key, non-integer, out-of-range"
+          },
+          {
+            "id": "reset-blocked-guard",
+            "status": "PASS",
+            "evidence": "checkCellBudgets(cell).ok -> throw RESET_NOT_NEEDED cells.mjs:~1320"
+          },
+          {
+            "id": "actor-required-and-guard-order",
+            "status": "PASS",
+            "evidence": "actor operator||BEE_AGENT_NAME else throw; order reason->not-found->actor->blocked per constraint"
+          },
+          {
+            "id": "audit-before-write",
+            "status": "PASS",
+            "evidence": "logDecision with by_actor BEFORE writeCell inside lock; chmod-555 case proves audit survives write crash"
+          },
+          {
+            "id": "prohibitions",
+            "status": "PASS",
+            "evidence": "DEFAULT_BUDGETS {3,4,2} unchanged; trace.attempts untouched"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-20T03:52:17.372Z"
+      }
     ]
   }
 }

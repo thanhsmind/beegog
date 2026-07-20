@@ -177,6 +177,10 @@ bee.mjs feedback digest [--out PATH] [--json]     (P18, evolving loop; decision 
     prior persisted hash, a manifest_changed:true hint is written to stderr only — stdout's shape
     never changes.
     Unknown command → a Levenshtein nearest-match suggestion, never a bare not-found.
+    Group/command-scoped help (GH #23): `bee <group> [verb] --help [--json]` emits the manifest
+    filtered to that command or group prefix (exact name or `<name>.*`), exit 0 — `state --help`
+    lists the 17 state.* entries instead of the old Unknown-command error. A token matching no
+    entry and no group prefix keeps the fallback behavior above unchanged.
     Deferred: an MCP server wrapper and a mandatory every-session --help --json discovery call —
     foundation-add without demonstrated need.
 ```

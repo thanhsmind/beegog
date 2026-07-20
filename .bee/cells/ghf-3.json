@@ -67,6 +67,46 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "one-claim-n-heartbeats-one-acquisition",
+            "status": "PASS",
+            "evidence": "claims.mjs:+292 stamps acquired_at once; checkCellBudgets pairs on (claim_session, acquired_at ?? claimed_at); hb-budget case max_claims=2 green (29 rows/0)"
+          },
+          {
+            "id": "legacy-entries-unchanged",
+            "status": "PASS",
+            "evidence": "appendAttempt + pair key use acquired_at ?? claimed_at fallback; test_lib 409/0"
+          },
+          {
+            "id": "renew-preserves-acquired_at",
+            "status": "PASS",
+            "evidence": "renewClaimTTL spread keeps acquired_at; stability case passes"
+          },
+          {
+            "id": "no-claimed_at-rename",
+            "status": "PASS",
+            "evidence": "claimed_at kept verbatim everywhere; acquired_at purely additive"
+          },
+          {
+            "id": "decision-honored",
+            "status": "PASS",
+            "evidence": "plan.md Approach item 3 matches diff exactly (label nit: cell cites D-GHF-B, plan uses same name in Approach — no scope drift)"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-20T03:51:29.966Z"
+      }
     ]
   }
 }

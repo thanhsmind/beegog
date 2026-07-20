@@ -72,6 +72,46 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "needs-revision-blocks-cap",
+            "status": "PASS",
+            "evidence": "cells.mjs:~786 latest semantic_judge NEEDS_REVISION && !override -> throw JUDGE_REWORK_REQUIRED; judge.mjs:16 confirms enum"
+          },
+          {
+            "id": "no-judge-cells-unchanged",
+            "status": "PASS",
+            "evidence": "empty judgeEntries -> guard skipped; only latest entry consulted"
+          },
+          {
+            "id": "override-always-audited",
+            "status": "PASS",
+            "evidence": "override appends judge_overrides entry + logDecision before writeCell cells.mjs:~800-820"
+          },
+          {
+            "id": "prohibitions",
+            "status": "PASS",
+            "evidence": "no status reopen; goal-check dispatch untouched"
+          },
+          {
+            "id": "cli-wiring",
+            "status": "PASS",
+            "evidence": "handleCellsCap threads override-judge; registry param added; test_bee_cli 212/0 incl e2e override case"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-20T03:52:17.433Z"
+      }
     ]
   }
 }
