@@ -1778,7 +1778,7 @@
     },
     {
       "path": "hooks/catalog.mjs",
-      "sha256": "166f6dfdbca2846b261f78d09b61f97b2b4b04876809a79c985e1ccfcfb370d2",
+      "sha256": "97962ed8c9159a12f3d70aa0e2635a1416a25474c7d4a02fa16d83160c4a9eb4",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/catalog.mjs"
@@ -1806,7 +1806,7 @@
     },
     {
       "path": "hooks/test_hook_contracts.mjs",
-      "sha256": "620dcfb56d9a050cba0629db223bc131a11abfa45961c5062e45a7619ac0ba99",
+      "sha256": "43ada8bde49af936f83cdfe2ed1fcc97a522aeca389cbaf9d6af3be3cfbb60ce",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/test_hook_contracts.mjs"

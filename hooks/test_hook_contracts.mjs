@@ -990,8 +990,8 @@ function runCatalogDriftChecks() {
   // root variable (Codex sets neither; $CLAUDE_PROJECT_DIR unset is exactly
   // what collapsed the old commands to `node /.bee/bin/hooks/...` and killed
   // every hook with MODULE_NOT_FOUND), must launch the CURRENT source
-  // wrappers under hooks/, must declare source identity repo, and must carry
-  // the pinned VISIBLE fail-open diagnostic on stderr.
+  // wrappers under .bee/bin/hooks/, must declare source identity repo, and
+  // must carry the pinned VISIBLE fail-open diagnostic on stderr.
   const repoProjection = renderProjection(RUNTIMES.CODEX, { target: TARGETS.REPO });
   const repoCommands = Object.values(repoProjection.hooks)
     .flat()
@@ -1001,7 +1001,7 @@ function runCatalogDriftChecks() {
     (c) => !/CLAUDE_PROJECT_DIR|CLAUDE_PLUGIN_ROOT/.test(c),
   );
   const launchesSourceWrappers = repoCommands.every((c) =>
-    /exec node "\$r"\/hooks\/bee-[a-z-]+\.mjs --source=repo$/m.test(c),
+    /exec node "\$r"\/\.bee\/bin\/hooks\/bee-[a-z-]+\.mjs --source=repo$/m.test(c),
   );
   const visibleFailOpen = repoCommands.every(
     (c) =>
@@ -1030,7 +1030,7 @@ function runCatalogDriftChecks() {
       "codex-repo-target-generated-topology",
       transportOk,
       transportOk
-        ? `all ${repoCommands.length} generated repo commands carry no Claude root variable, include paired audit events, launch hooks/bee-*.mjs with --source=repo, and fail open visibly`
+        ? `all ${repoCommands.length} generated repo commands carry no Claude root variable, include paired audit events, launch .bee/bin/hooks/bee-*.mjs with --source=repo, and fail open visibly`
         : `repo transport contract violated: commands=${repoCommands.length} (expected 13) ` +
             `noClaudeVars=${noClaudeVars} launchesSourceWrappers=${launchesSourceWrappers} ` +
             `visibleFailOpen=${visibleFailOpen} startAudit=${repoStartAudit.length} stopAudit=${repoStopAudit.length}`,
@@ -1120,7 +1120,7 @@ function runCatalogDriftChecks() {
   const repoCommandWindowsEntries = Object.values(repoProjection.hooks)
     .flat()
     .flatMap((g) => g.hooks);
-  const NODE_BARE_SOURCE_REPO = /^node hooks\/bee-[a-z-]+\.mjs --source=repo$/;
+  const NODE_BARE_SOURCE_REPO = /^node \.bee\/bin\/hooks\/bee-[a-z-]+\.mjs --source=repo$/;
   const SHELL_METACHARS = /\$\(|\[\s*-n|\bexec\b/;
   const repoCommandWindowsOk =
     repoCommandWindowsEntries.length > 0 &&
@@ -1145,7 +1145,7 @@ function runCatalogDriftChecks() {
       "codex-repo-commandWindows-contract",
       commandWindowsContractOk,
       commandWindowsContractOk
-        ? `all ${repoCommandWindowsEntries.length} codex-repo-target entries carry a bare "node hooks/<script>.mjs --source=repo" commandWindows (no shell metacharacters); claude and codex-plugin entries carry none`
+        ? `all ${repoCommandWindowsEntries.length} codex-repo-target entries carry a bare "node .bee/bin/hooks/<script>.mjs --source=repo" commandWindows (no shell metacharacters); claude and codex-plugin entries carry none`
         : `DRIFT: commandWindows contract violated: repoOk=${repoCommandWindowsOk} ` +
             `claudeAbsent=${claudeCommandWindowsAbsent} codexPluginAbsent=${codexPluginCommandWindowsAbsent}`,
     ),
@@ -2660,16 +2660,17 @@ function buildRouteFixture() {
   const codexHome = path.join(root, ".fixture-codex-home");
   const nested = path.join(root, "src", "deep nest ✦");
   const shim = path.join(root, ".shim-no-git");
-  for (const dir of [home, codexHome, nested, shim, path.join(root, "hooks")]) {
+  const routeHooksDir = path.join(root, ".bee", "bin", "hooks");
+  for (const dir of [home, codexHome, nested, shim, routeHooksDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // The wrappers the configured commands actually exec, plus the shared libs
-  // they import at runtime.
-  fs.mkdirSync(path.join(root, ".bee"), { recursive: true });
+  // The wrappers the configured commands actually exec (the committed,
+  // git-tracked .bee/bin/hooks/ vendored location the repo target resolves
+  // against), plus the shared libs they import at runtime.
   for (const name of fs.readdirSync(HOOKS_DIR)) {
     if (name.endsWith(".mjs")) {
-      fs.copyFileSync(path.join(HOOKS_DIR, name), path.join(root, "hooks", name));
+      fs.copyFileSync(path.join(HOOKS_DIR, name), path.join(routeHooksDir, name));
     }
   }
   copyLib(root);

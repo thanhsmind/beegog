@@ -216,10 +216,10 @@ const DOCTOR_HOOKS_JSON = {
     PreToolUse: [
       {
         matcher: "spawn_agent",
-        hooks: [{ type: "command", command: 'exec node "$r"/hooks/bee-model-guard.mjs --source=repo' }],
+        hooks: [{ type: "command", command: 'exec node "$r"/.bee/bin/hooks/bee-model-guard.mjs --source=repo' }],
       },
     ],
-    Stop: [{ hooks: [{ type: "command", command: 'exec node "$r"/hooks/bee-state-sync.mjs --source=repo' }] }],
+    Stop: [{ hooks: [{ type: "command", command: 'exec node "$r"/.bee/bin/hooks/bee-state-sync.mjs --source=repo' }] }],
   },
 };
 

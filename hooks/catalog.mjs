@@ -77,7 +77,7 @@ function repoCommand(script) {
   return [
     'r="$(git rev-parse --show-toplevel 2>/dev/null)"',
     `[ -n "$r" ] || { echo "${REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC}" >&2; exit 0; }`,
-    `exec node "$r"/hooks/${script} --source=repo`,
+    `exec node "$r"/.bee/bin/hooks/${script} --source=repo`,
   ].join("\n");
 }
 
@@ -92,9 +92,10 @@ function commandFor(script, target) {
 // Shell-agnostic (works under both cmd.exe and powershell.exe): a bare node
 // invocation, relative to cwd, no `$(...)`, no `[ -n ]`, no `exec`, no
 // env-var expansion. Codex-repo only (see renderProjection's call site) —
-// bee's own hooks live at top-level hooks/ in that projection.
+// bee's own hooks live at .bee/bin/hooks/ (the committed, git-tracked
+// vendored location) in that projection.
 function commandWindowsFor(script, target) {
-  if (target === TARGETS.REPO) return `node hooks/${script} --source=repo`;
+  if (target === TARGETS.REPO) return `node .bee/bin/hooks/${script} --source=repo`;
   return undefined;
 }
 
