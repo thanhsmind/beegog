@@ -63,6 +63,7 @@ export const SUITES = [
   ["scripts/test_store_lock.mjs"],
   ["scripts/test_claim_race.mjs"],
   ["scripts/test_reservation_race.mjs"],
+  ["scripts/test_worktree_holds_race.mjs"],
   ["scripts/test_heartbeat_touch.mjs"],
 ];
 
@@ -74,6 +75,7 @@ const SERIAL_SENSITIVE = new Set([
   "scripts/test_store_lock.mjs",
   "scripts/test_claim_race.mjs",
   "scripts/test_reservation_race.mjs",
+  "scripts/test_worktree_holds_race.mjs",
   "scripts/test_state_write_concurrency.mjs",
   "scripts/test_heartbeat_touch.mjs",
 ]);

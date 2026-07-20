@@ -91,6 +91,14 @@ import { validateJudgeVerdict, deriveModelIndependence, JUDGE_VERDICT_SCHEMA } f
 import { PINNED_MODEL_STATUS } from '../lib/dispatch-guard.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
 import {
+  mirrorHold,
+  releaseHolds,
+  findForeignHolds,
+  releaseAllForHolder,
+  sweepExpiredHolds,
+  holdsStoreCorrupt,
+} from '../lib/worktree-holds.mjs';
+import {
   createSession,
   readSession,
   heartbeatSession,
@@ -10410,6 +10418,160 @@ await check('capCell (D-GHF-C, GH #27.5): a PASS verdict caps normally with no o
   await recordVerify(root, 'judge-none-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
   const noJudgeCapped = await capCell(root, 'judge-none-1', { files_changed: ['a.js'], outcome: 'shipped' });
   assert(noJudgeCapped.status === 'capped', 'a cell with no semantic_judge entries at all must cap exactly as before ghf-6');
+});
+
+// ─── worktree-holds (xwh-1): shared cross-worktree holds ledger ────────────
+
+function makeHoldsRoot() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-worktree-holds-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  return dir;
+}
+
+await check('worktree-holds: missing ledger reads as empty (findForeignHolds) and not corrupt (holdsStoreCorrupt)', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    assert(findForeignHolds(holdsRoot, 'wt-a', 'src/api/router.ts').length === 0, 'a missing ledger must yield zero foreign holds');
+    assert(holdsStoreCorrupt(holdsRoot) === false, 'a missing ledger file must never read as corrupt');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: mirrorHold + findForeignHolds — foreign holders see the hold, the acting holder never sees its own', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    const result = await mirrorHold(holdsRoot, { path: 'src/api/router.ts', holder: 'wt-a', feature: 'demo', cell: 'demo-1', ttl: 3600 });
+    assert(result.ok === true, `mirrorHold must succeed, got ${JSON.stringify(result)}`);
+    assert(result.hold.path === 'src/api/router.ts', 'the returned hold must carry the normalized path');
+    assert(result.hold.holder === 'wt-a', 'the returned hold must carry the holder');
+    assert(result.hold.released_at === null, 'a freshly mirrored hold must be unreleased');
+
+    const own = findForeignHolds(holdsRoot, 'wt-a', 'src/api/router.ts');
+    assert(own.length === 0, `findForeignHolds must never return the acting holder's own entries, got ${JSON.stringify(own)}`);
+
+    const foreign = findForeignHolds(holdsRoot, 'wt-b', 'src/api/router.ts');
+    assert(foreign.length === 1, `a different holder must see the foreign hold, got ${JSON.stringify(foreign)}`);
+    assert(foreign[0].holder === 'wt-a', 'the foreign hold must name the actual holder');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: findForeignHolds honors reservations.mjs pathsOverlap semantics (exact, prefix, glob)', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'src/api/router.ts', holder: 'main' });
+
+    assert(findForeignHolds(holdsRoot, 'wt-b', 'src/api/router.ts').length === 1, 'exact-path overlap must match');
+    assert(findForeignHolds(holdsRoot, 'wt-b', 'src/api').length === 1, 'a directory-prefix request must overlap a deeper held path');
+    assert(findForeignHolds(holdsRoot, 'wt-b', 'src/api/*').length === 1, 'a trivial glob-suffixed request must overlap the held path it covers');
+    assert(findForeignHolds(holdsRoot, 'wt-b', 'src/other/file.ts').length === 0, 'an unrelated path must never overlap');
+    assert(
+      findForeignHolds(holdsRoot, 'wt-b', ['src/other/file.ts', 'src/api/router.ts']).length === 1,
+      'a paths array must match if ANY entry overlaps',
+    );
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: releaseHolds narrows by holder + optional session/cell, and only releases what matches', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'a.ts', holder: 'wt-a', session: 's1', cell: 'c1' });
+    await mirrorHold(holdsRoot, { path: 'b.ts', holder: 'wt-a', session: 's2', cell: 'c2' });
+    await mirrorHold(holdsRoot, { path: 'c.ts', holder: 'wt-x', session: 's1', cell: 'c1' });
+
+    const narrowed = await releaseHolds(holdsRoot, { holder: 'wt-a', session: 's1' });
+    assert(narrowed.released === 1, `session-narrowed release must release exactly 1, got ${JSON.stringify(narrowed)}`);
+    assert(findForeignHolds(holdsRoot, 'other', 'a.ts').length === 0, 'the session-matching hold must be released');
+    assert(findForeignHolds(holdsRoot, 'other', 'b.ts').length === 1, 'a non-matching-session hold for the same holder must survive');
+    assert(findForeignHolds(holdsRoot, 'other', 'c.ts').length === 1, 'a different holder must never be touched by another holder\'s release');
+
+    const rest = await releaseHolds(holdsRoot, { holder: 'wt-a' });
+    assert(rest.released === 1, `unfiltered release must release the remaining wt-a hold, got ${JSON.stringify(rest)}`);
+    assert(findForeignHolds(holdsRoot, 'other', 'b.ts').length === 0, 'the remaining wt-a hold must now be released');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: releaseAllForHolder releases every hold for a holder regardless of session/cell', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'a.ts', holder: 'wt-d', session: 's1', cell: 'c1' });
+    await mirrorHold(holdsRoot, { path: 'b.ts', holder: 'wt-d', session: 's2', cell: 'c2' });
+    await mirrorHold(holdsRoot, { path: 'c.ts', holder: 'wt-e' });
+
+    const result = await releaseAllForHolder(holdsRoot, 'wt-d');
+    assert(result.released === 2, `expected both wt-d holds released, got ${JSON.stringify(result)}`);
+    assert(findForeignHolds(holdsRoot, 'other', 'a.ts').length === 0, 'wt-d hold a must be released');
+    assert(findForeignHolds(holdsRoot, 'other', 'b.ts').length === 0, 'wt-d hold b must be released');
+    assert(findForeignHolds(holdsRoot, 'other', 'c.ts').length === 1, 'a different holder must be untouched');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: TTL expiry is pruned on read (findForeignHolds), and sweepExpiredHolds persists it to disk', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'expiring.ts', holder: 'wt-f', ttl: 1 });
+    assert(findForeignHolds(holdsRoot, 'other', 'expiring.ts').length === 1, 'a fresh hold must be visible before expiry');
+
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    assert(
+      findForeignHolds(holdsRoot, 'other', 'expiring.ts').length === 0,
+      'an expired hold must be pruned on read (never returned) even before an explicit sweep',
+    );
+
+    const ledgerBefore = readJson(path.join(holdsRoot, '.bee', 'runtime', 'cross-worktree-holds.json'), { holds: [] });
+    assert(
+      ledgerBefore.holds.find((h) => h.path === 'expiring.ts').released_at === null,
+      'read-time pruning must not itself mutate the on-disk ledger — only sweepExpiredHolds persists expiry',
+    );
+
+    const swept = await sweepExpiredHolds(holdsRoot);
+    assert(swept === 1, `sweepExpiredHolds must report 1 released, got ${swept}`);
+    const ledgerAfter = readJson(path.join(holdsRoot, '.bee', 'runtime', 'cross-worktree-holds.json'), { holds: [] });
+    assert(
+      ledgerAfter.holds.find((h) => h.path === 'expiring.ts').released_at !== null,
+      'sweepExpiredHolds must persist released_at on the expired entry',
+    );
+
+    const sweptAgain = await sweepExpiredHolds(holdsRoot);
+    assert(sweptAgain === 0, 'a second sweep must find nothing new to release');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: holdsStoreCorrupt is true for a present-but-malformed ledger, false once it parses again', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'a.ts', holder: 'wt-a' });
+    assert(holdsStoreCorrupt(holdsRoot) === false, 'a well-formed ledger must never read as corrupt');
+
+    const ledgerFile = path.join(holdsRoot, '.bee', 'runtime', 'cross-worktree-holds.json');
+    fs.writeFileSync(ledgerFile, '{not valid json');
+    assert(holdsStoreCorrupt(holdsRoot) === true, 'a present-but-unparsable ledger must read as corrupt');
+
+    fs.writeFileSync(ledgerFile, JSON.stringify({ holds: [] }));
+    assert(holdsStoreCorrupt(holdsRoot) === false, 'a ledger that parses cleanly again must no longer read as corrupt');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: mirrorHold validates required fields (path, holder)', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await assertRejects(() => mirrorHold(holdsRoot, { holder: 'wt-a' }), 'path', 'mirrorHold must reject a missing path');
+    await assertRejects(() => mirrorHold(holdsRoot, { path: 'a.ts' }), 'holder', 'mirrorHold must reject a missing holder');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
 });
 
 fs.rmSync(detectRoot, { recursive: true, force: true });
