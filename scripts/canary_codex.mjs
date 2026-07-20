@@ -646,6 +646,14 @@ async function main() {
   // absent binary degrades to the same skip as the default P1-P5 suite.
   if (args.includes("--probe")) {
     if (!codexOnPath()) {
+      // Loud, machine-greppable skip marker (hardening-8): a bare "skipped"
+      // sentence reads as silence once this suite runs alongside dozens of
+      // others under run_verify.mjs — CANARY_SKIP is the one line every
+      // caller (a human scanning logs, or run_verify's own summary below)
+      // can grep for to tell "ran nothing" apart from "ran and passed".
+      // Exit code stays 0: an absent codex binary is an environment fact,
+      // never a failure (see file header + canary.yml).
+      console.log("CANARY_SKIP reason=no-codex-binary mode=probe");
       console.log("canary --probe: skipped (no codex binary)");
       return 0;
     }
@@ -653,6 +661,7 @@ async function main() {
   }
 
   if (!codexOnPath()) {
+    console.log("CANARY_SKIP reason=no-codex-binary mode=default");
     console.log("canary: skipped (no codex binary)");
     return 0;
   }

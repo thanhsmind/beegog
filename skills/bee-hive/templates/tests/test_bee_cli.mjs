@@ -1630,6 +1630,52 @@ await check('config set: nested dot-key, string coercion, refuse-on-invalid, no-
   }
 });
 
+await check('config set/get/unset --local redirects to .bee/config.local.json, never the tracked config.json (hardening-8 config overlay)', async () => {
+  const cfgRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-config-local-'));
+  try {
+    fs.mkdirSync(path.join(cfgRoot, '.bee'), { recursive: true });
+    writeJsonAtomic(path.join(cfgRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+    // `--local` is a bare boolean flag (FLAG_ALONE_BOOLEANS) — regression
+    // guard for the parser bug caught live while writing this fixture: before
+    // --local was added to that set, the flag parser consumed the NEXT token
+    // (here, --json) as --local's value, so `flags.local === true` was never
+    // true and the write silently landed in the tracked file instead.
+    let r = await runModuleWorker(BEE_MJS, {
+      args: ['config', 'set', '--key', 'dogfood_repos', '--value', '[{"path":"/tmp/x","label":"x"}]', '--local', '--json'],
+      cwd: cfgRoot,
+    });
+    assert(r.status === 0, `config set --local exit ${r.status}: ${r.stderr}`);
+    const setParsed = JSON.parse(r.stdout);
+    assert(setParsed.local === true, `set result must report local:true, got ${r.stdout}`);
+    assert(!fs.existsSync(path.join(cfgRoot, '.bee', 'config.json')), 'a --local set must never create/touch the tracked config.json');
+    const overlayOnDisk = JSON.parse(fs.readFileSync(path.join(cfgRoot, '.bee', 'config.local.json'), 'utf8'));
+    assert(Array.isArray(overlayOnDisk.dogfood_repos) && overlayOnDisk.dogfood_repos[0].label === 'x', `dogfood_repos must land in config.local.json, got ${JSON.stringify(overlayOnDisk)}`);
+
+    // get --local reads back from the overlay.
+    r = await runModuleWorker(BEE_MJS, { args: ['config', 'get', '--key', 'dogfood_repos', '--local', '--json'], cwd: cfgRoot });
+    assert(r.status === 0, `config get --local exit ${r.status}: ${r.stderr}`);
+    const got = JSON.parse(r.stdout);
+    assert(got.present === true && got.local === true, `get --local should read the overlay value, got ${r.stdout}`);
+
+    // omitting --local on a plain set still targets the tracked file exactly as before (D4 zero-flag parity).
+    r = await runModuleWorker(BEE_MJS, { args: ['config', 'set', '--key', 'product_root', '--value', 'repo', '--json'], cwd: cfgRoot });
+    assert(r.status === 0, `plain set (no --local) exit ${r.status}: ${r.stderr}`);
+    const tracked = JSON.parse(fs.readFileSync(path.join(cfgRoot, '.bee', 'config.json'), 'utf8'));
+    assert(tracked.product_root === 'repo', `a plain set must land in the tracked config.json, got ${JSON.stringify(tracked)}`);
+    assert(!('dogfood_repos' in tracked), 'the tracked file must never gain the overlay-only key');
+
+    // unset --local removes it from the overlay, never the tracked file.
+    r = await runModuleWorker(BEE_MJS, { args: ['config', 'unset', '--key', 'dogfood_repos', '--local', '--json'], cwd: cfgRoot });
+    assert(r.status === 0, `config unset --local exit ${r.status}: ${r.stderr}`);
+    const unsetParsed = JSON.parse(r.stdout);
+    assert(unsetParsed.removed === true && unsetParsed.local === true, `unset --local should report removed:true, local:true, got ${r.stdout}`);
+    const overlayAfter = JSON.parse(fs.readFileSync(path.join(cfgRoot, '.bee', 'config.local.json'), 'utf8'));
+    assert(!('dogfood_repos' in overlayAfter), 'dogfood_repos must be gone from the overlay after unset --local');
+  } finally {
+    fs.rmSync(cfgRoot, { recursive: true, force: true });
+  }
+});
+
 await check('state.advisor-ref examples run through the real dispatcher', async () => {
   // makeAdvisorRoot is a hoisted function declaration (defined in the advisor
   // block below); an active feature + a present digest file let the record

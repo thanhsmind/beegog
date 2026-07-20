@@ -128,6 +128,12 @@ const GITIGNORE_BLOCK_PATTERNS = [
   // — never doctor-attest.json, never tracked (see bee.mjs's
   // readNativeTransportClassification/writeNativeTransportProbe).
   ".bee/native-transport-probe.json",
+  // Machine-local config overlay (hardening-8, config-overlay D-local-config):
+  // deep-merged OVER the tracked .bee/config.json by readConfig (overlay
+  // wins, arrays replace) so a single contributor's machine-local values
+  // (today: dogfood_repos absolute paths) never land in the shared, tracked
+  // config file. Never tracked — every checkout/clone starts without one.
+  ".bee/config.local.json",
 ];
 
 const HOOK_FILENAMES = [

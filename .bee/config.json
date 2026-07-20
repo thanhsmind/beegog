@@ -33,11 +33,5 @@
         "promptVia": "stdin"
       }
     }
-  },
-  "dogfood_repos": [
-    {
-      "path": "/home/thanhsmind/projects/anphabe/anphabe-gogl",
-      "label": "anphabe-gogl"
-    }
-  ]
+  }
 }

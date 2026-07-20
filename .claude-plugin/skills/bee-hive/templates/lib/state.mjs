@@ -1242,9 +1242,61 @@ export function readOnboarding(root) {
   return readJson(path.join(root, '.bee', 'onboarding.json'), null);
 }
 
+// config.local.json path (hardening-8 config overlay, D-local-config-overlay)
+// — a per-machine, gitignored sibling of the TRACKED .bee/config.json. Lets a
+// machine-specific value (today: dogfood_repos absolute paths) live outside
+// the tracked file so a shared repo's config.json never commits one
+// contributor's local filesystem layout.
+export function localConfigPath(root) {
+  return path.join(root, '.bee', 'config.local.json');
+}
+
+// mergeConfigOverlay — deep-merge `overlay` OVER `base` (overlay wins on every
+// conflict). Plain objects merge key-by-key, recursively; arrays REPLACE
+// wholesale (never concatenated/deep-merged element-by-element — an overlay
+// listing 2 dogfood_repos must fully replace the tracked list's 3, never
+// interleave them). A non-object/non-array overlay value (string, number,
+// boolean, null) simply replaces the base value at that key. `base` is never
+// mutated — every level that changes is a fresh object/array.
+export function mergeConfigOverlay(base, overlay) {
+  if (Array.isArray(overlay)) return overlay.slice();
+  if (overlay && typeof overlay === 'object') {
+    const baseObj = base && typeof base === 'object' && !Array.isArray(base) ? base : {};
+    const out = { ...baseObj };
+    for (const [key, value] of Object.entries(overlay)) {
+      if (
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        baseObj[key] &&
+        typeof baseObj[key] === 'object' &&
+        !Array.isArray(baseObj[key])
+      ) {
+        out[key] = mergeConfigOverlay(baseObj[key], value);
+      } else if (Array.isArray(value)) {
+        out[key] = value.slice();
+      } else {
+        out[key] = value;
+      }
+    }
+    return out;
+  }
+  // overlay is not an object/array (undefined, null, or a scalar at the root)
+  // — nothing to merge; base passes through untouched.
+  return base;
+}
+
 export function readConfig(root) {
   const raw = readJson(path.join(root, '.bee', 'config.json'), null);
-  const config = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const tracked = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  // Overlay wins; an absent/malformed overlay file leaves `config` exactly
+  // the tracked object — byte-identical to pre-overlay readConfig for every
+  // repo that has never written .bee/config.local.json (D4 zero-overlay
+  // parity, mirrors the lanes/worktree additive-by-default discipline
+  // elsewhere in this file).
+  const overlayRaw = readJson(localConfigPath(root), null);
+  const overlay = overlayRaw && typeof overlayRaw === 'object' && !Array.isArray(overlayRaw) ? overlayRaw : null;
+  const config = overlay ? mergeConfigOverlay(tracked, overlay) : tracked;
   // Advisor mode is removed in full (D1, reverses decisions 0013/0015). A
   // stale `advisor` key left over in a repo's .bee/config.json must be
   // TOLERATED, never thrown on — but it must not flow through this spread

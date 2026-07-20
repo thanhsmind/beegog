@@ -114,7 +114,24 @@ function suiteLabel(entry) {
   return [entry[0], ...entry.slice(1)].join(" ");
 }
 
-function runOne(entry) {
+// Skip-marker convention (hardening-8, loud canary skip): a suite that
+// self-skips its real work (e.g. scripts/canary_codex.mjs's no-codex-binary
+// path) still exits 0 — the correct exit code, since an absent optional
+// binary is an environment fact, never a failure — but that makes it read as
+// an ORDINARY PASS once buried among dozens of other suites in this
+// runner's summary: "ran and proved something" and "ran nothing" become
+// indistinguishable. A suite opts in by printing one line matching this
+// pattern to stdout; the summary loop below then annotates that suite's PASS
+// line with the skip reason instead of silently folding it in. Exit codes
+// are NEVER touched by this — only the printed line gains a note.
+export const SKIP_MARKER_RE = /^CANARY_SKIP\s+(.*)$/m;
+
+export function skipNote(stdout) {
+  const m = SKIP_MARKER_RE.exec(stdout || "");
+  return m ? m[1].trim() : null;
+}
+
+export function runOne(entry) {
   const [script, ...args] = entry;
   const start = Date.now();
   return new Promise((resolve) => {
@@ -212,7 +229,8 @@ async function main() {
   for (const r of results) {
     const status = r.code === 0 ? "PASS" : "FAIL";
     if (r.code !== 0) anyFail = true;
-    console.log(`${status}  ${String(r.ms).padStart(6)}ms  ${r.label}`);
+    const note = status === "PASS" ? skipNote(r.stdout) : null;
+    console.log(`${status}  ${String(r.ms).padStart(6)}ms  ${r.label}${note ? `  [SKIPPED: ${note}]` : ""}`);
   }
 
   const failed = results.filter((r) => r.code !== 0);

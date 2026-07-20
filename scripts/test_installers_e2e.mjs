@@ -34,6 +34,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(__dirname, "..");
 const INSTALL_SH = path.join(REPO_ROOT, "scripts", "install.sh");
 const INSTALL_PS1 = path.join(REPO_ROOT, "scripts", "install.ps1");
@@ -244,8 +245,19 @@ function sandbox({ targetName = "target", preinstalled = false, version = SOURCE
   return { root, home, claudeHome, codexHome, bin, canary, statePath, logPath, target, version, pkgRoot };
 }
 
-function run(sb, { args = [], withFakes = true, extraEnv = {}, input = "" } = {}) {
-  const env = {
+// sandboxEnv — the ONE place that builds the isolated child env (deny
+// sentinel: HOME/USERPROFILE/CLAUDE_HOME/CODEX_HOME point inside the sandbox,
+// PATH excludes the real ~/.local/bin). Passing `env` to spawnSync/execFileSync
+// REPLACES the entire child environment (node child_process semantics) rather
+// than merging with process.env, so every caller that builds its env through
+// this helper is fully sealed off from whatever HOME/CODEX_HOME/PATH the
+// outer test process (or a developer's shell) happens to have — not just the
+// install run itself, but every POST-install verification call too (E2E env
+// seal, hardening-8: before this, assertVersionParity's status/onboard-recheck
+// calls and the codex-plugin-first doctor check carried no `env` option at
+// all, so they silently inherited the real environment).
+function sandboxEnv(sb, { withFakes = true, extraEnv = {} } = {}) {
+  return {
     PATH: withFakes ? `${sb.bin}${path.delimiter}${BASE_PATH}` : BASE_PATH,
     HOME: sb.home,
     USERPROFILE: sb.home,
@@ -259,6 +271,10 @@ function run(sb, { args = [], withFakes = true, extraEnv = {}, input = "" } = {}
     BEE_FAKE_VERSION: sb.version,
     ...extraEnv,
   };
+}
+
+function run(sb, { args = [], withFakes = true, extraEnv = {}, input = "" } = {}) {
+  const env = sandboxEnv(sb, { withFakes, extraEnv });
   const result = spawnSync("bash", [INSTALL_SH, ...args], { env, input, encoding: "utf8", timeout: 240000 });
   return { code: result.status, signal: result.signal, stdout: result.stdout ?? "", stderr: result.stderr ?? "", out: `${result.stdout ?? ""}${result.stderr ?? ""}` };
 }
@@ -274,14 +290,20 @@ function mutatingCalls(sb) {
 }
 
 function assertVersionParity(sb, expected = SOURCE_VERSION, { sourceRoot = REPO_ROOT, onboardFlags = [] } = {}) {
-  const statusRaw = execFileSync("node", [".bee/bin/bee.mjs", "status", "--json"], { cwd: sb.target, encoding: "utf8" });
+  // Both post-install verification calls below run AFTER install.sh's own
+  // (already-sealed) run, so they must carry the exact same sandbox env — an
+  // execFileSync/spawnSync call with no explicit `env` inherits the outer
+  // test process's real environment instead (node child_process semantics),
+  // silently reopening the isolation this suite's header promises (E2E env
+  // seal, hardening-8).
+  const statusRaw = execFileSync("node", [".bee/bin/bee.mjs", "status", "--json"], { cwd: sb.target, encoding: "utf8", env: sandboxEnv(sb) });
   const status = JSON.parse(statusRaw);
   assert.equal(status.onboarding?.installed, true, "onboarding.installed must be true");
   assert.equal(status.onboarding?.bee_version, expected, "bee_version must equal source");
   assert.equal(status.onboarding?.plugin_version, expected, "plugin_version must equal source");
   assert.equal(status.onboarding?.drift, false, "status must report no drift");
   // Independent immediate up_to_date recheck (mirrors the flags the installer used).
-  const planRaw = execFileSync("node", [path.join(sourceRoot, "skills/bee-hive/scripts/onboard_bee.mjs"), "--repo-root", sb.target, "--json", ...onboardFlags], { encoding: "utf8" });
+  const planRaw = execFileSync("node", [path.join(sourceRoot, "skills/bee-hive/scripts/onboard_bee.mjs"), "--repo-root", sb.target, "--json", ...onboardFlags], { encoding: "utf8", env: sandboxEnv(sb) });
   assert.equal(JSON.parse(planRaw).status, "up_to_date", "onboarding must be up_to_date immediately after apply");
 }
 
@@ -317,6 +339,30 @@ check("install.ps1 sparse-checkout set fetches every tree onboarding reads (incl
   const roots = m[1].trim().split(/\s+/);
   for (const required of ["skills", "hooks", ".claude-plugin", ".codex-plugin", "docs/history/codex-harness-hardening"]) {
     assert.ok(roots.includes(required), `sparse-checkout set must include ${required} (got: ${roots.join(" ")})`);
+  }
+});
+
+// Regression guard (hardening-8, E2E env seal): every POST-install
+// verification call this suite makes (assertVersionParity's status +
+// onboard-recheck, the codex-plugin-first doctor check) must pass an
+// explicit `env: sandboxEnv(...)` — passing `env` REPLACES the entire child
+// environment (node child_process semantics), so this is what seals a
+// post-install check off from whatever HOME/CODEX_HOME/PATH the outer test
+// process (or a developer's shell) happens to have, exactly like the actual
+// install run already is. Before this cell these three call sites carried no
+// `env` option at all and silently inherited the real environment — a leak
+// this static source check pins so it can never quietly regress.
+check("every post-install verification call in this suite carries the sandbox env (no real HOME/CODEX_HOME leak)", () => {
+  const selfSource = fs.readFileSync(__filename, "utf8");
+  const postInstallCallSites = [
+    /execFileSync\("node", \[".bee\/bin\/bee\.mjs", "status", "--json"\][^;]*?\);/s,
+    /execFileSync\("node", \[path\.join\(sourceRoot, "skills\/bee-hive\/scripts\/onboard_bee\.mjs"\)[^;]*?\);/s,
+    /spawnSync\("node", \[".bee\/bin\/bee\.mjs", "doctor", "--runtime", "codex", "--json"\][^;]*?\);/s,
+  ];
+  for (const re of postInstallCallSites) {
+    const m = re.exec(selfSource);
+    assert.ok(m, `expected post-install call site not found for pattern: ${re}`);
+    assert.match(m[0], /env:\s*sandboxEnv\(/, `call site must pass env: sandboxEnv(sb) — no post-install call may inherit the real process env: ${m[0]}`);
   }
 });
 
@@ -569,7 +615,8 @@ check("codex plugin-first: post-cleanup end state has codex-hybrid hooks and no 
   // g22-4) independently hold the fresh-sandbox verdict at `blocked` here, so a
   // `degraded` expectation would not hold; that is a separate, out-of-scope
   // concern from the trust-row re-class this cell fixes.
-  const doctorResult = spawnSync("node", [".bee/bin/bee.mjs", "doctor", "--runtime", "codex", "--json"], { cwd: sb.target, encoding: "utf8" });
+  // Post-install verification call: same sandbox env seal as assertVersionParity above.
+  const doctorResult = spawnSync("node", [".bee/bin/bee.mjs", "doctor", "--runtime", "codex", "--json"], { cwd: sb.target, encoding: "utf8", env: sandboxEnv(sb) });
   assert.equal(doctorResult.status, 0, `doctor must run cleanly in the sandbox target:\n${doctorResult.stdout}\n${doctorResult.stderr}`);
   let doctor;
   try {

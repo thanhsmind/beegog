@@ -68,6 +68,7 @@ import {
   cacheFilePath,
   advisorRefAnchors,
   advisorRefStale,
+  localConfigPath,
 } from './lib/state.mjs';
 // Lane + session CLI surface (fresh-session-handoff fsh-4, D2/D4): claims.mjs
 // stays out of this cell's file scope — these are already-exported read/
@@ -2904,24 +2905,28 @@ function handleConfigValidate(root, _flags) {
 // through a validated CLI instead of hand-editing .bee/config.json — the same
 // "everything through the CLI" contract every other .bee file already has.
 
-function configFilePath(root) {
-  return path.join(root, '.bee', 'config.json');
+// hardening-8 (config overlay): --local redirects every config get/set/unset
+// verb at the machine-local overlay (.bee/config.local.json, gitignored)
+// instead of the tracked .bee/config.json. Omitting --local is byte-identical
+// to today (D4 zero-flag parity) — every existing caller is unaffected.
+function configFilePath(root, { local = false } = {}) {
+  return local ? localConfigPath(root) : path.join(root, '.bee', 'config.json');
 }
 
 // Read the RAW config object for editing (not readConfig — that normalizes and
 // fills defaults, which would balloon the file). Refuses on a present-but-broken
 // file so a set/unset never silently clobbers an unparseable config and loses it.
-function readRawConfigForEdit(root) {
-  const file = configFilePath(root);
+function readRawConfigForEdit(root, { local = false } = {}) {
+  const file = configFilePath(root, { local });
   if (!fs.existsSync(file)) return {};
   const raw = readJson(file, undefined);
   if (raw === undefined || raw === null) {
     throw new Error(
-      `config: .bee/config.json exists but is not valid JSON — fix it before "config set"/"config unset" (refusing to overwrite and lose your config).`,
+      `config: ${path.relative(root, file)} exists but is not valid JSON — fix it before "config set"/"config unset" (refusing to overwrite and lose your config).`,
     );
   }
   if (typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('config: .bee/config.json is not a JSON object.');
+    throw new Error(`config: ${path.relative(root, file)} is not a JSON object.`);
   }
   return raw;
 }
@@ -3002,10 +3007,11 @@ function refuseIfNewConfigProblem(verb, before, after) {
 
 function handleConfigGet(root, flags) {
   const key = requireFlag(flags, 'key');
-  const value = getConfigAtPath(readRawConfigForEdit(root), key);
+  const local = flags.local === true;
+  const value = getConfigAtPath(readRawConfigForEdit(root, { local }), key);
   const present = value !== undefined;
   return {
-    result: { key, present, value: present ? value : null },
+    result: { key, present, value: present ? value : null, local },
     text: present ? `${key} = ${JSON.stringify(value)}` : `config get: "${key}" is not set.`,
   };
 }
@@ -3013,25 +3019,37 @@ function handleConfigGet(root, flags) {
 function handleConfigSet(root, flags) {
   const key = requireFlag(flags, 'key');
   const value = coerceConfigValue(requireFlag(flags, 'value'), flags.string === true);
-  const before = validateModelsConfig(readRawConfigForValidation(root));
-  const config = readRawConfigForEdit(root);
-  setConfigAtPath(config, key, value);
-  refuseIfNewConfigProblem('set', before, validateModelsConfig(config));
-  writeJsonAtomic(configFilePath(root), config);
-  return { result: { key, value }, text: `config set: ${key} = ${JSON.stringify(value)}` };
+  const local = flags.local === true;
+  const config = readRawConfigForEdit(root, { local });
+  // The models-config cli-safety guard only ever applies to the TRACKED
+  // config (the overlay is for machine-local values like dogfood_repos, not
+  // model/cli wiring) — an overlay write skips it rather than comparing a
+  // local-only object against the tracked validator's expectations.
+  if (!local) {
+    const before = validateModelsConfig(readRawConfigForValidation(root));
+    setConfigAtPath(config, key, value);
+    refuseIfNewConfigProblem('set', before, validateModelsConfig(config));
+  } else {
+    setConfigAtPath(config, key, value);
+  }
+  writeJsonAtomic(configFilePath(root, { local }), config);
+  return { result: { key, value, local }, text: `config set${local ? ' --local' : ''}: ${key} = ${JSON.stringify(value)}` };
 }
 
 function handleConfigUnset(root, flags) {
   const key = requireFlag(flags, 'key');
-  const before = validateModelsConfig(readRawConfigForValidation(root));
-  const config = readRawConfigForEdit(root);
+  const local = flags.local === true;
+  const config = readRawConfigForEdit(root, { local });
+  const before = !local ? validateModelsConfig(readRawConfigForValidation(root)) : null;
   const removed = unsetConfigAtPath(config, key);
   if (!removed) {
-    return { result: { key, removed: false }, text: `config unset: "${key}" was not set (no change).` };
+    return { result: { key, removed: false, local }, text: `config unset${local ? ' --local' : ''}: "${key}" was not set (no change).` };
   }
-  refuseIfNewConfigProblem('unset', before, validateModelsConfig(config));
-  writeJsonAtomic(configFilePath(root), config);
-  return { result: { key, removed: true }, text: `config unset: removed "${key}".` };
+  if (!local) {
+    refuseIfNewConfigProblem('unset', before, validateModelsConfig(config));
+  }
+  writeJsonAtomic(configFilePath(root, { local }), config);
+  return { result: { key, removed: true, local }, text: `config unset${local ? ' --local' : ''}: removed "${key}".` };
 }
 
 // ─── doctor (codex-native-runtime-v2 D11): fail-closed runtime health report
@@ -4229,7 +4247,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

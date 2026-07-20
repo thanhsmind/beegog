@@ -585,6 +585,12 @@ const EXPECTED_STATE_EXPORTS = [
   'handoffPath',
   'writeHandoff',
   'adoptHandoff',
+  // hardening-8 (config overlay): the machine-local .bee/config.local.json
+  // sibling readConfig deep-merges over the tracked config (overlay wins,
+  // arrays replace) — see test_state.mjs's own readConfig/mergeConfigOverlay
+  // rows for the actual behavior coverage.
+  'localConfigPath',
+  'mergeConfigOverlay',
 ];
 
 await check('readConfig strips a stale advisor key and never throws; advisor exports are gone', async () => {

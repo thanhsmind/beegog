@@ -23,6 +23,9 @@ import {
   readStateStrict,
   gateApproved,
   startFeature,
+  readConfig,
+  localConfigPath,
+  mergeConfigOverlay,
 } from '../lib/state.mjs';
 import { readBacklogCounts } from '../lib/backlog.mjs';
 import { reserve, reservationsPath } from '../lib/reservations.mjs';
@@ -602,6 +605,107 @@ await check('lanes: restarting a terminal lane resets exactly its four gates (cr
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ─── config.local.json overlay (hardening-8) ───────────────────────────────
+// Machine-local values (today: dogfood_repos absolute paths) live in a
+// gitignored .bee/config.local.json sibling, deep-merged OVER the tracked
+// .bee/config.json by readConfig — overlay wins, absent overlay is
+// byte-identical to today (D4 zero-overlay parity), and arrays replace
+// wholesale rather than merging element-by-element.
+
+function writeConfigFixture(dir, tracked, overlay) {
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'config.json'), tracked);
+  if (overlay !== undefined) writeJsonAtomic(localConfigPath(dir), overlay);
+}
+
+await check('readConfig: absent .bee/config.local.json is byte-identical to today (no overlay file at all)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-config-overlay-absent-'));
+  try {
+    writeConfigFixture(dir, {
+      gate_bypass: 'normal',
+      dogfood_repos: [{ path: dir, label: 'tracked-only' }],
+    });
+    assert(!fs.existsSync(localConfigPath(dir)), 'precondition: no overlay file exists');
+    const config = readConfig(dir);
+    assert(config.gate_bypass === 'normal', `gate_bypass must come from the tracked file unchanged, got ${config.gate_bypass}`);
+    assert(config.dogfood_repos.length === 1 && config.dogfood_repos[0].label === 'tracked-only', 'dogfood_repos must be exactly the tracked list when no overlay exists');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('readConfig: an overlay value WINS over the tracked value for the same key', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-config-overlay-wins-'));
+  try {
+    writeConfigFixture(
+      dir,
+      { gate_bypass: 'off', product_root: 'tracked-root' },
+      { gate_bypass: 'total' },
+    );
+    const config = readConfig(dir);
+    assert(config.gate_bypass === 'total', `overlay must win: expected "total", got ${config.gate_bypass}`);
+    assert(config.product_root === 'tracked-root', 'a key the overlay never mentions must still come from the tracked file');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('readConfig: dogfood_repos overlay REPLACES the tracked array wholesale (never concatenated/interleaved)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-config-overlay-array-'));
+  try {
+    writeConfigFixture(
+      dir,
+      { dogfood_repos: [{ path: dir, label: 'tracked-a' }, { path: dir, label: 'tracked-b' }] },
+      { dogfood_repos: [{ path: dir, label: 'local-only' }] },
+    );
+    const config = readConfig(dir);
+    assert(config.dogfood_repos.length === 1, `overlay array must fully replace the tracked array (expected 1 entry, got ${config.dogfood_repos.length})`);
+    assert(config.dogfood_repos[0].label === 'local-only', `expected the overlay's own entry to survive, got ${JSON.stringify(config.dogfood_repos)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('readConfig: overlay deep-merges nested objects (a partial hooks override leaves untouched siblings from the tracked file)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-config-overlay-nested-'));
+  try {
+    writeConfigFixture(
+      dir,
+      { hooks: { 'session-init': true, 'write-guard': true } },
+      { hooks: { 'write-guard': false } },
+    );
+    const config = readConfig(dir);
+    assert(config.hooks['write-guard'] === false, 'overlay leaf must win inside a nested object');
+    assert(config.hooks['session-init'] === true, 'a sibling key inside the same nested object the overlay never touched must survive from the tracked file');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('readConfig: a malformed (non-object) .bee/config.local.json degrades to "absent overlay", never throws', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-config-overlay-malformed-'));
+  try {
+    writeConfigFixture(dir, { gate_bypass: 'normal' });
+    fs.writeFileSync(localConfigPath(dir), '[ "not", "an", "object" ]\n');
+    const config = readConfig(dir);
+    assert(config.gate_bypass === 'normal', 'a malformed overlay must never override or crash — tracked value stands');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('mergeConfigOverlay: pure function — base is never mutated, arrays replace, plain objects merge recursively', () => {
+  const base = { a: 1, nested: { x: 1, y: 2 }, list: [1, 2, 3] };
+  const baseSnapshot = JSON.parse(JSON.stringify(base));
+  const merged = mergeConfigOverlay(base, { nested: { y: 99 }, list: [7] });
+  assert(JSON.stringify(base) === JSON.stringify(baseSnapshot), 'base object must never be mutated by the merge');
+  assert(merged.a === 1, 'a key the overlay never mentions passes through unchanged');
+  assert(merged.nested.x === 1 && merged.nested.y === 99, 'nested object merges: untouched sibling survives, overlaid leaf wins');
+  assert(Array.isArray(merged.list) && merged.list.length === 1 && merged.list[0] === 7, 'array overlay replaces wholesale, never concatenates');
+  assert(mergeConfigOverlay(base, undefined) === base, 'an undefined overlay returns the base object unchanged (identity, not a copy)');
+  assert(mergeConfigOverlay(base, null) === base, 'a null overlay returns the base object unchanged');
 });
 
 printSummaryAndExit();
