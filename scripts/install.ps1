@@ -88,6 +88,187 @@ function Invoke-PluginListProbe([string]$CliName) {
   }
 }
 
+# D8: pre-confirmation is READ-ONLY. Builds a combined { claude, codex }
+# plugin-state json file from `plugin list` status probes ONLY - never a
+# mutating verb (marketplace add / plugin add / install / remove /
+# uninstall). Mirrors install.sh's probe_plugin_state, including its
+# --plugin-state-file early return (a caller-supplied fixture file is used
+# as-is, no real CLI probing, so fixture-driven runs never touch a real
+# runtime plugin).
+function New-PluginStateFile([string]$DestDir) {
+  if ($PluginStateFile) { return (Resolve-Path $PluginStateFile).ProviderPath }
+
+  $claudeStatePath = Join-Path $DestDir 'claude.json'
+  $codexStatePath = Join-Path $DestDir 'codex.json'
+  Set-Content -Encoding ASCII -Path $claudeStatePath -Value '[]'
+  Set-Content -Encoding ASCII -Path $codexStatePath -Value '[]'
+
+  if ($Runtime -in @('codex', 'both')) {
+    $codex = Get-Command codex -ErrorAction SilentlyContinue
+    if ($codex) {
+      $codexStatusProbe = Invoke-PluginListProbe 'codex'
+      if ($codexStatusProbe.ExitCode -ne 0) {
+        # CLI is on PATH but not runnable (field report: a codex npm shim that
+        # crashes with "Missing optional dependency @openai/codex-linux-x64"
+        # on Windows+WSL). plugin-first genuinely needs the CLI, so it still
+        # refuses, but now with a named, actionable message. repo-copy never
+        # calls the CLI for anything but this read-only probe, so it warns
+        # and keeps the pre-seeded '[]' state content instead of failing.
+        $codexFirstErr = if ($codexStatusProbe.StdErr.Count -gt 0) { $codexStatusProbe.StdErr[0] } else { '' }
+        if ($Distribution -eq 'plugin-first') {
+          foreach ($line in $codexStatusProbe.StdErr) { Write-Host $line }
+          Fail "codex CLI is on PATH but not runnable ('codex plugin list --json' failed). Fix options: repair or reinstall the codex CLI, re-run with -Distribution repo-copy (does not require a runtime CLI), or re-run with -Runtime claude to exclude codex."
+        } else {
+          Write-Warning "codex CLI found on PATH but not runnable ('codex plugin list --json' failed: $codexFirstErr); repo-copy does not require it, continuing without it."
+        }
+      } else {
+        Set-Content -Encoding UTF8 -Path $codexStatePath -Value ($codexStatusProbe.StdOut -join "`n")
+      }
+    } elseif ($Distribution -eq 'plugin-first') { Fail 'Codex CLI is required for plugin-first' }
+  }
+
+  if ($Runtime -in @('claude', 'both')) {
+    $claude = Get-Command claude -ErrorAction SilentlyContinue
+    if ($claude) {
+      $claudeStatusProbe = Invoke-PluginListProbe 'claude'
+      if ($claudeStatusProbe.ExitCode -ne 0) {
+        # Same broken-but-present-CLI policy as the codex probe above.
+        $claudeFirstErr = if ($claudeStatusProbe.StdErr.Count -gt 0) { $claudeStatusProbe.StdErr[0] } else { '' }
+        if ($Distribution -eq 'plugin-first') {
+          foreach ($line in $claudeStatusProbe.StdErr) { Write-Host $line }
+          Fail "claude CLI is on PATH but not runnable ('claude plugin list --json' failed). Fix options: repair or reinstall the claude CLI, re-run with -Distribution repo-copy (does not require a runtime CLI), or re-run with -Runtime codex to exclude claude."
+        } else {
+          Write-Warning "claude CLI found on PATH but not runnable ('claude plugin list --json' failed: $claudeFirstErr); repo-copy does not require it, continuing without it."
+        }
+      } else {
+        Set-Content -Encoding UTF8 -Path $claudeStatePath -Value ($claudeStatusProbe.StdOut -join "`n")
+      }
+    } elseif ($Distribution -eq 'plugin-first') { Fail 'Claude CLI is required for plugin-first' }
+  }
+
+  $combined = @{ claude = (Get-Content $claudeStatePath -Raw | ConvertFrom-Json); codex = (Get-Content $codexStatePath -Raw | ConvertFrom-Json) }
+  $result = Join-Path $DestDir 'state.json'
+  Set-Content -Encoding UTF8 -Path $result -Value ($combined | ConvertTo-Json -Depth 100)
+  return $result
+}
+
+# Whether the bee plugin was recorded as installed for <RuntimeName> in a
+# { claude, codex } state json blob. Tolerant of a bare array, a wrapped
+# {plugins|items|data} shape, or a single object; unparseable/missing data
+# reads as "not installed" (fail-safe for rollback comparisons). Mirrors
+# install.sh's plugin_was_installed.
+function Test-PluginWasInstalled([string]$RuntimeName, [string]$StateJsonPath) {
+  if (-not (Test-Path $StateJsonPath)) { return $false }
+  try {
+    $state = Get-Content $StateJsonPath -Raw | ConvertFrom-Json
+    $list = $state.$RuntimeName
+    if (-not $list) { return $false }
+    $items = @($list)
+    if ($items.Count -eq 1 -and $items[0].PSObject.Properties.Name -contains 'plugins') { $items = @($items[0].plugins) }
+    elseif ($items.Count -eq 1 -and $items[0].PSObject.Properties.Name -contains 'items') { $items = @($items[0].items) }
+    elseif ($items.Count -eq 1 -and $items[0].PSObject.Properties.Name -contains 'data') { $items = @($items[0].data) }
+    foreach ($item in $items) {
+      $name = $null
+      if ($item.name) { $name = $item.name }
+      elseif ($item.id) { $name = $item.id }
+      elseif ($item.plugin -and $item.plugin.name) { $name = $item.plugin.name }
+      if ($name -eq 'bee' -or ([string]$name).StartsWith('bee@')) {
+        $statusRaw = $item.status
+        if (-not $statusRaw) { $statusRaw = $item.state }
+        if (-not $statusRaw) { $statusRaw = '' }
+        $statusText = ([string]$statusRaw).ToLowerInvariant()
+        if ($item.installed -eq $true) { return $true }
+        return -not (@('removed', 'not_installed') -contains $statusText)
+      }
+    }
+  } catch { return $false }
+  return $false
+}
+
+# D8 point 3: mutate the plugin ONLY after the confirmation gate has been
+# passed (called post-confirm by the caller below). plugin-first installs
+# the plugin package; repo-copy removes it (best-effort - a pre-run absence
+# means nothing to remove). Fixture runs (-PluginStateFile) skip every real
+# CLI transition entirely, mirroring install.sh's plugin-state-file early
+# return in transition_plugin.
+function Invoke-PluginTransition {
+  if ($PluginStateFile) { return $true }
+  foreach ($rt in @('codex', 'claude')) {
+    if ($Runtime -notin @($rt, 'both')) { continue }
+    $cmd = Get-Command $rt -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+      if ($Distribution -eq 'plugin-first') { Fail "$rt CLI is required for plugin-first" }
+      continue
+    }
+    if ($Distribution -eq 'plugin-first') {
+      # Mutation verbs take NO --json (only `plugin list` does); the real
+      # CLI rejects `--json` here with `error: unknown option '--json'`.
+      & $rt plugin marketplace add $beeSrc | Out-Null
+      if ($LASTEXITCODE -ne 0) { return $false }
+      if ($rt -eq 'codex') { & codex plugin add 'bee@bee' | Out-Null } else { & claude plugin install 'bee@bee' | Out-Null }
+      if ($LASTEXITCODE -ne 0) { return $false }
+    } else {
+      $preProbe = Invoke-PluginListProbe $rt
+      if ($preProbe.ExitCode -eq 0 -and ($preProbe.StdOut -join '') -match 'bee@bee') {
+        if ($rt -eq 'codex') { & codex plugin remove 'bee@bee' | Out-Null } else { & claude plugin uninstall 'bee@bee' | Out-Null }
+      }
+    }
+  }
+  return $true
+}
+
+# D8 point 4: restore every active runtime to its exact pre-run installed
+# state. Honest rollback: re-probes the CURRENT state and only acts where it
+# genuinely differs from the snapshot taken before the transition ran - a
+# transition that died before mutating anything (e.g. at `marketplace add`)
+# leaves current == pre-run, so rollback is correctly a no-op success, never
+# removing a never-installed plugin. Mirrors install.sh's rollback_plugin.
+function Invoke-PluginRollback {
+  if ($PluginStateFile) { return $true }
+  $ok = $true
+  $rollbackDir = Join-Path $stateTempDir ("rollback-" + [Guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $rollbackDir | Out-Null
+  $nowStateFile = New-PluginStateFile $rollbackDir
+  foreach ($rt in @('codex', 'claude')) {
+    if ($Runtime -notin @($rt, 'both')) { continue }
+    $cmd = Get-Command $rt -ErrorAction SilentlyContinue
+    if (-not $cmd) { continue }
+    $was = Test-PluginWasInstalled $rt $preStateFile
+    $now = Test-PluginWasInstalled $rt $nowStateFile
+    if ($was -eq $now) { continue }
+    if ($was) {
+      # pre-run had the plugin, the transition removed it: re-install.
+      & $rt plugin marketplace add $beeSrc | Out-Null
+      if ($LASTEXITCODE -ne 0) { $ok = $false }
+      if ($rt -eq 'codex') { & codex plugin add 'bee@bee' | Out-Null } else { & claude plugin install 'bee@bee' | Out-Null }
+      if ($LASTEXITCODE -ne 0) { $ok = $false }
+    } else {
+      # pre-run lacked the plugin, the transition installed it: remove it.
+      if ($rt -eq 'codex') { & codex plugin remove 'bee@bee' | Out-Null } else { & claude plugin uninstall 'bee@bee' | Out-Null }
+      if ($LASTEXITCODE -ne 0) { $ok = $false }
+    }
+  }
+  return $ok
+}
+
+# A post-transition (or post-preflight, or post-apply) failure: roll the
+# plugin state back to the pre-run snapshot, leave the target untouched,
+# report BOTH the primary failure and any rollback failure, and exit
+# nonzero - never convert a failed install into success. Uses
+# $host.UI.WriteErrorLine (not Write-Error) so the message prints to stderr
+# WITHOUT tripping $ErrorActionPreference = 'Stop' into a terminating error
+# that would skip the rollback call below. Mirrors install.sh's
+# handle_transition_failure.
+function Invoke-PluginTransitionFailure([string]$Message) {
+  $host.UI.WriteErrorLine("Error: $Message")
+  if (Invoke-PluginRollback) {
+    $host.UI.WriteErrorLine('rollback: pre-run plugin state restored; target left unchanged')
+  } else {
+    $host.UI.WriteErrorLine('Error: rollback failed to fully restore the pre-run plugin state')
+  }
+  exit 1
+}
+
 # ---------- prerequisites ----------
 
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
@@ -205,92 +386,39 @@ try {
   if ($ClaudeMd) { $onboardFlags += '--claude-md' }
   if ($GlobalSkills) { $onboardFlags += '--global-skills' }
 
-  if ($PluginStateFile) {
-    if (-not (Test-Path $PluginStateFile)) { Fail "-PluginStateFile not found: $PluginStateFile" }
-    $stateFile = (Resolve-Path $PluginStateFile).ProviderPath
-  } else {
-    $stateTempDir = Join-Path ([IO.Path]::GetTempPath()) ("bee-plugin-state-" + [Guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Force -Path $stateTempDir | Out-Null
-    $claudeStatePath = Join-Path $stateTempDir 'claude.json'
-    $codexStatePath = Join-Path $stateTempDir 'codex.json'
-    Set-Content -Encoding ASCII -Path $claudeStatePath -Value '[]'
-    Set-Content -Encoding ASCII -Path $codexStatePath -Value '[]'
+  if ($PluginStateFile -and -not (Test-Path $PluginStateFile)) { Fail "-PluginStateFile not found: $PluginStateFile" }
+  $stateTempDir = Join-Path ([IO.Path]::GetTempPath()) ("bee-plugin-state-" + [Guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $stateTempDir | Out-Null
 
-    if ($Runtime -in @('codex', 'both')) {
-      $codex = Get-Command codex -ErrorAction SilentlyContinue
-      if ($codex) {
-        if (-not $DryRun) {
-          if ($Distribution -eq 'plugin-first') {
-            # Mutation verbs take NO --json (only `plugin list` does); the real
-            # CLI rejects `--json` here with `error: unknown option '--json'`.
-            & codex plugin marketplace add $beeSrc | Out-Null
-            if ($LASTEXITCODE -ne 0) { Fail 'Codex marketplace registration failed' }
-            & codex plugin add 'bee@bee' | Out-Null
-            if ($LASTEXITCODE -ne 0) { Fail 'Codex bee plugin install failed' }
-          } else {
-            $codexPreProbe = Invoke-PluginListProbe 'codex'
-            if ($codexPreProbe.ExitCode -eq 0 -and ($codexPreProbe.StdOut -join '') -match 'bee@bee') {
-              & codex plugin remove 'bee@bee' | Out-Null
-            }
-          }
-        }
-        $codexStatusProbe = Invoke-PluginListProbe 'codex'
-        if ($codexStatusProbe.ExitCode -ne 0) {
-          # CLI is on PATH but not runnable (field report: a codex npm shim that
-          # crashes with "Missing optional dependency @openai/codex-linux-x64"
-          # on Windows+WSL). plugin-first genuinely needs the CLI, so it still
-          # refuses, but now with a named, actionable message. repo-copy never
-          # calls the CLI for anything but this read-only probe, so it warns
-          # and keeps the pre-seeded '[]' state content instead of failing.
-          $codexFirstErr = if ($codexStatusProbe.StdErr.Count -gt 0) { $codexStatusProbe.StdErr[0] } else { '' }
-          if ($Distribution -eq 'plugin-first') {
-            foreach ($line in $codexStatusProbe.StdErr) { Write-Host $line }
-            Fail "codex CLI is on PATH but not runnable ('codex plugin list --json' failed). Fix options: repair or reinstall the codex CLI, re-run with -Distribution repo-copy (does not require a runtime CLI), or re-run with -Runtime claude to exclude codex."
-          } else {
-            Write-Warning "codex CLI found on PATH but not runnable ('codex plugin list --json' failed: $codexFirstErr); repo-copy does not require it, continuing without it."
-          }
-        } else {
-          Set-Content -Encoding UTF8 -Path $codexStatePath -Value ($codexStatusProbe.StdOut -join "`n")
-        }
-      } elseif ($Distribution -eq 'plugin-first') { Fail 'Codex CLI is required for plugin-first' }
-    }
+  # 1. read-only probe of the CURRENT plugin state (pre-confirmation, no
+  #    mutation) - install.sh D8 order, mirrored here.
+  $stateFile = New-PluginStateFile $stateTempDir
+  $preStateFile = Join-Path $stateTempDir 'pre-state.json'
+  Copy-Item $stateFile $preStateFile -Force
 
-    if ($Runtime -in @('claude', 'both')) {
-      $claude = Get-Command claude -ErrorAction SilentlyContinue
-      if ($claude) {
-        if (-not $DryRun) {
-          if ($Distribution -eq 'plugin-first') {
-            & claude plugin marketplace add $beeSrc | Out-Null
-            if ($LASTEXITCODE -ne 0) { Fail 'Claude marketplace registration failed' }
-            & claude plugin install 'bee@bee' | Out-Null
-            if ($LASTEXITCODE -ne 0) { Fail 'Claude bee plugin install failed' }
-          } else {
-            $claudePreProbe = Invoke-PluginListProbe 'claude'
-            if ($claudePreProbe.ExitCode -eq 0 -and ($claudePreProbe.StdOut -join '') -match 'bee@bee') {
-              & claude plugin uninstall 'bee@bee' | Out-Null
-            }
-          }
-        }
-        $claudeStatusProbe = Invoke-PluginListProbe 'claude'
-        if ($claudeStatusProbe.ExitCode -ne 0) {
-          # Same broken-but-present-CLI policy as the codex probe above.
-          $claudeFirstErr = if ($claudeStatusProbe.StdErr.Count -gt 0) { $claudeStatusProbe.StdErr[0] } else { '' }
-          if ($Distribution -eq 'plugin-first') {
-            foreach ($line in $claudeStatusProbe.StdErr) { Write-Host $line }
-            Fail "claude CLI is on PATH but not runnable ('claude plugin list --json' failed). Fix options: repair or reinstall the claude CLI, re-run with -Distribution repo-copy (does not require a runtime CLI), or re-run with -Runtime codex to exclude claude."
-          } else {
-            Write-Warning "claude CLI found on PATH but not runnable ('claude plugin list --json' failed: $claudeFirstErr); repo-copy does not require it, continuing without it."
-          }
-        } else {
-          Set-Content -Encoding UTF8 -Path $claudeStatePath -Value ($claudeStatusProbe.StdOut -join "`n")
-        }
-      } elseif ($Distribution -eq 'plugin-first') { Fail 'Claude CLI is required for plugin-first' }
-    }
+  Write-Host "plan     onboard_bee.mjs $($onboardFlags -join ' ') (dry-run first)"
+  node $onboard --repo-root $Directory @onboardFlags
+  if ($LASTEXITCODE -ne 0) { Fail 'Onboarding plan failed.' }
 
-    $combined = @{ claude = (Get-Content $claudeStatePath -Raw | ConvertFrom-Json); codex = (Get-Content $codexStatePath -Raw | ConvertFrom-Json) }
-    $stateFile = Join-Path $stateTempDir 'state.json'
-    Set-Content -Encoding UTF8 -Path $stateFile -Value ($combined | ConvertTo-Json -Depth 100)
+  if ($DryRun) {
+    Write-Host 'dry-run  nothing written. Re-run without -DryRun to apply.'
+    exit 0
   }
+
+  # 2. single confirmation gate covers BOTH the plugin transition and the
+  #    onboarding apply below - nothing above this point mutates a plugin,
+  #    target, or home.
+  if (-not (Confirm-Step "Apply this onboarding plan to $Directory?")) { Fail 'Aborted - nothing applied.' }
+
+  # 3. mutate the plugin ONLY now, after confirmation - the pre-run snapshot
+  #    recorded above ($preStateFile) is what a later failure rolls back to.
+  if (-not (Invoke-PluginTransition)) { Invoke-PluginTransitionFailure 'Plugin transition failed' }
+
+  # Re-probe post-transition: the distribution helper below must see the
+  # plugin's ACTUAL current state (installed for plugin-first, removed for
+  # repo-copy) to prove/clean correctly - matches install.sh's second
+  # probe_plugin_state call immediately before its own $DIST_HELPER call.
+  $stateFile = New-PluginStateFile $stateTempDir
 
   $distributionArgs = @('--mode', $Distribution, '--runtime', $Runtime, '--repo-root', $Directory, '--release-manifest', $releaseManifest, '--plugin-state-file', $stateFile)
   # GH #22 P0-1 (cph-1 self-erasure fix): a plugin-first install whose runtime
@@ -313,37 +441,24 @@ try {
   }
 
   node $distributionHelper @distributionArgs
-  if ($LASTEXITCODE -ne 0) { Fail 'Distribution preflight refused' }
+  if ($LASTEXITCODE -ne 0) { Invoke-PluginTransitionFailure 'Distribution preflight refused after transition' }
 
-  Write-Host "plan     onboard_bee.mjs $($onboardFlags -join ' ') (dry-run first)"
-  node $onboard --repo-root $Directory @onboardFlags
-  if ($LASTEXITCODE -ne 0) { Fail 'Onboarding plan failed.' }
-
-  if ($DryRun) {
-    Write-Host 'dry-run  nothing written. Re-run without -DryRun to apply.'
-    exit 0
-  }
-
-  if (-not (Confirm-Step "Apply this onboarding plan to $Directory?")) { Fail 'Aborted - nothing applied.' }
+  # 4. apply onboarding. A refused/blocked apply (e.g. the codex-hybrid hook
+  #    write preflight in onboard_bee.mjs applyPlan refusing because
+  #    .codex/hooks.json or .bee/bin/hooks/ can't be written) names the
+  #    concrete way out below, then rolls the plugin transition back.
   $applyOutput = node $onboard --repo-root $Directory --apply @onboardFlags
   if ($LASTEXITCODE -ne 0) {
-    # A typed-blocked/refused apply (e.g. the codex-hybrid hook write preflight
-    # in onboard_bee.mjs applyPlan refusing because .codex/hooks.json or
-    # .bee/bin/hooks/ can't be written) names the concrete way out: repo-copy
-    # sidesteps codex-hybrid entirely, or clear the obstacle and retry hybrid.
-    # NOTE: unlike install.sh, this installer has no plugin transition/rollback
-    # machinery (the plugin add/remove above is not undone on a later failure);
-    # this only extends the failure message with fix guidance.
     Write-Host ($applyOutput -join "`n")
     Write-Host '  fix options:'
     Write-Host '    - re-run with -Distribution repo-copy (no codex-hybrid hook write required)'
     Write-Host '    - clear the obstacle blocking the write (see reason above) and re-run -Distribution plugin-first'
-    Fail 'Onboarding apply failed.'
+    Invoke-PluginTransitionFailure 'Onboarding apply failed'
   }
 
   if ($Distribution -eq 'plugin-first') {
     node $distributionHelper @distributionArgs --apply
-    if ($LASTEXITCODE -ne 0) { Fail 'Plugin-first cleanup refused; repository fallbacks were preserved' }
+    if ($LASTEXITCODE -ne 0) { Invoke-PluginTransitionFailure 'Plugin-first cleanup refused; repository fallbacks were preserved' }
   }
 
   # ---------- verify ----------
