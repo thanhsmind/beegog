@@ -490,7 +490,7 @@ function record(name, pass, note) {
 
   const sessionId = "sess-hb-budget";
 
-  const claimed = claimCellCrossSession(root, { sessionId, worker: "worker-hb", cellId });
+  const claimed = await claimCellCrossSession(root, { sessionId, worker: "worker-hb", cellId });
   record("hb-budget:claim-ok", Boolean(claimed.ok), `claimed=${JSON.stringify(claimed)}`);
 
   await recordVerify(root, cellId, {

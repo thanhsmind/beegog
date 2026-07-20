@@ -245,7 +245,7 @@ await check("lanes: claimCell resolves the execution gate from the cell's featur
     });
     makeCellFile(dir, 'lg-1', { feature: 'lane-feat', status: 'open' });
     writeLaneFixture(dir, 'lane-feat', { phase: 'validating' }); // all four gates false
-    assertThrows(
+    await assertRejects(
       () => claimCell(dir, 'lg-1', 'worker-l'),
       'execution',
       "the lane's unapproved execution gate refuses the claim even though the DEFAULT execution gate is true",
@@ -263,7 +263,7 @@ await check("lanes: claimCell resolves the execution gate from the cell's featur
       approved_gates: { context: false, shape: false, execution: false, review: false },
       workers: [],
     });
-    const claimed = claimCell(dir, 'lg-1', 'worker-l');
+    const claimed = await claimCell(dir, 'lg-1', 'worker-l');
     assert(
       claimed.status === 'claimed' && claimed.trace.worker === 'worker-l',
       "the lane's execution approval authorizes the claim even while the default gate is false",
@@ -284,7 +284,7 @@ await check("lanes: claimCell for a cell whose feature has NO lane record keeps 
       workers: [],
     });
     makeCellFile(dir, 'dg-1', { feature: 'plain-feat', status: 'open' });
-    assertThrows(
+    await assertRejects(
       () => claimCell(dir, 'dg-1', 'worker-d'),
       'execution',
       'no lane record → the default gate governs, refusing while unapproved',
@@ -296,14 +296,14 @@ await check("lanes: claimCell for a cell whose feature has NO lane record keeps 
       approved_gates: { context: true, shape: true, execution: true, review: false },
       workers: [],
     });
-    const claimed = claimCell(dir, 'dg-1', 'worker-d');
+    const claimed = await claimCell(dir, 'dg-1', 'worker-d');
     assert(claimed.status === 'claimed', 'default-gate claim proceeds once approved — no lane on disk, no lane logic');
     // a present-but-corrupt lane record must refuse the claim loudly: guessing
     // back to the default gate would let it authorize a lane cell (D2 boundary)
     makeCellFile(dir, 'cg-1', { feature: 'lane-corrupt', status: 'open' });
     fs.mkdirSync(path.join(dir, '.bee', 'lanes'), { recursive: true });
     fs.writeFileSync(laneFile(dir, 'lane-corrupt'), '{ not json', 'utf8');
-    assertThrows(
+    await assertRejects(
       () => claimCell(dir, 'cg-1', 'worker-d'),
       'lane',
       'a corrupt lane record refuses the claim loudly instead of falling back to the default gate',

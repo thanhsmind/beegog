@@ -289,11 +289,20 @@ function tmpDir(prefix) {
 // writeGrant / removeGrant / listGrants (Slice A: CLI-usable write side)
 // ---------------------------------------------------------------------------
 
+// hardening-4b: writeGrant/removeGrant are now async (withStoreLock-wrapped,
+// serialized under the MAIN checkout's 'worktree-admin' lock). The lock root
+// is derived from `path.dirname(mainStoreRoot)` — production always calls
+// these with `mainStoreRoot === path.join(mainRoot, '.bee')`, so these tests
+// now mirror that exact shape (`path.join(dir, ".bee")`, not a bare tmpDir)
+// instead of the looser pre-existing convention, and every call is awaited
+// (top-level await — plain ESM, no wrapping async function needed here).
+
 {
   const dir = tmpDir("worktree-store-write-grant-");
+  const mainStoreRoot = path.join(dir, ".bee");
   try {
-    const next = writeGrant(dir, "id-a");
-    const ok = next["id-a"] === true && JSON.stringify(readGrants(dir)) === JSON.stringify(next);
+    const next = await writeGrant(mainStoreRoot, "id-a");
+    const ok = next["id-a"] === true && JSON.stringify(readGrants(mainStoreRoot)) === JSON.stringify(next);
     record("writeGrant: creates the runtime dir + grants file when absent", ok, JSON.stringify(next));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -302,9 +311,10 @@ function tmpDir(prefix) {
 
 {
   const dir = tmpDir("worktree-store-write-grant-merge-");
+  const mainStoreRoot = path.join(dir, ".bee");
   try {
-    writeGrant(dir, "id-a");
-    const next = writeGrant(dir, "id-b");
+    await writeGrant(mainStoreRoot, "id-a");
+    const next = await writeGrant(mainStoreRoot, "id-b");
     const ok = next["id-a"] === true && next["id-b"] === true && Object.keys(next).length === 2;
     record("writeGrant: merges into existing entries, never drops prior grants", ok, JSON.stringify(next));
   } finally {
@@ -314,11 +324,12 @@ function tmpDir(prefix) {
 
 {
   const dir = tmpDir("worktree-store-remove-grant-");
+  const mainStoreRoot = path.join(dir, ".bee");
   try {
-    writeGrant(dir, "id-a");
-    writeGrant(dir, "id-b");
-    const next = removeGrant(dir, "id-a");
-    const ok = !("id-a" in next) && next["id-b"] === true && !("id-a" in readGrants(dir));
+    await writeGrant(mainStoreRoot, "id-a");
+    await writeGrant(mainStoreRoot, "id-b");
+    const next = await removeGrant(mainStoreRoot, "id-a");
+    const ok = !("id-a" in next) && next["id-b"] === true && !("id-a" in readGrants(mainStoreRoot));
     record("removeGrant: deletes only the named id, preserves the rest", ok, JSON.stringify(next));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -327,9 +338,10 @@ function tmpDir(prefix) {
 
 {
   const dir = tmpDir("worktree-store-remove-grant-missing-");
+  const mainStoreRoot = path.join(dir, ".bee");
   try {
-    const before = readGrants(dir);
-    const after = removeGrant(dir, "never-granted");
+    const before = readGrants(mainStoreRoot);
+    const after = await removeGrant(mainStoreRoot, "never-granted");
     const ok = JSON.stringify(before) === "{}" && JSON.stringify(after) === "{}";
     record("removeGrant: no-op (never throws) when the id/file does not exist", ok, JSON.stringify(after));
   } finally {
@@ -339,10 +351,11 @@ function tmpDir(prefix) {
 
 {
   const dir = tmpDir("worktree-store-list-grants-");
+  const mainStoreRoot = path.join(dir, ".bee");
   try {
-    writeGrant(dir, "id-a");
-    const ok = JSON.stringify(listGrants(dir)) === JSON.stringify(readGrants(dir));
-    record("listGrants: matches readGrants (thin named alias, no second read implementation)", ok, JSON.stringify(listGrants(dir)));
+    await writeGrant(mainStoreRoot, "id-a");
+    const ok = JSON.stringify(listGrants(mainStoreRoot)) === JSON.stringify(readGrants(mainStoreRoot));
+    record("listGrants: matches readGrants (thin named alias, no second read implementation)", ok, JSON.stringify(listGrants(mainStoreRoot)));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

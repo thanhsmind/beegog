@@ -854,7 +854,7 @@ function handleCellsAdd(root, flags) {
   return { result: added, text: `Added ${summarizeCell(added)}` };
 }
 
-function handleCellsUpdate(root, flags) {
+async function handleCellsUpdate(root, flags) {
   // Strict flag validation (workers-prune discipline): a typoed flag on a
   // mutating verb must refuse, never silently no-op into a bad patch.
   for (const name of Object.keys(flags)) {
@@ -872,7 +872,10 @@ function handleCellsUpdate(root, flags) {
   } catch {
     throw new Error('update: patch input is not valid JSON.');
   }
-  const updated = updateCell(root, id, patch);
+  // hardening-4b: updateCell's read-check-write now runs under
+  // withStoreLock, so it is async — every handler below awaits it (dispatch
+  // already does `await handler(...)`, so this only needed the local await).
+  const updated = await updateCell(root, id, patch);
   // Lint the MERGED cell (updateCell's return), not the raw patch — a patch
   // that only touches `title` still carries the cell's existing verify/files
   // through the merge, and the trap is exactly as live post-update as it was
@@ -892,7 +895,7 @@ function handleCellsUpdate(root, flags) {
 // double-owning the cell. D3: --session-id is optional — resolveSessionId
 // falls back to CLAUDE_CODE_SESSION_ID, then to a legal sessionless claim
 // (single-session flow keeps working exactly as before, with no id at all).
-function handleCellsClaim(root, flags) {
+async function handleCellsClaim(root, flags) {
   const id = requireFlag(flags, 'id');
   const worker = requireFlag(flags, 'worker');
   const sessionId = resolveSessionId({
@@ -902,7 +905,9 @@ function handleCellsClaim(root, flags) {
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
   }
-  const result = claimCellCrossSession(root, { sessionId, worker, cellId: id, ttl });
+  // hardening-4b: claimCellCrossSession composes claimCell, now
+  // withStoreLock-wrapped (async).
+  const result = await claimCellCrossSession(root, { sessionId, worker, cellId: id, ttl });
   if (!result.ok) {
     throw new Error(`claim: ${result.code} — ${result.reason}`);
   }
@@ -980,18 +985,21 @@ async function handleCellsBlock(root, flags) {
   return { result: cell, text: `Blocked ${cell.id}.` };
 }
 
-function handleCellsDrop(root, flags) {
-  const cell = dropCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
+// hardening-4b: dropCell/unclaimCell/reopenCell are now withStoreLock-wrapped
+// (async) — every handler below awaits it (dispatch already does `await
+// handler(...)`, so this only needed the local await + async keyword).
+async function handleCellsDrop(root, flags) {
+  const cell = await dropCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
   return { result: cell, text: `Dropped ${cell.id}.` };
 }
 
-function handleCellsUnclaim(root, flags) {
-  const cell = unclaimCell(root, requireFlag(flags, 'id'), ownershipFlags(flags));
+async function handleCellsUnclaim(root, flags) {
+  const cell = await unclaimCell(root, requireFlag(flags, 'id'), ownershipFlags(flags));
   return { result: cell, text: `Unclaimed ${cell.id} — back to open.` };
 }
 
-function handleCellsReopen(root, flags) {
-  const cell = reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
+async function handleCellsReopen(root, flags) {
+  const cell = await reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Reopened ${cell.id} — back to open.` };
 }
 
@@ -1024,8 +1032,9 @@ async function handleCellsUnarchive(root, flags) {
   };
 }
 
-function handleCellsTier(root, flags) {
-  const cell = setTier(root, requireFlag(flags, 'id'), String(requireFlag(flags, 'tier')));
+// hardening-4b: setTier is now withStoreLock-wrapped (async).
+async function handleCellsTier(root, flags) {
+  const cell = await setTier(root, requireFlag(flags, 'id'), String(requireFlag(flags, 'tier')));
   return { result: cell, text: `Cell ${cell.id} tier set to ${cell.tier}.` };
 }
 
@@ -1103,7 +1112,7 @@ async function handleCellsJudgeRecord(root, flags) {
 // as a thrown Error at the CLI boundary — same convention handleStateHandoffAdopt
 // already uses for adoptHandoff's own typed refusals — so the process exits
 // non-zero with the reason on stderr rather than a misleadingly "successful" exit.
-function handleCellsClaimNext(root, flags) {
+async function handleCellsClaimNext(root, flags) {
   const worker = requireFlag(flags, 'worker');
   // D3: --session-id keeps working exactly as before; it is now also
   // resolvable from CLAUDE_CODE_SESSION_ID when the flag is omitted.
@@ -1121,7 +1130,9 @@ function handleCellsClaimNext(root, flags) {
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
   }
-  const result = claimNextCell(root, { sessionId, worker, ttl });
+  // hardening-4b: claimNextCell now awaits sweepExpiredClaims (sweep-reset)
+  // and composes the now-async claimCellCrossSession.
+  const result = await claimNextCell(root, { sessionId, worker, ttl });
   if (!result.ok) {
     throw new Error(`claim-next: ${result.code} — ${result.reason}`);
   }
@@ -2714,7 +2725,7 @@ function holdForeignExpiry(hold) {
   return `expires ${new Date(mirroredMs + ttl * 1000).toISOString()}`;
 }
 
-function handleWorktreeRegister(_root, flags) {
+async function handleWorktreeRegister(_root, flags) {
   const feature = requireFlag(flags, 'feature');
   let resolution;
   try {
@@ -2731,7 +2742,9 @@ function handleWorktreeRegister(_root, flags) {
   }
   const { id, mainRoot, worktreeRoot } = resolution;
   const mainStoreRoot = path.join(mainRoot, '.bee');
-  writeGrant(mainStoreRoot, id);
+  // hardening-4b: writeGrant is now withStoreLock-wrapped (async, serialized
+  // under the 'worktree-admin' lock).
+  await writeGrant(mainStoreRoot, id);
   const bootstrap = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature);
   const result = { ok: true, id, feature, main_root: mainRoot, worktree_root: worktreeRoot, bootstrap };
   const text = [
@@ -2751,7 +2764,7 @@ function handleWorktreeRegister(_root, flags) {
 // handleWorktreeRegister uses to require the opposite ('linked-valid'); here
 // it must be 'ordinary', because "new" is what CREATES the linked worktree
 // register later runs inside of.
-function handleWorktreeNew(_root, flags) {
+async function handleWorktreeNew(_root, flags) {
   const feature = requireFlag(flags, 'feature');
   const baseRef = flags['base-ref'] !== undefined ? String(flags['base-ref']) : undefined;
   let resolution;
@@ -2768,7 +2781,9 @@ function handleWorktreeNew(_root, flags) {
     );
   }
   const mainRoot = resolution.workRoot;
-  const created = createFeatureWorktree(mainRoot, { feature, baseRef });
+  // hardening-4b: createFeatureWorktree now runs its whole body inside
+  // withStoreLock('worktree-admin') (async).
+  const created = await createFeatureWorktree(mainRoot, { feature, baseRef });
   // GH #31 (wux-1, messaging only): the explicit session-boundary next-step —
   // this session (in mainRoot) never cd's into the new worktree itself, so
   // the success output has to say so plainly: open a NEW session there, and
@@ -2871,7 +2886,7 @@ function handleWorktreeList(root, _flags) {
   return { result: { grants, main_root: mainRoot }, text };
 }
 
-function handleWorktreeUnregister(root, flags) {
+async function handleWorktreeUnregister(root, flags) {
   const mainRoot = resolveMainRoot(root);
   const mainStoreRoot = path.join(mainRoot, '.bee');
   let id = flags.id ? String(flags.id) : null;
@@ -2889,7 +2904,8 @@ function handleWorktreeUnregister(root, flags) {
     }
     id = resolution.id;
   }
-  removeGrant(mainStoreRoot, id);
+  // hardening-4b: removeGrant is now withStoreLock-wrapped (async).
+  await removeGrant(mainStoreRoot, id);
   return { result: { ok: true, id, main_root: mainRoot }, text: `Removed worktree grant for id ${id}.` };
 }
 
@@ -3976,8 +3992,17 @@ function handleDispatchPrepare(root, flags) {
   const runtime = requireFlag(flags, 'runtime');
   const kind = requireFlag(flags, 'kind');
   const cellId = typeof flags.cell === 'string' && flags.cell ? flags.cell : null;
+  // hardening-7: --worker/--force-ownership are inert for every kind but
+  // 'cell' (prepareDispatch's own claim-ownership guard only reads them
+  // there) — passed through unconditionally so every existing gather/
+  // reviewer/advisor call site stays byte-identical. Restored here
+  // (hardening-4b) after this handler was found reverted to its
+  // pre-hardening-7 shape while dispatch-prepare.mjs's own worker-required
+  // logic was still live — the two must travel together.
+  const worker = typeof flags.worker === 'string' && flags.worker ? flags.worker : null;
+  const forceOwnership = flags['force-ownership'] === true;
   const classification = runtime === 'codex' ? readNativeTransportClassification(root).classification : undefined;
-  const out = prepareDispatch(root, { runtime, kind, cell: cellId, classification });
+  const out = prepareDispatch(root, { runtime, kind, cell: cellId, worker, forceOwnership, classification });
   return { result: out, text: JSON.stringify(out, null, 2) };
 }
 

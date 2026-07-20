@@ -142,6 +142,9 @@ function makeLinkedWorktree(feature) {
       '.bee/claims/',
       '.bee/runtime/',
       '.bee/cache/',
+      // hardening-4b: withStoreLock's lockfiles — same rationale as
+      // test_worktree_cli.mjs's own BEE_GITIGNORE update.
+      '.bee/locks/',
       '',
     ].join('\n'),
   );

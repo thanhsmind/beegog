@@ -542,7 +542,12 @@ try {
     const rollbackBranch = `wt/${rollbackFeature}`;
     let caught = null;
     try {
-      createFeatureWorktree(main, {
+      // hardening-4b: createFeatureWorktree is now async (withStoreLock-
+      // wrapped) — its throw is a rejected promise now, so this needs an
+      // await in front of it to still land in the catch below (same reason
+      // mergeFeatureWorktree needed one at xwh-2, see the comment near its
+      // own await a few hundred lines down).
+      await createFeatureWorktree(main, {
         feature: rollbackFeature,
         _bootstrapWorktreeStore: () => {
           throw new Error('injected-bootstrap-failure');
@@ -613,6 +618,12 @@ const BEE_GITIGNORE = [
   '.bee/claims/',
   '.bee/runtime/',
   '.bee/cache/',
+  // hardening-4b: withStoreLock's lockfiles (.bee/locks/*.lock) — the
+  // worktree-admin mutex now HOLDS its lock for the entire create/merge
+  // operation, so leaving this ignored would make the lock file itself
+  // register as untracked dirt to the D8a `git status --porcelain` checks
+  // this same operation runs.
+  '.bee/locks/',
   '',
 ].join('\n');
 

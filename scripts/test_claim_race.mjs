@@ -68,7 +68,7 @@ const CLAIMS_LIB_PATH = path.join(REPO_ROOT, '.bee', 'bin', 'lib', 'claims.mjs')
 const FSUTIL_LIB_PATH = path.join(REPO_ROOT, '.bee', 'bin', 'lib', 'fsutil.mjs');
 
 const RACERS = 8;
-const UNSAFE_WIDEN_MS = 30;
+const UNSAFE_WIDEN_MS = 50; // hardening-4b: bumped from 30ms for extra margin under concurrent-verify (parallel suite) CPU contention — observed one transient miss on the new (g-unsafe) control at 30ms, clean on rerun; matches this file's own documented "widen enough to reliably demonstrate the hazard" discipline, not a semantics change.
 
 function argVal(flag) {
   const found = process.argv.find((a) => a.startsWith(`${flag}=`));
@@ -92,7 +92,7 @@ async function runWorker(workerRole) {
       const cellId = argVal('--cell');
       const id = argVal('--id');
       const { claimCellCrossSession } = await import(CELLS_LIB_PATH);
-      const result = claimCellCrossSession(root, {
+      const result = await claimCellCrossSession(root, {
         sessionId: `sess-safe-${id}`,
         worker: `worker-safe-${id}`,
         cellId,
@@ -124,7 +124,7 @@ async function runWorker(workerRole) {
       const cellId = argVal('--cell');
       const id = argVal('--id');
       const { claimCellCrossSession } = await import(CELLS_LIB_PATH);
-      const result = claimCellCrossSession(root, {
+      const result = await claimCellCrossSession(root, {
         sessionId: `sess-budget-${id}`,
         worker: `worker-budget-${id}`,
         cellId,
@@ -171,6 +171,64 @@ async function runWorker(workerRole) {
       };
       writeJsonAtomic(cellPath, fresh);
       process.stdout.write(`${JSON.stringify({ id })}\n`);
+      process.exit(0);
+    } else if (workerRole === 'raw-claim') {
+      // hardening-4b (g): the REAL cells.mjs claimCell, called DIRECTLY (not
+      // via claimCellCrossSession/claims.mjs) — races against concurrent
+      // raw-update racers below to prove claimCell and updateCell now
+      // serialize against EACH OTHER (same `cells:<id>` lock name), not just
+      // against themselves.
+      const root = argVal('--root');
+      const cellId = argVal('--cell');
+      const id = argVal('--id');
+      const { claimCell } = await import(CELLS_LIB_PATH);
+      try {
+        const cell = await claimCell(root, cellId, `worker-mc-${id}`);
+        process.stdout.write(`${JSON.stringify({ ok: true, id, status: cell.status })}\n`);
+      } catch (err) {
+        process.stdout.write(`${JSON.stringify({ ok: false, id, error: String((err && err.message) || err) })}\n`);
+      }
+      process.exit(0);
+    } else if (workerRole === 'raw-update') {
+      // hardening-4b (g): the REAL cells.mjs updateCell, patching `title`
+      // only (never `status`) — under the fix, a raw-update that runs AFTER
+      // the raw-claim commits reads the FRESH "claimed" cell under the same
+      // lock and correctly refuses (updateCell only allows open/blocked); one
+      // that runs BEFORE it succeeds normally. Either way, the claim itself
+      // must never be silently reverted by a stale merge (that is exactly
+      // the (g)-unsafe negative control below).
+      const root = argVal('--root');
+      const cellId = argVal('--cell');
+      const id = argVal('--id');
+      const { updateCell } = await import(CELLS_LIB_PATH);
+      try {
+        const cell = await updateCell(root, cellId, { title: `mutator-race-title-${id}` });
+        process.stdout.write(`${JSON.stringify({ ok: true, id, status: cell.status, title: cell.title })}\n`);
+      } catch (err) {
+        process.stdout.write(`${JSON.stringify({ ok: false, id, error: String((err && err.message) || err) })}\n`);
+      }
+      process.exit(0);
+    } else if (workerRole === 'unsafe-update-racer') {
+      // hardening-4b (g), DELIBERATE RED (falsifiability): a test-owned proxy
+      // mimicking updateCell's PRE-FIX read-check-write shape (read the cell,
+      // WIDEN the window, merge the title patch onto the STALE snapshot,
+      // write) with NO lock in front of it. Raced against the REAL (locked)
+      // raw-claim above: if this proxy's stale merge ever lands AFTER the
+      // real claim committed, it silently carries the stale `status: 'open'`
+      // back onto disk, REVERTING the claim — the exact class of bug D1/
+      // hardening-4b's cross-mutator locking removes. Proves the hazard is
+      // real, independent of whether claimCell itself happens to race.
+      const root = argVal('--root');
+      const cellId = argVal('--cell');
+      const id = argVal('--id');
+      const { readJson, writeJsonAtomic } = await import(FSUTIL_LIB_PATH);
+      const cellPath = path.join(root, '.bee', 'cells', `${cellId}.json`);
+      const seen = readJson(cellPath, null);
+      await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      const fresh = readJson(cellPath, seen); // "fresh" in name only — merge base below is the STALE `seen`, the pre-fix bug
+      const merged = { ...seen, title: `unsafe-update-title-${id}` };
+      writeJsonAtomic(cellPath, merged);
+      process.stdout.write(`${JSON.stringify({ id, sawStatus: seen && seen.status, staleStatusWasOpen: !!(seen && seen.status === 'open'), freshExisted: !!fresh })}\n`);
       process.exit(0);
     } else {
       throw new Error(`unknown role: ${workerRole}`);
@@ -286,7 +344,7 @@ async function makeBudgetExhaustedCell(dir, id) {
 // ─── orchestrator ────────────────────────────────────────────────────────────
 
 async function runOrchestrator() {
-  const { readJson } = await import(FSUTIL_LIB_PATH);
+  const { readJson, writeJsonAtomic } = await import(FSUTIL_LIB_PATH);
   const { readClaim, claimGatePath } = await import(CLAIMS_LIB_PATH);
   const failures = [];
 
@@ -397,7 +455,7 @@ async function runOrchestrator() {
       await makeCell(dir, 'race-c');
       const { claimCellCrossSession, blockCell, reopenCell } = await import(CELLS_LIB_PATH);
 
-      const firstClaim = claimCellCrossSession(dir, { sessionId: 'sess-roundtrip', worker: 'worker-rt', cellId: 'race-c' });
+      const firstClaim = await claimCellCrossSession(dir, { sessionId: 'sess-roundtrip', worker: 'worker-rt', cellId: 'race-c' });
       if (!firstClaim.ok) failures.push(`(c) first claim should succeed, got ${JSON.stringify(firstClaim)}`);
 
       await blockCell(dir, 'race-c', 'round-trip test block', { sessionId: 'sess-roundtrip' });
@@ -405,12 +463,12 @@ async function runOrchestrator() {
         failures.push('(c) block must release the claim file (D1 Δ2)');
       }
 
-      reopenCell(dir, 'race-c', 'round-trip test reopen', { sessionId: 'sess-roundtrip' });
+      await reopenCell(dir, 'race-c', 'round-trip test reopen', { sessionId: 'sess-roundtrip' });
       if (readClaim(dir, 'race-c') !== null) {
         failures.push('(c) reopen must release the claim file (D1 Δ2)');
       }
 
-      const secondClaim = claimCellCrossSession(dir, { sessionId: 'sess-roundtrip', worker: 'worker-rt', cellId: 'race-c' });
+      const secondClaim = await claimCellCrossSession(dir, { sessionId: 'sess-roundtrip', worker: 'worker-rt', cellId: 'race-c' });
       if (!secondClaim.ok) {
         failures.push(
           `(c) same-session round-trip re-claim must succeed (no self-refusal), got ${JSON.stringify(secondClaim)} — ` +
@@ -578,6 +636,199 @@ async function runOrchestrator() {
     }
   }
 
+  // (g) hardening-4b — MUTATOR CROSS-RACE: the REAL, now-locked claimCell
+  // racing against the REAL, now-locked updateCell on ONE open cell. Both
+  // share the exact same `cells:<id>` lock name, so this proves the fix
+  // serializes DIFFERENT mutators against each other, not merely a mutator
+  // against itself (scenarios a/e above). Exactly ONE raw-claim racer (so the
+  // claim's own success is deterministic regardless of interleaving — only
+  // it ever touches `status`) plus RACERS raw-update racers patching `title`
+  // only. The invariant: the claim must never be silently reverted — final
+  // status stays "claimed", and every update racer's own reported outcome is
+  // internally consistent (never a crash, never a torn write).
+  {
+    const dir = makeRoot();
+    try {
+      await writeApprovedState(dir);
+      await makeCell(dir, 'race-g');
+
+      const [claimResults, updateResults] = await Promise.all([
+        spawnRacers(1, () => ['--role=raw-claim', `--root=${dir}`, '--cell=race-g', '--id=claim']),
+        spawnRacers(RACERS, (i) => ['--role=raw-update', `--root=${dir}`, '--cell=race-g', `--id=${i}`]),
+      ]);
+      const crashed = [...claimResults, ...updateResults].filter((r) => r.code !== 0);
+      if (crashed.length) {
+        failures.push(
+          `(g) ${crashed.length} mutator-race racer(s) crashed:\n` +
+            crashed.map((c) => `  exit=${c.code} stderr=${c.stderr.trim()}`).join('\n'),
+        );
+      }
+      const claimParsed = lastJsonLine(claimResults[0].stdout);
+      if (!claimParsed || claimParsed.ok !== true) {
+        failures.push(`(g) the sole raw-claim racer should always win (nothing else touches status), got ${JSON.stringify(claimParsed)}`);
+      }
+      const updateParsed = updateResults.map((r) => lastJsonLine(r.stdout));
+      const badUpdates = updateParsed.filter(
+        (p) => !p || (p.ok === true && p.status !== 'claimed' && p.status !== 'open') || (p.ok === false && !/open|blocked/.test(String(p.error))),
+      );
+      if (badUpdates.length) {
+        failures.push(`(g) every raw-update outcome must be a clean success (status open/claimed) or a typed open/blocked refusal, got ${JSON.stringify(badUpdates)}`);
+      }
+      const finalCell = readJson(path.join(dir, '.bee', 'cells', 'race-g.json'), null);
+      if (!finalCell || finalCell.status !== 'claimed') {
+        failures.push(`(g) final cell status must be "claimed" — a lost update would silently revert it to "open", got ${JSON.stringify(finalCell)}`);
+      }
+      if (finalCell && finalCell.trace.worker !== 'worker-mc-claim') {
+        failures.push(`(g) the claim's own worker must survive every concurrent update, got ${JSON.stringify(finalCell && finalCell.trace)}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // (g) DELIBERATE RED (falsifiability) — the SAME raw-claim racer, now raced
+  // against RACERS copies of the UNSAFE, unlocked updateCell-shaped proxy
+  // (widened-window read-check-write, no lock). Demonstrates the exact
+  // hazard the fix removes: an unlocked "update" can read the cell BEFORE
+  // the claim commits, then write its stale snapshot's `status: 'open'` back
+  // to disk AFTER the claim committed — silently reverting it. At least one
+  // unsafe racer must have observed "open" pre-claim for the control to be
+  // meaningful; the detector bites when the FINAL status is not "claimed".
+  {
+    const dir = makeRoot();
+    try {
+      await writeApprovedState(dir);
+      await makeCell(dir, 'race-g-unsafe');
+
+      const [claimResults, unsafeResults] = await Promise.all([
+        spawnRacers(1, () => ['--role=raw-claim', `--root=${dir}`, '--cell=race-g-unsafe', '--id=claim']),
+        spawnRacers(RACERS, (i) => ['--role=unsafe-update-racer', `--root=${dir}`, '--cell=race-g-unsafe', `--id=${i}`]),
+      ]);
+      const crashed = [...claimResults, ...unsafeResults].filter((r) => r.code !== 0);
+      if (crashed.length) {
+        failures.push(
+          `(g-unsafe) ${crashed.length} racer(s) crashed:\n` + crashed.map((c) => `  exit=${c.code} stderr=${c.stderr.trim()}`).join('\n'),
+        );
+      }
+      const unsafeParsed = unsafeResults.map((r) => lastJsonLine(r.stdout));
+      const sawOpenCount = unsafeParsed.filter((p) => p && p.staleStatusWasOpen === true).length;
+      if (sawOpenCount === 0) {
+        failures.push('(g-unsafe) no unsafe racer observed the cell "open" pre-claim — the control never even got a chance to bite; widen the window or check scheduling');
+      }
+      const finalCell = readJson(path.join(dir, '.bee', 'cells', 'race-g-unsafe.json'), null);
+      if (!finalCell || finalCell.status === 'claimed') {
+        failures.push(
+          `(g-unsafe) DETECTOR DID NOT BITE: final status is "${finalCell && finalCell.status}" — this negative control must demonstrate ` +
+            'the claim getting silently reverted by an unlocked stale-snapshot write, or the (g) green result proves nothing.',
+        );
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // (h) hardening-4b — SWEEP-RESET: sweepExpiredClaims (claims.mjs) now ALSO
+  // resets a cell it just swept from claimed back to open, guarded by
+  // trace.claim_session matching the swept claim exactly (never clobbering a
+  // fresher claim). Not itself a race (single-process, time simulated via
+  // sweepExpiredClaims' own `now` override — same technique test_claims.mjs
+  // already uses) — sequential proof that the reset fires, is audited, and
+  // that a subsequent claimant can genuinely reclaim the cell.
+  {
+    const dir = makeRoot();
+    try {
+      await writeApprovedState(dir);
+      await makeCell(dir, 'race-h');
+      const { claimCellCrossSession } = await import(CELLS_LIB_PATH);
+      const { DEFAULT_CLAIM_TTL_SECONDS, DEFAULT_HEARTBEAT_STALE_SECONDS } = await import(CLAIMS_LIB_PATH);
+
+      const claimed = await claimCellCrossSession(dir, { sessionId: 'sess-sweep-reset', worker: 'worker-sweep', cellId: 'race-h' });
+      if (!claimed.ok) failures.push(`(h) setup claim should succeed, got ${JSON.stringify(claimed)}`);
+
+      const cellPathH = path.join(dir, '.bee', 'cells', 'race-h.json');
+      const afterClaim = readJson(cellPathH, null);
+      if (!afterClaim || afterClaim.trace.claim_session !== 'sess-sweep-reset') {
+        failures.push(`(h) claimCell must stamp trace.claim_session with the acting session, got ${JSON.stringify(afterClaim && afterClaim.trace)}`);
+      }
+
+      // Simulate both TTL expiry and heartbeat staleness at once via `now`,
+      // rather than a real sleep (same technique claims.mjs's own sweep
+      // tests use) — well past both default thresholds.
+      const futureNow = Date.now() + (DEFAULT_CLAIM_TTL_SECONDS + DEFAULT_HEARTBEAT_STALE_SECONDS + 60) * 1000;
+      const sweepResult = await sweepExpiredClaimsFrom(dir, futureNow);
+      if (!sweepResult.ok || !sweepResult.swept.includes('race-h')) {
+        failures.push(`(h) the expired, stale claim on race-h should sweep, got ${JSON.stringify(sweepResult)}`);
+      }
+      if (!Array.isArray(sweepResult.reset) || !sweepResult.reset.includes('race-h')) {
+        failures.push(`(h) sweepExpiredClaims must report race-h in .reset — cell reset is the must-have truth under test, got ${JSON.stringify(sweepResult)}`);
+      }
+      const afterSweep = readJson(cellPathH, null);
+      if (!afterSweep || afterSweep.status !== 'open') {
+        failures.push(`(h) race-h must be back to "open" after the sweep-reset, got ${JSON.stringify(afterSweep)}`);
+      }
+      if (afterSweep && (afterSweep.trace.claim_session !== null || afterSweep.trace.worker !== null)) {
+        failures.push(`(h) sweep-reset must clear trace.claim_session and trace.worker, got ${JSON.stringify(afterSweep.trace)}`);
+      }
+      const decisionsPath = path.join(dir, '.bee', 'decisions.jsonl');
+      const decisionsText = fs.existsSync(decisionsPath) ? fs.readFileSync(decisionsPath, 'utf8') : '';
+      if (!/race-h/.test(decisionsText) || !/sweep/i.test(decisionsText)) {
+        failures.push('(h) sweep-reset must log one audit decision line naming the reset cell — none found in decisions.jsonl');
+      }
+
+      const reclaimed = await claimCellCrossSession(dir, { sessionId: 'sess-fresh-claimant', worker: 'worker-fresh', cellId: 'race-h' });
+      if (!reclaimed.ok) {
+        failures.push(`(h) a fresh claimant must be able to reclaim race-h after the sweep-reset, got ${JSON.stringify(reclaimed)}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // (h2) hardening-4b — SWEEP-RESET NEVER CLOBBERS A FRESHER CLAIM: simulates
+  // (deterministically, no real race needed) the exact guard
+  // sweepExpiredClaims' reset checks — a cell whose trace.claim_session no
+  // longer matches the just-swept claim's session (someone else's claim
+  // already won the cell by the time the reset's own lock acquisition runs)
+  // must be left untouched, never forced back to open out from under the
+  // fresher claimant.
+  {
+    const dir = makeRoot();
+    try {
+      await writeApprovedState(dir);
+      await makeCell(dir, 'race-h2');
+      const { claimCellCrossSession } = await import(CELLS_LIB_PATH);
+      const { DEFAULT_CLAIM_TTL_SECONDS, DEFAULT_HEARTBEAT_STALE_SECONDS } = await import(CLAIMS_LIB_PATH);
+
+      const claimed = await claimCellCrossSession(dir, { sessionId: 'sess-h2-original', worker: 'worker-h2-original', cellId: 'race-h2' });
+      if (!claimed.ok) failures.push(`(h2) setup claim should succeed, got ${JSON.stringify(claimed)}`);
+
+      // Simulate "a fresher claim already won it": hand-edit the cell's
+      // trace.claim_session to a DIFFERENT session than the one whose claim
+      // file the sweep below is about to remove — the ONLY way this happens
+      // for real is a fresh claim already replacing it; hand-editing pins the
+      // guard's behavior deterministically without needing a genuine race.
+      const cellPathH2 = path.join(dir, '.bee', 'cells', 'race-h2.json');
+      const cellH2 = readJson(cellPathH2, null);
+      cellH2.trace.claim_session = 'sess-h2-fresher';
+      writeJsonAtomic(cellPathH2, cellH2);
+
+      const futureNow = Date.now() + (DEFAULT_CLAIM_TTL_SECONDS + DEFAULT_HEARTBEAT_STALE_SECONDS + 60) * 1000;
+      const sweepResult = await sweepExpiredClaimsFrom(dir, futureNow);
+      if (!sweepResult.ok || !sweepResult.swept.includes('race-h2')) {
+        failures.push(`(h2) the expired, stale claim FILE should still sweep regardless of the mismatch, got ${JSON.stringify(sweepResult)}`);
+      }
+      if (Array.isArray(sweepResult.reset) && sweepResult.reset.includes('race-h2')) {
+        failures.push(`(h2) a claim_session MISMATCH must never reset the cell — got ${JSON.stringify(sweepResult)}`);
+      }
+      const afterSweep = readJson(cellPathH2, null);
+      if (!afterSweep || afterSweep.status !== 'claimed' || afterSweep.trace.claim_session !== 'sess-h2-fresher') {
+        failures.push(`(h2) the cell must be left exactly as the fresher claimant left it — untouched by the mismatched sweep, got ${JSON.stringify(afterSweep)}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   if (failures.length) {
     console.error('FAIL test_claim_race:');
     for (const f of failures) console.error(`  - ${f}`);
@@ -591,6 +842,16 @@ async function runOrchestrator() {
       `with no self-refusal; (d) ${RACERS} racers against an already-exhausted budget -> 0 winners, every loss typed ` +
       'CELL_BUDGET_EXHAUSTED or CLAIMED, no orphaned claim-store file (D2+Δ2 unwind holds under real concurrency); ' +
       `(e) ${RACERS} real recordVerify racers on one cell -> zero lost trace.attempts entries (GH #27.2 ledger lock); ` +
-      '(f) deliberate-red unsafe proxy demonstrated lost updates (detector bites).',
+      '(f) deliberate-red unsafe proxy demonstrated lost updates (detector bites); ' +
+      '(g) hardening-4b: real claimCell vs real updateCell cross-mutator race never reverts the claim, deliberate-red ' +
+      'unsafe-update proxy demonstrated the revert (detector bites); (h) sweepExpiredClaims resets a swept claimed ' +
+      'cell back to open (audited, re-claimable); (h2) a claim_session mismatch never clobbers a fresher claim.',
   );
+}
+
+// hardening-4b (h): thin wrapper so scenarios (h)/(h2) share one import line
+// for sweepExpiredClaims instead of repeating the dynamic import.
+async function sweepExpiredClaimsFrom(root, now) {
+  const { sweepExpiredClaims } = await import(CLAIMS_LIB_PATH);
+  return sweepExpiredClaims(root, { now });
 }

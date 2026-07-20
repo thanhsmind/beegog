@@ -14,16 +14,24 @@
 //   const decision = decideWorktreeStore(classification, { grants });
 //
 // Zero deps beyond node: built-ins, EXCEPT `releaseAllForHolder` (xwh-2,
-// imported below from worktree-holds.mjs) — the one intentional exception,
-// wired into performCleanup below so a removed worktree's mirrored
-// cross-worktree holds are released alongside its grant. No cycle:
-// worktree-holds.mjs only imports fsutil.mjs/lock.mjs/reservations.mjs, none
-// of which import this module. Node 18+.
+// imported below from worktree-holds.mjs) and `withStoreLock` (hardening-4b,
+// imported below from lock.mjs) — the two intentional exceptions.
+// releaseAllForHolder is wired into performCleanup below so a removed
+// worktree's mirrored cross-worktree holds are released alongside its grant.
+// withStoreLock serializes writeGrant/removeGrant/createFeatureWorktree/
+// mergeFeatureWorktree (+ performCleanup, which joins its caller's held
+// lock rather than re-acquiring) under one 'worktree-admin' lock on the
+// MAIN store — the audit finding was that two concurrent worktree admin ops
+// (e.g. `new` racing `merge`, or two `register`s) could interleave their
+// read-check-write of runtime/worktree-grants.json and the worktree
+// lifecycle itself. No cycle: neither worktree-holds.mjs nor lock.mjs import
+// this module. Node 18+.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { releaseAllForHolder } from './worktree-holds.mjs';
+import { withStoreLock } from './lock.mjs';
 
 // ---------------------------------------------------------------------------
 // readGrants — load the MAIN store's grant registry.
@@ -176,31 +184,57 @@ function writeGrantsFileAtomic(mainStoreRoot, grants) {
   fs.renameSync(tmp, file);
 }
 
-/**
- * Merges `{ [id]: true }` into <mainStoreRoot>/runtime/worktree-grants.json,
- * preserving every other entry already on disk. Creates the runtime/ dir and
- * the grants file if either is missing. Atomic write (tmp file + rename),
- * the same pattern fsutil.mjs's writeJsonAtomic uses (not imported directly,
- * to keep this module's zero-deps-beyond-node-builtins contract intact).
- */
-export function writeGrant(mainStoreRoot, id) {
+// hardening-4b: the UNLOCKED core write — used directly by callers that
+// already hold the 'worktree-admin' lock themselves (createFeatureWorktree,
+// mergeFeatureWorktree/performCleanup below), so they never try to
+// re-acquire the same lock they're already inside (withStoreLock is not
+// reentrant — a nested acquisition by the same call stack would simply wait
+// out its own hold and time out). The exported `writeGrant` wraps this with
+// the lock for every OTHER, standalone caller (bee.mjs's `worktree
+// register`).
+function writeGrantCore(mainStoreRoot, id) {
   const next = { ...readGrants(mainStoreRoot), [id]: true };
   writeGrantsFileAtomic(mainStoreRoot, next);
   return next;
 }
 
-/**
- * Deletes `id` from the MAIN store's grant registry. A no-op (returns the
- * registry unchanged, no write) when `id` was never present or the file
- * does not exist yet.
- */
-export function removeGrant(mainStoreRoot, id) {
+// hardening-4b: same unlocked/locked split as writeGrantCore/writeGrant.
+function removeGrantCore(mainStoreRoot, id) {
   const existing = readGrants(mainStoreRoot);
   if (!(id in existing)) return existing;
   const next = { ...existing };
   delete next[id];
   writeGrantsFileAtomic(mainStoreRoot, next);
   return next;
+}
+
+/**
+ * Merges `{ [id]: true }` into <mainStoreRoot>/runtime/worktree-grants.json,
+ * preserving every other entry already on disk. Creates the runtime/ dir and
+ * the grants file if either is missing. Atomic write (tmp file + rename),
+ * the same pattern fsutil.mjs's writeJsonAtomic uses (not imported directly,
+ * to keep this module's zero-deps-beyond-node-builtins contract intact
+ * beyond the two documented exceptions in the module header).
+ *
+ * hardening-4b: serialized under withStoreLock(mainRoot, 'worktree-admin')
+ * — `mainStoreRoot` is always `<mainRoot>/.bee` at every call site in this
+ * codebase (see the module header's wire-in note), so `path.dirname` recovers
+ * `mainRoot` for the lock without a second parameter.
+ */
+export async function writeGrant(mainStoreRoot, id) {
+  return withStoreLock(path.dirname(mainStoreRoot), 'worktree-admin', () => writeGrantCore(mainStoreRoot, id));
+}
+
+/**
+ * Deletes `id` from the MAIN store's grant registry. A no-op (returns the
+ * registry unchanged, no write) when `id` was never present or the file
+ * does not exist yet.
+ *
+ * hardening-4b: serialized under withStoreLock(mainRoot, 'worktree-admin'),
+ * same rationale as writeGrant above.
+ */
+export async function removeGrant(mainStoreRoot, id) {
+  return withStoreLock(path.dirname(mainStoreRoot), 'worktree-admin', () => removeGrantCore(mainStoreRoot, id));
 }
 
 /**
@@ -419,10 +453,27 @@ function readWorktreeGitVerifiedId(worktreeRoot) {
  * store throwing) is rolled back best-effort (`git worktree remove --force`
  * + best-effort `removeGrant`); if that rollback itself fails, the error
  * says the tree can be adopted via `bee worktree register`.
+ *
+ * hardening-4b: the ENTIRE body below (every pre-check through the rollback
+ * path) now runs inside withStoreLock(mainRoot, 'worktree-admin') — one
+ * critical section, serialized against writeGrant/removeGrant/
+ * mergeFeatureWorktree/cleanup. `_writeGrant`'s default is the UNLOCKED
+ * `writeGrantCore` (never the exported, lock-acquiring `writeGrant`) and the
+ * rollback path below calls `removeGrantCore` directly, for the same
+ * non-reentrancy reason: this function is already inside the lock by the
+ * time either would run, and withStoreLock is not reentrant. This is why the
+ * function is `async` now (previously fully synchronous).
  */
-export function createFeatureWorktree(mainRoot, options = {}) {
-  const { feature, baseRef, _writeGrant = writeGrant, _bootstrapWorktreeStore = bootstrapWorktreeStore } = options;
+export async function createFeatureWorktree(mainRoot, options = {}) {
+  const { feature, baseRef, _writeGrant = writeGrantCore, _bootstrapWorktreeStore = bootstrapWorktreeStore } = options;
+  return withStoreLock(mainRoot, 'worktree-admin', () => createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, _bootstrapWorktreeStore }));
+}
 
+// hardening-4b: the actual body, unchanged apart from `removeGrant` ->
+// `removeGrantCore` in the rollback path below — split out so
+// createFeatureWorktree's own doc comment above stays attached to the public
+// entrypoint while this runs INSIDE its withStoreLock('worktree-admin') hold.
+function createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, _bootstrapWorktreeStore }) {
   if (typeof feature !== 'string' || !FEATURE_SLUG_RE.test(feature)) {
     refuse(
       'WORKTREE_INVALID_SLUG',
@@ -516,7 +567,7 @@ export function createFeatureWorktree(mainRoot, options = {}) {
     // zero-mutation; this is the atomic real guard's own failure mode.
     if (id) {
       try {
-        removeGrant(mainStoreRoot, id);
+        removeGrantCore(mainStoreRoot, id);
       } catch {
         // best-effort — the typed error below still fires either way.
       }
@@ -778,7 +829,12 @@ async function performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkippe
   }
 
   try {
-    removeGrant(path.join(mainRoot, '.bee'), id);
+    // hardening-4b: the unlocked core — performCleanup always runs inside
+    // mergeFeatureWorktree's own withStoreLock('worktree-admin') hold (it
+    // "joins the same lock" rather than acquiring its own), so calling the
+    // exported, lock-acquiring `removeGrant` here would deadlock (nested,
+    // non-reentrant acquisition of the same named lock).
+    removeGrantCore(path.join(mainRoot, '.bee'), id);
   } catch {
     // best-effort — the worktree and branch are already gone either way.
   }
@@ -898,8 +954,22 @@ async function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id
  * synchronous throw, since the whole function body runs inside the implicit
  * async wrapper — callers must `await`/`.catch()` it, not wrap it in a bare
  * synchronous `try { } catch { }`.
+ *
+ * hardening-4b: the ENTIRE staged-merge transaction below (every pre-check,
+ * the merge/abort/commit sequence, and — via attachCleanupOutcome —
+ * performCleanup) now runs inside ONE withStoreLock(mainRoot,
+ * 'worktree-admin') hold, serialized against writeGrant/removeGrant/
+ * createFeatureWorktree. performCleanup itself does NOT acquire the lock
+ * (see its own removeGrantCore comment) — it "joins" this same hold.
  */
 export async function mergeFeatureWorktree(mainRoot, options = {}) {
+  return withStoreLock(mainRoot, 'worktree-admin', () => mergeFeatureWorktreeLocked(mainRoot, options));
+}
+
+// hardening-4b: the actual body, unchanged apart from running INSIDE
+// mergeFeatureWorktree's withStoreLock('worktree-admin') hold — split out so
+// the public entrypoint's doc comment above stays attached to it.
+async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
   const { id, cleanup = false, verifyCommand } = options;
 
   if (typeof id !== 'string' || !id) {
