@@ -30,7 +30,12 @@ const REPO_ROOT = path.join(__dirname, "..");
 // commands.verify — same scripts, same args, nothing added/dropped/renamed.
 // Each entry is [script, ...args].
 export const SUITES = [
-  ["skills/bee-hive/templates/tests/test_lib.mjs"],
+  ["skills/bee-hive/templates/tests/test_cli_state.mjs"],
+  ["skills/bee-hive/templates/tests/test_cli_cells.mjs"],
+  ["skills/bee-hive/templates/tests/test_state.mjs"],
+  ["skills/bee-hive/templates/tests/test_guards.mjs"],
+  ["skills/bee-hive/templates/tests/test_backlog_capture.mjs"],
+  ["skills/bee-hive/templates/tests/test_misc.mjs"],
   ["skills/bee-hive/templates/tests/test_cells.mjs"],
   ["skills/bee-hive/templates/tests/test_reservations.mjs"],
   ["skills/bee-hive/templates/tests/test_claims.mjs"],

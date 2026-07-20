@@ -10,7 +10,7 @@
   "lanes": {},
   "capabilities": {},
   "commands": {
-    "test": "node skills/bee-hive/templates/tests/test_lib.mjs",
+    "test": "node scripts/run_verify.mjs",
     "verify": "node scripts/run_verify.mjs"
   },
   "gate_bypass": "total",

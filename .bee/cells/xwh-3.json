@@ -4,7 +4,7 @@
   "lane": "standard",
   "behavior_change": true,
   "title": "claim-next skips cells whose files are held by another checkout",
-  "action": "Extend claimNextCell's hold-free predicate (templates/lib/cells.mjs:1950-1953): after the existing findSessionConflicts check, also consult findForeignHolds(mainRoot, holder, cell.files). Topology inside cells.mjs via resolveRoots (state.mjs already imported by cells.mjs orbit; ordinary checkout => holder 'main', mainRoot = root; linked-valid granted => holder id, mainRoot from resolveRoots; on resolveRoots throw, treat as no foreign holds — claim-next must never crash on topology). A skipped-for-foreign-hold cell is skipped exactly like a local hold today (silent skip, next candidate). Tests: test_lib.mjs section with a fabricated ledger entry proving a cell whose files overlap a foreign hold is skipped while a clean cell claims, and that holder-own entries do not skip. Self-onboard mirrors + plugin trees; full verify green.",
+  "action": "Extend claimNextCell's hold-free predicate (templates/lib/cells.mjs:1950-1953): after the existing findSessionConflicts check, also consult findForeignHolds(mainRoot, holder, cell.files). Topology inside cells.mjs via resolveRoots (state.mjs already imported by cells.mjs orbit; ordinary checkout => holder 'main', mainRoot = root; linked-valid granted => holder id, mainRoot from resolveRoots; on resolveRoots throw, treat as no foreign holds — claim-next must never crash on topology). A skipped-for-foreign-hold cell is skipped exactly like a local hold today (silent skip, next candidate). Tests: skills/bee-hive/templates/tests/test_cli_cells.mjs (post cs-2b split of the old test_lib.mjs monolith, this is where claimNextCell's selection-logic tests now live) gets a fabricated ledger entry proving a cell whose files overlap a foreign hold is skipped while a clean cell claims, and that holder-own entries do not skip. Self-onboard mirrors + plugin trees; full verify green.",
   "must_haves": {
     "truths": [
       "claimNextCell skips any candidate whose files overlap an unexpired ledger entry held by a different checkout, and still claims candidates overlapping only the acting checkout's own entries.",
@@ -24,7 +24,7 @@
   ],
   "files": [
     "skills/bee-hive/templates/lib/cells.mjs",
-    "skills/bee-hive/templates/tests/test_lib.mjs"
+    "skills/bee-hive/templates/tests/test_cli_cells.mjs"
   ],
   "deps": [
     "xwh-2"

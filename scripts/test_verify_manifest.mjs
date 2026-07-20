@@ -19,54 +19,63 @@ const REPO_ROOT = path.join(__dirname, "..");
 const CONFIG_PATH = path.join(REPO_ROOT, ".bee", "config.json");
 const RUNNER_PATH = path.join(REPO_ROOT, "scripts", "run_verify.mjs");
 
-// The suites that MUST always run as part of commands.verify.
+// The suites that MUST always run as part of commands.verify — full,
+// explicit repo-relative paths (cs-2b: the old test_lib.mjs monolith is gone,
+// split across six files; substring matching on bare basenames like "test_lib"
+// is retired in favor of exact membership so a rename or a near-miss path
+// can never silently satisfy an entry it was not meant to).
 const MANDATORY_SUITES = [
-  "test_lib",
-  "test_cells",
-  "test_reservations",
-  "test_claims",
-  "test_feedback",
-  "test_reviews",
-  "test_skill_render",
-  "test_onboard_bee",
-  "test_plugin_distribution",
-  "test_portable_paths",
-  "test_model_guard",
-  "test_write_guard",
-  "test_hook_contracts",
-  "test_bee_cli",
-  "test_state_write_concurrency",
-  "test_installers_e2e",
-  "test_conformance",
-  "test_agents_budget",
-  "test_recovery",
+  "skills/bee-hive/templates/tests/test_cli_state.mjs",
+  "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+  "skills/bee-hive/templates/tests/test_state.mjs",
+  "skills/bee-hive/templates/tests/test_guards.mjs",
+  "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+  "skills/bee-hive/templates/tests/test_misc.mjs",
+  "skills/bee-hive/templates/tests/test_cells.mjs",
+  "skills/bee-hive/templates/tests/test_reservations.mjs",
+  "skills/bee-hive/templates/tests/test_claims.mjs",
+  "skills/bee-hive/templates/tests/test_feedback.mjs",
+  "skills/bee-hive/templates/tests/test_reviews.mjs",
+  "scripts/test_skill_render.mjs",
+  "skills/bee-hive/scripts/test_onboard_bee.mjs",
+  "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+  "scripts/test_portable_paths.mjs",
+  "hooks/test_model_guard.mjs",
+  "hooks/test_write_guard.mjs",
+  "hooks/test_hook_contracts.mjs",
+  "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+  "scripts/test_state_write_concurrency.mjs",
+  "scripts/test_installers_e2e.mjs",
+  "scripts/test_conformance.mjs",
+  "scripts/test_agents_budget.mjs",
+  "skills/bee-hive/templates/tests/test_recovery.mjs",
 ];
 
 /**
  * Checks a flat list of suite path strings (e.g.
- * "skills/bee-hive/templates/tests/test_lib.mjs") for every mandatory suite
- * name. Returns { ok, missing } — missing is the list of suite names (in
- * MANDATORY_SUITES order) that do not appear as a substring of any entry.
+ * "skills/bee-hive/templates/tests/test_cells.mjs") for every mandatory
+ * suite. Returns { ok, missing } — missing is the list of full suite paths
+ * (in MANDATORY_SUITES order) that are not EXACTLY present in suitePaths
+ * (no substring matching — a mandatory path must appear verbatim).
  */
 function checkSuiteList(suitePaths) {
-  const haystack = Array.isArray(suitePaths) ? suitePaths.join(" ") : "";
-  const missing = MANDATORY_SUITES.filter((suite) => !haystack.includes(suite));
+  const present = new Set(Array.isArray(suitePaths) ? suitePaths : []);
+  const missing = MANDATORY_SUITES.filter((suite) => !present.has(suite));
   return { ok: missing.length === 0, missing };
 }
 
 // ─── internal self-test: prove the checker actually bites ─────────────────
-// Feed the checker a synthetic suite list with test_bee_cli removed (built
-// from the mandatory list itself, never from the real runner) and assert it
-// is flagged missing. This never mutates the real runner — it only proves
-// checkSuiteList() is not a rubber stamp before trusting it below.
+// Feed the checker a synthetic suite list with test_bee_cli's exact path
+// removed (built from the mandatory list itself, never from the real runner)
+// and assert it is flagged missing. This never mutates the real runner — it
+// only proves checkSuiteList() is not a rubber stamp before trusting it below.
 {
-  const syntheticSuites = MANDATORY_SUITES.filter((s) => s !== "test_bee_cli").map(
-    (s) => `skills/bee-hive/templates/tests/${s}.mjs`,
-  );
+  const bitten = "skills/bee-hive/templates/tests/test_bee_cli.mjs";
+  const syntheticSuites = MANDATORY_SUITES.filter((s) => s !== bitten);
 
   const selfTestResult = checkSuiteList(syntheticSuites);
 
-  if (selfTestResult.ok || !selfTestResult.missing.includes("test_bee_cli")) {
+  if (selfTestResult.ok || !selfTestResult.missing.includes(bitten)) {
     console.error(
       "FAIL test_verify_manifest: internal self-test did not catch a synthetic suite list with test_bee_cli removed",
     );
@@ -133,4 +142,4 @@ if (!result.ok) {
   process.exit(1);
 }
 
-console.log(`PASS test_verify_manifest: run_verify.mjs SUITES contains all ${MANDATORY_SUITES.length} mandatory suites (${MANDATORY_SUITES.join(", ")})`);
+console.log(`PASS test_verify_manifest: run_verify.mjs SUITES contains all ${MANDATORY_SUITES.length} mandatory suites, exact-path matched (${MANDATORY_SUITES.join(", ")})`);
