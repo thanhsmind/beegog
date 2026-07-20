@@ -48,17 +48,7 @@ const DISCOVERY_ROOTS = [
 // standalone suites. Every entry needs a reason in its comment — an
 // unexplained exclusion is a suite silently not run again, exactly the bug
 // this discovery mechanism replaces the hand-written array to prevent.
-const EXCLUDE = new Set([
-  // Fails standalone today (12 passed / 9 failed — hooks/bee-write-guard.mjs
-  // guard-dispatch logic returns allow instead of deny in several cases).
-  // Discovered live while building cs-4's convention-based glob; it was NOT
-  // in the old hand-written SUITES array either, so excluding it here is not
-  // a regression cs-4 introduces — it continues the pre-cs-4 status quo,
-  // now visible and tracked (see cs-4 report) instead of silently absent.
-  // Needs its own fix-first cell on hooks/bee-write-guard.mjs before it can
-  // rejoin the pool.
-  "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
-]);
+const EXCLUDE = new Set([]);
 
 // A handful of small scripts predate the `test_*.mjs` naming convention and
 // were already part of commands.verify by hand; not worth renaming just to

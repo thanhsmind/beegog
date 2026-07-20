@@ -55,27 +55,17 @@ function assert(condition, message) {
 // directly), so a realistic fixture must vendor real copies there — the
 // exact prerequisite this cell's own action names (validating iteration 1,
 // Blocker 4).
-// Must track command-registry.mjs's transitive lib imports: it imports
-// reviews.mjs (REVIEW_MODES), which in turn imports cells.mjs (readCell),
-// which in turn imports backlog.mjs (featureBacklogRank). state.mjs also
-// imports claims.mjs (fresh-session-handoff fsh-3, session/lane primitives).
-// Missing any of these here throws at import time in the fixture root, which
-// makes the hook's own resolver fail open (denial tests regress to exit 0) —
-// a pre-existing baseline gap (state.mjs's claims.mjs import and cells.mjs's
-// backlog.mjs import both shipped after this list was last updated) fixed in
-// passing here since this file is in scope for this cell.
-const VENDORED_LIB_MODULES = [
-  'fsutil.mjs',
-  'state.mjs',
-  'reservations.mjs',
-  'guards.mjs',
-  'validate-args.mjs',
-  'command-registry.mjs',
-  'reviews.mjs',
-  'cells.mjs',
-  'claims.mjs',
-  'backlog.mjs',
-];
+// The hook's dynamic import graph (rooted at state.mjs) reaches deep into
+// the lib directory's transitive closure, and a hand-maintained module list
+// here went stale at least twice (missing modules throw at import time in
+// the fixture root, which makes the hook's own resolver fail open — denial
+// tests silently regress to exit 0, decision 39be1227). Kill the class, not
+// the instance: copy the whole lib directory wholesale so any future module
+// (and its transitive imports) is vendored automatically, with no list to
+// maintain.
+function vendoredLibModuleNames() {
+  return fs.readdirSync(TEMPLATES_LIB_DIR).filter((name) => name.endsWith('.mjs'));
+}
 
 // A valid-shaped registry whose one entry throws when its `parameters`
 // getter is read — forces check (d)'s own parsing logic to throw (must_have
@@ -108,7 +98,7 @@ function makeFixtureRoot({
   fs.mkdirSync(path.join(root, '.bee', 'bin', 'lib'), { recursive: true });
   fs.mkdirSync(path.join(root, '.bee', 'logs'), { recursive: true });
 
-  for (const name of VENDORED_LIB_MODULES) {
+  for (const name of vendoredLibModuleNames()) {
     if (throwingRegistry && name === 'command-registry.mjs') continue;
     fs.copyFileSync(path.join(TEMPLATES_LIB_DIR, name), path.join(root, '.bee', 'bin', 'lib', name));
   }
