@@ -362,6 +362,38 @@ export const COMMAND_REGISTRY = [
     examples: ['bee cells schedule --json'],
     deprecated: null,
   },
+  {
+    name: 'cells.archive',
+    invoke: 'bee cells archive',
+    description:
+      'Move a fully-terminal feature\'s cells (every cell capped or dropped — refuses naming any open/claimed cell) out of the hot .bee/cells/ scan path into .bee/cells/archive/<feature>/, and record its capped/dropped counts in the archive summary ledger so `bee status` reports an honest archived total without scanning the archive tree. Refuses when --feature is the active state.feature (archiving in-flight work is never legal) or when the feature has zero cells.',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Feature slug to archive — must be fully terminal (all cells capped/dropped) and NOT the active state.feature.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['feature'],
+    },
+    examples: ['bee cells archive --feature demo-archive --json'],
+    deprecated: null,
+  },
+  {
+    name: 'cells.unarchive',
+    invoke: 'bee cells unarchive',
+    description:
+      'Reverse of cells.archive: moves a feature\'s cells back from .bee/cells/archive/<feature>/ into the active .bee/cells/ dir and drops that feature\'s entry from the archive summary ledger. Refuses when the feature has nothing archived.',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Feature slug to restore from the archive.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['feature'],
+    },
+    examples: ['bee cells unarchive --feature demo-archive --json'],
+    deprecated: null,
+  },
 
   // ─── reservations (bee_reservations.mjs) ─────────────────────────────────
   {
