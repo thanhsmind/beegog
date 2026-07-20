@@ -8,13 +8,19 @@
 // repo is an isolated temp dir under os.tmpdir(): the real checkout's own
 // .bee/ state is never touched.
 //
-// Covers the cell's three must_haves:
+// Covers must_haves:
 //   (a) a malformed bee.mjs-shaped Bash call is denied, structured correction
 //       on stderr, before it would execute
 //   (b) the existing gate guard, reservation guard, and privacy/scout guard
 //       behave exactly as before this cell — zero regression
 //   (c) the new check's logic never overwrites or discards a denial already
 //       computed by an existing check, even when forced to throw
+//   (d) (cell wux-2, GH #31) a containment denial targeting a KNOWN sibling
+//       worktree (or, inversely, the main checkout from a worktree-rooted
+//       session) names it and both remedies; an unknown outside path, and
+//       any worktree-grants.json read failure, both keep the ORIGINAL
+//       generic containment message byte-for-byte — the deny decision itself
+//       never changes, only the explanatory text.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -142,6 +148,55 @@ function activeReservation({ agent, path: reservedPath }) {
     reserved_at: new Date().toISOString(),
     released_at: null,
   };
+}
+
+// ─── sibling-worktree fixture builders (GH #31) ────────────────────────────
+// Fabricates the SAME bidirectional gitdir shape test_state.mjs's own
+// "resolveRoots validates linked-worktree backlinks" fixture uses (and
+// hooks/test_hook_contracts.mjs's runWorktreeAdapterRows) — no real `git
+// worktree add` needed, just the file/dir layout resolveRoots and the hook's
+// own inline mirror of it read.
+
+// An ORDINARY main-checkout fixture (via makeFixtureRoot) plus one GRANTED
+// sibling worktree registered in its runtime/worktree-grants.json. The
+// sibling's root is a real directory so realpath succeeds, but it needs no
+// content of its own — deriveGrantedWorktreeRoot only ever reads the
+// mainRoot-side "gitdir" pointer file, same as worktree-store.mjs's own
+// resolveWorktreeById.
+function makeSiblingWorktreeFixture({ grantsRaw } = {}) {
+  const root = makeFixtureRoot();
+  const siblingRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-write-guard-sibling-'));
+  const worktreeId = 'wt-sibling-demo';
+  const gitdir = path.join(root, '.git', 'worktrees', worktreeId);
+  fs.mkdirSync(gitdir, { recursive: true });
+  fs.writeFileSync(path.join(gitdir, 'gitdir'), `${path.join(siblingRoot, '.git')}\n`);
+  // Reverse pointer (sibling's own ".git" file back to this same gitdir) —
+  // the SAME bidirectional shape resolveWorktreeById/resolveRoots require,
+  // so the hook's forward-AND-reverse-verified resolution actually resolves
+  // this fixture's sibling instead of treating its link as unproven.
+  fs.writeFileSync(path.join(siblingRoot, '.git'), `gitdir: ${gitdir}\n`);
+  fs.mkdirSync(path.join(root, '.bee', 'runtime'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.bee', 'runtime', 'worktree-grants.json'),
+    grantsRaw !== undefined ? grantsRaw : JSON.stringify({ [worktreeId]: true }),
+  );
+  return { root, siblingRoot, worktreeId };
+}
+
+// A full main-checkout fixture (mainRoot, via makeFixtureRoot) plus a
+// SEPARATE workRoot whose own ".git" is a FILE pointing back at
+// "<mainRoot>/.git/worktrees/<id>" — the session in this fixture is ROOTED
+// IN the worktree (cwd = workRoot), the inverse of makeSiblingWorktreeFixture
+// above (whose session stays rooted in the ordinary main checkout).
+function makeWorktreeRootedFixture(opts = {}) {
+  const mainRoot = makeFixtureRoot(opts);
+  const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-write-guard-worktree-'));
+  const worktreeId = 'wt-rooted-demo';
+  const gitdir = path.join(mainRoot, '.git', 'worktrees', worktreeId);
+  fs.mkdirSync(gitdir, { recursive: true });
+  fs.writeFileSync(path.join(workRoot, '.git'), `gitdir: ${gitdir}\n`);
+  fs.writeFileSync(path.join(gitdir, 'gitdir'), `${path.join(workRoot, '.git')}\n`);
+  return { mainRoot, workRoot, worktreeId };
 }
 
 // ─── (a) CLI-shape validation: malformed calls denied, well-formed allowed ─
@@ -418,6 +473,94 @@ check('with no prior denial, a forced throw in check (d) fails open (allow) rath
     tool_input: { command: 'node .bee/bin/bee_cells.mjs show --id demo-1' },
   });
   assert(result.status === 0, `expected exit 0 (fail-open on the new check's own crash), got ${result.status} (stderr: ${result.stderr})`);
+});
+
+// ─── (d) sibling-worktree-aware containment denial message (GH #31) ───────
+// Message-only: the deny decision (exit 2) is untouched in every row below —
+// only the stderr text changes when the target proves to be a known
+// sibling/main checkout instead of a plain unrecognizable outside path.
+
+check('a denial targeting a granted sibling worktree names the worktree id and both remedies', () => {
+  const { root, siblingRoot, worktreeId } = makeSiblingWorktreeFixture();
+  const target = path.join(siblingRoot, 'src', 'foo.js');
+  const result = runHook(root, {
+    tool_name: 'Edit',
+    tool_input: { file_path: target },
+  });
+  assert(result.status === 2, `expected exit 2, got ${result.status} (stderr: ${result.stderr})`);
+  assert(result.stderr.includes(worktreeId), `expected the worktree id named, got: ${result.stderr}`);
+  assert(
+    result.stderr.includes(`cwd=${siblingRoot}`) || result.stderr.includes(siblingRoot),
+    `expected the "open a session with cwd=<worktree root>" remedy, got: ${result.stderr}`,
+  );
+  assert(
+    result.stderr.includes(`bee worktree merge --id ${worktreeId}`),
+    `expected the "merge it back from main" remedy, got: ${result.stderr}`,
+  );
+});
+
+check('a denial targeting a granted sibling worktree via a Bash-extracted target also names it (still exit 2)', () => {
+  const { root, siblingRoot, worktreeId } = makeSiblingWorktreeFixture();
+  const target = path.join(siblingRoot, 'src', 'foo.js');
+  const result = runHook(root, {
+    tool_name: 'Bash',
+    tool_input: { command: `rm ${target}` },
+  });
+  assert(result.status === 2, `expected exit 2, got ${result.status} (stderr: ${result.stderr})`);
+  assert(result.stderr.includes(worktreeId), `expected the worktree id named, got: ${result.stderr}`);
+  assert(
+    result.stderr.includes(`bee worktree merge --id ${worktreeId}`),
+    `expected the "merge it back from main" remedy, got: ${result.stderr}`,
+  );
+});
+
+check('an unknown outside path (no matching granted sibling) keeps the generic containment message', () => {
+  const { root } = makeSiblingWorktreeFixture();
+  const unrelated = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-write-guard-unrelated-'));
+  const target = path.join(unrelated, 'foo.js');
+  const result = runHook(root, {
+    tool_name: 'Edit',
+    tool_input: { file_path: target },
+  });
+  assert(result.status === 2, `expected exit 2, got ${result.status} (stderr: ${result.stderr})`);
+  assert(
+    result.stderr.includes('could not be canonically contained inside the physical worktree'),
+    `expected the generic containment message, got: ${result.stderr}`,
+  );
+  assert(!result.stderr.includes('worktree "'), `expected NO worktree naming for an unknown path, got: ${result.stderr}`);
+});
+
+check('an unparseable grants file falls back to the generic message (fail-open to generic, never allow, never crash)', () => {
+  const { root, siblingRoot } = makeSiblingWorktreeFixture({ grantsRaw: '{ not valid json' });
+  const target = path.join(siblingRoot, 'src', 'foo.js');
+  const result = runHook(root, {
+    tool_name: 'Edit',
+    tool_input: { file_path: target },
+  });
+  assert(result.status === 2, `expected exit 2 (never allow on a grants-read failure), got ${result.status} (stderr: ${result.stderr})`);
+  assert(
+    result.stderr.includes('could not be canonically contained inside the physical worktree'),
+    `expected the generic containment message, got: ${result.stderr}`,
+  );
+  assert(!result.stderr.includes('worktree "'), `expected NO worktree naming when grants are unparseable, got: ${result.stderr}`);
+});
+
+check('a session rooted in a worktree denies a target inside the MAIN checkout with the inverse message', () => {
+  const { mainRoot, workRoot } = makeWorktreeRootedFixture();
+  const target = path.join(mainRoot, 'src', 'foo.js');
+  const result = runHook(workRoot, {
+    tool_name: 'Edit',
+    tool_input: { file_path: target },
+  });
+  assert(result.status === 2, `expected exit 2, got ${result.status} (stderr: ${result.stderr})`);
+  assert(
+    result.stderr.includes('main checkout'),
+    `expected the inverse "belongs to the main checkout" message, got: ${result.stderr}`,
+  );
+  assert(
+    result.stderr.includes('session rooted there'),
+    `expected the "run this from a session rooted there" remedy, got: ${result.stderr}`,
+  );
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

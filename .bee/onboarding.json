@@ -39,7 +39,7 @@
       "bee-codex-subagent-audit.mjs": "f9f6900705aa20dfc0035a8c8c5c4b22fc56c9d0a4953e1b0ba3fd9466dec85e",
       "bee-session-init.mjs": "3bc1706a7d716017fac407898f06405239d2fefbd98639c581460a4d3a0be4e6",
       "bee-prompt-context.mjs": "3c28aa777c7a392f4514d0a9dcd78fc795d7e63b5497ed2619bc224385b9fd8c",
-      "bee-write-guard.mjs": "13ed59ddca24fbf26aad431c982c276a2f95d302af85cf5949ab23c7b8e17a33",
+      "bee-write-guard.mjs": "fd76ccce86100be793efa59731ffdab036b2cb92eaa6ea14f97785152f845f9f",
       "bee-state-sync.mjs": "7ccd67e7487fccce7f39a088fd51068425f41a008f17d38caa033ff0478d19ff",
       "bee-chain-nudge.mjs": "0520c71fad2513d93666ad4c3353b7196faeeac382430b1e1395fabd0febd9cb",
       "bee-session-close.mjs": "201073ddce795525ee6ec7bab0297f4adef01830bac8935b528b694e03dea2e6",
@@ -70,5 +70,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-20T19:59:37.952Z"
+  "updated_at": "2026-07-20T20:21:10.002Z"
 }

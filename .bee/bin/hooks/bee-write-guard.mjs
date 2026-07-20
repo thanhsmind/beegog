@@ -112,6 +112,189 @@ function canonicalRelPath(workRoot, cwd, rawPath) {
   return rel.split(path.sep).join("/");
 }
 
+// ─── sibling-worktree-aware denial enrichment (GH #31, message-only) ──────
+// When canonicalRelPath has ALREADY failed containment for a raw target
+// against the physical worktree `root`, this cheaply checks whether the
+// target actually lives inside a KNOWN sibling checkout — a granted worktree
+// registered in the MAIN store's runtime/worktree-grants.json (mirrors the
+// inline, dependency-light read adapter.mjs's own resolveRoots does for the
+// CURRENT worktree's storeRoot decision — never imported here, kept
+// dependency-light on purpose), or, when THIS session is itself rooted in a
+// linked worktree, the MAIN checkout it was cut from. This NEVER changes the
+// deny decision — it only replaces the generic containment text with a more
+// specific one when it can prove where the target belongs. Any failure at
+// any step (unreadable/malformed grants file, a broken worktree link, or the
+// target simply being elsewhere) returns null and the caller keeps the
+// existing generic message untouched — fail-open to generic, by design.
+
+const GENERIC_CONTAINMENT_MESSAGE =
+  "bee write guard denied this target: it could not be canonically contained inside the physical worktree. " +
+  "FIX: use a plain in-worktree path without traversal, outside absolute paths, or symlink escapes.";
+const GENERIC_BASH_CONTAINMENT_MESSAGE =
+  "bee write guard denied Bash: one or more extracted targets could not be canonically contained inside the physical worktree. " +
+  "FIX: use plain in-worktree paths without traversal, outside absolute paths, or symlink escapes.";
+
+function readGitdirPointer(file, base) {
+  try {
+    let raw = fs.readFileSync(file, "utf8").trim();
+    if (!raw) return null;
+    if (raw.startsWith("gitdir:")) raw = raw.slice("gitdir:".length).trim();
+    if (!raw) return null;
+    return path.resolve(base, raw.replace(/\\/g, path.sep));
+  } catch {
+    return null;
+  }
+}
+
+function realpathOrNull(value) {
+  try {
+    return fs.realpathSync.native(value);
+  } catch {
+    return null;
+  }
+}
+
+// Mirrors adapter.mjs resolveRoots' linked-valid branch, without importing
+// it: if `workRoot`'s own ".git" is a FILE pointing at
+// "<mainRoot>/.git/worktrees/<id>", returns { mainRoot, id }; else null
+// (ordinary checkout, or a broken/foreign link — never guessed).
+function deriveCurrentWorktree(workRoot) {
+  try {
+    const marker = path.join(workRoot, ".git");
+    const stat = fs.statSync(marker);
+    if (!stat.isFile()) return null;
+    const gitdir = readGitdirPointer(marker, workRoot);
+    if (!gitdir) return null;
+    const worktreesRoot = path.resolve(gitdir, "..");
+    const commonGitDir = path.resolve(worktreesRoot, "..");
+    if (path.basename(worktreesRoot) !== "worktrees" || path.basename(commonGitDir) !== ".git") {
+      return null;
+    }
+    const mainRoot = realpathOrNull(path.dirname(commonGitDir));
+    if (!mainRoot) return null;
+    return { mainRoot, id: path.basename(gitdir) };
+  } catch {
+    return null;
+  }
+}
+
+// Resolves a granted worktree `id` (from the MAIN store's grants registry)
+// to its worktreeRoot, with the SAME bidirectional gitdir check
+// worktree-store.mjs's resolveWorktreeById uses (forward:
+// <mainRoot>/.git/worktrees/<id>/gitdir -> <worktreeRoot>/.git; reverse:
+// <worktreeRoot>/.git -> back to that same <mainRoot>/.git/worktrees/<id>) —
+// never trusts a one-directional pointer alone. Null on any mismatch,
+// missing file, or unreadable content.
+function resolveGrantedWorktreeRoot(mainRoot, id) {
+  try {
+    const gitWorktreeDir = path.join(mainRoot, ".git", "worktrees", id);
+    if (!fs.statSync(gitWorktreeDir).isDirectory()) return null;
+    const forward = readGitdirPointer(path.join(gitWorktreeDir, "gitdir"), gitWorktreeDir);
+    if (!forward) return null;
+    const worktreeRoot = path.dirname(forward);
+    const reverse = readGitdirPointer(path.join(worktreeRoot, ".git"), worktreeRoot);
+    if (!reverse || path.resolve(reverse) !== path.resolve(gitWorktreeDir)) return null;
+    return realpathOrNull(worktreeRoot);
+  } catch {
+    return null;
+  }
+}
+
+// Reads <mainRoot>/.bee/runtime/worktree-grants.json and returns the ids
+// granted `true`, else [] — fail-open on ANY error (missing file, unparseable
+// JSON, non-object payload): never throws, never allows, just yields no known
+// siblings so the caller falls back to the generic message.
+function readGrantedWorktreeIds(mainRoot) {
+  try {
+    const raw = fs.readFileSync(path.join(mainRoot, ".bee", "runtime", "worktree-grants.json"), "utf8");
+    const grants = JSON.parse(raw);
+    if (!grants || typeof grants !== "object" || Array.isArray(grants)) return [];
+    return Object.keys(grants).filter((id) => grants[id] === true);
+  } catch {
+    return [];
+  }
+}
+
+// Resolves `rawTarget` the same lenient way canonicalRelPath does (walk up
+// through ENOENT segments, realpath the first existing ancestor) but returns
+// the resolved ABSOLUTE path instead of a root-relative one — needed here
+// because a sibling/main root can live entirely OUTSIDE `root`, which
+// canonicalRelPath's root-relative contract can't express. Null on any
+// failure (unresolvable path, Windows-foreign spelling on a POSIX host, ...).
+function resolveTargetRealpath(cwd, root, rawTarget) {
+  if (!rawTarget || typeof rawTarget !== "string") return null;
+  const normalized = normalizeToolPath(rawTarget);
+  if (path.sep !== "\\" && (/^[A-Za-z]:[\\/]/.test(rawTarget) || /^\\\\/.test(rawTarget))) {
+    return null;
+  }
+  const cwdBase = path.isAbsolute(cwd || "") ? cwd : root;
+  const lexicalTarget = path.isAbsolute(normalized) ? path.resolve(normalized) : path.resolve(cwdBase, normalized);
+  let cursor = lexicalTarget;
+  const unresolved = [];
+  while (true) {
+    try {
+      fs.lstatSync(cursor);
+      break;
+    } catch (error) {
+      if (!error || error.code !== "ENOENT") return null;
+      const parent = path.dirname(cursor);
+      if (parent === cursor) return null;
+      unresolved.unshift(path.basename(cursor));
+      cursor = parent;
+    }
+  }
+  const ancestorReal = realpathOrNull(cursor);
+  if (!ancestorReal) return null;
+  return path.resolve(ancestorReal, ...unresolved);
+}
+
+// True when real path `childReal` is real root `parentReal` itself or
+// strictly nested under it.
+function isUnderRoot(parentReal, childReal) {
+  if (!parentReal || !childReal) return false;
+  const rel = path.relative(parentReal, childReal);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+// Returns a replacement denial reason naming a known sibling/main checkout,
+// or null to keep the existing generic containment message (unknown outside
+// path, or ANY failure reading/deriving worktree state).
+function describeCrossWorktreeTarget(root, cwd, rawTarget) {
+  try {
+    const targetReal = resolveTargetRealpath(cwd, root, rawTarget);
+    if (!targetReal) return null;
+
+    const current = deriveCurrentWorktree(root);
+    const mainRoot = current ? current.mainRoot : realpathOrNull(root);
+    if (!mainRoot) return null;
+
+    // Session rooted in a worktree, target inside the MAIN checkout instead.
+    if (current && isUnderRoot(mainRoot, targetReal)) {
+      return (
+        "bee write guard denied this target: it could not be canonically contained inside the physical worktree — " +
+        "this path belongs to the main checkout, not this worktree. FIX: run this from a session rooted there."
+      );
+    }
+
+    // Target inside a KNOWN GRANTED sibling worktree.
+    for (const id of readGrantedWorktreeIds(mainRoot)) {
+      if (current && id === current.id) continue; // this session's own root, not a sibling
+      const worktreeRoot = resolveGrantedWorktreeRoot(mainRoot, id);
+      if (worktreeRoot && isUnderRoot(worktreeRoot, targetReal)) {
+        return (
+          "bee write guard denied this target: it could not be canonically contained inside the physical worktree — " +
+          `it resolves inside worktree "${id}". FIX: open a session with cwd=${worktreeRoot} to work there, or merge it ` +
+          `back from main via \`bee worktree merge --id ${id}\`.`
+        );
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function getNestedString(obj, keys) {
   for (const key of keys) {
     const value = obj && typeof obj === "object" ? obj[key] : undefined;
@@ -463,27 +646,24 @@ async function main() {
         if (command) {
           const targets = guards.extractBashTargets(command);
           const paths = (targets && targets.paths) || [];
-          relPaths = paths.map((p) => canonicalRelPath(root, cwd, p)).filter(Boolean);
-          if (paths.length !== relPaths.length) {
-            denial = {
-              reason:
-                "bee write guard denied Bash: one or more extracted targets could not be canonically contained inside the physical worktree. " +
-                "FIX: use plain in-worktree paths without traversal, outside absolute paths, or symlink escapes.",
-            };
+          const canonicalized = paths.map((p) => ({ raw: p, rel: canonicalRelPath(root, cwd, p) }));
+          relPaths = canonicalized.filter((c) => c.rel).map((c) => c.rel);
+          if (relPaths.length !== paths.length) {
+            const firstFailing = canonicalized.find((c) => !c.rel);
+            const enriched = firstFailing ? describeCrossWorktreeTarget(root, cwd, firstFailing.raw) : null;
+            denial = { reason: enriched || GENERIC_BASH_CONTAINMENT_MESSAGE };
           } else if (relPaths.length === 0 && targets && targets.broadWrite) {
             relPaths = ["**"];
           }
         }
       } else {
-        const rel = canonicalRelPath(root, cwd, toolInput.file_path || "");
+        const rawTarget = toolInput.file_path || "";
+        const rel = canonicalRelPath(root, cwd, rawTarget);
         if (rel) {
           relPaths = [rel];
         } else {
-          denial = {
-            reason:
-              "bee write guard denied this target: it could not be canonically contained inside the physical worktree. " +
-              "FIX: use a plain in-worktree path without traversal, outside absolute paths, or symlink escapes.",
-          };
+          const enriched = describeCrossWorktreeTarget(root, cwd, rawTarget);
+          denial = { reason: enriched || GENERIC_CONTAINMENT_MESSAGE };
         }
       }
 
