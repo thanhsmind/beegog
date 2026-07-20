@@ -164,6 +164,7 @@ import {
   lastDurableSettlement,
   computeMiningWindow,
   buildMiningPrompt,
+  scanTranscriptRoots,
 } from './lib/recovery.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
@@ -273,9 +274,13 @@ function buildReviewBlock(root) {
 // projects root on hosts with no transcript store e.g. Codex, corrupt
 // session/lane/claim records), so this try/catch is belt-and-suspenders —
 // a future change to that contract still can never crash bee_status.
+// hardening-5: `roots` is additive alongside the pre-existing `candidates`
+// field — every configured (or default-only) transcript root's scan result
+// (scanned/skipped+reason), so a second-runtime (e.g. Codex) user configuring
+// `recovery.transcript_roots` can SEE whether it was actually consulted.
 function buildRecoveryBlock(root) {
   try {
-    return { candidates: detectCrashCandidates(root) };
+    return { candidates: detectCrashCandidates(root), roots: scanTranscriptRoots(root) };
   } catch {
     return { candidates: [], degraded: true };
   }
@@ -2580,12 +2585,25 @@ function lastTranscriptActivity(transcript) {
 }
 
 function summarizeRecoveryCandidate(c) {
-  return `${c.session_id} [${c.lane || 'no-lane'}] last_heartbeat=${c.last_heartbeat || 'unknown'} transcript=${c.transcript || 'null'} last_activity=${lastTranscriptActivity(c.transcript) || 'unknown'}`;
+  return `${c.session_id} [${c.lane || 'no-lane'}] runtime=${c.runtime || 'claude'} last_heartbeat=${c.last_heartbeat || 'unknown'} transcript=${c.transcript || 'null'} last_activity=${lastTranscriptActivity(c.transcript) || 'unknown'}`;
+}
+
+// summarizeTranscriptRoot — one line per scanned/skipped transcript root
+// (hardening-5), appended to `recovery scan`'s human-readable text summary so
+// a second-runtime user can see a configured root was actually consulted (or
+// why it was skipped) without needing --json. The JSON `result` field below
+// stays the bare candidates array, unchanged, to keep `bee recovery scan
+// --json`'s existing shape byte-identical for every caller that parses it.
+function summarizeTranscriptRoot(r) {
+  return `root ${r.runtime} (${r.path}): ${r.scanned ? 'scanned' : `skipped (${r.reason})`}`;
 }
 
 function handleRecoveryScan(root, _flags) {
   const candidates = detectCrashCandidates(root);
-  const text = candidates.length ? candidates.map(summarizeRecoveryCandidate).join('\n') : 'recovery: no crash candidates.';
+  const roots = scanTranscriptRoots(root);
+  const candidateText = candidates.length ? candidates.map(summarizeRecoveryCandidate).join('\n') : 'recovery: no crash candidates.';
+  const rootsText = roots.map(summarizeTranscriptRoot).join('\n');
+  const text = `${candidateText}\n${rootsText}`;
   return { result: candidates, text };
 }
 

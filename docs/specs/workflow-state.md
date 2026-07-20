@@ -710,6 +710,17 @@ read. Recovery never resumes the dead session's work and never writes a pause
 record on its behalf — the never-auto-resume rule (B15) is untouched
 (transcript-recovery D1–D6, 2026-07-20).
 
+Detection's own transcript store is runtime-aware without guessing a second
+runtime's internals: a workspace can list additional transcript roots (each
+tagged with the runtime that owns it) in its config alongside the Claude
+default, and every recoverable candidate names which root it was actually
+found under. A configured root that turns out missing or unreadable degrades
+the same way as a missing store always has — a silent no-op to detection
+itself — but is also reported, by name, so a person running a second runtime
+can confirm the root was really consulted instead of quietly never checked; a
+workspace that names no extra root behaves exactly as before (hardening-5,
+2026-07-21).
+
 ## Actors & Access
 
 - **The agent** runs every verb itself; the human never runs workflow
