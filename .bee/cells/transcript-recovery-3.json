@@ -74,6 +74,56 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "stub-without-source-byte-shape-identical",
+            "status": "PASS",
+            "evidence": "capture.mjs sets stub.source only when normalizedSource truthy (key omitted, not defaulted). test_lib asserts no-source stub keys === kind,id,at,outcome,dids,area,files,lane; blank source treated as absent. test_lib 410/0."
+          },
+          {
+            "id": "capture-list-distinguishes-mined",
+            "status": "PASS",
+            "evidence": "formatCaptureStub marker=stub.source===mined? [mined]:; test_bee_cli asserts [mined] present for mined, absent for ordinary. cli 219/0."
+          },
+          {
+            "id": "flush-existing-path-zero-special-casing",
+            "status": "PASS",
+            "evidence": "git show a99b672 touches no flush code; flushCaptureStub (capture.mjs:111-116) unchanged. CLI test flushes mined stub via existing capture flush --id path."
+          },
+          {
+            "id": "prohibitions-no-autoflush-no-autopromotion-highrisk-throw-unchanged",
+            "status": "PASS",
+            "evidence": "No auto-flush or decision-promotion in diff. high-risk throw at capture.mjs:61-63 not in diff, byte-unchanged; D6 confirm-via-normal-flush preserved."
+          },
+          {
+            "id": "mirrors-byte-identical",
+            "status": "PASS",
+            "evidence": "cmp: capture.mjs, command-registry.mjs, bee.mjs template-vs-.bee/bin all IDENTICAL. test_lib_mirror 24 files PASS."
+          },
+          {
+            "id": "frozen-judge-file-test_bee_cli-justification",
+            "status": "PASS",
+            "evidence": "test_bee_cli.mjs change purely additive: +43 lines, one new check() block, zero deletions, no existing assertion rewritten. Matches cell ACTION Tests at BOTH levels. Justified out-of-files W2 fix."
+          },
+          {
+            "id": "task-to-diff-alignment",
+            "status": "PASS",
+            "evidence": "Diff implements D6/action exactly: optional trimmed source field, --source CLI flag, registry schema, [mined] marker, RED-first recorded (409/1,218/1 red then 410/0,219/0 green)."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-20T07:25:47.221Z"
+      }
     ]
   },
   "tier": "generation"

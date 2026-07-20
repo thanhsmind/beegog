@@ -71,6 +71,61 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "scan+window registered & dispatch via HANDLERS",
+            "status": "PASS",
+            "evidence": "bee.mjs HANDLERS adds recovery.scan:handleRecoveryScan,recovery.window:handleRecoveryWindow (~3931); command-registry.mjs adds recovery.scan/recovery.window schemas (@@ -1454)"
+          },
+          {
+            "id": "status always carries recovery block; fail-open candidates:[],degraded:true",
+            "status": "PASS",
+            "evidence": "buildRecoveryBlock try/catch->{candidates:[],degraded:true} (bee.mjs:257-272); called in buildStatus + recovery key (bee.mjs:444,494); corrupt-session test exits 0 candidates:[]"
+          },
+          {
+            "id": "recovery window emits prompt, no LLM in CLI (D4)",
+            "status": "PASS",
+            "evidence": "handleRecoveryWindow re-derives via readSession/resolveTranscript/lastDurableSettlement/computeMiningWindow/buildMiningPrompt; returns {transcript,since_ts,event_count,window_truncated,prompt}; no dispatch; test asserts prompt leads [bee-tier: generation]"
+          },
+          {
+            "id": "templates and .bee/bin bee.mjs byte-identical",
+            "status": "PASS",
+            "evidence": "cmp both bee.mjs IDENTICAL; cmp both command-registry.mjs IDENTICAL"
+          },
+          {
+            "id": "command-registry.mjs does NOT import recovery.mjs",
+            "status": "PASS",
+            "evidence": "grep recovery command-registry.mjs: only comment line 1459 must NOT import lib/recovery.mjs; no import statement"
+          },
+          {
+            "id": "prohibition: no auto-dispatch of mining from status or scan (D2)",
+            "status": "PASS",
+            "evidence": "handleRecoveryScan+buildRecoveryBlock only call detectCrashCandidates; neither dispatches a worker nor calls buildMiningPrompt"
+          },
+          {
+            "id": "prohibition: no new top-level status fields besides recovery",
+            "status": "PASS",
+            "evidence": "only +recovery added to buildStatus returned object (bee.mjs:494); window fields local to handleRecoveryWindow"
+          },
+          {
+            "id": "CONTEXT fidelity & verify green",
+            "status": "PASS",
+            "evidence": "D1 reused; D3 sinceTs lane->global->started_at; D5 prompt clauses asserted; verify re-run test_bee_cli 218/218, test_recovery 29/29, test_lib_mirror 24+10 byte-identical"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-20T07:13:21.906Z"
+      }
     ]
   },
   "tier": "generation"

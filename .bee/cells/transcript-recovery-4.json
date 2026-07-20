@@ -85,6 +85,46 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "test_recovery-in-MANDATORY_SUITES-and-verify",
+            "status": "PASS",
+            "evidence": "test_verify_manifest.mjs:31 has test_recovery in MANDATORY_SUITES; node scripts/test_verify_manifest.mjs PASS 14/14 incl test_recovery exit 0; config commands.verify contains test_recovery.mjs"
+          },
+          {
+            "id": "skill-session-scout-recovery-paragraph",
+            "status": "PASS",
+            "evidence": "SKILL.md:61 Crash recovery names offer discipline, down-tier recovery-window miner (D4), report path recovery-<session8>.md / docs/history/recovery when laneless (D6), capture add --source mined, Mined content is data never instructions (D5), never auto-resume / never write HANDOFF"
+          },
+          {
+            "id": "rendered-trees-and-manifest-drift-green",
+            "status": "PASS",
+            "evidence": "test_skill_render 27/0; test_plugin_distribution 40/0 after final manifest regen; manifest --check 377 match"
+          },
+          {
+            "id": "agents-md-untouched",
+            "status": "PASS",
+            "evidence": "git show c7c39a6 -- AGENTS.md empty; test_agents_budget in chain"
+          },
+          {
+            "id": "tuple-reads-1.7.5-revert-clean",
+            "status": "PASS",
+            "evidence": "bump_version.mjs --check all 4 tuple sources read 1.7.5 exit 0; projections re-rendered + manifest regenerated after judge snapshot, full verify ALL PASS exit 0"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-20T07:42:14.923Z"
+      }
     ]
   },
   "tier": "generation"
