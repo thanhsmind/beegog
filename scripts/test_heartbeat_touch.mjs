@@ -435,6 +435,110 @@ function record(name, pass, note) {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
+// 6. GH #27.1 (D-GHF-B): heartbeat-invariant claim counting — a heartbeat
+// renewal (renewClaimTTL) between two failed attempts under the SAME claim
+// epoch must not inflate checkCellBudgets' claims_used past the real
+// acquisition count. acquired_at is stamped once at claim creation and must
+// survive renewClaimTTL's spread untouched, unlike claimed_at (the expiry
+// clock) which the heartbeat legitimately advances; checkCellBudgets pairs
+// on (claim_session, acquired_at ?? claimed_at) instead of the
+// heartbeat-mutated claimed_at alone. max_claims is pinned to 2 so the
+// pre-fix bug (heartbeat splits one epoch into two counted pairs -> claims_used
+// 3 > 2 -> refused) and the fix (one pair -> claims_used 2 <= 2 -> ok) land on
+// opposite sides of the same boundary.
+{
+  const cellsLib = await import(libUrl("cells.mjs"));
+  const { claimCellCrossSession, recordVerify, readCell, checkCellBudgets } = cellsLib;
+
+  const root = mkSandbox("bee-heartbeat-budget-");
+  fs.mkdirSync(path.join(root, ".bee", "cells"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ".bee", "state.json"),
+    `${JSON.stringify(
+      {
+        schema_version: "1.0",
+        phase: "swarming",
+        feature: "hb-budget-feat",
+        mode: "standard",
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const cellId = "hb-budget-cell";
+  fs.writeFileSync(
+    path.join(root, ".bee", "cells", `${cellId}.json`),
+    `${JSON.stringify(
+      {
+        id: cellId,
+        feature: "hb-budget-feat",
+        title: "heartbeat budget test cell",
+        lane: "tiny",
+        status: "open",
+        deps: [],
+        action: "heartbeat budget target",
+        verify: 'node -e "process.exit(0)"',
+        budgets: { max_claims: 2 },
+        trace: {},
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const sessionId = "sess-hb-budget";
+
+  const claimed = claimCellCrossSession(root, { sessionId, worker: "worker-hb", cellId });
+  record("hb-budget:claim-ok", Boolean(claimed.ok), `claimed=${JSON.stringify(claimed)}`);
+
+  recordVerify(root, cellId, {
+    command: "node fail-1.mjs",
+    output: "fail one",
+    passed: false,
+    sessionId,
+    signature: "hb-budget-sig-1",
+  });
+
+  const heartbeat = renewClaimTTL(root, sessionId, { now: Date.now() + 90_000 });
+  record("hb-budget:heartbeat-renewed", heartbeat.renewed.includes(cellId), `heartbeat=${JSON.stringify(heartbeat)}`);
+
+  recordVerify(root, cellId, {
+    command: "node fail-2.mjs",
+    output: "fail two",
+    passed: false,
+    sessionId,
+    signature: "hb-budget-sig-2",
+  });
+
+  const cellAfter = readCell(root, cellId);
+  const attempts = (cellAfter.trace && cellAfter.trace.attempts) || [];
+  record("hb-budget:two-attempts-recorded", attempts.length === 2, `attempts=${JSON.stringify(attempts)}`);
+  record(
+    "hb-budget:claimed_at-advanced-by-heartbeat",
+    Boolean(attempts[0]) && Boolean(attempts[1]) && attempts[0].claimed_at !== attempts[1].claimed_at,
+    `attempt0.claimed_at=${attempts[0] && attempts[0].claimed_at} attempt1.claimed_at=${attempts[1] && attempts[1].claimed_at}`,
+  );
+  record(
+    "hb-budget:acquired_at-stable-across-heartbeat",
+    Boolean(attempts[0]) &&
+      Boolean(attempts[0].acquired_at) &&
+      attempts[0].acquired_at === (attempts[1] && attempts[1].acquired_at),
+    `attempt0.acquired_at=${attempts[0] && attempts[0].acquired_at} attempt1.acquired_at=${attempts[1] && attempts[1].acquired_at}`,
+  );
+
+  const budgetCheck = checkCellBudgets(cellAfter);
+  record(
+    "hb-budget:checkCellBudgets-counts-one-acquisition",
+    budgetCheck.ok === true,
+    `budgetCheck=${JSON.stringify(budgetCheck)} (claims_used must be 2 = 1 heartbeat-collapsed pair + 1 current, ` +
+      "under max_claims=2; a heartbeat wrongly splitting the epoch would push it to 3 and refuse)",
+  );
+
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
 // --- report ------------------------------------------------------------------
 
 for (const r of results) {

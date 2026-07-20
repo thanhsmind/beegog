@@ -143,6 +143,12 @@ export function normalizeFailureSignature(output) {
 // budget counting (D2) must key off exactly what claims.mjs itself considers
 // the current acquisition. A swept/absent/sessionless claim reads as
 // null/null; that undercount is conservative-safe (F2), never a refusal.
+//
+// GH #27.1 (D-GHF-B): acquired_at is read alongside claimed_at, falling back
+// to claimed_at when the claim file predates acquired_at (legacy claims) —
+// it is the immutable acquisition identity checkCellBudgets pairs on below.
+// claimed_at stays exactly as before for compat (it is the heartbeat-mutated
+// expiry clock, still recorded verbatim).
 function appendAttempt(root, id, trace, { verdict, failureSignature = null, note = null }) {
   const attempts = Array.isArray(trace.attempts) ? trace.attempts : [];
   const claim = readClaim(root, id);
@@ -155,6 +161,12 @@ function appendAttempt(root, id, trace, { verdict, failureSignature = null, note
         at: utcNow(),
         claim_session: claim && typeof claim.session === 'string' ? claim.session : null,
         claimed_at: claim && typeof claim.claimed_at === 'string' ? claim.claimed_at : null,
+        acquired_at:
+          claim && typeof claim.acquired_at === 'string'
+            ? claim.acquired_at
+            : claim && typeof claim.claimed_at === 'string'
+              ? claim.claimed_at
+              : null,
         worker: typeof trace.worker === 'string' ? trace.worker : null,
         verdict,
         failure_signature: failureSignature,
@@ -1164,18 +1176,25 @@ function budgetExhaustedRefusal(id, name, limit, used, relevant) {
 // proceed, else the typed refusal — surfaced as-is by claimCellCrossSession
 // (direct `cells claim --id`) or used as a selection filter by
 // claimNextCell (Δ3/F3: a bricked candidate is skipped, never surfaced).
-function checkCellBudgets(cell) {
+export function checkCellBudgets(cell) {
   const budgets = resolveCellBudgets(cell);
   const relevant = attemptsSinceBudgetReset(cell);
 
-  // D2+Δ1: claims_used = distinct (claim_session, claimed_at) pairs, +1 for
-  // the acquisition currently being attempted (it has no ledger entry yet —
-  // nothing has been verified/blocked under it). A legacy cell with no
+  // D2+Δ1 (GH #27.1, D-GHF-B): claims_used = distinct (claim_session,
+  // acquired_at ?? claimed_at) pairs, +1 for the acquisition currently being
+  // attempted (it has no ledger entry yet — nothing has been
+  // verified/blocked under it). The key is the heartbeat-invariant
+  // acquisition identity: acquired_at is stamped once at claim creation and
+  // never rewritten by renewClaimTTL, so N heartbeats between failures under
+  // one claim epoch still collapse to a single pair (D-GHF-B) — the pre-fix
+  // key of claimed_at alone changed on every heartbeat and inflated the
+  // count. Legacy ledger entries with no acquired_at fall back to
+  // claimed_at, counting exactly as before (D6). A legacy cell with no
   // ledger reads as 0 pairs, so its first claim is exactly 1 — byte-
   // identical to today (D6).
   const pairs = new Set();
   for (const a of relevant) {
-    pairs.add(`${a.claim_session ?? ''} ${a.claimed_at ?? ''}`);
+    pairs.add(`${a.claim_session ?? ''} ${(a.acquired_at ?? a.claimed_at) ?? ''}`);
   }
   const claimsUsed = pairs.size + 1;
   if (claimsUsed > budgets.max_claims) {
