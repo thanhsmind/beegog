@@ -4018,8 +4018,8 @@ function checkManifestDrift(root, { skipWrite = false } = {}) {
 
 // ─── --help / --help --json: D3 tool-schema-shaped manifest ────────────────
 
-function publicManifestEntries() {
-  return COMMAND_REGISTRY.map(({ name, invoke, description, parameters, examples, deprecated }) => ({
+function toManifestEntries(entries) {
+  return entries.map(({ name, invoke, description, parameters, examples, deprecated }) => ({
     name,
     invoke,
     description,
@@ -4029,9 +4029,13 @@ function publicManifestEntries() {
   }));
 }
 
-function renderHelpText() {
+function publicManifestEntries() {
+  return toManifestEntries(COMMAND_REGISTRY);
+}
+
+function renderHelpText(entries = publicManifestEntries()) {
   const lines = [`bee — unified CLI dispatcher (schema_version ${SCHEMA_VERSION})`, ''];
-  for (const entry of publicManifestEntries()) {
+  for (const entry of entries) {
     lines.push(entry.invoke);
     lines.push(`    ${entry.description}`);
     const required = entry.parameters?.required || [];
@@ -4090,6 +4094,29 @@ export async function main(argv) {
   const { leading, rest } = splitCommandTokens(argv);
   const { commandName, extra } = resolveCommand(leading);
   const jsonRequested = rest.some((t) => t === '--json' || t.startsWith('--json='));
+
+  // Group/command-scoped --help (GH #23): "bee <group> --help" or "bee
+  // <group> <verb> --help" renders help filtered to just that group/command,
+  // reusing the same publicManifestEntries/renderHelpText shapes as top-level
+  // --help. Only fires when commandName resolves to at least one registry
+  // entry (itself or a "<commandName>." prefix) — an unrecognized group falls
+  // through unchanged to the existing GROUP_USAGE_FALLBACKS / nearest-match
+  // error path below, byte-exact (DA5 bijection probe never sends --help).
+  if (commandName && rest.includes('--help')) {
+    const filtered = COMMAND_REGISTRY.filter(
+      (e) => e.name === commandName || e.name.startsWith(`${commandName}.`),
+    );
+    if (filtered.length > 0) {
+      const entries = toManifestEntries(filtered);
+      if (jsonRequested) {
+        const manifest = { schema_version: SCHEMA_VERSION, commands: entries };
+        process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+      } else {
+        process.stdout.write(renderHelpText(entries));
+      }
+      return 0;
+    }
+  }
 
   if (!commandName) {
     return emit(

@@ -2064,6 +2064,41 @@ await check('bee --help renders non-empty prose naming known commands', async ()
   assert(result.stdout.includes('bee cells ready'), `expected "bee cells ready" invoke text, got: ${result.stdout}`);
 });
 
+// ─── group/command-scoped --help (GH #23) ──────────────────────────────────
+
+await check('bee state --help --json exits 0 and lists only state.* commands, including state.set', async () => {
+  const result = await runBee(['state', '--help', '--json']);
+  assert(result.status === 0, `exit ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  assert(manifest.schema_version === SCHEMA_VERSION, `schema_version: ${manifest.schema_version}`);
+  const names = manifest.commands.map((c) => c.name);
+  assert(names.includes('state.set'), `expected "state.set" among scoped commands, got: ${names.join(', ')}`);
+  assert(names.every((n) => n.startsWith('state.')), `expected only state.* commands, got: ${names.join(', ')}`);
+});
+
+await check('bee cells --help (text) exits 0 and names only cells.* invokes', async () => {
+  const result = await runBee(['cells', '--help']);
+  assert(result.status === 0, `exit ${result.status}: ${result.stderr}`);
+  assert(result.stdout.includes('bee cells ready'), `expected "bee cells ready" invoke text, got: ${result.stdout}`);
+  assert(!result.stdout.includes('bee state set'), `scoped "cells --help" leaked an unrelated command: ${result.stdout}`);
+});
+
+await check('bee state handoff --help --json scopes to state.handoff.* only', async () => {
+  const result = await runBee(['state', 'handoff', '--help', '--json']);
+  assert(result.status === 0, `exit ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  const names = manifest.commands.map((c) => c.name);
+  assert(names.length > 0, 'expected at least one state.handoff.* command');
+  assert(names.every((n) => n.startsWith('state.handoff.')), `expected only state.handoff.* commands, got: ${names.join(', ')}`);
+  assert(names.includes('state.handoff.show'), `expected "state.handoff.show" among scoped commands, got: ${names.join(', ')}`);
+});
+
+await check('bee bogusgroup --help still errors exactly like an unrecognized command (unknown group unaffected)', async () => {
+  const result = await runBee(['bogusgroup', '--help']);
+  assert(result.status === 1, `expected exit 1, got ${result.status}: stdout=${result.stdout}`);
+  assert(result.stderr.includes('Unknown command "bogusgroup"'), `expected the unchanged unknown-command message, got: ${result.stderr}`);
+});
+
 // ─── demo-2 fixture chain, driven entirely through the bee.mjs dispatcher ──
 
 await check('bee cells add creates the demo-2 fixture cell used by the rest of this dispatcher chain', async () => {
