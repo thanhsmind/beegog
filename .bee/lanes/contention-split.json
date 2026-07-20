@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "feature": "contention-split",
   "mode": "standard",
-  "phase": "swarming",
+  "phase": "compounding",
   "approved_gates": {
     "context": true,
     "shape": true,
@@ -10,6 +10,15 @@
     "review": false
   },
   "summary": "cs-1..cs-2b serialize on test tree; cs-3 contention-free, dispatched",
-  "next_action": "execute cs-3 now; cs-1 queues behind test_lib holds",
-  "created_at": "2026-07-20T14:29:12.135Z"
+  "next_action": "compounding for contention-split lane; xwh-4 still executing",
+  "created_at": "2026-07-20T14:29:12.135Z",
+  "last_scribing_run": {
+    "feature": "contention-split",
+    "date": "2026-07-20",
+    "at": "2026-07-20T16:40:13.771Z",
+    "areas_synced": [
+      "verify-pipeline"
+    ],
+    "next_action": "compounding for contention-split lane; xwh-4 still executing"
+  }
 }

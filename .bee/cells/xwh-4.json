@@ -32,10 +32,10 @@
   "deps": [
     "xwh-3"
   ],
-  "status": "open",
+  "status": "claimed",
   "decisions": [],
   "trace": {
-    "worker": null,
+    "worker": "exec-xwh4",
     "outcome": null,
     "files_changed": [],
     "deviations": [],
@@ -44,6 +44,7 @@
     "behavior_change": false,
     "verification_evidence": null,
     "verify_output": null,
-    "verify_passed": null
+    "verify_passed": null,
+    "claimed_at": "2026-07-20T16:30:44.402Z"
   }
 }

@@ -4,7 +4,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { findConflicts, findSessionConflicts, reservationsPath } from './reservations.mjs';
-import { readConfig, resolvePipeline } from './state.mjs';
+import { readConfig, resolvePipeline, resolveRoots } from './state.mjs';
+// xwh-4: cross-worktree foreign-hold consultation. worktree-holds.mjs imports
+// only fsutil/lock/reservations.mjs — no cycle (same discipline cells.mjs's
+// own findForeignHolds import documents).
+import { findForeignHolds, holdsStoreCorrupt } from './worktree-holds.mjs';
 
 /** File-path patterns that must never be read without asking the human. */
 export const SECRET_PATTERNS = [
@@ -73,6 +77,14 @@ const TERMINAL_PHASES = new Set(['idle', 'compounding-complete']);
 const DIRECT_EDIT_DENY = {
   '.bee/state.json': 'bee.mjs state set --owner <selected pre-mutation phase>, or the dedicated state gate/worker/scribing-run verb',
   '.bee/backlog.jsonl': 'bee.mjs backlog add',
+  // xwh-4: the cross-worktree coordination stores are CLI-owned too — the
+  // holds ledger is mirrored/released only by bee.mjs reservations (xwh-2)
+  // and the grant registry only by bee.mjs worktree register/unregister. A
+  // hand edit bypasses the store lock and the atomic tmp+rename write both
+  // stores rely on (worktree-holds.mjs / worktree-store.mjs).
+  '.bee/runtime/cross-worktree-holds.json':
+    'bee.mjs reservations reserve/release (holds are mirrored into the ledger automatically)',
+  '.bee/runtime/worktree-grants.json': 'bee.mjs worktree register / unregister',
 };
 
 function normalizeRel(relPath) {
@@ -125,6 +137,53 @@ function holdExpiry(reservation) {
   return `expires ${new Date(reservedMs + ttl * 1000).toISOString()}`;
 }
 
+/** Same expiry-string convention as holdExpiry above, rebased on a
+ * cross-worktree ledger hold's `mirrored_at`/`ttl_seconds` fields (same shape
+ * bee.mjs's holdForeignExpiry uses for its own list rendering). */
+function foreignHoldExpiry(hold) {
+  const mirroredMs = Date.parse(hold?.mirrored_at);
+  const ttl = hold?.ttl_seconds;
+  if (!Number.isFinite(mirroredMs) || !Number.isFinite(ttl) || ttl <= 0) return 'no expiry';
+  return `expires ${new Date(mirroredMs + ttl * 1000).toISOString()}`;
+}
+
+// xwh-4: resolves the cross-worktree HOLD topology for the write guard —
+// same shape/naming as cells.mjs's resolveHoldTopology (xwh-3), rebased on
+// the `root` checkWrite already carries (the guard is a library call whose
+// `root` IS the checkout being written to, exactly like claim-next). Returns
+// `{ mainRoot, holder }` for the two topologies worth consulting:
+//   - an ORDINARY checkout: holder = 'main', mainRoot = the checkout itself.
+//   - a GRANTED linked worktree (its own storeRoot === its own worktreeRoot,
+//     i.e. resolveRoots did NOT fall back to main): holder = its
+//     git-verified id, mainRoot = resolveRoots' own `mainRoot`.
+// Returns `null` for every other case — an UNGRANTED linked worktree
+// (storeRoot === mainRoot already: the shared main store's same-checkout
+// reservation guards above already govern it directly) and an
+// unresolvable/invalid checkout (resolveRoots threw) both fall through to
+// `null`, which checkWrite treats as "skip the foreign-hold consultation
+// entirely, byte-identical to before this cell" — FAIL-OPEN, never a deny.
+// An over-denying write guard can lock every session out of its own fix
+// (critical pattern 20260716), so no error path in this resolution may deny.
+function resolveHoldTopology(root) {
+  let resolution;
+  try {
+    resolution = resolveRoots(root);
+  } catch {
+    return null;
+  }
+  if (resolution.worktreeResolution === 'ordinary') {
+    return { mainRoot: resolution.workRoot || root, holder: 'main' };
+  }
+  if (resolution.worktreeResolution === 'linked-valid' && resolution.mainRoot && resolution.id) {
+    const granted =
+      resolution.storeRoot && resolution.worktreeRoot && path.resolve(resolution.storeRoot) === path.resolve(resolution.worktreeRoot);
+    if (granted) {
+      return { mainRoot: resolution.mainRoot, holder: resolution.id };
+    }
+  }
+  return null;
+}
+
 /**
  * Gate + reservation write check.
  * - Direct-edit deny (first hit, every phase): `.bee/state.json` and
@@ -159,6 +218,16 @@ function holdExpiry(reservation) {
  *   fails closed with a typed {allow:false, kind:'holds-unreadable'} verdict
  *   (never a throw — the production hook is fail-open and would swallow a
  *   throw into an allow); a missing store stays open, same as today.
+ * - Cross-WORKTREE hold deny (xwh-4): right after the cross-session block,
+ *   before every phase branch, and NOT gated on sessionId — checkout
+ *   identity comes from resolveHoldTopology(root) (ordinary => 'main',
+ *   granted worktree => its git-verified id). A path ledger-held by a
+ *   DIFFERENT checkout denies with kind 'worktree-hold' naming the holding
+ *   checkout, its feature, and the expiry. Own holds, expired/released
+ *   holds, and a missing ledger never deny; unresolvable/ungranted topology
+ *   skips the consultation entirely (fail-open). The one deny on a broken
+ *   store: a present-but-corrupt ledger => typed
+ *   {allow:false, kind:'worktree-holds-unreadable'} (holdsStoreCorrupt).
  */
 export function checkWrite(root, state, relPath, agentName = null, { sessionId = null } = {}) {
   const normalized = normalizeRel(relPath);
@@ -224,6 +293,50 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
           `(agent ${holder.agent}, cell ${holder.cell}), ${holdExpiry(holder)}. ` +
           'Wait for the hold to expire or coordinate with that session — a cross-session hold is a hard block (D3).',
       };
+    }
+  }
+
+  // xwh-4: cross-WORKTREE foreign-hold consultation — unconditional on phase
+  // and on sessionId, same placement discipline as the cross-session block
+  // above (a foreign checkout's hold denies even in swarming with execution
+  // approved). Topology unresolvable/ungranted => null => skip entirely
+  // (fail-open). The ONE deliberate deny on a broken store is a
+  // present-but-unparseable ledger (holdsStoreCorrupt: missing=open,
+  // unparseable=deny — reservationStoreCorrupt's exact semantics): silently
+  // reading a torn ledger as empty would open every foreign-held path to
+  // this checkout. Any other failure inside the consultation itself is
+  // swallowed into an allow, never a deny (critical pattern 20260716: an
+  // over-denying guard locks the session out of its own fix).
+  {
+    const topology = resolveHoldTopology(root);
+    if (topology) {
+      if (holdsStoreCorrupt(topology.mainRoot)) {
+        return {
+          allow: false,
+          kind: 'worktree-holds-unreadable',
+          reason:
+            'bee cross-worktree hold guard: the shared holds ledger (.bee/runtime/cross-worktree-holds.json ' +
+            'in the main checkout) is present but unreadable/corrupt — failing closed rather than silently ' +
+            'treating it as empty. FIX: inspect/restore the ledger in the main checkout, then retry.',
+        };
+      }
+      let foreign = [];
+      try {
+        foreign = findForeignHolds(topology.mainRoot, topology.holder, [normalized]);
+      } catch {
+        foreign = []; // fail-open: a consultation crash never denies
+      }
+      if (foreign.length > 0) {
+        const hold = foreign[0];
+        return {
+          allow: false,
+          kind: 'worktree-hold',
+          reason:
+            `bee cross-worktree hold: "${normalized}" is held by checkout "${hold.holder}" ` +
+            `(feature ${hold.feature || 'unknown'}${hold.cell ? `, cell ${hold.cell}` : ''}), ${foreignHoldExpiry(hold)}. ` +
+            'Wait for the hold to expire or coordinate with that checkout — a cross-worktree hold is a hard block.',
+        };
+      }
     }
   }
 

@@ -592,4 +592,364 @@ await check('buildPromptReminder: omitting sessionId is unchanged; a bound sessi
   }
 });
 
+// ─── xwh-4: frozen regression net over the checkWrite decision table ────────
+// Critical pattern 20260716: freeze a load-bearing function's CURRENT behavior
+// in a regression net and see it GREEN before touching it. Every branch of
+// checkWrite gets rows pinning today's exact allow/deny + reason-shape
+// behavior. The net is TOLERANT of new fields (pins the fields that exist,
+// never asserts the absence of others) so a purely additive change stays
+// compatible. Any pre-existing row here that changes after an edit is a
+// defect in the edit, not a row to update.
+
+await check('NET branch 1 — direct-edit deny: .bee/state.json and .bee/backlog.jsonl are denied first-hit in EVERY phase, before GATE_ALLOWED_PREFIXES can allow .bee/', async () => {
+  const dir = makeStateRepo('bee-net-direct-edit-');
+  try {
+    const phases = [
+      { ...defaultState(), phase: 'idle' },
+      { ...defaultState(), phase: 'planning' },
+      { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } },
+      { ...defaultState(), phase: 'compounding-complete', approved_gates: { context: true, shape: true, execution: true, review: true } },
+    ];
+    for (const state of phases) {
+      const stateDeny = checkWrite(dir, state, '.bee/state.json');
+      assert(
+        stateDeny.allow === false && stateDeny.kind === 'direct-edit',
+        `.bee/state.json must be a direct-edit deny in phase ${state.phase}, got ${JSON.stringify(stateDeny)}`,
+      );
+      assert(
+        stateDeny.reason.includes('CLI-owned') && stateDeny.reason.includes('bee.mjs state'),
+        `direct-edit reason names CLI ownership and the state verb, got: ${stateDeny.reason}`,
+      );
+      const backlogDeny = checkWrite(dir, state, '.bee/backlog.jsonl');
+      assert(
+        backlogDeny.allow === false && backlogDeny.kind === 'direct-edit' && backlogDeny.reason.includes('bee.mjs backlog add'),
+        `.bee/backlog.jsonl must be a direct-edit deny naming bee.mjs backlog add in phase ${state.phase}, got ${JSON.stringify(backlogDeny)}`,
+      );
+    }
+    // path normalization: ./ prefix and backslashes still hit the deny
+    assert(checkWrite(dir, defaultState(), './.bee/state.json').allow === false, './-prefixed state.json still denied');
+    assert(checkWrite(dir, defaultState(), '.bee\\state.json').allow === false, 'backslash state.json still denied');
+    // other .bee/ files are NOT this rule's concern (idle allows .bee/ prefix)
+    const otherBee = checkWrite(dir, defaultState(), '.bee/cells/x-1.json');
+    assert(otherBee.allow === true, `.bee/cells/ stays allowed at idle, got ${JSON.stringify(otherBee)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('NET branch 2 — docs/history code-ext deny: code extensions deny with kind docs-history-code; .md/.json/extension-less allowed; precedence below direct-edit, above lane/hold/phase', async () => {
+  const dir = makeStateRepo('bee-net-history-code-');
+  try {
+    const active = { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } };
+    for (const p of ['docs/history/f/verify.sh', 'docs/history/f/helper.mjs', 'docs/history/f/tool.py', 'docs/history/f/x.ts']) {
+      const deny = checkWrite(dir, active, p);
+      assert(deny.allow === false && deny.kind === 'docs-history-code', `${p} must deny with docs-history-code, got ${JSON.stringify(deny)}`);
+      assert(deny.reason.includes('docs/history/') && /spikes|scripts/.test(deny.reason), `reason points at spikes/scripts, got: ${deny.reason}`);
+    }
+    assert(checkWrite(dir, active, 'docs/history/f/CONTEXT.md').allow === true, '.md under docs/history/ allowed');
+    assert(checkWrite(dir, active, 'docs/history/f/evidence.json').allow === true, '.json under docs/history/ allowed');
+    assert(checkWrite(dir, active, 'docs/history/f/Makefile').allow === true, 'extension-less file under docs/history/ allowed');
+    assert(checkWrite(dir, active, 'src/tool.py').allow === true, 'code outside docs/history/ untouched by this rule');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('NET branch 3 — lane resolution: broken binding is a typed lane deny naming the lane; a bound lane governs phase/gates; unbound session falls to the default record', async () => {
+  const dir = makeStateRepo('bee-net-lane-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'idle',
+      feature: null,
+      approved_gates: { context: false, shape: false, execution: false, review: false },
+      workers: [],
+    });
+    const state = readState(dir);
+    laneBinding.createSession(dir, { id: 'net-broken' });
+    laneBinding.bindSessionLane(dir, 'net-broken', 'net-lane-ghost');
+    const broken = checkWrite(dir, state, 'src/app.ts', null, { sessionId: 'net-broken' });
+    assert(broken.allow === false && broken.kind === 'lane', `broken binding is a typed lane deny, got ${JSON.stringify(broken)}`);
+    assert(broken.reason.startsWith('bee lane guard:') && broken.reason.includes('net-lane-ghost'), `lane reason shape pinned, got: ${broken.reason}`);
+    laneBinding.createSession(dir, { id: 'net-bound' });
+    writeLaneFixture(dir, 'net-lane-live', {
+      phase: 'swarming',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    laneBinding.bindSessionLane(dir, 'net-bound', 'net-lane-live');
+    const bound = checkWrite(dir, state, 'src/app.ts', null, { sessionId: 'net-bound' });
+    assert(bound.allow === true, `a bound approved lane allows over the idle default record, got ${JSON.stringify(bound)}`);
+    laneBinding.createSession(dir, { id: 'net-unbound' });
+    const unbound = checkWrite(dir, state, 'src/app.ts', null, { sessionId: 'net-unbound' });
+    assert(unbound.allow === false && unbound.kind === 'intake', 'unbound session resolves to the default record (intake at idle)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('NET branch 4 — cross-session hold: deny shape (session+agent+cell+expiry named), own hold open, corrupt store holds-unreadable, missing store open', async () => {
+  const dir = makeStateRepo('bee-net-hold-');
+  try {
+    laneBinding.createSession(dir, { id: 'net-sess-a' });
+    laneBinding.createSession(dir, { id: 'net-sess-b' });
+    writeLaneFixture(dir, 'net-lane-hold', {
+      phase: 'swarming',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+    });
+    laneBinding.bindSessionLane(dir, 'net-sess-a', 'net-lane-hold');
+    const state = readState(dir);
+    // missing store stays open
+    const openOk = checkWrite(dir, state, 'src/h/free.ts', null, { sessionId: 'net-sess-a' });
+    assert(openOk.allow === true, `missing reservation store stays open, got ${JSON.stringify(openOk)}`);
+    await reserve(dir, { agent: 'net-agent-b', cell: 'net-1', path: 'src/h/target.ts', session: 'net-sess-b' });
+    const deny = checkWrite(dir, state, 'src/h/target.ts', null, { sessionId: 'net-sess-a' });
+    assert(deny.allow === false && deny.kind === 'hold', `cross-session hold deny expected, got ${JSON.stringify(deny)}`);
+    assert(
+      deny.reason.startsWith('bee cross-session hold:') &&
+        deny.reason.includes('net-sess-b') &&
+        deny.reason.includes('net-agent-b') &&
+        deny.reason.includes('net-1') &&
+        /expires|no expiry/.test(deny.reason),
+      `hold deny reason shape pinned (session, agent, cell, expiry), got: ${deny.reason}`,
+    );
+    // the acting session's own hold never denies itself
+    await reserve(dir, { agent: 'net-agent-a', cell: 'net-1', path: 'src/h/mine.ts', session: 'net-sess-a' });
+    assert(checkWrite(dir, state, 'src/h/mine.ts', null, { sessionId: 'net-sess-a' }).allow === true, 'own hold never blocks');
+    // corrupt store: typed deny, never a throw
+    fs.writeFileSync(reservationsPath(dir), '{ torn', 'utf8');
+    let verdict;
+    let threw = false;
+    try {
+      verdict = checkWrite(dir, state, 'src/h/free.ts', null, { sessionId: 'net-sess-a' });
+    } catch {
+      threw = true;
+    }
+    assert(!threw && verdict && verdict.allow === false && verdict.kind === 'holds-unreadable', `corrupt store is a typed holds-unreadable deny, got ${JSON.stringify(verdict)}`);
+    assert(verdict.reason.includes('reservation store'), `holds-unreadable reason names the reservation store, got: ${verdict.reason}`);
+    // no sessionId: the hold machinery never runs at all
+    const swarm = { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } };
+    const saved = process.env.BEE_AGENT_NAME;
+    try {
+      delete process.env.BEE_AGENT_NAME;
+      assert(checkWrite(dir, swarm, 'src/h/target.ts').allow === true, 'no sessionId: session-hold check never consulted');
+    } finally {
+      if (saved === undefined) delete process.env.BEE_AGENT_NAME;
+      else process.env.BEE_AGENT_NAME = saved;
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('NET branch 5 — terminal-phase intake: idle and compounding-complete deny with kind intake naming the phase; allowed prefixes writable; guards.idle_gate=false disables', async () => {
+  const dir = makeStateRepo('bee-net-intake-');
+  try {
+    for (const phase of ['idle', 'compounding-complete']) {
+      const state = {
+        ...defaultState(),
+        phase,
+        approved_gates: phase === 'compounding-complete' ? { context: true, shape: true, execution: true, review: true } : defaultState().approved_gates,
+      };
+      const deny = checkWrite(dir, state, 'src/app.ts');
+      assert(deny.allow === false && deny.kind === 'intake', `intake deny at ${phase}, got ${JSON.stringify(deny)}`);
+      assert(deny.reason.startsWith('bee intake gate:') && deny.reason.includes(phase) && deny.reason.includes('bee-hive'), `intake reason names the phase and bee-hive routing, got: ${deny.reason}`);
+      assert(checkWrite(dir, state, 'docs/notes.md').allow === true, `docs/ writable at ${phase}`);
+      assert(checkWrite(dir, state, '.bee/cells/n-1.json').allow === true, `.bee/ writable at ${phase}`);
+      assert(checkWrite(dir, state, 'plans/next.md').allow === true, `plans/ writable at ${phase}`);
+      assert(checkWrite(dir, state, 'AGENTS.md').allow === true, `AGENTS.md writable at ${phase}`);
+    }
+    const configPath = path.join(dir, '.bee', 'config.json');
+    writeJsonAtomic(configPath, { guards: { idle_gate: false } });
+    assert(checkWrite(dir, defaultState(), 'src/app.ts').allow === true, 'guards.idle_gate=false disables the intake gate');
+    fs.rmSync(configPath, { force: true });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('NET branch 6 — gated phases: exploring/planning/validating deny outside allowed prefixes with kind gate; execution approval opens them', async () => {
+  const dir = makeStateRepo('bee-net-gate-');
+  try {
+    for (const phase of ['exploring', 'planning', 'validating']) {
+      const state = { ...defaultState(), phase };
+      const deny = checkWrite(dir, state, 'src/app.ts');
+      assert(deny.allow === false && deny.kind === 'gate', `gate deny at ${phase}, got ${JSON.stringify(deny)}`);
+      assert(deny.reason.startsWith('bee gate:') && deny.reason.includes(phase) && deny.reason.includes('execution'), `gate reason names phase and gate, got: ${deny.reason}`);
+      assert(checkWrite(dir, state, 'docs/history/f/plan.md').allow === true, `docs/history/ writable at ${phase}`);
+      const approved = { ...state, approved_gates: { context: true, shape: true, execution: true, review: false } };
+      assert(checkWrite(dir, approved, 'src/app.ts').allow === true, `execution approval opens source at ${phase}`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('NET branch 7 — swarming reservation: foreign reservation denies with kind reservation naming the holder; own agent and unreserved paths allowed; no agent identity means no check; unknown phase falls through open', async () => {
+  const dir = makeStateRepo('bee-net-swarm-');
+  try {
+    const state = { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } };
+    await reserve(dir, { agent: 'net-holder', cell: 'net-s1', path: 'src/s/engine.ts' });
+    const deny = checkWrite(dir, state, 'src/s/engine.ts', 'net-writer');
+    assert(deny.allow === false && deny.kind === 'reservation', `reservation deny expected, got ${JSON.stringify(deny)}`);
+    assert(deny.reason.startsWith('bee reservation conflict:') && deny.reason.includes('net-holder') && deny.reason.includes('net-s1') && deny.reason.includes('[BLOCKED]'), `reservation reason shape pinned, got: ${deny.reason}`);
+    assert(checkWrite(dir, state, 'src/s/engine.ts', 'net-holder').allow === true, 'holder writes its own reserved path');
+    assert(checkWrite(dir, state, 'src/s/other.ts', 'net-writer').allow === true, 'unreserved path allowed in swarming');
+    const saved = process.env.BEE_AGENT_NAME;
+    try {
+      delete process.env.BEE_AGENT_NAME;
+      assert(checkWrite(dir, state, 'src/s/engine.ts').allow === true, 'no agent identity: reservation check never runs');
+      process.env.BEE_AGENT_NAME = 'net-writer';
+      const envDeny = checkWrite(dir, state, 'src/s/engine.ts');
+      assert(envDeny.allow === false && envDeny.kind === 'reservation', 'BEE_AGENT_NAME env supplies the agent identity');
+    } finally {
+      if (saved === undefined) delete process.env.BEE_AGENT_NAME;
+      else process.env.BEE_AGENT_NAME = saved;
+    }
+    // non-terminal, non-gated, non-swarming phase falls through open
+    const executing = { ...defaultState(), phase: 'executing', approved_gates: { context: true, shape: true, execution: true, review: false } };
+    assert(checkWrite(dir, executing, 'src/app.ts', 'net-writer').allow === true, 'executing phase falls through to allow');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── xwh-4: cross-worktree foreign-hold branch (NEW behavior, RED-first) ────
+// The write guard consults the shared cross-worktree holds ledger (xwh-1,
+// worktree-holds.mjs) through the same topology resolution claim-next uses
+// (xwh-3): ordinary checkout => holder 'main', ledger at the checkout's own
+// root; granted linked worktree => holder = git-verified id, ledger at
+// mainRoot; everything else (ungranted, unresolvable) => no consultation at
+// all, fail-open. Runs after the cross-session hold branch, before every
+// phase branch — a foreign checkout's hold denies even in
+// swarming-with-execution-approved.
+
+function writeHoldsLedger(dir, holds) {
+  const runtime = path.join(dir, '.bee', 'runtime');
+  fs.mkdirSync(runtime, { recursive: true });
+  writeJsonAtomic(path.join(runtime, 'cross-worktree-holds.json'), { holds });
+}
+
+await check('checkWrite (xwh-4): a foreign checkout\'s ledger hold denies the write with a typed kind, naming the holding checkout, its feature, and the expiry — phase-independent (swarming with execution approved)', async () => {
+  const dir = makeStateRepo('bee-xwh-foreign-deny-');
+  try {
+    const state = { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } };
+    writeHoldsLedger(dir, [
+      {
+        path: 'src/held/feature.ts',
+        holder: 'wt-featx',
+        feature: 'feat-x',
+        session: null,
+        cell: 'fx-1',
+        ttl_seconds: 3600,
+        mirrored_at: new Date().toISOString(),
+        released_at: null,
+      },
+    ]);
+    const deny = checkWrite(dir, state, 'src/held/feature.ts', 'net-writer');
+    assert(
+      deny.allow === false && deny.kind === 'worktree-hold',
+      `a foreign ledger hold must deny with kind worktree-hold, got ${JSON.stringify(deny)}`,
+    );
+    assert(
+      deny.reason.includes('wt-featx') && deny.reason.includes('feat-x') && /expires|no expiry/.test(deny.reason),
+      `the deny reason must name the holding checkout, its feature, and the expiry, got: ${deny.reason}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check("checkWrite (xwh-4): the acting checkout's OWN ledger holds never deny (ordinary checkout acts as holder 'main'); a missing ledger stays open; expired and released foreign holds never block", async () => {
+  const dir = makeStateRepo('bee-xwh-own-open-');
+  try {
+    const state = { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } };
+    // missing ledger: byte-identical to today
+    assert(checkWrite(dir, state, 'src/free.ts', 'net-writer').allow === true, 'missing ledger stays open');
+    writeHoldsLedger(dir, [
+      // the acting checkout's own hold (an ordinary checkout mirrors as 'main')
+      { path: 'src/own.ts', holder: 'main', feature: 'feat-here', session: null, cell: null, ttl_seconds: 3600, mirrored_at: new Date().toISOString(), released_at: null },
+      // an EXPIRED foreign hold
+      { path: 'src/stale.ts', holder: 'wt-old', feature: 'feat-old', session: null, cell: null, ttl_seconds: 60, mirrored_at: new Date(Date.now() - 7200 * 1000).toISOString(), released_at: null },
+      // a RELEASED foreign hold
+      { path: 'src/done.ts', holder: 'wt-done', feature: 'feat-done', session: null, cell: null, ttl_seconds: 3600, mirrored_at: new Date().toISOString(), released_at: new Date().toISOString() },
+    ]);
+    assert(checkWrite(dir, state, 'src/own.ts', 'net-writer').allow === true, "the acting checkout's own hold never denies itself");
+    assert(checkWrite(dir, state, 'src/stale.ts', 'net-writer').allow === true, 'an expired foreign hold never blocks');
+    assert(checkWrite(dir, state, 'src/done.ts', 'net-writer').allow === true, 'a released foreign hold never blocks');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('checkWrite (xwh-4): a present-but-corrupt holds ledger is a typed deny (holdsStoreCorrupt semantics: missing=open, unparseable=deny) — never a throw; restoring a valid ledger re-opens', async () => {
+  const dir = makeStateRepo('bee-xwh-corrupt-');
+  try {
+    const state = { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } };
+    const runtime = path.join(dir, '.bee', 'runtime');
+    fs.mkdirSync(runtime, { recursive: true });
+    fs.writeFileSync(path.join(runtime, 'cross-worktree-holds.json'), '{ torn ledger', 'utf8');
+    let verdict;
+    let threw = false;
+    try {
+      verdict = checkWrite(dir, state, 'src/whatever.ts', 'net-writer');
+    } catch {
+      threw = true;
+    }
+    assert(!threw, 'checkWrite must never throw on a corrupt holds ledger — the hook is fail-open and would swallow a throw into an allow');
+    assert(
+      verdict && verdict.allow === false && verdict.kind === 'worktree-holds-unreadable',
+      `a corrupt holds ledger must be a typed {allow:false, kind:'worktree-holds-unreadable'} deny, got ${JSON.stringify(verdict)}`,
+    );
+    writeHoldsLedger(dir, []);
+    assert(checkWrite(dir, state, 'src/whatever.ts', 'net-writer').allow === true, 'a valid (empty) ledger re-opens the write');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('checkWrite (xwh-4): unresolvable topology fails OPEN — a checkout resolveRoots cannot place never consults the ledger, even a corrupt one', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-xwh-unresolvable-'));
+  try {
+    fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+    writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+    // a .git FILE with empty content = an invalid linked-worktree marker:
+    // resolveRoots throws WorktreeLinkInvalidError for it
+    fs.writeFileSync(path.join(dir, '.git'), '', 'utf8');
+    // even a corrupt ledger sitting right there must not deny — the topology
+    // never resolved, so the consultation never runs (fail-open discipline)
+    const runtime = path.join(dir, '.bee', 'runtime');
+    fs.mkdirSync(runtime, { recursive: true });
+    fs.writeFileSync(path.join(runtime, 'cross-worktree-holds.json'), '{ torn', 'utf8');
+    const state = { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } };
+    const verdict = checkWrite(dir, state, 'src/app.ts', 'net-writer');
+    assert(verdict.allow === true, `an unresolvable topology must fail open, got ${JSON.stringify(verdict)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('checkWrite (xwh-4): DIRECT_EDIT_DENY covers .bee/runtime/cross-worktree-holds.json and .bee/runtime/worktree-grants.json — hand edits refused in every phase, CLI named in the fix', async () => {
+  const dir = makeStateRepo('bee-xwh-direct-edit-');
+  try {
+    const phases = [
+      defaultState(), // idle
+      { ...defaultState(), phase: 'swarming', approved_gates: { context: true, shape: true, execution: true, review: false } },
+    ];
+    for (const state of phases) {
+      for (const file of ['.bee/runtime/cross-worktree-holds.json', '.bee/runtime/worktree-grants.json']) {
+        const deny = checkWrite(dir, state, file);
+        assert(
+          deny.allow === false && deny.kind === 'direct-edit',
+          `${file} must be a direct-edit deny in phase ${state.phase}, got ${JSON.stringify(deny)}`,
+        );
+        assert(deny.reason.includes('CLI-owned'), `direct-edit reason keeps the CLI-owned voice, got: ${deny.reason}`);
+      }
+    }
+    // other .bee/runtime/ files are not this rule's concern
+    assert(checkWrite(dir, defaultState(), '.bee/runtime/something-else.json').allow === true, 'other .bee/runtime files unaffected');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 printSummaryAndExit();

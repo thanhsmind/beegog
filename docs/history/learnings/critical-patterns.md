@@ -635,3 +635,16 @@ commit; if a non-release feature drifted it, restore with `bump_version.mjs <las
 before a `.bee-render.json` sha changes goes red on `plugin_distribution`. Order: edit →
 render trees → onboard sync → `release_manifest --write` → `--check`. Mechanization filed
 (backlog: cap-time tuple-drift guard).
+
+## [20260720] Measure the contention topology before adding coordination machinery
+**Category:** process
+**Feature:** contention-split
+**Tags:** [parallelism, contention, test-topology, discovery-over-registry]
+The "sessions wait for each other" complaint was 90% artificial: a 9.6k-line
+test monolith every feature edited, a hand-written suite registry every
+feature registered into, and an unlocked whole-tree regen. Splitting tests
+per module + convention-based discovery + a locked tmp-swap render removed
+the collisions outright — coordination machinery (holds ledger) is only for
+the residue of REAL same-module overlap. Corollary proven the same day: the
+hand registry had silently never run 4 existing test files, one of which was
+red against the live hook (discovery > registration, for correctness too).
