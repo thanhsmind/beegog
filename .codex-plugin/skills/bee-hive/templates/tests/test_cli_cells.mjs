@@ -20,6 +20,7 @@ import {
 } from '../../../../scripts/lib/test-fixture.mjs';
 import { readCell, claimCell, claimNextCell, claimCellCrossSession } from '../lib/cells.mjs';
 import { reserve } from '../lib/reservations.mjs';
+import { mirrorHold } from '../lib/worktree-holds.mjs';
 import {
   createSession,
   heartbeatSession,
@@ -429,6 +430,98 @@ await check("claimNextCell: the acting session's OWN active hold on a cell's fil
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+await check(
+  "claimNextCell: a cell whose files overlap a FOREIGN cross-worktree hold (xwh-3) is skipped while a clean cell claims",
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-foreign-hold-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      // readyCells sorts candidates by id (localeCompare) — 'held-foreign-1'
+      // deliberately sorts BEFORE 'zzz-foreign-free-1' so selection would
+      // pick the held cell FIRST without the xwh-3 foreign-hold check (a
+      // real RED: this row must fail against pre-fix cells.mjs, not pass by
+      // accident of id ordering).
+      makeCellFile(dir, 'held-foreign-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/foreign.ts'] });
+      makeCellFile(dir, 'zzz-foreign-free-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/free.ts'] });
+      // `dir` is an ordinary checkout (no .git file) -> resolveHoldTopology
+      // resolves holder='main', mainRoot=dir; a hold mirrored under any OTHER
+      // holder id is therefore foreign to the acting claim-next call.
+      await mirrorHold(dir, { path: 'src/foreign.ts', holder: 'worktree-other', feature: 'demo-feat', cell: 'other-cell' });
+
+      const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+      assert(
+        result.ok === true && result.cell.id === 'zzz-foreign-free-1',
+        `held-foreign-1 must be skipped for another checkout's cross-worktree hold, got ${JSON.stringify(result)}`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  "claimNextCell: the acting checkout's OWN cross-worktree ledger entries (holder 'main') never exclude a cell (xwh-3)",
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-own-foreign-hold-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      makeCellFile(dir, 'own-ledger-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/mine-ledger.ts'] });
+      // `dir` resolves holder='main' for itself; an entry ALSO mirrored under
+      // 'main' is the acting checkout's own hold, not a foreign one.
+      await mirrorHold(dir, { path: 'src/mine-ledger.ts', holder: 'main', feature: 'demo-feat', cell: 'own-ledger-1' });
+
+      const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+      assert(
+        result.ok === true && result.cell.id === 'own-ledger-1',
+        `the acting checkout's own ledger entry must never exclude the cell, got ${JSON.stringify(result)}`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check(
+  "claimNextCell: a repo with no cross-worktree ledger file at all selects exactly like today (xwh-3 missing = empty)",
+  async () => {
+    const dir = makeStateRepo('bee-claimnext-no-ledger-');
+    try {
+      writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+        schema_version: '1.0',
+        phase: 'swarming',
+        feature: 'demo-feat',
+        approved_gates: { context: true, shape: true, execution: true, review: false },
+        workers: [],
+      });
+      makeCellFile(dir, 'no-ledger-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/plain.ts'] });
+      assert(
+        !fs.existsSync(path.join(dir, '.bee', 'runtime', 'cross-worktree-holds.json')),
+        'no cross-worktree ledger file must exist before claim-next runs',
+      );
+
+      const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+      assert(
+        result.ok === true && result.cell.id === 'no-ledger-1',
+        `a missing ledger must behave byte-identically to today, got ${JSON.stringify(result)}`,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 await check(
   "claimCellCrossSession: a claimCell THROW after the claim file was created releases the claim file — no orphan (W4 unwind pin)",

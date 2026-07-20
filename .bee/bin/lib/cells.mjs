@@ -13,6 +13,7 @@ import {
   readLaneStrict,
   resolvePipeline,
   listLanes,
+  resolveRoots,
 } from './state.mjs';
 // fsh-11 (D2/D4): claim-next's cross-session selection + throw-safe two-store
 // claim needs claims.mjs's atomic primitive, reservations.mjs's cross-session
@@ -33,6 +34,14 @@ import {
   resolveSessionId,
 } from './claims.mjs';
 import { findSessionConflicts } from './reservations.mjs';
+// xwh-3: claim-next's hold-free predicate also consults the shared
+// cross-worktree ledger (worktree-holds.mjs, wired standalone by xwh-1/xwh-2)
+// so a cell whose files are held by a DIFFERENT checkout is skipped exactly
+// like a same-checkout reservation hold — read-only, never writes the
+// ledger. worktree-holds.mjs imports only fsutil/lock/reservations.mjs, so
+// this creates no cycle (same discipline reservations.mjs's own import
+// already relies on above it in the module graph).
+import { findForeignHolds } from './worktree-holds.mjs';
 import { featureBacklogRank } from './backlog.mjs';
 // D2 (self-correcting-loop) — resetCellBudget logs a decision through the
 // SAME event-sourced log every other decision-logging verb uses (bee-bypass-
@@ -1946,6 +1955,16 @@ export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } =
 //   (3) any candidate whose declared files intersect ANOTHER session's
 //       active reservation hold (findSessionConflicts, D3) is skipped
 //       outright — the acting session's own holds never exclude a cell.
+//   (3b, xwh-3) any candidate whose declared files intersect an unexpired
+//       cross-worktree ledger hold owned by a DIFFERENT checkout (resolved
+//       via resolveHoldTopology below + findForeignHolds, worktree-holds.mjs)
+//       is skipped exactly the same way — silently, next candidate — never
+//       a crash or a refusal. Read-only consultation: claim-next never
+//       mirrors or releases anything in the ledger. A repo with no ledger
+//       file, or a checkout resolveRoots cannot place (topology throws, or
+//       an ungranted linked worktree that already shares the main store
+//       directly), degrades to today's exact behavior — no foreign-hold
+//       check runs at all.
 //   (4) nothing claimable anywhere -> typed { ok:false, code:'NO_APPROVED_WORK' }.
 //
 // SWEEP PIN (validation-s4 panel B1): sweepExpiredClaims runs FIRST, every
@@ -1956,6 +1975,46 @@ export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } =
 // selection reads anything else, so a just-swept cell is immediately
 // claimable and the typed NO_APPROVED_WORK stop is never returned while one
 // still exists.
+
+// xwh-3: resolves the cross-worktree HOLD topology for claim-next's
+// foreign-hold consultation — same shape/naming as bee.mjs's own
+// resolveHoldTopology (xwh-2), rebased on the `root` claim-next already
+// carries instead of `process.cwd()` (claim-next is a library call, not a
+// CLI entrypoint pinned to the process's own cwd; `root` IS the checkout
+// under selection). Returns `{ mainRoot, holder }` for the two topologies
+// worth consulting:
+//   - an ORDINARY checkout: holder = 'main', mainRoot = the checkout itself.
+//   - a GRANTED linked worktree (its own storeRoot === its own worktreeRoot,
+//     i.e. resolveRoots did NOT fall back to main): holder = its
+//     git-verified id, mainRoot = resolveRoots' own `mainRoot`.
+// Returns `null` for every other case — an UNGRANTED linked worktree
+// (storeRoot === mainRoot already: `root` here already IS the shared main
+// store, so a foreign-hold check would just be redundant with the
+// same-checkout reservation check above it) and an unresolvable/invalid
+// checkout (resolveRoots threw) both fall through to `null`, which the
+// caller below treats as "skip the foreign-hold consultation entirely,
+// exactly like before this cell" — never a crash, never a refusal on its
+// own.
+function resolveHoldTopology(root) {
+  let resolution;
+  try {
+    resolution = resolveRoots(root);
+  } catch {
+    return null;
+  }
+  if (resolution.worktreeResolution === 'ordinary') {
+    return { mainRoot: resolution.workRoot || root, holder: 'main' };
+  }
+  if (resolution.worktreeResolution === 'linked-valid' && resolution.mainRoot && resolution.id) {
+    const granted =
+      resolution.storeRoot && resolution.worktreeRoot && path.resolve(resolution.storeRoot) === path.resolve(resolution.worktreeRoot);
+    if (granted) {
+      return { mainRoot: resolution.mainRoot, holder: resolution.id };
+    }
+  }
+  return null;
+}
+
 export function claimNextCell(root, { sessionId, worker, ttl } = {}) {
   if (typeof sessionId !== 'string' || !sessionId.trim()) {
     throw new Error('claimNextCell: sessionId is required.');
@@ -1981,7 +2040,16 @@ export function claimNextCell(root, { sessionId, worker, ttl } = {}) {
 
   const holdFree = (cell) => {
     const files = Array.isArray(cell.files) ? cell.files : [];
-    return files.length === 0 || findSessionConflicts(root, session, files).length === 0;
+    if (files.length === 0) return true;
+    if (findSessionConflicts(root, session, files).length > 0) return false;
+    // xwh-3: read-only foreign-hold consultation, same silent-skip posture
+    // as the same-checkout reservation check just above — a missing ledger
+    // (findForeignHolds' own fail-open read) or an unresolvable/ungranted
+    // topology (resolveHoldTopology -> null) both fall through as "no
+    // foreign holds", byte-identical to today.
+    const topology = resolveHoldTopology(root);
+    if (!topology) return true;
+    return findForeignHolds(topology.mainRoot, topology.holder, files).length === 0;
   };
   // D2 Δ3/F3: a budget-exhausted or repeated-failure candidate is skipped at
   // SELECTION (reads the candidate's own ledger cheaply, no extra I/O) so a
