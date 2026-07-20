@@ -250,12 +250,16 @@ runtime_active() { case "$RUNTIME" in "$1"|both) return 0 ;; *) return 1 ;; esac
 # warns and treats the probe as empty instead of hard-failing — $2 may hold
 # partial/garbage output from the failed call, so it is rewritten clean.
 probe_broken_cli() {
-  local cli="$1" json_file="$2" other
+  local cli="$1" json_file="$2" err_file="$3" other first_line
   case "$cli" in codex) other=claude ;; *) other=codex ;; esac
+  first_line="$(head -n 1 "$err_file" 2>/dev/null || true)"
   if [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then
+    # Surface the captured probe stderr before the actionable refusal, instead
+    # of letting the raw CLI error stream straight to the terminal.
+    [ -s "$err_file" ] && cat "$err_file" >&2
     fail "$cli CLI is on PATH but not runnable ('$cli plugin list --json' failed). Fix options: repair or reinstall the $cli CLI, re-run with --distribution repo-copy (does not require a runtime CLI), or re-run with --runtime $other to exclude $cli."
   else
-    log "Warning: $cli CLI found on PATH but not runnable ('$cli plugin list --json' failed); repo-copy does not require it, continuing without it."
+    log "Warning: $cli CLI found on PATH but not runnable ('$cli plugin list --json' failed: $first_line); repo-copy does not require it, continuing without it."
     printf '[]\n' > "$json_file"
   fi
 }
@@ -271,15 +275,16 @@ probe_plugin_state() {
     return
   fi
   local claude_json="$STATE_TMP/claude.json" codex_json="$STATE_TMP/codex.json"
+  local claude_err="$STATE_TMP/claude-probe.err" codex_err="$STATE_TMP/codex-probe.err"
   printf '[]\n' > "$claude_json"; printf '[]\n' > "$codex_json"
   if runtime_active codex; then
     if command -v codex >/dev/null 2>&1; then
-      codex plugin list --json > "$codex_json" || probe_broken_cli codex "$codex_json"
+      codex plugin list --json > "$codex_json" 2> "$codex_err" || probe_broken_cli codex "$codex_json" "$codex_err"
     elif [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then fail "Codex CLI is required for plugin-first"; fi
   fi
   if runtime_active claude; then
     if command -v claude >/dev/null 2>&1; then
-      claude plugin list --json > "$claude_json" || probe_broken_cli claude "$claude_json"
+      claude plugin list --json > "$claude_json" 2> "$claude_err" || probe_broken_cli claude "$claude_json" "$claude_err"
     elif [ "$DISTRIBUTION_MODE" = "plugin-first" ]; then fail "Claude CLI is required for plugin-first"; fi
   fi
   node -e 'const fs=require("fs"); const read=p=>JSON.parse(fs.readFileSync(p,"utf8")); fs.writeFileSync(process.argv[3], JSON.stringify({claude:read(process.argv[1]),codex:read(process.argv[2])}));' "$claude_json" "$codex_json" "$dest" \

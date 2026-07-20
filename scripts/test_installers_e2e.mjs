@@ -730,6 +730,7 @@ check("broken codex on PATH: default repo-copy install succeeds with a warning",
   assert.match(r.out, /codex/i, "must warn naming codex");
   assert.match(r.out, /not runnable/i, "must describe codex as not runnable");
   assert.match(r.out, /repo-copy/i, "must note repo-copy does not require it");
+  assert.match(r.out, /fake codex list forced failure/, "captured probe stderr must be embedded in the warning, not lost");
   assert.ok(fs.existsSync(path.join(sb.target, ".bee", "onboarding.json")), "the target must still be onboarded despite the broken codex CLI");
 });
 
@@ -745,6 +746,7 @@ check("broken codex on PATH: plugin-first still fails and names the way out", ()
   assert.notEqual(r.code, 0, "plugin-first must still refuse when a required CLI is present but broken");
   assert.match(r.out, /codex/i, "must name codex as the broken CLI");
   assert.match(r.out, /repo-copy/i, "must name repo-copy as a way out");
+  assert.match(r.out, /fake codex list forced failure/, "captured probe stderr must be surfaced before the refusal, not lost");
   assert.equal(mutatingCalls(sb).length, 0, "a broken required CLI must be caught before any mutation");
 });
 

@@ -65,6 +65,29 @@ function Confirm-Step([string]$Question) {
   return $answer -match '^(y|yes)$'
 }
 
+# Runs `<cli> plugin list --json` without ever letting a broken CLI's raw
+# stderr stream straight to the terminal (field report: a codex npm shim that
+# crashes on invocation prints a multi-line red error block before the
+# installer's own one-line warning, which reads as a hard failure even though
+# the install continues fine). This is the sanctioned exception to the
+# no-bare-2>-redirection rule above: the redirect happens INSIDE a scriptblock
+# that sets $ErrorActionPreference = 'Continue' for the native call, so a
+# nonzero exit becomes ordinary stderr output instead of a terminating
+# NativeCommandError. Returns ExitCode, StdOut (plain string lines) and StdErr
+# (stringified error-stream lines) so callers decide how much to surface.
+function Invoke-PluginListProbe([string]$CliName) {
+  & {
+    $ErrorActionPreference = 'Continue'
+    $out = @()
+    $err = @()
+    & $CliName plugin list --json 2>&1 | ForEach-Object {
+      if ($_ -is [System.Management.Automation.ErrorRecord]) { $err += $_.ToString() }
+      else { $out += [string]$_ }
+    }
+    [PSCustomObject]@{ ExitCode = $LASTEXITCODE; StdOut = $out; StdErr = $err }
+  }
+}
+
 # ---------- prerequisites ----------
 
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
@@ -205,27 +228,29 @@ try {
             & codex plugin add 'bee@bee' | Out-Null
             if ($LASTEXITCODE -ne 0) { Fail 'Codex bee plugin install failed' }
           } else {
-            $codexProbe = & codex plugin list --json
-            if ($LASTEXITCODE -eq 0 -and ($codexProbe -join '') -match 'bee@bee') {
+            $codexPreProbe = Invoke-PluginListProbe 'codex'
+            if ($codexPreProbe.ExitCode -eq 0 -and ($codexPreProbe.StdOut -join '') -match 'bee@bee') {
               & codex plugin remove 'bee@bee' | Out-Null
             }
           }
         }
-        $codexList = & codex plugin list --json
-        if ($LASTEXITCODE -ne 0) {
+        $codexStatusProbe = Invoke-PluginListProbe 'codex'
+        if ($codexStatusProbe.ExitCode -ne 0) {
           # CLI is on PATH but not runnable (field report: a codex npm shim that
           # crashes with "Missing optional dependency @openai/codex-linux-x64"
           # on Windows+WSL). plugin-first genuinely needs the CLI, so it still
           # refuses, but now with a named, actionable message. repo-copy never
           # calls the CLI for anything but this read-only probe, so it warns
           # and keeps the pre-seeded '[]' state content instead of failing.
+          $codexFirstErr = if ($codexStatusProbe.StdErr.Count -gt 0) { $codexStatusProbe.StdErr[0] } else { '' }
           if ($Distribution -eq 'plugin-first') {
+            foreach ($line in $codexStatusProbe.StdErr) { Write-Host $line }
             Fail "codex CLI is on PATH but not runnable ('codex plugin list --json' failed). Fix options: repair or reinstall the codex CLI, re-run with -Distribution repo-copy (does not require a runtime CLI), or re-run with -Runtime claude to exclude codex."
           } else {
-            Write-Warning "codex CLI found on PATH but not runnable ('codex plugin list --json' failed); repo-copy does not require it, continuing without it."
+            Write-Warning "codex CLI found on PATH but not runnable ('codex plugin list --json' failed: $codexFirstErr); repo-copy does not require it, continuing without it."
           }
         } else {
-          Set-Content -Encoding UTF8 -Path $codexStatePath -Value ($codexList -join "`n")
+          Set-Content -Encoding UTF8 -Path $codexStatePath -Value ($codexStatusProbe.StdOut -join "`n")
         }
       } elseif ($Distribution -eq 'plugin-first') { Fail 'Codex CLI is required for plugin-first' }
     }
@@ -240,22 +265,24 @@ try {
             & claude plugin install 'bee@bee' | Out-Null
             if ($LASTEXITCODE -ne 0) { Fail 'Claude bee plugin install failed' }
           } else {
-            $claudeProbe = & claude plugin list --json
-            if ($LASTEXITCODE -eq 0 -and ($claudeProbe -join '') -match 'bee@bee') {
+            $claudePreProbe = Invoke-PluginListProbe 'claude'
+            if ($claudePreProbe.ExitCode -eq 0 -and ($claudePreProbe.StdOut -join '') -match 'bee@bee') {
               & claude plugin uninstall 'bee@bee' | Out-Null
             }
           }
         }
-        $claudeList = & claude plugin list --json
-        if ($LASTEXITCODE -ne 0) {
+        $claudeStatusProbe = Invoke-PluginListProbe 'claude'
+        if ($claudeStatusProbe.ExitCode -ne 0) {
           # Same broken-but-present-CLI policy as the codex probe above.
+          $claudeFirstErr = if ($claudeStatusProbe.StdErr.Count -gt 0) { $claudeStatusProbe.StdErr[0] } else { '' }
           if ($Distribution -eq 'plugin-first') {
+            foreach ($line in $claudeStatusProbe.StdErr) { Write-Host $line }
             Fail "claude CLI is on PATH but not runnable ('claude plugin list --json' failed). Fix options: repair or reinstall the claude CLI, re-run with -Distribution repo-copy (does not require a runtime CLI), or re-run with -Runtime codex to exclude claude."
           } else {
-            Write-Warning "claude CLI found on PATH but not runnable ('claude plugin list --json' failed); repo-copy does not require it, continuing without it."
+            Write-Warning "claude CLI found on PATH but not runnable ('claude plugin list --json' failed: $claudeFirstErr); repo-copy does not require it, continuing without it."
           }
         } else {
-          Set-Content -Encoding UTF8 -Path $claudeStatePath -Value ($claudeList -join "`n")
+          Set-Content -Encoding UTF8 -Path $claudeStatePath -Value ($claudeStatusProbe.StdOut -join "`n")
         }
       } elseif ($Distribution -eq 'plugin-first') { Fail 'Claude CLI is required for plugin-first' }
     }
