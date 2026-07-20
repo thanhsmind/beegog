@@ -940,6 +940,7 @@ export const COMMAND_REGISTRY = [
         area: { type: 'string', description: 'Spec area the stub belongs to.' },
         files: { type: 'string', description: 'Comma-separated list of files touched.' },
         lane: { type: 'string', description: 'Lane the settlement ran at (high-risk never queues).' },
+        source: { type: 'string', description: 'Optional provenance tag (e.g. "mined" for a transcript-recovery candidate settlement); a mined stub sitting unflushed in the pending queue is the mined-unconfirmed state, and the normal flush is its confirmation.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: [],

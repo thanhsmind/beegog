@@ -1891,10 +1891,12 @@ function handleBacklogAdd(root, flags) {
 // bee_capture.mjs did — no logic change there. ─────────────────────────────
 
 function formatCaptureStub(stub) {
-  const parts = [`[${stub.at}] ${stub.outcome} (id ${stub.id})`];
+  const marker = stub.source === 'mined' ? ' [mined]' : '';
+  const parts = [`[${stub.at}] ${stub.outcome}${marker} (id ${stub.id})`];
   if (stub.dids && stub.dids.length) parts.push(`  decisions: ${stub.dids.join(', ')}`);
   if (stub.area) parts.push(`  area: ${stub.area}`);
   if (stub.files && stub.files.length) parts.push(`  files: ${stub.files.join(', ')}`);
+  if (stub.source) parts.push(`  source: ${stub.source}`);
   return parts.join('\n');
 }
 
@@ -1905,6 +1907,7 @@ function handleCaptureAdd(root, flags) {
     area: flags.area ? String(flags.area) : null,
     files: flags.files ? String(flags.files) : null,
     lane: flags.lane ? String(flags.lane) : null,
+    source: flags.source ? String(flags.source) : null,
   });
   return {
     result: stub,

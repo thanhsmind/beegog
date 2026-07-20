@@ -1071,6 +1071,49 @@ await check('capture.count example runs through the real dispatcher', async () =
   assert(typeof JSON.parse(result.stdout).count === 'number', `expected a numeric count, got ${result.stdout}`);
 });
 
+// ─── capture add --source CLI flag + capture list [mined] marker + flush
+// works identically (transcript-recovery D6: mined-unconfirmed = a source:
+// "mined" stub sitting unflushed; the normal flush IS the confirmation) ─────
+
+await check('capture add --source persists provenance; capture list marks [mined]; flush works identically (D6)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-capture-source-cli-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  try {
+    const added = await runBee(
+      ['capture', 'add', '--outcome', 'mined from crashed session', '--source', 'mined', '--json'],
+      dir,
+    );
+    assert(added.status === 0, `capture add --source failed: ${added.stdout}${added.stderr}`);
+    const stub = JSON.parse(added.stdout);
+    assert(stub.source === 'mined', `expected source "mined" persisted, got ${added.stdout}`);
+
+    const addedPlain = await runBee(['capture', 'add', '--outcome', 'ordinary settlement', '--json'], dir);
+    assert(addedPlain.status === 0, `capture add without --source failed: ${addedPlain.stdout}${addedPlain.stderr}`);
+    const plainStub = JSON.parse(addedPlain.stdout);
+    assert(!('source' in plainStub), `an ordinary stub must not carry a source key, got ${addedPlain.stdout}`);
+
+    const listed = await runBee(['capture', 'list'], dir);
+    assert(listed.status === 0, `capture list failed: ${listed.stdout}${listed.stderr}`);
+    assert(
+      /mined from crashed session[^\n]*\[mined\]/.test(listed.stdout),
+      `mined stub must render a [mined] marker, got: ${listed.stdout}`,
+    );
+    assert(
+      !/ordinary settlement[^\n]*\[mined\]/.test(listed.stdout),
+      `ordinary stub must not render a [mined] marker, got: ${listed.stdout}`,
+    );
+
+    // flush works identically for a mined stub — zero special-casing (D6)
+    const flushed = await runBee(['capture', 'flush', '--id', stub.id, '--json'], dir);
+    assert(flushed.status === 0, `flush of a mined stub failed: ${flushed.stdout}${flushed.stderr}`);
+    const record = JSON.parse(flushed.stdout);
+    assert(record.id === stub.id, `flush must confirm the mined stub id, got ${flushed.stdout}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ─── reviews.* / feedback.* examples: run in a dedicated fresh repo
 // (dispatcher-unify du-3). reviews.create's A10 preflight requires a real
 // capped behavior_change cell WITH recorded verification_evidence in scope,
