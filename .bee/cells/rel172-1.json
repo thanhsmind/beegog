@@ -17,19 +17,39 @@
   "verify": "node scripts/test_release_tuple.mjs && node scripts/release_manifest.mjs --check",
   "behavior_change": false,
   "deps": [],
-  "status": "claimed",
+  "status": "capped",
   "decisions": [],
   "trace": {
     "worker": "orchestrator-release",
     "outcome": null,
-    "files_changed": [],
+    "files_changed": [
+      "package.json",
+      ".claude-plugin",
+      ".codex-plugin",
+      ".bee",
+      "docs/history/codex-harness-hardening/release-manifest.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-19T22:44:48.490Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claimed_at": "2026-07-19T22:42:33.341Z"
+    "verify_output": "exit=0 ALL PASS (release-172-verify.log); tuple 1.7.2 agreed; pushed with tag v1.7.2",
+    "verify_passed": true,
+    "claimed_at": "2026-07-19T22:42:33.341Z",
+    "verify_command": "full configured verify chain (33 suites), foreground",
+    "verified_at": "2026-07-19T22:44:48.431Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-19T22:44:48.431Z",
+        "claim_session": "85b83b0f-ce26-4a32-8d98-fafb774e76aa",
+        "claimed_at": "2026-07-19T22:42:33.340Z",
+        "worker": "orchestrator-release",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }
