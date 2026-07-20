@@ -1015,7 +1015,7 @@ async function handleCellsResetBudget(root, flags) {
 // itself stays 4-arg/testable directly in test_lib.mjs regardless.
 // .bee/logs/dispatch.jsonl is never read here — Δ6: it is corroboration
 // only and must never feed a fail-closed guard.
-function handleCellsJudgeRecord(root, flags) {
+async function handleCellsJudgeRecord(root, flags) {
   const id = requireFlag(flags, 'id');
   const raw = readFileText(String(requireFlag(flags, 'file')), 'judge verdict');
   let verdict;
@@ -1028,7 +1028,9 @@ function handleCellsJudgeRecord(root, flags) {
   }
   const builderModel = flags['builder-model'] !== undefined ? String(flags['builder-model']) : null;
   const judgeModel = flags['judge-model'] !== undefined ? String(flags['judge-model']) : null;
-  const cell = recordJudgeVerdict(root, id, verdict, {
+  // hardening-3: recordJudgeVerdict is now async (withStoreLock-wrapped, so
+  // it can flip a capped cell back to claimed on a NEEDS_REVISION verdict).
+  const cell = await recordJudgeVerdict(root, id, verdict, {
     builderModel,
     builderStatus: builderModel ? PINNED_MODEL_STATUS : null,
     judgeModel,

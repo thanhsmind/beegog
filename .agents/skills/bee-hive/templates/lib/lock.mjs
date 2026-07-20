@@ -42,8 +42,29 @@ export function locksDir(root) {
   return path.join(root, '.bee', 'locks');
 }
 
+// Windows-invalid filename characters (< > : " / \ | ? *) plus control chars.
+// eslint-disable-next-line no-control-regex
+const UNSAFE_LOCK_NAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
+
+/**
+ * Maps a logical lock name (e.g. "cells:some-id") to a filesystem-safe
+ * basename. Runtime lock names contain ':' (cells.mjs's `cells:${id}`),
+ * which Windows rejects in filenames — plain substitution alone risks two
+ * DISTINCT logical names colliding after sanitization (e.g. "cells:a" and
+ * "cells/a" both -> "cells_a"), so a short deterministic hash of the
+ * ORIGINAL name is always appended: same logical name -> same file (pure
+ * function, safe across processes), distinct logical names -> distinct
+ * files, guaranteed rather than merely likely.
+ */
+function sanitizeLockName(name) {
+  const raw = String(name);
+  const sanitized = raw.replace(UNSAFE_LOCK_NAME_CHARS, '_');
+  const hash = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 8);
+  return `${sanitized}-${hash}`;
+}
+
 export function lockFilePath(root, name) {
-  return path.join(locksDir(root), `${name}.lock`);
+  return path.join(locksDir(root), `${sanitizeLockName(name)}.lock`);
 }
 
 function readHolder(lockPath) {

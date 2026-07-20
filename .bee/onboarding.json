@@ -5,12 +5,12 @@
     "agents_block": "84d1532386c14df08ad5483efd9b76b835e12567381a7005cfdfaa09f590df49",
     "gitignore_block": "12a9e9d365c2e2b05dba2efd6310a92308881814b800b9562a09753534bbf75e",
     "helpers": {
-      "bee.mjs": "22aa0801b9b86e19c5a78ff75eda00173ba5c843a45a7e86ee393bbe152c2d2a"
+      "bee.mjs": "a5750fc316967ad6597d546c1bdf1b6cdeec2a455c5ef896b1424a09f015715d"
     },
     "lib": {
       "backlog.mjs": "9e5b852c7b72fdb1d5d2f530e32cdc63a8271a83dba09d6407b30900d58990cd",
       "capture.mjs": "3779fd6bd5b28c50b50e4b93cbc368d458123ebab1cbcb3cc34757af0d24f8fa",
-      "cells.mjs": "5416bb9a7196df9e830a60fa912dec534f52b5a89da82ff726618e1080439bf7",
+      "cells.mjs": "92ed14a983c1e3676c6c3f523dfa771876e3dceef46f91aba68121c8d6301307",
       "claims.mjs": "a796cb3ec0b40ccb150080f24173165b3d2229b3e1d5ec8f2b221e74c17cde30",
       "command-registry.mjs": "746cd90444b893663e0fd50f4380b3d33e8515ff5ca72edd4208567bd046aa6c",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
@@ -21,8 +21,8 @@
       "fsutil.mjs": "d3c90d70f48bf3a4fde33fff164248b3813103bad175a9c9a5c545b13374773e",
       "guards.mjs": "e3c56b9e1669a10c48685efaae045b2c0f4d4d292ce8cdf19cdfeacfe6663aef",
       "inject.mjs": "f788e09556da85d04967f55119a21124e15f50fce3eb7747332a21d809921be0",
-      "judge.mjs": "22495d3e13cc38c1c2b02ef2c78274887f9b1788408bf0ca21b72dced13a124e",
-      "lock.mjs": "c358825fdfad663dd149fc8397cf97af6efb804ac0e1bdb6a401c8e74a78e910",
+      "judge.mjs": "5057e17a6bcd3dacff21fe479e13570620cfe1b9c821c0ff5c8254f39e3c6ed1",
+      "lock.mjs": "2a52ebe7cf6d25cbfc6fe62a2ddec5abb1f4054698acd107e7c2c2647ddf2dcd",
       "perf.mjs": "b3e64c2f2c8889751196662351d4b4acb0f22f6e58ad0c243fffce40b07754dd",
       "recovery.mjs": "0f59a02a474ee0fd47020d797d814c772e3a35842544af7fd561bc8ab26c3cfc",
       "reservations.mjs": "6d5160728e48f87205237cb52b83ccd0f7d406f3dd5d409e3131091a4354f36c",
@@ -31,6 +31,7 @@
       "source-identity.mjs": "716740641e1f6bfbb5ccc5b4fe7827f1165c2a1f1127ee3800f52a47ac09fc7a",
       "state.mjs": "a5ae0b7b1a348bdfe6d76284cd73d2a68632a47ee1b784c4bd1b95be6f2c8c01",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
+      "worktree-holds.mjs": "625823f0d248a41125f87680936b3056964590d35cc367335cc3ff5f1aad7a0e",
       "worktree-store.mjs": "b2621d5e0dd003fbf87d8f785ea6998f62a7826d275a16fd85ed188a71f0824a"
     },
     "repo_hooks": {
@@ -69,5 +70,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-20T11:24:28.515Z"
+  "updated_at": "2026-07-20T15:00:06.551Z"
 }

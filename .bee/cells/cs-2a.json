@@ -1,0 +1,53 @@
+{
+  "id": "cs-2a",
+  "feature": "contention-split",
+  "lane": "standard",
+  "behavior_change": false,
+  "title": "Test split part 1: lib-module blocks out of the monolith",
+  "action": "Move contiguous section blocks from skills/bee-hive/templates/tests/test_lib.mjs into new per-module files under skills/bee-hive/templates/tests/: test_cells.mjs (cells add/update/claim/cap/budgets/judge/claim-next blocks ~463-2076 plus later cells-only satellites), test_claims.mjs (~2162-2400 + resolveSessionId/sessionless/concurrent-Worker blocks), test_reservations.mjs (~2077-2160 + fsh-7 session holds), test_feedback.mjs (~4186-5287 incl mergeDigests/ENTRY_FIELD_SPEC/ranking), test_reviews.mjs (~8098-8842). Method per file: cut the EXACT contiguous range preserving internal order; prepend fixture-helper import + only the lib imports that range uses; each file gets its own makeTempRepo() root. A section inside a moved range that referenced the ORIGINAL shared accumulated root must be audited: if it depended on state built by sections remaining in test_lib.mjs, make it self-contained (own temp root) and note it in the trace deviations. Register each new file in scripts/run_verify.mjs SUITES; extend scripts/test_verify_manifest.mjs MANDATORY_SUITES to name each new file. Conservation census: sum of check() across test_lib.mjs + new files == pre-move count (record numbers in trace). Self-onboard + render trees; full verify green.",
+  "must_haves": {
+    "truths": [
+      "The five module test files exist, run standalone green, and are registered in SUITES + MANDATORY_SUITES.",
+      "check() conservation census recorded and equal; no test logic changed beyond self-containment fixes noted in deviations.",
+      "Full run_verify.mjs green; mirrors byte-identical."
+    ],
+    "prohibitions": [
+      "Do NOT reorder sections within a moved range.",
+      "Do NOT delete test_lib.mjs in this cell.",
+      "Do NOT weaken any assertion to make a moved section pass — self-containment fixes add setup, never remove checks."
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "scripts/lib/test-fixture.mjs",
+    "scripts/test_verify_manifest.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "skills/bee-hive/templates/tests/test_cells.mjs",
+    "skills/bee-hive/templates/tests/test_claims.mjs",
+    "skills/bee-hive/templates/tests/test_reservations.mjs",
+    "skills/bee-hive/templates/tests/test_feedback.mjs",
+    "skills/bee-hive/templates/tests/test_reviews.mjs",
+    "scripts/run_verify.mjs",
+    "scripts/test_verify_manifest.mjs"
+  ],
+  "deps": [
+    "cs-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

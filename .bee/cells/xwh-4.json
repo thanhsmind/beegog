@@ -1,0 +1,49 @@
+{
+  "id": "xwh-4",
+  "feature": "cross-worktree-holds",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Write-guard foreign-hold branch, net-first (frozen green before edit)",
+  "action": "REGRESSION NET FIRST (critical pattern 20260716 — an over-denying guard can lock a session out of its own fix): freeze a byte-for-byte green net over the checkWrite decision table (guards.mjs:163-287 branches: direct-edit deny, docs/history code-ext deny, lane resolution, cross-session hold deny 204-228, terminal-phase intake, gated-phase, swarming reservation) BEFORE any edit, run it green against current code, keep it in test_lib.mjs. THEN: (1) new branch immediately after the existing cross-session hold branch — foreign-hold deny: when topology resolves (resolveRoots in try/catch; guards.mjs already imports from state.mjs for resolvePipeline), findForeignHolds(mainRoot, holder, [normalized]); deny names holding checkout + feature + expiry with the same voice as guards.mjs:216-222. Corrupt ledger => deny via holdsStoreCorrupt (reservationStoreCorrupt precedent 108-117); missing => open; topology unresolvable => fail-open (existing crash-log discipline). (2) DIRECT_EDIT_DENY (guards.mjs:73-76) gains .bee/runtime/cross-worktree-holds.json and .bee/runtime/worktree-grants.json (CLI-only writes). Tests: net stays green for every pre-existing row; new rows for foreign-hold deny (message names holder+expiry), own-hold allow, missing-ledger allow, corrupt-ledger deny, direct-edit deny for both runtime files. Self-onboard mirrors + plugin trees (hook adapters consume the vendored guards.mjs); full verify green.",
+  "must_haves": {
+    "truths": [
+      "A frozen regression net over the full pre-change checkWrite decision table exists in test_lib.mjs and was proven green BEFORE the guard edit (evidence in trace).",
+      "checkWrite denies a write to a path ledger-held by a different checkout, naming holder + expiry; the acting checkout's own holds never deny; missing ledger allows; corrupt ledger denies with a typed kind; unresolvable topology fails open.",
+      "DIRECT_EDIT_DENY covers both .bee/runtime ledger files; hand Write/Edit of them is refused in every phase.",
+      "Every pre-existing guard behavior row is byte-identical (net green before and after).",
+      "Mirrors byte-identical (.bee/bin/lib/guards.mjs consumed by hooks); full run_verify.mjs green."
+    ],
+    "prohibitions": [
+      "Do NOT reorder or alter existing checkWrite branches; the foreign-hold branch is strictly additive after branch 4.",
+      "Do NOT let any ledger/topology error path produce a deny except the corrupt-ledger case; fail-open discipline everywhere else.",
+      "Do NOT touch hooks/bee-write-guard.mjs dispatch logic — the change lives in guards.mjs."
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/lib/guards.mjs",
+    "skills/bee-hive/templates/lib/worktree-holds.mjs",
+    "docs/history/learnings/critical-patterns.md"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/guards.mjs",
+    "skills/bee-hive/templates/tests/test_lib.mjs"
+  ],
+  "deps": [
+    "xwh-3"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

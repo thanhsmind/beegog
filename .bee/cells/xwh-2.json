@@ -1,0 +1,49 @@
+{
+  "id": "xwh-2",
+  "feature": "cross-worktree-holds",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Reservation seam mirrors holds; worktree lifecycle releases them",
+  "action": "Wire the ledger into the reservation lifecycle. bee.mjs handleReservationsReserve (templates/bee.mjs:1107-1126): resolve topology via resolveRoots (state.mjs:695-752) — holder = worktree id for a linked-valid granted checkout, 'main' for ordinary; BEFORE the local reserve, findForeignHolds(mainRoot, holder, [path]); on hit return a typed refusal {ok:false, code:'FOREIGN_HOLD', ...} whose message names the holding checkout, feature, and expiry (rule-14 language, mirror guards.mjs:216-222 phrasing); on clear, do the local reserve and then mirrorHold the same path/ttl/session/cell. handleReservationsRelease additionally releaseHolds for the same holder/session/cell. handleReservationsSweep also sweepExpiredHolds. handleReservationsList gains a 'cross_worktree' section listing active ledger entries (list stays read-only, prune-on-read only). Worktree lifecycle: performCleanup (templates/lib/worktree-store.mjs:729-781) calls releaseAllForHolder(mainRoot, id) best-effort AFTER removeGrant (same pattern lines 764-768). For an UNGRANTED linked worktree (storeRoot===mainRoot) skip mirroring entirely — its reservations already live in the shared store; holder stays 'main' semantics. Tests: test_lib.mjs section proving reserve-mirrors/release-clears/foreign-refusal-shape/cleanup-releases; extend as needed. Self-onboard mirrors + plugin trees; full verify green.",
+  "must_haves": {
+    "truths": [
+      "A reserve in a granted worktree mirrors into the main ledger and a reserve in main mirrors as holder 'main'; an ungranted linked worktree does not double-mirror.",
+      "A reserve against a path ledger-held by a DIFFERENT checkout is refused with a typed FOREIGN_HOLD result naming holder + expiry, before any local reservation row is written.",
+      "release and sweep clear/prune the mirrored entries; worktree merge --cleanup releases every entry for the removed worktree id (best-effort, after removeGrant).",
+      "reservations list --json exposes active cross-worktree entries; behavior for repos with no worktrees/no ledger is byte-identical to today (missing ledger = empty).",
+      "Mirrors byte-identical; full run_verify.mjs green including the reservation race suite."
+    ],
+    "prohibitions": [
+      "Do NOT change reservations.mjs core row semantics (reserve/release/TTL/pathsOverlap) — the seam lives in bee.mjs handlers and worktree-store cleanup.",
+      "Do NOT make reserve fail when the ledger is merely MISSING; missing = empty. Corrupt ledger at reserve time is a typed refusal, not a crash."
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/bee.mjs",
+    "skills/bee-hive/templates/lib/worktree-holds.mjs",
+    "skills/bee-hive/templates/lib/worktree-store.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/bee.mjs",
+    "skills/bee-hive/templates/lib/worktree-store.mjs",
+    "skills/bee-hive/templates/tests/test_lib.mjs"
+  ],
+  "deps": [
+    "xwh-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

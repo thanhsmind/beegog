@@ -1,0 +1,46 @@
+{
+  "id": "xwh-3",
+  "feature": "cross-worktree-holds",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "claim-next skips cells whose files are held by another checkout",
+  "action": "Extend claimNextCell's hold-free predicate (templates/lib/cells.mjs:1950-1953): after the existing findSessionConflicts check, also consult findForeignHolds(mainRoot, holder, cell.files). Topology inside cells.mjs via resolveRoots (state.mjs already imported by cells.mjs orbit; ordinary checkout => holder 'main', mainRoot = root; linked-valid granted => holder id, mainRoot from resolveRoots; on resolveRoots throw, treat as no foreign holds — claim-next must never crash on topology). A skipped-for-foreign-hold cell is skipped exactly like a local hold today (silent skip, next candidate). Tests: test_lib.mjs section with a fabricated ledger entry proving a cell whose files overlap a foreign hold is skipped while a clean cell claims, and that holder-own entries do not skip. Self-onboard mirrors + plugin trees; full verify green.",
+  "must_haves": {
+    "truths": [
+      "claimNextCell skips any candidate whose files overlap an unexpired ledger entry held by a different checkout, and still claims candidates overlapping only the acting checkout's own entries.",
+      "Topology failure (resolveRoots throw) degrades to today's behavior (no foreign-hold consultation), never a crash.",
+      "Repos with no ledger behave byte-identically to today (missing = empty).",
+      "Mirrors byte-identical; full run_verify.mjs green including claim race suite."
+    ],
+    "prohibitions": [
+      "Do NOT change claim ordering, lane selection, budget checks, or sweepExpiredClaims behavior.",
+      "Do NOT make claim-next write to the ledger — read-only consultation."
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/lib/cells.mjs",
+    "skills/bee-hive/templates/lib/worktree-holds.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/cells.mjs",
+    "skills/bee-hive/templates/tests/test_lib.mjs"
+  ],
+  "deps": [
+    "xwh-2"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

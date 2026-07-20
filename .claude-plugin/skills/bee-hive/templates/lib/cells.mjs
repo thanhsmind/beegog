@@ -1775,14 +1775,27 @@ export async function resetCellBudget(root, id, reason, { sessionId, operator } 
 // simply means the caller passed no model, which already degrades
 // model_independence to 'unverified' via deriveModelIndependence — never a
 // refusal).
-export function recordJudgeVerdict(
+//
+// hardening-3: a NEEDS_REVISION verdict recorded AFTER the cell already
+// capped (the realistic D4 goal-check ordering) used to be toothless — it
+// appended to trace.semantic_judge but never touched cell.status, so
+// capCell's own NEEDS_REVISION guard (line ~1145) never re-fires because the
+// cell is already past cap. Now: recording a NEEDS_REVISION verdict against
+// a cell whose CURRENT status is "capped" reopens it to "claimed" (rework)
+// in the SAME store-locked read-check-write — reusing the existing
+// CELL_STATUSES 'claimed' value, never a new status. A PASS verdict, or a
+// NEEDS_REVISION verdict on a non-capped cell, leaves cell.status untouched,
+// byte-identical to pre-hardening-3 behavior. This is now a logical
+// read-check-write (readCell -> possible status flip -> writeCell), so it
+// runs under the same withStoreLock discipline capCell/reopenCell use, and
+// is therefore async (mirrors msh-5's startFeature: refusals reject a
+// Promise instead of throwing synchronously — callers await it).
+export async function recordJudgeVerdict(
   root,
   id,
   verdictInput,
   { builderModel = null, builderStatus = null, judgeModel = null, judgeStatus = null, sessionId, forceOwnership = false } = {},
 ) {
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`recordJudgeVerdict: cell "${id}" not found.`);
   const { ok, errors } = validateJudgeVerdict(verdictInput);
   if (!ok) {
     throw new Error(
@@ -1790,23 +1803,42 @@ export function recordJudgeVerdict(
     );
   }
   const independence = deriveModelIndependence(builderModel, builderStatus, judgeModel, judgeStatus);
-  const entry = {
-    schema: verdictInput.schema,
-    verdict: verdictInput.verdict,
-    checks: verdictInput.checks,
-    failure_signature: verdictInput.failure_signature ?? null,
-    fixability: verdictInput.fixability,
-    confidence: verdictInput.confidence,
-    builder_model: typeof builderModel === 'string' && builderModel.trim() ? builderModel : null,
-    judge_model: typeof judgeModel === 'string' && judgeModel.trim() ? judgeModel : null,
-    model_independence: independence,
-    recorded_at: utcNow(),
-  };
-  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
-  trace = guardClaimOwnership(root, id, trace, 'recordJudgeVerdict', { sessionId, forceOwnership });
-  const existing = Array.isArray(trace.semantic_judge) ? trace.semantic_judge : [];
-  cell.trace = { ...trace, semantic_judge: [...existing, entry] };
-  return writeCell(root, cell);
+  return withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`recordJudgeVerdict: cell "${id}" not found.`);
+    const entry = {
+      schema: verdictInput.schema,
+      verdict: verdictInput.verdict,
+      checks: verdictInput.checks,
+      failure_signature: verdictInput.failure_signature ?? null,
+      fixability: verdictInput.fixability,
+      confidence: verdictInput.confidence,
+      builder_model: typeof builderModel === 'string' && builderModel.trim() ? builderModel : null,
+      judge_model: typeof judgeModel === 'string' && judgeModel.trim() ? judgeModel : null,
+      model_independence: independence,
+      recorded_at: utcNow(),
+    };
+    let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+    trace = guardClaimOwnership(root, id, trace, 'recordJudgeVerdict', { sessionId, forceOwnership });
+    const existing = Array.isArray(trace.semantic_judge) ? trace.semantic_judge : [];
+    trace = { ...trace, semantic_judge: [...existing, entry] };
+    if (verdictInput.verdict === 'NEEDS_REVISION' && cell.status === 'capped') {
+      cell.status = 'claimed'; // reopen for rework — reuses the existing enum, no new status
+      trace.reopened_for_rework = {
+        at: utcNow(),
+        reason: 'NEEDS_REVISION semantic-judge verdict recorded after cap',
+      };
+      logDecision(root, {
+        decision: `«cells judge-record: cell "${id}" reopened capped->claimed by a NEEDS_REVISION semantic-judge verdict»`,
+        rationale:
+          'A NEEDS_REVISION verdict recorded after cap must have teeth: the cell is reopened to claimed for rework instead of being silently logged into an inert trace entry (hardening-3).',
+        scope: 'repo',
+        source: 'user',
+      });
+    }
+    cell.trace = trace;
+    return writeCell(root, cell);
+  });
 }
 
 // ─── claim-next: cross-session selection + throw-safe two-store claim ──────

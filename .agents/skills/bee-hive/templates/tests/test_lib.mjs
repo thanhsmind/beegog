@@ -9,6 +9,15 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
+import {
+  makeTempRepo,
+  makeCell,
+  check,
+  assert,
+  assertThrows,
+  assertRejects,
+  printSummaryAndExit,
+} from '../../../../scripts/lib/test-fixture.mjs';
 
 const metadataParityTest = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -61,6 +70,8 @@ import {
   listCells,
   cellsArchiveDir,
   resolveCellFile,
+  archiveFeature,
+  archivedSummary,
   readyCells,
   claimCell,
   recordVerify,
@@ -88,6 +99,14 @@ import {
 import { validateJudgeVerdict, deriveModelIndependence, JUDGE_VERDICT_SCHEMA } from '../lib/judge.mjs';
 import { PINNED_MODEL_STATUS } from '../lib/dispatch-guard.mjs';
 import { reserve, release, listReservations, sweepExpired, findConflicts, findSessionConflicts, reservationsPath } from '../lib/reservations.mjs';
+import {
+  mirrorHold,
+  releaseHolds,
+  findForeignHolds,
+  releaseAllForHolder,
+  sweepExpiredHolds,
+  holdsStoreCorrupt,
+} from '../lib/worktree-holds.mjs';
 import {
   createSession,
   readSession,
@@ -149,95 +168,9 @@ import {
   rankClusters,
 } from '../lib/feedback.mjs';
 
-let passed = 0;
-let failed = 0;
-
-function recordPass(name) {
-  passed += 1;
-  console.log(`PASS  ${name}`);
-}
-
-function recordFailure(name, error) {
-  failed += 1;
-  console.log(`FAIL  ${name}`);
-  console.log(`      ${error instanceof Error ? error.message : error}`);
-}
-
-function check(name, fn) {
-  try {
-    const result = fn();
-    if (result && typeof result.then === 'function') {
-      return result.then(
-        () => recordPass(name),
-        (error) => recordFailure(name, error),
-      );
-    }
-    recordPass(name);
-  } catch (error) {
-    recordFailure(name, error);
-  }
-}
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-function assertThrows(fn, needle, message) {
-  try {
-    fn();
-  } catch (error) {
-    const text = error instanceof Error ? error.message : String(error);
-    assert(
-      text.toLowerCase().includes(needle.toLowerCase()),
-      `${message} — threw, but message "${text}" does not mention "${needle}"`,
-    );
-    return;
-  }
-  throw new Error(`${message} — expected an error, none thrown`);
-}
-
-// The async sibling of assertThrows (msh-5): startFeature (lib/state.mjs)
-// now wraps its body in withStoreLock, so its refusals reject a Promise
-// instead of throwing synchronously — same message-substring contract.
-async function assertRejects(fn, needle, message) {
-  try {
-    await fn();
-  } catch (error) {
-    const text = error instanceof Error ? error.message : String(error);
-    assert(
-      text.toLowerCase().includes(needle.toLowerCase()),
-      `${message} — threw, but message "${text}" does not mention "${needle}"`,
-    );
-    return;
-  }
-  throw new Error(`${message} — expected an error, none thrown`);
-}
-
 // ─── temp repo setup ────────────────────────────────────────────────────────
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-test-'));
-fs.mkdirSync(path.join(root, '.git'), { recursive: true });
-fs.mkdirSync(path.join(root, '.bee'), { recursive: true });
-writeJsonAtomic(path.join(root, '.bee', 'onboarding.json'), {
-  schema_version: '1.0',
-  bee_version: '0.1.0',
-});
-fs.mkdirSync(path.join(root, 'src'), { recursive: true });
-fs.mkdirSync(path.join(root, 'src', 'deep', 'nested'), { recursive: true });
-
-function makeCell(id, extra = {}) {
-  return {
-    id,
-    feature: 'demo',
-    title: `Cell ${id}`,
-    lane: 'small',
-    status: 'open',
-    deps: [],
-    action: 'Do the thing per D1.',
-    verify: 'node -e "process.exit(0)"',
-    ...extra,
-  };
-}
+const root = makeTempRepo();
 
 // ─── state ──────────────────────────────────────────────────────────────────
 
@@ -962,6 +895,148 @@ await check('listCells default scans ONLY the active .bee/cells/ dir (skips arch
     assert(
       archivedCappedOnly.map((c) => c.id).join(',') === 'arc-lst-a,arc-lst-c',
       'status filter applies to archived cells too',
+    );
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── hardening-1: P0 data-loss hardening for archiveFeature/unarchiveFeature
+// (slug/containment validation, capped|dropped allowlist, atomic rollback,
+// and the mutate-an-archived-cell fork guard). Each case below was RED
+// against the pre-hardening code (see cell hardening-1 report) — the point of
+// this net is that it stays green as the fix lands, not merely that it
+// exists.
+
+await check('archiveFeature refuses a path-traversal feature slug and moves nothing (P0 containment)', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-traversal-'));
+  try {
+    const evilFeature = '../escape';
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'trav-1.json'),
+      JSON.stringify(makeCell('trav-1', { feature: evilFeature, status: 'capped' })),
+    );
+
+    await assertRejects(
+      () => archiveFeature(aRoot, evilFeature),
+      'invalid feature',
+      'a feature slug containing ".." / "/" must be refused before any move',
+    );
+    assert(fs.existsSync(path.join(cellsDirPath, 'trav-1.json')), 'cell file untouched after refusal');
+    assert(
+      !fs.existsSync(path.join(cellsDirPath, 'escape')),
+      'no directory created outside the archive tree for the escaped path',
+    );
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('archiveFeature refuses a feature containing a blocked cell — only ALL-capped/dropped features archive', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-blocked-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'blk-1.json'),
+      JSON.stringify(makeCell('blk-1', { feature: 'blk-feat', status: 'capped' })),
+    );
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'blk-2.json'),
+      JSON.stringify(makeCell('blk-2', { feature: 'blk-feat', status: 'blocked' })),
+    );
+
+    await assertRejects(
+      () => archiveFeature(aRoot, 'blk-feat'),
+      'blk-2 (blocked)',
+      'a blocked sibling must refuse the whole archive, named in the error',
+    );
+    assert(fs.existsSync(path.join(cellsDirPath, 'blk-1.json')), 'capped sibling untouched — all-or-nothing refusal');
+    assert(fs.existsSync(path.join(cellsDirPath, 'blk-2.json')), 'the blocked cell itself untouched');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('mutating an archived cell id (updateCell/claimCell/capCell) refuses "archived" and never forks a duplicate active file', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-mutate-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'mut-1.json'),
+      JSON.stringify(makeCell('mut-1', { feature: 'mut-feat', status: 'capped' })),
+    );
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'mut-2.json'),
+      JSON.stringify(makeCell('mut-2', { feature: 'mut-feat', status: 'capped' })),
+    );
+
+    const state = readState(aRoot);
+    state.approved_gates.execution = true;
+    writeState(aRoot, state);
+
+    const archived = await archiveFeature(aRoot, 'mut-feat');
+    assert(
+      archived.moved.includes('mut-1') && archived.moved.includes('mut-2'),
+      `both cells should be archived, got ${JSON.stringify(archived)}`,
+    );
+    const activePath = path.join(cellsDirPath, 'mut-1.json');
+    assert(!fs.existsSync(activePath), 'sanity: the active copy is gone after archiving');
+    assert(readCell(aRoot, 'mut-1') !== null, 'sanity: readCell still resolves the id via the archive fallback');
+
+    assertThrows(() => updateCell(aRoot, 'mut-1', { title: 'hack' }), 'archived', 'updateCell on an archived id refuses');
+    assert(!fs.existsSync(activePath), 'updateCell must not fork a duplicate active file');
+
+    assertThrows(() => claimCell(aRoot, 'mut-1', 'worker-x'), 'archived', 'claimCell on an archived id refuses');
+    assert(!fs.existsSync(activePath), 'claimCell must not fork a duplicate active file');
+
+    await assertRejects(
+      () => capCell(aRoot, 'mut-1', { files_changed: ['x'], outcome: 'done' }),
+      'archived',
+      'capCell on an archived id refuses',
+    );
+    assert(!fs.existsSync(activePath), 'capCell must not fork a duplicate active file');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('archiveFeature is atomic: a mid-loop rename failure rolls back every already-moved file and leaves summary.json untouched', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-rollback-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    for (const id of ['roll-1', 'roll-2', 'roll-3']) {
+      fs.writeFileSync(
+        path.join(cellsDirPath, `${id}.json`),
+        JSON.stringify(makeCell(id, { feature: 'roll-feat', status: 'capped' })),
+      );
+    }
+    // listCells sorts by id, so the loop visits roll-1, roll-2, roll-3 in
+    // that order. Pre-creating a DIRECTORY at roll-2's destination path makes
+    // fs.renameSync throw EISDIR when the loop reaches the second cell —
+    // 'file onto an existing directory' is refused by the OS rename(2) call
+    // itself, a clean, deterministic, permission-free way to inject a
+    // mid-loop failure without mocking fs.
+    const archiveDir = cellsArchiveDir(aRoot, 'roll-feat');
+    fs.mkdirSync(path.join(archiveDir, 'roll-2.json'), { recursive: true });
+
+    await assertRejects(
+      () => archiveFeature(aRoot, 'roll-feat'),
+      'eisdir',
+      'the injected mid-loop rename failure must propagate, not be swallowed',
+    );
+
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-1.json')), 'roll-1 (already moved) must be rolled back to active');
+    assert(!fs.existsSync(path.join(archiveDir, 'roll-1.json')), 'roll-1 must not be left behind in the archive tree');
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-2.json')), 'roll-2 (never moved — its slot was blocked) stays active');
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-3.json')), 'roll-3 (never reached) stays active');
+    assert(
+      !('roll-feat' in archivedSummary(aRoot)),
+      'summary.json must be untouched — it is written only after every move succeeds',
     );
   } finally {
     fs.rmSync(aRoot, { recursive: true, force: true });
@@ -10135,7 +10210,7 @@ await check(
 
 await check('recordJudgeVerdict appends a stamped entry to append-only trace.semantic_judge, and refuses an invalid verdict with a typed error naming the cell', async () => {
   addCell(root, makeCell('jr-1'));
-  const afterFirst = recordJudgeVerdict(root, 'jr-1', VALID_VERDICT, {
+  const afterFirst = await recordJudgeVerdict(root, 'jr-1', VALID_VERDICT, {
     builderModel: 'sonnet',
     builderStatus: PINNED_MODEL_STATUS,
     judgeModel: 'opus',
@@ -10146,25 +10221,28 @@ await check('recordJudgeVerdict appends a stamped entry to append-only trace.sem
   assert(entries1[0].model_independence === 'confirmed', `two pinned, differing models must derive confirmed, got ${entries1[0].model_independence}`);
   assert(entries1[0].schema === JUDGE_VERDICT_SCHEMA && entries1[0].verdict === 'PASS', 'the raw verdict fields are stored verbatim');
 
-  const afterSecond = recordJudgeVerdict(root, 'jr-1', { ...VALID_VERDICT, confidence: 'medium' }, {});
+  const afterSecond = await recordJudgeVerdict(root, 'jr-1', { ...VALID_VERDICT, confidence: 'medium' }, {});
   const entries2 = afterSecond.trace.semantic_judge;
   assert(entries2.length === 2, `append-only: a second record must ADD an entry, not replace the first, got ${JSON.stringify(entries2)}`);
   assert(entries2[0].confidence === 'high' && entries2[1].confidence === 'medium', 'earlier entries are never rewritten');
   assert(entries2[1].model_independence === 'unverified', 'no model/status supplied -> unverified, never a refusal');
 
-  assertThrows(
+  // hardening-3: recordJudgeVerdict is now withStoreLock-wrapped (async), so
+  // its refusals reject a Promise instead of throwing synchronously — same
+  // assertRejects convention msh-5 established for startFeature.
+  await assertRejects(
     () => recordJudgeVerdict(root, 'jr-1', 'free prose from a confused judge', {}),
     'verdict rejected',
     'an invalid verdict must be refused with a typed error, not silently stored',
   );
-  assertThrows(() => recordJudgeVerdict(root, 'no-such-cell-jr', VALID_VERDICT, {}), 'not found', 'an unknown cell id must be refused');
+  await assertRejects(() => recordJudgeVerdict(root, 'no-such-cell-jr', VALID_VERDICT, {}), 'not found', 'an unknown cell id must be refused');
   const untouched = readCell(root, 'jr-1');
   assert(untouched.trace.semantic_judge.length === 2, 'a refused record must leave the ledger untouched');
 });
 
 await check('trace.semantic_judge entries survive cap and resist updateCell (append-only, frozen like trace.attempts) — D5 must-have', async () => {
   addCell(root, makeCell('jr-2'));
-  recordJudgeVerdict(root, 'jr-2', VALID_VERDICT, {
+  await recordJudgeVerdict(root, 'jr-2', VALID_VERDICT, {
     builderModel: 'sonnet',
     builderStatus: PINNED_MODEL_STATUS,
     judgeModel: 'sonnet',
@@ -10184,19 +10262,112 @@ await check('trace.semantic_judge entries survive cap and resist updateCell (app
   assert(capped.trace.semantic_judge[0].model_independence === 'same-model', 'equal pinned names must read same-model, honestly, even post-cap');
 
   // Recording AFTER cap (the realistic D4 goal-check ordering — the judge
-  // runs on an already-capped behavior_change cell) must also work:
-  // recordJudgeVerdict never gates on cell status (D5 prohibition: no
-  // dispatching logic, validation only — status transitions are scl-5's
-  // doctrine-only concern).
-  const postCap = recordJudgeVerdict(root, 'jr-2', { ...VALID_VERDICT, confidence: 'low' }, {});
+  // runs on an already-capped behavior_change cell) must also work. A PASS
+  // verdict (this one) never touches cell.status — only a NEEDS_REVISION
+  // verdict recorded against a capped cell reopens it (hardening-3, tested
+  // separately below); this stays byte-identical to pre-hardening-3 for PASS.
+  const postCap = await recordJudgeVerdict(root, 'jr-2', { ...VALID_VERDICT, confidence: 'low' }, {});
   assert(postCap.trace.semantic_judge.length === 2, 'recording after cap must append, not refuse');
-  assert(postCap.status === 'capped', 'recordJudgeVerdict never mutates cell status');
+  assert(postCap.status === 'capped', 'a PASS verdict recorded after cap must never mutate cell status');
 
   assertThrows(
     () => updateCell(root, 'jr-2', { trace: { semantic_judge: [] } }),
     'frozen',
     'trace stays frozen wholesale at updateCell (F1 precedent) — semantic_judge cannot be wiped through the update door',
   );
+});
+
+// ─── hardening-3: verdict/checks cross-check (judge.mjs) + NEEDS_REVISION
+// reopens a capped cell for rework (cells.mjs) ─────────────────────────────
+
+// Declared here (ahead of the D-GHF-C section's own NEEDS_REVISION_VERDICT
+// below, which is a `const` and therefore not usable this early via TDZ) —
+// a consistent NEEDS_REVISION payload: >=1 FAIL check + failure_signature.
+const NEEDS_REVISION_VERDICT_EARLY = {
+  schema: JUDGE_VERDICT_SCHEMA,
+  verdict: 'NEEDS_REVISION',
+  checks: [{ id: 'must_haves', status: 'FAIL', evidence: 'diff missed a CONTEXT truth' }],
+  failure_signature: 'missed-truth',
+  fixability: 'automatic',
+  confidence: 'high',
+};
+
+await check('validateJudgeVerdict rejects an inconsistent PASS (a FAIL check present) and an inconsistent NEEDS_REVISION (no FAIL check present); a consistent verdict of either kind still validates', async () => {
+  const passWithFail = {
+    schema: JUDGE_VERDICT_SCHEMA,
+    verdict: 'PASS',
+    checks: [{ id: 'must_haves', status: 'FAIL', evidence: 'missed a CONTEXT truth' }],
+    failure_signature: 'missed-truth',
+    fixability: 'automatic',
+    confidence: 'high',
+  };
+  const badPass = validateJudgeVerdict(passWithFail);
+  assert(badPass.ok === false, `a PASS verdict carrying a FAIL check must be refused, got ${JSON.stringify(badPass)}`);
+  assert(
+    badPass.errors.some((e) => e.includes('PASS') && e.includes('FAIL')),
+    `expected a PASS-vs-FAIL cross-check error, got ${JSON.stringify(badPass.errors)}`,
+  );
+
+  const revisionAllPass = {
+    schema: JUDGE_VERDICT_SCHEMA,
+    verdict: 'NEEDS_REVISION',
+    checks: [{ id: 'must_haves', status: 'PASS', evidence: 'diff matches every CONTEXT truth' }],
+    fixability: 'automatic',
+    confidence: 'medium',
+  };
+  const badRevision = validateJudgeVerdict(revisionAllPass);
+  assert(badRevision.ok === false, `NEEDS_REVISION with zero FAIL checks must be refused, got ${JSON.stringify(badRevision)}`);
+  assert(
+    badRevision.errors.some((e) => e.includes('NEEDS_REVISION') && e.includes('FAIL')),
+    `expected a NEEDS_REVISION-requires-FAIL cross-check error, got ${JSON.stringify(badRevision.errors)}`,
+  );
+
+  // Consistent verdicts of both kinds still validate — the cross-check only
+  // rejects the two inconsistent combinations, nothing else.
+  const consistentPass = validateJudgeVerdict(VALID_VERDICT); // all-PASS checks
+  assert(consistentPass.ok === true, `a consistent all-PASS verdict must still validate, got ${JSON.stringify(consistentPass)}`);
+  const consistentRevision = validateJudgeVerdict({ ...NEEDS_REVISION_VERDICT_EARLY });
+  assert(consistentRevision.ok === true, `a consistent NEEDS_REVISION (>=1 FAIL + failure_signature) must still validate, got ${JSON.stringify(consistentRevision)}`);
+});
+
+await check('recordJudgeVerdict: a NEEDS_REVISION verdict recorded against a capped cell reopens it to claimed (rework), logged in trace.reopened_for_rework; a NEEDS_REVISION on an open/claimed cell leaves status untouched; a PASS on a capped cell leaves it capped', async () => {
+  // Case 1: NEEDS_REVISION on a CAPPED cell -> reopens to claimed.
+  addCell(root, makeCell('jr-reopen-1'));
+  claimCell(root, 'jr-reopen-1', 'worker-e');
+  await recordVerify(root, 'jr-reopen-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  await capCell(root, 'jr-reopen-1', { files_changed: ['a.js'], outcome: 'shipped' });
+  const beforeReopen = readCell(root, 'jr-reopen-1');
+  assert(beforeReopen.status === 'capped', 'precondition: cell must be capped before the reopening verdict');
+  const reopened = await recordJudgeVerdict(root, 'jr-reopen-1', NEEDS_REVISION_VERDICT_EARLY, {});
+  assert(reopened.status === 'claimed', `a NEEDS_REVISION verdict on a capped cell must reopen it to claimed, got status ${JSON.stringify(reopened.status)}`);
+  assert(
+    reopened.trace.reopened_for_rework && typeof reopened.trace.reopened_for_rework.at === 'string',
+    `the reopen must be logged in trace.reopened_for_rework, got ${JSON.stringify(reopened.trace.reopened_for_rework)}`,
+  );
+  const decisionsAfterReopen = activeDecisions(root, { recent: 1 });
+  assert(
+    decisionsAfterReopen.length > 0 && decisionsAfterReopen[0].decision.includes('jr-reopen-1'),
+    `the reopen must log a decision naming the cell, got ${JSON.stringify(decisionsAfterReopen)}`,
+  );
+
+  // Case 2: NEEDS_REVISION on an OPEN cell -> status untouched (still open).
+  addCell(root, makeCell('jr-reopen-2'));
+  const stillOpen = await recordJudgeVerdict(root, 'jr-reopen-2', NEEDS_REVISION_VERDICT_EARLY, {});
+  assert(stillOpen.status === 'open', `NEEDS_REVISION on a non-capped (open) cell must never change status, got ${JSON.stringify(stillOpen.status)}`);
+
+  // Case 2b: NEEDS_REVISION on a CLAIMED cell -> status untouched (still claimed).
+  addCell(root, makeCell('jr-reopen-3'));
+  claimCell(root, 'jr-reopen-3', 'worker-f');
+  const stillClaimed = await recordJudgeVerdict(root, 'jr-reopen-3', NEEDS_REVISION_VERDICT_EARLY, {});
+  assert(stillClaimed.status === 'claimed', `NEEDS_REVISION on an already-claimed cell must never change status, got ${JSON.stringify(stillClaimed.status)}`);
+
+  // Case 3: PASS on a CAPPED cell -> status stays capped (no reopen for PASS).
+  addCell(root, makeCell('jr-reopen-4'));
+  claimCell(root, 'jr-reopen-4', 'worker-g');
+  await recordVerify(root, 'jr-reopen-4', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  await capCell(root, 'jr-reopen-4', { files_changed: ['a.js'], outcome: 'shipped' });
+  const stillCapped = await recordJudgeVerdict(root, 'jr-reopen-4', VALID_VERDICT, {});
+  assert(stillCapped.status === 'capped', `a PASS verdict on a capped cell must leave it capped, got ${JSON.stringify(stillCapped.status)}`);
 });
 
 // ─── D-GHF-C (GH #27.5): a NEEDS_REVISION semantic-judge verdict blocks cap
@@ -10213,7 +10384,7 @@ const NEEDS_REVISION_VERDICT = {
 
 await check('capCell (D-GHF-C, GH #27.5): refuses, typed JUDGE_REWORK_REQUIRED, when the latest trace.semantic_judge verdict is NEEDS_REVISION and no override is supplied — this is the fixed bug: cap must never silently ignore a fail verdict', async () => {
   addCell(root, makeCell('judge-block-1'));
-  recordJudgeVerdict(root, 'judge-block-1', NEEDS_REVISION_VERDICT, {});
+  await recordJudgeVerdict(root, 'judge-block-1', NEEDS_REVISION_VERDICT, {});
   claimCell(root, 'judge-block-1', 'worker-a');
   await recordVerify(root, 'judge-block-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
 
@@ -10232,7 +10403,7 @@ await check('capCell (D-GHF-C, GH #27.5): refuses, typed JUDGE_REWORK_REQUIRED, 
 
 await check('capCell (D-GHF-C, GH #27.5): --override-judge caps despite a NEEDS_REVISION verdict, appends an audited trace.judge_overrides entry, and logs a decision', async () => {
   addCell(root, makeCell('judge-override-1'));
-  recordJudgeVerdict(root, 'judge-override-1', NEEDS_REVISION_VERDICT, {});
+  await recordJudgeVerdict(root, 'judge-override-1', NEEDS_REVISION_VERDICT, {});
   claimCell(root, 'judge-override-1', 'worker-b');
   await recordVerify(root, 'judge-override-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
 
@@ -10254,7 +10425,7 @@ await check('capCell (D-GHF-C, GH #27.5): --override-judge caps despite a NEEDS_
 
 await check('capCell (D-GHF-C, GH #27.5): a PASS verdict caps normally with no override, and a cell with NO semantic_judge entries at all caps byte-identically to pre-ghf-6 behavior', async () => {
   addCell(root, makeCell('judge-pass-1'));
-  recordJudgeVerdict(root, 'judge-pass-1', VALID_VERDICT, {}); // VALID_VERDICT.verdict === 'PASS'
+  await recordJudgeVerdict(root, 'judge-pass-1', VALID_VERDICT, {}); // VALID_VERDICT.verdict === 'PASS'
   claimCell(root, 'judge-pass-1', 'worker-c');
   await recordVerify(root, 'judge-pass-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
   const passCapped = await capCell(root, 'judge-pass-1', { files_changed: ['a.js'], outcome: 'shipped' });
@@ -10268,8 +10439,161 @@ await check('capCell (D-GHF-C, GH #27.5): a PASS verdict caps normally with no o
   assert(noJudgeCapped.status === 'capped', 'a cell with no semantic_judge entries at all must cap exactly as before ghf-6');
 });
 
+// ─── worktree-holds (xwh-1): shared cross-worktree holds ledger ────────────
+
+function makeHoldsRoot() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-worktree-holds-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  return dir;
+}
+
+await check('worktree-holds: missing ledger reads as empty (findForeignHolds) and not corrupt (holdsStoreCorrupt)', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    assert(findForeignHolds(holdsRoot, 'wt-a', 'src/api/router.ts').length === 0, 'a missing ledger must yield zero foreign holds');
+    assert(holdsStoreCorrupt(holdsRoot) === false, 'a missing ledger file must never read as corrupt');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: mirrorHold + findForeignHolds — foreign holders see the hold, the acting holder never sees its own', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    const result = await mirrorHold(holdsRoot, { path: 'src/api/router.ts', holder: 'wt-a', feature: 'demo', cell: 'demo-1', ttl: 3600 });
+    assert(result.ok === true, `mirrorHold must succeed, got ${JSON.stringify(result)}`);
+    assert(result.hold.path === 'src/api/router.ts', 'the returned hold must carry the normalized path');
+    assert(result.hold.holder === 'wt-a', 'the returned hold must carry the holder');
+    assert(result.hold.released_at === null, 'a freshly mirrored hold must be unreleased');
+
+    const own = findForeignHolds(holdsRoot, 'wt-a', 'src/api/router.ts');
+    assert(own.length === 0, `findForeignHolds must never return the acting holder's own entries, got ${JSON.stringify(own)}`);
+
+    const foreign = findForeignHolds(holdsRoot, 'wt-b', 'src/api/router.ts');
+    assert(foreign.length === 1, `a different holder must see the foreign hold, got ${JSON.stringify(foreign)}`);
+    assert(foreign[0].holder === 'wt-a', 'the foreign hold must name the actual holder');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: findForeignHolds honors reservations.mjs pathsOverlap semantics (exact, prefix, glob)', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'src/api/router.ts', holder: 'main' });
+
+    assert(findForeignHolds(holdsRoot, 'wt-b', 'src/api/router.ts').length === 1, 'exact-path overlap must match');
+    assert(findForeignHolds(holdsRoot, 'wt-b', 'src/api').length === 1, 'a directory-prefix request must overlap a deeper held path');
+    assert(findForeignHolds(holdsRoot, 'wt-b', 'src/api/*').length === 1, 'a trivial glob-suffixed request must overlap the held path it covers');
+    assert(findForeignHolds(holdsRoot, 'wt-b', 'src/other/file.ts').length === 0, 'an unrelated path must never overlap');
+    assert(
+      findForeignHolds(holdsRoot, 'wt-b', ['src/other/file.ts', 'src/api/router.ts']).length === 1,
+      'a paths array must match if ANY entry overlaps',
+    );
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: releaseHolds narrows by holder + optional session/cell, and only releases what matches', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'a.ts', holder: 'wt-a', session: 's1', cell: 'c1' });
+    await mirrorHold(holdsRoot, { path: 'b.ts', holder: 'wt-a', session: 's2', cell: 'c2' });
+    await mirrorHold(holdsRoot, { path: 'c.ts', holder: 'wt-x', session: 's1', cell: 'c1' });
+
+    const narrowed = await releaseHolds(holdsRoot, { holder: 'wt-a', session: 's1' });
+    assert(narrowed.released === 1, `session-narrowed release must release exactly 1, got ${JSON.stringify(narrowed)}`);
+    assert(findForeignHolds(holdsRoot, 'other', 'a.ts').length === 0, 'the session-matching hold must be released');
+    assert(findForeignHolds(holdsRoot, 'other', 'b.ts').length === 1, 'a non-matching-session hold for the same holder must survive');
+    assert(findForeignHolds(holdsRoot, 'other', 'c.ts').length === 1, 'a different holder must never be touched by another holder\'s release');
+
+    const rest = await releaseHolds(holdsRoot, { holder: 'wt-a' });
+    assert(rest.released === 1, `unfiltered release must release the remaining wt-a hold, got ${JSON.stringify(rest)}`);
+    assert(findForeignHolds(holdsRoot, 'other', 'b.ts').length === 0, 'the remaining wt-a hold must now be released');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: releaseAllForHolder releases every hold for a holder regardless of session/cell', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'a.ts', holder: 'wt-d', session: 's1', cell: 'c1' });
+    await mirrorHold(holdsRoot, { path: 'b.ts', holder: 'wt-d', session: 's2', cell: 'c2' });
+    await mirrorHold(holdsRoot, { path: 'c.ts', holder: 'wt-e' });
+
+    const result = await releaseAllForHolder(holdsRoot, 'wt-d');
+    assert(result.released === 2, `expected both wt-d holds released, got ${JSON.stringify(result)}`);
+    assert(findForeignHolds(holdsRoot, 'other', 'a.ts').length === 0, 'wt-d hold a must be released');
+    assert(findForeignHolds(holdsRoot, 'other', 'b.ts').length === 0, 'wt-d hold b must be released');
+    assert(findForeignHolds(holdsRoot, 'other', 'c.ts').length === 1, 'a different holder must be untouched');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: TTL expiry is pruned on read (findForeignHolds), and sweepExpiredHolds persists it to disk', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'expiring.ts', holder: 'wt-f', ttl: 1 });
+    assert(findForeignHolds(holdsRoot, 'other', 'expiring.ts').length === 1, 'a fresh hold must be visible before expiry');
+
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    assert(
+      findForeignHolds(holdsRoot, 'other', 'expiring.ts').length === 0,
+      'an expired hold must be pruned on read (never returned) even before an explicit sweep',
+    );
+
+    const ledgerBefore = readJson(path.join(holdsRoot, '.bee', 'runtime', 'cross-worktree-holds.json'), { holds: [] });
+    assert(
+      ledgerBefore.holds.find((h) => h.path === 'expiring.ts').released_at === null,
+      'read-time pruning must not itself mutate the on-disk ledger — only sweepExpiredHolds persists expiry',
+    );
+
+    const swept = await sweepExpiredHolds(holdsRoot);
+    assert(swept === 1, `sweepExpiredHolds must report 1 released, got ${swept}`);
+    const ledgerAfter = readJson(path.join(holdsRoot, '.bee', 'runtime', 'cross-worktree-holds.json'), { holds: [] });
+    assert(
+      ledgerAfter.holds.find((h) => h.path === 'expiring.ts').released_at !== null,
+      'sweepExpiredHolds must persist released_at on the expired entry',
+    );
+
+    const sweptAgain = await sweepExpiredHolds(holdsRoot);
+    assert(sweptAgain === 0, 'a second sweep must find nothing new to release');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: holdsStoreCorrupt is true for a present-but-malformed ledger, false once it parses again', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await mirrorHold(holdsRoot, { path: 'a.ts', holder: 'wt-a' });
+    assert(holdsStoreCorrupt(holdsRoot) === false, 'a well-formed ledger must never read as corrupt');
+
+    const ledgerFile = path.join(holdsRoot, '.bee', 'runtime', 'cross-worktree-holds.json');
+    fs.writeFileSync(ledgerFile, '{not valid json');
+    assert(holdsStoreCorrupt(holdsRoot) === true, 'a present-but-unparsable ledger must read as corrupt');
+
+    fs.writeFileSync(ledgerFile, JSON.stringify({ holds: [] }));
+    assert(holdsStoreCorrupt(holdsRoot) === false, 'a ledger that parses cleanly again must no longer read as corrupt');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('worktree-holds: mirrorHold validates required fields (path, holder)', async () => {
+  const holdsRoot = makeHoldsRoot();
+  try {
+    await assertRejects(() => mirrorHold(holdsRoot, { holder: 'wt-a' }), 'path', 'mirrorHold must reject a missing path');
+    await assertRejects(() => mirrorHold(holdsRoot, { path: 'a.ts' }), 'holder', 'mirrorHold must reject a missing holder');
+  } finally {
+    fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
 fs.rmSync(detectRoot, { recursive: true, force: true });
 fs.rmSync(root, { recursive: true, force: true });
 fs.rmSync(siRoot, { recursive: true, force: true });
-console.log(`\n${passed} passed, ${failed} failed`);
-process.exit(failed > 0 ? 1 : 0);
+printSummaryAndExit();

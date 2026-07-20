@@ -1,7 +1,7 @@
 ---
 area: hook-runtime
 updated: 2026-07-20
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19); codex-native-transport cell cnt-7 (Claude model-param guard allowlist folds a configured model-shaped adviser's own model, closing a live adviser-dispatch refusal, allow-only-widening; trace in .bee/cells/, report docs/history/codex-native-transport/reports/cnt-7.md, 2026-07-19); multi-session-hardening cell msh-5 (throttled heartbeat-and-lease renewal wired into the per-prompt and post-task-update checkpoints, try-once/skip-on-busy against the coordination lock; trace in .bee/cells/, report docs/history/multi-session-hardening/reports/msh-5.md, 2026-07-19)]
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19); codex-native-transport cell cnt-7 (Claude model-param guard allowlist folds a configured model-shaped adviser's own model, closing a live adviser-dispatch refusal, allow-only-widening; trace in .bee/cells/, report docs/history/codex-native-transport/reports/cnt-7.md, 2026-07-19); multi-session-hardening cell msh-5 (throttled heartbeat-and-lease renewal wired into the per-prompt and post-task-update checkpoints, try-once/skip-on-busy against the coordination lock; trace in .bee/cells/, report docs/history/multi-session-hardening/reports/msh-5.md, 2026-07-19); codex-command-windows cells 1/2 (shell-agnostic Windows command on every codex source-repository fallback entry + both transport forms unified on the committed onboarded handler path; traces in .bee/cells/, 2026-07-20; flushed capture stub a681f64a)]
 decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated); codex-native-transport D3-D5 (3ceba8f5, D3a c0cba64e, Δ2-amended 760e9b05); 350f1e82 (codex-native-transport cnt-4 rescope — override-field route-check deferred to a documented pass-through-open gap, pending observed evidence); multi-session-hardening D2/D5 with Δ3-amendment (docs/history/multi-session-hardening/CONTEXT.md; audit 12f54e88, locked 17a624dc)]
 coverage: partial
 ---
@@ -392,6 +392,21 @@ that it reduces anything.
   the project root itself at launch and must succeed from the project root
   and from nested working directories, including paths with spaces and
   non-ASCII characters (codex-runtime-parity cells 6a, 6b).
+- R8a — Every second-runtime source-repository fallback entry carries two
+  transport forms: the POSIX command (login-shell transport, unchanged) and a
+  Windows-specific command that is shell-agnostic — a bare interpreter
+  invocation of the checkpoint file, relative to the session working
+  directory, with no shell substitution, test, or exec constructs — so it runs
+  identically under both native Windows shells. The Windows form exists only
+  on the second runtime's source-repository target: packaged (plugin)
+  projections and all first-runtime projections are byte-unchanged by its
+  rendering (codex-command-windows cell 1).
+- R8b — Both transport forms reference one checkpoint path: the committed,
+  onboarded handler location inside the workflow's own tool directory, which
+  is tracked in version control so a fresh clone resolves it without an
+  onboarding pass. The top-level handler source directory is plugin source
+  only and never appears in a rendered fallback command (codex-command-windows
+  cell 2, author decision).
 - R9 — A fallback checkpoint's pre-handoff launch-setup failure fails open
   visibly today — one diagnostic on the error stream, nothing on the output
   stream, success exit — while the shared handler's own decision (ordinary
@@ -597,12 +612,11 @@ that it reduces anything.
   than emit a visible diagnostic. A minimal fix (resolve the checkpoint root the
   same way the handler does, and fail the deny checkpoint closed on launch-setup
   failure) is available as a small fresh cell if ever wanted; it is not planned.
-- The source-repository fallback declares no equivalent command for a
-  non-POSIX-shell or native-Windows session: the rendering emits only a
-  POSIX shell command and does not populate the runtime's separate
-  Windows-specific command field. This is undeclared today, not merely
-  deferred — a Windows or non-POSIX-login-shell (e.g., fish, nu) session has
-  no working fallback checkpoint.
+- Native-Windows sessions are now covered by the separate shell-agnostic
+  Windows command on every fallback entry (R8a), but a non-POSIX Unix login
+  shell (e.g., fish, nu) still receives the POSIX command through the
+  login-shell transport and has no declared equivalent; that narrower gap
+  remains open (codex-command-windows closed only the Windows half).
 - The Codex native spawn checkpoint's override-field route-check (validating
   a spawn's requested model/effort/fork-count against the configured route,
   per B19) is written as a design intent only. No client version checked so

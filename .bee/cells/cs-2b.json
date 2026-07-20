@@ -1,0 +1,55 @@
+{
+  "id": "cs-2b",
+  "feature": "contention-split",
+  "lane": "standard",
+  "behavior_change": false,
+  "title": "Test split part 2: CLI block + remainder; delete the monolith",
+  "action": "Finish the migration: from skills/bee-hive/templates/tests/test_lib.mjs move the bee.mjs CLI/dispatcher block (~5288-9253) into test_cli_state.mjs (state/worker/start-feature/lanes/handoff/SessionStart/two-session e2e), test_cli_cells.mjs (claim-next selection CLI + backlog add verb), test_cli_reviews.mjs (reviews store/CLI/coverage/status integration); move state/lanes/readStateStrict (~244-462), guards + cross-session-hold + enforcement/presentation readers, backlog+capture, and everything else (inject/decisions/schedule/commands_detect/source-identity/model tiers/judge/golden-freeze/vendored-hygiene) into test_state.mjs, test_guards.mjs, test_backlog_capture.mjs, test_misc.mjs. The template-vendor byte-equality standing guard section (~9129) lands in test_misc.mjs. The external test_openai_metadata composition (test_lib.mjs:13-21) moves to test_misc.mjs. Then DELETE skills/bee-hive/templates/tests/test_lib.mjs, remove its SUITES entry, and make scripts/test_verify_manifest.mjs MANDATORY_SUITES enumerate every split file explicitly (kill the test_lib substring match). Final conservation census: sum over all split files == the original pre-split total from cs-2a trace. Audit note discipline same as cs-2a. Also: any open cell whose files list names test_lib.mjs (xwh-2, xwh-3, xwh-4) gets its files/action updated via bee cells update to point at the split file owning its section (worktree-holds unit tests -> their own home decided here, e.g. test_worktree_holds.mjs if xwh-1 landed one, else the module file). Self-onboard + render trees; full verify green.",
+  "must_haves": {
+    "truths": [
+      "test_lib.mjs no longer exists; every split file registered; MANDATORY_SUITES lists each explicitly with no substring matching.",
+      "Final conservation census equals the pre-split total; deviations documented.",
+      "Open cells previously naming test_lib.mjs were updated to their new target files.",
+      "Full run_verify.mjs green; mirrors byte-identical (vendor copies reflect the deletion)."
+    ],
+    "prohibitions": [
+      "Do NOT leave a stub test_lib.mjs behind.",
+      "Do NOT drop or weaken any section; census must balance."
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "scripts/test_verify_manifest.mjs",
+    "docs/history/contention-split/plan.md"
+  ],
+  "files": [
+    "skills/bee-hive/templates/tests/test_lib.mjs",
+    "skills/bee-hive/templates/tests/test_cli_state.mjs",
+    "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+    "skills/bee-hive/templates/tests/test_cli_reviews.mjs",
+    "skills/bee-hive/templates/tests/test_state.mjs",
+    "skills/bee-hive/templates/tests/test_guards.mjs",
+    "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+    "skills/bee-hive/templates/tests/test_misc.mjs",
+    "scripts/run_verify.mjs",
+    "scripts/test_verify_manifest.mjs"
+  ],
+  "deps": [
+    "cs-2a"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

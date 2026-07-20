@@ -1,0 +1,47 @@
+{
+  "id": "cs-4",
+  "feature": "contention-split",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Verify suite auto-discovery: kill the SUITES registry hotspot",
+  "action": "scripts/run_verify.mjs SUITES is a manual registry — every feature adding a test suite edits it, making it a per-feature contention point (observed live: exec-xwh1 vs exec-cs3 collided on it 2026-07-20). Replace manual listing with convention-based discovery: glob the known test roots (scripts/test_*.mjs, skills/bee-hive/templates/tests/test_*.mjs, hooks/test_*.mjs, skills/bee-hive/scripts/test_*.mjs — derive the exact root set from the current SUITES entries so nothing is lost) at runtime; SERIAL_SENSITIVE membership moves to a filename convention (*_race.mjs, *_lock.mjs, *_concurrency.mjs, plus an explicit small exception list for the existing serial suites whose names do not match). Keep an explicit EXCLUDE list for non-suite helpers (fixtures, lib). scripts/test_verify_manifest.mjs flips inversely: instead of MANDATORY_SUITES naming files, it asserts the discovery glob finds >= the frozen floor count and that every historically-mandatory suite path still exists on disk (rename-protection), so a deleted suite still fails loudly. Conservation: discovered set == current SUITES set exactly at flip time (assert in the manifest test, record both lists in trace). Full verify green.",
+  "must_haves": {
+    "truths": [
+      "run_verify.mjs discovers suites by glob + convention; adding a new test file requires ZERO run_verify.mjs edits.",
+      "Serial-sensitive routing preserved for every currently-serial suite (convention or exception list); pool behavior otherwise unchanged.",
+      "Manifest guard still fails loudly when a suite disappears (floor count + existence assertions); discovered set equals the old SUITES set at flip time, recorded in trace.",
+      "Full run_verify.mjs green; mirrors byte-identical."
+    ],
+    "prohibitions": [
+      "Do NOT let discovery pick up fixture/helper files (scripts/lib/, run-module-worker) — explicit exclude.",
+      "Do NOT drop any currently-registered suite."
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "scripts/run_verify.mjs",
+    "scripts/test_verify_manifest.mjs"
+  ],
+  "files": [
+    "scripts/run_verify.mjs",
+    "scripts/test_verify_manifest.mjs"
+  ],
+  "deps": [
+    "cs-2b",
+    "cs-3"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null
+  }
+}

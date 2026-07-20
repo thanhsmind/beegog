@@ -309,6 +309,86 @@ function cellFile(root, id) {
   return path.join(cellsDir(root), `${id}.json`);
 }
 
+// hardening-1 (P0 data-loss fix): archiveFeature/unarchiveFeature take a
+// caller-supplied `feature` string straight into path.join with no format
+// check at all — a value like "../../../x" walks the resulting path outside
+// .bee/cells/archive/ entirely. FEATURE_SLUG_PATTERN mirrors ID_PATTERN's
+// discipline elsewhere in this file (letters/digits/dot/dash/underscore
+// only, no path separators), and the bare "." / ".." forms are rejected on
+// top of that even though the pattern alone already excludes "/" — a
+// same-directory or parent-directory SEGMENT is a traversal primitive
+// regardless of whether a separator is present.
+const FEATURE_SLUG_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+class InvalidFeatureSlugError extends Error {
+  constructor(verb, feature) {
+    super(
+      `${verb}: invalid feature "${feature}" — use letters, digits, dot, dash, underscore only (no path separators, and never "." or ".."). Refusing before any file is touched.`,
+    );
+    this.name = 'InvalidFeatureSlugError';
+    this.code = 'INVALID_FEATURE_SLUG';
+  }
+}
+
+class ArchivePathEscapeError extends Error {
+  constructor(verb, resolved, base) {
+    super(
+      `${verb}: resolved archive path "${resolved}" escapes the archive root "${base}" — refusing before any file is touched.`,
+    );
+    this.name = 'ArchivePathEscapeError';
+    this.code = 'ARCHIVE_PATH_ESCAPE';
+  }
+}
+
+function assertValidFeatureSlug(verb, feature) {
+  if (typeof feature !== 'string' || !feature.trim()) {
+    throw new Error(`${verb}: feature is required.`);
+  }
+  if (!FEATURE_SLUG_PATTERN.test(feature) || /^\.+$/.test(feature)) {
+    throw new InvalidFeatureSlugError(verb, feature);
+  }
+}
+
+// Defense-in-depth alongside assertValidFeatureSlug: even though the slug
+// pattern above already forecloses every practical escape, this asserts the
+// FINAL computed archive directory is canonically contained inside the
+// archive root before any rename touches disk — the same "verify, don't
+// assume" discipline the cells-archive-1 must-have already applies to the
+// listCells directory filter (ARCHIVE_DIR_NAME comment above).
+function assertArchiveDirContained(verb, root, archiveDir) {
+  const base = path.resolve(path.join(cellsDir(root), ARCHIVE_DIR_NAME));
+  const resolved = path.resolve(archiveDir);
+  if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+    throw new ArchivePathEscapeError(verb, resolved, base);
+  }
+}
+
+// hardening-1 (P0 data-loss fix): the mutators below (updateCell, claimCell,
+// recordVerify, capCell, blockCell, dropCell) all write through cellFile()
+// (the ACTIVE path) while readCell()/resolveCellFile() transparently fall
+// back into the archive tree. Without this guard, calling e.g. updateCell on
+// an id that exists ONLY in the archive reads the archived copy fine, then
+// writeCell() creates a BRAND NEW file at the active path — forking one
+// logical cell id into two on-disk copies (one archived, one freshly active)
+// that silently drift apart. assertNotArchived is a no-op for an ordinary
+// active cell (cellFile exists — never even calls resolveCellFile) and for a
+// genuinely missing id (resolveCellFile returns null, so the caller's own
+// not-found handling fires as before); it throws ONLY when the id resolves
+// exclusively inside archive/.
+class CellArchivedError extends Error {
+  constructor(verb, id) {
+    super(`${verb}: cell "${id}" is archived — unarchive its feature first (bee.mjs cells unarchive --feature <feature>).`);
+    this.name = 'CellArchivedError';
+    this.code = 'CELL_ARCHIVED';
+  }
+}
+
+function assertNotArchived(root, verb, id) {
+  if (!id || !ID_PATTERN.test(String(id))) return; // malformed id — the caller's own validation handles this
+  if (fs.existsSync(cellFile(root, id))) return; // active copy exists — never archived-only
+  if (resolveCellFile(root, id)) throw new CellArchivedError(verb, id);
+}
+
 // resolveCellFile(root, id) — the REAL on-disk path for a cell, active or
 // archived. Unlike cellFile (always the active path, meaning unchanged for
 // every existing caller), this searches .bee/cells/archive/*/<id>.json when
@@ -462,38 +542,71 @@ export function archivedTotals(root) {
 // archive — named), or any open/claimed cell (named) — archiving is an
 // all-terminal-or-nothing operation, never a partial move that could hide a
 // still-live cell from the hot scan.
-export function archiveFeature(root, feature) {
-  if (typeof feature !== 'string' || !feature.trim()) {
-    throw new Error('archiveFeature: feature is required.');
-  }
-  const cells = listCells(root, { feature });
-  if (cells.length === 0) {
-    throw new Error(`archiveFeature: no cells found for feature "${feature}" — nothing to archive.`);
-  }
-  const nonTerminal = cells.filter((cell) => cell.status === 'open' || cell.status === 'claimed');
-  if (nonTerminal.length > 0) {
-    throw new Error(
-      `archiveFeature: feature "${feature}" has non-terminal cell(s) — ${nonTerminal
-        .map((cell) => `${cell.id} (${cell.status})`)
-        .join(', ')} — only a feature whose cells are ALL capped/dropped can be archived.`,
-    );
-  }
-  const archiveDir = cellsArchiveDir(root, feature);
-  ensureDir(archiveDir);
-  const moved = [];
-  let capped = 0;
-  let dropped = 0;
-  for (const cell of cells) {
-    fs.renameSync(cellFile(root, cell.id), path.join(archiveDir, `${cell.id}.json`));
-    moved.push(cell.id);
-    if (cell.status === 'capped') capped += 1;
-    else if (cell.status === 'dropped') dropped += 1;
-  }
-  const summary = archivedSummary(root);
-  const counts = { capped, dropped };
-  summary[feature] = { ...counts, archived_at: utcNow() };
-  writeJsonAtomic(archiveSummaryFile(root), summary);
-  return { feature, moved, counts };
+export async function archiveFeature(root, feature) {
+  assertValidFeatureSlug('archiveFeature', feature);
+  // hardening-1: the whole read-check-move-summarize body runs under a
+  // cross-process lock (colon-free name — this is a whole-store operation,
+  // not a per-cell one like the `cells:<id>` locks above) so a concurrent
+  // archive/unarchive/mutator on the SAME feature can never interleave with
+  // this move and observe (or create) a half-migrated state.
+  return withStoreLock(root, 'cells-archive', () => {
+    const cells = listCells(root, { feature });
+    if (cells.length === 0) {
+      throw new Error(`archiveFeature: no cells found for feature "${feature}" — nothing to archive.`);
+    }
+    // hardening-1: allowlist, not a denylist — archive ONLY capped/dropped
+    // cells. The prior denylist (open/claimed) silently let a `blocked` cell
+    // through, contradicting the documented "capped/dropped only" contract;
+    // negation here also fails closed against any future status this file
+    // doesn't yet know about.
+    const nonTerminal = cells.filter((cell) => cell.status !== 'capped' && cell.status !== 'dropped');
+    if (nonTerminal.length > 0) {
+      throw new Error(
+        `archiveFeature: feature "${feature}" has non-terminal cell(s) — ${nonTerminal
+          .map((cell) => `${cell.id} (${cell.status})`)
+          .join(', ')} — only a feature whose cells are ALL capped/dropped can be archived.`,
+      );
+    }
+    const archiveDir = cellsArchiveDir(root, feature);
+    assertArchiveDirContained('archiveFeature', root, archiveDir);
+    ensureDir(archiveDir);
+    const moved = [];
+    let capped = 0;
+    let dropped = 0;
+    try {
+      for (const cell of cells) {
+        const from = cellFile(root, cell.id);
+        const to = path.join(archiveDir, `${cell.id}.json`);
+        fs.renameSync(from, to);
+        moved.push({ id: cell.id, from, to });
+        if (cell.status === 'capped') capped += 1;
+        else if (cell.status === 'dropped') dropped += 1;
+      }
+    } catch (err) {
+      // hardening-1: a mid-loop crash (disk full, permission change, a
+      // blocked destination) used to leave cells half-moved with no summary
+      // update at all — the worst of both worlds (a cell invisible to the
+      // hot scan AND absent from the archive ledger). Roll every
+      // already-moved file back to its origin, in reverse order, before
+      // rethrowing — best-effort per file so one stuck rename during
+      // rollback never masks the original failure.
+      for (const entry of moved.reverse()) {
+        try {
+          fs.renameSync(entry.to, entry.from);
+        } catch {
+          // best-effort: the original error below is what the caller needs
+        }
+      }
+      throw err;
+    }
+    // Written LAST, only once every rename above has succeeded — summary.json
+    // must never advance ahead of what is actually on disk.
+    const summary = archivedSummary(root);
+    const counts = { capped, dropped };
+    summary[feature] = { ...counts, archived_at: utcNow() };
+    writeJsonAtomic(archiveSummaryFile(root), summary);
+    return { feature, moved: moved.map((entry) => entry.id), counts };
+  });
 }
 
 // unarchiveFeature(root, feature) — the reverse of archiveFeature: moves
@@ -502,37 +615,57 @@ export function archiveFeature(root, feature) {
 // now-empty archive/<feature> dir (best-effort — a leftover non-.json file
 // left by something else never blocks the unarchive itself). Refuses
 // (throws) when the feature has nothing archived.
-export function unarchiveFeature(root, feature) {
-  if (typeof feature !== 'string' || !feature.trim()) {
-    throw new Error('unarchiveFeature: feature is required.');
-  }
-  const archiveDir = cellsArchiveDir(root, feature);
-  let files;
-  try {
-    files = fs.readdirSync(archiveDir);
-  } catch {
-    throw new Error(`unarchiveFeature: no archived cells found for feature "${feature}".`);
-  }
-  const jsonFiles = files.filter((file) => file.endsWith('.json'));
-  if (jsonFiles.length === 0) {
-    throw new Error(`unarchiveFeature: no archived cells found for feature "${feature}".`);
-  }
-  const moved = [];
-  for (const file of jsonFiles) {
-    fs.renameSync(path.join(archiveDir, file), path.join(cellsDir(root), file));
-    moved.push(file.slice(0, -'.json'.length));
-  }
-  try {
-    fs.rmdirSync(archiveDir);
-  } catch {
-    // best-effort: a non-.json leftover (or a concurrent write) keeps the
-    // dir non-empty — the cells themselves are already moved back, which is
-    // the part that matters.
-  }
-  const summary = archivedSummary(root);
-  delete summary[feature];
-  writeJsonAtomic(archiveSummaryFile(root), summary);
-  return moved;
+export async function unarchiveFeature(root, feature) {
+  assertValidFeatureSlug('unarchiveFeature', feature);
+  // hardening-1: same whole-store lock as archiveFeature, same reserved name
+  // — archive/unarchive on the same feature (or a concurrent mutator racing
+  // an in-flight archive) must never interleave.
+  return withStoreLock(root, 'cells-archive', () => {
+    const archiveDir = cellsArchiveDir(root, feature);
+    assertArchiveDirContained('unarchiveFeature', root, archiveDir);
+    let files;
+    try {
+      files = fs.readdirSync(archiveDir);
+    } catch {
+      throw new Error(`unarchiveFeature: no archived cells found for feature "${feature}".`);
+    }
+    const jsonFiles = files.filter((file) => file.endsWith('.json'));
+    if (jsonFiles.length === 0) {
+      throw new Error(`unarchiveFeature: no archived cells found for feature "${feature}".`);
+    }
+    const moved = [];
+    try {
+      for (const file of jsonFiles) {
+        const from = path.join(archiveDir, file);
+        const to = path.join(cellsDir(root), file);
+        fs.renameSync(from, to);
+        moved.push({ id: file.slice(0, -'.json'.length), from, to });
+      }
+    } catch (err) {
+      // hardening-1: same rollback discipline as archiveFeature — restore
+      // every already-moved file to the archive before rethrowing.
+      for (const entry of moved.reverse()) {
+        try {
+          fs.renameSync(entry.to, entry.from);
+        } catch {
+          // best-effort: the original error below is what the caller needs
+        }
+      }
+      throw err;
+    }
+    try {
+      fs.rmdirSync(archiveDir);
+    } catch {
+      // best-effort: a non-.json leftover (or a concurrent write) keeps the
+      // dir non-empty — the cells themselves are already moved back, which is
+      // the part that matters.
+    }
+    // Written LAST, only once every rename above has succeeded.
+    const summary = archivedSummary(root);
+    delete summary[feature];
+    writeJsonAtomic(archiveSummaryFile(root), summary);
+    return moved.map((entry) => entry.id);
+  });
 }
 
 export function writeCell(root, cell) {
@@ -788,6 +921,7 @@ export function updateCell(root, id, patch) {
   if (!id || !ID_PATTERN.test(String(id))) {
     throw new Error(`updateCell: invalid id "${id}".`);
   }
+  assertNotArchived(root, 'updateCell', id); // hardening-1: refuse before ever reading/writing
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new Error('updateCell: patch must be a JSON object.');
   }
@@ -877,6 +1011,7 @@ export function claimCell(root, id, worker) {
   if (typeof worker !== 'string' || !worker.trim()) {
     throw new Error('claimCell: worker name is required.');
   }
+  assertNotArchived(root, 'claimCell', id); // hardening-1: refuse before ever reading/writing
   // fsh-5 (D2): the execution gate resolves from the CELL's own feature — a
   // lane record for cell.feature authorizes (or refuses) the claim with ITS
   // gate; no lane record means the default pipeline's gate, byte-identical to
@@ -923,6 +1058,7 @@ export async function recordVerify(
     throw new Error('recordVerify: passed must be true or false.');
   }
   return withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'recordVerify', id); // hardening-1: refuse before ever reading/writing
     const cell = readCell(root, id);
     if (!cell) throw new Error(`recordVerify: cell "${id}" not found.`);
     let trace = { ...defaultTrace(), ...(cell.trace || {}) };
@@ -980,6 +1116,7 @@ export async function capCell(
 ) {
   const overrideReason = typeof overrideJudge === 'string' ? overrideJudge.trim() : '';
   const saved = await withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'capCell', id); // hardening-1: refuse before ever reading/writing
     const cell = readCell(root, id);
     if (!cell) throw new Error(`capCell: cell "${id}" not found.`);
     // Honor the cell's declared behavior_change when the caller omits it — the CLI
@@ -1145,6 +1282,7 @@ export async function blockCell(root, id, reason, { sessionId, forceOwnership = 
     throw new Error('blockCell: a reason is required.');
   }
   const saved = await withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'blockCell', id); // hardening-1: refuse before ever reading/writing
     const cell = readCell(root, id);
     if (!cell) throw new Error(`blockCell: cell "${id}" not found.`);
     let trace = { ...defaultTrace(), ...(cell.trace || {}) };
@@ -1168,6 +1306,7 @@ export function dropCell(root, id, reason) {
   if (typeof reason !== 'string' || !reason.trim()) {
     throw new Error('dropCell: a reason is required.');
   }
+  assertNotArchived(root, 'dropCell', id); // hardening-1: refuse before ever reading/writing
   const cell = readCell(root, id);
   if (!cell) throw new Error(`dropCell: cell "${id}" not found.`);
   cell.status = 'dropped';
@@ -1636,14 +1775,27 @@ export async function resetCellBudget(root, id, reason, { sessionId, operator } 
 // simply means the caller passed no model, which already degrades
 // model_independence to 'unverified' via deriveModelIndependence — never a
 // refusal).
-export function recordJudgeVerdict(
+//
+// hardening-3: a NEEDS_REVISION verdict recorded AFTER the cell already
+// capped (the realistic D4 goal-check ordering) used to be toothless — it
+// appended to trace.semantic_judge but never touched cell.status, so
+// capCell's own NEEDS_REVISION guard (line ~1145) never re-fires because the
+// cell is already past cap. Now: recording a NEEDS_REVISION verdict against
+// a cell whose CURRENT status is "capped" reopens it to "claimed" (rework)
+// in the SAME store-locked read-check-write — reusing the existing
+// CELL_STATUSES 'claimed' value, never a new status. A PASS verdict, or a
+// NEEDS_REVISION verdict on a non-capped cell, leaves cell.status untouched,
+// byte-identical to pre-hardening-3 behavior. This is now a logical
+// read-check-write (readCell -> possible status flip -> writeCell), so it
+// runs under the same withStoreLock discipline capCell/reopenCell use, and
+// is therefore async (mirrors msh-5's startFeature: refusals reject a
+// Promise instead of throwing synchronously — callers await it).
+export async function recordJudgeVerdict(
   root,
   id,
   verdictInput,
   { builderModel = null, builderStatus = null, judgeModel = null, judgeStatus = null, sessionId, forceOwnership = false } = {},
 ) {
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`recordJudgeVerdict: cell "${id}" not found.`);
   const { ok, errors } = validateJudgeVerdict(verdictInput);
   if (!ok) {
     throw new Error(
@@ -1651,23 +1803,42 @@ export function recordJudgeVerdict(
     );
   }
   const independence = deriveModelIndependence(builderModel, builderStatus, judgeModel, judgeStatus);
-  const entry = {
-    schema: verdictInput.schema,
-    verdict: verdictInput.verdict,
-    checks: verdictInput.checks,
-    failure_signature: verdictInput.failure_signature ?? null,
-    fixability: verdictInput.fixability,
-    confidence: verdictInput.confidence,
-    builder_model: typeof builderModel === 'string' && builderModel.trim() ? builderModel : null,
-    judge_model: typeof judgeModel === 'string' && judgeModel.trim() ? judgeModel : null,
-    model_independence: independence,
-    recorded_at: utcNow(),
-  };
-  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
-  trace = guardClaimOwnership(root, id, trace, 'recordJudgeVerdict', { sessionId, forceOwnership });
-  const existing = Array.isArray(trace.semantic_judge) ? trace.semantic_judge : [];
-  cell.trace = { ...trace, semantic_judge: [...existing, entry] };
-  return writeCell(root, cell);
+  return withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`recordJudgeVerdict: cell "${id}" not found.`);
+    const entry = {
+      schema: verdictInput.schema,
+      verdict: verdictInput.verdict,
+      checks: verdictInput.checks,
+      failure_signature: verdictInput.failure_signature ?? null,
+      fixability: verdictInput.fixability,
+      confidence: verdictInput.confidence,
+      builder_model: typeof builderModel === 'string' && builderModel.trim() ? builderModel : null,
+      judge_model: typeof judgeModel === 'string' && judgeModel.trim() ? judgeModel : null,
+      model_independence: independence,
+      recorded_at: utcNow(),
+    };
+    let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+    trace = guardClaimOwnership(root, id, trace, 'recordJudgeVerdict', { sessionId, forceOwnership });
+    const existing = Array.isArray(trace.semantic_judge) ? trace.semantic_judge : [];
+    trace = { ...trace, semantic_judge: [...existing, entry] };
+    if (verdictInput.verdict === 'NEEDS_REVISION' && cell.status === 'capped') {
+      cell.status = 'claimed'; // reopen for rework — reuses the existing enum, no new status
+      trace.reopened_for_rework = {
+        at: utcNow(),
+        reason: 'NEEDS_REVISION semantic-judge verdict recorded after cap',
+      };
+      logDecision(root, {
+        decision: `«cells judge-record: cell "${id}" reopened capped->claimed by a NEEDS_REVISION semantic-judge verdict»`,
+        rationale:
+          'A NEEDS_REVISION verdict recorded after cap must have teeth: the cell is reopened to claimed for rework instead of being silently logged into an inert trace entry (hardening-3).',
+        scope: 'repo',
+        source: 'user',
+      });
+    }
+    cell.trace = trace;
+    return writeCell(root, cell);
+  });
 }
 
 // ─── claim-next: cross-session selection + throw-safe two-store claim ──────

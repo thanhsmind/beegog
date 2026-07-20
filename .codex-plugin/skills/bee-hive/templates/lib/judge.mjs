@@ -65,6 +65,17 @@ export function validateJudgeVerdict(obj) {
       }
       if (!isNonEmptyString(entry.evidence)) errors.push(`checks[${i}].evidence must be a non-empty string.`);
     });
+    // hardening-3: cross-check the top-level verdict against the check
+    // statuses it summarizes — the verdict is a claim ABOUT the checks, not
+    // an independent field a judge can set inconsistently. Evaluated only
+    // once `checks` is known to be a valid non-empty array (the branch
+    // above already refused a missing/empty/non-array `checks`).
+    if (obj.verdict === 'PASS' && anyFail) {
+      errors.push('verdict must not be PASS when any check has status FAIL — a PASS verdict must not carry a FAIL check.');
+    }
+    if (obj.verdict === 'NEEDS_REVISION' && !anyFail) {
+      errors.push('verdict NEEDS_REVISION requires at least one check with status FAIL — got no FAIL check among the checks.');
+    }
   }
   if (!JUDGE_FIXABILITIES.includes(obj.fixability)) {
     errors.push(`fixability must be one of ${JUDGE_FIXABILITIES.join('|')}, got ${JSON.stringify(obj.fixability)}.`);
