@@ -3837,6 +3837,45 @@ await check('capture queue: add, pending, flush, and surfacing contracts', async
   }
 });
 
+// ─── capture stub optional source field (transcript-recovery D6): a mined
+// stub sitting unflushed in the pending queue IS the mined-unconfirmed state;
+// the normal flush is the confirmation. Additive only — a stub created
+// without --source must be byte-shape-identical to today's stubs. ──────────
+
+await check('addCaptureStub optional source field: byte-shape-identical when absent, trimmed and persisted when given (D6)', async () => {
+  const qRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-capq-source-'));
+  fs.mkdirSync(path.join(qRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(qRoot, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  try {
+    const noSource = addCaptureStub(qRoot, { outcome: 'no source given' });
+    assert(!('source' in noSource), 'a stub created without --source must not gain a source key (byte-shape-identical)');
+    assert(
+      Object.keys(noSource).join(',') === 'kind,id,at,outcome,dids,area,files,lane',
+      `unexpected stub shape, got keys: ${Object.keys(noSource).join(',')}`,
+    );
+
+    const mined = addCaptureStub(qRoot, { outcome: 'mined from crashed session', source: '  mined  ' });
+    assert(mined.source === 'mined', `source must be trimmed and persisted, got ${JSON.stringify(mined.source)}`);
+
+    const blankSource = addCaptureStub(qRoot, { outcome: 'blank source treated as absent', source: '   ' });
+    assert(!('source' in blankSource), 'a blank/whitespace-only source must be treated as absent, not persisted');
+
+    // the on-disk journal reflects the exact same shape distinction
+    const events = fs
+      .readFileSync(path.join(qRoot, '.bee', 'capture-queue.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert(!('source' in events[0]), 'journal entry for the no-source stub omits the key entirely');
+    assert(events[1].source === 'mined', 'journal entry for the mined stub persists source: "mined"');
+  } finally {
+    fs.rmSync(qRoot, { recursive: true, force: true });
+  }
+});
+
 // ─── feedback collector: allowlist digest, read-scope (P18, decision 8cd4c84e) ─
 
 function mkFeedbackRepo() {

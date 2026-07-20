@@ -48,9 +48,13 @@ function normalizeList(value) {
 /**
  * Append a capture stub — the same-turn durability record for a settlement
  * whose full spec merge is deferred to flush. `outcome` is required; `dids`
- * (decision ids), `area`, `files`, `lane` are optional context for the flusher.
+ * (decision ids), `area`, `files`, `lane` are optional context for the
+ * flusher. `source` is optional provenance (e.g. "mined" for a transcript-
+ * recovery candidate settlement, transcript-recovery D6) — additive only: a
+ * stub created without it stays byte-shape-identical to today's stubs, so
+ * the key is omitted rather than defaulted to null.
  */
-export function addCaptureStub(root, { outcome, dids = null, area = null, files = null, lane = null }) {
+export function addCaptureStub(root, { outcome, dids = null, area = null, files = null, lane = null, source = null }) {
   if (typeof outcome !== 'string' || !outcome.trim()) {
     throw new Error('addCaptureStub: outcome text is required.');
   }
@@ -69,6 +73,8 @@ export function addCaptureStub(root, { outcome, dids = null, area = null, files 
     files: normalizeList(files),
     lane: typeof lane === 'string' && lane.trim() ? lane.trim() : null,
   };
+  const normalizedSource = typeof source === 'string' && source.trim() ? source.trim() : null;
+  if (normalizedSource) stub.source = normalizedSource;
   assertSafeContent('outcome', stub.outcome);
   if (stub.area) assertSafeContent('area', stub.area);
   appendJsonl(captureQueuePath(root), stub);

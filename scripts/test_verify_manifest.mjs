@@ -28,6 +28,7 @@ const MANDATORY_SUITES = [
   "test_installers_e2e",
   "test_conformance",
   "test_agents_budget",
+  "test_recovery",
 ];
 
 /**

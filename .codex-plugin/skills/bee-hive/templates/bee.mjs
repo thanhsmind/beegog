@@ -146,6 +146,16 @@ import {
   buildMatrixFromLog,
 } from './lib/perf.mjs';
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest, mergeDigests, clusterEntries, rankClusters } from './lib/feedback.mjs';
+// recovery.mjs is imported ONLY here (never by command-registry.mjs), the
+// same import discipline perf.mjs already follows above (transcript-recovery
+// D-decisions, docs/history/transcript-recovery/CONTEXT.md).
+import {
+  detectCrashCandidates,
+  readTranscriptTail,
+  lastDurableSettlement,
+  computeMiningWindow,
+  buildMiningPrompt,
+} from './lib/recovery.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
 import { classifySource } from './lib/source-identity.mjs';
@@ -244,6 +254,21 @@ function buildReviewBlock(root) {
     return { candidates: counts, open_sessions: openSessions, high_risk_unreviewed: highRiskUnreviewed };
   } catch {
     return { ...empty, degraded: true };
+  }
+}
+
+// Session-start crash-detection block for the status payload (transcript-
+// recovery D2: "detection is cheap and automatic"). Same fail-open shape as
+// buildReviewBlock immediately above: detectCrashCandidates is already
+// fail-open at every intermediate read (missing sessions dir, missing
+// projects root on hosts with no transcript store e.g. Codex, corrupt
+// session/lane/claim records), so this try/catch is belt-and-suspenders —
+// a future change to that contract still can never crash bee_status.
+function buildRecoveryBlock(root) {
+  try {
+    return { candidates: detectCrashCandidates(root) };
+  } catch {
+    return { candidates: [], degraded: true };
   }
 }
 
@@ -419,6 +444,7 @@ function buildStatus(root) {
     );
   }
   const review = buildReviewBlock(root);
+  const recovery = buildRecoveryBlock(root);
 
   const executionApproved = state.approved_gates?.execution === true;
   const ready = readyCells(root, state.feature || null);
@@ -468,6 +494,7 @@ function buildStatus(root) {
     cells: counts,
     lanes: buildLaneRows(root),
     review,
+    recovery,
     scribing_debt: scribingDebt(root),
     capture_queue: (() => {
       const queue = captureQueue(root);
@@ -1864,10 +1891,12 @@ function handleBacklogAdd(root, flags) {
 // bee_capture.mjs did — no logic change there. ─────────────────────────────
 
 function formatCaptureStub(stub) {
-  const parts = [`[${stub.at}] ${stub.outcome} (id ${stub.id})`];
+  const marker = stub.source === 'mined' ? ' [mined]' : '';
+  const parts = [`[${stub.at}] ${stub.outcome}${marker} (id ${stub.id})`];
   if (stub.dids && stub.dids.length) parts.push(`  decisions: ${stub.dids.join(', ')}`);
   if (stub.area) parts.push(`  area: ${stub.area}`);
   if (stub.files && stub.files.length) parts.push(`  files: ${stub.files.join(', ')}`);
+  if (stub.source) parts.push(`  source: ${stub.source}`);
   return parts.join('\n');
 }
 
@@ -1878,6 +1907,7 @@ function handleCaptureAdd(root, flags) {
     area: flags.area ? String(flags.area) : null,
     files: flags.files ? String(flags.files) : null,
     lane: flags.lane ? String(flags.lane) : null,
+    source: flags.source ? String(flags.source) : null,
   });
   return {
     result: stub,
@@ -2308,6 +2338,71 @@ function handlePerfReport(_root, flags) {
     (p) => `${p.project}  · ${p.sessions} sess · ${Math.round(p.running_time_ms / 1000)}s · ${p.total_tokens} tok (${p.parallel_sessions}/${p.sessions} parallel)`,
   );
   return { result: matrix, text: lines.join('\n') };
+}
+
+// ─── recovery: crash-candidate detection + bounded mining-window CLI (D1-D6,
+// docs/history/transcript-recovery/CONTEXT.md). Mining itself never runs
+// here (D4) — `recovery window` only emits the down-tier worker's prompt;
+// the orchestrator dispatches it to a down-tier worker, never an LLM call
+// from inside the CLI. `recovery scan` never auto-triggers mining (D2). ────
+
+// lastTranscriptActivity — the newest event timestamp in a candidate's
+// transcript tail, for `recovery scan`'s text summary only (the JSON result
+// carries detectCrashCandidates()'s own shape unchanged, no added field). A
+// tiny display-only re-derivation, not a second copy of recovery.mjs's own
+// since/work-signal math: a null transcript or an unreadable/empty tail
+// resolves to null, never throws.
+function lastTranscriptActivity(transcript) {
+  if (!transcript) return null;
+  let maxMs = null;
+  for (const event of readTranscriptTail(transcript)) {
+    const ts =
+      event && typeof event === 'object'
+        ? typeof event.timestamp === 'string'
+          ? Date.parse(event.timestamp)
+          : typeof event.at === 'string'
+            ? Date.parse(event.at)
+            : NaN
+        : NaN;
+    if (Number.isFinite(ts) && (maxMs === null || ts > maxMs)) maxMs = ts;
+  }
+  return maxMs === null ? null : new Date(maxMs).toISOString();
+}
+
+function summarizeRecoveryCandidate(c) {
+  return `${c.session_id} [${c.lane || 'no-lane'}] last_heartbeat=${c.last_heartbeat || 'unknown'} transcript=${c.transcript || 'null'} last_activity=${lastTranscriptActivity(c.transcript) || 'unknown'}`;
+}
+
+function handleRecoveryScan(root, _flags) {
+  const candidates = detectCrashCandidates(root);
+  const text = candidates.length ? candidates.map(summarizeRecoveryCandidate).join('\n') : 'recovery: no crash candidates.';
+  return { result: candidates, text };
+}
+
+// handleRecoveryWindow — from the bare session id alone, re-derive the whole
+// window: read the session record, resolve its transcript, compute sinceTs
+// from the last durable settlement (lane-scoped, global fallback, else the
+// session's own started_at — D3), then the bounded window and the miner
+// prompt (D4). The orchestrator dispatches `prompt`; this handler never
+// calls an LLM.
+function handleRecoveryWindow(root, flags) {
+  const sessionId = requireFlag(flags, 'session');
+  const session = readSession(root, sessionId);
+  if (!session) throw new Error(`Session "${sessionId}" not found.`);
+  const transcript = resolveTranscript(claudeProjectsRoot(), root, { sessionId });
+  const lane = session.lane || null;
+  const settled = lastDurableSettlement(root, lane);
+  const sinceTs = settled != null ? settled : session.started_at || null;
+  const window = computeMiningWindow(transcript, sinceTs);
+  const prompt = buildMiningPrompt({ session_id: sessionId, lane }, window);
+  const result = {
+    transcript,
+    since_ts: sinceTs,
+    event_count: window.event_count,
+    window_truncated: window.window_truncated,
+    prompt,
+  };
+  return { result, text: prompt };
 }
 
 // ─── worktree: register/list/unregister the opt-in per-worktree store grant
@@ -3712,6 +3807,11 @@ function dispatchUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: prepare.`;
 }
 
+function recoveryUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: scan, window.`;
+}
+
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
 // bee_reservations.mjs/bee_decisions.mjs are now shims, so their own
 // default-case "Unknown command ... Use: ..." messages (previously emitted
@@ -3746,6 +3846,7 @@ const GROUP_USAGE_FALLBACKS = {
   worktree: worktreeUsageFallback,
   config: configUsageFallback,
   dispatch: dispatchUsageFallback,
+  recovery: recoveryUsageFallback,
 };
 
 const HANDLERS = {
@@ -3833,6 +3934,8 @@ const HANDLERS = {
   'dispatch.prepare': handleDispatchPrepare,
   doctor: handleDoctor,
   'doctor.attest': handleDoctorAttest,
+  'recovery.scan': handleRecoveryScan,
+  'recovery.window': handleRecoveryWindow,
 };
 
 // ─── argv parsing: "bee <group> [<action>] [--flag value|--flag=value ...]" ─
