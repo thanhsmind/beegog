@@ -1178,11 +1178,37 @@ async function handleReservationsReserve(root, flags) {
 }
 
 async function handleReservationsRelease(root, flags) {
+  const agent = requireFlag(flags, 'agent');
   const cell = flags.cell ? String(flags.cell) : null;
-  const result = await release(root, {
-    agent: requireFlag(flags, 'agent'),
-    cell,
-  });
+
+  // xwh-2 hardening (found live, post-cap): a mirrored hold has NO agent
+  // field — worktree-holds.mjs's shape is only {path, holder, feature,
+  // session, cell, ttl_seconds, ...} — so in an ordinary checkout every
+  // agent's mirrors share the SAME holder ('main'). Calling
+  // releaseHolds({holder, cell: null}) whenever --cell is omitted (a normal,
+  // common call shape: "release everything I hold") would release EVERY
+  // mirrored hold under that holder, including ones mirrored by a
+  // COMPLETELY DIFFERENT agent's cell — confirmed live in this session: an
+  // agent-wide `reservations release --agent exec-xwh2` (no --cell) wrongly
+  // cleared 8 of a concurrent agent's still-active mirrored holds. Fix:
+  // never pass the raw --cell flag straight through. Instead, read this
+  // agent's own ACTIVE local rows first (before release() marks them),
+  // derive the exact distinct cell id(s) they belong to, and scope the
+  // ledger release to precisely those cells — never a blanket null, even
+  // when the local release itself IS agent-wide (cell:null there is safe:
+  // reservations.json rows already carry `agent`, so it can never touch
+  // another agent's row; the ledger has no such field, so it needs the
+  // narrower, derived scope instead).
+  const affectedCells = [
+    ...new Set(
+      listReservations(root, { activeOnly: true })
+        .filter((r) => r.agent === agent && (!cell || r.cell === cell))
+        .map((r) => r.cell)
+        .filter(Boolean),
+    ),
+  ];
+
+  const result = await release(root, { agent, cell });
 
   // xwh-2: also clear this checkout's mirrored entries in the shared ledger
   // — same topology as the reserve side, so a release never leaves a stale
@@ -1190,8 +1216,10 @@ async function handleReservationsRelease(root, flags) {
   const topology = resolveHoldTopology(root);
   let holdsReleased = 0;
   if (topology) {
-    const holdsResult = await releaseHolds(topology.mainRoot, { holder: topology.holder, cell });
-    holdsReleased = holdsResult.released;
+    for (const affectedCell of affectedCells) {
+      const holdsResult = await releaseHolds(topology.mainRoot, { holder: topology.holder, cell: affectedCell });
+      holdsReleased += holdsResult.released;
+    }
   }
 
   return {

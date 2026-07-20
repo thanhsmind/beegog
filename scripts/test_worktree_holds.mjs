@@ -263,6 +263,41 @@ check('release clears this checkout\'s mirrored ledger entries', () => {
   assert(listJson.cross_worktree.length === 0, 'a released hold must not appear in the active cross_worktree list');
 });
 
+check(
+  'release --agent (no --cell) only clears THAT agent\'s own mirrored cell(s) — never a different agent/cell sharing the same holder (regression: caught live, a same-checkout agent-wide release once wiped out a concurrent agent\'s active mirrored holds too, because a ledger row has no agent field, only holder+cell)',
+  () => {
+    const root = trackCleanup(makeOrdinaryRepo());
+    // Two DIFFERENT agents, two DIFFERENT cells, same ordinary checkout —
+    // both mirror under the SAME holder ('main'), exactly the shared-holder
+    // shape that made the original bug possible.
+    beeJson(root, ['reservations', 'reserve', '--agent', 'agent-one', '--cell', 'cell-one', '--path', 'src/one']);
+    beeJson(root, ['reservations', 'reserve', '--agent', 'agent-two', '--cell', 'cell-two', '--path', 'src/two']);
+    const before = readLedger(root);
+    assert(before.holds.length === 2, `sanity: expected 2 mirrored holds before release, got ${before.holds.length}`);
+
+    // agent-one releases WITHOUT --cell (the exact shape that regressed).
+    const { r, json } = beeJson(root, ['reservations', 'release', '--agent', 'agent-one']);
+    assert(r.status === 0, `release exited ${r.status}: ${r.stdout}${r.stderr}`);
+    assert(json.holds_released === 1, `expected holds_released:1 (only agent-one's own cell), got ${JSON.stringify(json.holds_released)}`);
+
+    const after = readLedger(root);
+    const cellOneHold = after.holds.find((h) => h.cell === 'cell-one');
+    const cellTwoHold = after.holds.find((h) => h.cell === 'cell-two');
+    assert(cellOneHold && cellOneHold.released_at !== null, 'agent-one\'s own mirrored hold (cell-one) should be released');
+    assert(cellTwoHold && cellTwoHold.released_at === null, 'agent-two\'s mirrored hold (cell-two) must survive agent-one\'s release untouched');
+
+    const { json: listJson } = beeJson(root, ['reservations', 'list']);
+    assert(
+      listJson.cross_worktree.some((h) => h.cell === 'cell-two'),
+      `agent-two's cell-two hold should still be active in cross_worktree, got ${JSON.stringify(listJson.cross_worktree)}`,
+    );
+    assert(
+      !listJson.cross_worktree.some((h) => h.cell === 'cell-one'),
+      'agent-one\'s cell-one hold should no longer be active in cross_worktree',
+    );
+  },
+);
+
 // ─── case 4: sweep-prunes ───────────────────────────────────────────────────
 
 check('sweep prunes TTL-expired ledger entries', () => {
