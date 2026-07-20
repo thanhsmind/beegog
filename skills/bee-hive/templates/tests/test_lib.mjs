@@ -9,6 +9,15 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
+import {
+  makeTempRepo,
+  makeCell,
+  check,
+  assert,
+  assertThrows,
+  assertRejects,
+  printSummaryAndExit,
+} from '../../../../scripts/lib/test-fixture.mjs';
 
 const metadataParityTest = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -159,95 +168,9 @@ import {
   rankClusters,
 } from '../lib/feedback.mjs';
 
-let passed = 0;
-let failed = 0;
-
-function recordPass(name) {
-  passed += 1;
-  console.log(`PASS  ${name}`);
-}
-
-function recordFailure(name, error) {
-  failed += 1;
-  console.log(`FAIL  ${name}`);
-  console.log(`      ${error instanceof Error ? error.message : error}`);
-}
-
-function check(name, fn) {
-  try {
-    const result = fn();
-    if (result && typeof result.then === 'function') {
-      return result.then(
-        () => recordPass(name),
-        (error) => recordFailure(name, error),
-      );
-    }
-    recordPass(name);
-  } catch (error) {
-    recordFailure(name, error);
-  }
-}
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-function assertThrows(fn, needle, message) {
-  try {
-    fn();
-  } catch (error) {
-    const text = error instanceof Error ? error.message : String(error);
-    assert(
-      text.toLowerCase().includes(needle.toLowerCase()),
-      `${message} — threw, but message "${text}" does not mention "${needle}"`,
-    );
-    return;
-  }
-  throw new Error(`${message} — expected an error, none thrown`);
-}
-
-// The async sibling of assertThrows (msh-5): startFeature (lib/state.mjs)
-// now wraps its body in withStoreLock, so its refusals reject a Promise
-// instead of throwing synchronously — same message-substring contract.
-async function assertRejects(fn, needle, message) {
-  try {
-    await fn();
-  } catch (error) {
-    const text = error instanceof Error ? error.message : String(error);
-    assert(
-      text.toLowerCase().includes(needle.toLowerCase()),
-      `${message} — threw, but message "${text}" does not mention "${needle}"`,
-    );
-    return;
-  }
-  throw new Error(`${message} — expected an error, none thrown`);
-}
-
 // ─── temp repo setup ────────────────────────────────────────────────────────
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-test-'));
-fs.mkdirSync(path.join(root, '.git'), { recursive: true });
-fs.mkdirSync(path.join(root, '.bee'), { recursive: true });
-writeJsonAtomic(path.join(root, '.bee', 'onboarding.json'), {
-  schema_version: '1.0',
-  bee_version: '0.1.0',
-});
-fs.mkdirSync(path.join(root, 'src'), { recursive: true });
-fs.mkdirSync(path.join(root, 'src', 'deep', 'nested'), { recursive: true });
-
-function makeCell(id, extra = {}) {
-  return {
-    id,
-    feature: 'demo',
-    title: `Cell ${id}`,
-    lane: 'small',
-    status: 'open',
-    deps: [],
-    action: 'Do the thing per D1.',
-    verify: 'node -e "process.exit(0)"',
-    ...extra,
-  };
-}
+const root = makeTempRepo();
 
 // ─── state ──────────────────────────────────────────────────────────────────
 
@@ -10577,5 +10500,4 @@ await check('worktree-holds: mirrorHold validates required fields (path, holder)
 fs.rmSync(detectRoot, { recursive: true, force: true });
 fs.rmSync(root, { recursive: true, force: true });
 fs.rmSync(siRoot, { recursive: true, force: true });
-console.log(`\n${passed} passed, ${failed} failed`);
-process.exit(failed > 0 ? 1 : 0);
+printSummaryAndExit();
