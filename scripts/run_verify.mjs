@@ -18,6 +18,7 @@
 // only printed when a suite fails, so a green run stays quiet.
 
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -25,73 +26,99 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
 
-// ─── suite list ─────────────────────────────────────────────────────────
-// Exact same coverage as the old `&&`-chain in .bee/config.json
-// commands.verify — same scripts, same args, nothing added/dropped/renamed.
-// Each entry is [script, ...args].
-export const SUITES = [
-  ["skills/bee-hive/templates/tests/test_cli_state.mjs"],
-  ["skills/bee-hive/templates/tests/test_cli_cells.mjs"],
-  ["skills/bee-hive/templates/tests/test_state.mjs"],
-  ["skills/bee-hive/templates/tests/test_guards.mjs"],
-  ["skills/bee-hive/templates/tests/test_backlog_capture.mjs"],
-  ["skills/bee-hive/templates/tests/test_misc.mjs"],
-  ["skills/bee-hive/templates/tests/test_cells.mjs"],
-  ["skills/bee-hive/templates/tests/test_reservations.mjs"],
-  ["skills/bee-hive/templates/tests/test_claims.mjs"],
-  ["skills/bee-hive/templates/tests/test_feedback.mjs"],
-  ["skills/bee-hive/templates/tests/test_reviews.mjs"],
-  ["scripts/test_skill_render.mjs"],
-  ["skills/bee-hive/scripts/test_onboard_bee.mjs"],
-  ["skills/bee-hive/scripts/test_plugin_distribution.mjs"],
-  ["scripts/test_portable_paths.mjs"],
-  ["hooks/test_model_guard.mjs"],
-  ["hooks/test_write_guard.mjs"],
-  ["hooks/test_hook_contracts.mjs"],
-  ["skills/bee-hive/templates/tests/test_bee_cli.mjs"],
-  ["skills/bee-hive/templates/tests/test_recovery.mjs"],
-  ["scripts/test_verify_manifest.mjs"],
-  ["scripts/test_release_tuple.mjs"],
-  ["scripts/test_bump_version.mjs"],
-  ["scripts/test_lib_mirror.mjs"],
-  ["scripts/test_state_write_concurrency.mjs"],
-  ["skills/bee-hive/scripts/test_split_brain_regression.mjs"],
+// ─── suite discovery (cs-4, contention-split) ──────────────────────────────
+// This array used to be a manually maintained list: every feature adding a
+// test suite had to edit these exact lines, making it a per-feature
+// contention point (observed live: exec-xwh1 vs exec-cs3 collided here,
+// 2026-07-20). Suites are now DISCOVERED by convention — glob a fixed set of
+// directory roots for `test_*.mjs` files — so adding a new suite under one
+// of these roots requires ZERO edits to this file.
+//
+// Roots are exactly the directories the old hand-written array drew suites
+// from; nothing is lost (docs/history/contention-split/reports/cs-4.md
+// records the old-vs-discovered set diff captured at flip time).
+const DISCOVERY_ROOTS = [
+  "scripts",
+  "skills/bee-hive/templates/tests",
+  "skills/bee-hive/scripts",
+  "hooks",
+];
+
+// `test_*.mjs` files under a discovery root that are NOT independent,
+// standalone suites. Every entry needs a reason in its comment — an
+// unexplained exclusion is a suite silently not run again, exactly the bug
+// this discovery mechanism replaces the hand-written array to prevent.
+const EXCLUDE = new Set([
+  // Fails standalone today (12 passed / 9 failed — hooks/bee-write-guard.mjs
+  // guard-dispatch logic returns allow instead of deny in several cases).
+  // Discovered live while building cs-4's convention-based glob; it was NOT
+  // in the old hand-written SUITES array either, so excluding it here is not
+  // a regression cs-4 introduces — it continues the pre-cs-4 status quo,
+  // now visible and tracked (see cs-4 report) instead of silently absent.
+  // Needs its own fix-first cell on hooks/bee-write-guard.mjs before it can
+  // rejoin the pool.
+  "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
+]);
+
+// A handful of small scripts predate the `test_*.mjs` naming convention and
+// were already part of commands.verify by hand; not worth renaming just to
+// fit the glob, so they stay explicit extra entries alongside discovery.
+const EXTRA_SUITES = [
   ["scripts/release_manifest.mjs", "--selftest"],
   ["scripts/release_manifest.mjs", "--check"],
-  ["scripts/test_gate_bypass_doctrine.mjs"],
   ["scripts/census_stale_spawn_syntax.mjs"],
   ["scripts/test_installers_e2e.mjs", "--installer", "bash"],
-  ["scripts/test_conformance.mjs"],
-  ["scripts/test_agents_budget.mjs"],
-  ["scripts/test_resolveroots_p40.mjs"],
-  ["scripts/test_worktree_store.mjs"],
-  ["scripts/test_worktree_grant_resolve.mjs"],
-  ["scripts/test_worktree_cli.mjs"],
-  ["scripts/test_worktree_holds.mjs"],
-  ["scripts/test_config_validate.mjs"],
-  ["scripts/test_dispatch_prepare.mjs"],
-  ["scripts/test_native_probe.mjs"],
-  ["scripts/test_store_lock.mjs"],
-  ["scripts/test_claim_race.mjs"],
-  ["scripts/test_reservation_race.mjs"],
-  ["scripts/test_worktree_holds_race.mjs"],
-  ["scripts/test_heartbeat_touch.mjs"],
-  ["scripts/test_render_race.mjs"],
 ];
+
+// scripts/test_installers_e2e.mjs is discovered by the glob too (it matches
+// `test_*.mjs`); its args variant is supplied via EXTRA_SUITES above, so the
+// bare no-args discovery hit for this one path is dropped to avoid running
+// it twice.
+const ARGS_OVERRIDE = new Set(["scripts/test_installers_e2e.mjs"]);
+
+function discoverSuites() {
+  const found = [];
+  for (const root of DISCOVERY_ROOTS) {
+    const dir = path.join(REPO_ROOT, root);
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!entry.name.startsWith("test_") || !entry.name.endsWith(".mjs")) continue;
+      const rel = `${root}/${entry.name}`;
+      if (EXCLUDE.has(rel) || ARGS_OVERRIDE.has(rel)) continue;
+      found.push([rel]);
+    }
+  }
+  found.sort((a, b) => a[0].localeCompare(b[0]));
+  return [...found, ...EXTRA_SUITES];
+}
+
+export const SUITES = discoverSuites();
 
 // Timing/lock/fork-racer suites: measured flaky under concurrent CPU
 // contention with other suites (not with each other). Run as ONE sequential
 // scheduling unit so they never overlap each other, while that unit still
 // runs concurrently with everything else in the pool.
-const SERIAL_SENSITIVE = new Set([
-  "scripts/test_store_lock.mjs",
-  "scripts/test_claim_race.mjs",
-  "scripts/test_reservation_race.mjs",
-  "scripts/test_worktree_holds_race.mjs",
-  "scripts/test_state_write_concurrency.mjs",
+//
+// Membership is convention-based: a suite whose filename ends in `_race.mjs`,
+// `_lock.mjs`, or `_concurrency.mjs` is serial-sensitive by construction. A
+// small number of pre-existing serial suites don't match that naming
+// convention; they are listed explicitly below.
+const SERIAL_NAME_PATTERN = /_(race|lock|concurrency)\.mjs$/;
+const SERIAL_EXCEPTIONS = new Set([
   "scripts/test_heartbeat_touch.mjs",
-  "scripts/test_render_race.mjs",
 ]);
+
+const SERIAL_SENSITIVE = new Set(
+  SUITES.map((entry) => entry[0]).filter(
+    (p) => SERIAL_NAME_PATTERN.test(p) || SERIAL_EXCEPTIONS.has(p),
+  ),
+);
 
 function suiteLabel(entry) {
   return [entry[0], ...entry.slice(1)].join(" ");

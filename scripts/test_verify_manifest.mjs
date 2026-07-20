@@ -7,8 +7,25 @@
 //
 // commands.verify now points at scripts/run_verify.mjs (a parallel runner)
 // instead of an inline `&&`-chain string, so the check below loads that
-// runner's exported SUITES list and asserts every mandatory suite name
-// appears in it — same guarantee, new source of truth.
+// runner's exported SUITES list.
+//
+// cs-4 (contention-split) flip: run_verify.mjs's SUITES array is no longer
+// hand-written — it's discovered by globbing `test_*.mjs` under a fixed set
+// of roots, which is exactly why the OLD exact-membership check here (a
+// mandatory path must appear verbatim in a hand-maintained array) stopped
+// being the right shape: there is no hand-maintained array left to drift.
+// The guard now asserts two INDEPENDENT things instead:
+//   (1) floor count — the discovered suite total never silently drops below
+//       a frozen historical floor (catches suites vanishing in bulk, e.g. a
+//       discovery root typo'd or a directory emptied);
+//   (2) per-suite rename/drop protection for a curated MANDATORY_SUITES
+//       list — each must (a) still exist on disk under its recorded path
+//       (a rename or delete is caught even though discovery would just
+//       quietly stop finding it) and (b) still appear in the SUITES array
+//       run_verify.mjs actually exports (catches the one way a suite can
+//       exist on disk yet never run: landing in run_verify.mjs's own
+//       EXCLUDE list without anyone updating this guard).
+// A deleted or excluded mandatory suite still fails loudly either way.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -23,7 +40,9 @@ const RUNNER_PATH = path.join(REPO_ROOT, "scripts", "run_verify.mjs");
 // explicit repo-relative paths (cs-2b: the old test_lib.mjs monolith is gone,
 // split across six files; substring matching on bare basenames like "test_lib"
 // is retired in favor of exact membership so a rename or a near-miss path
-// can never silently satisfy an entry it was not meant to).
+// can never silently satisfy an entry it was not meant to). Unchanged by the
+// cs-4 discovery flip — this list is the curated subset that gets the
+// stronger per-suite protection on top of the floor count below.
 const MANDATORY_SUITES = [
   "skills/bee-hive/templates/tests/test_cli_state.mjs",
   "skills/bee-hive/templates/tests/test_cli_cells.mjs",
@@ -51,40 +70,88 @@ const MANDATORY_SUITES = [
   "skills/bee-hive/templates/tests/test_recovery.mjs",
 ];
 
+// Floor count: total discovered suites must never silently drop below this
+// number. Frozen at the count run_verify.mjs actually discovered the moment
+// this guard flipped from hand-listing to convention-based discovery (cs-4,
+// 2026-07-20): 47 suites from the old hand-written array, plus 3 real
+// `test_*.mjs` files discovery found sitting in the repo that the old array
+// had silently never run (scripts/test_config_samples_safe.mjs,
+// skills/bee-hive/templates/tests/test_perf.mjs, hooks/test_bypass_stop_net.mjs)
+// = 50. Bump this UP whenever a suite is intentionally added; it should
+// never need to go down.
+const SUITE_FLOOR_COUNT = 50;
+
 /**
- * Checks a flat list of suite path strings (e.g.
- * "skills/bee-hive/templates/tests/test_cells.mjs") for every mandatory
- * suite. Returns { ok, missing } — missing is the list of full suite paths
- * (in MANDATORY_SUITES order) that are not EXACTLY present in suitePaths
- * (no substring matching — a mandatory path must appear verbatim).
+ * Checks a discovered suite list against a mandatory list and a floor count.
+ * `suitePaths` is a flat list of repo-relative suite path strings (e.g.
+ * "skills/bee-hive/templates/tests/test_cells.mjs"). Returns
+ * { ok, belowFloor, count, missingOnDisk, missingFromSuites } —
+ * missingOnDisk / missingFromSuites are `mandatory`-ordered subsets that
+ * failed each respective check (no substring matching — a mandatory path
+ * must appear verbatim).
  */
-function checkSuiteList(suitePaths) {
-  const present = new Set(Array.isArray(suitePaths) ? suitePaths : []);
-  const missing = MANDATORY_SUITES.filter((suite) => !present.has(suite));
-  return { ok: missing.length === 0, missing };
+function checkDiscovery(suitePaths, mandatory, floor) {
+  const paths = Array.isArray(suitePaths) ? suitePaths : [];
+  const present = new Set(paths);
+
+  const belowFloor = paths.length < floor;
+  const missingOnDisk = mandatory.filter(
+    (suite) => !fs.existsSync(path.join(REPO_ROOT, suite)),
+  );
+  const missingFromSuites = mandatory.filter((suite) => !present.has(suite));
+
+  return {
+    ok: !belowFloor && missingOnDisk.length === 0 && missingFromSuites.length === 0,
+    belowFloor,
+    count: paths.length,
+    missingOnDisk,
+    missingFromSuites,
+  };
 }
 
-// ─── internal self-test: prove the checker actually bites ─────────────────
-// Feed the checker a synthetic suite list with test_bee_cli's exact path
-// removed (built from the mandatory list itself, never from the real runner)
-// and assert it is flagged missing. This never mutates the real runner — it
-// only proves checkSuiteList() is not a rubber stamp before trusting it below.
+// ─── internal self-test: prove the checker actually bites, all three ways ─
+// Never touches the real runner or the real MANDATORY_SUITES — synthetic
+// data only, so a rubber-stamp checker can't hide behind reality happening
+// to be fine.
 {
-  const bitten = "skills/bee-hive/templates/tests/test_bee_cli.mjs";
-  const syntheticSuites = MANDATORY_SUITES.filter((s) => s !== bitten);
+  let selfTestFailed = false;
 
-  const selfTestResult = checkSuiteList(syntheticSuites);
+  // (a) floor count: fewer discovered suites than the floor requires.
+  const floorResult = checkDiscovery(["a.mjs", "b.mjs", "c.mjs"], [], 10);
+  if (floorResult.ok || !floorResult.belowFloor) {
+    console.error("FAIL test_verify_manifest: internal self-test did not catch a suite count below the floor");
+    console.error(`      checker result: ${JSON.stringify(floorResult)}`);
+    selfTestFailed = true;
+  }
 
-  if (selfTestResult.ok || !selfTestResult.missing.includes(bitten)) {
-    console.error(
-      "FAIL test_verify_manifest: internal self-test did not catch a synthetic suite list with test_bee_cli removed",
-    );
-    console.error(`      synthetic suite list: ${JSON.stringify(syntheticSuites)}`);
-    console.error(`      checker result: ${JSON.stringify(selfTestResult)}`);
+  // (b) membership: a mandatory suite that exists on disk (this very file)
+  // but is missing from the discovered list.
+  const presentButUnwired = "scripts/test_verify_manifest.mjs";
+  const dummyFloorSuites = Array.from({ length: 10 }, (_, i) => `dummy_${i}.mjs`);
+  const membershipResult = checkDiscovery(dummyFloorSuites, [presentButUnwired], 10);
+  if (membershipResult.ok || !membershipResult.missingFromSuites.includes(presentButUnwired)) {
+    console.error("FAIL test_verify_manifest: internal self-test did not catch a mandatory suite missing from the discovered SUITES array");
+    console.error(`      checker result: ${JSON.stringify(membershipResult)}`);
+    selfTestFailed = true;
+  }
+
+  // (c) on-disk existence: a mandatory suite path that does not exist,
+  // even though it IS present in the discovered list (renamed/deleted, but
+  // some stale entry still names the old path).
+  const neverExists = "scripts/__cs4_selftest_never_exists__.mjs";
+  const dummyFloorSuitesWithGhost = [neverExists, ...Array.from({ length: 9 }, (_, i) => `dummy_${i}.mjs`)];
+  const onDiskResult = checkDiscovery(dummyFloorSuitesWithGhost, [neverExists], 10);
+  if (onDiskResult.ok || !onDiskResult.missingOnDisk.includes(neverExists)) {
+    console.error("FAIL test_verify_manifest: internal self-test did not catch a mandatory suite missing on disk");
+    console.error(`      checker result: ${JSON.stringify(onDiskResult)}`);
+    selfTestFailed = true;
+  }
+
+  if (selfTestFailed) {
     process.exit(1);
   }
 
-  console.log("PASS test_verify_manifest: internal self-test — checker correctly flags a synthetic suite list missing test_bee_cli");
+  console.log("PASS test_verify_manifest: internal self-test — checker correctly flags floor-count, membership, and on-disk-existence regressions");
 }
 
 // ─── real check: THIS repo's real .bee/config.json + run_verify.mjs ───────
@@ -135,11 +202,19 @@ if (!Array.isArray(suites) || suites.length === 0) {
 
 const suitePaths = suites.map((entry) => (Array.isArray(entry) ? entry[0] : entry));
 
-const result = checkSuiteList(suitePaths);
+const result = checkDiscovery(suitePaths, MANDATORY_SUITES, SUITE_FLOOR_COUNT);
 if (!result.ok) {
-  console.error(`FAIL test_verify_manifest: run_verify.mjs SUITES is missing ${result.missing.length} mandatory suite(s): ${result.missing.join(", ")}`);
-  console.error(`      SUITES: ${JSON.stringify(suitePaths)}`);
+  if (result.belowFloor) {
+    console.error(`FAIL test_verify_manifest: run_verify.mjs discovered only ${result.count} suite(s), below the frozen floor of ${SUITE_FLOOR_COUNT}`);
+  }
+  if (result.missingOnDisk.length > 0) {
+    console.error(`FAIL test_verify_manifest: ${result.missingOnDisk.length} mandatory suite(s) no longer exist on disk: ${result.missingOnDisk.join(", ")}`);
+  }
+  if (result.missingFromSuites.length > 0) {
+    console.error(`FAIL test_verify_manifest: ${result.missingFromSuites.length} mandatory suite(s) exist on disk but are missing from run_verify.mjs's discovered SUITES array: ${result.missingFromSuites.join(", ")}`);
+  }
+  console.error(`      SUITES (${suitePaths.length}): ${JSON.stringify(suitePaths)}`);
   process.exit(1);
 }
 
-console.log(`PASS test_verify_manifest: run_verify.mjs SUITES contains all ${MANDATORY_SUITES.length} mandatory suites, exact-path matched (${MANDATORY_SUITES.join(", ")})`);
+console.log(`PASS test_verify_manifest: run_verify.mjs discovered ${result.count} suites (floor ${SUITE_FLOOR_COUNT}); all ${MANDATORY_SUITES.length} mandatory suites present on disk and wired in, exact-path matched (${MANDATORY_SUITES.join(", ")})`);

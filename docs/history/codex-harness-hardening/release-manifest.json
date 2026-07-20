@@ -2005,7 +2005,7 @@
     },
     {
       "path": "scripts/test_verify_manifest.mjs",
-      "sha256": "e0ba065734ed066f677491a0c3f62d444b89ed3fa83fa354bf3744724fd77a4f",
+      "sha256": "002c13723a2066373979c0425fa482f7628db22ead32945e299dce225d2a895a",
       "mode": "644",
       "role": "distribution_test"
     },
