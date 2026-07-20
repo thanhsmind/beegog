@@ -113,6 +113,17 @@ in the MAIN checkout (release always runs in main). The rule lives in bee-hive's
 and AGENTS.md critical rule 14; the existing guards (holds, live-owner lanes, gates) keep
 enforcing the hard parts.
 
+**Visibility (worktree-ux, 2026-07-21, GH #30/#31):** `bee status` inside an UNGRANTED
+linked worktree prints a loud notice (text + `worktree_notice` in JSON) that the tree
+SHARES the main checkout's store — same feature/phase/claims, no isolation — naming both
+remedies (`worktree new` from main, or `worktree register` for the existing tree); granted
+worktrees and ordinary checkouts are byte-unchanged. `worktree new` success output carries
+an explicit `next_step`: open a session with cwd at the created path; merge back later via
+`worktree merge`. A write denied by containment that targets a granted sibling worktree
+names that worktree and both remedies instead of the generic containment text (message
+only — the deny itself is unchanged; any grants-read error falls back to the generic
+message, never an allow).
+
 **Lane-first refinement (cross-worktree-holds D7, 2026-07-20):** exploring, planning, and
 validating do not touch source — a new feature in an occupied checkout starts as a per-feature
 LANE on the shared store (full live coordination: claims, reservations, holds all visible),

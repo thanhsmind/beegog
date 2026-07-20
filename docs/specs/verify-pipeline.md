@@ -69,13 +69,21 @@ same test artifact unless they genuinely change the same module.
 
 ## Open Gaps
 
-- `test_bee_write_guard_hook.mjs` (9/21 failing vs the live hook) awaits
-  its fix-first cell: net-first freeze of current hook behavior, then a
-  branch-by-branch verdict of test-wrong vs hook-wrong (P1 backlog,
-  2026-07-20).
 - The CLI dispatcher (4.4k lines, all handlers inline) remains the last
   structural hotspot; handler extraction is deferred to its own feature
   (contention-split D5).
+
+## Resolved Gaps
+
+- The guard-hook suite's 9/21 failures (P1, 2026-07-20) were TEST-WRONG with
+  one shared cause: the fixture's hand-maintained lib-module list under-
+  vendored the hook's import closure (10 listed vs 17 needed), so the hook's
+  first dynamic import threw and its documented fail-open caught every deny
+  path. The hook had no hole. Fixed 2026-07-21 (write-guard-hook-fix wgf-1):
+  the fixture now vendors the lib directory wholesale — killing the stale-
+  hand-list class, which had bitten at least twice — and the suite runs in
+  CI for the first time. Corollary rule: **R6 — a fixture that mirrors a
+  module tree copies the tree, never a hand-maintained file list.**
 
 ## Pointers (implementation)
 
