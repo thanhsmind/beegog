@@ -2,6 +2,13 @@
 
 - **Status:** active — GH #22 P1-7, decision D9 + advisor R7.
 - **Date:** 2026-07-19.
+- **Disposition (hardening-7, decision `e9c23b0a`):** the 1.7.3 roadmap's proposed "tiny-direct"
+  execution mode was deliberately **not built** — it is superseded by this protocol. Arm A
+  (inline) already measures exactly the no-dispatched-worker alternative a tiny-direct mode would
+  have reintroduced; building it separately would duplicate this A/B's own measurement and
+  confound the comparison (see "The two arms" below: mixing shapes is out of scope for exactly
+  this reason). No new execution mode exists or is planned — this A/B stays the single mechanism
+  for deciding whether tiny cells dispatch a worker or run inline.
 - **Source:** AO14 made tiny/small cell *implementation* itself ride one dispatched execution
   worker, never in-session — but that call was never measured against the inline alternative it
   replaced. This protocol collects the comparison from real usage instead of arguing it from

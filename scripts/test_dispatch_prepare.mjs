@@ -222,9 +222,11 @@ await check("kind cell against a cli-shaped generation slot returns the typed cl
     title: "Demo cell",
     action: "Do the demo thing.",
     verify: 'node -e "process.exit(0)"',
+    status: "claimed",
+    trace: { worker: "exec-demo-1" },
   });
 
-  const result = await runBee(["dispatch", "prepare", "--runtime", "claude", "--kind", "cell", "--cell", "demo-1", "--json"], root);
+  const result = await runBee(["dispatch", "prepare", "--runtime", "claude", "--kind", "cell", "--cell", "demo-1", "--worker", "exec-demo-1", "--json"], root);
   assert(result.status === 0, `expected exit 0 (a typed refusal is not a crash), got ${result.status}: ${result.stderr}`);
   const out = JSON.parse(result.stdout);
   assert(out.ok === false, `expected ok:false, got ${JSON.stringify(out)}`);
@@ -246,9 +248,11 @@ await check("kind cell on a model-shaped generation slot loads the cell and embe
     title: "Implement the widget",
     action: "Implement the widget end to end.",
     verify: 'node -e "process.exit(0)"',
+    status: "claimed",
+    trace: { worker: "exec-demo-7" },
   });
 
-  const out = await prepareOk(["--runtime", "claude", "--kind", "cell", "--cell", "demo-7"], root);
+  const out = await prepareOk(["--runtime", "claude", "--kind", "cell", "--cell", "demo-7", "--worker", "exec-demo-7"], root);
   assert(out.tool === "Agent", `expected tool Agent, got ${JSON.stringify(out)}`);
   assert(out.payload.prompt.includes("demo-7"), `expected the cell id in the prompt, got ${out.payload.prompt}`);
   assert(out.payload.prompt.includes("widget-feature"), `expected the feature in the prompt, got ${out.payload.prompt}`);
@@ -267,6 +271,132 @@ await check("kind cell against an unknown cell id throws (non-zero exit)", async
   writeConfig(root, { claude: { extraction: "haiku", generation: "sonnet", review: "opus" } });
   const result = await runBee(["dispatch", "prepare", "--runtime", "claude", "--kind", "cell", "--cell", "ghost-1", "--json"], root);
   assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
+});
+
+await check("kind cell without --worker throws (non-zero exit, no payload)", async () => {
+  const root = mkFixture("dispatch-prepare-cell-missing-worker-");
+  writeConfig(root, { claude: { extraction: "haiku", generation: "sonnet", review: "opus" } });
+  writeCellFixture(root, {
+    id: "demo-8",
+    feature: "demo",
+    title: "Demo cell",
+    action: "Do the demo thing.",
+    verify: 'node -e "process.exit(0)"',
+    status: "claimed",
+    trace: { worker: "exec-demo-8" },
+  });
+  const result = await runBee(["dispatch", "prepare", "--runtime", "claude", "--kind", "cell", "--cell", "demo-8", "--json"], root);
+  assert(result.status !== 0, `expected non-zero exit, got ${result.status}`);
+});
+
+// ─── hardening-7: claim-ownership guard (dispatch-prepare.mjs
+// checkCellClaimOwnership) — mirrors msh-4's audited-door pattern, but
+// checks the CELL RECORD's own status/trace.worker (never the claims.mjs
+// session store, which dispatch prepare never touches). ───────────────────
+
+await check("hardening-7: kind cell against an unclaimed (open) cell is refused, naming its actual status", async () => {
+  const root = mkFixture("dispatch-prepare-not-claimed-");
+  writeConfig(root, { claude: { extraction: "haiku", generation: "sonnet", review: "opus" } });
+  writeCellFixture(root, {
+    id: "open-1",
+    feature: "demo",
+    title: "Open cell",
+    action: "Do the demo thing.",
+    verify: 'node -e "process.exit(0)"',
+    // status defaults to "open" (writeCellFixture default) — never claimed.
+  });
+
+  const result = await runBee(["dispatch", "prepare", "--runtime", "claude", "--kind", "cell", "--cell", "open-1", "--worker", "exec-open-1", "--json"], root);
+  assert(result.status === 0, `expected exit 0 (a typed refusal is not a crash), got ${result.status}: ${result.stderr}`);
+  const out = JSON.parse(result.stdout);
+  assert(out.ok === false && out.type === "refused" && out.reason === "claim_ownership", `expected the typed claim_ownership refusal, got ${JSON.stringify(out)}`);
+  assert(out.code === "not_claimed", `expected code not_claimed, got ${JSON.stringify(out)}`);
+  assert(out.status === "open", `expected the actual status "open" named, got ${JSON.stringify(out)}`);
+  assert(out.owner === null, `expected owner null (never claimed), got ${JSON.stringify(out)}`);
+  assert(!("tool" in out) && !("payload" in out), `a refusal must never carry a payload, got ${JSON.stringify(out)}`);
+});
+
+await check("hardening-7: kind cell claimed by a DIFFERENT worker is refused, naming the actual owner", async () => {
+  const root = mkFixture("dispatch-prepare-not-owner-");
+  writeConfig(root, { claude: { extraction: "haiku", generation: "sonnet", review: "opus" } });
+  writeCellFixture(root, {
+    id: "owned-1",
+    feature: "demo",
+    title: "Owned cell",
+    action: "Do the demo thing.",
+    verify: 'node -e "process.exit(0)"',
+    status: "claimed",
+    trace: { worker: "exec-owner-a" },
+  });
+
+  const result = await runBee(["dispatch", "prepare", "--runtime", "claude", "--kind", "cell", "--cell", "owned-1", "--worker", "exec-owner-b", "--json"], root);
+  assert(result.status === 0, `expected exit 0 (a typed refusal is not a crash), got ${result.status}: ${result.stderr}`);
+  const out = JSON.parse(result.stdout);
+  assert(out.ok === false && out.type === "refused" && out.reason === "claim_ownership", `expected the typed claim_ownership refusal, got ${JSON.stringify(out)}`);
+  assert(out.code === "not_owner", `expected code not_owner, got ${JSON.stringify(out)}`);
+  assert(out.owner === "exec-owner-a", `expected the actual owner "exec-owner-a" named, got ${JSON.stringify(out)}`);
+  assert(!("tool" in out) && !("payload" in out), `a refusal must never carry a payload, got ${JSON.stringify(out)}`);
+});
+
+await check("hardening-7: kind cell claimed by the MATCHING worker proceeds unaffected — a real payload, no refusal", async () => {
+  const root = mkFixture("dispatch-prepare-matching-owner-");
+  writeConfig(root, { claude: { extraction: "haiku", generation: "sonnet", review: "opus" } });
+  writeCellFixture(root, {
+    id: "owned-2",
+    feature: "demo",
+    title: "Owned cell",
+    action: "Do the demo thing.",
+    verify: 'node -e "process.exit(0)"',
+    status: "claimed",
+    trace: { worker: "exec-owner-a" },
+  });
+
+  const out = await prepareOk(["--runtime", "claude", "--kind", "cell", "--cell", "owned-2", "--worker", "exec-owner-a"], root);
+  assert(out.tool === "Agent", `expected a real Agent payload for the matching owner, got ${JSON.stringify(out)}`);
+  const line = readLastJsonl(path.join(root, ".bee", "logs", "dispatch.jsonl"));
+  assert(!("ownership_override" in line), `a matching-owner dispatch must never carry an ownership_override, got ${JSON.stringify(line)}`);
+});
+
+await check("hardening-7: --force-ownership overrides a not_owner refusal and appends an audited ownership_override record", async () => {
+  const root = mkFixture("dispatch-prepare-force-ownership-");
+  writeConfig(root, { claude: { extraction: "haiku", generation: "sonnet", review: "opus" } });
+  writeCellFixture(root, {
+    id: "owned-3",
+    feature: "demo",
+    title: "Owned cell",
+    action: "Do the demo thing.",
+    verify: 'node -e "process.exit(0)"',
+    status: "claimed",
+    trace: { worker: "exec-owner-a" },
+  });
+
+  const out = await prepareOk(["--runtime", "claude", "--kind", "cell", "--cell", "owned-3", "--worker", "exec-rescuer", "--force-ownership"], root);
+  assert(out.tool === "Agent", `expected --force-ownership to still build a real payload, got ${JSON.stringify(out)}`);
+  const line = readLastJsonl(path.join(root, ".bee", "logs", "dispatch.jsonl"));
+  assert(line && line.ownership_override, `expected an audited ownership_override record, got ${JSON.stringify(line)}`);
+  assert(line.ownership_override.forced_by === "exec-rescuer", `expected forced_by exec-rescuer, got ${JSON.stringify(line.ownership_override)}`);
+  assert(line.ownership_override.bypassed === true, `expected bypassed true (there WAS a real conflict), got ${JSON.stringify(line.ownership_override)}`);
+  assert(line.ownership_override.code === "not_owner", `expected code not_owner, got ${JSON.stringify(line.ownership_override)}`);
+  assert(line.ownership_override.owner_bypassed === "exec-owner-a", `expected owner_bypassed exec-owner-a, got ${JSON.stringify(line.ownership_override)}`);
+});
+
+await check("hardening-7: --force-ownership on an unclaimed cell also proceeds, audited with bypassed:true, code not_claimed", async () => {
+  const root = mkFixture("dispatch-prepare-force-ownership-unclaimed-");
+  writeConfig(root, { claude: { extraction: "haiku", generation: "sonnet", review: "opus" } });
+  writeCellFixture(root, {
+    id: "open-2",
+    feature: "demo",
+    title: "Open cell",
+    action: "Do the demo thing.",
+    verify: 'node -e "process.exit(0)"',
+    // never claimed
+  });
+
+  const out = await prepareOk(["--runtime", "claude", "--kind", "cell", "--cell", "open-2", "--worker", "exec-rescuer", "--force-ownership"], root);
+  assert(out.tool === "Agent", `expected --force-ownership to still build a real payload for an unclaimed cell, got ${JSON.stringify(out)}`);
+  const line = readLastJsonl(path.join(root, ".bee", "logs", "dispatch.jsonl"));
+  assert(line.ownership_override.code === "not_claimed", `expected code not_claimed, got ${JSON.stringify(line.ownership_override)}`);
+  assert(line.ownership_override.owner_bypassed === null, `expected owner_bypassed null (never claimed, nothing to name), got ${JSON.stringify(line.ownership_override)}`);
 });
 
 // ─── advisor kind resolves the ADVISOR model, never generation's ──────────
@@ -368,9 +498,11 @@ await check("prepare-time dispatch record for kind cell carries the cell id", as
     title: "Demo cell",
     action: "Do the demo thing.",
     verify: 'node -e "process.exit(0)"',
+    status: "claimed",
+    trace: { worker: "exec-demo-9" },
   });
 
-  await prepareOk(["--runtime", "claude", "--kind", "cell", "--cell", "demo-9"], root);
+  await prepareOk(["--runtime", "claude", "--kind", "cell", "--cell", "demo-9", "--worker", "exec-demo-9"], root);
   const line = readLastJsonl(path.join(root, ".bee", "logs", "dispatch.jsonl"));
   assert(line && line.cell === "demo-9", `expected cell demo-9 recorded, got ${JSON.stringify(line)}`);
 });

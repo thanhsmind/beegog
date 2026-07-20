@@ -489,9 +489,10 @@ await check('cell tier: validation, tierMix, and the ceiling scarcity warning', 
     assert(w && w.ceiling === 2 && w.tiered === 3 && w.pct === 67, `scarcity warns, got ${JSON.stringify(w)}`);
 
     // the orchestrator re-tiers at dispatch via setTier (decision 0016)
-    assertThrows(() => setTier(tRoot, 'c1', 'huge'), 'tier', 'setTier validates the tier');
-    setTier(tRoot, 'c1', 'generation');
-    setTier(tRoot, 'c4', 'generation');
+    // hardening-4b: setTier is now withStoreLock-wrapped (async).
+    await assertRejects(() => setTier(tRoot, 'c1', 'huge'), 'tier', 'setTier validates the tier');
+    await setTier(tRoot, 'c1', 'generation');
+    await setTier(tRoot, 'c4', 'generation');
     assert(readCell(tRoot, 'c1').tier === 'generation', 'setTier records the dispatch-time judgment');
     assert(ceilingScarcityWarning(tRoot) === null, 're-tiering routine cells down clears the warning');
   } finally {
@@ -2537,7 +2538,7 @@ await check('trace.semantic_judge entries survive cap and resist updateCell (app
   state.phase = 'swarming';
   state.approved_gates.execution = true;
   writeState(root, state);
-  claimCell(root, 'jr-2', 'worker-a');
+  await claimCell(root, 'jr-2', 'worker-a');
   await recordVerify(root, 'jr-2', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
   const capped = await capCell(root, 'jr-2', { files_changed: ['a.js'], outcome: 'shipped' });
   assert(
@@ -2555,7 +2556,7 @@ await check('trace.semantic_judge entries survive cap and resist updateCell (app
   assert(postCap.trace.semantic_judge.length === 2, 'recording after cap must append, not refuse');
   assert(postCap.status === 'capped', 'a PASS verdict recorded after cap must never mutate cell status');
 
-  assertThrows(
+  await assertRejects(
     () => updateCell(root, 'jr-2', { trace: { semantic_judge: [] } }),
     'frozen',
     'trace stays frozen wholesale at updateCell (F1 precedent) — semantic_judge cannot be wiped through the update door',
@@ -2618,7 +2619,7 @@ await check('validateJudgeVerdict rejects an inconsistent PASS (a FAIL check pre
 await check('recordJudgeVerdict: a NEEDS_REVISION verdict recorded against a capped cell reopens it to claimed (rework), logged in trace.reopened_for_rework; a NEEDS_REVISION on an open/claimed cell leaves status untouched; a PASS on a capped cell leaves it capped', async () => {
   // Case 1: NEEDS_REVISION on a CAPPED cell -> reopens to claimed.
   addCell(root, makeCell('jr-reopen-1'));
-  claimCell(root, 'jr-reopen-1', 'worker-e');
+  await claimCell(root, 'jr-reopen-1', 'worker-e');
   await recordVerify(root, 'jr-reopen-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
   await capCell(root, 'jr-reopen-1', { files_changed: ['a.js'], outcome: 'shipped' });
   const beforeReopen = readCell(root, 'jr-reopen-1');
@@ -2642,13 +2643,13 @@ await check('recordJudgeVerdict: a NEEDS_REVISION verdict recorded against a cap
 
   // Case 2b: NEEDS_REVISION on a CLAIMED cell -> status untouched (still claimed).
   addCell(root, makeCell('jr-reopen-3'));
-  claimCell(root, 'jr-reopen-3', 'worker-f');
+  await claimCell(root, 'jr-reopen-3', 'worker-f');
   const stillClaimed = await recordJudgeVerdict(root, 'jr-reopen-3', NEEDS_REVISION_VERDICT_EARLY, {});
   assert(stillClaimed.status === 'claimed', `NEEDS_REVISION on an already-claimed cell must never change status, got ${JSON.stringify(stillClaimed.status)}`);
 
   // Case 3: PASS on a CAPPED cell -> status stays capped (no reopen for PASS).
   addCell(root, makeCell('jr-reopen-4'));
-  claimCell(root, 'jr-reopen-4', 'worker-g');
+  await claimCell(root, 'jr-reopen-4', 'worker-g');
   await recordVerify(root, 'jr-reopen-4', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
   await capCell(root, 'jr-reopen-4', { files_changed: ['a.js'], outcome: 'shipped' });
   const stillCapped = await recordJudgeVerdict(root, 'jr-reopen-4', VALID_VERDICT, {});
@@ -2670,7 +2671,7 @@ const NEEDS_REVISION_VERDICT = {
 await check('capCell (D-GHF-C, GH #27.5): refuses, typed JUDGE_REWORK_REQUIRED, when the latest trace.semantic_judge verdict is NEEDS_REVISION and no override is supplied — this is the fixed bug: cap must never silently ignore a fail verdict', async () => {
   addCell(root, makeCell('judge-block-1'));
   await recordJudgeVerdict(root, 'judge-block-1', NEEDS_REVISION_VERDICT, {});
-  claimCell(root, 'judge-block-1', 'worker-a');
+  await claimCell(root, 'judge-block-1', 'worker-a');
   await recordVerify(root, 'judge-block-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
 
   let caught = null;
@@ -2689,7 +2690,7 @@ await check('capCell (D-GHF-C, GH #27.5): refuses, typed JUDGE_REWORK_REQUIRED, 
 await check('capCell (D-GHF-C, GH #27.5): --override-judge caps despite a NEEDS_REVISION verdict, appends an audited trace.judge_overrides entry, and logs a decision', async () => {
   addCell(root, makeCell('judge-override-1'));
   await recordJudgeVerdict(root, 'judge-override-1', NEEDS_REVISION_VERDICT, {});
-  claimCell(root, 'judge-override-1', 'worker-b');
+  await claimCell(root, 'judge-override-1', 'worker-b');
   await recordVerify(root, 'judge-override-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
 
   const capped = await capCell(root, 'judge-override-1', {
@@ -2711,14 +2712,14 @@ await check('capCell (D-GHF-C, GH #27.5): --override-judge caps despite a NEEDS_
 await check('capCell (D-GHF-C, GH #27.5): a PASS verdict caps normally with no override, and a cell with NO semantic_judge entries at all caps byte-identically to pre-ghf-6 behavior', async () => {
   addCell(root, makeCell('judge-pass-1'));
   await recordJudgeVerdict(root, 'judge-pass-1', VALID_VERDICT, {}); // VALID_VERDICT.verdict === 'PASS'
-  claimCell(root, 'judge-pass-1', 'worker-c');
+  await claimCell(root, 'judge-pass-1', 'worker-c');
   await recordVerify(root, 'judge-pass-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
   const passCapped = await capCell(root, 'judge-pass-1', { files_changed: ['a.js'], outcome: 'shipped' });
   assert(passCapped.status === 'capped', 'a PASS verdict must never block cap');
   assert(!Array.isArray(passCapped.trace.judge_overrides) || passCapped.trace.judge_overrides.length === 0, 'no override was supplied, so judge_overrides stays empty');
 
   addCell(root, makeCell('judge-none-1'));
-  claimCell(root, 'judge-none-1', 'worker-d');
+  await claimCell(root, 'judge-none-1', 'worker-d');
   await recordVerify(root, 'judge-none-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
   const noJudgeCapped = await capCell(root, 'judge-none-1', { files_changed: ['a.js'], outcome: 'shipped' });
   assert(noJudgeCapped.status === 'capped', 'a cell with no semantic_judge entries at all must cap exactly as before ghf-6');

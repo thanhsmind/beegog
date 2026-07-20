@@ -1541,18 +1541,20 @@ export const COMMAND_REGISTRY = [
     name: 'dispatch.prepare',
     invoke: 'bee dispatch prepare',
     description:
-      'Build a bee-owned dispatch payload (Agent tool / spawn_agent / an external cli executor) for the given runtime and purpose, plus an economics record (logical_tier, requested_model, channel, enforcement). kind "cell" resolves the generation tier for cell execution and requires --cell (loaded for prompt context); kinds "gather"/"reviewer" resolve read-only gather-shaped tiers (generation/review respectively); kind "advisor" resolves the configured advisor slot, never a bare tier. A cli-shaped resolution for kind "cell" is returned as a typed refusal ({ok:false, reason:"cli_tier_gather_only", ...}) — prepare never routes around it. A cli-shaped resolution for gather/reviewer/advisor builds an external-executor Bash payload instead of an Agent/spawn_agent one.',
+      'Build a bee-owned dispatch payload (Agent tool / spawn_agent / an external cli executor) for the given runtime and purpose, plus an economics record (logical_tier, requested_model, channel, enforcement). kind "cell" resolves the generation tier for cell execution and requires --cell (loaded for prompt context) and --worker (checked against the cell\'s own status/claim owner — hardening-7); kinds "gather"/"reviewer" resolve read-only gather-shaped tiers (generation/review respectively); kind "advisor" resolves the configured advisor slot, never a bare tier. A cli-shaped resolution for kind "cell" is returned as a typed refusal ({ok:false, reason:"cli_tier_gather_only", ...}) — prepare never routes around it. For kind "cell", an unclaimed or foreign-claimed cell is refused as {ok:false, type:"refused", reason:"claim_ownership", code, status, owner, fix} naming the actual status/owner — --force-ownership overrides it and appends an audited ownership_override entry to the prepare-time dispatch record. A cli-shaped resolution for gather/reviewer/advisor builds an external-executor Bash payload instead of an Agent/spawn_agent one.',
     parameters: {
       type: 'object',
       properties: {
         runtime: { type: 'string', description: 'Target runtime the payload is shaped for.', enum: ['codex', 'claude'] },
         kind: { type: 'string', description: 'Dispatch purpose.', enum: ['cell', 'gather', 'reviewer', 'advisor'] },
         cell: { type: 'string', description: 'Cell id — required when --kind cell; loaded for prompt context.' },
+        worker: { type: 'string', description: 'Requesting worker identity — required when --kind cell; checked against the cell\'s status/trace.worker (claim-ownership guard, hardening-7).' },
+        'force-ownership': { type: 'boolean', description: 'Override a claim-ownership refusal for --kind cell (audited into the prepare-time dispatch record). Ignored for every other kind.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of pretty-printed JSON (prepare always prints JSON; flag kept for surface consistency).' },
       },
       required: ['runtime', 'kind'],
     },
-    examples: ['bee dispatch prepare --runtime claude --kind gather --json'],
+    examples: ['bee dispatch prepare --runtime claude --kind gather --json', 'bee dispatch prepare --runtime claude --kind cell --cell demo-1 --worker exec-demo-1 --json'],
     deprecated: null,
   },
 

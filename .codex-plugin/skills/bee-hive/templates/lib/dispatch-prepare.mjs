@@ -65,6 +65,40 @@ function purposeForKind(kind) {
   return kind === 'cell' ? { for: 'cell' } : { for: 'gather' };
 }
 
+// hardening-7 — claim-ownership guard for `dispatch prepare --kind cell`.
+// Mirrors msh-4's audited-door pattern (cells.mjs checkClaimOwnership /
+// guardClaimOwnership) but on a DIFFERENT axis: msh-4 compares the live
+// claim file's `session` against the caller's resolved session; this checks
+// the CELL RECORD's own `status`/`trace.worker` against the caller-supplied
+// `--worker` — dispatch prepare has no session concept and never touches the
+// claims.mjs store, so it reads exactly the fields readCell already
+// returned, nothing more. Never throws (a foreign/unclaimed cell is a
+// legitimate refusal a caller can rescue with --force-ownership, same
+// "throws only on a malformed CALL" discipline prepareDispatch's own
+// docstring states for every other branch).
+function checkCellClaimOwnership(cell, worker) {
+  if (cell.status !== 'claimed') {
+    return {
+      ok: false,
+      code: 'not_claimed',
+      status: cell.status,
+      owner: null,
+      reason: `cell "${cell.id}" is "${cell.status}", not "claimed" — dispatch prepare requires a claimed cell (run bee.mjs cells claim or cells claim-next first). Pass --force-ownership to override (audited).`,
+    };
+  }
+  const owner = cell.trace && typeof cell.trace.worker === 'string' ? cell.trace.worker : null;
+  if (owner !== worker) {
+    return {
+      ok: false,
+      code: 'not_owner',
+      status: cell.status,
+      owner,
+      reason: `cell "${cell.id}" is claimed by worker "${owner || '(unknown)'}" — "${worker}" does not own this claim. Pass --force-ownership to override (audited).`,
+    };
+  }
+  return { ok: true, code: null, status: cell.status, owner };
+}
+
 // Template-consistent minimal prompt bodies (advisor spec: "for cell, render
 // from the Worker Prompt Template shape ... for gather/reviewer/advisor,
 // template-consistent minimal shapes"). Cell context comes from the loaded
@@ -157,8 +191,22 @@ function appendPrepareRecord(root, record) {
  * behavior — which, for a non-native-shaped slot, is simply inert (only
  * `resolved.type === 'native'` ever reads this parameter at all), so every
  * existing budget-only/model/cli/refused caller stays byte-identical.
+ *
+ * `worker` (hardening-7, required when `kind === 'cell'`) names the caller
+ * requesting the dispatch; it is checked against the loaded cell's own
+ * `status`/`trace.worker` (checkCellClaimOwnership, above) so `prepare`
+ * refuses to build a payload for a cell nobody claimed, or that another
+ * worker currently owns — a dispatch payload is authority to act on a
+ * cell, and prepare must never hand that out to a caller who doesn't
+ * (yet) hold the claim. `forceOwnership` (--force-ownership) bypasses the
+ * refusal and appends an audited `ownership_override` entry to the same
+ * prepare-time record every dispatch already writes (mirrors msh-4's
+ * "force always leaves an audit line" discipline). Missing `worker` on a
+ * `kind: 'cell'` call is a malformed CALL (throws), same as missing
+ * `cell`; a claimed-elsewhere or unclaimed cell is a legitimate refusal
+ * (typed, not thrown) a caller can retry after claiming, or override.
  */
-export function prepareDispatch(root, { runtime, kind, cell: cellId, classification } = {}) {
+export function prepareDispatch(root, { runtime, kind, cell: cellId, worker, forceOwnership = false, classification } = {}) {
   if (!DISPATCH_RUNTIMES.includes(runtime)) {
     throw new Error(`dispatch prepare: --runtime must be one of ${DISPATCH_RUNTIMES.join('|')}, got "${runtime}".`);
   }
@@ -167,6 +215,7 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, classificat
   }
 
   let cell = null;
+  let ownershipOverride = null;
   if (kind === 'cell') {
     if (!cellId) {
       throw new Error('dispatch prepare: --cell is required when --kind cell.');
@@ -174,6 +223,34 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, classificat
     cell = readCell(root, cellId);
     if (!cell) {
       throw new Error(`dispatch prepare: cell "${cellId}" not found.`);
+    }
+    if (typeof worker !== 'string' || !worker.trim()) {
+      throw new Error('dispatch prepare: --worker is required when --kind cell.');
+    }
+    const trimmedWorker = worker.trim();
+    const ownership = checkCellClaimOwnership(cell, trimmedWorker);
+    if (!ownership.ok && !forceOwnership) {
+      return {
+        ok: false,
+        type: 'refused',
+        reason: 'claim_ownership',
+        code: ownership.code,
+        status: ownership.status,
+        owner: ownership.owner,
+        fix: ownership.reason,
+      };
+    }
+    if (forceOwnership) {
+      // hardening-7 (msh-4 mirror): logs whether or not there was actually a
+      // conflict to bypass — "force always leaves an audit line", never
+      // conditional on whether it turned out to be needed.
+      ownershipOverride = {
+        forced_by: trimmedWorker,
+        bypassed: !ownership.ok,
+        code: ownership.ok ? null : ownership.code,
+        owner_bypassed: ownership.ok ? null : ownership.owner,
+        status_bypassed: ownership.ok ? null : ownership.status,
+      };
     }
   }
 
@@ -334,6 +411,7 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, classificat
     runtime,
     ...(envelopeExtra.fallback_reason ? { native_fallback_reason: envelopeExtra.fallback_reason, native_classification: classification || null } : {}),
     ...(envelopeExtra.transport ? { native_classification: classification || null } : {}),
+    ...(ownershipOverride ? { ownership_override: ownershipOverride } : {}),
     ...economics,
   });
 
