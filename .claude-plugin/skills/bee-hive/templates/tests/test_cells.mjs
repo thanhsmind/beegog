@@ -238,7 +238,7 @@ await check('updateCell refuses a patch that reintroduces a cycle via deps; the 
     addCell(cRoot, cycMakeCell('cyc-upd-a', { deps: [] }));
     addCell(cRoot, cycMakeCell('cyc-upd-b', { deps: ['cyc-upd-a'] }));
     const before = readCell(cRoot, 'cyc-upd-a');
-    assertThrows(
+    await assertRejects(
       () => updateCell(cRoot, 'cyc-upd-a', { deps: ['cyc-upd-b'] }),
       'cycle',
       'update that closes a<->b via deps is refused',
@@ -247,7 +247,7 @@ await check('updateCell refuses a patch that reintroduces a cycle via deps; the 
     assert(JSON.stringify(after) === JSON.stringify(before), 'cyc-upd-a must be byte-unchanged after the refused update');
     // A field edit that does NOT touch deps is untouched by the cycle check —
     // proves the check is deps-gated, not a blanket re-validation.
-    const ok = updateCell(cRoot, 'cyc-upd-a', { title: 'renamed, no deps change' });
+    const ok = await updateCell(cRoot, 'cyc-upd-a', { title: 'renamed, no deps change' });
     assert(ok.title === 'renamed, no deps change', 'non-deps patch still applies normally');
   } finally {
     fs.rmSync(cRoot, { recursive: true, force: true });
@@ -258,11 +258,11 @@ await check('addCell over a store with pre-existing unsatisfiable deps (missing/
   const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-unsat-'));
   try {
     addCell(cRoot, cycMakeCell('cyc-unsat-blocked', { deps: [] }));
-    updateCell(cRoot, 'cyc-unsat-blocked', { title: 'still open' }); // no-op sanity
+    await updateCell(cRoot, 'cyc-unsat-blocked', { title: 'still open' }); // no-op sanity
     // Simulate a blocked cell directly (blockCell requires the cell to exist first).
     await blockCell(cRoot, 'cyc-unsat-blocked', 'unrelated reason');
     addCell(cRoot, cycMakeCell('cyc-unsat-dropped', { deps: [] }));
-    dropCell(cRoot, 'cyc-unsat-dropped', 'unrelated reason');
+    await dropCell(cRoot, 'cyc-unsat-dropped', 'unrelated reason');
     // A brand-new cell depending on a missing id, plus the blocked/dropped
     // cells above, plus a dep on a capped cell (satisfied) — none of this is
     // structurally a cycle; it must add cleanly.
@@ -290,16 +290,16 @@ await check('a pre-existing on-disk cycle (legacy store) never blocks unrelated 
     addCell(cRoot, makeCell('cyc-legacy-new', { feature: 'other-feature' }));
     assert(readCell(cRoot, 'cyc-legacy-new') !== null, 'unrelated add must succeed despite a legacy cycle elsewhere');
     // Unrelated deps patch succeeds too.
-    const upd = updateCell(cRoot, 'cyc-legacy-new', { deps: ['cyc-legacy-missing'] });
+    const upd = await updateCell(cRoot, 'cyc-legacy-new', { deps: ['cyc-legacy-missing'] });
     assert(upd.deps.length === 1, 'unrelated deps patch must apply despite a legacy cycle elsewhere');
     // A patch on a cycle MEMBER that keeps the cycle closed is still refused…
-    assertThrows(
+    await assertRejects(
       () => updateCell(cRoot, 'cyc-legacy-a', { deps: ['cyc-legacy-b', 'cyc-legacy-missing'] }),
       'cycle',
       'a deps patch that keeps the cell inside the cycle is refused',
     );
     // …while a patch that BREAKS the cycle applies cleanly (the fix path).
-    const healed = updateCell(cRoot, 'cyc-legacy-a', { deps: [] });
+    const healed = await updateCell(cRoot, 'cyc-legacy-a', { deps: [] });
     assert(healed.deps.length === 0, 'a deps patch that breaks the legacy cycle must be allowed');
   } finally {
     fs.rmSync(cRoot, { recursive: true, force: true });
@@ -344,7 +344,7 @@ await check('bee.mjs cells add CLI: a JSON array on --stdin creates the whole sl
 await check('updateCell lands patched fields on an open cell; unpatched fields, status, trace byte-stable', async () => {
   addCell(root, makeCell('upd-1', { action: 'Old action per D1.' }));
   const before = readCell(root, 'upd-1');
-  const updated = updateCell(root, 'upd-1', { action: 'New action per D2.', files: ['a.txt'] });
+  const updated = await updateCell(root, 'upd-1', { action: 'New action per D2.', files: ['a.txt'] });
   assert(updated.action === 'New action per D2.', 'action updated');
   assert(updated.files.length === 1 && updated.files[0] === 'a.txt', 'files updated');
   assert(updated.title === before.title, 'unpatched field unchanged');
@@ -354,9 +354,9 @@ await check('updateCell lands patched fields on an open cell; unpatched fields, 
 
 await check('updateCell works on a blocked cell (rescue path), refuses an empty patch', async () => {
   addCell(root, makeCell('upd-2', { status: 'blocked' }));
-  const updated = updateCell(root, 'upd-2', { verify: 'node -e "process.exit(0)" # v2' });
+  const updated = await updateCell(root, 'upd-2', { verify: 'node -e "process.exit(0)" # v2' });
   assert(updated.verify.includes('v2'), 'verify updated on blocked cell');
-  assertThrows(() => updateCell(root, 'upd-2', {}), 'empty', 'empty patch refused');
+  await assertRejects(() => updateCell(root, 'upd-2', {}), 'empty', 'empty patch refused');
 });
 
 await check('updateCell refuses claimed, capped, and dropped cells with the file byte-unchanged', async () => {
@@ -365,7 +365,7 @@ await check('updateCell refuses claimed, capped, and dropped cells with the file
     addCell(root, makeCell(id, { status }));
     const file = path.join(root, '.bee', 'cells', `${id}.json`);
     const before = fs.readFileSync(file, 'utf8');
-    assertThrows(() => updateCell(root, id, { title: 'nope' }), status, `${status} cell refused`);
+    await assertRejects(() => updateCell(root, id, { title: 'nope' }), status, `${status} cell refused`);
     assert(fs.readFileSync(file, 'utf8') === before, `${id} file byte-unchanged after refusal`);
   }
 });
@@ -375,36 +375,36 @@ await check('updateCell refuses every frozen key and unknown keys — whole patc
   const file = path.join(root, '.bee', 'cells', 'upd-3.json');
   const before = fs.readFileSync(file, 'utf8');
   for (const key of ['id', 'feature', 'status', 'trace', 'tier']) {
-    assertThrows(
+    await assertRejects(
       () => updateCell(root, 'upd-3', { title: 'ok', [key]: 'x' }),
       'frozen',
       `frozen key ${key} refuses the whole patch`,
     );
   }
-  assertThrows(() => updateCell(root, 'upd-3', { totally_new: 1 }), 'unknown field', 'unknown key refused');
-  assertThrows(() => updateCell(root, 'upd-3', { title: '' }), 'non-empty string', 'invalid value refused');
+  await assertRejects(() => updateCell(root, 'upd-3', { totally_new: 1 }), 'unknown field', 'unknown key refused');
+  await assertRejects(() => updateCell(root, 'upd-3', { title: '' }), 'non-empty string', 'invalid value refused');
   assert(fs.readFileSync(file, 'utf8') === before, 'upd-3 file untouched after all refusals');
 });
 
 await check('updateCell fails closed on a present-but-corrupt cell file and on a missing cell', async () => {
   const file = path.join(root, '.bee', 'cells', 'upd-corrupt.json');
   fs.writeFileSync(file, '{ not json');
-  assertThrows(() => updateCell(root, 'upd-corrupt', { title: 'x' }), 'not valid JSON', 'corrupt cell refused');
+  await assertRejects(() => updateCell(root, 'upd-corrupt', { title: 'x' }), 'not valid JSON', 'corrupt cell refused');
   assert(fs.readFileSync(file, 'utf8') === '{ not json', 'corrupt file untouched');
   fs.rmSync(file);
-  assertThrows(() => updateCell(root, 'upd-nope', { title: 'x' }), 'not found', 'missing cell refused');
+  await assertRejects(() => updateCell(root, 'upd-nope', { title: 'x' }), 'not found', 'missing cell refused');
 });
 
 await check('updateCell re-checks the standard/high-risk truths invariant on the merged result', async () => {
   addCell(root, makeCell('upd-4', { lane: 'standard', must_haves: { truths: ['t1'] } }));
-  assertThrows(
+  await assertRejects(
     () => updateCell(root, 'upd-4', { must_haves: { truths: [] } }),
     'truths',
     'emptied truths refused',
   );
-  const ok = updateCell(root, 'upd-4', { must_haves: { truths: ['t1', 't2'] } });
+  const ok = await updateCell(root, 'upd-4', { must_haves: { truths: ['t1', 't2'] } });
   assert(ok.must_haves.truths.length === 2, 'valid must_haves patch lands');
-  assertThrows(
+  await assertRejects(
     () => updateCell(root, 'upd-1', { lane: 'standard' }),
     'truths',
     'lane upgrade without truths refused',
@@ -438,7 +438,7 @@ await check('bee.mjs cells update CLI: --file works one-line; unknown flag and m
 // ─── cells: gate-locked claiming + deps ─────────────────────────────────────
 
 await check('claimCell refuses while gate execution is false', async () => {
-  assertThrows(() => claimCell(root, 'demo-1', 'worker-a'), 'execution', 'gate lock');
+  await assertRejects(() => claimCell(root, 'demo-1', 'worker-a'), 'execution', 'gate lock');
 });
 
 await check('readyCells excludes cells with uncapped deps', async () => {
@@ -509,7 +509,7 @@ await check('readyCells/depsAllCapped (pre-archive baseline): excludes an open c
     const state = readState(aRoot);
     state.approved_gates.execution = true;
     writeState(aRoot, state);
-    claimCell(aRoot, 'arc-dep-base', 'worker-arc');
+    await claimCell(aRoot, 'arc-dep-base', 'worker-arc');
     await recordVerify(aRoot, 'arc-dep-base', { command: 'true', output: 'ok', passed: true });
     await capCell(aRoot, 'arc-dep-base', { files_changed: ['x.txt'], outcome: 'done' });
 
@@ -694,10 +694,10 @@ await check('mutating an archived cell id (updateCell/claimCell/capCell) refuses
     assert(!fs.existsSync(activePath), 'sanity: the active copy is gone after archiving');
     assert(readCell(aRoot, 'mut-1') !== null, 'sanity: readCell still resolves the id via the archive fallback');
 
-    assertThrows(() => updateCell(aRoot, 'mut-1', { title: 'hack' }), 'archived', 'updateCell on an archived id refuses');
+    await assertRejects(() => updateCell(aRoot, 'mut-1', { title: 'hack' }), 'archived', 'updateCell on an archived id refuses');
     assert(!fs.existsSync(activePath), 'updateCell must not fork a duplicate active file');
 
-    assertThrows(() => claimCell(aRoot, 'mut-1', 'worker-x'), 'archived', 'claimCell on an archived id refuses');
+    await assertRejects(() => claimCell(aRoot, 'mut-1', 'worker-x'), 'archived', 'claimCell on an archived id refuses');
     assert(!fs.existsSync(activePath), 'claimCell must not fork a duplicate active file');
 
     await assertRejects(
@@ -755,11 +755,11 @@ await check('claimCell refuses a cell with uncapped deps even after gate approva
   state.phase = 'swarming';
   state.approved_gates.execution = true;
   writeState(root, state);
-  assertThrows(() => claimCell(root, 'demo-2', 'worker-a'), 'uncapped deps', 'dep lock');
+  await assertRejects(() => claimCell(root, 'demo-2', 'worker-a'), 'uncapped deps', 'dep lock');
 });
 
 await check('claimCell claims an open, dep-free cell', async () => {
-  const cell = claimCell(root, 'demo-1', 'worker-a');
+  const cell = await claimCell(root, 'demo-1', 'worker-a');
   assert(cell.status === 'claimed', 'status should be claimed');
   assert(cell.trace.worker === 'worker-a', 'worker recorded');
 });
@@ -772,13 +772,13 @@ await check('claimCell claims an open, dep-free cell', async () => {
 
 await check('claimCellCrossSession backs "cells claim --id": winner claims both the cell JSON and the claims-store file; a second claimant on the SAME cell gets typed CLAIMED naming the winner + expiry, and the cell is untouched', async () => {
   addCell(root, makeCell('claimx-1'));
-  const first = claimCellCrossSession(root, { sessionId: 'sess-x1', worker: 'worker-x1', cellId: 'claimx-1' });
+  const first = await claimCellCrossSession(root, { sessionId: 'sess-x1', worker: 'worker-x1', cellId: 'claimx-1' });
   assert(first.ok === true, `first claimant should win, got ${JSON.stringify(first)}`);
   assert(first.cell.status === 'claimed' && first.cell.trace.worker === 'worker-x1', 'cell JSON reflects the winner');
   assert(first.claim.session === 'sess-x1', 'claims-store file belongs to the winner');
   assert(readCell(root, 'claimx-1').status === 'claimed', 'on-disk cell is claimed');
 
-  const second = claimCellCrossSession(root, { sessionId: 'sess-x2', worker: 'worker-x2', cellId: 'claimx-1' });
+  const second = await claimCellCrossSession(root, { sessionId: 'sess-x2', worker: 'worker-x2', cellId: 'claimx-1' });
   assert(second.ok === false && second.code === 'CLAIMED', `second claimant must lose with typed CLAIMED, got ${JSON.stringify(second)}`);
   assert(second.reason.includes('sess-x1'), 'refusal names the actual owner');
   assert(/expir/i.test(second.reason), 'refusal names the expiry');
@@ -787,7 +787,7 @@ await check('claimCellCrossSession backs "cells claim --id": winner claims both 
 
 await check('claimCellCrossSession with sessionId null/undefined is a legal sessionless claim — the claim file omits "session" entirely; single-session flow (no env id) still claims successfully', async () => {
   addCell(root, makeCell('claimx-2'));
-  const result = claimCellCrossSession(root, { sessionId: null, worker: 'worker-sessionless', cellId: 'claimx-2' });
+  const result = await claimCellCrossSession(root, { sessionId: null, worker: 'worker-sessionless', cellId: 'claimx-2' });
   assert(result.ok === true, `a null sessionId must still succeed, got ${JSON.stringify(result)}`);
   assert(!('session' in result.claim), 'the sessionless claim record omits "session" entirely');
   assert(result.cell.status === 'claimed', 'the cell is claimed regardless of session');
@@ -837,7 +837,7 @@ await check('capCell on a high-risk cell requires files_changed and outcome', as
       must_haves: { truths: ['Auth still works'], artifacts: [], key_links: [], prohibitions: [] },
     }),
   );
-  claimCell(root, 'hr-1', 'worker-b');
+  await claimCell(root, 'hr-1', 'worker-b');
   await recordVerify(root, 'hr-1', { command: 'npm test', output: '12 passing', passed: true });
   await assertRejects(() => capCell(root, 'hr-1', {}), 'high-risk', 'high-risk trace tier');
   await capCell(root, 'hr-1', { files_changed: ['src/auth.js'], outcome: 'auth guard added' });
@@ -846,7 +846,7 @@ await check('capCell on a high-risk cell requires files_changed and outcome', as
 
 await check('capCell refuses a small cell whose verify has no output and no evidence (decision 0004)', async () => {
   addCell(root, makeCell('ev-1'));
-  claimCell(root, 'ev-1', 'worker-c');
+  await claimCell(root, 'ev-1', 'worker-c');
   await recordVerify(root, 'ev-1', { command: 'npm test', passed: true }); // assertion, no output
   await assertRejects(
     () => capCell(root, 'ev-1', { files_changed: ['src/y.js'], outcome: 'done' }),
@@ -868,7 +868,7 @@ await check('capCell refuses a small cell with proof but empty files_changed (de
 
 await check('tiny lane still caps on a passing verify alone (lanes scale strictness)', async () => {
   addCell(root, makeCell('tiny-1', { lane: 'tiny' }));
-  claimCell(root, 'tiny-1', 'worker-c');
+  await claimCell(root, 'tiny-1', 'worker-c');
   await recordVerify(root, 'tiny-1', { command: 'node -e "process.exit(0)"', passed: true });
   await capCell(root, 'tiny-1', { outcome: 'typo fixed' });
   assert(readCell(root, 'tiny-1').status === 'capped', 'tiny cell capped without output/files');
@@ -876,7 +876,7 @@ await check('tiny lane still caps on a passing verify alone (lanes scale strictn
 
 await check('capCell honors the cell-declared behavior_change when the flag is omitted (grooming fix)', async () => {
   addCell(root, makeCell('bc-decl', { behavior_change: true }));
-  claimCell(root, 'bc-decl', 'worker-c');
+  await claimCell(root, 'bc-decl', 'worker-c');
   await recordVerify(root, 'bc-decl', { command: 'npm test', output: 'ok', passed: true });
   // omitting the flag must NOT drop the declared behavior_change — cap still demands evidence
   await assertRejects(
@@ -931,7 +931,7 @@ await check('normalizeFailureSignature prefers the first FAIL/Error/refus/denied
 
 await check('recordVerify appends a ledger entry on every outcome — fail then fail then pass — with claim_session/claimed_at from the live claim file (D1+Δ1)', async () => {
   addCell(root, makeCell('ledger-1'));
-  const claimed = claimCellCrossSession(root, { sessionId: 'sess-ledger-1', worker: 'worker-ledger', cellId: 'ledger-1' });
+  const claimed = await claimCellCrossSession(root, { sessionId: 'sess-ledger-1', worker: 'worker-ledger', cellId: 'ledger-1' });
   assert(claimed.ok === true, `precondition: claim should succeed, got ${JSON.stringify(claimed)}`);
   const liveClaim = readClaim(root, 'ledger-1');
 
@@ -963,7 +963,7 @@ await check('recordVerify appends a ledger entry on every outcome — fail then 
 
 await check('recordVerify --signature (worker-supplied) overrides the mechanical normalizer for a failed attempt', async () => {
   addCell(root, makeCell('ledger-sig-1'));
-  claimCell(root, 'ledger-sig-1', 'worker-sig');
+  await claimCell(root, 'ledger-sig-1', 'worker-sig');
   await recordVerify(root, 'ledger-sig-1', { command: 'npm test', output: 'FAIL something', passed: false, signature: 'custom-sig-001' });
   const entry = readCell(root, 'ledger-sig-1').trace.attempts[0];
   assert(entry.failure_signature === 'custom-sig-001', `explicit --signature should win over the normalizer, got ${entry.failure_signature}`);
@@ -971,7 +971,7 @@ await check('recordVerify --signature (worker-supplied) overrides the mechanical
 
 await check('blockCell appends a "blocked" ledger entry whose note is the block reason and whose failure_signature derives from it', async () => {
   addCell(root, makeCell('ledger-block-1'));
-  claimCell(root, 'ledger-block-1', 'worker-block');
+  await claimCell(root, 'ledger-block-1', 'worker-block');
   await blockCell(root, 'ledger-block-1', 'reservation conflict on src/x.js');
   const entry = readCell(root, 'ledger-block-1').trace.attempts[0];
   assert(entry.verdict === 'blocked', `expected blocked verdict, got ${entry.verdict}`);
@@ -981,7 +981,7 @@ await check('blockCell appends a "blocked" ledger entry whose note is the block 
 
 await check('a sessionless claim records claim_session null but still carries the live claim file\'s claimed_at (D1+Δ1 undercount-safe, F2)', async () => {
   addCell(root, makeCell('ledger-sessionless-1'));
-  const claimed = claimCellCrossSession(root, { sessionId: null, worker: 'worker-sl', cellId: 'ledger-sessionless-1' });
+  const claimed = await claimCellCrossSession(root, { sessionId: null, worker: 'worker-sl', cellId: 'ledger-sessionless-1' });
   assert(claimed.ok === true, `precondition: sessionless claim should succeed, got ${JSON.stringify(claimed)}`);
   await recordVerify(root, 'ledger-sessionless-1', { command: 'npm test', output: 'FAIL x', passed: false });
   const entry = readCell(root, 'ledger-sessionless-1').trace.attempts[0];
@@ -991,7 +991,7 @@ await check('a sessionless claim records claim_session null but still carries th
 
 await check('trace.attempts entries survive capCell — appended to, never dropped by the trace spread', async () => {
   addCell(root, makeCell('ledger-cap-1'));
-  claimCell(root, 'ledger-cap-1', 'worker-cap');
+  await claimCell(root, 'ledger-cap-1', 'worker-cap');
   await recordVerify(root, 'ledger-cap-1', { command: 'npm test', output: 'FAIL once', passed: false });
   await recordVerify(root, 'ledger-cap-1', { command: 'npm test', output: 'ok', passed: true });
   const capped = await capCell(root, 'ledger-cap-1', { files_changed: ['a.js'], outcome: 'done' });
@@ -1001,12 +1001,12 @@ await check('trace.attempts entries survive capCell — appended to, never dropp
 
 await check('updateCell refuses a {trace:{...}} patch on an open cell — the ledger cannot be edited around (D1+F1: trace is already frozen wholesale)', async () => {
   addCell(root, makeCell('ledger-update-1'));
-  claimCell(root, 'ledger-update-1', 'worker-upd');
+  await claimCell(root, 'ledger-update-1', 'worker-upd');
   await recordVerify(root, 'ledger-update-1', { command: 'npm test', output: 'FAIL', passed: false });
   await blockCell(root, 'ledger-update-1', 'stuck', { sessionId: undefined });
   const file = path.join(root, '.bee', 'cells', 'ledger-update-1.json');
   const before = fs.readFileSync(file, 'utf8');
-  assertThrows(
+  await assertRejects(
     () => updateCell(root, 'ledger-update-1', { title: 'ok', trace: { attempts: [] } }),
     'frozen',
     'a patch attempting to touch trace.attempts must be refused wholesale, cell untouched',
@@ -1023,19 +1023,19 @@ await check('updateCell refuses a {trace:{...}} patch on an open cell — the le
 
 await check('claimCellCrossSession: a fresh cell with no attempts ledger claims exactly as today — D2 defaults never bite on a first claim (D6 compatibility floor)', async () => {
   addCell(root, makeCell('budget-fresh-1'));
-  const result = claimCellCrossSession(root, { sessionId: 'sess-budget-fresh', worker: 'w', cellId: 'budget-fresh-1' });
+  const result = await claimCellCrossSession(root, { sessionId: 'sess-budget-fresh', worker: 'w', cellId: 'budget-fresh-1' });
   assert(result.ok === true, `first claim on a fresh cell must succeed under default budgets, got ${JSON.stringify(result)}`);
 });
 
 await check('claimCellCrossSession: 3 claims exhaust the default max_claims budget — a 4th claim is refused typed CELL_BUDGET_EXHAUSTED naming the budget, and the just-acquired claim file is unwound (D2+Δ2)', async () => {
   addCell(root, makeCell('budget-claims-1'));
   for (let i = 0; i < 3; i += 1) {
-    const claimed = claimCellCrossSession(root, { sessionId: `sess-budget-claims-${i}`, worker: 'w', cellId: 'budget-claims-1' });
+    const claimed = await claimCellCrossSession(root, { sessionId: `sess-budget-claims-${i}`, worker: 'w', cellId: 'budget-claims-1' });
     assert(claimed.ok === true, `claim #${i + 1} should succeed under the default budget of 3, got ${JSON.stringify(claimed)}`);
     await recordVerify(root, 'budget-claims-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-budget-claims-${i}` });
-    unclaimCell(root, 'budget-claims-1', { sessionId: `sess-budget-claims-${i}` });
+    await unclaimCell(root, 'budget-claims-1', { sessionId: `sess-budget-claims-${i}` });
   }
-  const fourth = claimCellCrossSession(root, { sessionId: 'sess-budget-claims-3', worker: 'w', cellId: 'budget-claims-1' });
+  const fourth = await claimCellCrossSession(root, { sessionId: 'sess-budget-claims-3', worker: 'w', cellId: 'budget-claims-1' });
   assert(fourth.ok === false, `the 4th claim must be refused, got ${JSON.stringify(fourth)}`);
   assert(fourth.code === 'CELL_BUDGET_EXHAUSTED', `expected CELL_BUDGET_EXHAUSTED, got ${fourth.code}`);
   assert(fourth.budget && fourth.budget.name === 'max_claims', `refusal must name the exhausted budget, got ${JSON.stringify(fourth.budget)}`);
@@ -1047,11 +1047,11 @@ await check('claimCellCrossSession: 3 claims exhaust the default max_claims budg
 await check('claimCellCrossSession: two failed attempts sharing an identical failure_signature refuse the NEXT claim typed REPEATED_FAILURE, independent of the max_claims/max_failed_attempts budgets (D2 same-signature)', async () => {
   addCell(root, makeCell('budget-sig-1'));
   for (let i = 0; i < 2; i += 1) {
-    claimCellCrossSession(root, { sessionId: `sess-budget-sig-${i}`, worker: 'w', cellId: 'budget-sig-1' });
+    await claimCellCrossSession(root, { sessionId: `sess-budget-sig-${i}`, worker: 'w', cellId: 'budget-sig-1' });
     await recordVerify(root, 'budget-sig-1', { command: 'npm test', output: 'FAIL identical assertion', passed: false, sessionId: `sess-budget-sig-${i}` });
-    unclaimCell(root, 'budget-sig-1', { sessionId: `sess-budget-sig-${i}` });
+    await unclaimCell(root, 'budget-sig-1', { sessionId: `sess-budget-sig-${i}` });
   }
-  const third = claimCellCrossSession(root, { sessionId: 'sess-budget-sig-2', worker: 'w', cellId: 'budget-sig-1' });
+  const third = await claimCellCrossSession(root, { sessionId: 'sess-budget-sig-2', worker: 'w', cellId: 'budget-sig-1' });
   assert(third.ok === false, `a claim after 2 identical-signature fails must refuse, got ${JSON.stringify(third)}`);
   assert(third.code === 'REPEATED_FAILURE', `expected REPEATED_FAILURE, got ${third.code}`);
   assert(third.signature === normalizeFailureSignature('FAIL identical assertion'), `refusal must name the repeated signature, got ${third.signature}`);
@@ -1060,11 +1060,11 @@ await check('claimCellCrossSession: two failed attempts sharing an identical fai
 
 await check('claimCellCrossSession: an explicit per-cell budgets override is honored over the defaults (D2)', async () => {
   addCell(root, makeCell('budget-custom-1', { budgets: { max_claims: 1, max_failed_attempts: 4, max_same_signature: 2 } }));
-  const first = claimCellCrossSession(root, { sessionId: 'sess-budget-custom-0', worker: 'w', cellId: 'budget-custom-1' });
+  const first = await claimCellCrossSession(root, { sessionId: 'sess-budget-custom-0', worker: 'w', cellId: 'budget-custom-1' });
   assert(first.ok === true, `first claim under a custom max_claims:1 should succeed, got ${JSON.stringify(first)}`);
   await recordVerify(root, 'budget-custom-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: 'sess-budget-custom-0' });
-  unclaimCell(root, 'budget-custom-1', { sessionId: 'sess-budget-custom-0' });
-  const second = claimCellCrossSession(root, { sessionId: 'sess-budget-custom-1', worker: 'w', cellId: 'budget-custom-1' });
+  await unclaimCell(root, 'budget-custom-1', { sessionId: 'sess-budget-custom-0' });
+  const second = await claimCellCrossSession(root, { sessionId: 'sess-budget-custom-1', worker: 'w', cellId: 'budget-custom-1' });
   assert(second.ok === false && second.code === 'CELL_BUDGET_EXHAUSTED', `a 2nd claim under a custom max_claims:1 must refuse, got ${JSON.stringify(second)}`);
   assert(second.budget.limit === 1, `refusal must reflect the cell's own override, not the default, got ${JSON.stringify(second.budget)}`);
 });
@@ -1072,11 +1072,11 @@ await check('claimCellCrossSession: an explicit per-cell budgets override is hon
 await check('resetCellBudget: audited reset appends a budget_resets marker, logs a decision, never touches attempts, and reopens the claim door (D2)', async () => {
   addCell(root, makeCell('budget-reset-1'));
   for (let i = 0; i < 3; i += 1) {
-    claimCellCrossSession(root, { sessionId: `sess-budget-reset-${i}`, worker: 'w', cellId: 'budget-reset-1' });
+    await claimCellCrossSession(root, { sessionId: `sess-budget-reset-${i}`, worker: 'w', cellId: 'budget-reset-1' });
     await recordVerify(root, 'budget-reset-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-budget-reset-${i}` });
-    unclaimCell(root, 'budget-reset-1', { sessionId: `sess-budget-reset-${i}` });
+    await unclaimCell(root, 'budget-reset-1', { sessionId: `sess-budget-reset-${i}` });
   }
-  const blocked = claimCellCrossSession(root, { sessionId: 'sess-budget-reset-3', worker: 'w', cellId: 'budget-reset-1' });
+  const blocked = await claimCellCrossSession(root, { sessionId: 'sess-budget-reset-3', worker: 'w', cellId: 'budget-reset-1' });
   assert(blocked.ok === false && blocked.code === 'CELL_BUDGET_EXHAUSTED', `precondition: the door should be exhausted, got ${JSON.stringify(blocked)}`);
   const attemptsBefore = readCell(root, 'budget-reset-1').trace.attempts.length;
 
@@ -1089,7 +1089,7 @@ await check('resetCellBudget: audited reset appends a budget_resets marker, logs
   const decisions = activeDecisions(root, { recent: 1 });
   assert(decisions.length > 0 && decisions[0].decision.includes('budget-reset-1'), `resetCellBudget must log a decision naming the cell, got ${JSON.stringify(decisions)}`);
 
-  const reopened = claimCellCrossSession(root, { sessionId: 'sess-budget-reset-4', worker: 'w', cellId: 'budget-reset-1' });
+  const reopened = await claimCellCrossSession(root, { sessionId: 'sess-budget-reset-4', worker: 'w', cellId: 'budget-reset-1' });
   assert(reopened.ok === true, `after reset the door must reopen for a fresh claim, got ${JSON.stringify(reopened)}`);
 });
 
@@ -1176,11 +1176,11 @@ await check('resetCellBudget (D-GHF-C): refused without an actor — neither --o
 await check('resetCellBudget (D-GHF-C): the BEE_AGENT_NAME env fallback supplies the actor when --operator is omitted', async () => {
   addCell(root, makeCell('budget-reset-envactor-1'));
   for (let i = 0; i < 3; i += 1) {
-    claimCellCrossSession(root, { sessionId: `sess-envactor-${i}`, worker: 'w', cellId: 'budget-reset-envactor-1' });
+    await claimCellCrossSession(root, { sessionId: `sess-envactor-${i}`, worker: 'w', cellId: 'budget-reset-envactor-1' });
     await recordVerify(root, 'budget-reset-envactor-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-envactor-${i}` });
-    unclaimCell(root, 'budget-reset-envactor-1', { sessionId: `sess-envactor-${i}` });
+    await unclaimCell(root, 'budget-reset-envactor-1', { sessionId: `sess-envactor-${i}` });
   }
-  const blocked = claimCellCrossSession(root, { sessionId: 'sess-envactor-3', worker: 'w', cellId: 'budget-reset-envactor-1' });
+  const blocked = await claimCellCrossSession(root, { sessionId: 'sess-envactor-3', worker: 'w', cellId: 'budget-reset-envactor-1' });
   assert(blocked.ok === false, 'precondition: the door should be exhausted');
   const savedEnv = process.env.BEE_AGENT_NAME;
   process.env.BEE_AGENT_NAME = 'env-actor-1';
@@ -1206,11 +1206,11 @@ await check('resetCellBudget (D-GHF-C): writes the audit decision BEFORE the cel
     });
     addCell(dir, makeCell('budget-audit-order-1'));
     for (let i = 0; i < 3; i += 1) {
-      claimCellCrossSession(dir, { sessionId: `sess-audit-order-${i}`, worker: 'w', cellId: 'budget-audit-order-1' });
+      await claimCellCrossSession(dir, { sessionId: `sess-audit-order-${i}`, worker: 'w', cellId: 'budget-audit-order-1' });
       await recordVerify(dir, 'budget-audit-order-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-audit-order-${i}` });
-      unclaimCell(dir, 'budget-audit-order-1', { sessionId: `sess-audit-order-${i}` });
+      await unclaimCell(dir, 'budget-audit-order-1', { sessionId: `sess-audit-order-${i}` });
     }
-    const blocked = claimCellCrossSession(dir, { sessionId: 'sess-audit-order-3', worker: 'w', cellId: 'budget-audit-order-1' });
+    const blocked = await claimCellCrossSession(dir, { sessionId: 'sess-audit-order-3', worker: 'w', cellId: 'budget-audit-order-1' });
     assert(blocked.ok === false, 'precondition: the door should be exhausted');
     const before = fs.readFileSync(path.join(dir, '.bee', 'cells', 'budget-audit-order-1.json'), 'utf8');
 
@@ -1267,7 +1267,7 @@ await check(
       }));
       makeCellFile(dir, 'bypass-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
 
-      const result = claimCellCrossSession(dir, { sessionId: 'sess-bypass-total', worker: 'w', cellId: 'bypass-1' });
+      const result = await claimCellCrossSession(dir, { sessionId: 'sess-bypass-total', worker: 'w', cellId: 'bypass-1' });
       assert(result.ok === false && result.code === 'CELL_BUDGET_EXHAUSTED', `gate_bypass=total must NOT bypass the budget refusal, got ${JSON.stringify(result)}`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1301,7 +1301,7 @@ await check(
       makeCellFile(dir, 'exhausted-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
       makeCellFile(dir, 'healthy-1', { feature: 'demo-feat', status: 'open', deps: [] });
 
-      const result = claimNextCell(dir, { sessionId: 'sess-selector', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-selector', worker: 'w' });
       assert(result.ok === true, `expected a healthy cell to be selected, got ${JSON.stringify(result)}`);
       assert(result.cell.id === 'healthy-1', `the budget-exhausted candidate must be skipped by selection, got ${result.cell.id}`);
     } finally {
@@ -1335,10 +1335,10 @@ await check(
       }));
       makeCellFile(dir, 'exhausted-only-1', { feature: 'demo-feat', status: 'open', deps: [], trace: { attempts: oldAttempts } });
 
-      const result = claimNextCell(dir, { sessionId: 'sess-selector-2', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-selector-2', worker: 'w' });
       assert(result.ok === false && result.code === 'NO_APPROVED_WORK', `expected NO_APPROVED_WORK when the only candidate is bricked, got ${JSON.stringify(result)}`);
 
-      const direct = claimCellCrossSession(dir, { sessionId: 'sess-selector-2', worker: 'w', cellId: 'exhausted-only-1' });
+      const direct = await claimCellCrossSession(dir, { sessionId: 'sess-selector-2', worker: 'w', cellId: 'exhausted-only-1' });
       assert(direct.ok === false && direct.code === 'CELL_BUDGET_EXHAUSTED', `direct claim --id must still surface the typed refusal, got ${JSON.stringify(direct)}`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1376,20 +1376,20 @@ await check('addCell validates optional change_class against the enum, naming CH
 });
 
 await check('updateCell validates change_class the same way, and accepts null to un-set it back to derivation (D3)', async () => {
-  assertThrows(
+  await assertRejects(
     () => updateCell(root, 'jsm-good-class', { change_class: 'nonsense' }),
     'change_class',
     'update must refuse an invalid change_class',
   );
-  const cleared = updateCell(root, 'jsm-good-class', { change_class: null });
+  const cleared = await updateCell(root, 'jsm-good-class', { change_class: null });
   assert(cleared.change_class === null, 'null un-sets change_class back to derivation');
-  const revalidated = updateCell(root, 'jsm-good-class', { change_class: 'security' });
+  const revalidated = await updateCell(root, 'jsm-good-class', { change_class: 'security' });
   assert(revalidated.change_class === 'security', 'a subsequent valid change_class still applies');
 });
 
 await check('capCell refuses a behavior-class cap with no red_failure_evidence at all, naming the missing minimum — gated on change_class, independent of the behavior_change flag (D3)', async () => {
   addCell(root, makeCell('jsm-missing-1', { change_class: 'behavior' }));
-  claimCell(root, 'jsm-missing-1', 'worker-jsm');
+  await claimCell(root, 'jsm-missing-1', 'worker-jsm');
   await recordVerify(root, 'jsm-missing-1', { command: 'x', output: 'ok', passed: true });
   await assertRejects(
     () => capCell(root, 'jsm-missing-1', { files_changed: ['a.js'], outcome: 'done' }),
@@ -1400,7 +1400,7 @@ await check('capCell refuses a behavior-class cap with no red_failure_evidence a
 
 await check('capCell refuses a behavior-class cap whose red_failure_evidence is under 80 chars, naming the length floor (D3)', async () => {
   addCell(root, makeCell('jsm-short-1', { change_class: 'behavior' }));
-  claimCell(root, 'jsm-short-1', 'worker-jsm');
+  await claimCell(root, 'jsm-short-1', 'worker-jsm');
   await recordVerify(root, 'jsm-short-1', { command: 'x', output: 'ok', passed: true });
   await assertRejects(
     () =>
@@ -1420,7 +1420,7 @@ await check('capCell refuses a behavior-class cap whose red_failure_evidence is 
   assert(sharedText.length >= 80, 'fixture text must clear the length floor on its own, so only the duplicate check fires');
 
   addCell(root, makeCell('jsm-dup-a', { change_class: 'behavior' }));
-  claimCell(root, 'jsm-dup-a', 'worker-jsm');
+  await claimCell(root, 'jsm-dup-a', 'worker-jsm');
   await recordVerify(root, 'jsm-dup-a', { command: 'x', output: 'ok', passed: true });
   await capCell(root, 'jsm-dup-a', {
     files_changed: ['a.js'],
@@ -1429,7 +1429,7 @@ await check('capCell refuses a behavior-class cap whose red_failure_evidence is 
   });
 
   addCell(root, makeCell('jsm-dup-b', { change_class: 'behavior' }));
-  claimCell(root, 'jsm-dup-b', 'worker-jsm');
+  await claimCell(root, 'jsm-dup-b', 'worker-jsm');
   await recordVerify(root, 'jsm-dup-b', { command: 'x', output: 'ok', passed: true });
   await assertRejects(
     () =>
@@ -1445,7 +1445,7 @@ await check('capCell refuses a behavior-class cap whose red_failure_evidence is 
 
 await check('capCell caps a behavior-class cell whose red_failure_evidence clears the D3 floor and is unique (green row)', async () => {
   addCell(root, makeCell('jsm-green-1', { change_class: 'behavior' }));
-  claimCell(root, 'jsm-green-1', 'worker-jsm');
+  await claimCell(root, 'jsm-green-1', 'worker-jsm');
   await recordVerify(root, 'jsm-green-1', { command: 'x', output: 'ok', passed: true });
   const capped = await capCell(root, 'jsm-green-1', {
     files_changed: ['a.js'],
@@ -1460,7 +1460,7 @@ await check('capCell caps a behavior-class cell whose red_failure_evidence clear
 
 await check('capCell caps a behavior-class cell riding deliberate_exceptions without the D3 length/duplicate floor — today\'s contract unchanged (F5 passthrough)', async () => {
   addCell(root, makeCell('jsm-exception-1', { change_class: 'behavior' }));
-  claimCell(root, 'jsm-exception-1', 'worker-jsm');
+  await claimCell(root, 'jsm-exception-1', 'worker-jsm');
   await recordVerify(root, 'jsm-exception-1', { command: 'x', output: 'ok', passed: true });
   const capped = await capCell(root, 'jsm-exception-1', {
     files_changed: ['a.js'],
@@ -1475,7 +1475,7 @@ await check('capCell tolerates a corrupt sibling cell file during the D3 duplica
   fs.writeFileSync(corruptPath, '{ not valid json', 'utf8');
   try {
     addCell(root, makeCell('jsm-corrupt-check', { change_class: 'behavior' }));
-    claimCell(root, 'jsm-corrupt-check', 'worker-jsm');
+    await claimCell(root, 'jsm-corrupt-check', 'worker-jsm');
     await recordVerify(root, 'jsm-corrupt-check', { command: 'x', output: 'ok', passed: true });
     const capped = await capCell(root, 'jsm-corrupt-check', {
       files_changed: ['a.js'],
@@ -1493,7 +1493,7 @@ await check('capCell tolerates a corrupt sibling cell file during the D3 duplica
 
 await check('capCell applies NO teeth to non-behavior classes — an api-class cell caps normally without any verification_evidence (D3: only behavior gets hard teeth in v1)', async () => {
   addCell(root, makeCell('jsm-api-1', { change_class: 'api' }));
-  claimCell(root, 'jsm-api-1', 'worker-jsm');
+  await claimCell(root, 'jsm-api-1', 'worker-jsm');
   await recordVerify(root, 'jsm-api-1', { command: 'x', output: 'ok', passed: true });
   const capped = await capCell(root, 'jsm-api-1', { files_changed: ['a.js'], outcome: 'done' });
   assert(capped.status === 'capped', 'a non-behavior change_class never gets D3 cap teeth');
@@ -1508,7 +1508,7 @@ await check('capCell applies NO teeth to non-behavior classes — an api-class c
 
 await check('capCell releases the claim file on cap (D1 Δ2)', async () => {
   addCell(root, makeCell('rel-cap-1'));
-  claimCellCrossSession(root, { sessionId: 'sess-rel-cap', worker: 'w', cellId: 'rel-cap-1' });
+  await claimCellCrossSession(root, { sessionId: 'sess-rel-cap', worker: 'w', cellId: 'rel-cap-1' });
   assert(readClaim(root, 'rel-cap-1') !== null, 'precondition: claim file exists after claim');
   // D4 (msh-4): the owning session must now authenticate its own mutations —
   // recordVerify/capCell run AS 'sess-rel-cap', the session that claimed it.
@@ -1519,27 +1519,27 @@ await check('capCell releases the claim file on cap (D1 Δ2)', async () => {
 
 await check('unclaimCell releases the claim file, and the cell is re-claimable by the SAME session with no self-refusal (D1 Δ2)', async () => {
   addCell(root, makeCell('rel-unclaim-1'));
-  claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
+  await claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
   assert(readClaim(root, 'rel-unclaim-1') !== null, 'precondition: claim file exists after claim');
   // D4 (msh-4): unclaim as the owning session — single-session use never refuses.
-  unclaimCell(root, 'rel-unclaim-1', { sessionId: 'sess-rel-unclaim' });
+  await unclaimCell(root, 'rel-unclaim-1', { sessionId: 'sess-rel-unclaim' });
   assert(readClaim(root, 'rel-unclaim-1') === null, 'unclaim must release the claim file');
-  const reclaimed = claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
+  const reclaimed = await claimCellCrossSession(root, { sessionId: 'sess-rel-unclaim', worker: 'w', cellId: 'rel-unclaim-1' });
   assert(reclaimed.ok === true, `same-session re-claim after unclaim must not self-refuse, got ${JSON.stringify(reclaimed)}`);
 });
 
 await check('dropCell releases the claim file (D1 Δ2)', async () => {
   addCell(root, makeCell('rel-drop-1'));
-  claimCellCrossSession(root, { sessionId: 'sess-rel-drop', worker: 'w', cellId: 'rel-drop-1' });
+  await claimCellCrossSession(root, { sessionId: 'sess-rel-drop', worker: 'w', cellId: 'rel-drop-1' });
   assert(readClaim(root, 'rel-drop-1') !== null, 'precondition: claim file exists after claim');
-  dropCell(root, 'rel-drop-1', 'no longer needed');
+  await dropCell(root, 'rel-drop-1', 'no longer needed');
   assert(readClaim(root, 'rel-drop-1') === null, 'drop must release the claim file');
 });
 
 await check('capCell/unclaimCell/blockCell/dropCell/reopenCell never fail when there is no claim file to release (cells claimed before msh-2, or never claimed)', async () => {
   addCell(root, makeCell('rel-none-1'));
   assert(readClaim(root, 'rel-none-1') === null, 'precondition: no claim file (never claimed via claimCellCrossSession)');
-  claimCell(root, 'rel-none-1', 'worker-plain'); // the bare, file-less claim path
+  await claimCell(root, 'rel-none-1', 'worker-plain'); // the bare, file-less claim path
   await recordVerify(root, 'rel-none-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
   const capped = await capCell(root, 'rel-none-1', { files_changed: ['a.js'], outcome: 'done' });
   assert(capped.status === 'capped', 'cap succeeds cleanly with no claim file to release');
@@ -1555,7 +1555,7 @@ await check('capCell/unclaimCell/blockCell/dropCell/reopenCell never fail when t
 
 await check('a live claim mismatch refuses recordVerify/capCell/blockCell/unclaimCell, naming owner and expiry', async () => {
   addCell(root, makeCell('own-mismatch-1'));
-  claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-mismatch-1' });
+  await claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-mismatch-1' });
   await assertRejects(
     () =>
       recordVerify(root, 'own-mismatch-1', {
@@ -1588,7 +1588,7 @@ await check('a live claim mismatch refuses recordVerify/capCell/blockCell/unclai
     'sess-owner',
     'blockCell refuses a mismatched session',
   );
-  assertThrows(
+  await assertRejects(
     () => unclaimCell(root, 'own-mismatch-1', { sessionId: 'sess-intruder' }),
     'sess-owner',
     'unclaimCell refuses a mismatched session',
@@ -1601,7 +1601,7 @@ await check('a live claim mismatch refuses recordVerify/capCell/blockCell/unclai
 await check('reopenCell also refuses a live-claim mismatch, naming owner and expiry', async () => {
   addCell(root, makeCell('own-mismatch-reopen', { status: 'blocked' }));
   claimCellFile(root, 'sess-owner', 'own-mismatch-reopen', 3600); // a lingering live claim on an already-blocked cell
-  assertThrows(
+  await assertRejects(
     () => reopenCell(root, 'own-mismatch-reopen', 'retry', { sessionId: 'sess-intruder' }),
     'sess-owner',
     'reopenCell refuses a mismatched session',
@@ -1611,7 +1611,7 @@ await check('reopenCell also refuses a live-claim mismatch, naming owner and exp
 
 await check('an expired claim proceeds unchanged for verify/cap (rescue stays possible)', async () => {
   addCell(root, makeCell('own-expired-1'));
-  claimCell(root, 'own-expired-1', 'worker-x'); // bare claim (status only)
+  await claimCell(root, 'own-expired-1', 'worker-x'); // bare claim (status only)
   writeJsonAtomic(claimPath(root, 'own-expired-1'), {
     cell: 'own-expired-1',
     session: 'sess-gone',
@@ -1630,7 +1630,7 @@ await check('an expired claim proceeds unchanged for verify/cap (rescue stays po
 
 await check('a sessionless claim proceeds unchanged — single-session use never hits a refusal', async () => {
   addCell(root, makeCell('own-sessionless-1'));
-  claimCellCrossSession(root, { sessionId: null, worker: 'w', cellId: 'own-sessionless-1' });
+  await claimCellCrossSession(root, { sessionId: null, worker: 'w', cellId: 'own-sessionless-1' });
   assert(readClaim(root, 'own-sessionless-1').session === undefined, 'precondition: sessionless claim omits the session key');
   await recordVerify(root, 'own-sessionless-1', {
     command: 'node -e "process.exit(0)"',
@@ -1650,7 +1650,7 @@ await check(
   '--force-ownership bypasses a live-claim mismatch and appends an audited trace.ownership_overrides row (never trace.deviations) that survives the subsequent cap',
   async () => {
     addCell(root, makeCell('own-force-1'));
-    claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-force-1' });
+    await claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-force-1' });
     await recordVerify(root, 'own-force-1', {
       command: 'node -e "process.exit(0)"',
       output: 'ok',
@@ -1696,13 +1696,13 @@ await check(
   "a forced unclaim past another session's live claim still clears the claim file, so the forced-open cell is claimable by a new session (D4 Δ5)",
   async () => {
     addCell(root, makeCell('own-force-unclaim-1'));
-    claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-force-unclaim-1' });
-    unclaimCell(root, 'own-force-unclaim-1', { sessionId: 'sess-rescuer', forceOwnership: true });
+    await claimCellCrossSession(root, { sessionId: 'sess-owner', worker: 'w', cellId: 'own-force-unclaim-1' });
+    await unclaimCell(root, 'own-force-unclaim-1', { sessionId: 'sess-rescuer', forceOwnership: true });
     assert(
       readClaim(root, 'own-force-unclaim-1') === null,
       'forced unclaim releases the claim file — the cell must not stay self-refusing',
     );
-    const reclaimed = claimCellCrossSession(root, { sessionId: 'sess-rescuer', worker: 'w2', cellId: 'own-force-unclaim-1' });
+    const reclaimed = await claimCellCrossSession(root, { sessionId: 'sess-rescuer', worker: 'w2', cellId: 'own-force-unclaim-1' });
     assert(reclaimed.ok === true, `the forced-open cell is claimable by the rescuing session, got ${JSON.stringify(reclaimed)}`);
     const afterReclaim = readCell(root, 'own-force-unclaim-1');
     assert(

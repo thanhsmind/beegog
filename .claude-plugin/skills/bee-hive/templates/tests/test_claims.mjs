@@ -106,7 +106,7 @@ await check('sweep: TTL expired but heartbeat FRESH is never reclaimed (20260710
     claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
     ttl_seconds: 60,
   });
-  const result = sweepExpiredClaims(claimsRoot);
+  const result = await sweepExpiredClaims(claimsRoot);
   assert(result.ok === true, 'sweep returns ok');
   assert(!result.swept.includes('cell-1'), 'fresh-heartbeat claim not swept');
   assert(fs.existsSync(claimPath(claimsRoot, 'cell-1')), 'claim file untouched');
@@ -118,7 +118,7 @@ await check('sweep: TTL expired AND heartbeat stale IS reclaimed; no gate file l
     ...session,
     last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
   });
-  const result = sweepExpiredClaims(claimsRoot);
+  const result = await sweepExpiredClaims(claimsRoot);
   assert(result.swept.includes('cell-1'), `expired+stale claim swept, got ${JSON.stringify(result)}`);
   assert(!fs.existsSync(claimPath(claimsRoot, 'cell-1')), 'claim file reclaimed');
   assert(!fs.existsSync(claimGatePath(claimsRoot, 'cell-1')), 'gate file removed after sweep');
@@ -137,7 +137,7 @@ await check('sweep and adopt skip/refuse while the per-claim gate is held — ty
     last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
   });
   fs.writeFileSync(claimGatePath(claimsRoot, 'cell-2'), '{}', 'utf8'); // another process mid-adopt
-  const swept = sweepExpiredClaims(claimsRoot);
+  const swept = await sweepExpiredClaims(claimsRoot);
   assert(!swept.swept.includes('cell-2'), 'gated claim skipped by sweep');
   assert(fs.existsSync(claimPath(claimsRoot, 'cell-2')), 'gated claim untouched');
   const adopt = adoptClaim(claimsRoot, 'cell-2', 'sess-b');

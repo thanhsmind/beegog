@@ -293,6 +293,15 @@ function defaultTrace() {
     verification_evidence: null,
     verify_output: null,
     verify_passed: null,
+    // hardening-4b: the CURRENT claim's session (set by claimCell, cleared by
+    // releaseTrace on every claim-clearing transition) — distinct from the
+    // per-attempt ledger's own claim_session (appendAttempt), which is a
+    // point-in-time snapshot read from the live claims-store file at
+    // verify/block time. This one is a stable field on the cell itself, so
+    // claims.mjs's sweepExpiredClaims can check "does this cell's claim still
+    // belong to the session whose claim file I just swept" without reading
+    // the ledger at all.
+    claim_session: null,
   };
 }
 
@@ -926,11 +935,16 @@ function readCellStrictForUpdate(root, id) {
   return parsed;
 }
 
-export function updateCell(root, id, patch) {
+// hardening-4b: the read-check-write body (readCellStrictForUpdate through
+// writeCell) now runs inside withStoreLock(`cells:${id}`) — the audit finding
+// was that updateCell's status/merge check was not CAS-protected against a
+// concurrent claim/unclaim/reopen. Pure, store-agnostic validation (id shape,
+// patch shape, per-field validators) stays OUTSIDE the lock — it never reads
+// or writes the store, so there is nothing for it to race.
+export async function updateCell(root, id, patch) {
   if (!id || !ID_PATTERN.test(String(id))) {
     throw new Error(`updateCell: invalid id "${id}".`);
   }
-  assertNotArchived(root, 'updateCell', id); // hardening-1: refuse before ever reading/writing
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
     throw new Error('updateCell: patch must be a JSON object.');
   }
@@ -956,30 +970,33 @@ export function updateCell(root, id, patch) {
     }
   }
 
-  const cell = readCellStrictForUpdate(root, id);
-  if (cell.status !== 'open' && cell.status !== 'blocked') {
-    throw new Error(
-      `updateCell: cell "${id}" has status "${cell.status}" — only open or blocked cells are updatable (claimed = a live worker owns it; capped/dropped = frozen audit). The cell is untouched.`,
-    );
-  }
-
-  const merged = { ...cell, ...patch };
-  if (merged.lane === 'standard' || merged.lane === 'high-risk') {
-    const truths = merged.must_haves && merged.must_haves.truths;
-    if (!Array.isArray(truths) || truths.length === 0) {
+  return withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'updateCell', id); // hardening-1: refuse before ever reading/writing
+    const cell = readCellStrictForUpdate(root, id);
+    if (cell.status !== 'open' && cell.status !== 'blocked') {
       throw new Error(
-        `updateCell: lane "${merged.lane}" requires non-empty must_haves.truths — the patch would leave "${id}" without them. The cell is untouched.`,
+        `updateCell: cell "${id}" has status "${cell.status}" — only open or blocked cells are updatable (claimed = a live worker owns it; capped/dropped = frozen audit). The cell is untouched.`,
       );
     }
-  }
-  // D2: only a patch that changes `deps` can reintroduce a cycle — checking
-  // unconditionally would re-validate every unrelated field edit against the
-  // whole store for no reason. Runs before writeCell; a refusal leaves the
-  // cell untouched, same guarantee as every other updateCell refusal above.
-  if (Object.prototype.hasOwnProperty.call(patch, 'deps')) {
-    assertNoCycle(root, 'updateCell', [merged]);
-  }
-  return writeCell(root, merged);
+
+    const merged = { ...cell, ...patch };
+    if (merged.lane === 'standard' || merged.lane === 'high-risk') {
+      const truths = merged.must_haves && merged.must_haves.truths;
+      if (!Array.isArray(truths) || truths.length === 0) {
+        throw new Error(
+          `updateCell: lane "${merged.lane}" requires non-empty must_haves.truths — the patch would leave "${id}" without them. The cell is untouched.`,
+        );
+      }
+    }
+    // D2: only a patch that changes `deps` can reintroduce a cycle — checking
+    // unconditionally would re-validate every unrelated field edit against the
+    // whole store for no reason. Runs before writeCell; a refusal leaves the
+    // cell untouched, same guarantee as every other updateCell refusal above.
+    if (Object.prototype.hasOwnProperty.call(patch, 'deps')) {
+      assertNoCycle(root, 'updateCell', [merged]);
+    }
+    return writeCell(root, merged);
+  });
 }
 
 function depsAllCapped(root, cell) {
@@ -1016,43 +1033,63 @@ function laneRecordForFeature(root, feature) {
   return readLaneStrict(root, feature);
 }
 
-export function claimCell(root, id, worker) {
+// hardening-4b: the whole read-check-write (gate resolution through
+// writeCell) now runs inside withStoreLock(`cells:${id}`) — the audit finding
+// was that the status flip was not CAS-protected against a concurrent
+// unclaim/reopen/drop. `sessionId` (optional) is stamped onto
+// trace.claim_session — a NEW top-level trace field, distinct from the
+// per-attempt ledger's own claim_session (appendAttempt) — so
+// claims.mjs's sweepExpiredClaims can later verify, before resetting a swept
+// cell back to open, that the cell's CURRENT claim still matches the exact
+// session whose claim file it just removed (never resetting a cell some
+// OTHER, fresher claim already owns). claimCellCrossSession is the only
+// production caller that supplies sessionId; a bare/direct claimCell call
+// (tests, or any future sessionless caller) leaves it null, same shape a
+// sessionless claim already uses elsewhere in this module.
+export async function claimCell(root, id, worker, { sessionId } = {}) {
   if (typeof worker !== 'string' || !worker.trim()) {
     throw new Error('claimCell: worker name is required.');
   }
-  assertNotArchived(root, 'claimCell', id); // hardening-1: refuse before ever reading/writing
-  // fsh-5 (D2): the execution gate resolves from the CELL's own feature — a
-  // lane record for cell.feature authorizes (or refuses) the claim with ITS
-  // gate; no lane record means the default pipeline's gate, byte-identical to
-  // the single-pipeline model (D4 zero-lane parity). A missing cell resolves
-  // through the default gate so the error precedence (gate first, then
-  // not-found) matches today exactly.
-  const cell = readCell(root, id);
-  const laneRecord = cell ? laneRecordForFeature(root, cell.feature) : null;
-  const gateSource = laneRecord || readState(root);
-  if (!gateApproved(gateSource, 'execution')) {
-    throw new Error(
-      laneRecord
-        ? `claimCell: lane "${cell.feature}" gate "execution" is not approved — cells of this feature cannot be claimed before ITS lane passes Gate 3 (D2: only the lane's own approvals authorize its cells — the default pipeline's gate never does). Surface Gate 3 to the user for lane "${cell.feature}" and set its approved_gates.execution once approved.`
-        : 'claimCell: gate "execution" is not approved — cells cannot be claimed before execution is approved. Surface Gate 3 to the user ("Feasibility validated. Approve execution?") and set approved_gates.execution once approved. The opt-in gate_bypass switch may self-approve: level "normal" covers tiny/small/standard non-hard-gate work only; levels "full" and "total" also self-approve high-risk/hard-gate execution (decision 0010, total-autopilot dcf01d7b).',
-    );
-  }
-  if (!cell) throw new Error(`claimCell: cell "${id}" not found.`);
-  if (cell.status !== 'open') {
-    throw new Error(
-      `claimCell: cell "${id}" is "${cell.status}", not "open" — only open cells can be claimed. Run bee.mjs cells ready to list claimable cells.`,
-    );
-  }
-  const uncapped = depsAllCapped(root, cell);
-  if (uncapped.length > 0) {
-    throw new Error(
-      `claimCell: cell "${id}" has uncapped deps: ${uncapped.join(', ')} — deps must be capped first.`,
-    );
-  }
-  cell.status = 'claimed';
-  cell.trace = { ...defaultTrace(), ...(cell.trace || {}), worker: worker.trim() };
-  cell.trace.claimed_at = utcNow();
-  return writeCell(root, cell);
+  return withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'claimCell', id); // hardening-1: refuse before ever reading/writing
+    // fsh-5 (D2): the execution gate resolves from the CELL's own feature — a
+    // lane record for cell.feature authorizes (or refuses) the claim with ITS
+    // gate; no lane record means the default pipeline's gate, byte-identical to
+    // the single-pipeline model (D4 zero-lane parity). A missing cell resolves
+    // through the default gate so the error precedence (gate first, then
+    // not-found) matches today exactly.
+    const cell = readCell(root, id);
+    const laneRecord = cell ? laneRecordForFeature(root, cell.feature) : null;
+    const gateSource = laneRecord || readState(root);
+    if (!gateApproved(gateSource, 'execution')) {
+      throw new Error(
+        laneRecord
+          ? `claimCell: lane "${cell.feature}" gate "execution" is not approved — cells of this feature cannot be claimed before ITS lane passes Gate 3 (D2: only the lane's own approvals authorize its cells — the default pipeline's gate never does). Surface Gate 3 to the user for lane "${cell.feature}" and set its approved_gates.execution once approved.`
+          : 'claimCell: gate "execution" is not approved — cells cannot be claimed before execution is approved. Surface Gate 3 to the user ("Feasibility validated. Approve execution?") and set approved_gates.execution once approved. The opt-in gate_bypass switch may self-approve: level "normal" covers tiny/small/standard non-hard-gate work only; levels "full" and "total" also self-approve high-risk/hard-gate execution (decision 0010, total-autopilot dcf01d7b).',
+      );
+    }
+    if (!cell) throw new Error(`claimCell: cell "${id}" not found.`);
+    if (cell.status !== 'open') {
+      throw new Error(
+        `claimCell: cell "${id}" is "${cell.status}", not "open" — only open cells can be claimed. Run bee.mjs cells ready to list claimable cells.`,
+      );
+    }
+    const uncapped = depsAllCapped(root, cell);
+    if (uncapped.length > 0) {
+      throw new Error(
+        `claimCell: cell "${id}" has uncapped deps: ${uncapped.join(', ')} — deps must be capped first.`,
+      );
+    }
+    cell.status = 'claimed';
+    cell.trace = {
+      ...defaultTrace(),
+      ...(cell.trace || {}),
+      worker: worker.trim(),
+      claim_session: sessionId ?? null,
+    };
+    cell.trace.claimed_at = utcNow();
+    return writeCell(root, cell);
+  });
 }
 
 export async function recordVerify(
@@ -1311,16 +1348,20 @@ export async function blockCell(root, id, reason, { sessionId, forceOwnership = 
   return saved;
 }
 
-export function dropCell(root, id, reason) {
+// hardening-4b: read-check-write now runs inside withStoreLock(`cells:${id}`)
+// — the same CAS protection every other mutator below gets.
+export async function dropCell(root, id, reason) {
   if (typeof reason !== 'string' || !reason.trim()) {
     throw new Error('dropCell: a reason is required.');
   }
-  assertNotArchived(root, 'dropCell', id); // hardening-1: refuse before ever reading/writing
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`dropCell: cell "${id}" not found.`);
-  cell.status = 'dropped';
-  cell.trace = { ...defaultTrace(), ...(cell.trace || {}), dropped_reason: reason };
-  const saved = writeCell(root, cell);
+  const saved = await withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'dropCell', id); // hardening-1: refuse before ever reading/writing
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`dropCell: cell "${id}" not found.`);
+    cell.status = 'dropped';
+    cell.trace = { ...defaultTrace(), ...(cell.trace || {}), dropped_reason: reason };
+    return writeCell(root, cell);
+  });
   releaseClaimFileBestEffort(root, id); // D1 Δ2: drop is a claim-clearing transition
   return saved;
 }
@@ -1333,6 +1374,7 @@ function releaseTrace(existing) {
   const trace = { ...defaultTrace(), ...(existing || {}) };
   trace.worker = null;
   trace.claimed_at = null;
+  trace.claim_session = null; // hardening-4b: no owner once the claim is released
   trace.verify_command = null;
   trace.verify_output = null;
   trace.verify_passed = null;
@@ -1343,19 +1385,22 @@ function releaseTrace(existing) {
 // unclaimCell — the inverse of claim: a mis-claimed or abandoned "claimed" cell
 // goes back to "open" so another worker can pick it up. Refuses on any other
 // status (GitHub #12). Mirrors claimCell's own-status assertion shape.
-export function unclaimCell(root, id, { sessionId, forceOwnership = false } = {}) {
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`unclaimCell: cell "${id}" not found.`);
-  if (cell.status !== 'claimed') {
-    throw new Error(
-      `unclaimCell: cell "${id}" is "${cell.status}", not "claimed" — only a claimed cell can be unclaimed (returned to open). For a capped/blocked/dropped cell use bee.mjs cells reopen.`,
-    );
-  }
-  let trace = { ...defaultTrace(), ...(cell.trace || {}) };
-  trace = guardClaimOwnership(root, id, trace, 'unclaimCell', { sessionId, forceOwnership }); // D4
-  cell.status = 'open';
-  cell.trace = releaseTrace(trace);
-  const saved = writeCell(root, cell);
+// hardening-4b: read-check-write now runs inside withStoreLock(`cells:${id}`).
+export async function unclaimCell(root, id, { sessionId, forceOwnership = false } = {}) {
+  const saved = await withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`unclaimCell: cell "${id}" not found.`);
+    if (cell.status !== 'claimed') {
+      throw new Error(
+        `unclaimCell: cell "${id}" is "${cell.status}", not "claimed" — only a claimed cell can be unclaimed (returned to open). For a capped/blocked/dropped cell use bee.mjs cells reopen.`,
+      );
+    }
+    let trace = { ...defaultTrace(), ...(cell.trace || {}) };
+    trace = guardClaimOwnership(root, id, trace, 'unclaimCell', { sessionId, forceOwnership }); // D4
+    cell.status = 'open';
+    cell.trace = releaseTrace(trace);
+    return writeCell(root, cell);
+  });
   releaseClaimFileBestEffort(root, id); // D1 Δ2: unclaim is a claim-clearing transition (forced unclaim also clears — D4 Δ5)
   return saved;
 }
@@ -1364,30 +1409,33 @@ export function unclaimCell(root, id, { sessionId, forceOwnership = false } = {}
 // for rework, recording why. Refuses on "open" (already there) and on "claimed"
 // (that is unclaim's job). Clears the recorded verify so the reopened cell must
 // prove itself again before capping (GitHub #12).
-export function reopenCell(root, id, reason, { sessionId, forceOwnership = false } = {}) {
+// hardening-4b: read-check-write now runs inside withStoreLock(`cells:${id}`).
+export async function reopenCell(root, id, reason, { sessionId, forceOwnership = false } = {}) {
   if (typeof reason !== 'string' || !reason.trim()) {
     throw new Error('reopenCell: a reason is required.');
   }
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`reopenCell: cell "${id}" not found.`);
-  if (cell.status === 'open') {
-    throw new Error(`reopenCell: cell "${id}" is already "open".`);
-  }
-  if (cell.status === 'claimed') {
-    throw new Error(
-      `reopenCell: cell "${id}" is "claimed" — use bee.mjs cells unclaim to release the claim back to open.`,
-    );
-  }
-  let guardedTrace = { ...defaultTrace(), ...(cell.trace || {}) };
-  guardedTrace = guardClaimOwnership(root, id, guardedTrace, 'reopenCell', { sessionId, forceOwnership }); // D4
-  cell.status = 'open';
-  const trace = releaseTrace(guardedTrace);
-  trace.blocked_reason = null;
-  trace.dropped_reason = null;
-  trace.reopened_at = utcNow();
-  trace.reopened_reason = reason;
-  cell.trace = trace;
-  const saved = writeCell(root, cell);
+  const saved = await withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`reopenCell: cell "${id}" not found.`);
+    if (cell.status === 'open') {
+      throw new Error(`reopenCell: cell "${id}" is already "open".`);
+    }
+    if (cell.status === 'claimed') {
+      throw new Error(
+        `reopenCell: cell "${id}" is "claimed" — use bee.mjs cells unclaim to release the claim back to open.`,
+      );
+    }
+    let guardedTrace = { ...defaultTrace(), ...(cell.trace || {}) };
+    guardedTrace = guardClaimOwnership(root, id, guardedTrace, 'reopenCell', { sessionId, forceOwnership }); // D4
+    cell.status = 'open';
+    const trace = releaseTrace(guardedTrace);
+    trace.blocked_reason = null;
+    trace.dropped_reason = null;
+    trace.reopened_at = utcNow();
+    trace.reopened_reason = reason;
+    cell.trace = trace;
+    return writeCell(root, cell);
+  });
   releaseClaimFileBestEffort(root, id); // D1 Δ2: reopen is a claim-clearing transition
   return saved;
 }
@@ -1396,14 +1444,17 @@ export function reopenCell(root, id, reason, { sessionId, forceOwnership = false
 // records the tier it chose (extraction/generation/ceiling), rather than a fixed
 // planning-time label. Keeps tierMix/scarcity accurate against real dispatch
 // decisions. Idempotent; validates the tier.
-export function setTier(root, id, tier) {
+// hardening-4b: read-check-write now runs inside withStoreLock(`cells:${id}`).
+export async function setTier(root, id, tier) {
   if (!MODEL_TIERS.includes(tier)) {
     throw new Error(`setTier: tier must be one of ${MODEL_TIERS.join(', ')}, got "${tier}".`);
   }
-  const cell = readCell(root, id);
-  if (!cell) throw new Error(`setTier: cell "${id}" not found.`);
-  cell.tier = tier;
-  return writeCell(root, cell);
+  return withStoreLock(root, `cells:${id}`, () => {
+    const cell = readCell(root, id);
+    if (!cell) throw new Error(`setTier: cell "${id}" not found.`);
+    cell.tier = tier;
+    return writeCell(root, cell);
+  });
 }
 
 // Decision 0011 — capture-mode spine. The behavior_change cells capped for the
@@ -1876,7 +1927,7 @@ export async function recordJudgeVerdict(
 // only other caller) still enforces a non-empty sessionId at its OWN
 // boundary before ever reaching here, so the cross-session selection flow is
 // byte-unchanged for a real session id.
-export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } = {}) {
+export async function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } = {}) {
   if (sessionId !== null && sessionId !== undefined && (typeof sessionId !== 'string' || !sessionId.trim())) {
     throw new Error('claimCellCrossSession: sessionId must be a non-empty string, or null/absent for a sessionless claim.');
   }
@@ -1914,7 +1965,11 @@ export function claimCellCrossSession(root, { sessionId, worker, cellId, ttl } =
   }
 
   try {
-    const cell = claimCell(root, id, worker);
+    // hardening-4b: claimCell is now withStoreLock-wrapped (async); pass the
+    // resolved session through so its trace.claim_session matches the claim
+    // file this same call just created — the pairing sweepExpiredClaims'
+    // reset guard checks.
+    const cell = await claimCell(root, id, worker, { sessionId: session });
     return { ok: true, cell, claim: fileClaim.claim };
   } catch (err) {
     releaseClaim(root, session, id); // never orphan the claim file we just created
@@ -2015,7 +2070,10 @@ function resolveHoldTopology(root) {
   return null;
 }
 
-export function claimNextCell(root, { sessionId, worker, ttl } = {}) {
+// hardening-4b: async — sweepExpiredClaims may now itself acquire
+// withStoreLock (the sweep-reset), and this composes claimCellCrossSession
+// (also now async) at the bottom.
+export async function claimNextCell(root, { sessionId, worker, ttl } = {}) {
   if (typeof sessionId !== 'string' || !sessionId.trim()) {
     throw new Error('claimNextCell: sessionId is required.');
   }
@@ -2027,7 +2085,7 @@ export function claimNextCell(root, { sessionId, worker, ttl } = {}) {
   // Unconditional, first thing — the production sweep trigger (C10). A swept
   // cell's stale claims-store file is gone by the time selection below reads
   // anything, so it is claimable in this exact pass.
-  sweepExpiredClaims(root);
+  await sweepExpiredClaims(root);
 
   const resolved = resolvePipeline(root, { sessionId: session });
   if (!resolved.ok) {

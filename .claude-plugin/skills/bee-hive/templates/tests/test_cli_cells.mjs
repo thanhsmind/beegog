@@ -128,7 +128,7 @@ await check(
       });
       assert(readCell(dir, 'stale-1').status === 'open', 'precondition: cells.mjs status was never flipped (the crash-window gap)');
 
-      const result = claimNextCell(dir, { sessionId: 'sess-fresh', worker: 'worker-fresh' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-fresh', worker: 'worker-fresh' });
       assert(result.ok === true, `expected the swept cell to be reclaimed and selected, got ${JSON.stringify(result)}`);
       assert(result.cell.id === 'stale-1' && result.cell.status === 'claimed', 'the previously-stale cell is now claimed');
       assert(readClaim(dir, 'stale-1').session === 'sess-fresh', 'the claims-store claim now belongs to the fresh session');
@@ -163,7 +163,7 @@ await check(
       laneBinding.createSession(dir, { id: 'sess-own' });
       laneBinding.bindSessionLane(dir, 'sess-own', 'lane-own');
 
-      const result = claimNextCell(dir, { sessionId: 'sess-own', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-own', worker: 'w' });
       assert(result.ok === true && result.cell.id === 'own-1', `own lane must win regardless of backlog rank, got ${JSON.stringify(result)}`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -182,7 +182,7 @@ await check(
       laneBinding.createSession(dir, { id: 'sess-locked' });
       laneBinding.bindSessionLane(dir, 'sess-locked', 'lane-locked');
 
-      const result = claimNextCell(dir, { sessionId: 'sess-locked', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-locked', worker: 'w' });
       assert(result.ok === false && result.code === 'NO_APPROVED_WORK', `an unapproved lane must never be auto-selected, got ${JSON.stringify(result)}`);
       assert(readCell(dir, 'locked-1').status === 'open', 'the locked cell is untouched');
     } finally {
@@ -202,7 +202,7 @@ await check("claimNextCell: own lane with no ready cells falls through to anothe
     laneBinding.createSession(dir, { id: 'sess-empty' });
     laneBinding.bindSessionLane(dir, 'sess-empty', 'lane-empty');
 
-    const result = claimNextCell(dir, { sessionId: 'sess-empty', worker: 'w' });
+    const result = await claimNextCell(dir, { sessionId: 'sess-empty', worker: 'w' });
     assert(result.ok === true && result.cell.id === 'full-1', `own lane empty must fall through to the other approved lane, got ${JSON.stringify(result)}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -235,12 +235,12 @@ await check(
 
       // lane-ranked has an explicit (best) backlog rank, so it wins even
       // though it is the YOUNGEST lane by created_at.
-      const first = claimNextCell(dir, { sessionId: 'sess-unbound-1', worker: 'w' });
+      const first = await claimNextCell(dir, { sessionId: 'sess-unbound-1', worker: 'w' });
       assert(first.ok === true && first.cell.id === 'ranked-1', `backlog rank must win the tie-break first, got ${JSON.stringify(first)}`);
 
       // With lane-ranked's cell now claimed (no longer ready), the two
       // remaining UNRANKED lanes tie-break by created_at, oldest first.
-      const second = claimNextCell(dir, { sessionId: 'sess-unbound-2', worker: 'w' });
+      const second = await claimNextCell(dir, { sessionId: 'sess-unbound-2', worker: 'w' });
       assert(second.ok === true && second.cell.id === 'old-1', `unranked lanes must tie-break by created_at, oldest first, got ${JSON.stringify(second)}`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -291,7 +291,7 @@ await check(
       );
       bindLiveSession(dir, 'sess-other-live', 'lane-owned');
 
-      const result = claimNextCell(dir, { sessionId: 'sess-acting', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-acting', worker: 'w' });
       assert(
         result.ok === true && result.cell.id === 'free-1',
         `the live-owned lane must be skipped despite its better backlog rank, got ${JSON.stringify(result)}`,
@@ -326,7 +326,7 @@ await check(
       );
       bindStaleSessionOnLane(dir, 'sess-other-dead', 'lane-owned');
 
-      const result = claimNextCell(dir, { sessionId: 'sess-acting', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-acting', worker: 'w' });
       assert(
         result.ok === true && result.cell.id === 'owned-1',
         `a stale-heartbeat binder must not protect the lane — it is poolable and wins its backlog rank, got ${JSON.stringify(result)}`,
@@ -353,7 +353,7 @@ await check(
       laneBinding.bindSessionLane(dir, 'sess-acting-x', 'lane-x'); // acting session bound to its OWN lane
       bindLiveSession(dir, 'sess-other-y', 'lane-y');
 
-      const result = claimNextCell(dir, { sessionId: 'sess-acting-x', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-acting-x', worker: 'w' });
       assert(
         result.ok === true && result.cell.id === 'z-1',
         `own binding to lane-x must not block anything and lane-y must stay excluded, got ${JSON.stringify(result)}`,
@@ -375,7 +375,7 @@ await check(
       makeCellFile(dir, 'owned-only-1', { feature: 'lane-owned', status: 'open', deps: [] });
       bindLiveSession(dir, 'sess-other-live', 'lane-owned');
 
-      const result = claimNextCell(dir, { sessionId: 'sess-acting-lonely', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-acting-lonely', worker: 'w' });
       assert(
         result.ok === false && result.code === 'NO_APPROVED_WORK',
         `a live-owned lane must never be raided even as the only candidate anywhere, got ${JSON.stringify(result)}`,
@@ -403,7 +403,7 @@ await check(
       makeCellFile(dir, 'free-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/free.ts'] });
       await reserve(dir, { agent: 'other-worker', cell: 'other-cell', path: 'src/held.ts', session: 'sess-other' });
 
-      const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
       assert(result.ok === true && result.cell.id === 'free-1', `held-1 must be skipped for another session's hold, got ${JSON.stringify(result)}`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -424,7 +424,7 @@ await check("claimNextCell: the acting session's OWN active hold on a cell's fil
     makeCellFile(dir, 'own-hold-1', { feature: 'demo-feat', status: 'open', deps: [], files: ['src/mine.ts'] });
     await reserve(dir, { agent: 'me-worker', cell: 'own-hold-1', path: 'src/mine.ts', session: 'sess-me' });
 
-    const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+    const result = await claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
     assert(result.ok === true && result.cell.id === 'own-hold-1', `own hold must never exclude the cell, got ${JSON.stringify(result)}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -455,7 +455,7 @@ await check(
       // holder id is therefore foreign to the acting claim-next call.
       await mirrorHold(dir, { path: 'src/foreign.ts', holder: 'worktree-other', feature: 'demo-feat', cell: 'other-cell' });
 
-      const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
       assert(
         result.ok === true && result.cell.id === 'zzz-foreign-free-1',
         `held-foreign-1 must be skipped for another checkout's cross-worktree hold, got ${JSON.stringify(result)}`,
@@ -483,7 +483,7 @@ await check(
       // 'main' is the acting checkout's own hold, not a foreign one.
       await mirrorHold(dir, { path: 'src/mine-ledger.ts', holder: 'main', feature: 'demo-feat', cell: 'own-ledger-1' });
 
-      const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
       assert(
         result.ok === true && result.cell.id === 'own-ledger-1',
         `the acting checkout's own ledger entry must never exclude the cell, got ${JSON.stringify(result)}`,
@@ -512,7 +512,7 @@ await check(
         'no cross-worktree ledger file must exist before claim-next runs',
       );
 
-      const result = claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-me', worker: 'w' });
       assert(
         result.ok === true && result.cell.id === 'no-ledger-1',
         `a missing ledger must behave byte-identically to today, got ${JSON.stringify(result)}`,
@@ -540,7 +540,7 @@ await check(
       // checks deps/status, so step 1 succeeds before step 2 throws.
       makeCellFile(dir, 'blocked-1', { feature: 'demo-feat', status: 'open', deps: ['missing-dep'] });
 
-      const result = claimCellCrossSession(dir, { sessionId: 'sess-x', worker: 'w', cellId: 'blocked-1' });
+      const result = await claimCellCrossSession(dir, { sessionId: 'sess-x', worker: 'w', cellId: 'blocked-1' });
       assert(result.ok === false && result.code === 'CLAIM_CELL_FAILED', `claimCell's throw must surface as a typed failure, got ${JSON.stringify(result)}`);
       assert(readClaim(dir, 'blocked-1') === null, 'the claims-store file must be released, not orphaned, after the throw');
       assert(readCell(dir, 'blocked-1').status === 'open', 'the cell itself is untouched by the failed claim');
@@ -564,7 +564,7 @@ await check(
       });
       makeCellFile(dir, 'plain-1', { feature: 'plain-feat', status: 'open', deps: [] });
 
-      const result = claimNextCell(dir, { sessionId: 'sess-brand-new', worker: 'w' });
+      const result = await claimNextCell(dir, { sessionId: 'sess-brand-new', worker: 'w' });
       assert(result.ok === true && result.cell.id === 'plain-1', `a fresh session id with no lane binding must resolve to the default pipeline, got ${JSON.stringify(result)}`);
       assert(!fs.existsSync(path.join(dir, '.bee', 'lanes')), 'no lanes directory was ever created by claim-next itself');
     } finally {
@@ -577,7 +577,7 @@ await check('claimNextCell: NO_APPROVED_WORK when there is genuinely nothing cla
   const dir = makeStateRepo('bee-claimnext-none-');
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { schema_version: '1.0', phase: 'idle', feature: null, workers: [] });
-    const result = claimNextCell(dir, { sessionId: 'sess-lonely', worker: 'w' });
+    const result = await claimNextCell(dir, { sessionId: 'sess-lonely', worker: 'w' });
     assert(result.ok === false && result.code === 'NO_APPROVED_WORK', `expected NO_APPROVED_WORK, got ${JSON.stringify(result)}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

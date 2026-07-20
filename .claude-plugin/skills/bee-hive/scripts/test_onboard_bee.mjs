@@ -1410,6 +1410,7 @@ try {
     ".bee/claims/",
     ".bee/runtime/",
     ".bee/cache/",
+    ".bee/locks/",
     ".bee/doctor-attest.json",
     ".bee/native-transport-probe.json",
     ".bee/config.local.json",

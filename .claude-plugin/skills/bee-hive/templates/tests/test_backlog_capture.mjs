@@ -199,7 +199,7 @@ await check('scribingDebt tracks behavior_change caps against the last scribing 
   });
   const cap = async (id, behaviorChange) => {
     addCell(dRoot, mk(id));
-    claimCell(dRoot, id, 'w');
+    await claimCell(dRoot, id, 'w');
     await recordVerify(dRoot, id, { command: 'x', output: 'ok', passed: true });
     await capCell(
       dRoot,
