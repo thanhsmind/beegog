@@ -1108,6 +1108,49 @@ function runCatalogDriftChecks() {
     ),
   );
 
+  // cell codex-command-windows-1: the Codex hook schema's optional
+  // `commandWindows` override (run with the session cwd as working dir, no
+  // `$SHELL -lc`) must be present on every codex-repo-target entry as a
+  // BARE node invocation with no shell metacharacters — the POSIX `command`
+  // string above is Windows-broken ($(...), exec, [ -n ] all fail under
+  // cmd.exe/powershell.exe). commandWindows is codex-repo-only: the Codex
+  // plugin manifest omits codex hooks (only .codex/hooks.json, the repo
+  // target, ever loads), so neither the codex PLUGIN projection nor the
+  // Claude projection may carry it.
+  const repoCommandWindowsEntries = Object.values(repoProjection.hooks)
+    .flat()
+    .flatMap((g) => g.hooks);
+  const NODE_BARE_SOURCE_REPO = /^node hooks\/bee-[a-z-]+\.mjs --source=repo$/;
+  const SHELL_METACHARS = /\$\(|\[\s*-n|\bexec\b/;
+  const repoCommandWindowsOk =
+    repoCommandWindowsEntries.length > 0 &&
+    repoCommandWindowsEntries.every(
+      (h) =>
+        typeof h.commandWindows === "string" &&
+        NODE_BARE_SOURCE_REPO.test(h.commandWindows) &&
+        !SHELL_METACHARS.test(h.commandWindows),
+    );
+  const claudeCommandWindowsAbsent = Object.values(claudeProjection.hooks)
+    .flat()
+    .flatMap((g) => g.hooks)
+    .every((h) => h.commandWindows === undefined);
+  const codexPluginCommandWindowsAbsent = Object.values(codexProjection.hooks)
+    .flat()
+    .flatMap((g) => g.hooks)
+    .every((h) => h.commandWindows === undefined);
+  const commandWindowsContractOk =
+    repoCommandWindowsOk && claudeCommandWindowsAbsent && codexPluginCommandWindowsAbsent;
+  rows.push(
+    catalogDriftRow(
+      "codex-repo-commandWindows-contract",
+      commandWindowsContractOk,
+      commandWindowsContractOk
+        ? `all ${repoCommandWindowsEntries.length} codex-repo-target entries carry a bare "node hooks/<script>.mjs --source=repo" commandWindows (no shell metacharacters); claude and codex-plugin entries carry none`
+        : `DRIFT: commandWindows contract violated: repoOk=${repoCommandWindowsOk} ` +
+            `claudeAbsent=${claudeCommandWindowsAbsent} codexPluginAbsent=${codexPluginCommandWindowsAbsent}`,
+    ),
+  );
+
   return rows;
 }
 

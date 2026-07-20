@@ -911,18 +911,54 @@ try {
   const codexText2 = JSON.stringify(codexRepo2);
   check(codexText2.includes("user-owned-codex-hook"),
     "non-bee .codex/hooks.json entry survives a second --repo-hooks apply");
-  const codexInitCount = codexText2.split("bee-session-init.mjs").length - 1;
-  check(codexInitCount === 1,
-    "no duplicate bee entries in .codex/hooks.json after second apply",
-    `count: ${codexInitCount}`);
+  // codex-command-windows-1: every codex-repo entry now carries the filename
+  // TWICE by design — once in `command` (POSIX) and once in `commandWindows`
+  // (Windows override) — so a flat substring count over the whole stringified
+  // object would conflate "one entry, two fields" with "two duplicate
+  // entries". Count each field separately instead: this is a STRONGER guard
+  // than the old flat count, since it also proves commandWindows itself never
+  // duplicates independently of command.
+  function fieldOccurrences(hooksObj, filename, field) {
+    let count = 0;
+    for (const entries of Object.values(hooksObj || {})) {
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        for (const hook of entry.hooks || []) {
+          if (String(hook[field] || "").includes(filename)) count += 1;
+        }
+      }
+    }
+    return count;
+  }
+  const codexInitCommandCount = fieldOccurrences(codexRepo2.hooks, "bee-session-init.mjs", "command");
+  const codexInitCommandWindowsCount = fieldOccurrences(codexRepo2.hooks, "bee-session-init.mjs", "commandWindows");
+  check(codexInitCommandCount === 1 && codexInitCommandWindowsCount === 1,
+    "no duplicate bee entries in .codex/hooks.json after second apply (command and commandWindows each carry bee-session-init.mjs exactly once)",
+    `command: ${codexInitCommandCount}, commandWindows: ${codexInitCommandWindowsCount}`);
   check(!codexText2.includes('"$r"/hooks/bee-'),
     'stale source-repo-shape ("$r"/hooks) bee entry replaced, not preserved');
   check(!codexText2.includes("CLAUDE_PROJECT_DIR"),
     "stale $CLAUDE_PROJECT_DIR-shape bee entry replaced, not preserved");
-  const codexStateSyncCount = codexText2.split("bee-state-sync.mjs").length - 1;
-  check(codexStateSyncCount === 3,
-    "bee-state-sync.mjs appears exactly 3x (canonical PostToolUse/SubagentStop/Stop; seeded stale Stop twin dropped)",
-    `count: ${codexStateSyncCount}`);
+  const codexStateSyncCommandCount = fieldOccurrences(codexRepo2.hooks, "bee-state-sync.mjs", "command");
+  const codexStateSyncCommandWindowsCount = fieldOccurrences(codexRepo2.hooks, "bee-state-sync.mjs", "commandWindows");
+  check(codexStateSyncCommandCount === 3 && codexStateSyncCommandWindowsCount === 3,
+    "bee-state-sync.mjs appears exactly 3x in command AND 3x in commandWindows (canonical PostToolUse/SubagentStop/Stop; seeded stale Stop twin dropped)",
+    `command: ${codexStateSyncCommandCount}, commandWindows: ${codexStateSyncCommandWindowsCount}`);
+  // Regression guard for the Windows contract itself (cell codex-command-windows-1):
+  // every codex-repo entry's commandWindows is a BARE node invocation with no
+  // shell metacharacters — no $(...), no [ -n ], no exec.
+  const allCodexRepoHooks2 = Object.values(codexRepo2.hooks || {})
+    .flat()
+    .flatMap((e) => e.hooks || [])
+    .filter((h) => String(h.command || "").includes("hooks/bee-"));
+  const bareNodeNoShellMeta = allCodexRepoHooks2.every((h) =>
+    typeof h.commandWindows === "string" &&
+    /^node \.bee\/bin\/hooks\/bee-[a-z-]+\.mjs --source=repo$/.test(h.commandWindows) &&
+    !h.commandWindows.includes("$(") &&
+    !h.commandWindows.includes("[ -n") &&
+    !/\bexec\b/.test(h.commandWindows));
+  check(bareNodeNoShellMeta,
+    "every bee .codex/hooks.json entry's commandWindows is a bare \"node .bee/bin/hooks/<file>.mjs --source=repo\" with no shell metacharacters ($(, [ -n, exec)",
+    JSON.stringify(allCodexRepoHooks2.map((h) => h.commandWindows)));
 
   // --- 9e. Codex user-config status line (machine-level, add-only) -----------
   // Uses its own temp repo + fake homes: the check targets ~/.codex/config.toml

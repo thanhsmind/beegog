@@ -86,6 +86,18 @@ function commandFor(script, target) {
   return `node "\${CLAUDE_PLUGIN_ROOT}/hooks/${script}"`;
 }
 
+// Windows override for the repo target's Codex projection (Codex hook schema
+// optional `commandWindows` field, run with the session cwd as working dir —
+// no `$SHELL -lc`, so the POSIX `command` string above is Windows-broken).
+// Shell-agnostic (works under both cmd.exe and powershell.exe): a bare node
+// invocation, relative to cwd, no `$(...)`, no `[ -n ]`, no `exec`, no
+// env-var expansion. Codex-repo only (see renderProjection's call site) —
+// bee's own hooks live at top-level hooks/ in that projection.
+function commandWindowsFor(script, target) {
+  if (target === TARGETS.REPO) return `node hooks/${script} --source=repo`;
+  return undefined;
+}
+
 // Catalog entries carry the logical (script, statusMessage) pair; the concrete
 // command string is a function of the TARGET and is produced only at render
 // time. Nothing in the catalog is hand-authored per runtime or per target.
@@ -248,11 +260,20 @@ export function renderProjection(runtime, { target = TARGETS.PLUGIN } = {}) {
       .map((g) => {
         const out = {};
         if (g.matcher !== undefined) out.matcher = g.matcher;
-        out.hooks = g.hooks.map((h) => ({
-          type: "command",
-          command: commandFor(h.script, target),
-          statusMessage: h.statusMessage,
-        }));
+        out.hooks = g.hooks.map((h) => {
+          const entry = {
+            type: "command",
+            command: commandFor(h.script, target),
+          };
+          // commandWindows is CODEX-REPO-ONLY: the Codex plugin manifest
+          // omits codex hooks (only .codex/hooks.json, the repo target,
+          // loads), and Claude has no such field in its hook schema.
+          if (runtime === RUNTIMES.CODEX && target === TARGETS.REPO) {
+            entry.commandWindows = commandWindowsFor(h.script, target);
+          }
+          entry.statusMessage = h.statusMessage;
+          return entry;
+        });
         return out;
       });
     if (rendered.length > 0) hooks[event] = rendered;

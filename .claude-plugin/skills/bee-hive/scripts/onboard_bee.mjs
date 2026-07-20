@@ -2147,10 +2147,22 @@ function codexHookCommand(fileName) {
   ].join("\n");
 }
 
+// Windows override for this HOST projection (Codex hook schema optional
+// `commandWindows` field, run with the session cwd as working dir — no
+// `$SHELL -lc`, so the POSIX command above is Windows-broken). Shell-agnostic
+// (cmd.exe and powershell.exe both run it): a bare node invocation relative
+// to cwd, no `$(...)`, no `[ -n ]`, no `exec`, no env-var expansion. Mirrors
+// hooks/catalog.mjs's commandWindowsFor for TARGETS.REPO, but pointed at the
+// host's vendored .bee/bin/hooks/ instead of bee's own top-level hooks/.
+function codexHookCommandWindows(fileName) {
+  return `node .bee/bin/hooks/${fileName} --source=repo`;
+}
+
 function renderCodexHookEntries() {
   const entry = (fileName, statusMessage) => ({
     type: "command",
     command: codexHookCommand(fileName),
+    commandWindows: codexHookCommandWindows(fileName),
     statusMessage,
   });
   return {
