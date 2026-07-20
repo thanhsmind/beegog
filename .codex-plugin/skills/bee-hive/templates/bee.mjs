@@ -831,7 +831,7 @@ function ownershipFlags(flags) {
   };
 }
 
-function handleCellsVerify(root, flags) {
+async function handleCellsVerify(root, flags) {
   const id = requireFlag(flags, 'id');
   const command = requireFlag(flags, 'command');
   const passedRaw = requireFlag(flags, 'passed');
@@ -847,7 +847,10 @@ function handleCellsVerify(root, flags) {
   // failure_signature; omitted, recordVerify falls back to the mechanical
   // normalizer on `output`.
   const signature = flags.signature !== undefined ? String(flags.signature) : null;
-  const cell = recordVerify(root, id, {
+  // GH #27.2 (ghf-4): recordVerify's read-mutate-write body now runs under
+  // withStoreLock, so it is async — every handler below awaits it (dispatch
+  // already does `await handler(...)`, so this only needed the local await).
+  const cell = await recordVerify(root, id, {
     command,
     output,
     passed: passedRaw === 'true',
@@ -857,10 +860,10 @@ function handleCellsVerify(root, flags) {
   return { result: cell, text: `Recorded verify on ${cell.id}: passed=${cell.trace.verify_passed}.` };
 }
 
-function handleCellsCap(root, flags) {
+async function handleCellsCap(root, flags) {
   const id = requireFlag(flags, 'id');
   const deviations = flags['deviations-file'] ? parseDeviationsFile(String(flags['deviations-file'])) : [];
-  const cell = capCell(root, id, {
+  const cell = await capCell(root, id, {
     outcome: flags.outcome ? String(flags.outcome) : undefined,
     files_changed: flags.files
       ? String(flags.files)
@@ -876,14 +879,15 @@ function handleCellsCap(root, flags) {
         : null,
     deviations,
     friction: flags.friction ? String(flags.friction) : null,
+    overrideJudge: flags['override-judge'] !== undefined ? String(flags['override-judge']) : null,
     ...ownershipFlags(flags),
   });
   emitJudgeStandardCapAdvisory(cell); // F5
   return { result: cell, text: `Capped ${cell.id} at ${cell.trace.capped_at}.` };
 }
 
-function handleCellsBlock(root, flags) {
-  const cell = blockCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
+async function handleCellsBlock(root, flags) {
+  const cell = await blockCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Blocked ${cell.id}.` };
 }
 
@@ -917,18 +921,22 @@ function handleCellsJudge(root, flags) {
   return { result: verdict, text };
 }
 
-// D2 (self-correcting-loop): the audited reset door for a cell whose claim
+// D2 + GH #27.4 (D-GHF-C): the audited reset door for a cell whose claim
 // door is closed by CELL_BUDGET_EXHAUSTED/REPEATED_FAILURE. --reason is
 // required at the lib layer (resetCellBudget throws otherwise); --session-id
 // follows the same optional/env-resolved convention as every other
 // ownership-aware verb, but resetCellBudget never enforces claim ownership
 // (a budget-exhausted cell has already been claim-cleared by the refusal
-// path — there is no live claim to own).
-function handleCellsResetBudget(root, flags) {
+// path — there is no live claim to own). resetCellBudget itself now refuses
+// unless the cell is actually budget-blocked, and refuses without an actor
+// (--operator here, or its own BEE_AGENT_NAME env fallback when --operator
+// is omitted).
+async function handleCellsResetBudget(root, flags) {
   const id = requireFlag(flags, 'id');
   const reason = requireFlag(flags, 'reason');
   const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : undefined;
-  const cell = resetCellBudget(root, id, reason, { sessionId });
+  const operator = flags['operator'] !== undefined ? String(flags['operator']) : undefined;
+  const cell = await resetCellBudget(root, id, reason, { sessionId, operator });
   return { result: cell, text: `Reset the claim-lifetime budget door for ${cell.id}.` };
 }
 
@@ -4018,8 +4026,8 @@ function checkManifestDrift(root, { skipWrite = false } = {}) {
 
 // ─── --help / --help --json: D3 tool-schema-shaped manifest ────────────────
 
-function publicManifestEntries() {
-  return COMMAND_REGISTRY.map(({ name, invoke, description, parameters, examples, deprecated }) => ({
+function toManifestEntries(entries) {
+  return entries.map(({ name, invoke, description, parameters, examples, deprecated }) => ({
     name,
     invoke,
     description,
@@ -4029,9 +4037,13 @@ function publicManifestEntries() {
   }));
 }
 
-function renderHelpText() {
+function publicManifestEntries() {
+  return toManifestEntries(COMMAND_REGISTRY);
+}
+
+function renderHelpText(entries = publicManifestEntries()) {
   const lines = [`bee — unified CLI dispatcher (schema_version ${SCHEMA_VERSION})`, ''];
-  for (const entry of publicManifestEntries()) {
+  for (const entry of entries) {
     lines.push(entry.invoke);
     lines.push(`    ${entry.description}`);
     const required = entry.parameters?.required || [];
@@ -4090,6 +4102,29 @@ export async function main(argv) {
   const { leading, rest } = splitCommandTokens(argv);
   const { commandName, extra } = resolveCommand(leading);
   const jsonRequested = rest.some((t) => t === '--json' || t.startsWith('--json='));
+
+  // Group/command-scoped --help (GH #23): "bee <group> --help" or "bee
+  // <group> <verb> --help" renders help filtered to just that group/command,
+  // reusing the same publicManifestEntries/renderHelpText shapes as top-level
+  // --help. Only fires when commandName resolves to at least one registry
+  // entry (itself or a "<commandName>." prefix) — an unrecognized group falls
+  // through unchanged to the existing GROUP_USAGE_FALLBACKS / nearest-match
+  // error path below, byte-exact (DA5 bijection probe never sends --help).
+  if (commandName && rest.includes('--help')) {
+    const filtered = COMMAND_REGISTRY.filter(
+      (e) => e.name === commandName || e.name.startsWith(`${commandName}.`),
+    );
+    if (filtered.length > 0) {
+      const entries = toManifestEntries(filtered);
+      if (jsonRequested) {
+        const manifest = { schema_version: SCHEMA_VERSION, commands: entries };
+        process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+      } else {
+        process.stdout.write(renderHelpText(entries));
+      }
+      return 0;
+    }
+  }
 
   if (!commandName) {
     return emit(

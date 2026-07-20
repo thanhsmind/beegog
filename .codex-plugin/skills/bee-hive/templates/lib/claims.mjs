@@ -287,6 +287,12 @@ export function claimCellFile(root, sessionId, cellId, ttl = DEFAULT_CLAIM_TTL_S
     ...(session ? { session } : {}),
     ttl_seconds: Number.isFinite(ttl) && ttl > 0 ? Math.floor(ttl) : DEFAULT_CLAIM_TTL_SECONDS,
     claimed_at: utcNow(now),
+    // GH #27.1 (D-GHF-B): stamped ONCE here, at claim creation — the
+    // immutable acquisition identity. claimed_at is the mutable expiry
+    // clock (renewClaimTTL legitimately rewrites it on every heartbeat);
+    // acquired_at never changes for the life of this claim file, so
+    // checkCellBudgets can key off it and stay heartbeat-invariant.
+    acquired_at: utcNow(now),
   };
   try {
     fs.writeFileSync(claimPath(root, cell), `${JSON.stringify(claim, null, 2)}\n`, {
@@ -374,6 +380,9 @@ export function renewClaimTTL(root, sessionId, { now = Date.now() } = {}) {
     try {
       const claim = readClaim(root, cell); // re-verify ownership under the gate
       if (claim && claim.session === session) {
+        // GH #27.1 (D-GHF-B): the `...claim` spread carries acquired_at
+        // forward untouched — only claimed_at (the expiry clock) advances
+        // on a heartbeat. Never add an explicit acquired_at key here.
         writeJsonAtomic(claimPath(root, cell), { ...claim, claimed_at: utcNow(now) });
         renewed.push(cell);
       }
