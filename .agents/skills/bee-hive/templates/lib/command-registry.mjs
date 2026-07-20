@@ -186,6 +186,7 @@ export const COMMAND_REGISTRY = [
         'evidence-file': { type: 'string', description: 'Path to a verification_evidence JSON file (back-compat; prefer --evidence-stdin).' },
         'deviations-file': { type: 'string', description: 'Path to a deviations list (JSON array or newline-delimited text).' },
         friction: { type: 'string', description: 'One-line friction note, only when a friction trigger fired.' },
+        'override-judge': { type: 'string', description: 'Audited override reason — required to cap a cell whose latest semantic-judge verdict is NEEDS_REVISION (refused otherwise with JUDGE_REWORK_REQUIRED); recorded to trace.judge_overrides and logged as a decision.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['id'],

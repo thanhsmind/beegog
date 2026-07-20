@@ -761,8 +761,10 @@ export async function capCell(
     outcome,
     sessionId,
     forceOwnership = false,
+    overrideJudge = null,
   } = {},
 ) {
+  const overrideReason = typeof overrideJudge === 'string' ? overrideJudge.trim() : '';
   const saved = await withStoreLock(root, `cells:${id}`, () => {
     const cell = readCell(root, id);
     if (!cell) throw new Error(`capCell: cell "${id}" not found.`);
@@ -780,6 +782,44 @@ export async function capCell(
       throw new Error(
         `capCell: cell "${id}" has no passing verify result — run the cell's verify command and record it (bee.mjs cells verify --id ${id} --command CMD --passed true) before capping.`,
       );
+    }
+    // D-GHF-C (GH #27.5): a NEEDS_REVISION semantic-judge verdict (judge.mjs
+    // JUDGE_VERDICTS — the enum has no 'FAIL', 'NEEDS_REVISION' is the fail
+    // value) blocks cap unless an audited --override-judge reason is
+    // supplied. Only the LATEST trace.semantic_judge entry is consulted — a
+    // cell with no semantic_judge entries at all is untouched by this guard
+    // (byte-identical to pre-ghf-6 behavior).
+    const judgeEntries = Array.isArray(trace.semantic_judge) ? trace.semantic_judge : [];
+    const latestJudge = judgeEntries.length ? judgeEntries[judgeEntries.length - 1] : null;
+    if (latestJudge && latestJudge.verdict === 'NEEDS_REVISION' && !overrideReason) {
+      const err = new Error(
+        `capCell: cell "${id}" has a NEEDS_REVISION semantic-judge verdict — rework the cell and record a PASS verdict (bee.mjs cells judge-record), or cap with an audited override (bee.mjs cells cap --id ${id} --override-judge "<reason>").`,
+      );
+      err.code = 'JUDGE_REWORK_REQUIRED';
+      throw err;
+    }
+    // Override always audited: appended to append-only trace.judge_overrides
+    // and logged as a decision BEFORE the cell write (inside the lock,
+    // mirroring resetCellBudget's D-GHF-C audit-before-write ordering) so the
+    // decision record survives even if the write itself fails. Recorded
+    // whenever a reason is supplied, not only when the guard above actually
+    // fired — an override is audit-worthy on its own, regardless of whether
+    // it was strictly needed.
+    if (overrideReason) {
+      const overrides = Array.isArray(trace.judge_overrides) ? trace.judge_overrides : [];
+      const overrideEntry = {
+        overridden_at: utcNow(),
+        reason: overrideReason,
+        last_verdict: latestJudge ? latestJudge.verdict : null,
+      };
+      logDecision(root, {
+        decision: `«cells cap: cell "${id}" judge override by ${trace.worker || 'unknown'} — ${overrideReason}»`,
+        rationale:
+          'Audited cap over a NEEDS_REVISION (or absent) semantic-judge verdict (D-GHF-C, GH #27.5) — the verdict itself is never rewritten, only a judge_overrides marker appended.',
+        scope: 'repo',
+        source: 'user',
+      });
+      trace = { ...trace, judge_overrides: [...overrides, overrideEntry] };
     }
     if (bc && !verification_evidence) {
       throw new Error(

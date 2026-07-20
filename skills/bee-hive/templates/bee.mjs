@@ -879,6 +879,7 @@ async function handleCellsCap(root, flags) {
         : null,
     deviations,
     friction: flags.friction ? String(flags.friction) : null,
+    overrideJudge: flags['override-judge'] !== undefined ? String(flags['override-judge']) : null,
     ...ownershipFlags(flags),
   });
   emitJudgeStandardCapAdvisory(cell); // F5

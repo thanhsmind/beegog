@@ -2510,6 +2510,52 @@ await check('bee cells cap --id demo-2 caps the cell', async () => {
   assert(JSON.parse(result.stdout).status === 'capped', `expected capped, got ${result.stdout}`);
 });
 
+// D-GHF-C (GH #27.5): `cells cap --override-judge` end to end through the
+// real dispatcher — refused without the flag when the latest judge-recorded
+// verdict is NEEDS_REVISION, capped with an audited trace.judge_overrides
+// entry when the flag is supplied.
+await check('bee cells cap refuses a NEEDS_REVISION-judged cell without --override-judge, and --override-judge caps it with an audited trace.judge_overrides entry', async () => {
+  addCell(root2, {
+    id: 'judge-cli-1',
+    feature: 'demo2',
+    title: 'CLI judge-override fixture',
+    lane: 'small',
+    action: 'Exercise the --override-judge flag through the dispatcher.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  const claimed = await runBee(['cells', 'claim', '--id', 'judge-cli-1', '--worker', 'worker-judge-cli', '--json']);
+  assert(claimed.status === 0, `cells claim setup failed: ${claimed.status}: stdout=${claimed.stdout} stderr=${claimed.stderr}`);
+  const verified = await runBee(['cells', 'verify', '--id', 'judge-cli-1', '--command', 'node -e 0', '--output', 'ok', '--passed', 'true', '--json']);
+  assert(verified.status === 0, `cells verify setup failed: ${verified.status}: stdout=${verified.stdout} stderr=${verified.stderr}`);
+
+  const verdictPath = path.join(root2, 'verdict-judge-cli-1.json');
+  fs.writeFileSync(
+    verdictPath,
+    JSON.stringify({
+      schema: 'judge-verdict/1',
+      verdict: 'NEEDS_REVISION',
+      checks: [{ id: 'must_haves', status: 'FAIL', evidence: 'diff missed a CONTEXT truth' }],
+      failure_signature: 'missed-truth',
+      fixability: 'automatic',
+      confidence: 'high',
+    }),
+    'utf8',
+  );
+  const recorded = await runBee(['cells', 'judge-record', '--id', 'judge-cli-1', '--file', 'verdict-judge-cli-1.json', '--json']);
+  assert(recorded.status === 0, `cells judge-record setup failed: ${recorded.status}: stdout=${recorded.stdout} stderr=${recorded.stderr}`);
+
+  const blocked = await runBee(['cells', 'cap', '--id', 'judge-cli-1', '--outcome', 'done', '--files', 'a.js', '--json']);
+  assert(blocked.status !== 0, `cap without --override-judge must be refused, got status ${blocked.status}: stdout=${blocked.stdout}`);
+  assert(/JUDGE_REWORK_REQUIRED|NEEDS_REVISION/.test(blocked.stdout), `refusal must name the judge block (emitError writes JSON to stdout under --json), got stdout=${blocked.stdout}`);
+
+  const overridden = await runBee(['cells', 'cap', '--id', 'judge-cli-1', '--outcome', 'done', '--files', 'a.js', '--override-judge', 'accepted risk via CLI', '--json']);
+  assert(overridden.status === 0, `cap with --override-judge must succeed, got status ${overridden.status}: stdout=${overridden.stdout} stderr=${overridden.stderr}`);
+  const overriddenCell = JSON.parse(overridden.stdout);
+  assert(overriddenCell.status === 'capped', `expected capped, got ${overridden.stdout}`);
+  const overrides = overriddenCell.trace.judge_overrides;
+  assert(Array.isArray(overrides) && overrides.length === 1 && overrides[0].reason === 'accepted risk via CLI', `expected one audited judge_overrides entry, got ${JSON.stringify(overrides)}`);
+});
+
 await check('bee cells judge --id demo-2 reports no frozen-judge hits', async () => {
   const result = await runBee(['cells', 'judge', '--id', 'demo-2', '--json']);
   assert(JSON.parse(result.stdout).hits.length === 0, `expected no hits, got ${result.stdout}`);
