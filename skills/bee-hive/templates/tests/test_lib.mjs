@@ -61,6 +61,8 @@ import {
   listCells,
   cellsArchiveDir,
   resolveCellFile,
+  archiveFeature,
+  archivedSummary,
   readyCells,
   claimCell,
   recordVerify,
@@ -962,6 +964,148 @@ await check('listCells default scans ONLY the active .bee/cells/ dir (skips arch
     assert(
       archivedCappedOnly.map((c) => c.id).join(',') === 'arc-lst-a,arc-lst-c',
       'status filter applies to archived cells too',
+    );
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+// ─── hardening-1: P0 data-loss hardening for archiveFeature/unarchiveFeature
+// (slug/containment validation, capped|dropped allowlist, atomic rollback,
+// and the mutate-an-archived-cell fork guard). Each case below was RED
+// against the pre-hardening code (see cell hardening-1 report) — the point of
+// this net is that it stays green as the fix lands, not merely that it
+// exists.
+
+await check('archiveFeature refuses a path-traversal feature slug and moves nothing (P0 containment)', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-traversal-'));
+  try {
+    const evilFeature = '../escape';
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'trav-1.json'),
+      JSON.stringify(makeCell('trav-1', { feature: evilFeature, status: 'capped' })),
+    );
+
+    await assertRejects(
+      () => archiveFeature(aRoot, evilFeature),
+      'invalid feature',
+      'a feature slug containing ".." / "/" must be refused before any move',
+    );
+    assert(fs.existsSync(path.join(cellsDirPath, 'trav-1.json')), 'cell file untouched after refusal');
+    assert(
+      !fs.existsSync(path.join(cellsDirPath, 'escape')),
+      'no directory created outside the archive tree for the escaped path',
+    );
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('archiveFeature refuses a feature containing a blocked cell — only ALL-capped/dropped features archive', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-blocked-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'blk-1.json'),
+      JSON.stringify(makeCell('blk-1', { feature: 'blk-feat', status: 'capped' })),
+    );
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'blk-2.json'),
+      JSON.stringify(makeCell('blk-2', { feature: 'blk-feat', status: 'blocked' })),
+    );
+
+    await assertRejects(
+      () => archiveFeature(aRoot, 'blk-feat'),
+      'blk-2 (blocked)',
+      'a blocked sibling must refuse the whole archive, named in the error',
+    );
+    assert(fs.existsSync(path.join(cellsDirPath, 'blk-1.json')), 'capped sibling untouched — all-or-nothing refusal');
+    assert(fs.existsSync(path.join(cellsDirPath, 'blk-2.json')), 'the blocked cell itself untouched');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('mutating an archived cell id (updateCell/claimCell/capCell) refuses "archived" and never forks a duplicate active file', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-mutate-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'mut-1.json'),
+      JSON.stringify(makeCell('mut-1', { feature: 'mut-feat', status: 'capped' })),
+    );
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'mut-2.json'),
+      JSON.stringify(makeCell('mut-2', { feature: 'mut-feat', status: 'capped' })),
+    );
+
+    const state = readState(aRoot);
+    state.approved_gates.execution = true;
+    writeState(aRoot, state);
+
+    const archived = await archiveFeature(aRoot, 'mut-feat');
+    assert(
+      archived.moved.includes('mut-1') && archived.moved.includes('mut-2'),
+      `both cells should be archived, got ${JSON.stringify(archived)}`,
+    );
+    const activePath = path.join(cellsDirPath, 'mut-1.json');
+    assert(!fs.existsSync(activePath), 'sanity: the active copy is gone after archiving');
+    assert(readCell(aRoot, 'mut-1') !== null, 'sanity: readCell still resolves the id via the archive fallback');
+
+    assertThrows(() => updateCell(aRoot, 'mut-1', { title: 'hack' }), 'archived', 'updateCell on an archived id refuses');
+    assert(!fs.existsSync(activePath), 'updateCell must not fork a duplicate active file');
+
+    assertThrows(() => claimCell(aRoot, 'mut-1', 'worker-x'), 'archived', 'claimCell on an archived id refuses');
+    assert(!fs.existsSync(activePath), 'claimCell must not fork a duplicate active file');
+
+    await assertRejects(
+      () => capCell(aRoot, 'mut-1', { files_changed: ['x'], outcome: 'done' }),
+      'archived',
+      'capCell on an archived id refuses',
+    );
+    assert(!fs.existsSync(activePath), 'capCell must not fork a duplicate active file');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('archiveFeature is atomic: a mid-loop rename failure rolls back every already-moved file and leaves summary.json untouched', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-rollback-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    for (const id of ['roll-1', 'roll-2', 'roll-3']) {
+      fs.writeFileSync(
+        path.join(cellsDirPath, `${id}.json`),
+        JSON.stringify(makeCell(id, { feature: 'roll-feat', status: 'capped' })),
+      );
+    }
+    // listCells sorts by id, so the loop visits roll-1, roll-2, roll-3 in
+    // that order. Pre-creating a DIRECTORY at roll-2's destination path makes
+    // fs.renameSync throw EISDIR when the loop reaches the second cell —
+    // 'file onto an existing directory' is refused by the OS rename(2) call
+    // itself, a clean, deterministic, permission-free way to inject a
+    // mid-loop failure without mocking fs.
+    const archiveDir = cellsArchiveDir(aRoot, 'roll-feat');
+    fs.mkdirSync(path.join(archiveDir, 'roll-2.json'), { recursive: true });
+
+    await assertRejects(
+      () => archiveFeature(aRoot, 'roll-feat'),
+      'eisdir',
+      'the injected mid-loop rename failure must propagate, not be swallowed',
+    );
+
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-1.json')), 'roll-1 (already moved) must be rolled back to active');
+    assert(!fs.existsSync(path.join(archiveDir, 'roll-1.json')), 'roll-1 must not be left behind in the archive tree');
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-2.json')), 'roll-2 (never moved — its slot was blocked) stays active');
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-3.json')), 'roll-3 (never reached) stays active');
+    assert(
+      !('roll-feat' in archivedSummary(aRoot)),
+      'summary.json must be untouched — it is written only after every move succeeds',
     );
   } finally {
     fs.rmSync(aRoot, { recursive: true, force: true });

@@ -947,7 +947,7 @@ function handleCellsReopen(root, flags) {
 // feature guard lives HERE (not in archiveFeature itself, which has no
 // access to state.json) — archiving the feature currently in flight would
 // hide its own cells from readyCells/claim-next mid-swarm.
-function handleCellsArchive(root, flags) {
+async function handleCellsArchive(root, flags) {
   const feature = requireFlag(flags, 'feature');
   const state = readState(root);
   if (state.feature && state.feature === feature) {
@@ -955,16 +955,16 @@ function handleCellsArchive(root, flags) {
       `cells archive: feature "${feature}" is the active feature (state.feature) — only a closed/inactive feature can be archived. Switch or clear state.feature first, or archive a different feature.`,
     );
   }
-  const result = archiveFeature(root, feature);
+  const result = await archiveFeature(root, feature);
   return {
     result,
     text: `Archived feature "${result.feature}": ${result.moved.length} cell(s) moved (capped=${result.counts.capped} dropped=${result.counts.dropped}).`,
   };
 }
 
-function handleCellsUnarchive(root, flags) {
+async function handleCellsUnarchive(root, flags) {
   const feature = requireFlag(flags, 'feature');
-  const moved = unarchiveFeature(root, feature);
+  const moved = await unarchiveFeature(root, feature);
   return {
     result: { feature, moved },
     text: `Unarchived feature "${feature}": ${moved.length} cell(s) restored to .bee/cells/.`,

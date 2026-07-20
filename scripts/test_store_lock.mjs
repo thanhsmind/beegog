@@ -209,12 +209,71 @@ function readCounterTotal(dir) {
 // ─── orchestrator ────────────────────────────────────────────────────────────
 
 async function runOrchestrator() {
-  const { lockFilePath } = await import(LOCK_LIB_PATH);
+  const { lockFilePath, withStoreLock } = await import(LOCK_LIB_PATH);
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'test-store-lock-'));
   fs.mkdirSync(path.join(tmpRoot, '.bee', 'locks'), { recursive: true });
 
   const failures = [];
   const expectedTotal = WORKERS * ITERS;
+
+  // (0) lockFilePath sanitizes logical names for Windows filesystem safety.
+  // Runtime lock names include "cells:<id>" (cells.mjs's `cells:${id}`, 4
+  // call sites) — ':' is invalid in a Windows filename, so an unsanitized
+  // lockFilePath made every cap/verify/block/reset under that lock throw on
+  // Windows (fs.writeFileSync with flag 'wx' rejects the path outright).
+  {
+    const WINDOWS_INVALID_CHARS = /[<>:"/\\|?*\x00-\x1f]/;
+
+    const cellsDemoPath = lockFilePath(tmpRoot, 'cells:demo-1');
+    const cellsDemoBasename = path.basename(cellsDemoPath);
+    if (WINDOWS_INVALID_CHARS.test(cellsDemoBasename)) {
+      failures.push(
+        `(0a) lockFilePath(root, 'cells:demo-1') basename "${cellsDemoBasename}" still contains a Windows-invalid character`,
+      );
+    }
+
+    // Distinct logical names must map to distinct files even after
+    // sanitization could otherwise collide them (":" and "/" both -> "_").
+    const pathColonA = lockFilePath(tmpRoot, 'cells:a');
+    const pathColonB = lockFilePath(tmpRoot, 'cells:b');
+    const pathSlashA = lockFilePath(tmpRoot, 'cells/a');
+    if (pathColonA === pathColonB) {
+      failures.push(`(0b) distinct logical names 'cells:a' and 'cells:b' collided to the same lock file: ${pathColonA}`);
+    }
+    if (pathColonA === pathSlashA) {
+      failures.push(
+        `(0b) distinct logical names 'cells:a' and 'cells/a' collided to the same lock file after sanitization: ${pathColonA}`,
+      );
+    }
+
+    // The SAME logical name must map to the SAME file every time (pure
+    // function, safe across processes) — determinism, not per-call entropy.
+    const pathColonAAgain = lockFilePath(tmpRoot, 'cells:a');
+    if (pathColonA !== pathColonAAgain) {
+      failures.push(
+        `(0c) lockFilePath(root, 'cells:a') is not deterministic: ${pathColonA} vs ${pathColonAAgain} on a second call`,
+      );
+    }
+
+    // A real withStoreLock round-trip using a colon-bearing logical name
+    // still acquires and releases cleanly (mutual exclusion still works,
+    // and the lock file it creates on disk is the sanitized path above).
+    try {
+      let ran = false;
+      await withStoreLock(tmpRoot, 'cells:round-trip', async () => {
+        ran = true;
+      });
+      if (!ran) {
+        failures.push('(0d) withStoreLock(root, "cells:round-trip", fn) did not run fn');
+      }
+      const roundTripLockPath = lockFilePath(tmpRoot, 'cells:round-trip');
+      if (fs.existsSync(roundTripLockPath)) {
+        failures.push(`(0d) withStoreLock left the lock file behind after release: ${roundTripLockPath}`);
+      }
+    } catch (err) {
+      failures.push(`(0d) withStoreLock(root, "cells:round-trip", fn) threw: ${(err && err.stack) || err}`);
+    }
+  }
 
   try {
     // (a) N racers under the real lock, fresh lock file — no lost update, no overlap.
