@@ -65,6 +65,7 @@ export const SUITES = [
   ["scripts/test_reservation_race.mjs"],
   ["scripts/test_worktree_holds_race.mjs"],
   ["scripts/test_heartbeat_touch.mjs"],
+  ["scripts/test_render_race.mjs"],
 ];
 
 // Timing/lock/fork-racer suites: measured flaky under concurrent CPU
@@ -78,6 +79,7 @@ const SERIAL_SENSITIVE = new Set([
   "scripts/test_worktree_holds_race.mjs",
   "scripts/test_state_write_concurrency.mjs",
   "scripts/test_heartbeat_touch.mjs",
+  "scripts/test_render_race.mjs",
 ]);
 
 function suiteLabel(entry) {

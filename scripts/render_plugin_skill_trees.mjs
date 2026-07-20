@@ -28,6 +28,7 @@ import {
   RENDER_SIDECAR,
   buildRenderSidecar,
 } from "../skills/bee-hive/scripts/onboard_bee.mjs";
+import { withStoreLock } from "../skills/bee-hive/templates/lib/lock.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
@@ -124,17 +125,94 @@ export function sidecarBytes(runtime, rendered) {
   return Buffer.from(`${JSON.stringify(sidecarObject(runtime, rendered), null, 2)}\n`, "utf8");
 }
 
-function writeTree(targetRoot, rendered, runtime) {
-  fs.rmSync(targetRoot, { recursive: true, force: true });
-  for (const [rel, bytes] of rendered) {
-    const dest = path.join(targetRoot, ...rel.split("/"));
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, bytes);
-  }
-  fs.writeFileSync(path.join(targetRoot, RENDER_SIDECAR), sidecarBytes(runtime, rendered));
+// Concurrency safety (cell cs-3): two `node render_plugin_skill_trees.mjs`
+// runs firing at once used to race on this exact rmSync-whole-dir + plain
+// per-file-write loop — a later run's rmSync could fire mid-way through an
+// earlier run's write loop (ENOTEMPTY when files reappear under an
+// in-progress delete, or a torn tree with files missing/interleaved from
+// both runs). The fix has two parts:
+//   1. main() wraps the render+write of BOTH plugin trees in ONE
+//      withStoreLock(REPO_ROOT, 'plugin-render') critical section, so only
+//      one process is ever inside writeTree at a time system-wide.
+//   2. writeTree itself renders into a fresh tmp SIBLING dir (never touching
+//      targetRoot), writes the sidecar there too (pre-swap), then swaps via
+//      two renames — the only window where targetRoot is observably
+//      mid-change shrinks from "the whole write loop" to two atomic
+//      rename() syscalls. This also means a crash mid-render leaves the
+//      previous committed tree intact rather than half-deleted.
+const TMP_STALE_MS = 5 * 60 * 1000; // 5 minutes: presumed a crashed prior run, never a slow one
+
+function randomSuffix() {
+  return crypto.randomBytes(6).toString("hex");
 }
 
-function main() {
+// Startup hygiene: remove any stale '<base>.tmp-*' sibling dirs a crashed
+// prior run left behind. Only dirs older than TMP_STALE_MS are removed, so
+// this never races a concurrent run's own in-progress tmp dir (that run
+// still holds/will hold the 'plugin-render' lock; this cleanup runs before
+// acquiring it, deliberately, since a stale tmp dir from a PID that no
+// longer exists must not require the lock to clean up).
+function cleanStaleTmpDirs(targetRoot) {
+  const parent = path.dirname(targetRoot);
+  const base = path.basename(targetRoot);
+  let entries;
+  try {
+    entries = fs.readdirSync(parent, { withFileTypes: true });
+  } catch {
+    return; // parent doesn't exist yet — nothing to clean
+  }
+  const now = Date.now();
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(`${base}.tmp-`)) continue;
+    const abs = path.join(parent, entry.name);
+    let stat;
+    try {
+      stat = fs.statSync(abs);
+    } catch {
+      continue; // vanished between readdir and stat — fine, nothing to do
+    }
+    if (now - stat.mtimeMs > TMP_STALE_MS) {
+      fs.rmSync(abs, { recursive: true, force: true });
+    }
+  }
+}
+
+// Render `rendered` into a tmp sibling dir (sidecar included, pre-swap),
+// then swap it into place via renames. Caller MUST hold
+// withStoreLock(REPO_ROOT, 'plugin-render') — see main().
+function writeTree(targetRoot, rendered, runtime) {
+  const parent = path.dirname(targetRoot);
+  const base = path.basename(targetRoot);
+  const tmpRoot = path.join(parent, `${base}.tmp-${process.pid}-${randomSuffix()}`);
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  fs.mkdirSync(tmpRoot, { recursive: true });
+  try {
+    for (const [rel, bytes] of rendered) {
+      const dest = path.join(tmpRoot, ...rel.split("/"));
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, bytes);
+    }
+    fs.writeFileSync(path.join(tmpRoot, RENDER_SIDECAR), sidecarBytes(runtime, rendered));
+
+    const backupRoot = path.join(parent, `${base}.old-${process.pid}-${randomSuffix()}`);
+    const existed = fs.existsSync(targetRoot);
+    if (existed) fs.renameSync(targetRoot, backupRoot);
+    try {
+      fs.renameSync(tmpRoot, targetRoot);
+    } catch (error) {
+      // Swap failed partway — restore the previous tree rather than leaving
+      // targetRoot missing.
+      if (existed) fs.renameSync(backupRoot, targetRoot);
+      throw error;
+    }
+    if (existed) fs.rmSync(backupRoot, { recursive: true, force: true });
+  } finally {
+    // No-op once renamed away; cleans up tmpRoot on any throw before the swap.
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+async function main() {
   const files = canonicalFiles();
   const errors = validateWholeTree(files);
   if (errors.length) {
@@ -142,13 +220,23 @@ function main() {
     process.exit(1);
   }
   for (const runtime of RENDER_RUNTIMES) {
-    const rendered = renderTree(runtime, files);
-    writeTree(TARGET_ROOTS[runtime], rendered, runtime);
-    console.log(
-      `WROTE ${path.relative(REPO_ROOT, TARGET_ROOTS[runtime])}: ${rendered.size} file(s) + ${RENDER_SIDECAR}`,
-    );
+    cleanStaleTmpDirs(TARGET_ROOTS[runtime]);
   }
+  await withStoreLock(REPO_ROOT, "plugin-render", () => {
+    for (const runtime of RENDER_RUNTIMES) {
+      const rendered = renderTree(runtime, files);
+      writeTree(TARGET_ROOTS[runtime], rendered, runtime);
+      console.log(
+        `WROTE ${path.relative(REPO_ROOT, TARGET_ROOTS[runtime])}: ${rendered.size} file(s) + ${RENDER_SIDECAR}`,
+      );
+    }
+  });
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) main();
+if (isMain) {
+  main().catch((error) => {
+    console.error(`render_plugin_skill_trees: ${(error && error.stack) || error}`);
+    process.exit(1);
+  });
+}
