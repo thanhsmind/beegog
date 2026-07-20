@@ -56,15 +56,20 @@ function utcNow(nowMs) {
 }
 
 /**
- * D3 — session id is resolved at mutation time, never handed down: explicit
- * flag (highest, for tests/CLI callers) -> CLAUDE_CODE_SESSION_ID env ->
- * absent (null). A blank/whitespace-only flag or env value is treated as
+ * D3 (hardening-4a Δ-amended) — session id is resolved at mutation time,
+ * never handed down: explicit flag (highest, for tests/CLI callers) ->
+ * BEE_SESSION_ID env (runtime-neutral — set by any harness, not just
+ * Claude Code) -> CLAUDE_CODE_SESSION_ID env (legacy, kept for back-compat)
+ * -> absent (null). A blank/whitespace-only flag or env value is treated as
  * absent, same as omitting it. Callers that require a session (claim-next)
  * still enforce non-null themselves; this helper only resolves, it never
- * refuses.
+ * refuses. lock.mjs's withStoreLock duplicates this exact chain inline
+ * (deliberately, to stay import-light) — keep the two in sync by hand.
  */
 export function resolveSessionId({ flag } = {}) {
   if (typeof flag === 'string' && flag.trim()) return flag.trim();
+  const beeEnv = process.env.BEE_SESSION_ID;
+  if (typeof beeEnv === 'string' && beeEnv.trim()) return beeEnv.trim();
   const env = process.env.CLAUDE_CODE_SESSION_ID;
   if (typeof env === 'string' && env.trim()) return env.trim();
   return null;
@@ -184,6 +189,26 @@ export function heartbeatStale(session, nowMs = Date.now(), staleSeconds = DEFAU
   return beatMs + staleSeconds * 1000 <= nowMs;
 }
 
+/**
+ * hardening-4a — "concurrent mode" is true when at least one OTHER session
+ * record exists with a LIVE (non-stale) heartbeat, reusing the exact msh-5
+ * staleness window heartbeatStale already applies everywhere else
+ * (DEFAULT_HEARTBEAT_STALE_SECONDS, overridable only for tests). Backs the
+ * sessionless-claim/reserve refusal below: a genuinely solo session (nobody
+ * else's heartbeat is live) keeps today's sessionless behavior byte-
+ * unchanged; only once a second live session shows up does an unidentified
+ * caller get asked to say who it is. `excludeSessionId` lets a caller that
+ * DOES hold a real session id exclude its own record — its own liveness is
+ * never "another" session; a caller with no session id at all simply asks
+ * "is anyone else out there right now."
+ */
+export function isConcurrentMode(root, { excludeSessionId = null, now = Date.now(), staleSeconds = DEFAULT_HEARTBEAT_STALE_SECONDS } = {}) {
+  const exclude = typeof excludeSessionId === 'string' ? excludeSessionId.trim() : '';
+  return listSessionRecords(root).some(
+    (session) => session.id !== exclude && !heartbeatStale(session, now, staleSeconds),
+  );
+}
+
 // ─── session→lane binding (fresh-session-handoff fsh-3) ─────────────────────
 // The lane field is OPTIONAL and OMITTED while unbound: createSession never
 // writes it, so pre-existing session-record consumers see exactly the shape
@@ -277,10 +302,24 @@ function releaseGate(root, cellId) {
  * the `session` key entirely rather than writing a placeholder value. A
  * non-null sessionId is still validated the same as before (a plain id, no
  * path separators).
+ *
+ * hardening-4a: the D1 sessionless relaxation above is single-session-only
+ * in spirit. Once isConcurrentMode(root) sees another session's heartbeat
+ * live, an unidentified caller (session resolves null) is refused with a
+ * typed SESSION_REQUIRED error naming both ways to identify itself
+ * (--session-id flag, BEE_SESSION_ID env) BEFORE any claim file is written —
+ * a solo caller (nobody else live) is completely unaffected, byte-identical
+ * to before this cell.
  */
 export function claimCellFile(root, sessionId, cellId, ttl = DEFAULT_CLAIM_TTL_SECONDS, { now = Date.now() } = {}) {
   const session = sessionId == null ? null : requireId(sessionId, 'session id');
   const cell = requireId(cellId, 'cell id');
+  if (session == null && isConcurrentMode(root)) {
+    return fail(
+      'SESSION_REQUIRED',
+      `cell "${cell}" cannot be claimed without identifying the acting session while another session is active — pass --session-id or set BEE_SESSION_ID (CLAUDE_CODE_SESSION_ID is also honored).`,
+    );
+  }
   ensureDir(claimsDir(root));
   const claim = {
     cell,

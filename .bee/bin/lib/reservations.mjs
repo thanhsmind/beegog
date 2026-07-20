@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { readJson, writeJsonAtomic } from './fsutil.mjs';
 import { withStoreLock } from './lock.mjs';
-import { resolveSessionId } from './claims.mjs';
+import { resolveSessionId, isConcurrentMode } from './claims.mjs';
 
 const DEFAULT_TTL_SECONDS = 3600;
 
@@ -117,10 +117,13 @@ export function findSessionConflicts(root, sessionId, paths) {
  * the store fresh under the lock, never a pre-lock snapshot.
  *
  * D3: when `session` is absent, it self-derives (explicit flag -> `resolve
- * SessionId`'s own CLAUDE_CODE_SESSION_ID env fallback -> null), so a
- * top-level-session reserve becomes cross-session-visible by default; a
- * genuinely absent id (no flag, no env) still writes a session-less row,
- * byte-identical to today's shape.
+ * SessionId`'s own BEE_SESSION_ID/CLAUDE_CODE_SESSION_ID env fallback ->
+ * null), so a top-level-session reserve becomes cross-session-visible by
+ * default; a genuinely absent id (no flag, no env) still writes a
+ * session-less row, byte-identical to today's shape — UNLESS another
+ * session is concurrently live (hardening-4a): see the SESSION_REQUIRED
+ * refusal below, the reserve-side sibling of claims.mjs claimCellFile's own
+ * sessionless-in-concurrent-mode refusal.
  */
 export async function reserve(root, { agent, cell, path: reservedPath, ttl = DEFAULT_TTL_SECONDS, session = null }) {
   if (typeof agent !== 'string' || !agent.trim()) {
@@ -133,6 +136,19 @@ export async function reserve(root, { agent, cell, path: reservedPath, ttl = DEF
     throw new Error('reserve: path is required.');
   }
   const resolvedSession = resolveSessionId({ flag: session });
+  // hardening-4a: mirrors claimCellFile's typed refusal — a solo caller
+  // (nobody else live) keeps today's sessionless-reserve behavior
+  // byte-unchanged; `conflicts: []` is included defensively alongside `code`
+  // so any existing caller that only inspects `.conflicts` on !ok never
+  // crashes on this new failure shape.
+  if (resolvedSession == null && isConcurrentMode(root)) {
+    return {
+      ok: false,
+      code: 'SESSION_REQUIRED',
+      reason: `reserve: cannot reserve "${reservedPath.trim()}" without identifying the acting session while another session is active — pass --session-id or set BEE_SESSION_ID (CLAUDE_CODE_SESSION_ID is also honored).`,
+      conflicts: [],
+    };
+  }
   return withStoreLock(root, 'reservations', () => {
     const conflicts = findConflicts(root, agent.trim(), [reservedPath]);
     if (conflicts.length > 0) {

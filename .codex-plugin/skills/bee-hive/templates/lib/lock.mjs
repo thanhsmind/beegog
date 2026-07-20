@@ -42,6 +42,21 @@ export function locksDir(root) {
   return path.join(root, '.bee', 'locks');
 }
 
+// hardening-4a: mirrors claims.mjs's resolveSessionId env-only chain
+// (BEE_SESSION_ID wins over the legacy CLAUDE_CODE_SESSION_ID) WITHOUT
+// importing claims.mjs — lock.mjs stays a dependency-light leaf module
+// (claims.mjs itself imports withStoreLock from here, so importing back
+// would cycle). claims.mjs's resolveSessionId is the CANONICAL
+// implementation; this is a deliberate small duplicate for the lock-holder
+// label only (never used to authorize anything) — keep the two in sync by
+// hand if the chain ever changes.
+function envSessionId(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 // Windows-invalid filename characters (< > : " / \ | ? *) plus control chars.
 // eslint-disable-next-line no-control-regex
 const UNSAFE_LOCK_NAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
@@ -128,9 +143,10 @@ function tryStaleTakeover(lockPath, nowMs) {
  * but the token match makes it structurally impossible to unlink the wrong
  * lock either way).
  *
- * Session id is self-derived (CLAUDE_CODE_SESSION_ID), never a parameter —
- * matching D3's "never handed down" posture even though full session-id
- * resolution (explicit flag -> env -> hook payload) is msh-2's helper.
+ * Session id is self-derived (BEE_SESSION_ID, falling back to the legacy
+ * CLAUDE_CODE_SESSION_ID), never a parameter — matching D3's "never handed
+ * down" posture even though full session-id resolution (explicit flag ->
+ * env -> hook payload) is msh-2's helper (claims.mjs resolveSessionId).
  *
  * options.maxAttempts (default MAX_ATTEMPTS, ~100) lets a caller opt into a
  * SINGLE attempt (msh-5, D5 Δ3-amended: "hooks never WAIT on the lock" —
@@ -151,7 +167,7 @@ export async function withStoreLock(root, name, fn, { maxAttempts = MAX_ATTEMPTS
   ensureDir(locksDir(root));
   const lockPath = lockFilePath(root, name);
   const token = crypto.randomBytes(8).toString('hex');
-  const session = process.env.CLAUDE_CODE_SESSION_ID || null;
+  const session = envSessionId(process.env.BEE_SESSION_ID, process.env.CLAUDE_CODE_SESSION_ID);
   let acquired = false;
 
   for (let attempt = 0; attempt < maxAttempts && !acquired; attempt++) {
