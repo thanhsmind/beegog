@@ -309,18 +309,19 @@ export const COMMAND_REGISTRY = [
     name: 'cells.reset-budget',
     invoke: 'bee cells reset-budget',
     description:
-      'D2 (self-correcting-loop): the ONLY door that reopens a cell whose claim door is closed by CELL_BUDGET_EXHAUSTED or REPEATED_FAILURE. Requires --reason (audited), logs a decision, and appends {reset_at, reason, by_session} to the append-only trace.budget_resets — never rewrites or drops any trace.attempts ledger entry. gate_bypass never substitutes for this: the budget check itself never reads bypass config, so this verb is the only reopening path at any bypass level.',
+      'D2 + GH #27.4 (D-GHF-C): the ONLY door that reopens a cell whose claim door is closed by CELL_BUDGET_EXHAUSTED or REPEATED_FAILURE. Refuses (typed RESET_NOT_NEEDED) unless the cell is actually budget-blocked, and refuses without an actor (--operator, or the BEE_AGENT_NAME env fallback). Requires --reason (audited), logs a decision BEFORE writing the cell (the audit survives even if the write itself fails), and appends {reset_at, reason, by_session, by_actor} to the append-only trace.budget_resets — never rewrites or drops any trace.attempts ledger entry. gate_bypass never substitutes for this: the budget check itself never reads bypass config, so this verb is the only reopening path at any bypass level.',
     parameters: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Cell id whose claim-lifetime budget door is closed.' },
         reason: { type: 'string', description: 'Why a retry is warranted — required, logged to the decision log.' },
+        operator: { type: 'string', description: 'Acting operator/agent name, recorded as by_actor in the audit trail and the decision text. Optional — falls back to the BEE_AGENT_NAME environment variable when omitted; refused when neither is present.' },
         'session-id': { type: 'string', description: 'Resetting session identity, recorded as by_session. Optional — resolves from CLAUDE_CODE_SESSION_ID when omitted.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['id', 'reason'],
     },
-    examples: ['bee cells reset-budget --id demo-1 --reason "manager approved a genuine retry after a real fix" --json'],
+    examples: ['bee cells reset-budget --id demo-1 --reason "manager approved a genuine retry after a real fix" --operator "manager-session" --json'],
     deprecated: null,
   },
   {

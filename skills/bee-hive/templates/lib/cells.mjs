@@ -382,6 +382,34 @@ function validateNewCell(root, cell) {
       `addCell: optional "change_class" must be one of ${CHANGE_CLASSES.join(', ')} when present.`,
     );
   }
+  // GH #27.3 (D-GHF-C): an authored `budgets` object is validated strictly —
+  // unlike resolveCellBudgets's forgiving runtime fallback (default on bad
+  // input, clamp on over-ceiling input), a malformed value here is refused
+  // outright so a typo at authoring time surfaces immediately instead of
+  // silently degrading at claim time.
+  if (cell.budgets !== undefined && cell.budgets !== null) {
+    if (typeof cell.budgets !== 'object' || Array.isArray(cell.budgets)) {
+      throw new Error('addCell: optional "budgets" must be a plain object when present.');
+    }
+    const knownKeys = Object.keys(DEFAULT_BUDGETS);
+    for (const key of Object.keys(cell.budgets)) {
+      if (!knownKeys.includes(key)) {
+        throw new Error(
+          `addCell: unknown "budgets" key "${key}" — must be one of: ${knownKeys.join(', ')}.`,
+        );
+      }
+    }
+    for (const key of knownKeys) {
+      if (!(key in cell.budgets)) continue;
+      const value = cell.budgets[key];
+      const hardMax = BUDGET_HARD_MAX[key];
+      if (!Number.isInteger(value) || value < 1 || value > hardMax) {
+        throw new Error(
+          `addCell: "budgets.${key}" must be an integer in [1, ${hardMax}] when present, got ${JSON.stringify(value)}.`,
+        );
+      }
+    }
+  }
   if (readCell(root, cell.id)) {
     throw new Error(`addCell: cell "${cell.id}" already exists.`);
   }
@@ -1142,13 +1170,30 @@ export function ceilingScarcityWarning(root) {
 // attempt cells behave byte-identically until a cell actually loops).
 const DEFAULT_BUDGETS = { max_claims: 3, max_failed_attempts: 4, max_same_signature: 2 };
 
-function resolveCellBudgets(cell) {
+// GH #27.3 (D-GHF-C): a hard ceiling on every resolved budget, 3x
+// DEFAULT_BUDGETS — closes the authoring-time gap the #27 claim verdicts
+// flagged (workers can never raise budgets live, but an authored cell could
+// declare an absurd budgets.max_claims and never hit the claim door at all).
+// resolveCellBudgets clamps a too-high DECLARED value down to this ceiling
+// (defensive at resolve time, for legacy/pre-guard cells); validateNewCell
+// below refuses an over-ceiling value outright at authoring time instead.
+const BUDGET_HARD_MAX = { max_claims: 9, max_failed_attempts: 12, max_same_signature: 6 };
+
+export function resolveCellBudgets(cell) {
   const declared =
     cell && typeof cell.budgets === 'object' && cell.budgets && !Array.isArray(cell.budgets)
       ? cell.budgets
       : {};
-  const pick = (key) =>
-    Number.isFinite(declared[key]) && declared[key] > 0 ? declared[key] : DEFAULT_BUDGETS[key];
+  // A non-integer or below-floor (<1) declared value is untrustworthy input,
+  // not merely "too big" — it falls back to DEFAULT_BUDGETS for that key
+  // rather than being clamped. A valid integer >=1 that exceeds the hard max
+  // is clamped down to it instead (D-GHF-C: no path ever raises a budget
+  // above BUDGET_HARD_MAX).
+  const pick = (key) => {
+    const value = declared[key];
+    if (!Number.isInteger(value) || value < 1) return DEFAULT_BUDGETS[key];
+    return Math.min(value, BUDGET_HARD_MAX[key]);
+  };
   return {
     max_claims: pick('max_claims'),
     max_failed_attempts: pick('max_failed_attempts'),
@@ -1248,34 +1293,71 @@ export function checkCellBudgets(cell) {
   return { ok: true };
 }
 
-// D2: the ONLY door that reopens a budget-exhausted or repeated-failure
-// cell. Requires a reason (audited), logs a decision, and appends to the
-// append-only trace.budget_resets — it NEVER touches trace.attempts, so the
-// full attempt history the marker is scoped against stays intact for
-// post-hoc review (mirrors trace.ownership_overrides' append-only shape).
-export async function resetCellBudget(root, id, reason, { sessionId } = {}) {
+// D2 + GH #27.4 (D-GHF-C): the ONLY door that reopens a budget-exhausted or
+// repeated-failure cell. Requires a reason (audited), logs a decision, and
+// appends to the append-only trace.budget_resets — it NEVER touches
+// trace.attempts, so the full attempt history the marker is scoped against
+// stays intact for post-hoc review (mirrors trace.ownership_overrides'
+// append-only shape).
+//
+// GUARD ORDERING (plan-check constraint, keeps existing error contracts
+// byte-identical): reason-check first (outside the lock — cheapest, needs no
+// disk read), then not-found (inside the lock, first thing after readCell),
+// THEN the two new guards — actor-required, then budget-blocked. An unknown
+// cell id refuses "not found" regardless of whether an actor was supplied;
+// only once the cell is known to exist do the new guards get a say.
+//
+// D-GHF-C closes claim-verdict #4 (#27): reset previously had no exhaustion
+// guard at all (any cell, blocked or not, could be "reset") and the actor
+// was optional. Now: refuses (typed RESET_NOT_NEEDED) unless
+// checkCellBudgets(cell) currently reports not-ok, and refuses without an
+// actor (--operator flag or BEE_AGENT_NAME env fallback). The audit
+// logDecision runs BEFORE writeCell so a crash/failure in the write itself
+// still leaves the decision recorded — the audit trail never silently loses
+// a reset just because the store write failed.
+export async function resetCellBudget(root, id, reason, { sessionId, operator } = {}) {
   if (typeof reason !== 'string' || !reason.trim()) {
     throw new Error('resetCellBudget: a reason is required.');
   }
   const reasonText = reason.trim();
   const bySession = resolveSessionId({ flag: sessionId }) || null;
+  const actor =
+    typeof operator === 'string' && operator.trim()
+      ? operator.trim()
+      : typeof process.env.BEE_AGENT_NAME === 'string' && process.env.BEE_AGENT_NAME.trim()
+        ? process.env.BEE_AGENT_NAME.trim()
+        : null;
   const saved = await withStoreLock(root, `cells:${id}`, () => {
     const cell = readCell(root, id);
     if (!cell) throw new Error(`resetCellBudget: cell "${id}" not found.`);
+    if (!actor) {
+      throw new Error(
+        `resetCellBudget: an actor is required — pass --operator "<name>" or set BEE_AGENT_NAME in the environment before resetting cell "${id}"'s budget.`,
+      );
+    }
+    const budgetCheck = checkCellBudgets(cell);
+    if (budgetCheck.ok) {
+      const err = new Error(
+        `resetCellBudget: cell "${id}" is not budget-blocked (checkCellBudgets reports ok) — a reset is only needed once the claim door is actually closed by CELL_BUDGET_EXHAUSTED or REPEATED_FAILURE.`,
+      );
+      err.code = 'RESET_NOT_NEEDED';
+      throw err;
+    }
     const trace = { ...defaultTrace(), ...(cell.trace || {}) };
     const resets = Array.isArray(trace.budget_resets) ? trace.budget_resets : [];
-    cell.trace = {
-      ...trace,
-      budget_resets: [...resets, { reset_at: utcNow(), reason: reasonText, by_session: bySession }],
-    };
+    const resetEntry = { reset_at: utcNow(), reason: reasonText, by_session: bySession, by_actor: actor };
+    // Audit BEFORE write (D-GHF-C): logDecision is synchronous and completes
+    // here first, so the decision record survives even if writeCell below
+    // throws (e.g. an unwritable store).
+    logDecision(root, {
+      decision: `«cells reset-budget: cell "${id}" claim-lifetime budget reset by ${actor} — ${reasonText}»`,
+      rationale:
+        'Audited reopening of a D2 loop-safety door (self-correcting-loop); the attempt ledger itself is never rewritten, only a budget_resets marker appended.',
+      scope: 'repo',
+      source: 'user',
+    });
+    cell.trace = { ...trace, budget_resets: [...resets, resetEntry] };
     return writeCell(root, cell);
-  });
-  logDecision(root, {
-    decision: `«cells reset-budget: cell "${id}" claim-lifetime budget reset — ${reasonText}»`,
-    rationale:
-      'Audited reopening of a D2 loop-safety door (self-correcting-loop); the attempt ledger itself is never rewritten, only a budget_resets marker appended.',
-    scope: 'repo',
-    source: 'user',
   });
   return saved;
 }

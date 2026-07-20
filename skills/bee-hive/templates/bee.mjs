@@ -920,18 +920,22 @@ function handleCellsJudge(root, flags) {
   return { result: verdict, text };
 }
 
-// D2 (self-correcting-loop): the audited reset door for a cell whose claim
+// D2 + GH #27.4 (D-GHF-C): the audited reset door for a cell whose claim
 // door is closed by CELL_BUDGET_EXHAUSTED/REPEATED_FAILURE. --reason is
 // required at the lib layer (resetCellBudget throws otherwise); --session-id
 // follows the same optional/env-resolved convention as every other
 // ownership-aware verb, but resetCellBudget never enforces claim ownership
 // (a budget-exhausted cell has already been claim-cleared by the refusal
-// path — there is no live claim to own).
+// path — there is no live claim to own). resetCellBudget itself now refuses
+// unless the cell is actually budget-blocked, and refuses without an actor
+// (--operator here, or its own BEE_AGENT_NAME env fallback when --operator
+// is omitted).
 async function handleCellsResetBudget(root, flags) {
   const id = requireFlag(flags, 'id');
   const reason = requireFlag(flags, 'reason');
   const sessionId = flags['session-id'] !== undefined ? String(flags['session-id']) : undefined;
-  const cell = await resetCellBudget(root, id, reason, { sessionId });
+  const operator = flags['operator'] !== undefined ? String(flags['operator']) : undefined;
+  const cell = await resetCellBudget(root, id, reason, { sessionId, operator });
   return { result: cell, text: `Reset the claim-lifetime budget door for ${cell.id}.` };
 }
 

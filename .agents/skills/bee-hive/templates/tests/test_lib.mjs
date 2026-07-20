@@ -76,6 +76,8 @@ import {
   claimCellCrossSession,
   normalizeFailureSignature,
   resetCellBudget,
+  resolveCellBudgets,
+  checkCellBudgets,
   deriveChangeClass,
   CHANGE_CLASSES,
   recordJudgeVerdict,
@@ -1133,9 +1135,10 @@ await check('resetCellBudget: audited reset appends a budget_resets marker, logs
   assert(blocked.ok === false && blocked.code === 'CELL_BUDGET_EXHAUSTED', `precondition: the door should be exhausted, got ${JSON.stringify(blocked)}`);
   const attemptsBefore = readCell(root, 'budget-reset-1').trace.attempts.length;
 
-  const reset = await resetCellBudget(root, 'budget-reset-1', 'manager approved a genuine retry');
+  const reset = await resetCellBudget(root, 'budget-reset-1', 'manager approved a genuine retry', { operator: 'manager-1' });
   assert(Array.isArray(reset.trace.budget_resets) && reset.trace.budget_resets.length === 1, `reset must append exactly one budget_resets entry, got ${JSON.stringify(reset.trace.budget_resets)}`);
   assert(reset.trace.budget_resets[0].reason === 'manager approved a genuine retry', 'the reset reason is recorded verbatim');
+  assert(reset.trace.budget_resets[0].by_actor === 'manager-1', `reset must record the acting operator as by_actor, got ${JSON.stringify(reset.trace.budget_resets[0])}`);
   assert(reset.trace.attempts.length === attemptsBefore, 'reset never rewrites or drops any attempts ledger entry');
 
   const decisions = activeDecisions(root, { recent: 1 });
@@ -1150,6 +1153,145 @@ await check('resetCellBudget requires a non-empty reason, and refuses an unknown
   await assertRejects(() => resetCellBudget(root, 'budget-reset-noreason-1', ''), 'reason', 'resetCellBudget must refuse an empty reason');
   await assertRejects(() => resetCellBudget(root, 'budget-reset-noreason-1', '   '), 'reason', 'resetCellBudget must refuse a whitespace-only reason');
   await assertRejects(() => resetCellBudget(root, 'no-such-cell-budget', 'a reason'), 'not found', 'resetCellBudget must refuse an unknown cell id');
+});
+
+// ─── D-GHF-C (GH #27.3+4): budget hard clamps + guarded, audit-first reset ──
+
+await check('resolveCellBudgets (D-GHF-C): clamps a declared value above the hard max down to it, and falls back to DEFAULT_BUDGETS for a non-integer or below-floor declared value — no path ever raises a budget above the hard max', () => {
+  assert(resolveCellBudgets({}).max_claims === 3, `no declared budgets -> DEFAULT max_claims 3, got ${resolveCellBudgets({}).max_claims}`);
+
+  const clampedHigh = resolveCellBudgets({
+    budgets: { max_claims: 999999, max_failed_attempts: 999999, max_same_signature: 999999 },
+  });
+  assert(clampedHigh.max_claims === 9, `max_claims must clamp to hard max 9, got ${clampedHigh.max_claims}`);
+  assert(clampedHigh.max_failed_attempts === 12, `max_failed_attempts must clamp to hard max 12, got ${clampedHigh.max_failed_attempts}`);
+  assert(clampedHigh.max_same_signature === 6, `max_same_signature must clamp to hard max 6, got ${clampedHigh.max_same_signature}`);
+
+  // boundary: exactly at the hard max is honored verbatim; one above clamps down.
+  assert(resolveCellBudgets({ budgets: { max_claims: 9 } }).max_claims === 9, 'a declared value exactly at the hard max is honored verbatim');
+  assert(resolveCellBudgets({ budgets: { max_claims: 10 } }).max_claims === 9, 'one above the hard max clamps down to it');
+
+  // non-integer / below-floor declared values fall back to DEFAULT, not the hard max.
+  assert(resolveCellBudgets({ budgets: { max_claims: 2.5 } }).max_claims === 3, 'a non-integer declared value falls back to DEFAULT (3), never clamps');
+  assert(resolveCellBudgets({ budgets: { max_claims: 0 } }).max_claims === 3, 'a zero declared value falls back to DEFAULT');
+  assert(resolveCellBudgets({ budgets: { max_claims: -5 } }).max_claims === 3, 'a negative declared value falls back to DEFAULT');
+  assert(resolveCellBudgets({ budgets: { max_claims: 'nine' } }).max_claims === 3, 'a non-numeric declared value falls back to DEFAULT');
+});
+
+await check('addCell (validateNewCell, D-GHF-C): refuses a malformed budgets object at authoring time — non-plain-object, unknown key, non-integer, and over-hard-max values are all rejected before write; a valid at-hard-max object is accepted verbatim', () => {
+  assertThrows(() => addCell(root, makeCell('budget-authoring-array-1', { budgets: [1, 2, 3] })), 'budgets', 'an array budgets value must be refused');
+  assertThrows(() => addCell(root, makeCell('budget-authoring-unknown-1', { budgets: { max_claims: 3, bogus_key: 1 } })), 'budgets', 'an unknown budgets key must be refused');
+  assertThrows(() => addCell(root, makeCell('budget-authoring-noninteger-1', { budgets: { max_claims: 2.5 } })), 'budgets', 'a non-integer budgets value must be refused');
+  assertThrows(() => addCell(root, makeCell('budget-authoring-toohigh-1', { budgets: { max_claims: 10 } })), 'budgets', 'a budgets value above the hard max must be refused');
+  assertThrows(() => addCell(root, makeCell('budget-authoring-zero-1', { budgets: { max_claims: 0 } })), 'budgets', 'a zero budgets value must be refused');
+  assert(readCell(root, 'budget-authoring-array-1') === null, 'a refused authoring call must not leave a partial cell file behind');
+
+  const ok = addCell(root, makeCell('budget-authoring-ok-1', { budgets: { max_claims: 9, max_failed_attempts: 12, max_same_signature: 6 } }));
+  assert(ok.budgets.max_claims === 9 && ok.budgets.max_failed_attempts === 12 && ok.budgets.max_same_signature === 6, `a valid at-hard-max budgets object must be accepted verbatim, got ${JSON.stringify(ok.budgets)}`);
+});
+
+await check('resetCellBudget (D-GHF-C): refused, typed RESET_NOT_NEEDED, on a cell that is not actually budget-blocked — checkCellBudgets(cell).ok stays the door, not a bare reason string', async () => {
+  addCell(root, makeCell('budget-reset-healthy-1'));
+  assert(checkCellBudgets(readCell(root, 'budget-reset-healthy-1')).ok === true, 'precondition: a fresh cell is not budget-blocked');
+  let caught = null;
+  try {
+    await resetCellBudget(root, 'budget-reset-healthy-1', 'trying to reset anyway', { operator: 'manager-1' });
+  } catch (error) {
+    caught = error;
+  }
+  assert(caught !== null, 'resetCellBudget must refuse a reset on a healthy (non-budget-blocked) cell');
+  assert(caught.code === 'RESET_NOT_NEEDED', `refusal must be typed RESET_NOT_NEEDED, got ${JSON.stringify(caught.code)}`);
+  const after = readCell(root, 'budget-reset-healthy-1');
+  assert(!Array.isArray(after.trace.budget_resets) || after.trace.budget_resets.length === 0, 'a refused reset must not append a budget_resets entry');
+});
+
+await check('resetCellBudget (D-GHF-C): refused without an actor — neither --operator nor BEE_AGENT_NAME supplied, message names both options', async () => {
+  addCell(root, makeCell('budget-reset-noactor-1'));
+  const savedEnv = process.env.BEE_AGENT_NAME;
+  delete process.env.BEE_AGENT_NAME;
+  try {
+    await assertRejects(
+      () => resetCellBudget(root, 'budget-reset-noactor-1', 'a reason'),
+      'operator',
+      'resetCellBudget must refuse without an actor, naming --operator',
+    );
+    await assertRejects(
+      () => resetCellBudget(root, 'budget-reset-noactor-1', 'a reason'),
+      'BEE_AGENT_NAME',
+      'resetCellBudget must refuse without an actor, naming BEE_AGENT_NAME',
+    );
+  } finally {
+    if (savedEnv === undefined) delete process.env.BEE_AGENT_NAME;
+    else process.env.BEE_AGENT_NAME = savedEnv;
+  }
+  const after = readCell(root, 'budget-reset-noactor-1');
+  assert(!Array.isArray(after.trace.budget_resets) || after.trace.budget_resets.length === 0, 'a refused actor-less reset must not append a budget_resets entry');
+});
+
+await check('resetCellBudget (D-GHF-C): the BEE_AGENT_NAME env fallback supplies the actor when --operator is omitted', async () => {
+  addCell(root, makeCell('budget-reset-envactor-1'));
+  for (let i = 0; i < 3; i += 1) {
+    claimCellCrossSession(root, { sessionId: `sess-envactor-${i}`, worker: 'w', cellId: 'budget-reset-envactor-1' });
+    await recordVerify(root, 'budget-reset-envactor-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-envactor-${i}` });
+    unclaimCell(root, 'budget-reset-envactor-1', { sessionId: `sess-envactor-${i}` });
+  }
+  const blocked = claimCellCrossSession(root, { sessionId: 'sess-envactor-3', worker: 'w', cellId: 'budget-reset-envactor-1' });
+  assert(blocked.ok === false, 'precondition: the door should be exhausted');
+  const savedEnv = process.env.BEE_AGENT_NAME;
+  process.env.BEE_AGENT_NAME = 'env-actor-1';
+  try {
+    const reset = await resetCellBudget(root, 'budget-reset-envactor-1', 'env fallback actor test');
+    assert(reset.trace.budget_resets[0].by_actor === 'env-actor-1', `expected the BEE_AGENT_NAME env value as the actor, got ${JSON.stringify(reset.trace.budget_resets[0])}`);
+  } finally {
+    if (savedEnv === undefined) delete process.env.BEE_AGENT_NAME;
+    else process.env.BEE_AGENT_NAME = savedEnv;
+  }
+});
+
+await check('resetCellBudget (D-GHF-C): writes the audit decision BEFORE the cell write — a forced writeCell failure still leaves the decision recorded, and the cell file itself is untouched', async () => {
+  const dir = makeStateRepo('bee-budget-audit-order-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+      schema_version: '1.0',
+      phase: 'swarming',
+      feature: 'demo-feat',
+      mode: 'standard',
+      approved_gates: { context: true, shape: true, execution: true, review: false },
+      workers: [],
+    });
+    addCell(dir, makeCell('budget-audit-order-1'));
+    for (let i = 0; i < 3; i += 1) {
+      claimCellCrossSession(dir, { sessionId: `sess-audit-order-${i}`, worker: 'w', cellId: 'budget-audit-order-1' });
+      await recordVerify(dir, 'budget-audit-order-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-audit-order-${i}` });
+      unclaimCell(dir, 'budget-audit-order-1', { sessionId: `sess-audit-order-${i}` });
+    }
+    const blocked = claimCellCrossSession(dir, { sessionId: 'sess-audit-order-3', worker: 'w', cellId: 'budget-audit-order-1' });
+    assert(blocked.ok === false, 'precondition: the door should be exhausted');
+    const before = fs.readFileSync(path.join(dir, '.bee', 'cells', 'budget-audit-order-1.json'), 'utf8');
+
+    const cellsDir = path.join(dir, '.bee', 'cells');
+    fs.chmodSync(cellsDir, 0o555);
+    let threw = false;
+    try {
+      await resetCellBudget(dir, 'budget-audit-order-1', 'forced write failure test', { operator: 'test-op' });
+    } catch {
+      threw = true;
+    } finally {
+      fs.chmodSync(cellsDir, 0o755);
+    }
+    assert(threw, 'a forced writeCell failure must propagate as a rejection, not be silently swallowed');
+
+    const after = fs.readFileSync(path.join(dir, '.bee', 'cells', 'budget-audit-order-1.json'), 'utf8');
+    assert(after === before, 'the cell file itself must be byte-unchanged — the write never actually landed');
+
+    const decisions = activeDecisions(dir, { recent: 1 });
+    assert(
+      decisions.length > 0 && decisions[0].decision.includes('budget-audit-order-1'),
+      `the audit decision must exist even though the cell write failed, got ${JSON.stringify(decisions)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 await check(
