@@ -1,38 +1,38 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.7.8",
+  "bee_version": "1.7.9",
   "managed": {
     "agents_block": "84d1532386c14df08ad5483efd9b76b835e12567381a7005cfdfaa09f590df49",
-    "gitignore_block": "12a9e9d365c2e2b05dba2efd6310a92308881814b800b9562a09753534bbf75e",
+    "gitignore_block": "5d0b5a295e6dcf408a1911239bcb97f6a4f3037769b091f131ccb654d1f988cd",
     "helpers": {
-      "bee.mjs": "25ce549a9c42526d31f607b8c41f5d464d2f64c3afc922fa97e6e5f900f173b5"
+      "bee.mjs": "4bd91432111e01ccad07435ad39bc64febdb5cacf2c06b5c8926109a58e32a27"
     },
     "lib": {
       "backlog.mjs": "9e5b852c7b72fdb1d5d2f530e32cdc63a8271a83dba09d6407b30900d58990cd",
       "capture.mjs": "3779fd6bd5b28c50b50e4b93cbc368d458123ebab1cbcb3cc34757af0d24f8fa",
-      "cells.mjs": "aed20ed7121bf16a585975259cc8e3bc1b3b2015074b1b1f43633db19ca8725f",
-      "claims.mjs": "a796cb3ec0b40ccb150080f24173165b3d2229b3e1d5ec8f2b221e74c17cde30",
-      "command-registry.mjs": "746cd90444b893663e0fd50f4380b3d33e8515ff5ca72edd4208567bd046aa6c",
+      "cells.mjs": "540b356335c66e3286732cace453c66eed52168477c88649c3f38f5eb84a3b36",
+      "claims.mjs": "7966ff8a862fbc6c0bd315583eff57d29846755a67d01a97480073f7c75d5ac7",
+      "command-registry.mjs": "1f989d5b83f68df499039906c8402850f66eb80f9e656585fa4120883df2f8ce",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "5a208729f5bd98c5f60711e33ad288cc9cfb46b3a0e7d96062f7f6673ff018a3",
       "dispatch-guard.mjs": "cb5502790c01720a3ece0d4870b44670cb3c6f68027d91503c343699965d5e37",
-      "dispatch-prepare.mjs": "5eb691b2c3311373df3ce6610c5fe1e5eb6de31b4d82c3812ea1cc6e062b8e12",
+      "dispatch-prepare.mjs": "d1f6afba659f36aab5fc7cd1bd4149f4835546dd8997207836549d24b473eaf6",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
       "fsutil.mjs": "d3c90d70f48bf3a4fde33fff164248b3813103bad175a9c9a5c545b13374773e",
       "guards.mjs": "5eeac097c75b96cb9ae48abaa946bbd7e830157cb1456bceedb89f8bcac3cb2c",
       "inject.mjs": "f788e09556da85d04967f55119a21124e15f50fce3eb7747332a21d809921be0",
       "judge.mjs": "5057e17a6bcd3dacff21fe479e13570620cfe1b9c821c0ff5c8254f39e3c6ed1",
-      "lock.mjs": "2a52ebe7cf6d25cbfc6fe62a2ddec5abb1f4054698acd107e7c2c2647ddf2dcd",
+      "lock.mjs": "bc3574f6ba9ff4c8e4325117674c5118360d5c6f6e4f37810b6aa6d3d1ee5159",
       "perf.mjs": "b3e64c2f2c8889751196662351d4b4acb0f22f6e58ad0c243fffce40b07754dd",
-      "recovery.mjs": "0f59a02a474ee0fd47020d797d814c772e3a35842544af7fd561bc8ab26c3cfc",
-      "reservations.mjs": "6d5160728e48f87205237cb52b83ccd0f7d406f3dd5d409e3131091a4354f36c",
+      "recovery.mjs": "27660da0da230baf6537e1a1cf8789f30b2d6bacdbb64198f61a0b1c8f287658",
+      "reservations.mjs": "1e61a74fc678ee484130483cbe77f28d1470085215358ff072fde29be497c6af",
       "reviews.mjs": "6008cb1de50fb223c84638abaa4bdcd2521743c858ffd3e6b95bbcc6cce97502",
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "source-identity.mjs": "716740641e1f6bfbb5ccc5b4fe7827f1165c2a1f1127ee3800f52a47ac09fc7a",
-      "state.mjs": "a5ae0b7b1a348bdfe6d76284cd73d2a68632a47ee1b784c4bd1b95be6f2c8c01",
+      "state.mjs": "7c24f7ff9f18bd0c5607653d0546a6dabfcfccc1da1ee456668b69b6ba92d067",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
       "worktree-holds.mjs": "625823f0d248a41125f87680936b3056964590d35cc367335cc3ff5f1aad7a0e",
-      "worktree-store.mjs": "2ab8535a93d2ec9e63d6490934e2e7b559ab64243b7fcafafd9ba2fbb33b47fe"
+      "worktree-store.mjs": "7d7f7cae05afd51d833af52d5b5f80e35487727d2573bb6dcedf36f201dd9530"
     },
     "repo_hooks": {
       "adapter.mjs": "773afef754c385a0a570cdfce6f4545f256bfc904c412b784561a10a3f05ba5f",
@@ -53,7 +53,7 @@
     }
   },
   "agents_sync": {
-    "bee_version": "1.7.8",
+    "bee_version": "1.7.9",
     "files": [
       ".claude/agents/bee-extract.md",
       ".claude/agents/bee-gather.md",
@@ -70,5 +70,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-20T20:21:10.002Z"
+  "updated_at": "2026-07-20T23:22:26.981Z"
 }

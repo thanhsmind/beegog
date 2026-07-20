@@ -19,6 +19,7 @@ import {
   findSessionConflicts,
   reservationsPath,
 } from '../lib/reservations.mjs';
+import { createSession } from '../lib/claims.mjs';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.mjs';
 
 const root = makeTempRepo();
@@ -106,6 +107,40 @@ await check('findSessionConflicts: an expired session-owned hold never conflicts
   writeJsonAtomic(reservationsPath(root), store);
   const conflicts = findSessionConflicts(root, 'sess-D', ['src/hold/expiring.ts']);
   assert(conflicts.length === 0, 'a TTL-expired hold is never a conflict, even for a different session');
+});
+
+// ─── hardening-4a: sessionless reserve refuses in concurrent mode ──────────
+
+await check('reserve: sessionless reserve still works solo (nobody else live) — byte-unchanged; refuses typed SESSION_REQUIRED once another session goes live, naming --session-id and BEE_SESSION_ID; a real session id still reserves fine in concurrent mode', async () => {
+  const savedLegacyEnv = process.env.CLAUDE_CODE_SESSION_ID;
+  const savedBeeEnv = process.env.BEE_SESSION_ID;
+  try {
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+    delete process.env.BEE_SESSION_ID;
+
+    const solo = await reserve(root, { agent: 'worker-solo', cell: 'concurrent-1', path: 'src/hold/solo.ts' });
+    assert(solo.ok === true, 'sessionless reserve still succeeds with nobody else live');
+    assert(!('session' in solo.reservation), 'solo sessionless reserve still omits the session key entirely');
+    await release(root, { agent: 'worker-solo', cell: 'concurrent-1' });
+
+    createSession(root, { id: 'other-live-sess' }); // fresh heartbeat -> concurrent mode
+    const refused = await reserve(root, { agent: 'worker-solo', cell: 'concurrent-2', path: 'src/hold/refused.ts' });
+    assert(refused.ok === false, 'sessionless reserve refused while another session is live');
+    assert(refused.code === 'SESSION_REQUIRED', `expected typed SESSION_REQUIRED, got ${refused.code}`);
+    assert(typeof refused.reason === 'string' && refused.reason.includes('--session-id'), `reason should name --session-id, got ${JSON.stringify(refused.reason)}`);
+    assert(refused.reason.includes('BEE_SESSION_ID'), `reason should name BEE_SESSION_ID, got ${JSON.stringify(refused.reason)}`);
+    assert(Array.isArray(refused.conflicts) && refused.conflicts.length === 0, 'refusal carries an empty conflicts array so an existing !ok caller reading .conflicts never crashes');
+    assert(listReservations(root, { activeOnly: true }).filter((r) => r.cell === 'concurrent-2').length === 0, 'the refusal never leaves a reservation row behind');
+
+    const withSession = await reserve(root, { agent: 'worker-solo', cell: 'concurrent-2', path: 'src/hold/refused.ts', session: 'other-live-sess' });
+    assert(withSession.ok === true, 'a real session id reserves fine even in concurrent mode');
+    await release(root, { agent: 'worker-solo', cell: 'concurrent-2' });
+  } finally {
+    if (savedLegacyEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedLegacyEnv;
+    if (savedBeeEnv === undefined) delete process.env.BEE_SESSION_ID;
+    else process.env.BEE_SESSION_ID = savedBeeEnv;
+  }
 });
 
 printSummaryAndExit();

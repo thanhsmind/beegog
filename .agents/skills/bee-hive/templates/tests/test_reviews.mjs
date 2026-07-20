@@ -89,7 +89,7 @@ function reviewCell(id, extra = {}) {
 /** A capped behavior_change cell WITH recorded verification_evidence. */
 async function seedCappedCellWithEvidence(dir, id) {
   addCell(dir, reviewCell(id, { behavior_change: true }));
-  claimCell(dir, id, 'worker-rev');
+  await claimCell(dir, id, 'worker-rev');
   await recordVerify(dir, id, { command: 'node -e 0', output: 'ok', passed: true });
   await capCell(dir, id, {
     behavior_change: true,
@@ -177,7 +177,7 @@ await check('createReview: A6 auto-excludes an open/claimed included cell with r
     await seedCappedCellWithEvidence(dir, 'ok-1');
     addCell(dir, reviewCell('open-1')); // stays open — never claimed
     addCell(dir, reviewCell('claimed-1'));
-    claimCell(dir, 'claimed-1', 'worker-rev');
+    await claimCell(dir, 'claimed-1', 'worker-rev');
 
     const session = createReview(
       dir,

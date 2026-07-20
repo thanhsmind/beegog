@@ -68,6 +68,7 @@ import {
   cacheFilePath,
   advisorRefAnchors,
   advisorRefStale,
+  localConfigPath,
 } from './lib/state.mjs';
 // Lane + session CLI surface (fresh-session-handoff fsh-4, D2/D4): claims.mjs
 // stays out of this cell's file scope — these are already-exported read/
@@ -163,6 +164,7 @@ import {
   lastDurableSettlement,
   computeMiningWindow,
   buildMiningPrompt,
+  scanTranscriptRoots,
 } from './lib/recovery.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from './lib/command-registry.mjs';
 import { validate } from './lib/validate-args.mjs';
@@ -272,9 +274,13 @@ function buildReviewBlock(root) {
 // projects root on hosts with no transcript store e.g. Codex, corrupt
 // session/lane/claim records), so this try/catch is belt-and-suspenders —
 // a future change to that contract still can never crash bee_status.
+// hardening-5: `roots` is additive alongside the pre-existing `candidates`
+// field — every configured (or default-only) transcript root's scan result
+// (scanned/skipped+reason), so a second-runtime (e.g. Codex) user configuring
+// `recovery.transcript_roots` can SEE whether it was actually consulted.
 function buildRecoveryBlock(root) {
   try {
-    return { candidates: detectCrashCandidates(root) };
+    return { candidates: detectCrashCandidates(root), roots: scanTranscriptRoots(root) };
   } catch {
     return { candidates: [], degraded: true };
   }
@@ -848,7 +854,7 @@ function handleCellsAdd(root, flags) {
   return { result: added, text: `Added ${summarizeCell(added)}` };
 }
 
-function handleCellsUpdate(root, flags) {
+async function handleCellsUpdate(root, flags) {
   // Strict flag validation (workers-prune discipline): a typoed flag on a
   // mutating verb must refuse, never silently no-op into a bad patch.
   for (const name of Object.keys(flags)) {
@@ -866,7 +872,10 @@ function handleCellsUpdate(root, flags) {
   } catch {
     throw new Error('update: patch input is not valid JSON.');
   }
-  const updated = updateCell(root, id, patch);
+  // hardening-4b: updateCell's read-check-write now runs under
+  // withStoreLock, so it is async — every handler below awaits it (dispatch
+  // already does `await handler(...)`, so this only needed the local await).
+  const updated = await updateCell(root, id, patch);
   // Lint the MERGED cell (updateCell's return), not the raw patch — a patch
   // that only touches `title` still carries the cell's existing verify/files
   // through the merge, and the trap is exactly as live post-update as it was
@@ -886,7 +895,7 @@ function handleCellsUpdate(root, flags) {
 // double-owning the cell. D3: --session-id is optional — resolveSessionId
 // falls back to CLAUDE_CODE_SESSION_ID, then to a legal sessionless claim
 // (single-session flow keeps working exactly as before, with no id at all).
-function handleCellsClaim(root, flags) {
+async function handleCellsClaim(root, flags) {
   const id = requireFlag(flags, 'id');
   const worker = requireFlag(flags, 'worker');
   const sessionId = resolveSessionId({
@@ -896,7 +905,9 @@ function handleCellsClaim(root, flags) {
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
   }
-  const result = claimCellCrossSession(root, { sessionId, worker, cellId: id, ttl });
+  // hardening-4b: claimCellCrossSession composes claimCell, now
+  // withStoreLock-wrapped (async).
+  const result = await claimCellCrossSession(root, { sessionId, worker, cellId: id, ttl });
   if (!result.ok) {
     throw new Error(`claim: ${result.code} — ${result.reason}`);
   }
@@ -974,18 +985,21 @@ async function handleCellsBlock(root, flags) {
   return { result: cell, text: `Blocked ${cell.id}.` };
 }
 
-function handleCellsDrop(root, flags) {
-  const cell = dropCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
+// hardening-4b: dropCell/unclaimCell/reopenCell are now withStoreLock-wrapped
+// (async) — every handler below awaits it (dispatch already does `await
+// handler(...)`, so this only needed the local await + async keyword).
+async function handleCellsDrop(root, flags) {
+  const cell = await dropCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'));
   return { result: cell, text: `Dropped ${cell.id}.` };
 }
 
-function handleCellsUnclaim(root, flags) {
-  const cell = unclaimCell(root, requireFlag(flags, 'id'), ownershipFlags(flags));
+async function handleCellsUnclaim(root, flags) {
+  const cell = await unclaimCell(root, requireFlag(flags, 'id'), ownershipFlags(flags));
   return { result: cell, text: `Unclaimed ${cell.id} — back to open.` };
 }
 
-function handleCellsReopen(root, flags) {
-  const cell = reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
+async function handleCellsReopen(root, flags) {
+  const cell = await reopenCell(root, requireFlag(flags, 'id'), requireFlag(flags, 'reason'), ownershipFlags(flags));
   return { result: cell, text: `Reopened ${cell.id} — back to open.` };
 }
 
@@ -1018,8 +1032,9 @@ async function handleCellsUnarchive(root, flags) {
   };
 }
 
-function handleCellsTier(root, flags) {
-  const cell = setTier(root, requireFlag(flags, 'id'), String(requireFlag(flags, 'tier')));
+// hardening-4b: setTier is now withStoreLock-wrapped (async).
+async function handleCellsTier(root, flags) {
+  const cell = await setTier(root, requireFlag(flags, 'id'), String(requireFlag(flags, 'tier')));
   return { result: cell, text: `Cell ${cell.id} tier set to ${cell.tier}.` };
 }
 
@@ -1097,7 +1112,7 @@ async function handleCellsJudgeRecord(root, flags) {
 // as a thrown Error at the CLI boundary — same convention handleStateHandoffAdopt
 // already uses for adoptHandoff's own typed refusals — so the process exits
 // non-zero with the reason on stderr rather than a misleadingly "successful" exit.
-function handleCellsClaimNext(root, flags) {
+async function handleCellsClaimNext(root, flags) {
   const worker = requireFlag(flags, 'worker');
   // D3: --session-id keeps working exactly as before; it is now also
   // resolvable from CLAUDE_CODE_SESSION_ID when the flag is omitted.
@@ -1115,7 +1130,9 @@ function handleCellsClaimNext(root, flags) {
   if (flags.ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
     throw new Error('--ttl must be a positive integer (seconds).');
   }
-  const result = claimNextCell(root, { sessionId, worker, ttl });
+  // hardening-4b: claimNextCell now awaits sweepExpiredClaims (sweep-reset)
+  // and composes the now-async claimCellCrossSession.
+  const result = await claimNextCell(root, { sessionId, worker, ttl });
   if (!result.ok) {
     throw new Error(`claim-next: ${result.code} — ${result.reason}`);
   }
@@ -2579,12 +2596,25 @@ function lastTranscriptActivity(transcript) {
 }
 
 function summarizeRecoveryCandidate(c) {
-  return `${c.session_id} [${c.lane || 'no-lane'}] last_heartbeat=${c.last_heartbeat || 'unknown'} transcript=${c.transcript || 'null'} last_activity=${lastTranscriptActivity(c.transcript) || 'unknown'}`;
+  return `${c.session_id} [${c.lane || 'no-lane'}] runtime=${c.runtime || 'claude'} last_heartbeat=${c.last_heartbeat || 'unknown'} transcript=${c.transcript || 'null'} last_activity=${lastTranscriptActivity(c.transcript) || 'unknown'}`;
+}
+
+// summarizeTranscriptRoot — one line per scanned/skipped transcript root
+// (hardening-5), appended to `recovery scan`'s human-readable text summary so
+// a second-runtime user can see a configured root was actually consulted (or
+// why it was skipped) without needing --json. The JSON `result` field below
+// stays the bare candidates array, unchanged, to keep `bee recovery scan
+// --json`'s existing shape byte-identical for every caller that parses it.
+function summarizeTranscriptRoot(r) {
+  return `root ${r.runtime} (${r.path}): ${r.scanned ? 'scanned' : `skipped (${r.reason})`}`;
 }
 
 function handleRecoveryScan(root, _flags) {
   const candidates = detectCrashCandidates(root);
-  const text = candidates.length ? candidates.map(summarizeRecoveryCandidate).join('\n') : 'recovery: no crash candidates.';
+  const roots = scanTranscriptRoots(root);
+  const candidateText = candidates.length ? candidates.map(summarizeRecoveryCandidate).join('\n') : 'recovery: no crash candidates.';
+  const rootsText = roots.map(summarizeTranscriptRoot).join('\n');
+  const text = `${candidateText}\n${rootsText}`;
   return { result: candidates, text };
 }
 
@@ -2695,7 +2725,7 @@ function holdForeignExpiry(hold) {
   return `expires ${new Date(mirroredMs + ttl * 1000).toISOString()}`;
 }
 
-function handleWorktreeRegister(_root, flags) {
+async function handleWorktreeRegister(_root, flags) {
   const feature = requireFlag(flags, 'feature');
   let resolution;
   try {
@@ -2712,7 +2742,9 @@ function handleWorktreeRegister(_root, flags) {
   }
   const { id, mainRoot, worktreeRoot } = resolution;
   const mainStoreRoot = path.join(mainRoot, '.bee');
-  writeGrant(mainStoreRoot, id);
+  // hardening-4b: writeGrant is now withStoreLock-wrapped (async, serialized
+  // under the 'worktree-admin' lock).
+  await writeGrant(mainStoreRoot, id);
   const bootstrap = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature);
   const result = { ok: true, id, feature, main_root: mainRoot, worktree_root: worktreeRoot, bootstrap };
   const text = [
@@ -2732,7 +2764,7 @@ function handleWorktreeRegister(_root, flags) {
 // handleWorktreeRegister uses to require the opposite ('linked-valid'); here
 // it must be 'ordinary', because "new" is what CREATES the linked worktree
 // register later runs inside of.
-function handleWorktreeNew(_root, flags) {
+async function handleWorktreeNew(_root, flags) {
   const feature = requireFlag(flags, 'feature');
   const baseRef = flags['base-ref'] !== undefined ? String(flags['base-ref']) : undefined;
   let resolution;
@@ -2749,7 +2781,9 @@ function handleWorktreeNew(_root, flags) {
     );
   }
   const mainRoot = resolution.workRoot;
-  const created = createFeatureWorktree(mainRoot, { feature, baseRef });
+  // hardening-4b: createFeatureWorktree now runs its whole body inside
+  // withStoreLock('worktree-admin') (async).
+  const created = await createFeatureWorktree(mainRoot, { feature, baseRef });
   // GH #31 (wux-1, messaging only): the explicit session-boundary next-step —
   // this session (in mainRoot) never cd's into the new worktree itself, so
   // the success output has to say so plainly: open a NEW session there, and
@@ -2852,7 +2886,7 @@ function handleWorktreeList(root, _flags) {
   return { result: { grants, main_root: mainRoot }, text };
 }
 
-function handleWorktreeUnregister(root, flags) {
+async function handleWorktreeUnregister(root, flags) {
   const mainRoot = resolveMainRoot(root);
   const mainStoreRoot = path.join(mainRoot, '.bee');
   let id = flags.id ? String(flags.id) : null;
@@ -2870,7 +2904,8 @@ function handleWorktreeUnregister(root, flags) {
     }
     id = resolution.id;
   }
-  removeGrant(mainStoreRoot, id);
+  // hardening-4b: removeGrant is now withStoreLock-wrapped (async).
+  await removeGrant(mainStoreRoot, id);
   return { result: { ok: true, id, main_root: mainRoot }, text: `Removed worktree grant for id ${id}.` };
 }
 
@@ -2904,24 +2939,28 @@ function handleConfigValidate(root, _flags) {
 // through a validated CLI instead of hand-editing .bee/config.json — the same
 // "everything through the CLI" contract every other .bee file already has.
 
-function configFilePath(root) {
-  return path.join(root, '.bee', 'config.json');
+// hardening-8 (config overlay): --local redirects every config get/set/unset
+// verb at the machine-local overlay (.bee/config.local.json, gitignored)
+// instead of the tracked .bee/config.json. Omitting --local is byte-identical
+// to today (D4 zero-flag parity) — every existing caller is unaffected.
+function configFilePath(root, { local = false } = {}) {
+  return local ? localConfigPath(root) : path.join(root, '.bee', 'config.json');
 }
 
 // Read the RAW config object for editing (not readConfig — that normalizes and
 // fills defaults, which would balloon the file). Refuses on a present-but-broken
 // file so a set/unset never silently clobbers an unparseable config and loses it.
-function readRawConfigForEdit(root) {
-  const file = configFilePath(root);
+function readRawConfigForEdit(root, { local = false } = {}) {
+  const file = configFilePath(root, { local });
   if (!fs.existsSync(file)) return {};
   const raw = readJson(file, undefined);
   if (raw === undefined || raw === null) {
     throw new Error(
-      `config: .bee/config.json exists but is not valid JSON — fix it before "config set"/"config unset" (refusing to overwrite and lose your config).`,
+      `config: ${path.relative(root, file)} exists but is not valid JSON — fix it before "config set"/"config unset" (refusing to overwrite and lose your config).`,
     );
   }
   if (typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('config: .bee/config.json is not a JSON object.');
+    throw new Error(`config: ${path.relative(root, file)} is not a JSON object.`);
   }
   return raw;
 }
@@ -3002,10 +3041,11 @@ function refuseIfNewConfigProblem(verb, before, after) {
 
 function handleConfigGet(root, flags) {
   const key = requireFlag(flags, 'key');
-  const value = getConfigAtPath(readRawConfigForEdit(root), key);
+  const local = flags.local === true;
+  const value = getConfigAtPath(readRawConfigForEdit(root, { local }), key);
   const present = value !== undefined;
   return {
-    result: { key, present, value: present ? value : null },
+    result: { key, present, value: present ? value : null, local },
     text: present ? `${key} = ${JSON.stringify(value)}` : `config get: "${key}" is not set.`,
   };
 }
@@ -3013,25 +3053,37 @@ function handleConfigGet(root, flags) {
 function handleConfigSet(root, flags) {
   const key = requireFlag(flags, 'key');
   const value = coerceConfigValue(requireFlag(flags, 'value'), flags.string === true);
-  const before = validateModelsConfig(readRawConfigForValidation(root));
-  const config = readRawConfigForEdit(root);
-  setConfigAtPath(config, key, value);
-  refuseIfNewConfigProblem('set', before, validateModelsConfig(config));
-  writeJsonAtomic(configFilePath(root), config);
-  return { result: { key, value }, text: `config set: ${key} = ${JSON.stringify(value)}` };
+  const local = flags.local === true;
+  const config = readRawConfigForEdit(root, { local });
+  // The models-config cli-safety guard only ever applies to the TRACKED
+  // config (the overlay is for machine-local values like dogfood_repos, not
+  // model/cli wiring) — an overlay write skips it rather than comparing a
+  // local-only object against the tracked validator's expectations.
+  if (!local) {
+    const before = validateModelsConfig(readRawConfigForValidation(root));
+    setConfigAtPath(config, key, value);
+    refuseIfNewConfigProblem('set', before, validateModelsConfig(config));
+  } else {
+    setConfigAtPath(config, key, value);
+  }
+  writeJsonAtomic(configFilePath(root, { local }), config);
+  return { result: { key, value, local }, text: `config set${local ? ' --local' : ''}: ${key} = ${JSON.stringify(value)}` };
 }
 
 function handleConfigUnset(root, flags) {
   const key = requireFlag(flags, 'key');
-  const before = validateModelsConfig(readRawConfigForValidation(root));
-  const config = readRawConfigForEdit(root);
+  const local = flags.local === true;
+  const config = readRawConfigForEdit(root, { local });
+  const before = !local ? validateModelsConfig(readRawConfigForValidation(root)) : null;
   const removed = unsetConfigAtPath(config, key);
   if (!removed) {
-    return { result: { key, removed: false }, text: `config unset: "${key}" was not set (no change).` };
+    return { result: { key, removed: false, local }, text: `config unset${local ? ' --local' : ''}: "${key}" was not set (no change).` };
   }
-  refuseIfNewConfigProblem('unset', before, validateModelsConfig(config));
-  writeJsonAtomic(configFilePath(root), config);
-  return { result: { key, removed: true }, text: `config unset: removed "${key}".` };
+  if (!local) {
+    refuseIfNewConfigProblem('unset', before, validateModelsConfig(config));
+  }
+  writeJsonAtomic(configFilePath(root, { local }), config);
+  return { result: { key, removed: true, local }, text: `config unset${local ? ' --local' : ''}: removed "${key}".` };
 }
 
 // ─── doctor (codex-native-runtime-v2 D11): fail-closed runtime health report
@@ -3940,8 +3992,17 @@ function handleDispatchPrepare(root, flags) {
   const runtime = requireFlag(flags, 'runtime');
   const kind = requireFlag(flags, 'kind');
   const cellId = typeof flags.cell === 'string' && flags.cell ? flags.cell : null;
+  // hardening-7: --worker/--force-ownership are inert for every kind but
+  // 'cell' (prepareDispatch's own claim-ownership guard only reads them
+  // there) — passed through unconditionally so every existing gather/
+  // reviewer/advisor call site stays byte-identical. Restored here
+  // (hardening-4b) after this handler was found reverted to its
+  // pre-hardening-7 shape while dispatch-prepare.mjs's own worker-required
+  // logic was still live — the two must travel together.
+  const worker = typeof flags.worker === 'string' && flags.worker ? flags.worker : null;
+  const forceOwnership = flags['force-ownership'] === true;
   const classification = runtime === 'codex' ? readNativeTransportClassification(root).classification : undefined;
-  const out = prepareDispatch(root, { runtime, kind, cell: cellId, classification });
+  const out = prepareDispatch(root, { runtime, kind, cell: cellId, worker, forceOwnership, classification });
   return { result: out, text: JSON.stringify(out, null, 2) };
 }
 
@@ -4229,7 +4290,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

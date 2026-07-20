@@ -118,6 +118,17 @@ const GITIGNORE_BLOCK_PATTERNS = [
   ".bee/claims/",
   ".bee/runtime/",
   ".bee/cache/",
+  // Cross-process store-mutex lockfiles (hardening-4b): withStoreLock
+  // (lock.mjs) writes a short-lived .lock file per named critical section —
+  // machine/process-local coordination state, never tracked. Left unignored,
+  // a "worktree new"/"worktree merge" run holds this lock for the ENTIRE
+  // operation (worktree-admin mutex, hardening-4b), so its own lock file is
+  // untracked dirt sitting in the checkout for that whole window — `git
+  // status --porcelain` (the D8a dirty-check every merge/create runs FIRST)
+  // would see it and refuse WORKTREE_MERGE_MAIN_DIRTY/WORKTREE_CALLER_NOT_
+  // ORDINARY-adjacent checks against a tree that is only "dirty" because bee
+  // itself is holding a lock on it.
+  ".bee/locks/",
   // Static "doctor attest" record (g22-3, D5-REVISED): hash/version/identity
   // pairing a human vouched for via `bee doctor attest --runtime codex` —
   // machine-local runtime state, never tracked (a different checkout or a
@@ -128,6 +139,12 @@ const GITIGNORE_BLOCK_PATTERNS = [
   // — never doctor-attest.json, never tracked (see bee.mjs's
   // readNativeTransportClassification/writeNativeTransportProbe).
   ".bee/native-transport-probe.json",
+  // Machine-local config overlay (hardening-8, config-overlay D-local-config):
+  // deep-merged OVER the tracked .bee/config.json by readConfig (overlay
+  // wins, arrays replace) so a single contributor's machine-local values
+  // (today: dogfood_repos absolute paths) never land in the shared, tracked
+  // config file. Never tracked — every checkout/clone starts without one.
+  ".bee/config.local.json",
 ];
 
 const HOOK_FILENAMES = [

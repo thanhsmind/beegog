@@ -102,11 +102,11 @@ function raceSteal({ root, sessionId, cellId, goFile, ttl }) {
 
 // scenario: sweep-heartbeat — sweepers hammering while a heartbeat renewer
 // keeps one claim alive; nobody may reclaim a live claim.
-function raceSweep({ root, cellId, goFile, stopFile, staleSeconds }) {
+async function raceSweep({ root, cellId, goFile, stopFile, staleSeconds }) {
   spinUntil(goFile);
   let sawErroneousSweep = false;
   while (!fs.existsSync(stopFile)) {
-    const result = sweepExpiredClaims(root, { staleSeconds });
+    const result = await sweepExpiredClaims(root, { staleSeconds });
     if (result.ok && result.swept.includes(cellId)) {
       sawErroneousSweep = true;
       break;
@@ -297,7 +297,7 @@ async function sweepHeartbeat() {
     // Negative control: heartbeat has stopped; once staleness truly elapses,
     // a direct sweep call must reclaim it — proving sweep is not a no-op.
     await sleep(STALE_SECONDS * 1000 + 300);
-    const finalSweep = sweepExpiredClaims(root, { staleSeconds: STALE_SECONDS });
+    const finalSweep = await sweepExpiredClaims(root, { staleSeconds: STALE_SECONDS });
     if (!finalSweep.ok || !finalSweep.swept.includes(cellId) || fs.existsSync(claimPath(root, cellId))) {
       failures.push(`round ${r}: negative control failed — sweep did not reclaim after heartbeat stopped: ${JSON.stringify(finalSweep)}`);
     }

@@ -22,6 +22,8 @@ import {
   adoptClaim,
   sweepExpiredClaims,
   isClaimActive,
+  isConcurrentMode,
+  listSessionRecords,
   sessionPath,
   claimPath,
   claimGatePath,
@@ -104,7 +106,7 @@ await check('sweep: TTL expired but heartbeat FRESH is never reclaimed (20260710
     claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
     ttl_seconds: 60,
   });
-  const result = sweepExpiredClaims(claimsRoot);
+  const result = await sweepExpiredClaims(claimsRoot);
   assert(result.ok === true, 'sweep returns ok');
   assert(!result.swept.includes('cell-1'), 'fresh-heartbeat claim not swept');
   assert(fs.existsSync(claimPath(claimsRoot, 'cell-1')), 'claim file untouched');
@@ -116,7 +118,7 @@ await check('sweep: TTL expired AND heartbeat stale IS reclaimed; no gate file l
     ...session,
     last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
   });
-  const result = sweepExpiredClaims(claimsRoot);
+  const result = await sweepExpiredClaims(claimsRoot);
   assert(result.swept.includes('cell-1'), `expired+stale claim swept, got ${JSON.stringify(result)}`);
   assert(!fs.existsSync(claimPath(claimsRoot, 'cell-1')), 'claim file reclaimed');
   assert(!fs.existsSync(claimGatePath(claimsRoot, 'cell-1')), 'gate file removed after sweep');
@@ -135,7 +137,7 @@ await check('sweep and adopt skip/refuse while the per-claim gate is held — ty
     last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
   });
   fs.writeFileSync(claimGatePath(claimsRoot, 'cell-2'), '{}', 'utf8'); // another process mid-adopt
-  const swept = sweepExpiredClaims(claimsRoot);
+  const swept = await sweepExpiredClaims(claimsRoot);
   assert(!swept.swept.includes('cell-2'), 'gated claim skipped by sweep');
   assert(fs.existsSync(claimPath(claimsRoot, 'cell-2')), 'gated claim untouched');
   const adopt = adoptClaim(claimsRoot, 'cell-2', 'sess-b');
@@ -180,7 +182,7 @@ await check('claimCellFile default TTL matches the exported constant; released c
   releaseClaim(claimsRoot, 'sess-b', 'cell-2');
 });
 
-// ─── D3: resolveSessionId — explicit flag -> CLAUDE_CODE_SESSION_ID env -> null ──
+// ─── D3: resolveSessionId — explicit flag -> BEE_SESSION_ID -> CLAUDE_CODE_SESSION_ID -> null ──
 
 await check('resolveSessionId: explicit flag wins over env; a blank flag falls through to env; neither present resolves null', async () => {
   const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
@@ -199,7 +201,45 @@ await check('resolveSessionId: explicit flag wins over env; a blank flag falls t
   }
 });
 
+await check('resolveSessionId (hardening-4a): BEE_SESSION_ID wins over legacy CLAUDE_CODE_SESSION_ID env; explicit flag still wins over both; a blank BEE_SESSION_ID falls through to the legacy env', async () => {
+  const savedBee = process.env.BEE_SESSION_ID;
+  const savedLegacy = process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    delete process.env.BEE_SESSION_ID;
+    process.env.CLAUDE_CODE_SESSION_ID = 'sess-legacy';
+    assert(resolveSessionId({}) === 'sess-legacy', 'legacy env alone still resolves, runtime-neutral chain is additive');
+
+    process.env.BEE_SESSION_ID = 'sess-bee';
+    assert(resolveSessionId({}) === 'sess-bee', 'BEE_SESSION_ID wins over CLAUDE_CODE_SESSION_ID when both are set');
+    assert(resolveSessionId({ flag: 'sess-flag' }) === 'sess-flag', 'explicit flag still wins over both envs');
+
+    process.env.BEE_SESSION_ID = '   ';
+    assert(resolveSessionId({}) === 'sess-legacy', 'a whitespace-only BEE_SESSION_ID falls through to CLAUDE_CODE_SESSION_ID, same blank-treated-as-absent rule as the flag');
+
+    delete process.env.BEE_SESSION_ID;
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+    assert(resolveSessionId({}) === null, 'neither env present still resolves null');
+  } finally {
+    if (savedBee === undefined) delete process.env.BEE_SESSION_ID;
+    else process.env.BEE_SESSION_ID = savedBee;
+    if (savedLegacy === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedLegacy;
+  }
+});
+
 // ─── D1 Δ2: sessionless claims — claimCellFile/releaseClaim/clearClaim ─────
+// hardening-4a: this shared claimsRoot has accumulated LIVE session records
+// from every row above (sess-a, sess-b, plus the anonymous generated-id
+// session from the very first createSession row) — stale every one of them
+// out here so the sessionless rows below genuinely exercise the SOLO case
+// (isConcurrentMode(claimsRoot) === false), matching what these rows always
+// meant to test (single-session use), predating concurrent mode entirely.
+for (const record of listSessionRecords(claimsRoot)) {
+  writeJsonAtomic(sessionPath(claimsRoot, record.id), {
+    ...record,
+    last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
+  });
+}
 
 await check('claimCellFile(root, null, ...): a sessionless claim omits the "session" key entirely (never null) and still race-serializes via O_EXCL', async () => {
   const first = claimCellFile(claimsRoot, null, 'cell-sessionless', 60);
@@ -236,6 +276,55 @@ await check('clearClaim: unconditional removal regardless of owner; no-ops (ok:t
 });
 
 fs.rmSync(claimsRoot, { recursive: true, force: true });
+
+// ─── hardening-4a: isConcurrentMode + sessionless-claim refusal ────────────
+
+const concurrentModeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-claims-concurrent-'));
+
+await check('isConcurrentMode: false with no session records or only the acting session live; true once ANOTHER session has a live heartbeat; a stale other-session heartbeat does not count', async () => {
+  assert(isConcurrentMode(concurrentModeRoot) === false, 'no session records at all -> not concurrent');
+  createSession(concurrentModeRoot, { id: 'solo-sess' });
+  assert(isConcurrentMode(concurrentModeRoot, { excludeSessionId: 'solo-sess' }) === false, 'only the acting session itself is live -> not concurrent');
+  createSession(concurrentModeRoot, { id: 'other-sess' });
+  assert(isConcurrentMode(concurrentModeRoot, { excludeSessionId: 'solo-sess' }) === true, 'another live session -> concurrent');
+  assert(isConcurrentMode(concurrentModeRoot) === true, 'with no excludeSessionId, any live session counts, including one that would otherwise be excluded');
+  writeJsonAtomic(sessionPath(concurrentModeRoot, 'other-sess'), {
+    ...readSession(concurrentModeRoot, 'other-sess'),
+    last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
+  });
+  assert(isConcurrentMode(concurrentModeRoot, { excludeSessionId: 'solo-sess' }) === false, 'a stale-heartbeat other session does not count as concurrent');
+});
+
+await check('claimCellFile: sessionless claim still works solo (nobody else live) — byte-unchanged; refuses typed SESSION_REQUIRED once another session goes live, naming --session-id and BEE_SESSION_ID; a real session id still claims fine in concurrent mode', async () => {
+  // 'solo-sess' is still live from the row above (never staled there) — stale
+  // every session record here so this actually starts from a genuine solo
+  // state before proving the sessionless claim still works unaffected.
+  for (const record of listSessionRecords(concurrentModeRoot)) {
+    writeJsonAtomic(sessionPath(concurrentModeRoot, record.id), {
+      ...record,
+      last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
+    });
+  }
+  assert(isConcurrentMode(concurrentModeRoot) === false, 'precondition: genuinely solo before the claim attempt');
+  const solo = claimCellFile(concurrentModeRoot, null, 'cell-solo', 60);
+  assert(solo.ok === true, 'sessionless claim still succeeds when nobody else is live');
+  assert(!('session' in solo.claim), 'solo sessionless claim still omits the session key entirely');
+  releaseClaim(concurrentModeRoot, null, 'cell-solo');
+
+  heartbeatSession(concurrentModeRoot, 'other-sess'); // bring it back to a live heartbeat -> concurrent mode
+  const refused = claimCellFile(concurrentModeRoot, null, 'cell-concurrent', 60);
+  assert(refused.ok === false, 'sessionless claim refused while another session is live');
+  assert(refused.code === 'SESSION_REQUIRED', `expected typed SESSION_REQUIRED, got ${refused.code}`);
+  assert(typeof refused.reason === 'string' && refused.reason.includes('--session-id'), `reason should name --session-id, got ${JSON.stringify(refused.reason)}`);
+  assert(refused.reason.includes('BEE_SESSION_ID'), `reason should name BEE_SESSION_ID, got ${JSON.stringify(refused.reason)}`);
+  assert(!fs.existsSync(claimPath(concurrentModeRoot, 'cell-concurrent')), 'the refusal never leaves a claim file behind');
+
+  const withSession = claimCellFile(concurrentModeRoot, 'other-sess', 'cell-concurrent', 60);
+  assert(withSession.ok === true, 'a real session id claims fine even in concurrent mode');
+  releaseClaim(concurrentModeRoot, 'other-sess', 'cell-concurrent');
+});
+
+fs.rmSync(concurrentModeRoot, { recursive: true, force: true });
 
 // ─── claims: concurrent Worker races (fsh-2) ───────────────────────────────
 // The entire race lives inside race_claims_child.mjs as a self-contained

@@ -32,6 +32,10 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readJson, writeJsonAtomic, ensureDir } from './fsutil.mjs';
 import { withStoreLock, LockBusyError } from './lock.mjs';
+// hardening-4b (sweep-reset): logs one audit line per cell reset below.
+// decisions.mjs imports only fsutil.mjs/node builtins, so importing it here
+// creates no cycle.
+import { logDecision } from './decisions.mjs';
 // Deliberately NOT importing reservations.mjs here (state.mjs:7-9 pins
 // claims.mjs and reservations.mjs as cycle-free leaf modules — reservations.mjs
 // already imports resolveSessionId from THIS file). heartbeatTouch below
@@ -56,15 +60,20 @@ function utcNow(nowMs) {
 }
 
 /**
- * D3 — session id is resolved at mutation time, never handed down: explicit
- * flag (highest, for tests/CLI callers) -> CLAUDE_CODE_SESSION_ID env ->
- * absent (null). A blank/whitespace-only flag or env value is treated as
+ * D3 (hardening-4a Δ-amended) — session id is resolved at mutation time,
+ * never handed down: explicit flag (highest, for tests/CLI callers) ->
+ * BEE_SESSION_ID env (runtime-neutral — set by any harness, not just
+ * Claude Code) -> CLAUDE_CODE_SESSION_ID env (legacy, kept for back-compat)
+ * -> absent (null). A blank/whitespace-only flag or env value is treated as
  * absent, same as omitting it. Callers that require a session (claim-next)
  * still enforce non-null themselves; this helper only resolves, it never
- * refuses.
+ * refuses. lock.mjs's withStoreLock duplicates this exact chain inline
+ * (deliberately, to stay import-light) — keep the two in sync by hand.
  */
 export function resolveSessionId({ flag } = {}) {
   if (typeof flag === 'string' && flag.trim()) return flag.trim();
+  const beeEnv = process.env.BEE_SESSION_ID;
+  if (typeof beeEnv === 'string' && beeEnv.trim()) return beeEnv.trim();
   const env = process.env.CLAUDE_CODE_SESSION_ID;
   if (typeof env === 'string' && env.trim()) return env.trim();
   return null;
@@ -184,6 +193,26 @@ export function heartbeatStale(session, nowMs = Date.now(), staleSeconds = DEFAU
   return beatMs + staleSeconds * 1000 <= nowMs;
 }
 
+/**
+ * hardening-4a — "concurrent mode" is true when at least one OTHER session
+ * record exists with a LIVE (non-stale) heartbeat, reusing the exact msh-5
+ * staleness window heartbeatStale already applies everywhere else
+ * (DEFAULT_HEARTBEAT_STALE_SECONDS, overridable only for tests). Backs the
+ * sessionless-claim/reserve refusal below: a genuinely solo session (nobody
+ * else's heartbeat is live) keeps today's sessionless behavior byte-
+ * unchanged; only once a second live session shows up does an unidentified
+ * caller get asked to say who it is. `excludeSessionId` lets a caller that
+ * DOES hold a real session id exclude its own record — its own liveness is
+ * never "another" session; a caller with no session id at all simply asks
+ * "is anyone else out there right now."
+ */
+export function isConcurrentMode(root, { excludeSessionId = null, now = Date.now(), staleSeconds = DEFAULT_HEARTBEAT_STALE_SECONDS } = {}) {
+  const exclude = typeof excludeSessionId === 'string' ? excludeSessionId.trim() : '';
+  return listSessionRecords(root).some(
+    (session) => session.id !== exclude && !heartbeatStale(session, now, staleSeconds),
+  );
+}
+
 // ─── session→lane binding (fresh-session-handoff fsh-3) ─────────────────────
 // The lane field is OPTIONAL and OMITTED while unbound: createSession never
 // writes it, so pre-existing session-record consumers see exactly the shape
@@ -277,10 +306,24 @@ function releaseGate(root, cellId) {
  * the `session` key entirely rather than writing a placeholder value. A
  * non-null sessionId is still validated the same as before (a plain id, no
  * path separators).
+ *
+ * hardening-4a: the D1 sessionless relaxation above is single-session-only
+ * in spirit. Once isConcurrentMode(root) sees another session's heartbeat
+ * live, an unidentified caller (session resolves null) is refused with a
+ * typed SESSION_REQUIRED error naming both ways to identify itself
+ * (--session-id flag, BEE_SESSION_ID env) BEFORE any claim file is written —
+ * a solo caller (nobody else live) is completely unaffected, byte-identical
+ * to before this cell.
  */
 export function claimCellFile(root, sessionId, cellId, ttl = DEFAULT_CLAIM_TTL_SECONDS, { now = Date.now() } = {}) {
   const session = sessionId == null ? null : requireId(sessionId, 'session id');
   const cell = requireId(cellId, 'cell id');
+  if (session == null && isConcurrentMode(root)) {
+    return fail(
+      'SESSION_REQUIRED',
+      `cell "${cell}" cannot be claimed without identifying the acting session while another session is active — pass --session-id or set BEE_SESSION_ID (CLAUDE_CODE_SESSION_ID is also honored).`,
+    );
+  }
   ensureDir(claimsDir(root));
   const claim = {
     cell,
@@ -460,14 +503,51 @@ export function clearClaim(root, cellId) {
   }
 }
 
+// hardening-4b (sweep-reset): a minimal, SELF-CONTAINED read/write of a
+// cell's on-disk shape (.bee/cells/<id>.json) for the reset below —
+// deliberately NOT importing cells.mjs's readCell/writeCell: cells.mjs
+// already imports sweepExpiredClaims FROM this module (see its own import
+// comment), so importing back would cycle. This mirrors lock.mjs's own
+// documented precedent (its envSessionId duplicates claims.mjs's
+// resolveSessionId chain rather than import it) — a small, deliberate
+// duplication to keep claims.mjs a dependency-light leaf module. Archived
+// cells (moved under .bee/cells/archive/<feature>/<id>.json) are out of
+// scope here on purpose: a cell can only be archived once terminal
+// (capped/dropped), never while "claimed", so the active-path lookup below
+// finding nothing is simply "no live claimed cell to reset" — never an error.
+function cellFilePathForSweep(root, cellId) {
+  return path.join(root, '.bee', 'cells', `${cellId}.json`);
+}
+
+function readCellForSweepReset(root, cellId) {
+  return readJson(cellFilePathForSweep(root, cellId), null);
+}
+
 /**
  * Reclaim only what is provably abandoned: TTL expired AND owner heartbeat
  * stale (missing/corrupt session record counts as stale), both RE-VERIFIED
  * under the claim's exclusive gate (pattern 20260710 — never steal on a stall
  * signal alone). A held gate means another process is mid-adopt/sweep: skip,
  * never wait.
+ *
+ * hardening-4b (sweep-reset): once a claim file is actually removed, the
+ * CELL it pointed at is very likely still sitting at status "claimed" —
+ * before this, nothing ever flipped it back to "open", so a dead session's
+ * claim would sweep its claims-store file but silently leave the cell
+ * unclaimable-looking-claimed forever (claim-next's own selection only reads
+ * "open" cells). The reset below closes that gap: under
+ * withStoreLock(`cells:${id}`) — the SAME per-cell lock every other cells.mjs
+ * mutator now uses — read the cell fresh, and only reset claimed -> open
+ * when BOTH (a) its status is still "claimed" (never touch anything else)
+ * and (b) its trace.claim_session matches the JUST-SWEPT claim's session
+ * (claim.session ?? null) — i.e. nobody re-claimed it between the claim-file
+ * removal above and this reset acquiring the lock. A mismatch means a fresh
+ * claim already won the cell; the reset is skipped, never overwriting a live
+ * claimant. One audit decision line is logged per actual reset (best-effort:
+ * a decision-log failure must never abort an already-decided reset, since
+ * the cell write below is the thing that actually matters).
  */
-export function sweepExpiredClaims(root, { now = Date.now(), staleSeconds = DEFAULT_HEARTBEAT_STALE_SECONDS } = {}) {
+export async function sweepExpiredClaims(root, { now = Date.now(), staleSeconds = DEFAULT_HEARTBEAT_STALE_SECONDS } = {}) {
   const dir = claimsDir(root);
   let entries;
   try {
@@ -477,6 +557,7 @@ export function sweepExpiredClaims(root, { now = Date.now(), staleSeconds = DEFA
   }
   const swept = [];
   const skipped = [];
+  const resetCells = [];
   for (const entry of entries) {
     if (!entry.endsWith('.json')) continue;
     const cell = entry.slice(0, -'.json'.length);
@@ -488,6 +569,7 @@ export function sweepExpiredClaims(root, { now = Date.now(), staleSeconds = DEFA
       skipped.push(cell);
       continue;
     }
+    let sweptClaim = null;
     try {
       const claim = readClaim(root, cell); // re-verify everything under the gate
       if (
@@ -497,12 +579,47 @@ export function sweepExpiredClaims(root, { now = Date.now(), staleSeconds = DEFA
       ) {
         fs.rmSync(claimPath(root, cell), { force: true });
         swept.push(cell);
+        sweptClaim = claim;
       }
     } finally {
       releaseGate(root, cell);
     }
+    if (!sweptClaim) continue;
+    const sweptSession = sweptClaim.session ?? null;
+    const wasReset = await withStoreLock(root, `cells:${cell}`, () => {
+      const cellRecord = readCellForSweepReset(root, cell);
+      if (!cellRecord || cellRecord.status !== 'claimed') return false;
+      const currentSession = (cellRecord.trace && cellRecord.trace.claim_session) ?? null;
+      if (currentSession !== sweptSession) return false; // a fresher claim already owns it — never overwrite
+      cellRecord.status = 'open';
+      cellRecord.trace = {
+        ...(cellRecord.trace || {}),
+        worker: null,
+        claimed_at: null,
+        claim_session: null,
+        swept_at: new Date(now).toISOString(),
+        swept_from_session: sweptSession,
+      };
+      writeJsonAtomic(cellFilePathForSweep(root, cell), cellRecord);
+      return true;
+    });
+    if (wasReset) {
+      resetCells.push(cell);
+      try {
+        logDecision(root, {
+          decision: `«sweep: cell "${cell}" reset claimed -> open — swept session "${sweptSession ?? 'none (sessionless)'}"'s expired, stale claim»`,
+          rationale:
+            'sweepExpiredClaims (hardening-4b) removed the abandoned claim file; the cell was still "claimed" by that exact session (trace.claim_session matched), so it is returned to open rather than left claimed-but-unclaimable forever.',
+          scope: 'repo',
+          source: 'user',
+        });
+      } catch {
+        // best-effort — the cell reset above already committed; a decision-log
+        // failure must never be treated as the reset itself having failed.
+      }
+    }
   }
-  return { ok: true, swept, skipped };
+  return { ok: true, swept, skipped, reset: resetCells };
 }
 
 // ─── heartbeat + lease renewal touch (D5) ───────────────────────────────────

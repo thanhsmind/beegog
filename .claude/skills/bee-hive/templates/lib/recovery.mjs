@@ -29,7 +29,7 @@ import {
   readClaim,
   isClaimActive,
 } from './claims.mjs';
-import { readLane } from './state.mjs';
+import { readLane, readConfig } from './state.mjs';
 import { listCells } from './cells.mjs';
 import { activeDecisions } from './decisions.mjs';
 import { captureQueuePath } from './capture.mjs';
@@ -212,6 +212,68 @@ function sessionHasActiveClaim(root, sessionId, nowMs) {
   return false;
 }
 
+// --- (0) config-driven transcript roots (hardening-5) ------------------------
+
+// normalizeTranscriptRootsConfig — `.bee/config.json` `recovery.transcript_roots`
+// entries: each must be `{ runtime, path }` with non-empty strings; anything
+// else (wrong shape, non-array, absent) is silently ignored and resolves to
+// [] — the byte-identical, Claude-only default this cell must preserve when
+// no config key is set. No filesystem check happens here: existence/
+// readability is checked fresh on every scanTranscriptRoots() call instead, so
+// a root that comes and goes across sessions is never baked into a stale
+// config-time judgment.
+function normalizeTranscriptRootsConfig(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const runtime = typeof entry.runtime === 'string' ? entry.runtime.trim() : '';
+    const rootPath = typeof entry.path === 'string' ? entry.path.trim() : '';
+    if (!runtime || !rootPath) continue;
+    out.push({ runtime, path: rootPath });
+  }
+  return out;
+}
+
+// scanTranscriptRoots — the Claude default root PLUS every configured extra
+// root (config.recovery.transcript_roots), each tagged with its runtime and a
+// scan result: `{ scanned: true }` when the directory exists and is readable,
+// or `{ scanned: false, reason }` when it is missing/unreadable. Degrading is
+// always silent to CALLERS (never a throw), but a bad CONFIGURED root also
+// gets exactly one console.warn naming its path — so a second-runtime (e.g.
+// Codex) user who misconfigures recovery.transcript_roots can SEE the root
+// was skipped (`bee recovery scan --json` / `bee status --json`'s recovery
+// block both surface this list). The Claude DEFAULT root's own missing case
+// stays silent (D2 already documents that as a no-op — e.g. a host with no
+// ~/.claude/projects at all — so warning there would regress the "no config
+// key = byte-identical" contract this cell must hold).
+export function scanTranscriptRoots(root, { projectsRoot = claudeProjectsRoot() } = {}) {
+  const config = readConfig(root);
+  const configuredRaw = config && config.recovery ? config.recovery.transcript_roots : undefined;
+  const configured = normalizeTranscriptRootsConfig(configuredRaw);
+  const entries = [
+    { runtime: 'claude', path: projectsRoot, isConfigured: false },
+    ...configured.map((c) => ({ ...c, isConfigured: true })),
+  ];
+
+  return entries.map(({ runtime, path: rootPath, isConfigured }) => {
+    let scanned = false;
+    let reason = null;
+    try {
+      scanned = fs.statSync(rootPath).isDirectory();
+      if (!scanned) reason = 'not-a-directory';
+    } catch (err) {
+      reason = err && err.code ? err.code : 'unreadable';
+    }
+    if (!scanned && isConfigured) {
+      console.warn(
+        `recovery: configured transcript root "${rootPath}" (runtime "${runtime}") is ${reason} — skipping (config: recovery.transcript_roots)`,
+      );
+    }
+    return { runtime, path: rootPath, scanned, reason };
+  });
+}
+
 // --- (1) detectCrashCandidates ------------------------------------------------
 
 // detectCrashCandidates — every session that is a "recoverable crash" per D1:
@@ -221,7 +283,13 @@ function sessionHasActiveClaim(root, sessionId, nowMs) {
 // than the last durable settlement). Missing sessions dir, missing/unset
 // projects root (e.g. Codex — D2), or zero session records all resolve to []
 // without a throw — every intermediate reader here is already fail-open, so
-// no special-casing is needed to get that behavior.
+// no special-casing is needed to get that behavior. hardening-5: the
+// transcript is resolved against the Claude default root PLUS every
+// configured `recovery.transcript_roots` entry (scanTranscriptRoots, root
+// order preserved — Claude first, then config order), first match wins; the
+// candidate is tagged with whichever root's runtime actually held it. No
+// config key -> exactly the pre-hardening-5 single-root behavior, just with
+// candidates now always carrying `runtime: 'claude'`.
 export function detectCrashCandidates(
   root,
   { projectsRoot = claudeProjectsRoot(), projectPath = root, now = Date.now(), currentSessionId = null } = {},
@@ -230,13 +298,25 @@ export function detectCrashCandidates(
   const sessions = listSessionRecords(root);
   if (!sessions.length) return [];
 
+  const roots = scanTranscriptRoots(root, { projectsRoot });
+
   const candidates = [];
   for (const session of sessions) {
     if (!session || !session.id) continue;
     if (resolvedCurrent && session.id === resolvedCurrent) continue; // the live session is never a candidate
     if (!heartbeatStale(session, now)) continue; // fresh heartbeat -> not stale, not a crash
 
-    const transcript = resolveTranscript(projectsRoot, projectPath, { sessionId: session.id });
+    let transcript = null;
+    let transcriptRuntime = null;
+    for (const r of roots) {
+      if (!r.scanned) continue; // missing/unreadable root — already warned (if configured) by scanTranscriptRoots
+      const found = resolveTranscript(r.path, projectPath, { sessionId: session.id });
+      if (found) {
+        transcript = found;
+        transcriptRuntime = r.runtime;
+        break;
+      }
+    }
     if (!transcript) continue; // D1: transcript must exist to prove an abrupt stop
 
     const tail = readTranscriptTail(transcript);
@@ -272,6 +352,7 @@ export function detectCrashCandidates(
       session_id: session.id,
       lane,
       transcript,
+      runtime: transcriptRuntime,
       started_at: session.started_at || null,
       last_heartbeat: session.last_heartbeat || null,
       work_signal: workSignal,

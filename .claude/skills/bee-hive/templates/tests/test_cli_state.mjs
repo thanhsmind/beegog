@@ -865,8 +865,8 @@ await check('bee.mjs state start-feature refuses while the PRIOR feature has a n
 
     // Resolve through the EXISTING drop verb (lib/cells.mjs dropCell) — never
     // an auto-clear inside startFeature itself.
-    dropCell(dir, 'old-1', 'abandoned, superseded by new-feat');
-    dropCell(dir, 'old-2', 'abandoned, superseded by new-feat');
+    await dropCell(dir, 'old-1', 'abandoned, superseded by new-feat');
+    await dropCell(dir, 'old-2', 'abandoned, superseded by new-feat');
     assert(readCell(dir, 'old-1').status === 'dropped', 'old-1 dropped');
     assert(readCell(dir, 'old-2').status === 'dropped', 'old-2 dropped');
 

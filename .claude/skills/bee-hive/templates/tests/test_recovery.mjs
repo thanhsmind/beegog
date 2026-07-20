@@ -15,8 +15,10 @@ import {
   lastDurableSettlement,
   computeMiningWindow,
   buildMiningPrompt,
+  scanTranscriptRoots,
 } from '../lib/recovery.mjs';
 import { encodeProjectDir } from '../lib/perf.mjs';
+import { writeJsonAtomic } from '../lib/fsutil.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -108,6 +110,12 @@ function writeCappedCell(root, { id, feature, capped_at }) {
     `${JSON.stringify({ id, feature, status: 'capped', trace: { capped_at } }, null, 2)}\n`,
     'utf8',
   );
+}
+
+function writeConfig(root, config) {
+  const file = path.join(root, '.bee', 'config.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeJsonAtomic(file, config);
 }
 
 function writeClaim(root, { cellId, sessionId, claimed_at, ttl_seconds = 3600 }) {
@@ -454,6 +462,122 @@ check('detectCrashCandidates: no settlement anywhere falls back to session start
   const out = detectCrashCandidates(root, { projectsRoot, projectPath: PROJECT_PATH, now: BASE });
   eq(out.length, 1, 'activity after started_at, with zero durable settlement anywhere -> still a candidate');
   eq(out[0].since, startedAt, 'since falls back to the session started_at (D3)');
+});
+
+// ======================================================================
+// scanTranscriptRoots + detectCrashCandidates (hardening-5: config-driven
+// recovery.transcript_roots — runtime-aware second-runtime transcript root)
+// ======================================================================
+
+check('scanTranscriptRoots: no config -> only the Claude default root, byte-identical (no extra entries, no warn)', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects'); // does not exist
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (msg) => warnings.push(msg);
+  let roots;
+  try {
+    roots = scanTranscriptRoots(root, { projectsRoot });
+  } finally {
+    console.warn = originalWarn;
+  }
+  eq(roots.length, 1, 'no config -> exactly the Claude default root');
+  eq(roots[0].runtime, 'claude');
+  eq(roots[0].path, projectsRoot);
+  eq(roots[0].scanned, false, 'missing default root -> not scanned');
+  eq(warnings.length, 0, 'a missing DEFAULT root must never warn (pre-existing D2 silent no-op, byte-identical)');
+});
+
+check('scanTranscriptRoots: configured extra root that exists is reported scanned, no warn', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects');
+  fs.mkdirSync(projectsRoot, { recursive: true });
+  const extraRoot = path.join(root, 'codex-sessions');
+  fs.mkdirSync(extraRoot, { recursive: true });
+  writeConfig(root, { recovery: { transcript_roots: [{ runtime: 'codex', path: extraRoot }] } });
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (msg) => warnings.push(msg);
+  let roots;
+  try {
+    roots = scanTranscriptRoots(root, { projectsRoot });
+  } finally {
+    console.warn = originalWarn;
+  }
+  eq(roots.length, 2, 'Claude default + one configured root');
+  eq(roots[1].runtime, 'codex');
+  eq(roots[1].path, extraRoot);
+  eq(roots[1].scanned, true, 'existing configured root is scanned');
+  eq(warnings.length, 0, 'a healthy configured root must not warn');
+});
+
+check('scanTranscriptRoots: missing/unreadable configured root degrades to scanned:false + reason, with exactly one console.warn naming the path', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects');
+  fs.mkdirSync(projectsRoot, { recursive: true });
+  const missingRoot = path.join(root, 'does-not-exist-codex-root');
+  writeConfig(root, { recovery: { transcript_roots: [{ runtime: 'codex', path: missingRoot }] } });
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (msg) => warnings.push(msg);
+  let roots;
+  try {
+    roots = scanTranscriptRoots(root, { projectsRoot });
+  } finally {
+    console.warn = originalWarn;
+  }
+  eq(roots.length, 2);
+  eq(roots[1].scanned, false, 'missing configured root -> not scanned');
+  assert(typeof roots[1].reason === 'string' && roots[1].reason.length > 0, 'reason must be populated');
+  eq(warnings.length, 1, 'exactly one console.warn for the bad configured root');
+  assert(warnings[0].includes(missingRoot), 'the warning must name the offending path');
+});
+
+check('scanTranscriptRoots: malformed transcript_roots entries (missing runtime/path, non-array, junk) are ignored silently -> [] extra roots', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects');
+  writeConfig(root, {
+    recovery: {
+      transcript_roots: [{ runtime: 'codex' }, { path: '/no-runtime' }, 'just-a-string', 42, null],
+    },
+  });
+  const roots = scanTranscriptRoots(root, { projectsRoot });
+  eq(roots.length, 1, 'every malformed entry ignored -> only the Claude default remains');
+});
+
+check('detectCrashCandidates: a configured extra-runtime root with a fabricated transcript is scanned and the candidate is tagged with that runtime', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects'); // Claude root: intentionally absent for this session
+  const codexRoot = path.join(root, 'codex-sessions');
+  fs.mkdirSync(codexRoot, { recursive: true });
+  writeConfig(root, { recovery: { transcript_roots: [{ runtime: 'codex', path: codexRoot }] } });
+
+  const sid = 'sess-codex-crash';
+  writeSessionRecord(root, sid, { started_at: iso(BASE - 5000), last_heartbeat: STALE_HEARTBEAT, lane: 'feat-codex' });
+  writeLaneRecord(root, 'feat-codex', { phase: 'swarming' });
+  const transcript = writeTranscript(codexRoot, PROJECT_PATH, sid, dirtyEndEvents(BASE - 4000));
+
+  const out = detectCrashCandidates(root, { projectsRoot, projectPath: PROJECT_PATH, now: BASE });
+  eq(out.length, 1, 'the configured codex root must be consulted in addition to the (here, absent) Claude default');
+  eq(out[0].session_id, sid);
+  eq(out[0].transcript, transcript, 'transcript resolved from the configured root');
+  eq(out[0].runtime, 'codex', 'candidate tagged with the runtime whose root actually held the transcript');
+});
+
+check('detectCrashCandidates: no recovery config at all -> byte-identical Claude-only detection (candidate carries runtime "claude")', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects');
+  const sid = 'sess-lane';
+  writeSessionRecord(root, sid, { started_at: iso(BASE - 5000), last_heartbeat: STALE_HEARTBEAT, lane: 'feat-lane' });
+  writeLaneRecord(root, 'feat-lane', { phase: 'swarming' });
+  writeTranscript(projectsRoot, PROJECT_PATH, sid, dirtyEndEvents(BASE - 4000));
+  const out = detectCrashCandidates(root, { projectsRoot, projectPath: PROJECT_PATH, now: BASE });
+  eq(out.length, 1);
+  eq(out[0].session_id, sid);
+  eq(out[0].work_signal, 'lane');
+  eq(out[0].runtime, 'claude', 'default (no config) resolution is tagged with the claude runtime');
 });
 
 console.log(`\ntest_recovery: ${pass} passed, ${fail} failed`);
