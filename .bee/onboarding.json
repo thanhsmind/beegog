@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.7.5",
+  "bee_version": "1.7.6",
   "managed": {
     "agents_block": "84d1532386c14df08ad5483efd9b76b835e12567381a7005cfdfaa09f590df49",
     "gitignore_block": "12a9e9d365c2e2b05dba2efd6310a92308881814b800b9562a09753534bbf75e",
@@ -29,7 +29,7 @@
       "reviews.mjs": "6008cb1de50fb223c84638abaa4bdcd2521743c858ffd3e6b95bbcc6cce97502",
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "source-identity.mjs": "716740641e1f6bfbb5ccc5b4fe7827f1165c2a1f1127ee3800f52a47ac09fc7a",
-      "state.mjs": "78d40082a5da79faf678bc8a63106475f4d2201de679424402a8709cedacacf4",
+      "state.mjs": "66d2022ebf543cda176bbc911add4cf3d9903be6e3bb6467d8e74363922b2c56",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
       "worktree-store.mjs": "b2621d5e0dd003fbf87d8f785ea6998f62a7826d275a16fd85ed188a71f0824a"
     },
@@ -44,7 +44,7 @@
       "bee-session-close.mjs": "201073ddce795525ee6ec7bab0297f4adef01830bac8935b528b694e03dea2e6",
       "bee-model-guard.mjs": "07c22de49b17c6d349bc2ae94ad35721471fd1437a49cdc0feaad3b2d061e829",
       "bee-tools-logger.mjs": "668634222153c37d858bd5cb8ac5183507bc0da643ef78929219dcf810a39224",
-      ".codex/hooks.json": "6f2f2610cbb249dc9dd340c6b945218b5f3f39474f5323ad1a47fd5015aaf047"
+      ".codex/hooks.json": "169b0b058bef8230ff4c8ebe4afb3a07897e1151752f0341c7905b390ed5730a"
     },
     "statusline": {
       "statusline-command.sh": "de03ffbc330cef57fe2c6ced4a56af1987b7720a2ef35277e1ee95e2945fab21",
@@ -52,7 +52,7 @@
     }
   },
   "agents_sync": {
-    "bee_version": "1.7.5",
+    "bee_version": "1.7.6",
     "files": [
       ".claude/agents/bee-extract.md",
       ".claude/agents/bee-gather.md",
@@ -69,5 +69,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-20T07:36:45.120Z"
+  "updated_at": "2026-07-20T09:35:23.158Z"
 }
