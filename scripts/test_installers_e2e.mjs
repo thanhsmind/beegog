@@ -717,6 +717,37 @@ check("repeat install reports current without timestamp-only managed rewrites (b
   assert.equal(sha256(fs.readFileSync(path.join(sb.target, ".bee/onboarding.json"))), onboardingBefore, "onboarding.json must not be rewritten on a repeat install");
 });
 
+// ── 16. broken CLI on PATH: repo-copy warns and continues (field regression) ──
+// Field report: a codex npm shim on PATH crashes when run (e.g. "Missing
+// optional dependency @openai/codex-linux-x64" on Windows+WSL). Default
+// repo-copy mode never needs codex to be runnable at all, so a broken-but-
+// present CLI must degrade to a warning instead of hard-failing the probe.
+check("broken codex on PATH: default repo-copy install succeeds with a warning", () => {
+  const sb = sandbox();
+  fs.mkdirSync(sb.target, { recursive: true });
+  const r = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT], extraEnv: { BEE_FAKE_FAIL: "codex:list" } });
+  assert.equal(r.code, 0, `repo-copy must tolerate a present-but-broken codex CLI:\n${r.out}`);
+  assert.match(r.out, /codex/i, "must warn naming codex");
+  assert.match(r.out, /not runnable/i, "must describe codex as not runnable");
+  assert.match(r.out, /repo-copy/i, "must note repo-copy does not require it");
+  assert.ok(fs.existsSync(path.join(sb.target, ".bee", "onboarding.json")), "the target must still be onboarded despite the broken codex CLI");
+});
+
+// ── 16a. broken CLI on PATH: plugin-first still fails with the named way out ──
+check("broken codex on PATH: plugin-first still fails and names the way out", () => {
+  const staged = stagedSource();
+  const sb = sandbox({ preinstalled: false, version: staged.version, pkgRoot: staged.pkg });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const r = run(sb, {
+    args: ["-d", sb.target, "-y", "--no-git-init", "--distribution", "plugin-first", "--source", staged.src],
+    extraEnv: { BEE_FAKE_FAIL: "codex:list" },
+  });
+  assert.notEqual(r.code, 0, "plugin-first must still refuse when a required CLI is present but broken");
+  assert.match(r.out, /codex/i, "must name codex as the broken CLI");
+  assert.match(r.out, /repo-copy/i, "must name repo-copy as a way out");
+  assert.equal(mutatingCalls(sb).length, 0, "a broken required CLI must be caught before any mutation");
+});
+
 // ─── SUMMARY ───────────────────────────────────────────────────────────────────
 for (const dir of cleanups) fs.rmSync(dir, { recursive: true, force: true });
 

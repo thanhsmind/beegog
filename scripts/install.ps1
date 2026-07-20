@@ -212,8 +212,21 @@ try {
           }
         }
         $codexList = & codex plugin list --json
-        if ($LASTEXITCODE -ne 0) { Fail 'Codex plugin status probe failed' }
-        Set-Content -Encoding UTF8 -Path $codexStatePath -Value ($codexList -join "`n")
+        if ($LASTEXITCODE -ne 0) {
+          # CLI is on PATH but not runnable (field report: a codex npm shim that
+          # crashes with "Missing optional dependency @openai/codex-linux-x64"
+          # on Windows+WSL). plugin-first genuinely needs the CLI, so it still
+          # refuses, but now with a named, actionable message. repo-copy never
+          # calls the CLI for anything but this read-only probe, so it warns
+          # and keeps the pre-seeded '[]' state content instead of failing.
+          if ($Distribution -eq 'plugin-first') {
+            Fail "codex CLI is on PATH but not runnable ('codex plugin list --json' failed). Fix options: repair or reinstall the codex CLI, re-run with -Distribution repo-copy (does not require a runtime CLI), or re-run with -Runtime claude to exclude codex."
+          } else {
+            Write-Warning "codex CLI found on PATH but not runnable ('codex plugin list --json' failed); repo-copy does not require it, continuing without it."
+          }
+        } else {
+          Set-Content -Encoding UTF8 -Path $codexStatePath -Value ($codexList -join "`n")
+        }
       } elseif ($Distribution -eq 'plugin-first') { Fail 'Codex CLI is required for plugin-first' }
     }
 
@@ -234,8 +247,16 @@ try {
           }
         }
         $claudeList = & claude plugin list --json
-        if ($LASTEXITCODE -ne 0) { Fail 'Claude plugin status probe failed' }
-        Set-Content -Encoding UTF8 -Path $claudeStatePath -Value ($claudeList -join "`n")
+        if ($LASTEXITCODE -ne 0) {
+          # Same broken-but-present-CLI policy as the codex probe above.
+          if ($Distribution -eq 'plugin-first') {
+            Fail "claude CLI is on PATH but not runnable ('claude plugin list --json' failed). Fix options: repair or reinstall the claude CLI, re-run with -Distribution repo-copy (does not require a runtime CLI), or re-run with -Runtime codex to exclude claude."
+          } else {
+            Write-Warning "claude CLI found on PATH but not runnable ('claude plugin list --json' failed); repo-copy does not require it, continuing without it."
+          }
+        } else {
+          Set-Content -Encoding UTF8 -Path $claudeStatePath -Value ($claudeList -join "`n")
+        }
       } elseif ($Distribution -eq 'plugin-first') { Fail 'Claude CLI is required for plugin-first' }
     }
 
