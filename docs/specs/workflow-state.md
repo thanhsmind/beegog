@@ -1080,6 +1080,48 @@ workspace that names no extra root behaves exactly as before (hardening-5,
   advisory noting it took that door instead of meeting the length/duplicate
   floor (self-correcting-loop D3, Δ5).
 
+## Hardening 1.7.9 settlements (2026-07-21)
+
+- **Session identity is runtime-neutral.** One resolver chain everywhere a
+  session id is read: explicit flag > `BEE_SESSION_ID` > the first runtime's
+  own env var > null. The store-lock holder label derives from the same chain
+  (inlined — the lock module stays import-light, with the resolver named as
+  canonical in a comment).
+- **Sessionless writes refuse under concurrency.** When at least one OTHER
+  session record has a live heartbeat, a claim or reservation attempted with
+  no resolvable session id is refused with a typed `SESSION_REQUIRED` error
+  naming both the flag and the env var. Solo (single-session) sessionless
+  behavior is byte-identical to before.
+- **Every cell mutator is lock-serialized.** All eleven mutators run their
+  read-check-write inside the per-cell store lock (the six previously
+  unlocked — claim, update, drop, unclaim, reopen, set-tier — joined the
+  five that already were). A forked-process racer proved the pre-fix
+  interleave (an update silently reverting a concurrent claim) and its
+  closure.
+- **A swept claim reopens its cell.** Claim expiry sweep, after removing the
+  expired claim file, resets the cell record claimed→open — guarded by an
+  exact `claim_session` match and audited with a decision line per reset.
+- **Worktree admin is a mutex.** Grant write/remove, worktree create, the
+  whole staged merge transaction, and cleanup serialize under one
+  `worktree-admin` main-store lock per operation. (Side discovery: the lock
+  directory itself must be gitignored, or the admin lock's own lockfile
+  makes every worktree operation self-refuse as git-dirty.)
+- **Dispatch prepare checks claim ownership.** Preparing a cell dispatch
+  requires the worker name, refuses an unclaimed or foreign-claimed cell
+  with a typed refusal naming the actual owner/status, and offers an
+  audited `--force-ownership` door (same pattern as the mutator ownership
+  guard).
+- **Machine-local config lives in a gitignored overlay.** `readConfig`
+  deep-merges `.bee/config.local.json` over the tracked config (overlay
+  wins, arrays replace); machine paths (dogfood repos) belong in the
+  overlay, never in the tracked file; the config CLI writes it via
+  `--local`.
+- **Recovery transcript roots are configurable.** `recovery.transcript_roots`
+  entries ({runtime, path}) are scanned beside the first runtime's default
+  root; candidates carry a runtime tag; missing/unreadable configured roots
+  degrade visibly (per-root scanned/skipped in the JSON result), never
+  crash. No config = prior behavior byte-identical.
+
 ## Open Gaps
 
 - Real-terminal UAT of the fresh-session flow is outstanding: the two-session

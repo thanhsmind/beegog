@@ -648,3 +648,16 @@ the collisions outright — coordination machinery (holds ledger) is only for
 the residue of REAL same-module overlap. Corollary proven the same day: the
 hand registry had silently never run 4 existing test files, one of which was
 red against the live hook (discovery > registration, for correctness too).
+
+## [20260721] Shared-file axes must be sequenced at dispatch time; a worker's "watcher" dies with its turn
+**Category:** process
+**Feature:** hardening-1-7-9
+**Tags:** [orchestration, deadlock, reservations, subagents]
+Two lessons from a real circular wait (worker A held the dispatcher file B
+needed; B held the test files A wanted quiet): (1) when several cells share
+one hotspot file, pick the order UP FRONT and tell each worker who precedes
+it — polite polling from both sides deadlocks. (2) A returned subagent's
+"background monitor" does not survive its turn: the orchestrator owns
+resumption — track who waits on what, and SendMessage the waiter the moment
+its blocker clears. Corollary CLI gap (filed): reservation release scopes by
+agent/cell only, so releasing ONE path drops all holds.
