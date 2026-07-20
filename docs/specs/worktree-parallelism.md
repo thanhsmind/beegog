@@ -113,6 +113,49 @@ in the MAIN checkout (release always runs in main). The rule lives in bee-hive's
 and AGENTS.md critical rule 14; the existing guards (holds, live-owner lanes, gates) keep
 enforcing the hard parts.
 
+**Lane-first refinement (cross-worktree-holds D7, 2026-07-20):** exploring, planning, and
+validating do not touch source — a new feature in an occupied checkout starts as a per-feature
+LANE on the shared store (full live coordination: claims, reservations, holds all visible),
+and a worktree grant is taken only at Gate 3, and only when the feature's execution genuinely
+overlaps files with other in-flight work. Most parallel work never needs the worktree at all;
+per-module test suites + suite auto-discovery (see `verify-pipeline.md`) removed the
+artificial overlaps that used to force the choice early.
+
+## Cross-worktree holds (the shared ledger — cross-worktree-holds D1-D6, 2026-07-20)
+
+A granted worktree's store is an island by design — which used to mean its reservations were
+invisible to main and to sibling worktrees, and overlapping edits surfaced only at merge. The
+shared holds ledger closes that gap at WRITE time:
+
+- **One ledger, main store only:** `<mainRoot>/.bee/runtime/cross-worktree-holds.json`,
+  beside the grant registry (same trust model: the main store is the authority; a worktree
+  reaches it via `resolveRoots().mainRoot`). Path-keyed rows
+  `{holder, feature, session, cell, acquired_at, expires_at}`; holder is the git-verified
+  worktree id or `"main"`. TTL-expired rows are pruned on every read; all mutations run under
+  the main store's `cross-worktree-holds` lock with atomic tmp+rename writes.
+- **Mirror on reserve:** a reservation in any checkout mirrors into the ledger (an ungranted
+  linked worktree never double-mirrors — its reservations already live in the shared store).
+  Before reserving, the seam consults the ledger and refuses with a typed `FOREIGN_HOLD`
+  result naming the holding checkout, feature, and expiry.
+- **Three read taps, one voice:** (1) `reservations reserve` — typed refusal before any local
+  row is written; (2) `claim-next` — silently skips a cell whose declared files overlap a
+  foreign hold, so a session always picks conflict-free work instead of waiting; (3) the
+  write-guard — denies a write to a foreign-held path, naming holder + feature + expiry,
+  phase-independent, added net-first (frozen 26-row green before the edit, 31/31 after).
+- **Release is scoped by cell, never by holder alone.** All agents in the main checkout share
+  `holder:"main"`; an early cut that released by holder wiped a concurrent worker's mirrored
+  holds (live incident, same day, decision a0ab91b6). Release derives the acting agent's own
+  active cell ids and clears exactly those rows. Worktree merge `--cleanup` releases every
+  row for the removed worktree id, best-effort after the grant is removed.
+- **Failure discipline:** missing ledger = empty (byte-identical to pre-ledger behavior);
+  unparseable ledger = typed deny (`worktree-holds-unreadable`, mirroring the reservation
+  corrupt-store rule); unresolvable topology = fail-open with crash-log. Both runtime files
+  (`cross-worktree-holds.json`, `worktree-grants.json`) are direct-edit-denied in every
+  phase — CLI-only writes.
+- **Waiting model:** fail-fast, never blocking — a refusal names who and until when; the
+  session takes other open work (`claim-next` already routed it away) and the hold lapses by
+  TTL if its owner dies. The merge verify-gate stays as the final semantic net.
+
 ## The three tiers (what merges, what does not)
 
 The store is classified into three lifecycle tiers, realized by git config (no directory move):
@@ -127,8 +170,9 @@ The store is classified into three lifecycle tiers, realized by git config (no d
 
 ## Boundary (out of scope)
 
-- Same-feature / same-file concurrent read-write across worktrees — delegated to the existing
-  claims/holds primitives, not solved here.
+- Same-feature / same-file concurrent WRITE-INTENT across worktrees is now covered by the
+  shared holds ledger (above); concurrent read visibility across worktrees stays out of
+  scope by design — digests and the merge gate remain the interface.
 - Rollout to onboarded host repos — deferred; proven in bee's own repo first.
 - P40 swarm-worker behavior — unchanged; this area coexists beside it.
 
@@ -143,5 +187,11 @@ The store is classified into three lifecycle tiers, realized by git config (no d
   for a linked-valid worktree.
 - CLI: the `worktree` command group.
 - Merge safety: `.gitattributes` (log tier) + the onboarding gitignore block (runtime/cache tiers).
-- Tests: resolver P40 regression, grant-resolve, worktree-store unit, worktree CLI e2e (all in
-  the mandatory verify chain).
+- Shared ledger: `templates/lib/worktree-holds.mjs` (mirror/release/foreign-lookup/sweep,
+  corrupt-check); seam wiring in `templates/bee.mjs` reservations handlers +
+  `performCleanup`; claim-next tap in `templates/lib/cells.mjs`; guard tap in
+  `templates/lib/guards.mjs` (`resolveHoldTopology` in all three, same shape).
+- Tests: resolver P40 regression, grant-resolve, worktree-store unit, worktree CLI e2e,
+  `scripts/test_worktree_holds.mjs` (seam), `scripts/test_worktree_holds_race.mjs`
+  (concurrency), claim-next foreign-skip rows in `test_cli_cells.mjs`, guard net + foreign
+  rows in `templates/tests/test_guards.mjs` (all discovered by the verify pipeline).
