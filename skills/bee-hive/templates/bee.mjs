@@ -70,6 +70,8 @@ import {
   advisorRefAnchors,
   advisorRefStale,
   localConfigPath,
+  isLocalOnlyConfigKey,
+  trackedLocalOnlyKeyWarning,
 } from './lib/state.mjs';
 // Lane + session CLI surface (fresh-session-handoff fsh-4, D2/D4): claims.mjs
 // stays out of this cell's file scope — these are already-exported read/
@@ -3373,13 +3375,52 @@ function refuseIfNewConfigProblem(verb, before, after) {
   }
 }
 
+// D2 (intake-gate-git-exemption): if `key` is present in the TRACKED
+// config.json (regardless of whether it's ALSO in the overlay now), warn
+// that it is stuck there — guards.*/hooks.* keys are never written to or
+// removed from the tracked file by this CLI anymore, so a value found there
+// is either legacy or was hand-edited back in. Returns null when the key
+// isn't a local-only namespace, when the tracked file is unreadable/absent,
+// or when the key simply isn't present in it — never throws.
+function trackedKeyWarningIfPresent(root, key) {
+  if (!isLocalOnlyConfigKey(key)) return null;
+  let trackedRaw;
+  try {
+    trackedRaw = readRawConfigForEdit(root, { local: false });
+  } catch {
+    return null;
+  }
+  return getConfigAtPath(trackedRaw, key) !== undefined ? trackedLocalOnlyKeyWarning(key) : null;
+}
+
 function handleConfigGet(root, flags) {
   const key = requireFlag(flags, 'key');
-  const local = flags.local === true;
-  const value = getConfigAtPath(readRawConfigForEdit(root, { local }), key);
+  const explicitLocal = flags.local === true;
+  // guards.*/hooks.* without an explicit --local: surface the ACTUAL
+  // effective value (overlay wins over tracked, same precedence readConfig()
+  // uses) instead of a single raw file — otherwise `config get` would read
+  // "not set" immediately after a `config set` that (by D2) always lands in
+  // the overlay for these namespaces. --local still means exactly what it
+  // always has: read the overlay file only.
+  if (!explicitLocal && isLocalOnlyConfigKey(key)) {
+    const overlayValue = getConfigAtPath(readRawConfigForEdit(root, { local: true }), key);
+    const trackedRaw = readRawConfigForEdit(root, { local: false });
+    const trackedValue = getConfigAtPath(trackedRaw, key);
+    const present = overlayValue !== undefined || trackedValue !== undefined;
+    const value = overlayValue !== undefined ? overlayValue : trackedValue;
+    const local = overlayValue !== undefined;
+    const warning = trackedValue !== undefined ? trackedLocalOnlyKeyWarning(key) : null;
+    return {
+      result: { key, present, value: present ? value : null, local, warning },
+      text:
+        (present ? `${key} = ${JSON.stringify(value)}` : `config get: "${key}" is not set.`) +
+        (warning ? `\n${warning}` : ''),
+    };
+  }
+  const value = getConfigAtPath(readRawConfigForEdit(root, { local: explicitLocal }), key);
   const present = value !== undefined;
   return {
-    result: { key, present, value: present ? value : null, local },
+    result: { key, present, value: present ? value : null, local: explicitLocal, warning: null },
     text: present ? `${key} = ${JSON.stringify(value)}` : `config get: "${key}" is not set.`,
   };
 }
@@ -3387,7 +3428,11 @@ function handleConfigGet(root, flags) {
 function handleConfigSet(root, flags) {
   const key = requireFlag(flags, 'key');
   const value = coerceConfigValue(requireFlag(flags, 'value'), flags.string === true);
-  const local = flags.local === true;
+  // D2: guards.*/hooks.* ALWAYS route to the local overlay, regardless of
+  // --local — a machine-local safety toggle must be structurally incapable
+  // of reaching the tracked, git-committed config.json (incident a7d2069).
+  const forcedLocal = isLocalOnlyConfigKey(key);
+  const local = forcedLocal || flags.local === true;
   const config = readRawConfigForEdit(root, { local });
   // The models-config cli-safety guard only ever applies to the TRACKED
   // config (the overlay is for machine-local values like dogfood_repos, not
@@ -3401,23 +3446,37 @@ function handleConfigSet(root, flags) {
     setConfigAtPath(config, key, value);
   }
   writeJsonAtomic(configFilePath(root, { local }), config);
-  return { result: { key, value, local }, text: `config set${local ? ' --local' : ''}: ${key} = ${JSON.stringify(value)}` };
+  const warning = forcedLocal ? trackedKeyWarningIfPresent(root, key) : null;
+  return {
+    result: { key, value, local, warning },
+    text: `config set${local ? ' --local' : ''}: ${key} = ${JSON.stringify(value)}` + (warning ? `\n${warning}` : ''),
+  };
 }
 
 function handleConfigUnset(root, flags) {
   const key = requireFlag(flags, 'key');
-  const local = flags.local === true;
+  // D2: same forced routing as set — guards.*/hooks.* unset never touches
+  // the tracked file, even to remove a legacy value there (never auto-edit).
+  const forcedLocal = isLocalOnlyConfigKey(key);
+  const local = forcedLocal || flags.local === true;
   const config = readRawConfigForEdit(root, { local });
   const before = !local ? validateModelsConfig(readRawConfigForValidation(root)) : null;
   const removed = unsetConfigAtPath(config, key);
+  const warning = forcedLocal ? trackedKeyWarningIfPresent(root, key) : null;
   if (!removed) {
-    return { result: { key, removed: false, local }, text: `config unset${local ? ' --local' : ''}: "${key}" was not set (no change).` };
+    return {
+      result: { key, removed: false, local, warning },
+      text: `config unset${local ? ' --local' : ''}: "${key}" was not set (no change).` + (warning ? `\n${warning}` : ''),
+    };
   }
   if (!local) {
     refuseIfNewConfigProblem('unset', before, validateModelsConfig(config));
   }
   writeJsonAtomic(configFilePath(root, { local }), config);
-  return { result: { key, removed: true, local }, text: `config unset${local ? ' --local' : ''}: removed "${key}".` };
+  return {
+    result: { key, removed: true, local, warning },
+    text: `config unset${local ? ' --local' : ''}: removed "${key}".` + (warning ? `\n${warning}` : ''),
+  };
 }
 
 // ─── doctor (codex-native-runtime-v2 D11): fail-closed runtime health report

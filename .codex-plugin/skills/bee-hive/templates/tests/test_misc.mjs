@@ -525,6 +525,12 @@ const EXPECTED_STATE_EXPORTS = [
   'PHASES',
   'KNOWN_PHASES',
   'isKnownPhase',
+  // intake-gate-git-exemption D2 (cell ige-1): guards.*/hooks.* toggles are
+  // machine-local and persist only to the gitignored .bee/config.local.json,
+  // so a temporary safety lift can never be committed to the tracked config.
+  'LOCAL_ONLY_CONFIG_NAMESPACES',
+  'isLocalOnlyConfigKey',
+  'trackedLocalOnlyKeyWarning',
   'COMMAND_KEYS',
   // worktree-companion-hook: separate from COMMAND_KEYS on purpose — see the
   // export's own doc comment in lib/state.mjs for why.

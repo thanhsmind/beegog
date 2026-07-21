@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { runModuleWorker } from "../scripts/lib/run-module-worker.mjs";
@@ -149,6 +150,38 @@ function buildLinkedFixture(prefix, { invalid = false, reservedPath = null, hold
   }
   fs.mkdirSync(path.join(workRoot, "src"), { recursive: true });
   return { mainRoot, workRoot };
+}
+
+// --- git-exemption fixture builders (D1/D3/D4, cell ige-2, P46 / GH #1) ----
+// A REAL git repo (not just a fixture directory) so `git diff --cached
+// --name-only` resolves against actual index state — the whole point of D4
+// (eligibility computed from real staged paths, never from wording).
+function runGit(cwd, args) {
+  execFileSync("git", args, { cwd, stdio: ["ignore", "ignore", "ignore"] });
+}
+
+function buildGitFixture(prefix, { phase = "idle" } = {}) {
+  const root = mkFixture(prefix);
+  runGit(root, ["init", "-q"]);
+  runGit(root, ["config", "user.email", "ige2@example.com"]);
+  runGit(root, ["config", "user.name", "ige2 fixture"]);
+  fs.mkdirSync(path.join(root, ".bee"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".bee", "onboarding.json"), "{}\n");
+  copyLib(root);
+  writeState(root, {
+    phase,
+    mode: "standard",
+    feature: "demo",
+    approved_gates: { context: true, shape: true, execution: false, review: false },
+  });
+  return root;
+}
+
+function stageFile(root, relPath, content = "x\n") {
+  const abs = path.join(root, relPath);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, content);
+  runGit(root, ["add", relPath]);
 }
 
 function writePayloadFor(toolName, target) {
@@ -823,6 +856,136 @@ async function main() {
     throwRoot,
   );
   check(r46.status === 0, "row46: scratch-shaped target still fails open when guards.mjs throws on import", `status=${r46.status} stderr=${r46.stderr}`);
+
+  // ======================================================================
+  // 47+. Intake-gate git exemption (D1/D3/D4, cell ige-2, closes P46 / GH
+  // #1): a mutating git command at a terminal phase is exempt from the
+  // intake gate ONLY when every path it would actually change is bookkeeping
+  // (.bee/, docs/, plans/, AGENTS.md) — computed from REAL git state (D4),
+  // never the command's wording. Read-only git is always allowed; an
+  // unrecognized subcommand fails closed; `git push` never gets the
+  // exemption. All rows use `phase: "idle"` (a TERMINAL_PHASES member) —
+  // the exact phase the incident (commit a7d2069) hit.
+  // ======================================================================
+
+  // --- 47. git status / git log: always allowed at a terminal phase.
+  const gitRoot = buildGitFixture("bee-write-guard-git-", { phase: "idle" });
+  const r47a = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: "git status" } },
+    gitRoot,
+  );
+  check(r47a.status === 0, "row47a: `git status` is allowed at a terminal phase", `status=${r47a.status} stderr=${r47a.stderr}`);
+  const r47b = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: "git log --oneline -5" } },
+    gitRoot,
+  );
+  check(r47b.status === 0, "row47b: `git log` is allowed at a terminal phase", `status=${r47b.status} stderr=${r47b.stderr}`);
+
+  // --- 48. terminal phase, staged paths ALL bookkeeping (.bee/ + docs/) ->
+  // `git commit` is ALLOWED (the exemption firing).
+  const bkRoot = buildGitFixture("bee-write-guard-git-bookkeeping-", { phase: "idle" });
+  stageFile(bkRoot, ".bee/cells/demo-1.json", "{}\n");
+  stageFile(bkRoot, "docs/notes.md", "# notes\n");
+  const r48 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: 'git commit -m "bookkeeping only"' } },
+    bkRoot,
+  );
+  check(r48.status === 0, "row48: `git commit` with only .bee/+docs staged is allowed at a terminal phase (exemption)", `status=${r48.status} stderr=${r48.stderr}`);
+
+  // --- 49. terminal phase, ONE staged source path among the bookkeeping
+  // ones -> `git commit` is REFUSED with today's semantics (D1: a single
+  // source path keeps the refusal exactly as today).
+  const srcRoot = buildGitFixture("bee-write-guard-git-source-", { phase: "idle" });
+  stageFile(srcRoot, ".bee/cells/demo-1.json", "{}\n");
+  stageFile(srcRoot, "src/feature.js", "console.log('x');\n");
+  const r49 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: 'git commit -m "mixed change"' } },
+    srcRoot,
+  );
+  check(r49.status === 2, "row49: `git commit` staging a source path (mixed with bookkeeping) is refused at a terminal phase", `status=${r49.status} stderr=${r49.stderr}`);
+  check(/intake gate/.test(r49.stderr), "row49: stderr identifies the intake gate", r49.stderr);
+  check(r49.stderr.includes("src/feature.js"), "row49: stderr names the actual offending source path", r49.stderr);
+
+  // --- 50. D4: a misleading commit MESSAGE never changes the outcome — the
+  // SAME staged source path, but the message claims "just bookkeeping".
+  const misleadRoot = buildGitFixture("bee-write-guard-git-mislead-", { phase: "idle" });
+  stageFile(misleadRoot, "src/feature.js", "console.log('x');\n");
+  const r50 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: 'git commit -m "just bookkeeping"' } },
+    misleadRoot,
+  );
+  check(r50.status === 2, "row50: a `-m \"just bookkeeping\"` message does NOT change the outcome — still refused (D4)", `status=${r50.status} stderr=${r50.stderr}`);
+
+  // --- 51. `git push` gets NO exemption at a terminal phase, even with
+  // nothing outstanding to commit — outward-facing, always refused.
+  const pushRoot = buildGitFixture("bee-write-guard-git-push-", { phase: "idle" });
+  const r51 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: "git push origin main" } },
+    pushRoot,
+  );
+  check(r51.status === 2, "row51: `git push` is refused at a terminal phase (no exemption)", `status=${r51.status} stderr=${r51.stderr}`);
+  check(/push/i.test(r51.stderr) && /(never|no) exempt/i.test(r51.stderr), "row51: stderr says push is never exempted", r51.stderr);
+
+  // --- 52. an unrecognized git subcommand fails closed at a terminal phase
+  // (never assumed read-only, never assumed a safe mutation).
+  const unkRoot = buildGitFixture("bee-write-guard-git-unknown-", { phase: "idle" });
+  const r52 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: "git bisect start" } },
+    unkRoot,
+  );
+  check(r52.status === 2, "row52: an unrecognized git subcommand (`git bisect`) is refused, not assumed safe", `status=${r52.status} stderr=${r52.stderr}`);
+
+  // --- 53. the refusal's FIX line names the bookkeeping-only route and
+  // bee-hive BEFORE it ever mentions guards.idle_gate (D3) — checked on the
+  // row49 mixed-commit refusal, the exact incident shape.
+  const fixText = r49.stderr;
+  const idleGateIdx = fixText.indexOf("guards.idle_gate");
+  const bookkeepingIdx = fixText.search(/commit or write bookkeeping|bookkeeping.{0,40}directly/i);
+  check(idleGateIdx > -1 && bookkeepingIdx > -1 && bookkeepingIdx < idleGateIdx,
+    "row53: the FIX line names the bookkeeping/bee-hive route before guards.idle_gate (D3)",
+    `bookkeepingIdx=${bookkeepingIdx} idleGateIdx=${idleGateIdx} :: ${fixText}`);
+
+  // --- 54. explicit-pathspec form: `git add <source path>` at a terminal
+  // phase is refused (D1's "explicit pathspecs for git add" branch).
+  const addSrcRoot = buildGitFixture("bee-write-guard-git-add-src-", { phase: "idle" });
+  fs.mkdirSync(path.join(addSrcRoot, "src"), { recursive: true });
+  fs.writeFileSync(path.join(addSrcRoot, "src", "new.js"), "x\n");
+  const r54 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: "git add src/new.js" } },
+    addSrcRoot,
+  );
+  check(r54.status === 2, "row54: `git add` with an explicit source pathspec is refused at a terminal phase", `status=${r54.status} stderr=${r54.stderr}`);
+
+  // --- 55. explicit-pathspec form: `git add <bookkeeping path>` at a
+  // terminal phase is allowed (the exemption for add/rm/mv/checkout/restore
+  // with an explicit pathspec).
+  const addBkRoot = buildGitFixture("bee-write-guard-git-add-bk-", { phase: "idle" });
+  fs.mkdirSync(path.join(addBkRoot, "docs"), { recursive: true });
+  fs.writeFileSync(path.join(addBkRoot, "docs", "new.md"), "# x\n");
+  const r55 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: "git add docs/new.md" } },
+    addBkRoot,
+  );
+  check(r55.status === 0, "row55: `git add` with an explicit bookkeeping pathspec is allowed at a terminal phase", `status=${r55.status} stderr=${r55.stderr}`);
+
+  // --- 56. scope control (Boundary): outside a terminal phase (swarming),
+  // this new git-awareness never fires — a plain `git commit` with a staged
+  // source path behaves exactly as it did before this cell (unaffected;
+  // proves the fix stays confined to the intake gate, never reopening
+  // gated/swarming behavior).
+  const swarmRoot = buildGitFixture("bee-write-guard-git-swarm-", { phase: "swarming" });
+  writeState(swarmRoot, {
+    phase: "swarming",
+    mode: "standard",
+    feature: "demo",
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  stageFile(swarmRoot, "src/feature.js", "console.log('x');\n");
+  const r56 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: 'git commit -m "normal work"' } },
+    swarmRoot,
+  );
+  check(r56.status === 0, "row56: `git commit` with a staged source path is unaffected outside a terminal phase (scope control)", `status=${r56.status} stderr=${r56.stderr}`);
 
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;

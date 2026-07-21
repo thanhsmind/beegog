@@ -3,6 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { findConflicts, findSessionConflicts, reservationsPath } from './reservations.mjs';
 import { readConfig, resolvePipeline, resolveRoots } from './state.mjs';
 // xwh-4: cross-worktree foreign-hold consultation. worktree-holds.mjs imports
@@ -177,6 +178,272 @@ function underAllowedPrefix(relPath) {
   });
 }
 
+// ─── intake-gate refusal message (D3, ige-2 / P46 / GH #1) ────────────────
+// One shared builder for every terminal-phase ("intake gate") refusal —
+// plain source writes AND the git-command denials below all funnel through
+// this, so the wording fix applies everywhere the operator can hit it, not
+// just the git path the incident happened to use. D3: the FIX line names the
+// bookkeeping-direct-commit route and bee-hive FIRST; `guards.idle_gate` is
+// mentioned LAST, as a repo-level opt-out, never as the way to finish a
+// commit — the previous ordering pointed the operator straight at the
+// dangerous escape, which is exactly how the incident (a7d2069) happened.
+function intakeFixLine() {
+  return (
+    `FIX: commit or write bookkeeping directly — ${GATE_ALLOWED_PREFIXES.join(', ')} are exempt from this gate — ` +
+    'or route the request through bee-hive first (classify the mode; tiny fixes stay tiny — one cell, a 2-minute ' +
+    'reality check, Gate 3, go), then execute. Last resort, repo-level opt-out: ' +
+    'bee config set --key guards.idle_gate --value false (re-enable with: bee config unset --key guards.idle_gate).'
+  );
+}
+
+function intakeRefusal(phase, blockedDescription, extraSentence = '') {
+  return (
+    `bee intake gate: no bee work is active (phase: ${phase}) — ${blockedDescription} is blocked. ` +
+    extraSentence +
+    intakeFixLine()
+  );
+}
+
+// Resolves the effective phase/gate record for a write decision: a bound
+// sessionId reads through resolvePipeline's lane record; an absent one uses
+// the caller's own `state` (byte-identical to the pre-fsh-8 checkWrite
+// contract). An unresolvable lane binding is a typed deny, never a silent
+// fallback to the default pipeline. Shared by checkWrite and
+// checkGitBashCommand so both apply the SAME phase/lane semantics.
+function resolveWriteRecord(root, state, sessionId) {
+  if (typeof sessionId === 'string' && sessionId.trim()) {
+    const resolved = resolvePipeline(root, { sessionId });
+    if (!resolved.ok) {
+      return { ok: false, reason: `bee lane guard: ${resolved.reason}` };
+    }
+    return { ok: true, record: resolved.record };
+  }
+  return { ok: true, record: state };
+}
+
+// ─── git write-exemption classification (D1/D3/D4, ige-2 / P46 / GH #1) ───
+// Read-only git subcommands, deliberately enumerated — never inferred. Two
+// of these are read-only ONLY with a specific flag: a bare `git branch
+// <name>` / `git tag <name>` MUTATES (creates), so they must not match here
+// without --list; `git remote` similarly needs -v/--verbose to be read-only.
+const GIT_READONLY_SUBCOMMANDS = new Set([
+  'status', 'log', 'diff', 'show', 'rev-parse', 'ls-files', 'check-ignore',
+  'merge-base', 'rev-list', 'describe', 'blame', 'cat-file',
+]);
+const GIT_READONLY_FLAG_GATED = {
+  branch: new Set(['--list']),
+  tag: new Set(['--list']),
+  remote: new Set(['-v', '--verbose']),
+};
+
+// Mutating git subcommands this exemption logic recognizes at all (D1).
+// `push` is deliberately NOT a member — it never gets the bookkeeping-path
+// exemption (outward-facing) and is classified separately below. Anything
+// NOT in this set and NOT read-only is "unrecognized" and refused at a
+// terminal phase rather than silently allowed through (fail closed).
+const GIT_MUTATING_SUBCOMMANDS = new Set([
+  'commit', 'add', 'rm', 'mv', 'checkout', 'restore',
+  'tag', 'merge', 'reset', 'stash', 'clean', 'apply', 'cherry-pick', 'revert', 'rebase',
+]);
+// Subset of GIT_MUTATING_SUBCOMMANDS whose changed paths this classifier can
+// actually resolve from real git state (D4). The rest (merge/reset/stash/
+// clean/apply/cherry-pick/revert/rebase/tag) are structural/broad operations
+// with no reliable pathspec model here — they always fail closed (today's
+// refusal), never inferred safe just because they're "recognized".
+const GIT_PATH_RESOLVABLE_SUBCOMMANDS = new Set(['commit', 'add', 'rm', 'mv', 'checkout', 'restore']);
+const GIT_BROAD_PATHSPECS = new Set(['.', ':', ':/', './']);
+
+function gitGlobalFlagTakesValue(token) {
+  return token === '-C' || token === '-c' || token === '--git-dir' || token === '--work-tree' || token === '--namespace';
+}
+
+// Finds the FIRST top-level `git <subcommand>` invocation in `command`
+// (skipping git's own global flags, e.g. `-C <dir>`), returning
+// { subcommand, rest } — `subcommand` is null for a bare "git" with no
+// subcommand token at all — or null when `command` contains no `git`
+// invocation whatsoever. Only the first invocation is classified; a compound
+// command chaining a SECOND git call is a documented limitation of this cell.
+function findGitInvocation(tokens) {
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (SEPARATORS.has(tokens[i])) continue;
+    const cmd = tokens[i].replace(/\\/g, '/').split('/').pop();
+    if (cmd !== 'git') continue;
+    let end = i + 1;
+    while (end < tokens.length && !SEPARATORS.has(tokens[end])) end += 1;
+    const invocationTokens = tokens.slice(i + 1, end);
+    let subcommand = null;
+    let subIdx = -1;
+    for (let j = 0; j < invocationTokens.length; j += 1) {
+      const t = invocationTokens[j];
+      if (gitGlobalFlagTakesValue(t)) { j += 1; continue; }
+      if (t.startsWith('-')) continue;
+      subcommand = t;
+      subIdx = j;
+      break;
+    }
+    if (subcommand === null) return { subcommand: null, rest: [] };
+    return { subcommand, rest: invocationTokens.slice(subIdx + 1) };
+  }
+  return null;
+}
+
+function runGitCapture(cwd, args) {
+  try {
+    const out = execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+function hasGitShortFlag(tokens, letter) {
+  return tokens.some((t) => /^-[a-zA-Z]+$/.test(t) && t.slice(1).includes(letter));
+}
+
+// Explicit pathspec args: everything after a literal `--`, or (when no `--`
+// is present) every non-flag token. Used for add/rm/mv/checkout/restore,
+// whose syntax is `git <verb> [flags] [--] <pathspec>...` — a pathspec here
+// is exactly what the command names, nothing inferred.
+function extractExplicitPathspecs(restTokens) {
+  const dashDashIdx = restTokens.indexOf('--');
+  const scanTokens = dashDashIdx === -1 ? restTokens : restTokens.slice(dashDashIdx + 1);
+  if (dashDashIdx === -1) return scanTokens.filter((t) => !t.startsWith('-'));
+  return scanTokens;
+}
+
+/**
+ * Resolves the repo-relative paths a mutating git subcommand would actually
+ * change, from REAL git state at check time (D4) — never from the command's
+ * wording, a flag, or an env var. Returns null when the set cannot be proved
+ * (a broad/glob pathspec, no pathspec at all where one is required, or the
+ * git call itself failed) — the caller fails closed on null, exactly like a
+ * proved source path.
+ *
+ * `commit`: a pathspec is only ever recognized AFTER a literal `--`
+ * (git's own disambiguator) — never a bare trailing token, because a bare
+ * trailing token after `-m`/`-c`/etc. is that flag's VALUE (the commit
+ * message), not a pathspec; treating it as one would let a message's wording
+ * masquerade as a path, which D4 forbids. No `--` pathspec -> resolves to the
+ * STAGED index (`git diff --cached --name-only`); `-a`/`--all` (or a short
+ * flag containing 'a', e.g. `-am`) folds in tracked-but-unstaged paths too.
+ */
+function resolveGitMutationPaths(cwd, subcommand, restTokens) {
+  if (subcommand === 'commit') {
+    const dashDashIdx = restTokens.indexOf('--');
+    const explicitPathspecs = dashDashIdx === -1 ? [] : restTokens.slice(dashDashIdx + 1);
+    const preDashDash = dashDashIdx === -1 ? restTokens : restTokens.slice(0, dashDashIdx);
+    const isAll = hasGitShortFlag(preDashDash, 'a') || preDashDash.includes('--all');
+
+    const staged = runGitCapture(cwd, ['diff', '--cached', '--name-only']);
+    if (staged === null) return null;
+
+    if (explicitPathspecs.length > 0) {
+      if (explicitPathspecs.some((p) => GIT_BROAD_PATHSPECS.has(p) || p.includes('*'))) return null;
+      return explicitPathspecs;
+    }
+    if (!isAll) return staged;
+    const unstaged = runGitCapture(cwd, ['diff', '--name-only']);
+    if (unstaged === null) return null;
+    return Array.from(new Set([...staged, ...unstaged]));
+  }
+
+  // add / rm / mv / checkout / restore: resolve to literal pathspec args.
+  const pathspecs = extractExplicitPathspecs(restTokens);
+  if (pathspecs.length === 0) return null; // bare/flags-only invocation: unprovable
+  if (pathspecs.some((p) => GIT_BROAD_PATHSPECS.has(p) || p.includes('*'))) return null; // broad/glob: unprovable
+  return pathspecs;
+}
+
+/**
+ * Git-command awareness for the intake gate (D1/D3/D4, ige-2 / P46 / GH #1).
+ * Scoped ONLY to the terminal-phase intake gate — D1 says "while the phase
+ * is terminal", and the Boundary this cell shipped under is explicit that
+ * nothing here may reopen the gate's actual purpose. Outside a terminal
+ * phase (gated phases, swarming, ...), this returns null unconditionally and
+ * the caller's existing Bash-target logic is completely unaffected — the
+ * fix stays confined to the one door the incident (a7d2069) walked through.
+ *
+ * Returns:
+ *   null                          — not a git command, phase isn't
+ *                                    terminal, or the idle gate is disabled:
+ *                                    caller's existing logic decides.
+ *   { allow: true, kind }         — read-only git, or a mutating git command
+ *                                    whose actually-changed paths are ALL
+ *                                    inside GATE_ALLOWED_PREFIXES.
+ *   { allow: false, kind, reason } — `git push` (never exempt), an
+ *                                    unrecognized subcommand (fail closed),
+ *                                    or a mutating command touching a
+ *                                    non-bookkeeping path (today's refusal).
+ */
+export function checkGitBashCommand(root, state, command, { cwd = root, sessionId = null } = {}) {
+  const recordResolution = resolveWriteRecord(root, state, sessionId);
+  if (!recordResolution.ok) {
+    return { allow: false, kind: 'lane', reason: recordResolution.reason };
+  }
+  const phase = recordResolution.record?.phase || 'idle';
+  if (!TERMINAL_PHASES.has(phase)) return null;
+
+  const config = readConfig(root);
+  const idleGateOn = !(config.guards && config.guards.idle_gate === false);
+  if (!idleGateOn) return null;
+
+  const tokens = tokenize(command);
+  const invocation = findGitInvocation(tokens);
+  if (!invocation) return null;
+  const { subcommand, rest } = invocation;
+
+  if (subcommand && GIT_READONLY_SUBCOMMANDS.has(subcommand)) {
+    return { allow: true, kind: 'git-read-only' };
+  }
+  if (subcommand && GIT_READONLY_FLAG_GATED[subcommand] && rest.some((t) => GIT_READONLY_FLAG_GATED[subcommand].has(t))) {
+    return { allow: true, kind: 'git-read-only' };
+  }
+
+  if (subcommand === 'push') {
+    return {
+      allow: false,
+      kind: 'git-push',
+      reason: intakeRefusal(
+        phase,
+        '`git push`',
+        'git push is outward-facing and is never exempted from this gate, regardless of what it would push. ',
+      ),
+    };
+  }
+
+  if (subcommand && GIT_MUTATING_SUBCOMMANDS.has(subcommand)) {
+    const resolvedPaths = GIT_PATH_RESOLVABLE_SUBCOMMANDS.has(subcommand)
+      ? resolveGitMutationPaths(cwd, subcommand, rest)
+      : null;
+    if (resolvedPaths === null) {
+      return {
+        allow: false,
+        kind: 'intake',
+        reason: intakeRefusal(phase, `running \`git ${subcommand}\` (its changed paths could not be proved bookkeeping-only)`),
+      };
+    }
+    const offending = resolvedPaths.map(normalizeRel).find((p) => !underAllowedPrefix(p));
+    if (offending) {
+      return {
+        allow: false,
+        kind: 'intake',
+        reason: intakeRefusal(phase, `running \`git ${subcommand}\` — it would change "${offending}"`),
+      };
+    }
+    return { allow: true, kind: 'git-bookkeeping' };
+  }
+
+  return {
+    allow: false,
+    kind: 'git-unrecognized',
+    reason: intakeRefusal(
+      phase,
+      `running \`git ${subcommand || command.trim()}\``,
+      'This git subcommand is not recognized as read-only or as a modeled bookkeeping-eligible mutation, so it is refused rather than assumed safe. ',
+    ),
+  };
+}
+
 /**
  * Corrupt-vs-missing discriminator for the reservation store (D3 fail-closed
  * shape, panel B1). A MISSING store is today's exact open behavior — nothing
@@ -344,18 +611,11 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
     };
   }
 
-  let record = state;
-  if (typeof sessionId === 'string' && sessionId.trim()) {
-    const resolved = resolvePipeline(root, { sessionId });
-    if (!resolved.ok) {
-      return {
-        allow: false,
-        kind: 'lane',
-        reason: `bee lane guard: ${resolved.reason}`,
-      };
-    }
-    record = resolved.record;
+  const recordResolution = resolveWriteRecord(root, state, sessionId);
+  if (!recordResolution.ok) {
+    return { allow: false, kind: 'lane', reason: recordResolution.reason };
   }
+  const record = recordResolution.record;
 
   if (typeof sessionId === 'string' && sessionId.trim()) {
     const acting = sessionId.trim();
@@ -436,13 +696,7 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
       return {
         allow: false,
         kind: 'intake',
-        reason:
-          `bee intake gate: no bee work is active (phase: ${phase}) — writing "${normalized}" is blocked. ` +
-          'Route the request through bee-hive first: classify the mode (tiny fixes stay tiny — one cell, ' +
-          'a 2-minute reality check, Gate 3, go), then execute. ' +
-          `Writable without routing: ${GATE_ALLOWED_PREFIXES.join(', ')}. ` +
-          'To disable this gate for the repo, run: bee config set --key guards.idle_gate --value false ' +
-          '(re-enable with: bee config unset --key guards.idle_gate).',
+        reason: intakeRefusal(phase, `writing "${normalized}"`),
       };
     }
     return { allow: true };

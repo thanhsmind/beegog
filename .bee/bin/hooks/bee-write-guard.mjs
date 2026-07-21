@@ -681,6 +681,24 @@ async function main() {
           break;
         }
       }
+
+      // Intake-gate git exemption (D1/D3/D4, cell ige-2, closes P46 / GH #1):
+      // additive and scoped to Bash only. `guards.checkGitBashCommand` itself
+      // returns null unless the phase is terminal AND the command contains a
+      // recognizable `git` invocation — everywhere else this is a no-op, so
+      // it can never override or discard a denial checks (a)-(c) above (or
+      // the reservation/gate loop just run) already computed.
+      if (!denial && toolName === "Bash" && typeof guards.checkGitBashCommand === "function") {
+        const bashCommand = typeof toolInput.command === "string" ? toolInput.command : "";
+        if (bashCommand) {
+          const gitVerdict = guards.checkGitBashCommand(storeRoot, state, bashCommand, { cwd, sessionId });
+          if (gitVerdict && gitVerdict.allow === false) {
+            denial = {
+              reason: gitVerdict.reason || `bee ${gitVerdict.kind || "git"} guard denied: ${bashCommand}`,
+            };
+          }
+        }
+      }
     }
 
     // Check (d) — CLI-shape validation (additive, D4). Runs unconditionally
