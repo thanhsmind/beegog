@@ -17,12 +17,16 @@
 //       proxy that mimics the PRE-FIX writeTree shape (rmSync-whole-dir,
 //       then a per-file mkdir+writeFileSync loop, widened with a small
 //       per-file delay) with NO store lock in front of it, both racing the
-//       SAME throwaway target dir. Demonstrates the exact torn-tree/crash
-//       hazard cs-3 exists to kill: either a worker crashes (ENOENT when
-//       its write lands after the other's rmSync fires mid-loop) or the
-//       final dir is torn (fewer files than either racer alone would have
-//       left). Runs in its own temp dir — the real committed plugin trees
-//       are never touched by this scenario.
+//       SAME throwaway target dir. An fs-based ready-file barrier (rel180-3;
+//       see the "deterministic barrier" comment below) forces racer B's
+//       destructive rmSync to land while racer A is provably mid-write-loop,
+//       so this negative control tears the tree on every run instead of
+//       depending on the two racers' rmSync calls happening to interleave.
+//       Demonstrates the exact torn-tree/crash hazard cs-3 exists to kill:
+//       either a worker crashes (ENOENT when its write lands after the
+//       other's rmSync fires mid-loop) or the final dir is torn (fewer files
+//       than either racer alone would have left). Runs in its own temp dir —
+//       the real committed plugin trees are never touched by this scenario.
 //   (b) SAFE, real production path — two concurrent REAL spawns of
 //       `node scripts/render_plugin_skill_trees.mjs` against the actual
 //       repo (the only target it knows how to write): both must exit 0,
@@ -46,6 +50,7 @@ const RENDER_SCRIPT = path.join(REPO_ROOT, 'scripts', 'render_plugin_skill_trees
 
 const RED_FILES_PER_WORKER = 24;
 const RED_WIDEN_MS = 8;
+const RED_MIDPOINT = Math.floor(RED_FILES_PER_WORKER / 2);
 
 function argVal(flag) {
   const found = process.argv.find((a) => a.startsWith(`${flag}=`));
@@ -60,6 +65,39 @@ if (role) {
   await runOrchestrator();
 }
 
+// ─── deterministic barrier (rel180-3) ───────────────────────────────────────
+// Scenario (a) used to let both racers call rmSync at t=0 with no ordering
+// guarantee between them: on a loaded box the whole two-racer sequence can
+// fully serialize (one racer completes its entire rm+write loop before the
+// other is even scheduled), so neither racer ever observes the other's
+// partially-written files and the dir ends up intact — "DETECTOR DID NOT
+// BITE", the exact scheduler-luck class settled in
+// docs/history/learnings/20260721-ci-timing-flake-class.md. An fs-based
+// ready-file handshake (same pattern as test_claim_race.mjs /
+// test_worktree_holds_race.mjs) replaces that hope with a real guarantee:
+// racer A signals once it has written its first half of files, and racer B
+// waits for that signal before running its own destructive rmSync — so B's
+// rm is PROVEN to land while A is still mid-write-loop (A already has
+// RED_MIDPOINT files on disk, has RED_MIDPOINT left to write) on every run,
+// on any core count, making the resulting tear structural instead of timing-
+// dependent.
+function touchFile(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, '');
+}
+
+async function waitForFile(filePath, { timeoutMs = 10_000, pollMs = 5 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (fs.existsSync(filePath)) return;
+    if (Date.now() > deadline) {
+      throw new Error(`waitForFile: timed out after ${timeoutMs}ms waiting for ${filePath}`);
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
 // ─── worker roles (each its own OS process) ─────────────────────────────────
 
 async function runWorker(workerRole) {
@@ -67,6 +105,13 @@ async function runWorker(workerRole) {
     if (workerRole === 'unsafe-racer') {
       const targetDir = argVal('--target');
       const id = argVal('--id');
+      const barrier = argVal('--barrier');
+      // Racer B waits for racer A to be mid-write before running its own
+      // destructive rmSync — see the barrier comment above. Racer A gets no
+      // wait: it is the one whose progress the barrier is anchored to.
+      if (barrier && id === 'B') {
+        await waitForFile(path.join(barrier, 'A-mid.ready'));
+      }
       // PRE-FIX writeTree shape, verbatim structure (no lock, no tmp-swap):
       // rmSync-whole-dir, then a per-file mkdir+writeFileSync loop. The
       // per-file delay stands in for the real per-file render work
@@ -78,6 +123,9 @@ async function runWorker(workerRole) {
         fs.writeFileSync(dest, `worker ${id} file ${i}\n`);
         // eslint-disable-next-line no-await-in-loop
         await sleep(RED_WIDEN_MS);
+        if (barrier && id === 'A' && i === RED_MIDPOINT - 1) {
+          touchFile(path.join(barrier, 'A-mid.ready'));
+        }
       }
       fs.writeFileSync(path.join(targetDir, `.sidecar-${id}.json`), '{}\n');
       process.stdout.write(`${JSON.stringify({ id, ok: true })}\n`);
@@ -119,11 +167,20 @@ async function runOrchestrator() {
   const failures = [];
 
   // (a) DELIBERATE RED — widened-window rmSync-whole-dir + per-file writes
-  // with NO store lock, proving the pre-fix hazard is real.
+  // with NO store lock, proving the pre-fix hazard is real. The barrierDir
+  // forces racer B's rm to land mid-way through racer A's write loop (see
+  // the "deterministic barrier" comment above) so the tear is guaranteed
+  // every run instead of depending on scheduler luck.
   {
     const targetDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-render-race-red-'));
+    const barrierDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-render-race-barrier-'));
     try {
-      const results = await spawnRacers(2, (i) => [`--role=unsafe-racer`, `--target=${targetDir}`, `--id=${i === 0 ? 'A' : 'B'}`]);
+      const results = await spawnRacers(2, (i) => [
+        `--role=unsafe-racer`,
+        `--target=${targetDir}`,
+        `--id=${i === 0 ? 'A' : 'B'}`,
+        `--barrier=${barrierDir}`,
+      ]);
       const crashed = results.filter((r) => r.code !== 0);
 
       let finalFiles = [];
@@ -151,6 +208,7 @@ async function runOrchestrator() {
       }
     } finally {
       fs.rmSync(targetDir, { recursive: true, force: true });
+      fs.rmSync(barrierDir, { recursive: true, force: true });
     }
   }
 

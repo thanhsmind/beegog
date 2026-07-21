@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.7.10",
+  "bee_version": "1.8.0",
   "managed": {
     "agents_block": "84d1532386c14df08ad5483efd9b76b835e12567381a7005cfdfaa09f590df49",
     "gitignore_block": "3da1a6176ae8b85a98b6779f7f314e7647bdc854969b1c2d0fa5fd7e97d4c69f",
@@ -19,7 +19,7 @@
       "dispatch-prepare.mjs": "9ae99701d47589d3a1c05986e7c1ce691db568d3e6f49e3dfdd9684e838548d2",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
       "fsutil.mjs": "c0a65d8aebfca7f7423f10cc9e13fa8ca43234c4a7b7e7ea1f05619b18e06af0",
-      "guards.mjs": "5eeac097c75b96cb9ae48abaa946bbd7e830157cb1456bceedb89f8bcac3cb2c",
+      "guards.mjs": "8630bfebb5ee3b6dd075aa45feba86bbf58759725e616bebad6d2bb5a95f78d0",
       "inject.mjs": "f788e09556da85d04967f55119a21124e15f50fce3eb7747332a21d809921be0",
       "judge.mjs": "5057e17a6bcd3dacff21fe479e13570620cfe1b9c821c0ff5c8254f39e3c6ed1",
       "lock.mjs": "47f632d110463850b7c38d1b0d46c4a28b8a75995433b3c3d3f5e9faf930521c",
@@ -30,7 +30,7 @@
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "scratch.mjs": "db94b27d1d148c98df5bdc0e8f16fd55eaae71d48e5cc1111559d3d3c7d6c26f",
       "source-identity.mjs": "716740641e1f6bfbb5ccc5b4fe7827f1165c2a1f1127ee3800f52a47ac09fc7a",
-      "state.mjs": "34444ca1e49e7f9a53d546c4c54648f887d9cac79025344fcf0bce4e601784da",
+      "state.mjs": "a3629b32ad5ebdb293d682be3819a5da51542fbee657f6100f67742cd631a44f",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
       "worktree-holds.mjs": "942d180f0c04c156adf19f76992652c7907320e708dfb91da4587de407a00b55",
       "worktree-store.mjs": "7d7f7cae05afd51d833af52d5b5f80e35487727d2573bb6dcedf36f201dd9530"
@@ -54,7 +54,7 @@
     }
   },
   "agents_sync": {
-    "bee_version": "1.7.10",
+    "bee_version": "1.8.0",
     "files": [
       ".claude/agents/bee-extract.md",
       ".claude/agents/bee-gather.md",
@@ -71,5 +71,5 @@
     }
   },
   "created_at": "2026-07-07T15:28:12.863Z",
-  "updated_at": "2026-07-21T15:31:28.816Z"
+  "updated_at": "2026-07-21T15:52:14.853Z"
 }

@@ -403,4 +403,70 @@ await check('race: sweep-heartbeat — concurrent sweepExpiredClaims + heartbeat
   assert(/^PASS +sweep-heartbeat/m.test(result.stdout), `expected a PASS summary line, got: ${result.stdout}`);
 });
 
+// ─── rel180-2: forced-interleaving proof (deterministic, no worker threads,
+// no timing luck) ────────────────────────────────────────────────────────
+// The worker-thread race above (sweep-heartbeat) only catches the bug when
+// real OS scheduling happens to land a renewal in the exact unprotected
+// window — that is what made it ~1-in-4-under-load instead of 10/10. This
+// row instead uses sweepExpiredClaims's own `_raceSeam` (test-only, no
+// production caller ever passes it — see claims.mjs) to FORCE a heartbeat
+// renewal to land precisely between the sweeper's heartbeat-staleness
+// decision and its reclaim, every single round, with no dependency on
+// thread scheduling. The invariant under test: it is never simultaneously
+// true that a renewal reports success (the on-disk heartbeat really did
+// move to "now") AND the claim was reclaimed anyway — that combination IS
+// the diagnosed bug (a live, heartbeating owner's claim swept out from
+// under it). Pre-fix this fails 10/10; post-fix it passes 10/10.
+await check('race: sweep-vs-renewal (rel180-2, forced interleaving) — a renewal forced to land between the sweep\'s decision and its reclaim is never invisible to that decision', async () => {
+  const ROUNDS = 10;
+  const STALE_SECONDS = 1;
+  const failures = [];
+  for (let r = 0; r < ROUNDS; r += 1) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-claims-race180-'));
+    const ownerSession = `owner-${r}`;
+    const cellId = `race180-cell-${r}`;
+    createSession(root, { id: ownerSession });
+    const claimed = claimCellFile(root, ownerSession, cellId, 60);
+    assert(claimed.ok === true, `round ${r}: setup claim failed`);
+    // Backdate BOTH the claim's TTL and the owner's heartbeat so the claim
+    // is a genuine sweep candidate by the numbers the instant
+    // sweepExpiredClaims starts — the seam below is what then injects the
+    // renewal a correct implementation must not silently miss.
+    writeJsonAtomic(claimPath(root, cellId), {
+      ...readClaim(root, cellId),
+      claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
+      ttl_seconds: 60,
+    });
+    writeJsonAtomic(sessionPath(root, ownerSession), {
+      ...readSession(root, ownerSession),
+      last_heartbeat: new Date(Date.now() - (STALE_SECONDS + 5) * 1000).toISOString(),
+    });
+
+    let heartbeatResult = null;
+    const result = await sweepExpiredClaims(root, {
+      staleSeconds: STALE_SECONDS,
+      _raceSeam: async ({ session }) => {
+        heartbeatResult = heartbeatSession(root, session);
+      },
+    });
+
+    const swept = result.ok === true && result.swept.includes(cellId);
+    if (heartbeatResult && heartbeatResult.ok === true && swept) {
+      failures.push(
+        `round ${r}: erroneous sweep — renewal reported success (last_heartbeat=${heartbeatResult.session && heartbeatResult.session.last_heartbeat}) yet the claim was reclaimed anyway (swept=${JSON.stringify(result.swept)})`,
+      );
+    }
+    // Sanity: the seam must actually have fired every round, or this test
+    // would vacuously pass by never exercising the race at all.
+    if (!heartbeatResult) {
+      failures.push(`round ${r}: seam never fired — claim was not a sweep candidate, test setup is broken`);
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  assert(
+    failures.length === 0,
+    `sweep-vs-renewal forced interleaving: ${failures.length}/${ROUNDS} rounds bad | ${failures.join(' | ')}`,
+  );
+});
+
 printSummaryAndExit();
