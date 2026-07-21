@@ -46,6 +46,31 @@ async function main() {
         if (touch && touch.touched) {
           const reservations = await import(libModuleUrl(root, "reservations.mjs"));
           await reservations.renewHoldsBySession(root, sessionId, { lockOptions: { maxAttempts: 1 } });
+
+          // hardening-1-7-10 (D3) — also refresh this session's CROSS-WORKTREE
+          // ledger holds (worktree-holds.mjs's renewHolds), same try-once/
+          // never-block posture as the local renewal above: a missed
+          // renewal is skipped, never waited on, never escalated past this
+          // hook's own fail-open try/catch. The ledger always lives in the
+          // MAIN checkout's store (never this checkout's own `.bee/`), so
+          // mainRoot is resolved the same way bee.mjs's private
+          // resolveMainRoot does — ordinary checkout: mainRoot is `root`
+          // itself; linked worktree (granted or not): resolveRoots' own
+          // `mainRoot` field, independent of THIS checkout's own grant
+          // state. Duplicated here rather than imported from bee.mjs
+          // because bee.mjs is the CLI entry point, not a lib module a hook
+          // imports.
+          try {
+            let mainRoot = root;
+            const resolution = stateLib.resolveRoots(process.cwd());
+            if (resolution.worktreeResolution === "linked-valid" && resolution.mainRoot) {
+              mainRoot = resolution.mainRoot;
+            }
+            const holdsLib = await import(libModuleUrl(root, "worktree-holds.mjs"));
+            await holdsLib.renewHolds(mainRoot, sessionId, { maxAttempts: 1 });
+          } catch (error) {
+            logCrash(root, HOOK_NAME, error, ctx.source);
+          }
         }
       } catch (error) {
         logCrash(root, HOOK_NAME, error, ctx.source);

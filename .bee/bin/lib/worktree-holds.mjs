@@ -1,10 +1,29 @@
-// worktree-holds.mjs — shared cross-worktree holds ledger (xwh-1, additive,
-// UNWIRED: nothing in production imports this module yet). Mirrors a
-// path-level hold from any checkout (the ordinary checkout, holder 'main',
-// or a granted linked worktree, holder = its git-verified worktree id) into
-// ONE shared ledger so a different checkout can discover a foreign hold on a
-// path it is about to write to, before same-checkout reservation/state
-// guards ever see it.
+// worktree-holds.mjs — shared cross-worktree holds ledger (xwh-1, additive).
+// WIRED since xwh-2 into bee.mjs's handleReservationsReserve/Release/Sweep/
+// List (this stale header used to say "UNWIRED" — corrected in
+// hardening-1-7-10 D3, see below). Mirrors a path-level hold from any
+// checkout (the ordinary checkout, holder 'main', or a granted linked
+// worktree, holder = its git-verified worktree id) into ONE shared ledger so
+// a different checkout can discover a foreign hold on a path it is about to
+// write to, before same-checkout reservation/state guards ever see it.
+//
+// hardening-1-7-10 (D3): the reserve seam used to be check-then-act — an
+// UNLOCKED findForeignHolds read, then a local reserve, then a separately
+// locked mirrorHold — three independent critical sections with real gaps
+// between them, so two checkouts racing the SAME path could both pass the
+// foreign-hold check before either had mirrored, and both land an active
+// grant (test_worktree_holds_race.mjs's same-path scenario demonstrates the
+// double-grant against that old shape). `withHoldsLock` is now exported so a
+// caller (bee.mjs) can run the check + local reserve + mirror-insert as ONE
+// atomic section under this module's own shared lock — `insertHold` is the
+// unlocked core `mirrorHold` already wrapped in that lock, exposed
+// separately so it can be called from INSIDE a section that already holds
+// the lock (calling the locked `mirrorHold` there would self-deadlock: the
+// lock file is per-process-exclusive, not reentrant). `renewHolds` is new
+// too: it refreshes `mirrored_at` in place for a session's still-active
+// holds (never a new row — mirrorHold/insertHold stay append-only), wired
+// into the existing heartbeat/lease-renewal hook so a live worker never
+// silently loses its cross-worktree hold at the 1h TTL.
 //
 // Store: <mainRoot>/.bee/runtime/cross-worktree-holds.json — ALWAYS the
 // MAIN checkout's store, never a worktree's own `.bee/` (same asymmetry
@@ -20,12 +39,15 @@
 // drop the earlier one (same D2 lost-update fix reservations.mjs's
 // reserve()/release()/sweepExpired() already apply to .bee/reservations.json).
 //
-// TTL-only expiry (reservations.mjs's sweepExpired precedent) — there is no
-// heartbeat/renewal primitive here. Expired entries are pruned ON READ (never
-// returned by findForeignHolds), and separately reconciled to disk (marked
-// released) only by the explicit sweepExpiredHolds() call — the exact same
-// two-tier shape (`isActive` read-time filter vs. `sweepExpired` disk write)
-// reservations.mjs already uses.
+// TTL-only expiry (reservations.mjs's sweepExpired precedent). Expired
+// entries are pruned ON READ (never returned by findForeignHolds), and
+// separately reconciled to disk (marked released) only by the explicit
+// sweepExpiredHolds() call — the exact same two-tier shape (`isActive`
+// read-time filter vs. `sweepExpired` disk write) reservations.mjs already
+// uses. `renewHolds` (D3) is the renewal primitive that TTL-only expiry was
+// missing: it pushes `mirrored_at` forward for a session's still-active
+// holds so a live session's TTL clock keeps resetting instead of only ever
+// counting down to sweepExpiredHolds pruning it.
 //
 // pathsOverlap is REUSED, not reimplemented: imported directly from
 // reservations.mjs, which is the established sharing style already used by
@@ -34,9 +56,10 @@
 // module's own header comment. reservations.mjs imports only fsutil.mjs +
 // lock.mjs + claims.mjs, so importing it here creates no cycle.
 //
-// This module is NOT wired into any production caller in this cell — no
-// bee.mjs, guards.mjs, cells.mjs, or worktree-store.mjs change accompanies
-// it. It ships the primitive only, proven by its own unit + race tests.
+// Production callers: bee.mjs's handleReservationsReserve/Release/Sweep/List
+// (xwh-2) and the atomic reserve section added in hardening-1-7-10 D3;
+// hooks/bee-state-sync.mjs's heartbeat renewal path (D3) calls renewHolds
+// alongside its existing claims/reservations lease renewal.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -92,44 +115,73 @@ function isActive(entry, nowMs = Date.now()) {
   return entry.released_at == null && !isExpired(entry, nowMs);
 }
 
+// The single named lock every mutation in this module runs under. Exported
+// (D3) so a caller that needs to run MORE than one of this module's
+// operations as one atomic section (bee.mjs's reserve seam: re-check foreign
+// holds, do the local reserve, insert the mirror row, all without releasing
+// the shared lock in between) can acquire it directly instead of composing
+// several independently-locked calls with gaps between them.
+export const CROSS_WORKTREE_HOLDS_LOCK = 'cross-worktree-holds';
+
 /**
- * Mirrors ONE path-level hold into the shared ledger under
- * withStoreLock(mainRoot, 'cross-worktree-holds'). `holder` is the granted
- * worktree id, or the literal string 'main' for the ordinary checkout —
- * required, like `path`. `feature`/`session`/`cell` are optional context
- * carried through for later callers (e.g. a deny message naming which
- * feature/cell holds a foreign path); `ttl` defaults to
- * DEFAULT_TTL_SECONDS, same default reservations.mjs's reserve() uses.
- *
- * Always appends a new entry (never upserts) — the same posture
- * reservations.mjs's reserve() takes: repeated calls from the same holder on
- * the same path simply accumulate rows, and isActive()/findForeignHolds()
- * read-time-filter which of them still matter. No conflict check runs here;
- * this module only records visibility, it does not itself decide allow/deny.
+ * Runs `fn` with this module's shared cross-worktree-holds lock held
+ * (lock.mjs's withStoreLock under the hood). `options` passes straight
+ * through to withStoreLock (e.g. `{ maxAttempts: 1 }` for a hook's
+ * try-once/never-block posture). Lock order for any caller composing this
+ * with a second, DIFFERENT lock (e.g. reservations.mjs's own local
+ * 'reservations' lock): this shared lock outermost, the local store's own
+ * lock inside — and never hold this lock across a child-process spawn.
  */
-export async function mirrorHold(mainRoot, { path: holdPath, holder, feature = null, session = null, cell = null, ttl = DEFAULT_TTL_SECONDS } = {}) {
+export function withHoldsLock(mainRoot, fn, options) {
+  return withStoreLock(mainRoot, CROSS_WORKTREE_HOLDS_LOCK, fn, options);
+}
+
+/**
+ * The unlocked CORE of mirrorHold — reads the store, appends one hold row,
+ * writes it back. Never acquires a lock itself: callers already inside a
+ * withHoldsLock(mainRoot, ...) section (bee.mjs's atomic reserve seam, D3)
+ * call this directly, because calling the LOCKED `mirrorHold` from inside a
+ * section that already holds the same lock would self-deadlock (the lock
+ * file is per-process-exclusive via O_EXCL, never reentrant). Always
+ * appends a new entry (never upserts) — the same posture reservations.mjs's
+ * reserve() takes: repeated calls from the same holder on the same path
+ * simply accumulate rows, and isActive()/findForeignHolds() read-time-filter
+ * which of them still matter. No conflict check runs here; this module only
+ * records visibility, it does not itself decide allow/deny.
+ */
+export function insertHold(mainRoot, { path: holdPath, holder, feature = null, session = null, cell = null, ttl = DEFAULT_TTL_SECONDS } = {}) {
   if (typeof holdPath !== 'string' || !holdPath.trim()) {
-    throw new Error('mirrorHold: path is required.');
+    throw new Error('insertHold: path is required.');
   }
   if (typeof holder !== 'string' || !holder.trim()) {
-    throw new Error('mirrorHold: holder is required.');
+    throw new Error('insertHold: holder is required.');
   }
-  return withStoreLock(mainRoot, 'cross-worktree-holds', () => {
-    const store = readStore(mainRoot);
-    const hold = {
-      path: normalizePath(holdPath),
-      holder: holder.trim(),
-      feature: typeof feature === 'string' && feature.trim() ? feature.trim() : null,
-      session: typeof session === 'string' && session.trim() ? session.trim() : null,
-      cell: typeof cell === 'string' && cell.trim() ? cell.trim() : null,
-      ttl_seconds: Number.isFinite(ttl) && ttl > 0 ? Math.floor(ttl) : DEFAULT_TTL_SECONDS,
-      mirrored_at: utcNow(),
-      released_at: null,
-    };
-    store.holds.push(hold);
-    writeStore(mainRoot, store);
-    return { ok: true, hold };
-  });
+  const store = readStore(mainRoot);
+  const hold = {
+    path: normalizePath(holdPath),
+    holder: holder.trim(),
+    feature: typeof feature === 'string' && feature.trim() ? feature.trim() : null,
+    session: typeof session === 'string' && session.trim() ? session.trim() : null,
+    cell: typeof cell === 'string' && cell.trim() ? cell.trim() : null,
+    ttl_seconds: Number.isFinite(ttl) && ttl > 0 ? Math.floor(ttl) : DEFAULT_TTL_SECONDS,
+    mirrored_at: utcNow(),
+    released_at: null,
+  };
+  store.holds.push(hold);
+  writeStore(mainRoot, store);
+  return { ok: true, hold };
+}
+
+/**
+ * Mirrors ONE path-level hold into the shared ledger under
+ * withHoldsLock(mainRoot, ...) — the standalone, self-locking public API
+ * (unchanged call shape from before D3). Callers that need this insert as
+ * part of a LARGER atomic section (bee.mjs's reserve seam) should call
+ * `insertHold` directly from inside their own `withHoldsLock` block instead,
+ * to avoid nesting two acquisitions of the same lock.
+ */
+export async function mirrorHold(mainRoot, opts) {
+  return withHoldsLock(mainRoot, () => insertHold(mainRoot, opts));
 }
 
 /**
@@ -168,7 +220,7 @@ export async function releaseHolds(mainRoot, { holder, session = null, cell = nu
     throw new Error('releaseHolds: holder is required.');
   }
   const actingHolder = holder.trim();
-  return withStoreLock(mainRoot, 'cross-worktree-holds', () => {
+  return withHoldsLock(mainRoot, () => {
     const store = readStore(mainRoot);
     const releasedAt = utcNow();
     let released = 0;
@@ -205,7 +257,7 @@ export async function releaseAllForHolder(mainRoot, id) {
  * something actually changed" guard. Returns the count of holds released.
  */
 export async function sweepExpiredHolds(mainRoot) {
-  return withStoreLock(mainRoot, 'cross-worktree-holds', () => {
+  return withHoldsLock(mainRoot, () => {
     const store = readStore(mainRoot);
     const nowMs = Date.now();
     const releasedAt = utcNow();
@@ -219,6 +271,46 @@ export async function sweepExpiredHolds(mainRoot) {
     if (released > 0) writeStore(mainRoot, store);
     return released;
   });
+}
+
+/**
+ * D3 — renews this session's still-active holds by pushing `mirrored_at`
+ * forward to now, WITHOUT touching `released_at` or appending any row (the
+ * renewal exception to this module's otherwise append-only mutation shape:
+ * mirrorHold/insertHold always append, releaseHolds/sweepExpiredHolds only
+ * ever set `released_at`; renewHolds is the one path that rewrites an
+ * existing row's `mirrored_at` in place). Only rows that are still
+ * `isActive` (unreleased AND not yet expired) at call time are renewed — a
+ * hold that already lapsed past its TTL is left alone rather than resurrected,
+ * matching findForeignHolds' own "no longer visible" verdict for it. Runs
+ * under withHoldsLock so a renewal can never race a concurrent
+ * insert/release/sweep into a lost update. `options` passes straight through
+ * to withHoldsLock (hook callers pass `{ maxAttempts: 1 }`, the same
+ * try-once/never-block posture claims.mjs's heartbeatTouch and
+ * reservations.mjs's renewHoldsBySession already use — a missed renewal here
+ * is skipped, never waited on). Returns `{ renewed: <count> }`.
+ */
+export async function renewHolds(mainRoot, sessionId, options) {
+  const session = typeof sessionId === 'string' ? sessionId.trim() : '';
+  if (!session) return { renewed: 0 };
+  return withHoldsLock(
+    mainRoot,
+    () => {
+      const store = readStore(mainRoot);
+      const nowMs = Date.now();
+      const nowIso = utcNow();
+      let renewed = 0;
+      for (const hold of store.holds) {
+        if (!isActive(hold, nowMs)) continue;
+        if (hold.session !== session) continue;
+        hold.mirrored_at = nowIso;
+        renewed += 1;
+      }
+      if (renewed > 0) writeStore(mainRoot, store);
+      return { renewed };
+    },
+    options,
+  );
 }
 
 /**
