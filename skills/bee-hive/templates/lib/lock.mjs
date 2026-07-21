@@ -108,6 +108,39 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// rel180-4 (Windows CI hazard fix, same class as claims.mjs's rel1710rc-5):
+// lock.mjs's own open ('wx' writeFileSync)/rename/unlink calls can
+// intermittently fail with EBUSY/EPERM/ENOTEMPTY/EMFILE/ENFILE on Windows
+// when another thread/process holds even a brief open handle on that exact
+// path — POSIX permits renaming/unlinking a file another process has open
+// outright; Windows generally does not. dp-3's new decisions store lock
+// (which goes through THIS module) exposed the exact gap claims.mjs already
+// closed for its own claim/session files (rel1710rc-5). lock.mjs stays a
+// dependency-light leaf module (claims.mjs imports FROM here, so importing
+// back would cycle — same precedent as envSessionId's duplicated chain
+// above), so this is a deliberate small duplicate of claims.mjs's
+// withTransientFsRetry: same shape, same budget — keep the two in sync by
+// hand if the retry policy ever changes.
+const TRANSIENT_FS_RETRY_ATTEMPTS = 15;
+const TRANSIENT_FS_RETRY_DELAY_MS = 20;
+const TRANSIENT_FS_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE', 'ENFILE']);
+
+function sleepSyncMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function withTransientFsRetry(fn) {
+  for (let attempt = 0; attempt < TRANSIENT_FS_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return fn();
+    } catch (error) {
+      const transient = error && TRANSIENT_FS_ERROR_CODES.has(error.code);
+      if (!transient || attempt + 1 >= TRANSIENT_FS_RETRY_ATTEMPTS) throw error;
+      sleepSyncMs(TRANSIENT_FS_RETRY_DELAY_MS);
+    }
+  }
+}
+
 /**
  * isPidAlive(pid) — synchronous liveness probe via the null-signal trick
  * (`process.kill(pid, 0)` never actually signals anything; it only reports
@@ -138,7 +171,9 @@ export function isPidAlive(pid) {
 
 function tryAcquire(lockPath, body) {
   try {
-    fs.writeFileSync(lockPath, `${JSON.stringify(body)}\n`, { encoding: 'utf8', flag: 'wx' });
+    withTransientFsRetry(() =>
+      fs.writeFileSync(lockPath, `${JSON.stringify(body)}\n`, { encoding: 'utf8', flag: 'wx' }),
+    );
     return true;
   } catch (error) {
     if (error && error.code === 'EEXIST') return false;
@@ -146,48 +181,133 @@ function tryAcquire(lockPath, body) {
   }
 }
 
-// Attempt exactly one stale takeover of lockPath by ATOMIC RENAME. Returns
-// true only when THIS call performed the rename (sole winner; the corpse is
-// now at a pid-unique stale path and gets unlinked here) — never an
-// unconditional unlink, which lets a waiter delete a fresh holder's lock out
-// from under it (spike negative control: naive unlink reproduced 7-8
-// simultaneous "winners"). Two racers renaming the same source path is still
-// safe even though each targets a different pid-unique destination: rename()
-// consumes its source, so the loser's rename sees the source already gone
-// and fails ENOENT — that is a normal loss, not an error, so it just backs
-// off into the retry loop.
-//
-// hardening-1-7-10 (D2): mtime age alone is no longer sufficient. A lock
-// past STALE_MS is only a takeover CANDIDATE — it becomes eligible only when
-// the recorded owner pid is NOT alive (crashed-holder case), UNLESS the age
-// has also passed the HARD_STALE_MS absolute ceiling, in which case takeover
-// proceeds regardless of liveness (pid-reuse / unknowable-liveness guard of
-// last resort). A pid that is provably alive is therefore never stolen
-// below HARD_STALE_MS, no matter how long a legitimate holder blocks the
-// event loop inside a child spawn.
-function tryStaleTakeover(lockPath, nowMs) {
+// rel180-4 (fix-first, pre-existing mutual-exclusion violation, backlog P2):
+// judges whether lockPath is CURRENTLY eligible for stale takeover (mtime +
+// pid-liveness rule, D2/hardening-1-7-10 — unchanged from before this cell)
+// and, when eligible, returns a SNAPSHOT of the holder body observed at this
+// exact moment. That snapshot is the anchor performTakeoverClaim below
+// re-verifies against AFTER the rename — closing the TOCTOU window where a
+// DIFFERENT racer's fresh reacquisition replaces the file at lockPath
+// between this judgment and the actual rename (see performTakeoverClaim's
+// own comment for the full failure mode this closes). Returns null when not
+// eligible (fresh/live holder, or the lock vanished — either way, normal
+// retry, never an error).
+function judgeStaleTakeoverEligibility(lockPath, nowMs) {
   let stat;
   try {
     stat = fs.statSync(lockPath);
   } catch {
-    return false; // lock vanished between our EEXIST and this stat — normal retry
+    return null; // lock vanished between our EEXIST and this stat — normal retry
   }
   const ageMs = nowMs - stat.mtimeMs;
-  if (ageMs <= STALE_MS) return false;
+  if (ageMs <= STALE_MS) return null;
+  const holderBefore = readHolder(lockPath);
   if (ageMs <= HARD_STALE_MS) {
-    const holder = readHolder(lockPath);
-    const pid = holder && typeof holder === 'object' ? holder.pid : undefined;
-    if (isPidAlive(pid)) return false; // live holder — legitimately long-running, never stolen
+    const pid = holderBefore && typeof holderBefore === 'object' ? holderBefore.pid : undefined;
+    if (isPidAlive(pid)) return null; // live holder — legitimately long-running, never stolen
   }
-  const stalePath = `${lockPath}.stale-${process.pid}-${nowMs}`;
+  return { holderBefore };
+}
+
+// Attempt exactly one stale takeover of lockPath by ATOMIC RENAME. Returns
+// true only when THIS call performed the rename AND the file it renamed away
+// is STILL the exact holder body judgeStaleTakeoverEligibility judged stale
+// (never an unconditional unlink, which lets a waiter delete a fresh
+// holder's lock out from under it — spike negative control: naive unlink
+// reproduced 7-8 simultaneous "winners").
+//
+// rel180-4 (fix-first, pre-existing mutual-exclusion violation, backlog P2):
+// rename() only guarantees ONE racer consumes a given PATH at a time — it
+// does NOT guarantee the CONTENT at that path is still what an earlier
+// stat/readHolder observed. Under real cross-process contention, a racer
+// that judged lockPath stale can be descheduled between that judgment and
+// its own renameSync; in that window a FASTER racer can legitimately win the
+// same original takeover, recreate a fresh lock, and even be mid-critical-
+// section by the time the slower racer's renameSync finally runs. That
+// renameSync still "succeeds" (rename doesn't care whose content is at the
+// path) — pre-fix, the slower racer then unconditionally deleted the corpse
+// and reported a win, so it and the fast racer's still-live holder both
+// believed they held the lock at once (reproduced as the observed
+// mutual-exclusion violation; the forced-interleaving test in
+// scripts/test_store_lock.mjs reproduces this deterministically). The fix:
+// after the rename, compare the renamed-away body against the snapshot
+// judged stale (pid+token+ts — token is a fresh random value per
+// acquisition, so any mismatch means the content changed underneath us). A
+// match means it truly was the same stale lock — safe to delete, takeover
+// wins. A mismatch means we accidentally displaced a DIFFERENT, fresher
+// lock: put it back (unless something has since re-occupied lockPath — never
+// clobber a newer legitimate acquisition that raced in during our own
+// verification window) and report that we did NOT win. Two racers renaming
+// the same source path is still safe even though each targets a different
+// pid-unique destination: rename() consumes its source, so the loser's
+// rename sees the source already gone and fails ENOENT — that is a normal
+// loss, not an error, so it just backs off into the retry loop.
+function performTakeoverClaim(lockPath, nowMs, holderBefore) {
+  const stalePath = `${lockPath}.stale-${process.pid}-${nowMs}-${crypto.randomBytes(4).toString('hex')}`;
   try {
-    fs.renameSync(lockPath, stalePath);
+    withTransientFsRetry(() => fs.renameSync(lockPath, stalePath));
   } catch (error) {
     if (error && error.code === 'ENOENT') return false; // another racer already renamed it away
     throw error;
   }
-  fs.rmSync(stalePath, { force: true });
+  const holderAfter = readHolder(stalePath);
+  const sameHolder =
+    holderBefore &&
+    holderAfter &&
+    holderAfter.pid === holderBefore.pid &&
+    holderAfter.token === holderBefore.token &&
+    holderAfter.ts === holderBefore.ts;
+  if (!sameHolder) {
+    // We renamed away a DIFFERENT, fresher lock than the one judged stale —
+    // put it back unless lockPath has since been re-occupied by yet another
+    // legitimate acquisition (never clobber that); either way this call did
+    // NOT win the takeover.
+    let occupied = false;
+    try {
+      fs.statSync(lockPath);
+      occupied = true;
+    } catch {
+      // not occupied — safe to restore
+    }
+    if (!occupied) {
+      try {
+        withTransientFsRetry(() => fs.renameSync(stalePath, lockPath));
+        return false;
+      } catch {
+        // lost the restore race too (lockPath got recreated in the sliver
+        // between our check and this rename) — fall through and drop the
+        // corpse below rather than leave two files behind.
+      }
+    }
+    withTransientFsRetry(() => fs.rmSync(stalePath, { force: true }));
+    return false;
+  }
+  withTransientFsRetry(() => fs.rmSync(stalePath, { force: true }));
   return true;
+}
+
+// Synchronous, no-seam entry point (acquireStoreLockOnceSync's sibling —
+// must stay sync end-to-end, see that function's own doc comment).
+function tryStaleTakeover(lockPath, nowMs) {
+  const eligibility = judgeStaleTakeoverEligibility(lockPath, nowMs);
+  if (!eligibility) return false;
+  return performTakeoverClaim(lockPath, nowMs, eligibility.holderBefore);
+}
+
+// Async sibling used only by withStoreLock: identical logic to
+// tryStaleTakeover above, but accepts an optional `seam` — an async hook
+// awaited AFTER judging eligibility and BEFORE performing the takeover rename
+// (rel180-4, deterministic race proof only — never set by any production
+// caller, undefined is a no-op; same "test seam" idiom as claims.mjs's
+// sweepExpiredClaims `_raceSeam`). This is what lets
+// scripts/test_store_lock.mjs's forced-interleaving test hold one racer
+// suspended at exactly the TOCTOU window performTakeoverClaim's verification
+// closes, so the fix can be proven deterministically instead of by load.
+async function tryStaleTakeoverAsync(lockPath, nowMs, seam) {
+  const eligibility = judgeStaleTakeoverEligibility(lockPath, nowMs);
+  if (!eligibility) return false;
+  if (typeof seam === 'function') await seam();
+  return performTakeoverClaim(lockPath, nowMs, eligibility.holderBefore);
 }
 
 /**
@@ -268,13 +388,21 @@ export function acquireStoreLockOnceSync(root, name) {
       released = true;
       const holder = readHolder(lockPath);
       if (holder && holder.token === token && holder.pid === process.pid) {
-        fs.rmSync(lockPath, { force: true });
+        withTransientFsRetry(() => fs.rmSync(lockPath, { force: true }));
       }
     },
   };
 }
 
-export async function withStoreLock(root, name, fn, { maxAttempts = MAX_ATTEMPTS, retryDelayMs = RETRY_DELAY_MS } = {}) {
+// options._takeoverSeam (rel180-4): test-only async hook forwarded to
+// tryStaleTakeoverAsync — see that function's doc comment. Never set by any
+// production caller; undefined is a complete no-op.
+export async function withStoreLock(
+  root,
+  name,
+  fn,
+  { maxAttempts = MAX_ATTEMPTS, retryDelayMs = RETRY_DELAY_MS, _takeoverSeam } = {},
+) {
   ensureDir(locksDir(root));
   const lockPath = lockFilePath(root, name);
   const token = crypto.randomBytes(8).toString('hex');
@@ -290,7 +418,7 @@ export async function withStoreLock(root, name, fn, { maxAttempts = MAX_ATTEMPTS
     }
     // Staleness is re-verified at THIS retry, on the real filesystem mtime —
     // never cached from an earlier check.
-    if (tryStaleTakeover(lockPath, nowMs)) {
+    if (await tryStaleTakeoverAsync(lockPath, nowMs, _takeoverSeam)) {
       // We just freed the slot ourselves; race for it immediately rather
       // than waiting a full retry interval behind everyone else.
       if (tryAcquire(lockPath, { ...body, ts: new Date(Date.now()).toISOString() })) {
@@ -312,7 +440,7 @@ export async function withStoreLock(root, name, fn, { maxAttempts = MAX_ATTEMPTS
   } finally {
     const holder = readHolder(lockPath);
     if (holder && holder.token === token && holder.pid === process.pid) {
-      fs.rmSync(lockPath, { force: true });
+      withTransientFsRetry(() => fs.rmSync(lockPath, { force: true }));
     }
   }
 }

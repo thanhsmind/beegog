@@ -627,6 +627,231 @@ async function runOrchestrator() {
     if (fs.existsSync(ceilingLockPath)) {
       failures.push('(f) the pre-seeded past-ceiling lock file was never taken over/cleared — a live-but-past-ceiling holder must not wedge progress permanently');
     }
+
+    // (g) FORCED-INTERLEAVING TAKEOVER (rel180-4, fix-first — pre-existing
+    // mutual-exclusion violation, backlog P2, reproduced independently on
+    // unmodified baseline): (a)/(c)/(f) above only ever hit this race by
+    // luck (CI saw it 3 times across a whole run) — this scenario forces the
+    // EXACT TOCTOU window deterministically instead, using the test-only
+    // `_takeoverSeam` hook (withStoreLock's options; never set by any
+    // production caller — see lock.mjs's tryStaleTakeoverAsync doc comment).
+    // Racer 1 is paused, in-process, between judging a pre-seeded stale lock
+    // eligible for takeover and actually performing the rename; while
+    // paused, racer 2 (uncontended, no seam) fully wins its OWN takeover of
+    // that exact same stale lock, creates a fresh lock, and enters its
+    // critical section. Racer 1 is then resumed and attempts its rename
+    // against what is now racer 2's LIVE lock — the pre-fix bug: an
+    // unconditional-delete takeover would let racer 1 believe it won too,
+    // running its own critical section while racer 2 is still active
+    // (mutual-exclusion violation). The fix (performTakeoverClaim's
+    // post-rename content verification + restore-if-mismatched) must make
+    // racer 1 detect the mismatch, restore racer 2's lock untouched, and
+    // back off. Runs FORCED_ITERS times fresh to prove the fix holds every
+    // time, not just once — no real concurrency, no timing luck: forced by
+    // microtask ordering, which is deterministic in Node.
+    {
+      const FORCED_ITERS = 10;
+      let forcedPassed = 0;
+      for (let iter = 0; iter < FORCED_ITERS; iter++) {
+        const raceLockName = `race-forced-${iter}`;
+        const raceLockPath = lockFilePath(tmpRoot, raceLockName);
+        fs.writeFileSync(
+          raceLockPath,
+          `${JSON.stringify({ pid: 999999999, session: 'forced-stale-holder', ts: new Date(Date.now() - 45_000).toISOString(), token: `forced-token-${iter}` })}\n`,
+        );
+        const forcedStaleMs = (Date.now() - 45_000) / 1000;
+        fs.utimesSync(raceLockPath, forcedStaleMs, forcedStaleMs);
+
+        let racer1SeenOverlap = false;
+        let racer2Active = false;
+        let seamResolve;
+        const seamGate = new Promise((resolve) => {
+          seamResolve = resolve;
+        });
+        let racer2Resolve;
+        const racer2Gate = new Promise((resolve) => {
+          racer2Resolve = resolve;
+        });
+
+        const racer1Promise = withStoreLock(
+          tmpRoot,
+          raceLockName,
+          async () => {
+            if (racer2Active) racer1SeenOverlap = true;
+          },
+          { _takeoverSeam: () => seamGate, maxAttempts: 300, retryDelayMs: 10 },
+        ).catch((err) => ({ __racer1Error: err }));
+
+        // Racer 1's call above ran synchronously up to its paused `await
+        // seam()` before this line executes (no other await precedes it) —
+        // it is deterministically paused right now, not "probably" paused.
+        const racer2Promise = withStoreLock(tmpRoot, raceLockName, async () => {
+          racer2Active = true;
+          await racer2Gate;
+          racer2Active = false;
+        }).catch((err) => ({ __racer2Error: err }));
+
+        // Racer 2's call above is uncontended (no seam) and reaches its own
+        // `await racer2Gate` without ever waiting on anything real — but
+        // `await`ing an async call still costs at least one microtask tick
+        // even when that call never hit an internal await (an already-
+        // resolved promise still defers its continuation once, per spec),
+        // so poll a bounded number of microtask ticks rather than assume
+        // zero-tick synchronicity. This bound is generous (JS microtask
+        // ticks, not real time) and is itself test-infrastructure plumbing —
+        // it does not touch the property under test.
+        for (let tick = 0; tick < 50 && !racer2Active; tick++) {
+          await Promise.resolve();
+        }
+        if (!racer2Active) {
+          failures.push(
+            `(g) iter ${iter}: racer2 did not report itself active within 50 microtask ticks — forced setup did not hold (test infrastructure issue, not the fix under test)`,
+          );
+        }
+
+        // Resume racer 1. Its continuation (performTakeoverClaim, fully
+        // synchronous — no internal awaits) runs to completion as a
+        // contiguous microtask block ending at withStoreLock's next await
+        // (`await sleep(retryDelayMs)`), strictly before any of these
+        // `await Promise.resolve()` ticks resume (FIFO microtask
+        // ordering) — deterministic, not a timing guess.
+        seamResolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Only now let racer 2 finish and release.
+        racer2Resolve();
+
+        const [r1, r2] = await Promise.all([racer1Promise, racer2Promise]);
+        if (r1 && r1.__racer1Error) {
+          failures.push(`(g) iter ${iter}: racer1 threw unexpectedly: ${(r1.__racer1Error && r1.__racer1Error.stack) || r1.__racer1Error}`);
+        }
+        if (r2 && r2.__racer2Error) {
+          failures.push(`(g) iter ${iter}: racer2 threw unexpectedly: ${(r2.__racer2Error && r2.__racer2Error.stack) || r2.__racer2Error}`);
+        }
+        if (racer1SeenOverlap) {
+          failures.push(
+            `(g) iter ${iter}: racer1's critical section ran WHILE racer2 was still active — mutual-exclusion violation under forced interleaving`,
+          );
+        } else if (!(r1 && r1.__racer1Error) && !(r2 && r2.__racer2Error)) {
+          forcedPassed += 1;
+        }
+        fs.rmSync(raceLockPath, { force: true });
+      }
+      if (forcedPassed !== FORCED_ITERS) {
+        failures.push(`(g) forced-interleaving takeover: only ${forcedPassed}/${FORCED_ITERS} iterations passed cleanly`);
+      }
+    }
+
+    // (h) SIMULATED EPERM TRANSIENT RETRY (rel180-4, Windows CI hazard fix):
+    // stubs fs.writeFileSync/renameSync/rmSync to throw a transient EPERM
+    // exactly once, then behave normally — reproducing the Windows "another
+    // handle has this file open" class of failure deterministically,
+    // without needing an actual Windows box (same technique rel1710rc-5
+    // used to prove claims.mjs's own fix). Every stub is scoped to lock
+    // paths containing "epermtest" so it can never interfere with any other
+    // fs traffic (fixture files, other scenarios' lock files, tmpRoot
+    // cleanup).
+    {
+      const originalWriteFileSync = fs.writeFileSync;
+      const originalRenameSync = fs.renameSync;
+      const originalRmSync = fs.rmSync;
+
+      function throwOnceThenReal(real) {
+        let thrown = false;
+        return function patched(...args) {
+          if (!thrown && String(args[0]).includes('epermtest')) {
+            thrown = true;
+            const err = new Error('simulated transient EPERM');
+            err.code = 'EPERM';
+            throw err;
+          }
+          return real.apply(fs, args);
+        };
+      }
+
+      // (h1) the 'wx' acquire (writeFileSync) survives one transient EPERM.
+      const epermLockName1 = 'lock-h1-epermtest';
+      try {
+        fs.writeFileSync = throwOnceThenReal(originalWriteFileSync);
+        let ran1 = false;
+        await withStoreLock(tmpRoot, epermLockName1, async () => {
+          ran1 = true;
+        });
+        if (!ran1) failures.push('(h1) withStoreLock did not run fn after a simulated transient EPERM on acquire');
+      } catch (err) {
+        failures.push(`(h1) withStoreLock threw despite a single transient EPERM on acquire (should have retried and succeeded): ${(err && err.stack) || err}`);
+      } finally {
+        fs.writeFileSync = originalWriteFileSync;
+      }
+      if (fs.existsSync(lockFilePath(tmpRoot, epermLockName1))) {
+        failures.push('(h1) withStoreLock left the lock file behind after a retried acquire + release');
+      }
+
+      // (h2) release's rmSync survives one transient EPERM.
+      const epermLockName2 = 'lock-h2-epermtest';
+      try {
+        await withStoreLock(tmpRoot, epermLockName2, async () => {
+          fs.rmSync = throwOnceThenReal(originalRmSync);
+        });
+      } catch (err) {
+        failures.push(`(h2) withStoreLock release threw despite a single transient EPERM on rmSync (should have retried): ${(err && err.stack) || err}`);
+      } finally {
+        fs.rmSync = originalRmSync;
+      }
+      if (fs.existsSync(lockFilePath(tmpRoot, epermLockName2))) {
+        failures.push('(h2) withStoreLock release left the lock file behind after a simulated transient EPERM on rmSync');
+      }
+
+      // (h3) an ALWAYS-throwing EPERM on acquire still surfaces as a real,
+      // typed error — the retry is bounded, never an infinite/silent hang.
+      const epermLockName3 = 'lock-h3-epermtest';
+      fs.writeFileSync = (...args) => {
+        if (!String(args[0]).includes('epermtest')) return originalWriteFileSync.apply(fs, args);
+        const err = new Error('simulated PERMANENT EPERM');
+        err.code = 'EPERM';
+        throw err;
+      };
+      const h3StartedAt = Date.now();
+      let h3Threw = null;
+      try {
+        await withStoreLock(tmpRoot, epermLockName3, async () => {});
+      } catch (err) {
+        h3Threw = err;
+      } finally {
+        fs.writeFileSync = originalWriteFileSync;
+      }
+      const h3ElapsedMs = Date.now() - h3StartedAt;
+      if (!h3Threw || h3Threw.code !== 'EPERM') {
+        failures.push(`(h3) an always-throwing EPERM on acquire did not surface as a real EPERM error: ${h3Threw ? (h3Threw.stack || h3Threw) : 'no error thrown'}`);
+      }
+      if (h3ElapsedMs > 5000) {
+        failures.push(`(h3) an always-throwing EPERM took ${h3ElapsedMs}ms to surface — the bounded retry must fail fast (~15x20ms), not hang`);
+      }
+
+      // (h4) the atomic stale-takeover rename also survives one transient EPERM.
+      const epermLockName4 = 'lock-h4-epermtest';
+      const epermLockPath4 = lockFilePath(tmpRoot, epermLockName4);
+      fs.writeFileSync(
+        epermLockPath4,
+        `${JSON.stringify({ pid: 999999999, session: 'epermtest-stale-holder', ts: new Date(Date.now() - 45_000).toISOString(), token: 'epermtest-token' })}\n`,
+      );
+      const epermStaleMs = (Date.now() - 45_000) / 1000;
+      fs.utimesSync(epermLockPath4, epermStaleMs, epermStaleMs);
+      try {
+        fs.renameSync = throwOnceThenReal(originalRenameSync);
+        let ran4 = false;
+        await withStoreLock(tmpRoot, epermLockName4, async () => {
+          ran4 = true;
+        });
+        if (!ran4) failures.push('(h4) withStoreLock did not complete a stale takeover after a simulated transient EPERM on renameSync');
+      } catch (err) {
+        failures.push(`(h4) stale-takeover renameSync threw despite a single transient EPERM (should have retried): ${(err && err.stack) || err}`);
+      } finally {
+        fs.renameSync = originalRenameSync;
+      }
+    }
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -642,6 +867,8 @@ async function runOrchestrator() {
       `(b) unguarded control demonstrated loss/overlap; (c) ${WORKERS}x${ITERS} racers survived a pre-seeded stale ` +
       `lock with zero violations/exact count; (d) LOCK_BUSY refusal named the real holder after the real retry budget; ` +
       `(e) a 45s-backdated LIVE-pid lock was NOT stolen (LOCK_BUSY refusal); (f) ${WORKERS}x${ITERS} racers took over ` +
-      `a live-but-past-HARD_STALE_MS-ceiling lock anyway, zero violations/exact count.`,
+      `a live-but-past-HARD_STALE_MS-ceiling lock anyway, zero violations/exact count; (g) 10/10 forced-interleaving ` +
+      `stale-takeover races held mutual exclusion deterministically; (h) simulated transient/permanent EPERM on ` +
+      `acquire/release/takeover-rename retried and surfaced correctly, bounded.`,
   );
 }
