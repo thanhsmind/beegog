@@ -17,4 +17,11 @@
 .bee/doctor-attest.json
 .bee/native-transport-probe.json
 .bee/config.local.json
+.bee/tmp/
+.bee/backups/
+*.[0-9]*-*-*.tmp
+.claude-plugin/skills.tmp-*/
+.claude-plugin/skills.old-*/
+.codex-plugin/skills.tmp-*/
+.codex-plugin/skills.old-*/
 # BEE:END

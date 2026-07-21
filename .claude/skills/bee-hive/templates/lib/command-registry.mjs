@@ -468,7 +468,8 @@ export const COMMAND_REGISTRY = [
   {
     name: 'decisions.log',
     invoke: 'bee decisions log',
-    description: 'Append a decision event to the append-only decision log. Rejects secret-shaped or instruction-like content.',
+    description:
+      'Append a decision event to the append-only decision log. Rejects secret-shaped or instruction-like content. Once docs/decisions/taxonomy.json exists, a zero-tag event is refused (typed, names --tags); without that file it warns and proceeds (decision-propagation D7b). An unknown tag is always accepted and appended to the taxonomy\'s candidates[] in the same call — never refused, never a second call.',
     parameters: {
       type: 'object',
       properties: {
@@ -478,25 +479,29 @@ export const COMMAND_REGISTRY = [
         scope: { type: 'string', description: 'Decision scope (default "repo").' },
         source: { type: 'string', description: 'Who/what decided (default "user").' },
         confidence: { type: 'number', description: 'Confidence, 0-100.' },
+        tags: { type: 'array', description: 'Comma-separated lowercase slugs (e.g. "billing,nightly-job"), stored on the event for later --tag recall (decision-propagation D4a).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['decision', 'rationale'],
     },
     examples: [
-      'bee decisions log --decision "Use in-repo registry for CLI commands" --rationale "Avoid duplicated validation logic across dispatcher and hook" --json',
+      'bee decisions log --decision "Use in-repo registry for CLI commands" --rationale "Avoid duplicated validation logic across dispatcher and hook" --tags cli,registry --json',
     ],
     deprecated: null,
   },
   {
     name: 'decisions.supersede',
     invoke: 'bee decisions supersede',
-    description: 'Replace an earlier decision with a new one; the earlier decision drops out of the active set.',
+    description:
+      'Replace an earlier decision with a new one; the earlier decision drops out of the active set. Runs a propagation sweep of docs/** for citations of the superseded id (decision-propagation D2) and queues a capture stub per hit. Tag/scope inheritance (D6) consults the OVERLAY-APPLIED target, so a legacy target classified only via a retro-tag event still counts as tagged. Once docs/decisions/taxonomy.json exists, the final (explicit-or-inherited) tag set follows the same zero-tag refusal / unknown-tag-accepted rule as `decisions log` (decision-propagation D7b).',
     parameters: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Id of the decision being superseded.' },
         decision: { type: 'string', description: 'The replacement decision text.' },
         rationale: { type: 'string', description: 'Why the replacement supersedes the original.' },
+        tags: { type: 'array', description: 'Comma-separated lowercase slugs. Omit to inherit the superseded target\'s tags (decision-propagation D6).' },
+        scope: { type: 'string', description: 'Decision scope. Omit to inherit the superseded target\'s scope, falling back to "repo" for a metadata-less target (decision-propagation D6).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['id', 'decision', 'rationale'],
@@ -525,31 +530,101 @@ export const COMMAND_REGISTRY = [
   {
     name: 'decisions.active',
     invoke: 'bee decisions active',
-    description: 'List active (non-superseded, non-redacted) decisions, newest first.',
+    description: 'List active (non-superseded, non-redacted) decisions, newest first. Optional structured filters (decision-propagation D4a) narrow the list; --recent applies after filtering.',
     parameters: {
       type: 'object',
       properties: {
-        recent: { type: 'number', description: 'Return only the N most recent active decisions.' },
+        recent: { type: 'number', description: 'Return only the N most recent (post-filter) active decisions.' },
+        tag: { type: 'string', description: 'Exact tag match, case-insensitive.' },
+        scope: { type: 'string', description: 'Exact scope match, case-insensitive (scope is the spec-area dimension).' },
+        area: { type: 'string', description: 'Alias for --scope.' },
+        since: { type: 'string', description: 'ISO date; only events on/after this date (inclusive).' },
+        all: { type: 'boolean', description: 'Also reach events archived by `decisions archive` (decision-propagation D4c) — a union read of the active store and .bee/decisions-archive.jsonl, de-duplicated by id. Omit for the default active-store-only read.' },
+        untagged: { type: 'boolean', description: 'List only events with no tags AFTER the dp-5 overlay is applied (decision-propagation D7d). Composable with every other filter, including --all.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a formatted list.' },
       },
       required: [],
     },
-    examples: ['bee decisions active --recent 5 --json'],
+    examples: ['bee decisions active --recent 5 --json', 'bee decisions active --tag billing --json', 'bee decisions active --all --json', 'bee decisions active --untagged --json'],
     deprecated: null,
   },
   {
     name: 'decisions.search',
     invoke: 'bee decisions search',
-    description: 'Search active decisions by substring match across decision/rationale/alternatives.',
+    description:
+      'Search active decisions by multi-term text match and/or structured filters (decision-propagation D4a, D8b). --text is required only when no structured filter (--tag/--scope/--area/--since/--untagged) is given. --text is whitespace-split into terms, case-insensitive, OR across terms, matched over decision/rationale/alternatives AND (overlay-applied) tags — results are ranked by deterministic term-hit count descending, then date descending; a single term matches everything the old substring search matched, and more.',
     parameters: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'Substring to search for (case-insensitive).' },
+        text: { type: 'string', description: 'Whitespace-separated search terms (case-insensitive, OR-matched, ranked by hit count). Optional when a structured filter is present.' },
+        tag: { type: 'string', description: 'Exact tag match, case-insensitive.' },
+        scope: { type: 'string', description: 'Exact scope match, case-insensitive (scope is the spec-area dimension).' },
+        area: { type: 'string', description: 'Alias for --scope.' },
+        since: { type: 'string', description: 'ISO date; only events on/after this date (inclusive).' },
+        all: { type: 'boolean', description: 'Also reach events archived by `decisions archive` (decision-propagation D4c) — a union read of the active store and .bee/decisions-archive.jsonl, de-duplicated by id. Omit for the default active-store-only read.' },
+        untagged: { type: 'boolean', description: 'List only events with no tags AFTER the dp-5 overlay is applied (decision-propagation D7d) — the classification-completeness check (should reach zero once a backfill is done). Composable with every other filter, including --all; satisfies the "at least one filter" requirement on its own.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a formatted list.' },
       },
-      required: ['text'],
+      required: [],
     },
-    examples: ['bee decisions search --text "registry" --json'],
+    examples: ['bee decisions search --text "registry" --json', 'bee decisions search --tag billing --since 2026-07-01 --json', 'bee decisions search --tag billing --all --json', 'bee decisions search --untagged --json'],
+    deprecated: null,
+  },
+  {
+    name: 'decisions.archive',
+    invoke: 'bee decisions archive',
+    description: 'Move superseded/redacted decision events (always, regardless of age) plus decide events strictly older than --before from .bee/decisions.jsonl to .bee/decisions-archive.jsonl (decision-propagation D4c). --before is always required — there is no default age window. Refuses (typed) when zero events qualify. Use `decisions active --all` / `decisions search --all` to keep reaching archived events afterward.',
+    parameters: {
+      type: 'object',
+      properties: {
+        before: { type: 'string', description: 'ISO date. Plain decide events dated strictly before this are archived; superseded/redacted events are archived regardless of this cutoff. Required.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['before'],
+    },
+    // Far-future sentinel (not a real deadline) so the manifest-as-tested-
+    // contract example (test_bee_cli.mjs) always has something to archive
+    // regardless of when it actually runs — mirrors this repo's other
+    // far-future-ceiling idioms (e.g. lock.mjs's HARD_STALE_MS comment).
+    examples: ['bee decisions archive --before 2099-01-01 --json'],
+    deprecated: null,
+  },
+  {
+    name: 'decisions.tag',
+    invoke: 'bee decisions tag',
+    description:
+      'Append a retro-tag event (decision-propagation D7c) that overlays tags/scope onto an existing decide/supersede event WITHOUT rewriting its jsonl line — visible via `decisions active`/`decisions search` (including --all) at read time. --target accepts a full id or a unique short8 prefix. --stdin accepts a JSON array of {target, tags, scope?} for a batch: every entry is validated before any write, and one unresolvable target refuses the WHOLE batch (nothing appended). The latest tag event wins when several target the same decision; overlay REPLACES the whole tags array, and scope only when the tag event carries one.',
+    parameters: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'Full id or short8 prefix of the decide/supersede event to tag. Required unless --stdin is set.' },
+        tags: { type: 'array', description: 'Comma-separated lowercase slugs (e.g. "billing,nightly-job"). Required (unless --stdin) — replaces the target\'s effective tags entirely.' },
+        scope: { type: 'string', description: 'Optional scope to overlay onto the target. Omit to leave the target\'s existing scope untouched.' },
+        stdin: { type: 'boolean', description: 'Read a JSON array of {target, tags, scope?} from stdin for a batch retro-tag (all-or-nothing).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: [
+      'bee decisions tag --target 00000000-0000-0000-0000-000000000000 --tags billing,recall --scope billing --json',
+    ],
+    deprecated: null,
+  },
+  {
+    name: 'decisions.render',
+    invoke: 'bee decisions render',
+    description:
+      'Render docs/decisions/index.md from the active decision store (decision-propagation D4b/D6, overlay-aware per D7/D8): grouped by scope then tag (untagged last), newest-first inside each group, one line per decision "short8 · YYYY-MM-DD · first line of decision text". Superseded/redacted events are always excluded; a supersede event renders under its inherited scope/tags (D6). Consumes the SAME overlay-applied read path as `decisions search`/`active`, so a retro-tagged legacy event renders under its overlaid scope/tags, never under "untagged". The file carries a provenance header and is deterministic (byte-identical for the same store) — it is regenerated only, never hand-edited.',
+    parameters: {
+      type: 'object',
+      properties: {
+        all: { type: 'boolean', description: 'Also reach events archived by `decisions archive` (decision-propagation D4c) — same union-read flag as `decisions search`/`active`. Omit to render the active store only.' },
+        check: { type: 'boolean', description: 'Read-only: compute the index and compare it byte-for-byte against docs/decisions/index.md on disk, without writing. Exits non-zero (and never writes) when the on-disk file is missing or has drifted (e.g. hand-edited) from what the store would render.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee decisions render --json'],
     deprecated: null,
   },
 
@@ -1418,6 +1493,32 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: ['bee worktree unregister --id abc123 --json'],
+    deprecated: null,
+  },
+
+  // ─── tmp (tree-hygiene th-4, docs/history/tree-hygiene/CONTEXT.md D1/D2) —
+  // the ONE canonical scratch home (.bee/tmp/<feature-or-session>/,
+  // .bee/spikes/<feature>/) and its broom. lib/scratch.mjs owns every safety
+  // check (containment re-proved immediately before each removal, symlink
+  // escapes refused rather than followed — reusing the write-guard's own
+  // canonicalRelPath/isUnderRoot idiom); this entry is presentation only. ──
+  {
+    name: 'tmp.sweep',
+    invoke: 'bee tmp sweep',
+    description:
+      "Remove scratch dirs from .bee/tmp/ and .bee/spikes/ — the canonical home for every ephemeral file bee writes (judge payloads, evidence files, batch data, digests, verify logs, probe/debug scripts). ROOT-RESTRICTED: a candidate may only ever be removed once it is canonically resolved and re-checked contained inside one of those two roots; an escaping or symlinked candidate is refused, never followed. Refuses (typed, zero mutation) with NO flags at all — no default purge, same discipline as `decisions archive`'s mandatory --before. Default target set (neither --feature nor --all given): scratch whose feature/lane record is at a terminal phase (closed) is swept unconditionally; scratch with no record anywhere (absent) is swept only once older than --before. A LIVE feature's scratch survives the default sweep unless named explicitly via --feature; --all clears every entry, live or not. --dry-run reports exactly what would be removed (bytes/files) without deleting anything.",
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Sweep this one feature/session-named scratch dir explicitly — the only way to sweep a LIVE feature\'s scratch.' },
+        before: { type: 'string', description: 'ISO date age cutoff. In the default (non-all, non-feature) sweep, gates removal of scratch with no feature/lane record anywhere (a closed-record dir is swept regardless of this cutoff).' },
+        all: { type: 'boolean', description: 'Clear every scratch dir under .bee/tmp/ and .bee/spikes/, live or closed or absent alike.' },
+        'dry-run': { type: 'boolean', description: 'Report exactly what would be removed (paths, bytes, files) without deleting anything.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee tmp sweep --all --dry-run --json'],
     deprecated: null,
   },
 

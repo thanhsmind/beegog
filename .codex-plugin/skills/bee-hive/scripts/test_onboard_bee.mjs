@@ -1443,6 +1443,13 @@ try {
     ".bee/doctor-attest.json",
     ".bee/native-transport-probe.json",
     ".bee/config.local.json",
+    ".bee/tmp/",
+    ".bee/backups/",
+    "*.[0-9]*-*-*.tmp",
+    ".claude-plugin/skills.tmp-*/",
+    ".claude-plugin/skills.old-*/",
+    ".codex-plugin/skills.tmp-*/",
+    ".codex-plugin/skills.old-*/",
   ];
   const expectedGitignoreBlockSource =
     `# BEE:START\n${GITIGNORE_PATTERNS_FOR_HASH.join("\n")}\n# BEE:END\n`;
@@ -1590,6 +1597,57 @@ try {
     try {
       fs.rmSync(nonGitTmp, { recursive: true, force: true });
       fs.rmSync(nonGitHome, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  // --- 9g. crash-leak scratch ignore patterns (tree-hygiene D3, th-5):
+  // .bee/tmp/, .bee/backups/, the atomic-tmp SHAPE (never a bare '*.tmp'),
+  // and the four plugin swap-dir patterns join the managed block. Shape-only
+  // matching is asserted in BOTH directions via `git check-ignore` so a
+  // human's own hand-made notes.tmp never disappears from git status. -------
+  const scratchGiTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-gitignore-scratch-"));
+  const scratchGiHome = makeFakeHome();
+  try {
+    await runOnboard(["--repo-root", scratchGiTmp, "--apply", "--json"], scratchGiHome);
+    const scratchGiText = fs.readFileSync(path.join(scratchGiTmp, ".gitignore"), "utf8");
+    for (const pattern of [
+      ".bee/tmp/",
+      ".bee/backups/",
+      ".claude-plugin/skills.tmp-*/",
+      ".claude-plugin/skills.old-*/",
+      ".codex-plugin/skills.tmp-*/",
+      ".codex-plugin/skills.old-*/",
+    ]) {
+      check(scratchGiText.includes(pattern), `.gitignore block includes crash-leak pattern ${pattern}`,
+        scratchGiText);
+    }
+    check(
+      !scratchGiText.split("\n").some((line) => line.trim() === "*.tmp"),
+      ".gitignore block never adds a greedy bare *.tmp rule (D3 prohibition: a human's own notes.tmp must stay visible)",
+      scratchGiText,
+    );
+
+    if (gitAvailable) {
+      runGit(scratchGiTmp, ["init", "-q"]);
+      fs.writeFileSync(path.join(scratchGiTmp, "notes.tmp"), "human scratch note\n", "utf8");
+      fs.writeFileSync(path.join(scratchGiTmp, "x.json.12345-0-abcdef.tmp"), "{}\n", "utf8");
+      const checkIgnoreHuman = runGit(scratchGiTmp, ["check-ignore", "-q", "notes.tmp"]);
+      check(checkIgnoreHuman.status !== 0,
+        "a hand-made notes.tmp is NEVER matched by the atomic-tmp shape pattern -- stays visible to git status",
+        JSON.stringify(checkIgnoreHuman));
+      const checkIgnoreAtomic = runGit(scratchGiTmp, ["check-ignore", "-q", "x.json.12345-0-abcdef.tmp"]);
+      check(checkIgnoreAtomic.status === 0,
+        "an atomic-tmp-SHAPED file (<pid>-<counter>-<random>.tmp) IS matched by the managed ignore pattern",
+        JSON.stringify(checkIgnoreAtomic));
+    } else {
+      skip("atomic-tmp shape ignore (git check-ignore)", "git binary not available");
+    }
+  } finally {
+    try {
+      fs.rmSync(scratchGiTmp, { recursive: true, force: true });
+      fs.rmSync(scratchGiHome, { recursive: true, force: true });
     } catch {
       // best-effort cleanup
     }

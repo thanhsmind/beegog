@@ -59,7 +59,7 @@ Bootstrap scaled to the lane the mode gate just picked — never a full context 
 - **standard / high-risk:** full bootstrap, in order:
   1. `docs/history/<feature>/CONTEXT.md` (or the hive scoping synthesis for surface-scope-earlier work).
   2. `docs/history/learnings/critical-patterns.md` — already digested from the preamble; re-read for the feature's area as needed.
-  3. Recent decisions: `node .bee/bin/bee.mjs decisions active --recent 3` and a tag-matched search for this feature's area (`node .bee/bin/bee.mjs decisions search --text <tag>`).
+  3. Recent decisions: `node .bee/bin/bee.mjs decisions active --recent 3`, then recall for this feature's area through the structured filters and the derived index (decision-propagation D7/D8) — `node .bee/bin/bee.mjs decisions search --tag <tag>` / `--scope <area>` (multi-term `--text` is OR-ranked; `--all` reaches the archive), and the area's section of `docs/decisions/index.md` as the complete-by-construction recall surface. Bare substring grep is the fallback, never the recall path.
   4. Tag-matched precedent in `docs/history/learnings/` (grep for the feature's domain keywords). Inject hits as "we've solved X before: <file>" — precedent beats research.
   5. Session scout: `node .bee/bin/bee.mjs status --json`.
 

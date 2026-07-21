@@ -397,8 +397,25 @@ function isSessionOpen(session) {
 
 // Every git call in this module takes an explicit `root` as cwd — never
 // process.cwd() — consistent with every other lib function taking root.
-function runGit(root, args) {
+function defaultRunGit(root, args) {
   return spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+}
+
+// D2 (docs/history/cli-performance/CONTEXT.md): a derivation PASS over many
+// candidates (buildReviewBlock / buildReviewsStatusSummary in bee.mjs) sees
+// the same (head, ref) / (ref) git questions over and over across candidates
+// that share a covering session. `memo`, when passed, is a single pass-local
+// Map (born in the caller's candidate loop, never persisted, never TTL'd —
+// see CONTEXT "Pass-local cache") that these two functions read-through and
+// populate. Key strings are namespace-prefixed so the two call shapes can
+// never collide inside one Map. `runGit` is an injection seam (defaults to
+// the real spawnSync-backed runner) — production callers never pass it;
+// tests use it to count real git invocations without faking the answers.
+function coveredByKey(head, ref) {
+  return `covered ${head} ${ref}`;
+}
+function commitsSinceKey(ref) {
+  return `since ${ref}`;
 }
 
 /**
@@ -407,12 +424,17 @@ function runGit(root, args) {
  * { covered: null, unresolved: true } when git cannot answer (missing
  * binary, unknown sha after rebase/amend, shallow clone) — never throws.
  */
-function headCoveredBy(root, head, ref) {
+function headCoveredBy(root, head, ref, memo, runGit = defaultRunGit) {
   if (head === ref) return { covered: true, unresolved: false };
+  const key = memo ? coveredByKey(head, ref) : null;
+  if (memo && memo.has(key)) return memo.get(key);
   const result = runGit(root, ['merge-base', '--is-ancestor', head, ref]);
-  if (result.status === 0) return { covered: true, unresolved: false };
-  if (result.status === 1) return { covered: false, unresolved: false };
-  return { covered: null, unresolved: true }; // null or e.g. exit 128 — unknown/invalid revision
+  let value;
+  if (result.status === 0) value = { covered: true, unresolved: false };
+  else if (result.status === 1) value = { covered: false, unresolved: false };
+  else value = { covered: null, unresolved: true }; // null or e.g. exit 128 — unknown/invalid revision
+  if (memo) memo.set(key, value);
+  return value;
 }
 
 /**
@@ -420,14 +442,19 @@ function headCoveredBy(root, head, ref) {
  * { count, unresolved } — unresolved (never throws) covers a missing git
  * binary, an unresolvable ref, or non-numeric output.
  */
-function commitsSince(root, ref) {
+function commitsSince(root, ref, memo, runGit = defaultRunGit) {
+  const key = memo ? commitsSinceKey(ref) : null;
+  if (memo && memo.has(key)) return memo.get(key);
   const result = runGit(root, ['rev-list', `${ref}..HEAD`, '--count']);
+  let value;
   if (result.status !== 0) {
-    return { count: null, unresolved: true };
+    value = { count: null, unresolved: true };
+  } else {
+    const count = parseInt(String(result.stdout).trim(), 10);
+    value = Number.isFinite(count) ? { count, unresolved: false } : { count: null, unresolved: true };
   }
-  const count = parseInt(String(result.stdout).trim(), 10);
-  if (!Number.isFinite(count)) return { count: null, unresolved: true };
-  return { count, unresolved: false };
+  if (memo) memo.set(key, value);
+  return value;
 }
 
 /**
@@ -435,6 +462,13 @@ function commitsSince(root, ref) {
  * `candidate` carries at least { feature, head, cells }. `opts.sessions`
  * lets a caller iterating many candidates (e.g. a status summary) pass a
  * pre-fetched listReviews(root) once instead of re-reading per candidate.
+ * `opts.gitMemo` (D2, cli-performance CONTEXT): an optional pass-local Map,
+ * born once in the caller's candidate loop and passed to every
+ * deriveCandidateStatus call in that pass, so repeated (head,ref)/(ref) git
+ * questions across candidates sharing a covering session are answered once.
+ * Never persisted beyond the pass, never TTL'd. `opts.runGit` is a test-only
+ * injection seam for the underlying git runner — production callers never
+ * set it.
  *
  * Priority: any covering session still open (pending/blocked) -> 'in review'
  * (an active session always outranks a stale older approval). Otherwise, the
@@ -448,6 +482,8 @@ function commitsSince(root, ref) {
  */
 export function deriveCandidateStatus(root, candidate, opts = {}) {
   const sessions = Array.isArray(opts.sessions) ? opts.sessions : listReviews(root);
+  const gitMemo = opts.gitMemo;
+  const runGit = opts.runGit;
   const covering = sessions.filter((s) => sessionCoversCandidate(s, candidate));
 
   const open = covering.filter(isSessionOpen);
@@ -459,13 +495,13 @@ export function deriveCandidateStatus(root, candidate, opts = {}) {
   const approved = covering.filter((s) => !isSessionOpen(s));
   let unresolvedSession = null;
   for (const session of approved) {
-    const coverage = headCoveredBy(root, candidate.head, session.head);
+    const coverage = headCoveredBy(root, candidate.head, session.head, gitMemo, runGit);
     if (coverage.unresolved) {
       unresolvedSession = unresolvedSession || session;
       continue;
     }
     if (!coverage.covered) continue; // candidate's work postdates this session's frozen head — not this session's coverage
-    const since = commitsSince(root, session.head);
+    const since = commitsSince(root, session.head, gitMemo, runGit);
     if (since.unresolved) {
       return { status: 'review stale', session: session.id, note: 'range unresolvable' };
     }

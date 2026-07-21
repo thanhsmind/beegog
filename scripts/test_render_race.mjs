@@ -37,7 +37,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -217,6 +217,59 @@ async function runOrchestrator() {
     }
   }
 
+  // (c) live-pid discipline (tree-hygiene D3, th-5): cleanStaleTmpDirs must
+  // sweep crash-leaked '<base>.old-*' siblings the same way it already sweeps
+  // '<base>.tmp-*' ones — but only once the pid embedded in the dir's OWN
+  // name is PROVEN dead (isPidAlive). A live pid's dir survives regardless of
+  // age; a dead pid's dir is swept even if it is brand new. Exercised against
+  // a throwaway scratch parent/base — the real committed plugin trees are
+  // never touched by this scenario.
+  {
+    const mod = await import(pathToFileURL(RENDER_SCRIPT).href);
+    if (typeof mod.cleanStaleTmpDirs !== 'function') {
+      failures.push(
+        '(c) render_plugin_skill_trees.mjs does not export cleanStaleTmpDirs — cannot exercise the live-pid sweep directly',
+      );
+    } else {
+      const scratchParent = fs.mkdtempSync(path.join(os.tmpdir(), 'test-render-race-sweep-'));
+      const targetRoot = path.join(scratchParent, 'skills');
+      try {
+        // A genuinely dead pid: spawn a child that exits immediately and
+        // reuse its now-terminated pid — isPidAlive(deadPid) must read false.
+        const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+        const deadPid = dead.pid;
+
+        const liveOldDir = path.join(scratchParent, `skills.old-${process.pid}-deadbeef`);
+        const deadOldDir = path.join(scratchParent, `skills.old-${deadPid}-deadbeef`);
+        const liveTmpDir = path.join(scratchParent, `skills.tmp-${process.pid}-deadbeef`);
+        const deadTmpDir = path.join(scratchParent, `skills.tmp-${deadPid}-deadbeef`);
+        for (const d of [liveOldDir, deadOldDir, liveTmpDir, deadTmpDir]) {
+          fs.mkdirSync(d, { recursive: true });
+          fs.writeFileSync(path.join(d, 'marker.txt'), 'x');
+        }
+
+        mod.cleanStaleTmpDirs(targetRoot);
+
+        if (!fs.existsSync(liveOldDir)) {
+          failures.push('(c) a live-pid .old-* dir was swept — never remove a dir owned by a live pid');
+        }
+        if (!fs.existsSync(liveTmpDir)) {
+          failures.push('(c) a live-pid .tmp-* dir was swept — never remove a dir owned by a live pid');
+        }
+        if (fs.existsSync(deadOldDir)) {
+          failures.push(
+            '(c) a dead-pid .old-* dir survived the sweep — crash-leaked .old-* siblings must be swept the same way .tmp-* already is',
+          );
+        }
+        if (fs.existsSync(deadTmpDir)) {
+          failures.push('(c) a dead-pid .tmp-* dir survived the sweep');
+        }
+      } finally {
+        fs.rmSync(scratchParent, { recursive: true, force: true });
+      }
+    }
+  }
+
   if (failures.length) {
     console.error('FAIL test_render_race:');
     for (const f of failures) console.error(`  - ${f}`);
@@ -226,6 +279,7 @@ async function runOrchestrator() {
   console.log(
     'PASS test_render_race: (a) deliberate-red unguarded proxy crashed/tore at least one racer\'s tree (detector bites, lock ' +
       'removed); (b) 2 concurrent real render_plugin_skill_trees.mjs spawns -> both exit 0, both plugin trees byte-match a ' +
-      'fresh render(canonical), both sidecars present and valid, no stray tmp/old swap artifacts.',
+      'fresh render(canonical), both sidecars present and valid, no stray tmp/old swap artifacts; (c) cleanStaleTmpDirs sweeps ' +
+      'a dead-pid .tmp-*/.old-* dir while a live-pid one survives (live-pid discipline).',
   );
 }

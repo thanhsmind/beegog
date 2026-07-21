@@ -78,7 +78,7 @@ Log choices future planning must honor. Supersede outdated decisions (`bee.mjs d
 2. Record present → note it in the run summary and move on.
 3. Record absent while `behavior_change` cells were capped → **invoke bee-scribing now**, then resume compounding. Never merge specs inline "to save a step" — the BA-grade template, sources, and rebuild check live in scribing, and a shortcut sync produces exactly the shallow spec decision 0002 exists to prevent. **This is no longer only prose: `state set --phase compounding-complete` is REFUSED while any capped `behavior_change` cell is unscribed, and the refusal names every one (chain-integrity D2).** You cannot close around it. If the behavior genuinely belongs in no spec, `--waive-scribing-debt` is the sanctioned door — it permits the close and logs a decision naming every cell you waived.
 
-**Backlog done-flip fallback (D11b):** confirm the feature's `docs/backlog.md` row flipped to `done` with a `docs/history/<feature>/` link. Scribing owns that flip at sync; when scribing legitimately NOOPed (no `behavior_change` cell, nothing to sync), compounding is the last close point — do the done-flip here so no shipped feature leaves a stale `in-flight` row. The backlog done-flip specifically remains prose-ruled (D7); the **scribing record** it sits next to is not — that one is now mechanically enforced at the close (chain-integrity D2).
+**Backlog done-flip fallback (D11b):** confirm the feature's `docs/backlog.md` row flipped to `done` with a `docs/history/<feature>/` link. Scribing owns that flip at sync; when scribing legitimately NOOPed (no `behavior_change` cell, nothing to sync), compounding is the last close point — do the done-flip here, under the identical per-clause CoS check as scribing, never looser (D1, decision `b9b9fee3`): enumerate every CoS clause and cite delivered evidence per clause. Any clause without evidence means no flip — the row stays `in-flight` with a `Delivered:`/`Remaining:` annotation naming the subset still owed, and the remainder may split into a new row when the delivered subset is independently shippable; silent full-flip on partial delivery is never allowed here either, so no shipped feature leaves a stale `in-flight` row wearing an unearned `done`. The backlog done-flip specifically remains prose-ruled (D7); the **scribing record** it sits next to is not — that one is now mechanically enforced at the close (chain-integrity D2).
 
 **Review candidate at close (SPEC review-on-demand R3, flow 7.1 step 6):** the feature closes without independent review — that is the normal path, not a shortcut. Register the completed change set so it can be picked up by a later user-invoked review: `node .bee/bin/bee.mjs reviews candidate add --feature <feature> --head "$(git rev-parse HEAD)" --mode <lane>` (`<lane>` is the feature's lane — tiny/small/spike/standard/high-risk). Then post the completion line: "Completed and verified: N cells. Independent review not requested; the change set was added to review candidates." Never describe the close as reviewed or approved — the feature is truthfully `unreviewed` until a user-invoked review session covers this head (R10).
 
@@ -102,7 +102,17 @@ This holds **regardless of whether you recognize the error**. An unfamiliar, nev
 
 **Never skip silently.** If the refresh is not run — for any reason, including context pressure, exhaustion, or an unfamiliar error — say so explicitly in the run summary and Handoff line (e.g. "digest refresh skipped: <reason>"). A silent omission is a violation even when the surrounding handoff template has no field for it; extend the handoff rather than emit a clean-looking close that hides the skip.
 
-## 9. Update State
+## 9. Sweep the Feature's Scratch (tree-hygiene D2)
+
+Feature close is one of the two moments D2 names for sweeping scratch (the other is session finish, AGENTS.md). Run it for the finishing feature:
+
+```
+node .bee/bin/bee.mjs tmp sweep --feature <feature>
+```
+
+This clears `.bee/tmp/<feature>/` and `.bee/spikes/<feature>/` for the feature that just closed — the one documented override that sweeps a named feature's scratch even though compounding still treats it as "current" at the moment this runs. **Warn, never block** — same discipline as the digest refresh (§8): a failing or absent sweep (the command throws, the feature had no scratch dir, `bee.mjs` predates this verb) is a one-line warning in the run summary and nothing more. It never blocks, fails, delays, or reverses the feature close.
+
+## 10. Update State
 
 Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner compounding --phase compounding-complete --next-action "<next action>" --summary "learnings: <file path>; promoted: <count>"`.
 
@@ -135,6 +145,7 @@ Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner c
 - blocking or failing a host project's feature close because `bee.mjs feedback digest` threw — telemetry never stops the line; warn and file friction (Scenario 2)
 - treating an *unfamiliar* digest error as exempt from warn-never-block — "I must understand this throw before I can close" is the loophole; a digest error never gates a close, understanding it is post-close cleanup (Scenario 2 REFACTOR)
 - skipping the digest refresh under context/exhaustion pressure and saying nothing — a silent skip is a violation; disclose it in the summary and Handoff (Scenario 3)
+- skipping the scratch sweep (§9) silently, or letting it block/fail/delay the close — same warn-never-block discipline as the digest refresh (tree-hygiene D2)
 
 Violating the letter of these rules is violating the spirit of these rules.
 

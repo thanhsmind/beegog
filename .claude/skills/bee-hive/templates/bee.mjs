@@ -16,12 +16,13 @@
 //   bee status [--json]
 //   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|judge-record|schedule|archive|unarchive> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
-//   bee decisions <log|supersede|redact|active|search> ... [--json]
+//   bee decisions <log|supersede|redact|active|search|archive|tag> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
 //   bee backlog <add|counts|rank|badges> ... [--json]
 //   bee capture <add|list|flush|count> ... [--json]
 //   bee reviews <create|list|show|record|candidate add|candidates|status> ... [--json]
 //   bee feedback <digest|count|collect|rank> ... [--json]
+//   bee tmp <sweep> ... [--json]
 //   bee --help [--json]
 //
 // D3: `bee --help --json` emits {schema_version, commands:[{name, invoke,
@@ -128,7 +129,19 @@ import {
   PINNED_MODEL_STATUS,
 } from './lib/dispatch-guard.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
-import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
+import {
+  logDecision,
+  supersedeDecision,
+  redactDecision,
+  activeDecisions,
+  archiveDecisions,
+  tagDecision,
+  tagDecisionsBatch,
+  datamark,
+  taxonomyFileExists,
+  renderDecisionIndex,
+  decisionIndexDrift,
+} from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
 import {
@@ -143,6 +156,8 @@ import {
   REVIEW_MODES,
 } from './lib/reviews.mjs';
 import { readJson, writeJsonAtomic, appendJsonl, hashFile, removeFileIfExists } from './lib/fsutil.mjs';
+// tree-hygiene th-4 (D1/D2): the canonical scratch home + its broom.
+import { runSweep } from './lib/scratch.mjs';
 // perf.mjs is imported ONLY here (never by command-registry.mjs) so it stays
 // out of the write-guard fixture's hand-listed VENDORED_LIB_MODULES.
 import {
@@ -248,8 +263,12 @@ function buildReviewBlock(root) {
     const sessions = listReviews(root);
     const counts = { total: candidates.length, unreviewed: 0, in_review: 0, reviewed: 0, stale: 0 };
     let highRiskUnreviewed = 0;
+    // D2 (cli-performance CONTEXT): one pass-local memo for the whole loop —
+    // candidates sharing a covering session's (head,ref)/(ref) pair answer
+    // the underlying git question once instead of once per candidate.
+    const gitMemo = new Map();
     for (const candidate of candidates) {
-      const derived = deriveCandidateStatus(root, candidate, { sessions });
+      const derived = deriveCandidateStatus(root, candidate, { sessions, gitMemo });
       if (derived.status === 'unreviewed') counts.unreviewed += 1;
       else if (derived.status === 'in review') counts.in_review += 1;
       else if (derived.status === 'reviewed') counts.reviewed += 1;
@@ -1383,17 +1402,54 @@ function handleDecisionsLog(root, flags) {
     scope: flags.scope ? String(flags.scope) : 'repo',
     source: flags.source ? String(flags.source) : 'user',
     confidence,
+    tags: flags.tags !== undefined ? splitList(flags.tags) : undefined,
   });
-  return { result: event, text: `Logged decision ${event.id}.` };
+  // decision-propagation dp-6 (CONTEXT D7b): bootstrap-safe warn-only path —
+  // no docs/decisions/taxonomy.json means logDecision never refused a
+  // zero-tag event above; surface that as a human-readable warning (JSON
+  // output stays data-only, see emit()'s result-vs-text split).
+  const warning =
+    !taxonomyFileExists(root) && !(Array.isArray(event.tags) && event.tags.length)
+      ? '\nWarning: no taxonomy.json found — this decision was logged without tags. Create docs/decisions/taxonomy.json to require classification going forward.'
+      : '';
+  return { result: event, text: `Logged decision ${event.id}.${warning}` };
 }
 
+// decision-propagation dp-2 (CONTEXT D2): capture stub creation lives here,
+// not in lib/decisions.mjs — capture.mjs already imports the secret/
+// injection pattern constants FROM decisions.mjs, so having decisions.mjs
+// import addCaptureStub back from capture.mjs would create a module cycle.
+// The lock doctrine (sweep computed before the append, written once) is
+// still fully satisfied inside supersedeDecision itself; this is purely a
+// downstream side effect using the sweep result the returned event already
+// carries.
 function handleDecisionsSupersede(root, flags) {
   const event = supersedeDecision(root, {
     supersedes: requireFlag(flags, 'id'),
     decision: requireFlag(flags, 'decision'),
     rationale: requireFlag(flags, 'rationale'),
+    tags: flags.tags !== undefined ? splitList(flags.tags) : undefined,
+    scope: flags.scope !== undefined ? String(flags.scope) : undefined,
   });
-  return { result: event, text: `Superseded ${event.supersedes} with ${event.id}.` };
+
+  const hits = event.sweep?.files || [];
+  for (const hit of hits) {
+    addCaptureStub(root, {
+      outcome: `${hit.file}:${hit.line} still cites superseded decision ${event.supersedes} — reconcile against replacement ${event.id}.`,
+      dids: [event.supersedes, event.id],
+      files: [hit.file],
+      source: 'supersede-sweep',
+    });
+  }
+
+  const header = `Superseded ${event.supersedes} with ${event.id}.`;
+  const sweepLines = hits.length
+    ? [
+        `Propagation sweep: ${hits.length} citation(s) found under docs/** — a capture stub was queued for each.`,
+        ...hits.map((hit) => `  ${hit.file}:${hit.line}  ${hit.excerpt}`),
+      ]
+    : ['Propagation sweep: no citations found under docs/**.'];
+  return { result: event, text: [header, ...sweepLines].join('\n') };
 }
 
 function handleDecisionsRedact(root, flags) {
@@ -1404,28 +1460,196 @@ function handleDecisionsRedact(root, flags) {
   return { result: event, text: `Redacted ${event.redacts}.` };
 }
 
+// decision-propagation dp-1 (CONTEXT D4a, GH #32): structured recall filters
+// shared by `decisions search` and `decisions active` (the latter a
+// deliberate sibling extension beyond D4a's letter — logged as a decision at
+// implementation time). --scope/--area is one filter (--area is an exact
+// alias, never a second dimension — no new `area` field, fresh-eyes P2).
+// Every filter is exact-match case-insensitive except --since (inclusive
+// lower bound on event.date) and --text. A legacy event with no `tags`
+// array never matches a --tag filter (it has nothing to match), but is
+// untouched by every other filter — so it stays reachable via
+// --text/--scope/--since exactly as before.
+//
+// decision-propagation dp-6 (CONTEXT D7d): --untagged keeps exactly the
+// events with no tags AFTER overlay (the events already passed in here
+// carry their dp-5 overlay applied — see activeDecisions) — composable with
+// every other filter, including --all upstream.
+//
+// decision-propagation dp-6 (CONTEXT D8b): --text upgrades from a single
+// substring match to multi-term: whitespace-split, case-insensitive, OR
+// across terms, matched over decision/rationale/alternatives AND (now)
+// tags — a single term still matches everything the old substring check
+// matched (decision/rationale/alternatives are still searched), so
+// single-term results are a strict superset of the pre-dp-6 behavior.
+// Matches are ranked by deterministic term-hit count descending; the sort
+// is STABLE (spec-guaranteed since ES2019), so it preserves the incoming
+// newest-first order (activeDecisions' own date-desc, index-tiebroken
+// ordering) as the secondary key — "hit count desc, then date desc" falls
+// out of "stable-sort the already-date-ordered list by hit count" with no
+// separate date comparison, no wall-clock read, and no dependence on Map or
+// object iteration order.
+function filterDecisionEvents(decisions, { text, tag, scope, since, untagged } = {}) {
+  let result = decisions;
+  if (untagged) {
+    result = result.filter((event) => !(Array.isArray(event.tags) && event.tags.length > 0));
+  }
+  if (tag) {
+    const needle = tag.toLowerCase();
+    result = result.filter(
+      (event) => Array.isArray(event.tags) && event.tags.some((t) => String(t).toLowerCase() === needle),
+    );
+  }
+  if (scope) {
+    const needle = scope.toLowerCase();
+    result = result.filter((event) => typeof event.scope === 'string' && event.scope.toLowerCase() === needle);
+  }
+  if (since) {
+    const sinceMs = Date.parse(since);
+    result = result.filter((event) => {
+      const eventMs = Date.parse(event.date);
+      return Number.isFinite(eventMs) && eventMs >= sinceMs;
+    });
+  }
+  if (text) {
+    const terms = String(text).toLowerCase().split(/\s+/).filter(Boolean);
+    const scored = result
+      .map((event) => {
+        const haystacks = [event.decision, event.rationale, event.alternatives, ...(Array.isArray(event.tags) ? event.tags : [])]
+          .filter((v) => v !== null && v !== undefined && v !== '')
+          .map((v) => String(v).toLowerCase());
+        const hitCount = terms.reduce((count, term) => (haystacks.some((h) => h.includes(term)) ? count + 1 : count), 0);
+        return { event, hitCount };
+      })
+      .filter(({ hitCount }) => hitCount > 0);
+    scored.sort((a, b) => b.hitCount - a.hitCount);
+    result = scored.map(({ event }) => event);
+  }
+  return result;
+}
+
+// --scope/--area share one filter value; --area is an exact alias (D4a: no
+// second navigation dimension). An explicit --scope wins if both are somehow
+// passed (matches how most other dual-flag call sites in this file resolve
+// ties — first-named flag wins).
+function resolveScopeFilter(flags) {
+  if (flags.scope !== undefined) return String(flags.scope);
+  if (flags.area !== undefined) return String(flags.area);
+  return null;
+}
+
+function resolveSinceFilter(flags) {
+  if (flags.since === undefined) return null;
+  const since = String(flags.since);
+  if (!Number.isFinite(Date.parse(since))) {
+    throw new Error(`--since must be a valid ISO date, got ${JSON.stringify(since)}.`);
+  }
+  return since;
+}
+
 function handleDecisionsActive(root, flags) {
   const recent =
     flags.recent !== undefined ? Number.parseInt(String(flags.recent), 10) : null;
   if (flags.recent !== undefined && (!Number.isFinite(recent) || recent <= 0)) {
     throw new Error('--recent must be a positive integer.');
   }
-  const decisions = activeDecisions(root, { recent });
+  const tag = flags.tag !== undefined ? String(flags.tag) : null;
+  const scope = resolveScopeFilter(flags);
+  const since = resolveSinceFilter(flags);
+  const all = flags.all !== undefined; // decision-propagation dp-3 (D4c): union read including .bee/decisions-archive.jsonl
+  const untagged = flags.untagged !== undefined; // decision-propagation dp-6 (D7d): events with no tags after overlay
+  let decisions = filterDecisionEvents(activeDecisions(root, { all }), { tag, scope, since, untagged });
+  if (recent != null) decisions = decisions.slice(0, recent);
   const text = decisions.length ? decisions.map(formatDecision).join('\n') : 'No active decisions.';
   return { result: { decisions }, text };
 }
 
 function handleDecisionsSearch(root, flags) {
-  const needle = requireFlag(flags, 'text').toLowerCase();
-  const decisions = activeDecisions(root).filter((event) =>
-    [event.decision, event.rationale, event.alternatives]
-      .filter(Boolean)
-      .some((field) => String(field).toLowerCase().includes(needle)),
-  );
-  const text = decisions.length
+  const text = flags.text !== undefined ? String(flags.text) : null;
+  const tag = flags.tag !== undefined ? String(flags.tag) : null;
+  const scope = resolveScopeFilter(flags);
+  const since = resolveSinceFilter(flags);
+  const all = flags.all !== undefined; // decision-propagation dp-3 (D4c): union read including .bee/decisions-archive.jsonl
+  const untagged = flags.untagged !== undefined; // decision-propagation dp-6 (D7d): events with no tags after overlay
+  if (!text && !tag && !scope && !since && !untagged) {
+    throw new Error(
+      'decisions search requires --text, or at least one structured filter (--tag/--scope/--area/--since/--untagged).',
+    );
+  }
+  const decisions = filterDecisionEvents(activeDecisions(root, { all }), { text, tag, scope, since, untagged });
+  const resultText = decisions.length
     ? decisions.map(formatDecision).join('\n')
-    : `No active decisions matching "${needle}".`;
-  return { result: { decisions }, text };
+    : 'No active decisions matching the given filters.';
+  return { result: { decisions }, text: resultText };
+}
+
+// decision-propagation dp-3 (CONTEXT D4c): moves superseded/redacted events
+// (always) plus decide events strictly older than the explicit --before to
+// .bee/decisions-archive.jsonl. All refusal/crash-safety logic lives in
+// lib/decisions.mjs's archiveDecisions — this is presentation only.
+function handleDecisionsArchive(root, flags) {
+  const before = flags.before !== undefined ? String(flags.before) : undefined;
+  const result = archiveDecisions(root, { before });
+  return {
+    result,
+    text: `Archived ${result.archived.length} decision(s) to .bee/decisions-archive.jsonl (kept ${result.kept} active, cutoff ${result.before}).`,
+  };
+}
+
+// decision-propagation dp-5 (CONTEXT D7c): `decisions tag --target <id|
+// short8> --tags a,b [--scope s]` appends a retro-tag event; `--stdin`
+// accepts a JSON array of {target, tags, scope?} for a batch. All
+// validation (target resolution + tag shape) and the all-or-nothing
+// atomicity live in lib/decisions.mjs's tagDecisionsBatch — this handler is
+// presentation only, mirroring handleCellsAdd's --stdin-array-is-a-batch
+// shape.
+function tagEventSummary(event) {
+  const scopeSuffix = event.scope ? ` scope=${event.scope}` : '';
+  return `Tagged ${event.target} with [${event.tags.join(', ')}]${scopeSuffix}.`;
+}
+
+function handleDecisionsTag(root, flags) {
+  if (flags.stdin === true) {
+    const text = fs.readFileSync(0, 'utf8');
+    let entries;
+    try {
+      entries = JSON.parse(text);
+    } catch {
+      throw new Error('decisions tag --stdin: input is not valid JSON.');
+    }
+    if (!Array.isArray(entries)) {
+      throw new Error('decisions tag --stdin: input must be a JSON array of {target, tags, scope?}.');
+    }
+    const events = tagDecisionsBatch(root, entries);
+    return { result: events, text: events.map(tagEventSummary).join('\n') };
+  }
+  const event = tagDecision(root, {
+    target: requireFlag(flags, 'target'),
+    tags: splitList(requireFlag(flags, 'tags')),
+    scope: flags.scope !== undefined ? String(flags.scope) : undefined,
+  });
+  return { result: event, text: tagEventSummary(event) };
+}
+
+// decision-propagation dp-4 (CONTEXT D4b/D6, overlay-aware per D7/D8):
+// `decisions render` writes docs/decisions/index.md; `--check` is read-only
+// and refuses (non-zero exit) on drift instead of writing — all computation
+// (grouping, overlay, byte-diff) lives in lib/decisions.mjs, this handler is
+// presentation + the --check-refuses-loudly policy only. `--all` reaches the
+// archive, matching search/active's own flag (D4c).
+function handleDecisionsRender(root, flags) {
+  const all = flags.all !== undefined;
+  if (flags.check !== undefined) {
+    const { drift, path: relPath } = decisionIndexDrift(root, { all });
+    if (drift) {
+      throw new Error(
+        `decisions render --check: ${relPath} is out of date — run \`bee decisions render\` to regenerate (never hand-edit it).`,
+      );
+    }
+    return { result: { drift: false, path: relPath }, text: `${relPath} is up to date.` };
+  }
+  const result = renderDecisionIndex(root, { all });
+  return { result, text: `Wrote ${result.path} (${result.count} decision(s)).` };
 }
 
 // ─── state: full port of bee_state.mjs's verb logic (dispatcher-unify du-1).
@@ -2244,8 +2468,11 @@ function buildReviewsStatusSummary(root, { feature } = {}) {
   const counts = { verified: candidates.length };
   for (const label of CANDIDATE_STATUSES) counts[label] = 0;
 
+  // D2 (cli-performance CONTEXT): same pass-local gitMemo idiom as
+  // buildReviewBlock above — born once per summary pass, never persisted.
+  const gitMemo = new Map();
   const rows = candidates.map((candidate) => {
-    const derived = deriveCandidateStatus(root, candidate, { sessions });
+    const derived = deriveCandidateStatus(root, candidate, { sessions, gitMemo });
     counts[derived.status] += 1;
     return {
       ...candidate,
@@ -2938,6 +3165,32 @@ async function handleWorktreeUnregister(root, flags) {
   // hardening-4b: removeGrant is now withStoreLock-wrapped (async).
   await removeGrant(mainStoreRoot, id);
   return { result: { ok: true, id, main_root: mainRoot }, text: `Removed worktree grant for id ${id}.` };
+}
+
+// ─── tmp sweep (tree-hygiene th-4, CONTEXT D1/D2) ──────────────────────────
+// `bee tmp sweep` — the broom for the one canonical scratch home (.bee/tmp/
+// and .bee/spikes/). All safety (containment, symlink-escape refusal) and
+// target-selection logic lives in lib/scratch.mjs; this handler is
+// presentation + the "no default purge" refusal policy only. Refuses (typed,
+// zero mutation) unless at least one of --feature/--before/--all/--dry-run is
+// given — an all-defaults call would otherwise silently pick a target set,
+// which is exactly the "no default purge" discipline `decisions archive`
+// already established for its own mandatory --before.
+function handleTmpSweep(root, flags) {
+  const feature = flags.feature !== undefined ? String(flags.feature) : undefined;
+  const before = flags.before !== undefined ? String(flags.before) : undefined;
+  const all = flags.all === true;
+  const dryRun = flags['dry-run'] === true;
+  if (!feature && !before && !all && !dryRun) {
+    throw new Error(
+      'tmp sweep requires at least one of --feature/--before/--all/--dry-run — no default purge (same discipline as `decisions archive`). ' +
+        'FIX: pass --dry-run to preview the default (closed/absent-feature) target set, --feature <slug> to target one feature explicitly (even a live one), --before <ISO> to age-gate scratch with no feature/lane record, or --all to clear everything.',
+    );
+  }
+  const result = runSweep(root, { feature, before, all, dryRun });
+  const verb = dryRun ? 'Would remove' : 'Removed';
+  const text = `${verb} ${result.removed.length} scratch dir(s) (${result.bytes_freed} bytes, ${result.files_freed} files) from .bee/tmp/ and .bee/spikes/.`;
+  return { result, text };
 }
 
 // config (ao-2ai-1) — reads the RAW .bee/config.json (readJson fallback
@@ -4175,6 +4428,11 @@ function recoveryUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: scan, window.`;
 }
 
+function tmpUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: sweep.`;
+}
+
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
 // bee_reservations.mjs/bee_decisions.mjs are now shims, so their own
 // default-case "Unknown command ... Use: ..." messages (previously emitted
@@ -4193,7 +4451,7 @@ function reservationsUsageFallback(leading) {
 
 function decisionsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search.`;
+  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search, archive, tag, render.`;
 }
 
 const GROUP_USAGE_FALLBACKS = {
@@ -4210,6 +4468,7 @@ const GROUP_USAGE_FALLBACKS = {
   config: configUsageFallback,
   dispatch: dispatchUsageFallback,
   recovery: recoveryUsageFallback,
+  tmp: tmpUsageFallback,
 };
 
 const HANDLERS = {
@@ -4243,6 +4502,9 @@ const HANDLERS = {
   'decisions.redact': handleDecisionsRedact,
   'decisions.active': handleDecisionsActive,
   'decisions.search': handleDecisionsSearch,
+  'decisions.archive': handleDecisionsArchive,
+  'decisions.tag': handleDecisionsTag,
+  'decisions.render': handleDecisionsRender,
   'state.set': handleStateSet,
   'state.gate': handleStateGate,
   'state.worker.add': handleStateWorkerAdd,
@@ -4292,6 +4554,7 @@ const HANDLERS = {
   'worktree.unregister': handleWorktreeUnregister,
   'worktree.new': handleWorktreeNew,
   'worktree.merge': handleWorktreeMerge,
+  'tmp.sweep': handleTmpSweep,
   'config.get': handleConfigGet,
   'config.set': handleConfigSet,
   'config.unset': handleConfigUnset,
@@ -4321,7 +4584,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

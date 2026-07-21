@@ -39,19 +39,56 @@
   "deps": [
     "th-4"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "orch",
+    "outcome": "Crash-leak scratch self-cleans: .old-*/.tmp-* swept by real pid-liveness, atomic writers unlink+rethrow, managed ignore covers .bee/tmp, .bee/backups, the atomic-tmp shape and the four swap-dir patterns",
+    "files_changed": [
+      "scripts/render_plugin_skill_trees.mjs",
+      "scripts/test_render_race.mjs",
+      "skills/bee-hive/templates/lib/fsutil.mjs",
+      ".bee/bin/lib/fsutil.mjs",
+      "skills/bee-hive/templates/lib/decisions.mjs",
+      ".bee/bin/lib/decisions.mjs",
+      "skills/bee-hive/scripts/onboard_bee.mjs",
+      "skills/bee-hive/scripts/test_onboard_bee.mjs",
+      "skills/bee-hive/templates/tests/test_misc.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "capped_at": "2026-07-21T15:31:57.662Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\"test_render_race baseline (a)(b)\", \"test_onboard_bee gitignore block hash reconstruction\", \"test_misc atomic-write coverage\"],\n  \"tests_added\": [\"render scenario (c): dead-pid .old-*/.tmp-* swept, live-pid preserved; test_misc x2: forced EISDIR on all three atomic writers leaves no tmp and rethrows the original error; test_onboard_bee 9g: pattern presence + git check-ignore proof BOTH directions\"],\n  \"red_failure_evidence\": \"Pre-implementation red: test_render_race '(c) a dead-pid .old-* dir survived the sweep' + '(c) a dead-pid .tmp-* dir survived'; test_onboard_bee 8 FAILs (block hash mismatch + 6 missing patterns + atomic shape not ignored); test_misc 2 FAILs (leaked tmp on forced EISDIR).\",\n  \"verification_run\": \"Worker + orchestrator re-run: test_misc 97/97, test_render_race PASS incl. new (c), test_onboard_bee 0 failures. Orchestrator applied the block via self-onboard (status applied) and proved BOTH directions on the real repo: notes.tmp stays visible to git, x.json.12345-0-abcdef.tmp is ignored. Deviation accepted: the worker upgraded BOTH prefixes from age-based to real isPidAlive discipline (stronger than the cell's literal 'same as .tmp-*' ask, and what the never-touch-a-live-pid prohibition actually requires). Full chain deferred to wave close per the verify ladder.\"\n}\n",
+    "verify_output": "GREEN (post-implementation), th-5. render_race: (a) unsafe-proxy negative control confirmed red (rerun once, WSL2 flake noted in cell resolved on rerun); (b) 2 concurrent real render spawns byte-match, no stray swap dirs; (c) NEW live-pid discipline -- cleanStaleTmpDirs now sweeps both .tmp-*/.old-* prefixes, removing a dead-pid dir immediately while a live-pid one survives regardless of age (isPidAlive from lock.mjs). test_onboard_bee.mjs: all checks pass incl. new 9g crash-leak ignore-pattern block (gitignore_block hash ties, all 6 new patterns present, git check-ignore proves notes.tmp stays visible while an atomic-tmp-shaped file is ignored). test_misc.mjs (extra regression run, not in this cell's verify string): writeJsonAtomic/writeJsonlAtomic/writeTextAtomic now unlink their tmp file and rethrow the original EISDIR unchanged on a forced rename failure; vendored .bee/bin/lib mirror byte-identical. render_plugin_skill_trees.mjs + release_manifest.mjs --write/--check both green (424 files match). Tail: PASS test_render_race (a/b/c); PASS test_onboard_bee failures:0 skipped:1 (pre-existing case-alias skip, unrelated).",
+    "verify_passed": true,
+    "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+    "claimed_at": "2026-07-21T15:14:26.126Z",
+    "verify_command": "node scripts/test_render_race.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs",
+    "verified_at": "2026-07-21T15:30:15.887Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-21T15:26:39.648Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T15:14:26.124Z",
+        "acquired_at": "2026-07-21T15:14:26.124Z",
+        "worker": "orch",
+        "verdict": "fail",
+        "failure_signature": "d1b9b28ad464",
+        "note": null
+      },
+      {
+        "n": 2,
+        "at": "2026-07-21T15:30:15.887Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T15:14:26.124Z",
+        "acquired_at": "2026-07-21T15:14:26.124Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }

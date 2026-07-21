@@ -28,7 +28,7 @@ import {
   RENDER_SIDECAR,
   buildRenderSidecar,
 } from "../skills/bee-hive/scripts/onboard_bee.mjs";
-import { withStoreLock } from "../skills/bee-hive/templates/lib/lock.mjs";
+import { withStoreLock, isPidAlive } from "../skills/bee-hive/templates/lib/lock.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
@@ -146,13 +146,31 @@ function randomSuffix() {
   return crypto.randomBytes(6).toString("hex");
 }
 
-// Startup hygiene: remove any stale '<base>.tmp-*' sibling dirs a crashed
-// prior run left behind. Only dirs older than TMP_STALE_MS are removed, so
-// this never races a concurrent run's own in-progress tmp dir (that run
-// still holds/will hold the 'plugin-render' lock; this cleanup runs before
-// acquiring it, deliberately, since a stale tmp dir from a PID that no
-// longer exists must not require the lock to clean up).
-function cleanStaleTmpDirs(targetRoot) {
+// Startup hygiene: remove crash-leaked '<base>.tmp-*' AND '<base>.old-*'
+// sibling dirs a prior run left behind (tree-hygiene D3 — the render's swap
+// backup dirs get the same sweep its tmp dirs already had). Each dir's own
+// name embeds the pid that created it (`${base}.tmp-${pid}-${random}` /
+// `${base}.old-${pid}-${random}`), so removability is decided by LIVE-PID
+// DISCIPLINE first: a dir whose owning pid is proven alive (isPidAlive) is
+// never touched, no matter its age — that is exactly a concurrent run's own
+// in-progress tmp dir or backup. Only once the owning pid is confirmed dead
+// is the dir swept, immediately, regardless of age. A dir whose pid segment
+// cannot be parsed at all (should not happen for anything this script itself
+// created) falls back to the original age-based staleness signal rather than
+// ever guessing "dead". This cleanup runs before acquiring the
+// 'plugin-render' lock, deliberately: a leaked dir from a dead pid must not
+// require the lock to clean up.
+const SWAP_DIR_PREFIXES = ["tmp-", "old-"];
+
+function isSwapDirRemovable(entryName, prefix, stat) {
+  const pidMatch = entryName.match(new RegExp(`\\.${prefix}(\\d+)-`));
+  if (pidMatch) {
+    return !isPidAlive(Number(pidMatch[1]));
+  }
+  return Date.now() - stat.mtimeMs > TMP_STALE_MS;
+}
+
+export function cleanStaleTmpDirs(targetRoot) {
   const parent = path.dirname(targetRoot);
   const base = path.basename(targetRoot);
   let entries;
@@ -161,9 +179,10 @@ function cleanStaleTmpDirs(targetRoot) {
   } catch {
     return; // parent doesn't exist yet — nothing to clean
   }
-  const now = Date.now();
   for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.startsWith(`${base}.tmp-`)) continue;
+    if (!entry.isDirectory()) continue;
+    const prefix = SWAP_DIR_PREFIXES.find((p) => entry.name.startsWith(`${base}.${p}`));
+    if (!prefix) continue;
     const abs = path.join(parent, entry.name);
     let stat;
     try {
@@ -171,7 +190,7 @@ function cleanStaleTmpDirs(targetRoot) {
     } catch {
       continue; // vanished between readdir and stat — fine, nothing to do
     }
-    if (now - stat.mtimeMs > TMP_STALE_MS) {
+    if (isSwapDirRemovable(entry.name, prefix, stat)) {
       fs.rmSync(abs, { recursive: true, force: true });
     }
   }
@@ -186,6 +205,11 @@ function writeTree(targetRoot, rendered, runtime) {
   const tmpRoot = path.join(parent, `${base}.tmp-${process.pid}-${randomSuffix()}`);
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   fs.mkdirSync(tmpRoot, { recursive: true });
+  // Set only once the swap has moved the previous tree aside; cleared back to
+  // null once it has been removed. Tracked outside the try body so `finally`
+  // — not just the success path — is what removes it (tree-hygiene D3): a
+  // crash anywhere after the swap succeeds no longer leaks the backup dir.
+  let backupRoot = null;
   try {
     for (const [rel, bytes] of rendered) {
       const dest = path.join(tmpRoot, ...rel.split("/"));
@@ -194,21 +218,30 @@ function writeTree(targetRoot, rendered, runtime) {
     }
     fs.writeFileSync(path.join(tmpRoot, RENDER_SIDECAR), sidecarBytes(runtime, rendered));
 
-    const backupRoot = path.join(parent, `${base}.old-${process.pid}-${randomSuffix()}`);
     const existed = fs.existsSync(targetRoot);
-    if (existed) fs.renameSync(targetRoot, backupRoot);
+    if (existed) {
+      backupRoot = path.join(parent, `${base}.old-${process.pid}-${randomSuffix()}`);
+      fs.renameSync(targetRoot, backupRoot);
+    }
     try {
       fs.renameSync(tmpRoot, targetRoot);
     } catch (error) {
       // Swap failed partway — restore the previous tree rather than leaving
       // targetRoot missing.
-      if (existed) fs.renameSync(backupRoot, targetRoot);
+      if (backupRoot) {
+        fs.renameSync(backupRoot, targetRoot);
+        backupRoot = null; // restored — nothing left for finally to remove
+      }
       throw error;
     }
-    if (existed) fs.rmSync(backupRoot, { recursive: true, force: true });
   } finally {
-    // No-op once renamed away; cleans up tmpRoot on any throw before the swap.
+    // Runs on every exit path (success or thrown error): tmpRoot removal is a
+    // no-op once renamed away; backupRoot, when still set, means the swap
+    // committed but cleanup had not yet run — removing it here rather than
+    // only on the old success path closes the leak window between the swap
+    // and cleanup.
     fs.rmSync(tmpRoot, { recursive: true, force: true });
+    if (backupRoot) fs.rmSync(backupRoot, { recursive: true, force: true });
   }
 }
 

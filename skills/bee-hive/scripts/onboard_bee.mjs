@@ -145,6 +145,28 @@ const GITIGNORE_BLOCK_PATTERNS = [
   // (today: dogfood_repos absolute paths) never land in the shared, tracked
   // config file. Never tracked — every checkout/clone starts without one.
   ".bee/config.local.json",
+  // Crash-leak scratch (tree-hygiene D1-D3): the ONE canonical scratch home
+  // and its swept backups directory. Cleanup that only runs on the happy
+  // path is not cleanup, but ignoring is still the belt to self-cleaning's
+  // braces — a leaked scratch dir must never show up as git-status noise
+  // either.
+  ".bee/tmp/",
+  ".bee/backups/",
+  // Atomic-tmp SHAPE only — `<file>.<pid>-<counter>-<random>.tmp`, the exact
+  // name writeJsonAtomic/writeJsonlAtomic/writeTextAtomic use for their
+  // rename-target — never a bare `*.tmp`. A human's own hand-made notes.tmp
+  // must stay visible to git status; only the machine-generated shape (a
+  // literal dot, then a digit-led pid, then two more dash-separated
+  // segments, then `.tmp`) is ever matched.
+  "*.[0-9]*-*-*.tmp",
+  // Plugin render swap dirs (tree-hygiene D3): render_plugin_skill_trees.mjs
+  // writes into a tmp sibling and swaps via rename, keeping the previous
+  // tree in an '.old-*' sibling until its own cleanup removes it — both
+  // prefixes are crash-leak-prone and never deliberate deliverables.
+  ".claude-plugin/skills.tmp-*/",
+  ".claude-plugin/skills.old-*/",
+  ".codex-plugin/skills.tmp-*/",
+  ".codex-plugin/skills.old-*/",
 ];
 
 const HOOK_FILENAMES = [

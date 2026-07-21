@@ -83,12 +83,25 @@ let writeJsonAtomicCounter = 0;
 // rename, and the written JSON content / lack of fsync are unchanged — this
 // only removes the tmp-name collision, it does not add locking or serialize
 // the logical read-modify-write (last-writer-wins on that is unchanged).
+// tree-hygiene D3: if the write-or-rename throws, the tmp file is unlinked
+// best-effort (never allowed to mask the real failure) and the ORIGINAL
+// error is rethrown unchanged — a failed atomic write must never leak its
+// tmp file into a tracked directory.
 export function writeJsonAtomic(file, obj) {
   ensureDir(path.dirname(file));
   const unique = `${process.pid}-${(writeJsonAtomicCounter++).toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
   const tmp = `${file}.${unique}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(obj, null, 2)}\n`, 'utf8');
-  fs.renameSync(tmp, file);
+  try {
+    fs.writeFileSync(tmp, `${JSON.stringify(obj, null, 2)}\n`, 'utf8');
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      // best-effort cleanup — never let a cleanup failure mask the real error
+    }
+    throw error;
+  }
 }
 
 export function appendJsonl(file, obj) {

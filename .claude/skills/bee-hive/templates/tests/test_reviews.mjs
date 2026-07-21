@@ -722,6 +722,93 @@ if (gitAvailable) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+  await check('deriveCandidateStatus: a pass-local gitMemo dedupes repeated git invocations when multiple candidates share a covering session\'s (head,ref)/(ref) pair (D2) — derived statuses stay byte-identical to the unmemoized path (cp-2)', async () => {
+    const dir = makeReviewGitRepo('bee-cand-memo-');
+    try {
+      const sha0 = gitHead(dir); // seed commit — becomes both candidates' head
+      await seedCappedCellWithEvidence(dir, 'ok-1');
+      const sha1 = gitCommit(dir, 'v1.txt', 'v1\n', 'commit1 (session\'s frozen head)');
+      gitCommit(dir, 'v2.txt', 'v2\n', 'commit2 (advances HEAD past the session head)');
+      createReview(dir, baseScope({
+        id: 'rev-memo',
+        included: [{ type: 'feature', id: 'demo' }],
+        baseline: sha0,
+        head: sha1,
+      }));
+      recordOnReview(dir, 'rev-memo', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+
+      const candidateA = addCandidate(dir, { feature: 'demo', head: sha0, mode: 'standard' });
+      const candidateB = addCandidate(dir, { feature: 'demo', head: sha0, mode: 'standard' });
+
+      // Baseline (unmemoized, no opts.gitMemo/opts.runGit at all) — frozen expectation.
+      const baselineA = deriveCandidateStatus(dir, candidateA);
+      const baselineB = deriveCandidateStatus(dir, candidateB);
+      assert(baselineA.status === 'review stale', `sanity: candidate head predates the session head and HEAD has since advanced -> review stale, got ${baselineA.status}`);
+      assert(baselineB.status === 'review stale', `sanity: same fixture, second candidate -> review stale, got ${baselineB.status}`);
+
+      const calls = [];
+      const countingRunner = (cwd, args) => {
+        calls.push(args.join(' '));
+        return spawnSync('git', args, { cwd, encoding: 'utf8' });
+      };
+      const gitMemo = new Map();
+      const sessions = listReviews(dir);
+      const memoA = deriveCandidateStatus(dir, candidateA, { sessions, gitMemo, runGit: countingRunner });
+      const memoB = deriveCandidateStatus(dir, candidateB, { sessions, gitMemo, runGit: countingRunner });
+
+      assert(memoA.status === baselineA.status && memoA.session === baselineA.session, `memoized derivation must match the unmemoized baseline for candidate A, got ${JSON.stringify(memoA)} vs ${JSON.stringify(baselineA)}`);
+      assert(memoB.status === baselineB.status && memoB.session === baselineB.session, `memoized derivation must match the unmemoized baseline for candidate B, got ${JSON.stringify(memoB)} vs ${JSON.stringify(baselineB)}`);
+
+      const uniqueKeys = new Set(calls);
+      assert(calls.length === uniqueKeys.size, `each unique git invocation key must run at most once per pass (shared gitMemo across candidates A and B) — saw ${calls.length} calls for ${uniqueKeys.size} unique keys: ${JSON.stringify(calls)}`);
+      assert(calls.some((c) => c.startsWith('merge-base')), `expected a merge-base invocation to have been recorded via the injected runner, saw: ${JSON.stringify(calls)}`);
+      assert(calls.some((c) => c.startsWith('rev-list')), `expected a rev-list invocation to have been recorded via the injected runner, saw: ${JSON.stringify(calls)}`);
+      assert(calls.length === 2, `two candidates sharing one covering session's (head,ref)/(ref) pair must produce exactly one merge-base + one rev-list call total (not four) via a pass-local memo, saw ${calls.length}: ${JSON.stringify(calls)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  await check('deriveCandidateStatus: unresolvable-ancestry degradation ("review stale" / "range unresolvable") is unchanged with a gitMemo threaded through opts, and the unresolvable git invocation is memoized across candidates sharing the same unresolvable head (cp-2)', async () => {
+    const dir = makeReviewGitRepo('bee-cand-memo-unresolvable-');
+    try {
+      const sha1 = gitHead(dir);
+      await seedCappedCellWithEvidence(dir, 'ok-1');
+      createReview(dir, baseScope({
+        id: 'rev-memo-unresolvable',
+        included: [{ type: 'feature', id: 'demo' }],
+        baseline: sha1,
+        head: sha1,
+      }));
+      recordOnReview(dir, 'rev-memo-unresolvable', { kind: 'decision', payload: { status: 'approved', gate4: { approved_by: 'user', at: 'now' } } });
+      const fakeSha = 'b'.repeat(40);
+      const candidateA = addCandidate(dir, { feature: 'demo', head: fakeSha, mode: 'standard' });
+      const candidateB = addCandidate(dir, { feature: 'demo', head: fakeSha, mode: 'standard' });
+
+      const baseline = deriveCandidateStatus(dir, candidateA);
+      assert(baseline.status === 'review stale' && baseline.note === 'range unresolvable', `sanity baseline must match the existing unresolvable-ancestry fixture behavior, got ${JSON.stringify(baseline)}`);
+
+      const calls = [];
+      const countingRunner = (cwd, args) => {
+        calls.push(args.join(' '));
+        return spawnSync('git', args, { cwd, encoding: 'utf8' });
+      };
+      const gitMemo = new Map();
+      const sessions = listReviews(dir);
+      const derivedA = deriveCandidateStatus(dir, candidateA, { sessions, gitMemo, runGit: countingRunner });
+      const derivedB = deriveCandidateStatus(dir, candidateB, { sessions, gitMemo, runGit: countingRunner });
+
+      assert(derivedA.status === baseline.status && derivedA.note === baseline.note, `degraded status must be unchanged for candidate A, got ${JSON.stringify(derivedA)}`);
+      assert(derivedB.status === baseline.status && derivedB.note === baseline.note, `degraded status must be unchanged for candidate B, got ${JSON.stringify(derivedB)}`);
+      assert(derivedA.session === 'rev-memo-unresolvable' && derivedB.session === 'rev-memo-unresolvable', 'degraded status still names the covering session for both candidates');
+
+      const uniqueKeys = new Set(calls);
+      assert(calls.length === uniqueKeys.size, `unresolvable-key git invocation must also be memoized across candidates sharing the same unresolvable head, saw ${calls.length} calls for ${uniqueKeys.size} unique keys: ${JSON.stringify(calls)}`);
+      assert(calls.length === 1, `two candidates sharing the same unresolvable (head,ref) pair must invoke git exactly once total via the pass-local memo, saw ${calls.length}: ${JSON.stringify(calls)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 } else {
   console.log('SKIP  deriveCandidateStatus git-fixture tests (git binary not available in this environment)');
 }

@@ -168,23 +168,42 @@ export function hasCleanEndTrio(events) {
 // its current schema, so decisions are always read globally (adding a lane
 // field there is out of this cell's scope). No settlement anywhere -> null,
 // so the caller falls back to the session's own started_at (D3).
-export function lastDurableSettlement(root, lane = null) {
+//
+// cp-1 (D1, docs/history/cli-performance/CONTEXT.md): the three shared
+// stores (decisions, capture queue, cells) are expensive to re-read per call
+// (33x re-reads of a 495KB decisions.jsonl was the measured bug —
+// detectCrashCandidates was calling this once per stale session). The
+// optional third `injected` argument lets a caller that already loaded these
+// stores ONCE thread them straight through, skipping the re-read entirely.
+// Every other caller (the default, 2-arg shape) is untouched: it still reads
+// fresh on every call, computing its own `decisions`/`captureEvents`/`cells`
+// exactly as before. `cells` is read unfiltered (listCells(root)) in both the
+// injected and default path and filtered by lane in-memory below — same
+// matching set as the old listCells(root, {feature: lane}) filter, since
+// listCells's own feature filter is the identical `cell.feature !== feature`
+// check applied at read time instead.
+export function lastDurableSettlement(root, lane = null, injected = null) {
+  const decisions = injected && injected.decisions ? injected.decisions : activeDecisions(root);
+  const captureEvents = injected && injected.captureEvents ? injected.captureEvents : readJsonl(captureQueuePath(root));
+  const cells = injected && injected.cells ? injected.cells : listCells(root);
+
   let maxMs = null;
   const bump = (ms) => {
     if (Number.isFinite(ms) && (maxMs === null || ms > maxMs)) maxMs = ms;
   };
 
-  for (const event of activeDecisions(root)) {
+  for (const event of decisions) {
     bump(Date.parse(event && event.date));
   }
 
-  for (const event of readJsonl(captureQueuePath(root))) {
+  for (const event of captureEvents) {
     if (!event || event.kind !== 'stub') continue;
     if (lane && event.lane !== lane) continue;
     bump(Date.parse(event.at));
   }
 
-  for (const cell of listCells(root, lane ? { feature: lane } : {})) {
+  for (const cell of cells) {
+    if (lane && cell.feature !== lane) continue;
     const cappedAt = cell && cell.trace && cell.trace.capped_at;
     if (cappedAt) bump(Date.parse(cappedAt));
   }
@@ -301,6 +320,14 @@ export function detectCrashCandidates(
 
   const roots = scanTranscriptRoots(root, { projectsRoot });
 
+  // cp-1 (D1): computed at most ONCE per call, lazily on first need — a
+  // session that never reaches the lastDurableSettlement call below (not
+  // stale, live session, clean-end tail, missing transcript) triggers zero
+  // reads, same as before this cell (the zero-stale fast path is unchanged).
+  // Once built, every subsequent stale session in this same call reuses the
+  // identical arrays instead of re-reading decisions.jsonl/capture-queue/cells.
+  let sharedInputs = null;
+
   const candidates = [];
   for (const session of sessions) {
     if (!session || !session.id) continue;
@@ -349,7 +376,14 @@ export function detectCrashCandidates(
     if (hasCleanEndTrio(tail)) continue; // clean stop -> excluded, not a crash
 
     const lane = session.lane || null;
-    const since = lastDurableSettlement(root, lane);
+    if (!sharedInputs) {
+      sharedInputs = {
+        decisions: activeDecisions(root),
+        captureEvents: readJsonl(captureQueuePath(root)),
+        cells: listCells(root),
+      };
+    }
+    const since = lastDurableSettlement(root, lane, sharedInputs);
     const sinceMs = since != null ? Date.parse(since) : toMs(session.started_at);
 
     let workSignal = null;

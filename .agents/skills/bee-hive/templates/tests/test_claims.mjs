@@ -368,21 +368,38 @@ function runRaceScenario(scenario) {
   return runModuleWorker(raceChildScript, { args: [scenario], timeout: 60000 });
 }
 
+// rel1710rc-5 (Windows CI diagnosability): a failing race child can exit
+// non-zero with BOTH stdout and stderr genuinely empty — e.g. an uncaught
+// exception inside a NESTED racer Worker (raceSweep/raceHeartbeat spawn their
+// own child Workers — see race_claims_child.mjs) terminates that thread
+// before its default stack-trace dump reaches the outer captured stream, and
+// run-module-worker.mjs's own `error`/`signal` fields were never being
+// surfaced at all — a real diagnostic could be sitting in `result.error`
+// while the message printed only the (empty) stdout/stderr. This formatter is
+// unconditional: every field is always shown, `(empty)`/`(none)` included, so
+// a CI failure never again reads as a bare "status 1" with nothing to go on.
+function describeRaceFailure(scenario, result) {
+  const stdout = result.stdout || '(empty)';
+  const stderr = result.stderr || '(empty)';
+  const errorDetail = result.error ? (result.error.stack || result.error.message || String(result.error)) : '(none)';
+  return `${scenario} race failed (status ${result.status}, signal ${result.signal}): stdout=${stdout} stderr=${stderr} error=${errorDetail}`;
+}
+
 await check('race: claim-contention — concurrent workers racing one cell, exactly one O_EXCL winner every round', async () => {
   const result = await runRaceScenario('claim-contention');
-  assert(result.status === 0, `claim-contention race failed (status ${result.status}): ${result.stdout}${result.stderr}`);
+  assert(result.status === 0, describeRaceFailure('claim-contention', result));
   assert(/^PASS +claim-contention/m.test(result.stdout), `expected a PASS summary line, got: ${result.stdout}`);
 });
 
 await check('race: adoption-steal — a third session cannot steal a cell mid-adoption; every attempt loses with typed CLAIMED', async () => {
   const result = await runRaceScenario('adoption-steal');
-  assert(result.status === 0, `adoption-steal race failed (status ${result.status}): ${result.stdout}${result.stderr}`);
+  assert(result.status === 0, describeRaceFailure('adoption-steal', result));
   assert(/^PASS +adoption-steal/m.test(result.stdout), `expected a PASS summary line, got: ${result.stdout}`);
 });
 
 await check('race: sweep-heartbeat — concurrent sweepExpiredClaims + heartbeat renewal never reclaims a live claim (20260710)', async () => {
   const result = await runRaceScenario('sweep-heartbeat');
-  assert(result.status === 0, `sweep-heartbeat race failed (status ${result.status}): ${result.stdout}${result.stderr}`);
+  assert(result.status === 0, describeRaceFailure('sweep-heartbeat', result));
   assert(/^PASS +sweep-heartbeat/m.test(result.stdout), `expected a PASS summary line, got: ${result.stdout}`);
 });
 

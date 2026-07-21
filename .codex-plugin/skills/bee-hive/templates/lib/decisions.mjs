@@ -210,14 +210,26 @@ function classifyDecisionTags(root, tags) {
 // which has no jsonl-atomic-rewrite primitive today and is out of this
 // cell's file scope) — same atomic-rename shape as fsutil.mjs's own
 // writeJsonAtomic, specialized for a jsonl body.
+// tree-hygiene D3: same failed-rename discipline as fsutil.mjs's own
+// writeJsonAtomic — unlink the tmp file best-effort, then rethrow the
+// ORIGINAL error unchanged. Never masked, never leaked.
 let writeJsonlAtomicCounter = 0;
-function writeJsonlAtomic(file, events) {
+export function writeJsonlAtomic(file, events) {
   ensureDir(path.dirname(file));
   const body = events.map((event) => JSON.stringify(event)).join('\n');
   const unique = `${process.pid}-${(writeJsonlAtomicCounter++).toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
   const tmp = `${file}.${unique}.tmp`;
-  fs.writeFileSync(tmp, body.length ? `${body}\n` : '', 'utf8');
-  fs.renameSync(tmp, file);
+  try {
+    fs.writeFileSync(tmp, body.length ? `${body}\n` : '', 'utf8');
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      // best-effort cleanup — never let a cleanup failure mask the real error
+    }
+    throw error;
+  }
 }
 
 // decision-propagation dp-5 (CONTEXT D7c, plan-check BLOCKER B1): the batch
@@ -976,13 +988,23 @@ function decisionIndexContent(root, { all = false } = {}) {
 // writeJsonlAtomic (dp-3), specialized for a plain-text body. Local for the
 // same reason writeJsonlAtomic is: fsutil.mjs has no text-atomic-write
 // primitive today and is out of this cell's file scope.
+// tree-hygiene D3: same failed-rename discipline as writeJsonlAtomic above.
 let writeTextAtomicCounter = 0;
-function writeTextAtomic(file, text) {
+export function writeTextAtomic(file, text) {
   ensureDir(path.dirname(file));
   const unique = `${process.pid}-${(writeTextAtomicCounter++).toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
   const tmp = `${file}.${unique}.tmp`;
-  fs.writeFileSync(tmp, text, 'utf8');
-  fs.renameSync(tmp, file);
+  try {
+    fs.writeFileSync(tmp, text, 'utf8');
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      // best-effort cleanup — never let a cleanup failure mask the real error
+    }
+    throw error;
+  }
 }
 
 /**

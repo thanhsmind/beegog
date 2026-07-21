@@ -26,7 +26,7 @@ import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { addCell } from '../lib/cells.mjs';
 import { createSession } from '../lib/claims.mjs';
-import { writeJsonAtomic, hashFile } from '../lib/fsutil.mjs';
+import { writeJsonAtomic, hashFile, appendJsonl } from '../lib/fsutil.mjs';
 import { defaultState, writeState, BEE_VERSION } from '../lib/state.mjs';
 import { encodeProjectDir } from '../lib/perf.mjs';
 import {
@@ -112,6 +112,28 @@ writeState(root, {
 process.env.BEEHIVE_PERF_DIR = path.join(root, 'perf-global');
 process.env.CLAUDE_CONFIG_DIR = path.join(root, 'fake-claude');
 
+// decision-propagation dp-5 (CONTEXT D7c): unlike supersede/redact, the
+// registry's `decisions tag` example validates that --target actually
+// resolves to a decide/supersede event — a random/placeholder id would
+// refuse. Decision ids are crypto.randomUUID()-generated at write time, so
+// the registry's example string (a fixed, documentation-friendly zero id,
+// matching the supersede/redact convention) can only succeed if a matching
+// event is pre-seeded here, before any example runs — mirrors the "demo-1"
+// cell fixture's same well-known-id shape, one level down at the decisions
+// store. Harmless to the later decisions.supersede/redact examples (which
+// also target this same zero id): decisions tag's target resolution reads
+// the raw active+archive union by TYPE only, never by superseded/redacted/
+// archived status, so this event stays a valid tag target throughout the
+// whole example chain below regardless of what happens to it meanwhile.
+appendJsonl(path.join(root, '.bee', 'decisions.jsonl'), {
+  id: '00000000-0000-0000-0000-000000000000',
+  type: 'decide',
+  date: new Date().toISOString(),
+  decision: 'Fixture target for the decisions.tag registry example',
+  rationale: 'decision-propagation dp-5: a well-known id the tag example can always resolve',
+  scope: 'repo',
+});
+
 const executedNames = new Set();
 
 /** Run the executable-th (default 0) example of a registry entry inside `root`.
@@ -177,7 +199,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -208,7 +230,7 @@ await check('registry covers every subcommand of the 4 existing helpers', async 
 // prepended, exactly what each shim used to do internally, so the observed
 // "Unknown command" contract line is unchanged.
 
-const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch', 'recovery'];
+const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch', 'recovery', 'tmp'];
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
 // bee.mjs's own `cells update` verb separately emits an unrelated
@@ -280,11 +302,11 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
 });
 
 await check('DA5 bijection: the only dot-free registry entries are "status" and "doctor", and every entry\'s group is one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
-  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery']);
+  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp']);
   const allowedDotFree = new Set(['status', 'doctor']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
-    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config|dispatch`);
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config|dispatch|tmp`);
     if (!entry.name.includes('.')) {
       assert(allowedDotFree.has(entry.name), `dot-free registry entry "${entry.name}" is not one of status|doctor — only those may be dot-free`);
     }
@@ -685,6 +707,39 @@ await check('decisions.supersede example runs through the real dispatcher (arbit
 await check('decisions.redact example runs through the real dispatcher (arbitrary id — event-sourced, no existence check)', async () => {
   const result = await assertExampleOk('decisions.redact');
   assert(typeof JSON.parse(result.stdout).id === 'string', 'redact should return the new event id');
+});
+
+await check('decisions.archive example runs through the real dispatcher (decision-propagation dp-3) — the decide event logged above is strictly older than the far-future --before cutoff, so it always has something to archive', async () => {
+  const result = await assertExampleOk('decisions.archive');
+  const payload = JSON.parse(result.stdout);
+  assert(Array.isArray(payload.archived) && payload.archived.length >= 1, `archive should report at least 1 archived event, got ${result.stdout}`);
+  assert(fs.existsSync(path.join(root, '.bee', 'decisions-archive.jsonl')), 'archive should create .bee/decisions-archive.jsonl');
+});
+
+await check('decisions.tag example runs through the real dispatcher (decision-propagation dp-5) — resolves the pre-seeded fixture target even after archive/supersede/redact touched it', async () => {
+  // The fixture target (id 00000000-...) was ALSO the placeholder id for the
+  // decisions.supersede/redact examples above, so by this point it is both
+  // superseded and redacted — correctly excluded from active/search output
+  // regardless of any tag overlay (that exclusion is upstream of the
+  // overlay, unrelated to this example). This check only proves the
+  // registry's own example round-trips end-to-end through the dispatcher;
+  // the overlay-visible-in-search behavior is covered exhaustively by
+  // test_decisions_propagation.mjs's dp-5 section against a non-redacted
+  // target.
+  const result = await assertExampleOk('decisions.tag');
+  const event = JSON.parse(result.stdout);
+  assert(event.type === 'tag', `expected a tag event, got ${result.stdout}`);
+  assert(event.target === '00000000-0000-0000-0000-000000000000', `expected the fixture target id, got ${event.target}`);
+  assert(event.tags.join(',') === 'billing,recall', `expected tags billing,recall, got ${JSON.stringify(event.tags)}`);
+  assert(event.scope === 'billing', `expected scope billing, got ${event.scope}`);
+});
+
+await check('decisions.render example runs through the real dispatcher (decision-propagation dp-4) — writes docs/decisions/index.md from whatever the fixture chain above has logged so far', async () => {
+  const result = await assertExampleOk('decisions.render');
+  const payload = JSON.parse(result.stdout);
+  assert(typeof payload.path === 'string' && payload.path.length > 0, `render should report a path, got ${result.stdout}`);
+  assert(typeof payload.count === 'number', `render should report a numeric count, got ${result.stdout}`);
+  assert(fs.existsSync(path.join(root, 'docs', 'decisions', 'index.md')), 'render should write docs/decisions/index.md');
 });
 
 await check('status example runs through the real dispatcher', async () => {
@@ -1368,6 +1423,18 @@ await check('perf.sync example scans + writes the log (transcript-less temp env)
   const result = await assertExampleOk('perf.sync');
   const res = JSON.parse(result.stdout);
   assert(typeof res.sessions === 'number', 'perf sync --json reports a session count');
+});
+
+// ─── tmp group example (tree-hygiene th-4, CONTEXT D1/D2): --all --dry-run is
+// deliberately the registry's own example — it is the one call shape that is
+// always safe to run for real against ANY fixture (never deletes anything,
+// never refuses for lack of a flag) while still exercising the full
+// dispatcher -> lib/scratch.mjs wiring end to end. ─────────────────────────
+await check('tmp.sweep example (--all --dry-run) exits 0 and never deletes anything', async () => {
+  const result = await assertExampleOk('tmp.sweep');
+  const res = JSON.parse(result.stdout);
+  assert(res.dry_run === true, `tmp sweep --dry-run example must report dry_run:true, got ${result.stdout}`);
+  assert(Array.isArray(res.removed), 'tmp sweep --json reports a removed[] array');
 });
 
 // ─── dispatch group example (g22-1, GH #22 P0-3): a read-only "gather" kind

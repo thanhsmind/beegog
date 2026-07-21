@@ -84,7 +84,14 @@ import {
 } from '../lib/worktree-holds.mjs';
 import { checkWrite } from '../lib/guards.mjs';
 import { buildPromptReminder, shouldInject, markInjected, buildSessionPreamble } from '../lib/inject.mjs';
-import { logDecision, supersedeDecision, activeDecisions, datamark } from '../lib/decisions.mjs';
+import {
+  logDecision,
+  supersedeDecision,
+  activeDecisions,
+  datamark,
+  writeJsonlAtomic,
+  writeTextAtomic,
+} from '../lib/decisions.mjs';
 import { detectCycles, computeSchedule } from '../lib/schedule.mjs';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.mjs';
 
@@ -2957,6 +2964,63 @@ await check('worktree-holds: mirrorHold validates required fields (path, holder)
     await assertRejects(() => mirrorHold(holdsRoot, { path: 'a.ts' }), 'holder', 'mirrorHold must reject a missing holder');
   } finally {
     fs.rmSync(holdsRoot, { recursive: true, force: true });
+  }
+});
+
+await check('writeJsonAtomic (fsutil.mjs, tree-hygiene D3): a failed rename unlinks its tmp file and rethrows the ORIGINAL error unchanged, never masked', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-atomic-write-fsutil-'));
+  try {
+    const target = path.join(dir, 'config.json');
+    // Pre-creating the target AS A DIRECTORY forces the tmp->target rename to
+    // fail with a real, deterministic EISDIR — no fs mocking needed.
+    fs.mkdirSync(target);
+    let thrown = null;
+    try {
+      writeJsonAtomic(target, { a: 1 });
+    } catch (error) {
+      thrown = error;
+    }
+    assert(thrown !== null, 'writeJsonAtomic must rethrow when the rename fails, never swallow it');
+    assert(thrown.code === 'EISDIR', `original error code must survive unchanged, got ${thrown && thrown.code}`);
+    const leaked = fs.readdirSync(dir).filter((f) => f !== 'config.json' && f.endsWith('.tmp'));
+    assert(leaked.length === 0, `no tmp file must be left behind after a failed rename, found: ${JSON.stringify(leaked)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('writeJsonlAtomic and writeTextAtomic (decisions.mjs, tree-hygiene D3): same failed-rename discipline as fsutil.mjs — tmp unlinked, original error rethrown unchanged', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-atomic-write-decisions-'));
+  try {
+    const jsonlTarget = path.join(dir, 'decisions.jsonl');
+    fs.mkdirSync(jsonlTarget);
+    let jsonlThrown = null;
+    try {
+      writeJsonlAtomic(jsonlTarget, [{ id: 'x' }]);
+    } catch (error) {
+      jsonlThrown = error;
+    }
+    assert(jsonlThrown !== null, 'writeJsonlAtomic must rethrow when the rename fails');
+    assert(jsonlThrown.code === 'EISDIR', `original error code must survive unchanged, got ${jsonlThrown && jsonlThrown.code}`);
+    const jsonlLeaked = fs.readdirSync(dir).filter((f) => f !== 'decisions.jsonl' && f.endsWith('.tmp'));
+    assert(jsonlLeaked.length === 0, `no tmp file left after writeJsonlAtomic failure, found: ${JSON.stringify(jsonlLeaked)}`);
+
+    const textTarget = path.join(dir, 'index.md');
+    fs.mkdirSync(textTarget);
+    let textThrown = null;
+    try {
+      writeTextAtomic(textTarget, 'body');
+    } catch (error) {
+      textThrown = error;
+    }
+    assert(textThrown !== null, 'writeTextAtomic must rethrow when the rename fails');
+    assert(textThrown.code === 'EISDIR', `original error code must survive unchanged, got ${textThrown && textThrown.code}`);
+    const textLeaked = fs
+      .readdirSync(dir)
+      .filter((f) => f !== 'index.md' && f !== 'decisions.jsonl' && f.endsWith('.tmp'));
+    assert(textLeaked.length === 0, `no tmp file left after writeTextAtomic failure, found: ${JSON.stringify(textLeaked)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

@@ -215,7 +215,7 @@ export function heartbeatSession(root, sessionId, { now = Date.now() } = {}) {
     return fail('SESSION_MISSING', `session "${sessionId}" has no record to heartbeat.`);
   }
   session.last_heartbeat = utcNow(now);
-  writeJsonAtomic(sessionPath(root, sessionId), session);
+  withTransientFsRetry(() => writeJsonAtomic(sessionPath(root, sessionId), session));
   return { ok: true, session };
 }
 
@@ -262,7 +262,7 @@ export function bindSessionLane(root, sessionId, feature) {
     return fail('SESSION_MISSING', `session "${session}" has no record to bind to lane "${lane}".`);
   }
   const bound = { ...record, lane };
-  writeJsonAtomic(sessionPath(root, session), bound);
+  withTransientFsRetry(() => writeJsonAtomic(sessionPath(root, session), bound));
   return { ok: true, session: bound };
 }
 
@@ -274,7 +274,7 @@ export function unbindSessionLane(root, sessionId) {
     return fail('SESSION_MISSING', `session "${session}" has no record to unbind.`);
   }
   const { lane: _lane, ...unbound } = record;
-  writeJsonAtomic(sessionPath(root, session), unbound);
+  withTransientFsRetry(() => writeJsonAtomic(sessionPath(root, session), unbound));
   return { ok: true, session: unbound };
 }
 
@@ -325,7 +325,82 @@ function acquireGate(root, cellId, nowMs) {
 }
 
 function releaseGate(root, cellId) {
-  fs.rmSync(claimGatePath(root, cellId), { force: true });
+  // The gate file's own lifetime is sub-millisecond and single-owner (created
+  // 'wx' by the same thread that removes it; a losing acquireGate() only ever
+  // sees EEXIST on create, never opens the file), so this is lower-risk than
+  // the claim/session rmSync/renameSync call sites below — wrapped anyway for
+  // uniform coverage of every mutating fs call in this module (rel1710rc-5).
+  withTransientFsRetry(() => fs.rmSync(claimGatePath(root, cellId), { force: true }));
+}
+
+// hardening-1-7-10 (rel1710rc-3): the gate above is only ever held for the
+// handful of synchronous statements inside ONE releaseClaim/adopt/sweep
+// critical section — never for an unbounded external operation. Under real
+// cross-process contention (observed: scripts/test_claim_race.mjs scenario
+// (d), budget-exhausted racers on a 2-core CI runner) one racer's own
+// releaseClaim can rmSync the claim FILE (a separate file from the gate) a
+// beat before it reaches its own releaseGate; a second racer can win a
+// brand-new claimCellFile in that exact window and then call releaseClaim
+// itself, colliding on the still-held gate. Before this fix, a single-shot
+// GATE_HELD refusal there permanently orphaned that second racer's own claim
+// file — nothing else ever revisits an orphaned claim. Because the gate's
+// true hold time is always sub-millisecond-to-low-tens-of-milliseconds
+// (never a long op, unlike lock.mjs's live-holder case), a short BOUNDED
+// retry closes this window without reintroducing an unbounded wait: it only
+// ever waits out the tail end of ANOTHER release's own critical section, up
+// to GATE_RETRY_ATTEMPTS * GATE_RETRY_DELAY_MS (~300ms worst case) before
+// still returning the typed GATE_HELD refusal exactly as before.
+const GATE_RETRY_ATTEMPTS = 15;
+const GATE_RETRY_DELAY_MS = 20;
+
+function sleepSyncMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function acquireGateWithRetry(root, cellId) {
+  for (let attempt = 0; attempt < GATE_RETRY_ATTEMPTS; attempt++) {
+    if (acquireGate(root, cellId, Date.now())) return true;
+    if (attempt + 1 < GATE_RETRY_ATTEMPTS) sleepSyncMs(GATE_RETRY_DELAY_MS);
+  }
+  return false;
+}
+
+// rel1710rc-5 (Windows CI hazard fix): renameSync-onto-existing (the last
+// step of fsutil.mjs's writeJsonAtomic) and rmSync-of-a-file can both
+// intermittently fail with EBUSY/EPERM/ENOTEMPTY/EMFILE/ENFILE on Windows
+// when another thread holds even a brief open handle on that exact path —
+// POSIX permits renaming/unlinking a file another process has open outright;
+// Windows generally does not. This module's own concurrent race fixtures
+// (race_claims_child.mjs's sweep-heartbeat scenario) hammer readSession
+// (fs.readFileSync) from several sweeper threads while heartbeatSession
+// (writeJsonAtomic -> renameSync) rewrites the SAME session file every ~60ms
+// for 500ms straight — real production usage (heartbeatTouch, sweepers) has
+// the identical shape, just at lower frequency. fs.rmSync DOES have a
+// built-in `maxRetries`/`retryDelay` backoff for exactly this class of
+// transient error, but per Node's own docs that option "is ignored if the
+// `recursive` option is not true" — every rmSync call in this file targets a
+// single file (never recursive), so the built-in backoff never engages here.
+// This local bounded retry (same shape/budget as acquireGateWithRetry above:
+// worst case ~300ms, never unbounded) plugs that gap the same way the gate
+// retry above plugs its own — the losing side of this race is provably
+// transient (the other thread's own read/rename is sub-millisecond-to-
+// low-tens-of-ms), never a genuine failure to retry away. A non-transient
+// error (wrong code, or retries exhausted) still throws, unchanged from
+// before this cell.
+const TRANSIENT_FS_RETRY_ATTEMPTS = 15;
+const TRANSIENT_FS_RETRY_DELAY_MS = 20;
+const TRANSIENT_FS_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'ENOTEMPTY', 'EMFILE', 'ENFILE']);
+
+function withTransientFsRetry(fn) {
+  for (let attempt = 0; attempt < TRANSIENT_FS_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return fn();
+    } catch (error) {
+      const transient = error && TRANSIENT_FS_ERROR_CODES.has(error.code);
+      if (!transient || attempt + 1 >= TRANSIENT_FS_RETRY_ATTEMPTS) throw error;
+      sleepSyncMs(TRANSIENT_FS_RETRY_DELAY_MS);
+    }
+  }
 }
 
 /**
@@ -439,7 +514,7 @@ export function adoptClaim(root, cellId, newSessionId, { now = Date.now() } = {}
       adopted_from: previous,
       adopted_at: utcNow(now),
     };
-    writeJsonAtomic(claimPath(root, cell), adopted);
+    withTransientFsRetry(() => writeJsonAtomic(claimPath(root, cell), adopted));
     return { ok: true, claim: adopted, previous_owner: previous };
   } finally {
     releaseGate(root, cell);
@@ -483,7 +558,7 @@ export function renewClaimTTL(root, sessionId, { now = Date.now() } = {}) {
         // GH #27.1 (D-GHF-B): the `...claim` spread carries acquired_at
         // forward untouched — only claimed_at (the expiry clock) advances
         // on a heartbeat. Never add an explicit acquired_at key here.
-        writeJsonAtomic(claimPath(root, cell), { ...claim, claimed_at: utcNow(now) });
+        withTransientFsRetry(() => writeJsonAtomic(claimPath(root, cell), { ...claim, claimed_at: utcNow(now) }));
         renewed.push(cell);
       }
     } finally {
@@ -505,8 +580,11 @@ export function releaseClaim(root, sessionId, cellId) {
   if (!readClaim(root, cell)) {
     return fail('NOT_FOUND', `cell "${cell}" has no claim to release.`);
   }
-  if (!acquireGate(root, cell, Date.now())) {
-    return fail('GATE_HELD', `claim "${cell}" is gated by another in-flight adopt/sweep — retry later, never wait on the gate.`);
+  if (!acquireGateWithRetry(root, cell)) {
+    return fail(
+      'GATE_HELD',
+      `claim "${cell}" is gated by another in-flight adopt/sweep/release after ${GATE_RETRY_ATTEMPTS} bounded retries — never waited unboundedly.`,
+    );
   }
   try {
     const claim = readClaim(root, cell); // re-read under the gate
@@ -520,7 +598,7 @@ export function releaseClaim(root, sessionId, cellId) {
         `cell "${cell}" is owned by session "${owner ?? 'none (sessionless)'}", not "${session ?? 'none (sessionless)'}".`,
       );
     }
-    fs.rmSync(claimPath(root, cell), { force: true });
+    withTransientFsRetry(() => fs.rmSync(claimPath(root, cell), { force: true }));
     return { ok: true, released: claim };
   } finally {
     releaseGate(root, cell);
@@ -553,7 +631,7 @@ export function clearClaim(root, cellId) {
     if (!claim) {
       return { ok: true, released: null };
     }
-    fs.rmSync(claimPath(root, cell), { force: true });
+    withTransientFsRetry(() => fs.rmSync(claimPath(root, cell), { force: true }));
     return { ok: true, released: claim };
   } finally {
     releaseGate(root, cell);
@@ -634,7 +712,7 @@ export async function sweepExpiredClaims(root, { now = Date.now(), staleSeconds 
         isClaimExpired(claim, now) &&
         heartbeatStale(readSession(root, claim.session), now, staleSeconds)
       ) {
-        fs.rmSync(claimPath(root, cell), { force: true });
+        withTransientFsRetry(() => fs.rmSync(claimPath(root, cell), { force: true }));
         swept.push(cell);
         sweptClaim = claim;
       }
@@ -657,7 +735,7 @@ export async function sweepExpiredClaims(root, { now = Date.now(), staleSeconds 
         swept_at: new Date(now).toISOString(),
         swept_from_session: sweptSession,
       };
-      writeJsonAtomic(cellFilePathForSweep(root, cell), cellRecord);
+      withTransientFsRetry(() => writeJsonAtomic(cellFilePathForSweep(root, cell), cellRecord));
       return true;
     });
     if (wasReset) {

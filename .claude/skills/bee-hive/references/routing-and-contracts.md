@@ -97,7 +97,7 @@ Retrieval triggers, not reading lists. Token budgets by lane:
 | standard | ≈ 5K tokens | + recent active decisions, CONTEXT.md | touching schema → schema decisions first; touching auth → auth decisions |
 | high-risk | ≈ 10K tokens | + full decision search on tags, plan history | + high-risk template, prior spikes in `.bee/spikes/`, related learnings files |
 
-Reading order per area (state layer, decision 0001): **spec → decisions → history**. `docs/specs/reading-map.md` answers "where does X live" before any broad grep.
+Reading order per area (state layer, decision 0001; recall surface per decision-propagation D8): **spec → decision index (the area's section of `docs/decisions/index.md`, complete by construction; drill into events via `decisions search --tag/--scope`) → history**. `docs/specs/reading-map.md` answers "where does X live" before any broad grep.
 
 Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `coverage/` — the scout guard blocks them anyway.
 
@@ -235,6 +235,10 @@ The swarming goal-check (P12, decision 0018) gains a **semantic** judge tier by 
 | `high-risk` | same checklist judge as `standard` | independence preferred — model differs from the builder's resolved model; if equal, record `model_independence: "same-model"` honestly and the judge still runs | same verdict handling as `standard` |
 
 The judge returns the D5 schema (`judge-verdict/1`), recorded via `bee cells judge-record`; free-prose output is a failed judge run, re-dispatched once, then recorded `unverified`. This table is the single home for the judge-tier rule (D4+Δ6) — every other 565e68d0-adjacent surface (bee-swarming SKILL + reference, bee-hive SKILL both sites, go-mode, AGENTS.md + its template, bee-scribing SKILL) carries only a one-line pointer back here, never a repeated table.
+
+### Verify Ladder (D4, `e54878b1`)
+
+A cell's `verify` field is always its **targeted** suite (seconds), never the full configured `commands.verify` chain. The full chain runs at exactly four milestones — session baseline, wave close (once, by the orchestrator, per `bee-swarming/SKILL.md` — this replaces any per-cell full-chain re-run), session finish, and worktree merge/release gates (`AGENTS.md`) — targeted-only everywhere else. Judges and reviewers verify against the diff and `must_haves`, never by running the full chain as part of a verdict.
 
 
 ## Question Format
