@@ -4,12 +4,14 @@
   "lane": "standard",
   "behavior_change": true,
   "title": "Decision recall: tags[] + scope-as-area + search filters (D4a)",
-  "action": "Per CONTEXT D4a (docs/history/decision-propagation/CONTEXT.md): extend the decisions store for structured recall. In skills/bee-hive/templates/lib/decisions.mjs: logDecision accepts optional tags (array of lowercase slugs, validated), stored on the decide event; scope keeps its existing free-string semantics but is now documented as the spec-area dimension. In skills/bee-hive/templates/bee.mjs: `decisions log` gains --tags (comma-separated); `decisions search` gains --tag (exact, case-insensitive), --scope with alias --area (exact, case-insensitive), --since (ISO date, inclusive) — all composable with the existing --text substring filter; `decisions active` gains the same filters. Legacy events without tags match only when no --tag filter is given. Mirror byte-identically into .bee/bin/lib/decisions.mjs and .bee/bin/bee.mjs; add tests in a new skills/bee-hive/templates/tests/test_decisions_propagation.mjs covering: tags round-trip, filter composition, legacy-event behavior, empty store. Rerun render_plugin_skill_trees + release_manifest --write.",
+  "action": "Per CONTEXT D4a (docs/history/decision-propagation/CONTEXT.md): extend the decisions store for structured recall. RED-FIRST: write skills/bee-hive/templates/tests/test_decisions_propagation.mjs FIRST (repo standalone convention — see scripts/lib/test-fixture.mjs and sibling tests), run it against the UNMODIFIED decisions.mjs/bee.mjs, and record the failing output via cells verify as red evidence BEFORE implementing. Then: in skills/bee-hive/templates/lib/decisions.mjs, logDecision accepts optional tags (array of lowercase slugs, validated), stored on the decide event; scope keeps its existing free-string semantics, documented as the spec-area dimension. In skills/bee-hive/templates/bee.mjs: `decisions log` gains --tags (comma-separated); `decisions search` gains --tag (exact, case-insensitive), --scope with alias --area (exact, case-insensitive), --since (ISO date, inclusive), composable with --text — and --text becomes OPTIONAL whenever at least one structured filter is present (tag-only/scope-only recall is the point of GH #32; zero filters at all still refuses). `decisions active` gains the same filters (deliberate sibling extension beyond D4a's letter, logged). Legacy events without tags match only when no --tag filter is given. Mirror byte-identically into .bee/bin/lib/decisions.mjs and .bee/bin/bee.mjs; tests cover: tags round-trip, filter composition, --text-optional-with-filters, legacy-event behavior, empty store. Rerun render_plugin_skill_trees + release_manifest --write.",
   "must_haves": {
     "truths": [
       "decisions log --tags a,b round-trips; search --tag/--scope/--since/--text compose",
+      "search works with NO --text when a structured filter is present",
       "legacy metadata-less events still searchable by text",
-      "test_lib_mirror + release_manifest --check green"
+      "test_lib_mirror + release_manifest --check green",
+      "RED-FIRST: failing run against unmodified code recorded as red evidence before implementation"
     ],
     "prohibitions": [
       "No migration/rewrite of existing decisions.jsonl events",
@@ -19,7 +21,9 @@
   "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
   "read_first": [
     "docs/history/decision-propagation/CONTEXT.md",
-    "skills/bee-hive/templates/lib/decisions.mjs"
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "scripts/lib/test-fixture.mjs",
+    "skills/bee-hive/templates/tests/test_misc.mjs"
   ],
   "files": [
     "skills/bee-hive/templates/lib/decisions.mjs",

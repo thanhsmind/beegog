@@ -86,18 +86,38 @@ process.stdout.write(`test repo: ${tmp}\n`);
 const tmpHome = makeFakeHome();
 
 try {
+  // Two distinct properties, deliberately split so a slow/2-core CI runner
+  // can't flake either one (rel1710rc-4):
+  //  (1) timeout SEMANTICS (null status, SIGTERM, ETIMEDOUT) - a short
+  //      timeout is fine here because nothing about output timing is
+  //      asserted, so it stays cheap even on a starved runner.
+  //  (2) capture PRESERVATION on timeout - needs the child to have actually
+  //      printed before it's killed, which a short timeout cannot guarantee
+  //      under CI scheduling pressure (the child can be SIGTERMed before
+  //      node even boots). Use a generous timeout (>=5000ms) so the kill
+  //      always lands well after the module's first-millisecond prints.
   const hangingModule = path.join(tmp, "hanging-module.mjs");
   fs.writeFileSync(
     hangingModule,
-    'process.stdout.write("hanging stdout\\n"); process.stderr.write("hanging stderr\\n"); setInterval(() => {}, 1_000);\n',
+    "setInterval(() => {}, 1_000);\n",
   );
   const timedOut = await runModuleWorker(hangingModule, { timeout: 100 });
   check(timedOut.status === null, "shared Worker timeout returns null status");
   check(timedOut.signal === "SIGTERM", "shared Worker timeout returns SIGTERM signal");
   check(timedOut.error?.code === "ETIMEDOUT", "shared Worker timeout returns ETIMEDOUT error");
+
+  const printsThenHangsModule = path.join(tmp, "prints-then-hangs-module.mjs");
+  fs.writeFileSync(
+    printsThenHangsModule,
+    'process.stdout.write("hanging stdout\\n"); process.stderr.write("hanging stderr\\n"); setInterval(() => {}, 1_000);\n',
+  );
+  const timedOutWithOutput = await runModuleWorker(printsThenHangsModule, { timeout: 5_000 });
+  check(timedOutWithOutput.status === null, "capture-preservation timeout returns null status");
+  check(timedOutWithOutput.signal === "SIGTERM", "capture-preservation timeout returns SIGTERM signal");
+  check(timedOutWithOutput.error?.code === "ETIMEDOUT", "capture-preservation timeout returns ETIMEDOUT error");
   check(
-    timedOut.stdout.includes("hanging stdout") && timedOut.stderr.includes("hanging stderr"),
-    "shared Worker timeout preserves captured stdout and stderr",
+    timedOutWithOutput.stdout.includes("hanging stdout") && timedOutWithOutput.stderr.includes("hanging stderr"),
+    "shared Worker timeout preserves captured stdout and stderr (generous timeout so the kill lands after startup prints)",
   );
 
   // --- 1. plan mode on empty repo -> changes_needed -----------------------

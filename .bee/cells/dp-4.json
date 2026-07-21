@@ -9,7 +9,8 @@
     "truths": [
       "two consecutive renders over the same store are byte-identical",
       "superseded decisions never appear in the index",
-      "--check exits non-zero on hand-edited drift"
+      "--check exits non-zero on hand-edited drift",
+      "RED-FIRST: failing run against unmodified code recorded as red evidence before implementation"
     ],
     "prohibitions": [
       "index.md is never hand-edited source — regenerated only",
@@ -18,7 +19,9 @@
   },
   "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
   "read_first": [
-    "skills/bee-hive/templates/lib/decisions.mjs"
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "scripts/lib/test-fixture.mjs",
+    "skills/bee-hive/templates/tests/test_misc.mjs"
   ],
   "files": [
     "skills/bee-hive/templates/lib/decisions.mjs",

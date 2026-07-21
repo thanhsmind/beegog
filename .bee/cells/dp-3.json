@@ -4,22 +4,27 @@
   "lane": "standard",
   "behavior_change": true,
   "title": "Archive verb: decisions archive + --all union reads (D4c)",
-  "action": "Per CONTEXT D4c: new `decisions archive` verb moves superseded/redacted events (always) plus decide events strictly older than an explicit --before <ISO date> (never a default purge) from .bee/decisions.jsonl to .bee/decisions-archive.jsonl, all-or-nothing under the store lock (mirror the cells archive journaled-txn pattern). Refuses (typed) when nothing qualifies. `decisions search`/`active` gain --all to read the union (active file first, then archive, de-duplicated by id, ordering preserved newest-first). activeDecisions default behavior (no --all) is byte-identical to today for an unarchived store. Idempotent: second archive run with same args is a clean no-op. Mirror to .bee/bin, extend tests (archive split, union read, idempotency, missing archive file, concurrent log-vs-archive under lock), render + manifest.",
+  "action": "Per CONTEXT D4c: new `decisions archive` verb moves superseded/redacted events (always) plus decide events strictly older than an explicit --before <ISO date> (never a default purge) from .bee/decisions.jsonl to .bee/decisions-archive.jsonl. RED-FIRST: extend test_decisions_propagation.mjs with the new checks FIRST, run red against unmodified code, record via cells verify, then implement. CONCURRENCY (plan-checker BLOCKER, same class as cells.mjs writeCell retrofit at cells.mjs:414-426): the append writers logDecision/supersedeDecision/redactDecision must acquire the SAME decisions store lock (lock.mjs) that archive holds — bare appendJsonl is only safe while nobody rewrites the file underneath; archive breaks that invariant, so the appends join the lock. CRASH SAFETY: cells' rename-journal does NOT map to jsonl line-partition — define archive's own ordering: (1) under the lock, append qualifying events to the archive file first, (2) then temp-write+rename the pruned active file; on crash between (1) and (2) a duplicate id may exist in both files — union reads de-duplicate by id (archive copy loses), making recovery automatic. Refuses (typed) when nothing qualifies. `decisions search`/`active` gain --all reading the union (active first, then archive, de-dup by id, newest-first). Default reads (no --all) byte-identical to today for an unarchived store. Idempotent second run is a clean no-op. Mirror to .bee/bin, tests (archive split, union read, idempotency, missing archive file, duplicate-id dedup after simulated partial crash, concurrent log-vs-archive under the shared lock), render + manifest.",
   "must_haves": {
     "truths": [
-      "archive is all-or-nothing under the store lock",
+      "append writers and archive share ONE store lock — concurrent log-vs-archive loses no write",
+      "crash between archive-append and active-rewrite self-heals via union de-dup by id",
       "search --all reaches archived events; default search unchanged for unarchived stores",
-      "second run is a no-op"
+      "second run is a no-op",
+      "RED-FIRST: failing run against unmodified code recorded as red evidence before implementation"
     ],
     "prohibitions": [
       "No default age window — --before is explicit or the verb refuses",
-      "Never rewrite surviving active events (append-only integrity)"
+      "Never rewrite surviving active events (append-only integrity)",
+      "Never adopt cells' rename-journal for jsonl line surgery"
     ]
   },
   "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
   "read_first": [
     "skills/bee-hive/templates/lib/decisions.mjs",
-    "skills/bee-hive/templates/lib/cells.mjs"
+    "skills/bee-hive/templates/lib/lock.mjs",
+    "skills/bee-hive/templates/lib/cells.mjs",
+    "scripts/lib/test-fixture.mjs"
   ],
   "files": [
     "skills/bee-hive/templates/lib/decisions.mjs",
