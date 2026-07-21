@@ -2054,16 +2054,30 @@ export async function resetCellBudget(root, id, reason, { sessionId, operator } 
 // capped (the realistic D4 goal-check ordering) used to be toothless — it
 // appended to trace.semantic_judge but never touched cell.status, so
 // capCell's own NEEDS_REVISION guard (line ~1145) never re-fires because the
-// cell is already past cap. Now: recording a NEEDS_REVISION verdict against
-// a cell whose CURRENT status is "capped" reopens it to "claimed" (rework)
-// in the SAME store-locked read-check-write — reusing the existing
-// CELL_STATUSES 'claimed' value, never a new status. A PASS verdict, or a
-// NEEDS_REVISION verdict on a non-capped cell, leaves cell.status untouched,
-// byte-identical to pre-hardening-3 behavior. This is now a logical
-// read-check-write (readCell -> possible status flip -> writeCell), so it
-// runs under the same withStoreLock discipline capCell/reopenCell use, and
-// is therefore async (mirrors msh-5's startFeature: refusals reject a
-// Promise instead of throwing synchronously — callers await it).
+// cell is already past cap. hardening-3 first fixed this by reopening
+// "capped" -> "claimed", but that left a stale-evidence re-cap hole
+// (hardening-1-7-10 D7): trace.verify_passed/verify_command/verify_output
+// from the ORIGINAL cap survived the reopen untouched, so a later PASS
+// verdict recorded with NO fresh verify run at all could re-cap the cell —
+// capCell's `trace.verify_passed !== true` gate never re-fired because the
+// stale `true` from before was still sitting there. D7: recording a
+// NEEDS_REVISION verdict against a cell whose CURRENT status is "capped" now
+// reopens it to "open" (NOT "claimed" — reusing the existing CELL_STATUSES
+// 'open' value, never a new status) with releaseTrace clearing the claim +
+// verify evidence, exactly like reopenCell/unclaimCell do for every other
+// claim-clearing transition. A fresh claim (claimCell requires "open") and a
+// fresh verify are then structurally required before the existing capCell
+// gates (verify_passed, latest judge verdict) will pass again — the
+// stale-evidence hole closes. trace.semantic_judge (append-only, just
+// extended above) and trace.reopened_for_rework survive releaseTrace, which
+// only clears the claim/verify keys, never semantic history. A PASS
+// verdict, or a NEEDS_REVISION verdict on a non-capped cell, leaves
+// cell.status untouched, byte-identical to pre-hardening-3 behavior. This is
+// a logical read-check-write (readCell -> possible status flip ->
+// writeCell), so it runs under the same withStoreLock discipline
+// capCell/reopenCell use, and is therefore async (mirrors msh-5's
+// startFeature: refusals reject a Promise instead of throwing synchronously
+// — callers await it).
 export async function recordJudgeVerdict(
   root,
   id,
@@ -2077,7 +2091,8 @@ export async function recordJudgeVerdict(
     );
   }
   const independence = deriveModelIndependence(builderModel, builderStatus, judgeModel, judgeStatus);
-  return withStoreLock(root, `cells:${id}`, () => {
+  let reopenedForRework = false;
+  const saved = await withStoreLock(root, `cells:${id}`, () => {
     assertNotArchived(root, 'recordJudgeVerdict', id); // hardening-1-7-10 (D4): refuse before ever reading/writing
     const cell = readCell(root, id);
     if (!cell) throw new Error(`recordJudgeVerdict: cell "${id}" not found.`);
@@ -2098,15 +2113,23 @@ export async function recordJudgeVerdict(
     const existing = Array.isArray(trace.semantic_judge) ? trace.semantic_judge : [];
     trace = { ...trace, semantic_judge: [...existing, entry] };
     if (verdictInput.verdict === 'NEEDS_REVISION' && cell.status === 'capped') {
-      cell.status = 'claimed'; // reopen for rework — reuses the existing enum, no new status
+      cell.status = 'open'; // D7: reopen to a clean slate, not "claimed" — no owner survives a NEEDS_REVISION
       trace.reopened_for_rework = {
         at: utcNow(),
         reason: 'NEEDS_REVISION semantic-judge verdict recorded after cap',
       };
+      // D7: clear the claim + verify evidence (releaseTrace) AFTER stamping
+      // reopened_for_rework and appending semantic_judge above — releaseTrace
+      // only clears worker/claimed_at/claim_session/verify_* keys, so both of
+      // those survive intact. This is what closes the stale-evidence re-cap
+      // hole: capCell's verify_passed gate can never again pass on the
+      // evidence from before this reopen.
+      trace = releaseTrace(trace);
+      reopenedForRework = true;
       logDecision(root, {
-        decision: `«cells judge-record: cell "${id}" reopened capped->claimed by a NEEDS_REVISION semantic-judge verdict»`,
+        decision: `«cells judge-record: cell "${id}" reopened capped->open by a NEEDS_REVISION semantic-judge verdict»`,
         rationale:
-          'A NEEDS_REVISION verdict recorded after cap must have teeth: the cell is reopened to claimed for rework instead of being silently logged into an inert trace entry (hardening-3).',
+          'A NEEDS_REVISION verdict recorded after cap must have teeth: the cell is reopened to open (clean slate) for rework, with claim + verify evidence cleared, instead of being silently logged into an inert trace entry (hardening-3) or left falsely "claimed" with stale verify_passed that a later PASS verdict could re-cap on with zero fresh verify (hardening-1-7-10 D7).',
         scope: 'repo',
         source: 'user',
       });
@@ -2114,6 +2137,19 @@ export async function recordJudgeVerdict(
     cell.trace = trace;
     return writeCell(root, cell);
   });
+  if (reopenedForRework) {
+    // D7: reconcile the claims-store defensively. capCell already deleted the
+    // claim file on the ORIGINAL cap (releaseClaimFileBestEffort, "cap is a
+    // claim-clearing transition") — so ordinarily there is nothing left here.
+    // This call exists for the rare case a claims-store entry survived that
+    // cleanup (a missed release, a manually-recreated claim, or any other
+    // drift between the cells store and the claims store): a reopened-to-open
+    // cell must never leave an orphaned cross-session lock behind it, exactly
+    // the same "never orphan the claim file" discipline every other
+    // claim-clearing verb (cap/unclaim/block/drop/reopen) already applies.
+    releaseClaimFileBestEffort(root, id);
+  }
+  return saved;
 }
 
 // ─── claim-next: cross-session selection + throw-safe two-store claim ──────
