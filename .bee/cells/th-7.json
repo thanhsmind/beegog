@@ -27,19 +27,37 @@
   "deps": [
     "th-6"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "orch",
+    "outcome": "Cleared 171.5MB / 9162 files of accumulated scratch (.bee/spikes 153MB -> 124KB); live feature scratch preserved; git status unchanged",
+    "files_changed": [
+      "docs/history/tree-hygiene/reports/sweep-backlog.md"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-21T15:48:05.505Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "verify_output": "ĐÃ XOÁ: 20 mục, 171.5MB, 9162 files; refused_roots=[] refused_escapes=[]; skipped=[tree-hygiene(live)]; .bee/spikes 153M -> 124K; git status KHÔNG đổi; deliverables (docs/specs/decision-memory.md, .bee/cells/th-7.json, .bee/decisions.jsonl) còn nguyên; wave-close full chain PASS 56 suites wall=60121ms",
+    "verify_passed": true,
+    "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+    "claimed_at": "2026-07-21T15:45:36.330Z",
+    "verify_command": "bee tmp sweep --before <now> --json (real run, plan reviewed via --all --dry-run first); du -sh before/after; git status --porcelain diffed before/after",
+    "verified_at": "2026-07-21T15:48:05.449Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-21T15:48:05.449Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T15:45:36.329Z",
+        "acquired_at": "2026-07-21T15:45:36.329Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }
