@@ -31,6 +31,8 @@ import {
   tagDecision,
   tagDecisionsBatch,
   DECISIONS_LOCK_NAME,
+  renderDecisionIndex,
+  decisionIndexDrift,
 } from '../lib/decisions.mjs';
 import { appendJsonl, readJsonl } from '../lib/fsutil.mjs';
 import { pendingCaptureStubs } from '../lib/capture.mjs';
@@ -1426,6 +1428,212 @@ await check('dp-6: search --untagged alone satisfies the "needs at least one fil
   logDecision(r, { decision: 'Untagged only', rationale: 'x' });
   const run = await runBee(['decisions', 'search', '--untagged', '--json'], r);
   assert(run.status === 0, `search --untagged alone should not require --text, got exit ${run.status} :: ${run.stderr || run.stdout}`);
+});
+
+// ─── dp-4: derived decision index — `decisions render` -> docs/decisions/
+// index.md (CONTEXT D4b/D6, overlay-aware per D7/D8). Own temp repo, same
+// isolation discipline as dp-2/dp-3/dp-5. ──────────────────────────────────
+
+function decisionIndexFilePath(root) {
+  return path.join(root, 'docs', 'decisions', 'index.md');
+}
+
+// Slices the rendered content down to one `## <scope>` section (up to the
+// next `## ` scope heading or EOF) so assertions can check a scope's
+// contents without depending on the exact position of unrelated scopes.
+function extractScopeSection(content, scope) {
+  const marker = `## ${scope}\n`;
+  const start = content.indexOf(marker);
+  if (start === -1) return null;
+  const rest = content.slice(start + marker.length);
+  const nextIdx = rest.search(/\n## /);
+  return nextIdx === -1 ? rest : rest.slice(0, nextIdx);
+}
+
+const dp4Root = makeTempRepo();
+
+const dp4B1 = logDecision(dp4Root, { decision: 'B1 invoice decision', rationale: 'x', scope: 'billing', tags: ['invoices'] });
+const dp4B2 = logDecision(dp4Root, { decision: 'B2 invoice decision second', rationale: 'x', scope: 'billing', tags: ['invoices'] });
+setEventDate(dp4Root, dp4B1.id, '2026-01-01T00:00:00.000Z');
+setEventDate(dp4Root, dp4B2.id, '2026-02-01T00:00:00.000Z');
+
+const dp4C1 = logDecision(dp4Root, { decision: 'C1 checkout decision', rationale: 'x', scope: 'checkout', tags: ['flow'] });
+const dp4LegacyC = logDecision(dp4Root, { decision: 'Legacy untagged checkout decision', rationale: 'x', scope: 'checkout' });
+
+const dp4STarget = logDecision(dp4Root, { decision: 'S target to supersede', rationale: 'x', scope: 'billing', tags: ['invoices'] });
+const dp4SEvent = supersedeDecision(dp4Root, { supersedes: dp4STarget.id, decision: 'S replaced', rationale: 'dp-4 supersede placement' });
+
+const dp4ATarget = logDecision(dp4Root, { decision: 'Archived old decision', rationale: 'x', scope: 'billing', tags: ['invoices'] });
+setEventDate(dp4Root, dp4ATarget.id, '2020-01-01T00:00:00.000Z');
+archiveDecisions(dp4Root, { before: '2021-01-01' });
+
+const dp4LegacyR = logDecision(dp4Root, { decision: 'Legacy retro target', rationale: 'x' }); // scope defaults "repo", no tags
+tagDecision(dp4Root, { target: dp4LegacyR.id, tags: ['retro-only'], scope: 'retro-scope' });
+
+const dp4Multiline = logDecision(dp4Root, {
+  decision: 'Multi-line decision\nSecond line detail',
+  rationale: 'x',
+  scope: 'checkout',
+  tags: ['flow'],
+});
+
+await check('dp-4: renders a provenance header naming the generator, with no hand-edit / determinism note', async () => {
+  const result = renderDecisionIndex(dp4Root, {});
+  assert(typeof result.path === 'string' && result.path.length > 0, 'renderDecisionIndex must return a path');
+  assert(fs.existsSync(decisionIndexFilePath(dp4Root)), 'index.md should now exist on disk');
+  const content = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  assert(/bee decisions render/.test(content), 'header should name the generator command');
+  assert(/hand-edit/i.test(content), 'header should warn against hand-editing');
+  assert(
+    !/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(content),
+    'no wall-clock (full ISO timestamp) anywhere in the rendered body — only YYYY-MM-DD decision dates',
+  );
+});
+
+await check('dp-4: groups by scope (alphabetical) then tag (untagged last), newest-first inside each group', async () => {
+  const content = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+
+  const billingIdx = content.indexOf('## billing');
+  const checkoutIdx = content.indexOf('## checkout');
+  const retroIdx = content.indexOf('## retro-scope');
+  assert(billingIdx !== -1 && checkoutIdx !== -1 && retroIdx !== -1, 'expected all three scope headings present');
+  assert(billingIdx < checkoutIdx && checkoutIdx < retroIdx, 'scopes render in alphabetical order (billing, checkout, retro-scope)');
+  assert(!content.includes('## repo'), 'legacy event\'s original "repo" scope must not render once overlaid away to retro-scope');
+
+  const billingSection = extractScopeSection(content, 'billing');
+  const b1Line = billingSection.indexOf(dp4B1.id.slice(0, 8));
+  const b2Line = billingSection.indexOf(dp4B2.id.slice(0, 8));
+  assert(b1Line !== -1 && b2Line !== -1, 'both billing decisions present in the billing scope section');
+  assert(b2Line < b1Line, 'newest-first within a group: B2 (later date) renders before B1');
+
+  const checkoutSection = extractScopeSection(content, 'checkout');
+  const flowIdx = checkoutSection.indexOf('### flow');
+  const untaggedIdx = checkoutSection.indexOf('### untagged');
+  assert(flowIdx !== -1 && untaggedIdx !== -1, 'checkout scope has both a tag subgroup and an untagged subgroup');
+  assert(flowIdx < untaggedIdx, 'tag subgroups render before the untagged subgroup (untagged last)');
+  assert(
+    checkoutSection.indexOf(dp4LegacyC.id.slice(0, 8)) > untaggedIdx,
+    'the untagged legacy checkout decision renders inside the untagged subgroup',
+  );
+});
+
+await check('dp-4: superseded decisions never appear in the index; the supersede event itself renders under its inherited scope/tag', async () => {
+  const content = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  assert(!content.includes(dp4STarget.id.slice(0, 8)), 'the superseded target must never appear in the rendered index');
+  const billingSection = extractScopeSection(content, 'billing');
+  assert(
+    billingSection.includes(dp4SEvent.id.slice(0, 8)) && billingSection.includes('S replaced'),
+    'the supersede event renders under scope "billing" (inherited from its superseded target), tag "invoices"',
+  );
+});
+
+await check('dp-4: archived decisions are excluded by default and included only with --all', async () => {
+  const withoutAll = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  assert(!withoutAll.includes(dp4ATarget.id.slice(0, 8)), 'archived decision excluded from the default render');
+
+  const allResult = renderDecisionIndex(dp4Root, { all: true });
+  const withAll = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  assert(withAll.includes(dp4ATarget.id.slice(0, 8)), 'archived decision included once rendered with --all');
+  const renderedLineCount = (withAll.match(/^- /gm) || []).length;
+  assert(
+    allResult.count === renderedLineCount,
+    `expected reported count (${allResult.count}) to match the number of rendered "- " lines (${renderedLineCount})`,
+  );
+
+  // Restore the default (non-all) rendering for the checks that follow.
+  renderDecisionIndex(dp4Root, {});
+});
+
+await check('dp-4: a retro-tagged legacy event renders under its overlaid scope/tags, never under "untagged"', async () => {
+  const content = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  const retroSection = extractScopeSection(content, 'retro-scope');
+  assert(retroSection, 'expected a "retro-scope" scope section (the overlaid scope, not "repo")');
+  const retroOnlyIdx = retroSection.indexOf('### retro-only');
+  assert(retroOnlyIdx !== -1, 'expected a "retro-only" tag subgroup (the overlaid tag)');
+  const legacyRLineIdx = retroSection.indexOf(dp4LegacyR.id.slice(0, 8));
+  assert(legacyRLineIdx > retroOnlyIdx, 'the retro-tagged legacy event renders inside the "retro-only" tag subgroup');
+  const untaggedIdx = retroSection.indexOf('### untagged');
+  assert(
+    untaggedIdx === -1 || legacyRLineIdx < untaggedIdx || legacyRLineIdx > retroSection.indexOf('### untagged') + 999999,
+    'sanity guard (see next stronger assertion)',
+  );
+  // Stronger, unambiguous check: the legacy event's line never sits inside an "untagged" subgroup at all.
+  if (untaggedIdx !== -1) {
+    const afterUntagged = retroSection.slice(untaggedIdx);
+    assert(!afterUntagged.includes(dp4LegacyR.id.slice(0, 8)), 'retro-tagged legacy event must not appear under "untagged"');
+  }
+});
+
+await check('dp-4: only the first line of a multi-line decision text is rendered', async () => {
+  const content = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  assert(content.includes('Multi-line decision'), 'first line of the decision text must render');
+  assert(!content.includes('Second line detail'), 'second line of the decision text must never render');
+});
+
+await check('dp-4: one line per decision follows the "short8 · YYYY-MM-DD · first line" format', async () => {
+  const content = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  const short8 = dp4C1.id.slice(0, 8);
+  const re = new RegExp(`^- ${short8} · \\d{4}-\\d{2}-\\d{2} · C1 checkout decision$`, 'm');
+  assert(re.test(content), `expected a line matching "short8 · date · text" for C1, got:\n${content}`);
+});
+
+await check('dp-4: two consecutive renders over the same (unchanged) store are byte-identical — no wall-clock in the body', async () => {
+  const first = renderDecisionIndex(dp4Root, {});
+  const firstBytes = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  const second = renderDecisionIndex(dp4Root, {});
+  const secondBytes = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  assert(firstBytes === secondBytes, 'rendering twice over an unchanged store must produce byte-identical output');
+  assert(first.content === second.content, 'in-memory computed content must also be byte-identical across two renders');
+});
+
+await check('dp-4: --check reports no drift immediately after a render, and detects hand-edited drift with a non-zero exit', async () => {
+  renderDecisionIndex(dp4Root, {});
+  const clean = decisionIndexDrift(dp4Root, {});
+  assert(clean.drift === false, `expected no drift immediately after a render, got ${JSON.stringify(clean)}`);
+
+  const cleanCli = await runBee(['decisions', 'render', '--check', '--json'], dp4Root);
+  assert(cleanCli.status === 0, `CLI --check on a fresh render should exit 0, got ${cleanCli.status} :: ${cleanCli.stderr || cleanCli.stdout}`);
+
+  fs.appendFileSync(decisionIndexFilePath(dp4Root), '\nHAND-EDITED DRIFT MARKER\n', 'utf8');
+  const dirty = decisionIndexDrift(dp4Root, {});
+  assert(dirty.drift === true, 'hand-edited file must be detected as drifted');
+
+  const dirtyCli = await runBee(['decisions', 'render', '--check', '--json'], dp4Root);
+  assert(dirtyCli.status !== 0, 'CLI --check on a hand-edited file must exit non-zero');
+  const onDiskAfterCheck = fs.readFileSync(decisionIndexFilePath(dp4Root), 'utf8');
+  assert(onDiskAfterCheck.includes('HAND-EDITED DRIFT MARKER'), '--check must never write — the hand-edited drift marker must survive');
+
+  // A real (non-check) render fixes the drift.
+  renderDecisionIndex(dp4Root, {});
+  const fixed = decisionIndexDrift(dp4Root, {});
+  assert(fixed.drift === false, 'a real render clears the previously detected drift');
+});
+
+await check('dp-4: empty store — render never throws, produces a valid file with no decisions listed', async () => {
+  const emptyRoot = makeTempRepo();
+  try {
+    assert(!fs.existsSync(path.join(emptyRoot, '.bee', 'decisions.jsonl')), 'precondition: no decisions.jsonl exists yet');
+    const result = renderDecisionIndex(emptyRoot, {});
+    assert(fs.existsSync(decisionIndexFilePath(emptyRoot)), 'index.md should exist even for an empty store');
+    assert(result.count === 0, `expected a count of 0 for an empty store, got ${JSON.stringify(result)}`);
+    const content = fs.readFileSync(decisionIndexFilePath(emptyRoot), 'utf8');
+    assert(/no active decisions/i.test(content), 'empty-store render should say so in plain text');
+
+    const cliRun = await runBee(['decisions', 'render', '--json'], emptyRoot);
+    assert(cliRun.status === 0, `CLI render on an empty store exited ${cliRun.status} :: ${cliRun.stderr || cliRun.stdout}`);
+  } finally {
+    fs.rmSync(emptyRoot, { recursive: true, force: true });
+  }
+});
+
+await check('dp-4 CLI: decisions render --json writes docs/decisions/index.md and reports a count', async () => {
+  const r = makeTempRepo();
+  logDecision(r, { decision: 'CLI render fixture', rationale: 'x', scope: 'demo-scope', tags: ['demo-tag'] });
+  const run = await runBee(['decisions', 'render', '--json'], r);
+  assert(run.status === 0, `decisions render exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const payload = JSON.parse(run.stdout);
+  assert(payload.count === 1, `expected count 1, got ${JSON.stringify(payload)}`);
+  assert(fs.existsSync(decisionIndexFilePath(r)), 'index.md written to disk');
 });
 
 printSummaryAndExit();

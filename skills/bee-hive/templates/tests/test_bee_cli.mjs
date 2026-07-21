@@ -734,6 +734,14 @@ await check('decisions.tag example runs through the real dispatcher (decision-pr
   assert(event.scope === 'billing', `expected scope billing, got ${event.scope}`);
 });
 
+await check('decisions.render example runs through the real dispatcher (decision-propagation dp-4) — writes docs/decisions/index.md from whatever the fixture chain above has logged so far', async () => {
+  const result = await assertExampleOk('decisions.render');
+  const payload = JSON.parse(result.stdout);
+  assert(typeof payload.path === 'string' && payload.path.length > 0, `render should report a path, got ${result.stdout}`);
+  assert(typeof payload.count === 'number', `render should report a numeric count, got ${result.stdout}`);
+  assert(fs.existsSync(path.join(root, 'docs', 'decisions', 'index.md')), 'render should write docs/decisions/index.md');
+});
+
 await check('status example runs through the real dispatcher', async () => {
   const result = await assertExampleOk('status');
   assert(JSON.parse(result.stdout).phase === 'swarming', 'status should reflect the fixture repo\'s phase');

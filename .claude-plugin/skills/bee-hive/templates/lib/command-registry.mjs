@@ -610,6 +610,23 @@ export const COMMAND_REGISTRY = [
     ],
     deprecated: null,
   },
+  {
+    name: 'decisions.render',
+    invoke: 'bee decisions render',
+    description:
+      'Render docs/decisions/index.md from the active decision store (decision-propagation D4b/D6, overlay-aware per D7/D8): grouped by scope then tag (untagged last), newest-first inside each group, one line per decision "short8 · YYYY-MM-DD · first line of decision text". Superseded/redacted events are always excluded; a supersede event renders under its inherited scope/tags (D6). Consumes the SAME overlay-applied read path as `decisions search`/`active`, so a retro-tagged legacy event renders under its overlaid scope/tags, never under "untagged". The file carries a provenance header and is deterministic (byte-identical for the same store) — it is regenerated only, never hand-edited.',
+    parameters: {
+      type: 'object',
+      properties: {
+        all: { type: 'boolean', description: 'Also reach events archived by `decisions archive` (decision-propagation D4c) — same union-read flag as `decisions search`/`active`. Omit to render the active store only.' },
+        check: { type: 'boolean', description: 'Read-only: compute the index and compare it byte-for-byte against docs/decisions/index.md on disk, without writing. Exits non-zero (and never writes) when the on-disk file is missing or has drifted (e.g. hand-edited) from what the store would render.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee decisions render --json'],
+    deprecated: null,
+  },
 
   // ─── state (bee_state.mjs — .bee/state.json mutation verbs) ───────────────
   // Nested worker verbs use a 3-segment name (state.worker.add) resolved by

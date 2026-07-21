@@ -868,6 +868,156 @@ export function activeDecisions(root, { recent = null, all = false } = {}) {
   return recent != null ? active.slice(0, recent) : active;
 }
 
+// decision-propagation dp-4 (CONTEXT D4b/D6, overlay-aware per D7/D8): the
+// derived, CLI-rendered decision index at docs/decisions/index.md — never
+// hand-edited, regenerated only. Consumes activeDecisions(root, {all}), the
+// SAME overlay-applied read path dp-5/dp-6 already established, so a
+// retro-tagged legacy event (or a supersede event that inherited scope/tags
+// from its target at WRITE time — dp-2/D6) renders under its final,
+// overlay-applied scope/tags exactly as `search`/`active` already see it —
+// no separate overlay logic needed here.
+function decisionIndexPath(root) {
+  return path.join(root, 'docs', 'decisions', 'index.md');
+}
+
+// Deliberately carries NO generation timestamp or any other wall-clock
+// value — the must-have is "two consecutive renders over the same store are
+// byte-identical", so this header (and the body below) is a pure function
+// of the store's own event dates, never of when the render ran.
+const DECISION_INDEX_HEADER = [
+  '<!--',
+  'GENERATED FILE — do not hand-edit.',
+  'Rendered by `bee decisions render` from the decisions store (decision-propagation D4b/D8a).',
+  'Regenerate: `bee decisions render`. Check freshness: `bee decisions render --check`.',
+  'Deterministic: byte-identical for the same store contents — this file never includes a',
+  'generation timestamp or any other wall-clock value, only the dates already recorded on',
+  'each decision event.',
+  '-->',
+  '',
+  '# Decision Index',
+].join('\n');
+
+// One line per decision: `short8 · YYYY-MM-DD · first line of decision
+// text` — event.date is already a full ISO string, sliced to its date-only
+// prefix (never the time-of-day component, which would reintroduce a
+// wall-clock-shaped value read straight from data at least, but the spec's
+// literal format is date-only). Only the FIRST line of a multi-line
+// decision renders, so an embedded newline in `decision` can never break
+// the one-line-per-decision contract.
+function formatIndexLine(event) {
+  const short8 = String(event.id).slice(0, 8);
+  const date = typeof event.date === 'string' ? event.date.slice(0, 10) : '0000-00-00';
+  const firstLine = String(event.decision ?? '').split(/\r?\n/)[0];
+  return `- ${short8} · ${date} · ${firstLine}`;
+}
+
+// Grouped by scope (alphabetical), then by tag (alphabetical, untagged
+// last). A decision's group tag is its FIRST tag (declared/overlay order) —
+// one home per decision, never cross-listed under every tag it carries, so
+// the rendered line count always equals the number of decisions rendered
+// (no ambiguity for --check's byte-diff or any caller counting entries).
+// `all` reaches the archive (D4c), matching search/active's own flag.
+// Ordering within a group is newest-first, inherited for free from
+// activeDecisions' own newest-first order (stable partition, never re-sorted).
+function buildDecisionIndexBody(root, { all = false } = {}) {
+  const decisions = activeDecisions(root, { all });
+  const byScope = new Map();
+  for (const event of decisions) {
+    const scope = typeof event.scope === 'string' && event.scope.trim() ? event.scope.trim() : 'repo';
+    if (!byScope.has(scope)) byScope.set(scope, []);
+    byScope.get(scope).push(event);
+  }
+  const scopeNames = [...byScope.keys()].sort((a, b) => a.localeCompare(b));
+
+  const blocks = [];
+  let count = 0;
+  for (const scope of scopeNames) {
+    const scopeLines = [`## ${scope}`];
+    const events = byScope.get(scope);
+    const byTag = new Map();
+    const untagged = [];
+    for (const event of events) {
+      const tag = Array.isArray(event.tags) && event.tags.length ? String(event.tags[0]) : null;
+      if (tag) {
+        if (!byTag.has(tag)) byTag.set(tag, []);
+        byTag.get(tag).push(event);
+      } else {
+        untagged.push(event);
+      }
+    }
+    const tagNames = [...byTag.keys()].sort((a, b) => a.localeCompare(b));
+    for (const tag of tagNames) {
+      scopeLines.push('', `### ${tag}`, '');
+      for (const event of byTag.get(tag)) {
+        scopeLines.push(formatIndexLine(event));
+        count += 1;
+      }
+    }
+    if (untagged.length) {
+      scopeLines.push('', '### untagged', '');
+      for (const event of untagged) {
+        scopeLines.push(formatIndexLine(event));
+        count += 1;
+      }
+    }
+    blocks.push(scopeLines.join('\n'));
+  }
+
+  const body = blocks.length ? blocks.join('\n\n') : 'No active decisions.';
+  return { body, count };
+}
+
+function decisionIndexContent(root, { all = false } = {}) {
+  const { body, count } = buildDecisionIndexBody(root, { all });
+  return { content: `${DECISION_INDEX_HEADER}\n\n${body}\n`, count };
+}
+
+// writeTextAtomic — same temp-write+rename shape as this module's own
+// writeJsonlAtomic (dp-3), specialized for a plain-text body. Local for the
+// same reason writeJsonlAtomic is: fsutil.mjs has no text-atomic-write
+// primitive today and is out of this cell's file scope.
+let writeTextAtomicCounter = 0;
+function writeTextAtomic(file, text) {
+  ensureDir(path.dirname(file));
+  const unique = `${process.pid}-${(writeTextAtomicCounter++).toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  const tmp = `${file}.${unique}.tmp`;
+  fs.writeFileSync(tmp, text, 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+/**
+ * renderDecisionIndex(root, {all}) — decision-propagation dp-4 (CONTEXT
+ * D4b/D6). Computes the index from the active (+archive when `all`) store
+ * and writes it atomically to docs/decisions/index.md. Returns
+ * {path (repo-relative), content, count}. Never throws on an empty store —
+ * an empty store still renders a valid file saying so.
+ */
+export function renderDecisionIndex(root, { all = false } = {}) {
+  const { content, count } = decisionIndexContent(root, { all });
+  const file = decisionIndexPath(root);
+  writeTextAtomic(file, content);
+  return { path: path.relative(root, file), content, count };
+}
+
+/**
+ * decisionIndexDrift(root, {all}) — read-only: computes what the index
+ * SHOULD be right now and compares it byte-for-byte against whatever is on
+ * disk (a missing file counts as drift). Never writes. The CLI's `--check`
+ * mode turns a `drift: true` result into a non-zero exit; this function
+ * itself never throws.
+ */
+export function decisionIndexDrift(root, { all = false } = {}) {
+  const { content } = decisionIndexContent(root, { all });
+  const file = decisionIndexPath(root);
+  let onDisk = null;
+  try {
+    onDisk = fs.readFileSync(file, 'utf8');
+  } catch {
+    onDisk = null;
+  }
+  return { drift: onDisk !== content, path: path.relative(root, file) };
+}
+
 /** Neutralize resurfaced text so it can never act as instructions. */
 export function datamark(text) {
   const cleaned = String(text ?? '')

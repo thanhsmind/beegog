@@ -138,6 +138,8 @@ import {
   tagDecisionsBatch,
   datamark,
   taxonomyFileExists,
+  renderDecisionIndex,
+  decisionIndexDrift,
 } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
@@ -1620,6 +1622,27 @@ function handleDecisionsTag(root, flags) {
     scope: flags.scope !== undefined ? String(flags.scope) : undefined,
   });
   return { result: event, text: tagEventSummary(event) };
+}
+
+// decision-propagation dp-4 (CONTEXT D4b/D6, overlay-aware per D7/D8):
+// `decisions render` writes docs/decisions/index.md; `--check` is read-only
+// and refuses (non-zero exit) on drift instead of writing — all computation
+// (grouping, overlay, byte-diff) lives in lib/decisions.mjs, this handler is
+// presentation + the --check-refuses-loudly policy only. `--all` reaches the
+// archive, matching search/active's own flag (D4c).
+function handleDecisionsRender(root, flags) {
+  const all = flags.all !== undefined;
+  if (flags.check !== undefined) {
+    const { drift, path: relPath } = decisionIndexDrift(root, { all });
+    if (drift) {
+      throw new Error(
+        `decisions render --check: ${relPath} is out of date — run \`bee decisions render\` to regenerate (never hand-edit it).`,
+      );
+    }
+    return { result: { drift: false, path: relPath }, text: `${relPath} is up to date.` };
+  }
+  const result = renderDecisionIndex(root, { all });
+  return { result, text: `Wrote ${result.path} (${result.count} decision(s)).` };
 }
 
 // ─── state: full port of bee_state.mjs's verb logic (dispatcher-unify du-1).
@@ -4387,7 +4410,7 @@ function reservationsUsageFallback(leading) {
 
 function decisionsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search, archive, tag.`;
+  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search, archive, tag, render.`;
 }
 
 const GROUP_USAGE_FALLBACKS = {
@@ -4439,6 +4462,7 @@ const HANDLERS = {
   'decisions.search': handleDecisionsSearch,
   'decisions.archive': handleDecisionsArchive,
   'decisions.tag': handleDecisionsTag,
+  'decisions.render': handleDecisionsRender,
   'state.set': handleStateSet,
   'state.gate': handleStateGate,
   'state.worker.add': handleStateWorkerAdd,
@@ -4517,7 +4541,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check']);
 
 export function splitCommandTokens(argv) {
   const leading = [];
