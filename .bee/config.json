@@ -33,8 +33,5 @@
         "promptVia": "stdin"
       }
     }
-  },
-  "guards": {
-    "idle_gate": false
   }
 }
