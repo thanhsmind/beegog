@@ -54,7 +54,7 @@ Existing implementation, file/API/type inspection, command output, build/typeche
 - **YES** → record the discovered constraints for planning and execution.
 - Spike code never silently becomes production code.
 
-**Verify scripts and any executable code NEVER go in `docs/history/`** (GitHub #17). `docs/history/` is the tech-agnostic knowledge layer — `.md` only (CONTEXT.md, plan.md, reports, walkthrough). A cell's `verify` is a runnable command; when it needs a multi-line harness, that script lives in **the project's own scripts** (committed with the product, so `verify` points at it) or, if disposable, in **`.bee/spikes/<feature>/`**. The write-guard denies a code-extension file (`.sh`, `.mjs`, `.py`, …) written under `docs/history/`.
+**Verify scripts and any executable code NEVER go in `docs/history/`** (GitHub #17). `docs/history/` is the tech-agnostic knowledge layer — `.md` only (CONTEXT.md, plan.md, reports, walkthrough). A cell's `verify` is a runnable command; when it needs a multi-line harness, that script lives in **the project's own scripts** (committed with the product, so `verify` points at it) or, if disposable, in **`.bee/spikes/<feature>/`** — the disposable-code half of the one canonical scratch home (docs/specs/doctrine-layer.md R17). The write-guard denies a code-extension file (`.sh`, `.mjs`, `.py`, …) written under `docs/history/`, and also denies any scratch-shaped write landing in a tracked directory outside `.bee/tmp/`/`.bee/spikes/`.
 
 ## Plan Checker (adversarial)
 

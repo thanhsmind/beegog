@@ -87,7 +87,7 @@ Every field is honest or explicitly empty with a reason in `deliberate_exception
 
 ## Evidence lives in one place (decision 0009)
 
-The cell **trace** is the single source of verification evidence: `trace.verification_evidence` (the JSON above) plus `trace.verify_output` (the recorded verify run). **Pipe evidence with `--evidence-stdin` so no evidence file is ever written.** Do NOT create `reports/<cell-id>-evidence.json`, `reports/execution-*-evidence.md`, or any other on-disk evidence file — that is the exact duplication decision 0009 removed. (`--evidence-file` still exists only for back-compat; if you must use it, write to a throwaway path outside `docs/history/`, pass it to cap, and delete it — never leave it in `reports/`.) The per-cell report (below) *links and summarizes* the trace in one line; it never re-embeds it.
+The cell **trace** is the single source of verification evidence: `trace.verification_evidence` (the JSON above) plus `trace.verify_output` (the recorded verify run). **Pipe evidence with `--evidence-stdin` so no evidence file is ever written — this stays the preferred path.** Do NOT create `reports/<cell-id>-evidence.json`, `reports/execution-*-evidence.md`, or any other on-disk evidence file — that is the exact duplication decision 0009 removed. (`--evidence-file` still exists only for back-compat; if you must use it, write to `.bee/tmp/<feature-or-session>/` — the one canonical scratch home, docs/specs/doctrine-layer.md R17 — pass it to cap, and delete it; never leave it in `reports/` or any other tracked path.) The per-cell report (below) *links and summarizes* the trace in one line; it never re-embeds it.
 
 ## Verification Failure
 

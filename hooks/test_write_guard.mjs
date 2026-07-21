@@ -714,6 +714,116 @@ async function main() {
     );
   }
 
+  // ======================================================================
+  // 35+. scratch-shape guard (cell th-6, CONTEXT tree-hygiene D4/D5): a
+  // scratch-SHAPED write (.tmp/.log/.bak extension, a dotfile whose name
+  // contains debug/stress/scratch, or a verdict-/probe-/digest- prefixed
+  // payload) landing in a TRACKED directory is denied and the refusal names
+  // .bee/tmp/. The scratch homes (.bee/tmp/, .bee/spikes/, .bee/logs/,
+  // .bee/workers/) and every deliverable store (docs/**, .bee/cells/,
+  // .bee/decisions.jsonl, plugin skill renders) stay allowed even when a
+  // filename would otherwise look scratch-shaped — a false deny on a
+  // deliverable is worse than the garbage this guard prevents. Uses `root`
+  // (swarming, execution approved) — the same permissive fixture rows 1-5
+  // use, so a deny here proves the rule, not phase gating.
+  // ======================================================================
+
+  // --- 35. the cell's literal DENY example: a debug script into .bee/bin/
+  const r35 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: ".bee/bin/.foo_stress_debug.sh", content: "#!/bin/sh\n" } },
+    root,
+  );
+  check(r35.status === 2, "row35: a debug script written into .bee/bin/ is denied", `status=${r35.status} stderr=${r35.stderr}`);
+  check(r35.stderr.includes(".bee/tmp/"), "row35: the deny message names .bee/tmp/", r35.stderr);
+
+  // --- 36. the SAME file into .bee/tmp/ is allowed
+  const r36 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: ".bee/tmp/th6/.foo_stress_debug.sh", content: "#!/bin/sh\n" } },
+    root,
+  );
+  check(r36.status === 0, "row36: the same debug script into .bee/tmp/ is allowed", `status=${r36.status} stderr=${r36.stderr}`);
+
+  // --- 37. a report into docs/history/<feature>/reports/ is allowed, even
+  // named to otherwise look scratch-shaped (verdict- prefix) — proves the
+  // docs/** deliverable exemption, not just "this filename was never scratch"
+  const r37 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: "docs/history/tree-hygiene/reports/verdict-th6.md", content: "# report\n" } },
+    root,
+  );
+  check(r37.status === 0, "row37: a docs/history/<feature>/reports/ write is allowed even with a scratch-shaped name", `status=${r37.status} stderr=${r37.stderr}`);
+
+  // --- 38. a .bee/cells/<id>.json write is allowed, same non-trivial shape
+  const r38 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: ".bee/cells/probe-th-6.json", content: "{}\n" } },
+    root,
+  );
+  check(r38.status === 0, "row38: a .bee/cells/ write is allowed even with a scratch-shaped name", `status=${r38.status} stderr=${r38.stderr}`);
+
+  // --- 39. .bee/decisions.jsonl stays allowed (append-only decisions store)
+  const r39 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: 'printf "x" >> .bee/decisions.jsonl' } },
+    root,
+  );
+  check(r39.status === 0, "row39: .bee/decisions.jsonl append stays allowed", `status=${r39.status} stderr=${r39.stderr}`);
+
+  // --- 40. a plugin skill render stays allowed, again with a scratch-shaped
+  // basename so the assertion proves the render-tree exemption fires
+  const r40 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: ".claude-plugin/skills/bee-executing/probe-render.json", content: "{}\n" } },
+    root,
+  );
+  check(r40.status === 0, "row40: a plugin skill render write is allowed even with a scratch-shaped name", `status=${r40.status} stderr=${r40.stderr}`);
+
+  // --- 41. false-deny protection: a project's OWN .log file inside a
+  // recognized test/fixture directory is not bee scratch and stays allowed
+  const r41 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: "test/fixtures/sample.log", content: "log line\n" } },
+    root,
+  );
+  check(r41.status === 0, "row41: a project's own test-fixture .log file is not denied as bee scratch", `status=${r41.status} stderr=${r41.stderr}`);
+
+  // --- 42. the same bare .log extension OUTSIDE a fixture dir, in a tracked
+  // non-.bee directory, is denied (the rule fires; row41 is the exemption,
+  // not the rule failing to apply)
+  const r42 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: "results.log", content: "log line\n" } },
+    root,
+  );
+  check(r42.status === 2, "row42: a bare .log file in a tracked non-fixture directory is denied", `status=${r42.status} stderr=${r42.stderr}`);
+  check(r42.stderr.includes(".bee/tmp/"), "row42: the deny message names .bee/tmp/", r42.stderr);
+
+  // --- 43. a repo-root scratch dotfile (the exact D1 evidence shape: a
+  // crashed worker's .<slug>_stress_debug.sh) is denied, not just inside .bee/
+  const r43 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: ".rel9999_stress_debug.sh", content: "#!/bin/sh\n" } },
+    root,
+  );
+  check(r43.status === 2, "row43: a repo-root scratch dotfile is denied, not only inside .bee/", `status=${r43.status} stderr=${r43.stderr}`);
+
+  // --- 44. a .tmp extension in a tracked non-.bee directory (scripts/) is denied
+  const r44 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: "scripts/scratch-notes.tmp", content: "x\n" } },
+    root,
+  );
+  check(r44.status === 2, "row44: a .tmp file in scripts/ is denied", `status=${r44.status} stderr=${r44.stderr}`);
+
+  // --- 45. a verdict-/probe-/digest- prefixed payload in a tracked non-.bee
+  // directory is denied, proving the naming-pattern rules aren't .bee-only
+  const r45 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: "scripts/probe-foo.mjs", content: "// x\n" } },
+    root,
+  );
+  check(r45.status === 2, "row45: a probe-*.mjs payload in scripts/ is denied", `status=${r45.status} stderr=${r45.stderr}`);
+
+  // --- 46. fail-open reinforcement: guards.mjs throwing on import still
+  // fails open (exit 0) even when the target is scratch-shaped (row7 proves
+  // this generically; this row proves it for the new rule's own code path)
+  const r46 = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: ".bee/bin/.foo_stress_debug.sh", content: "#!/bin/sh\n" } },
+    throwRoot,
+  );
+  check(r46.status === 0, "row46: scratch-shaped target still fails open when guards.mjs throws on import", `status=${r46.status} stderr=${r46.stderr}`);
+
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }

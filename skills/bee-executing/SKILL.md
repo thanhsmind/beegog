@@ -110,7 +110,7 @@ Record every consult in the cap trace and the per-cell report (see Cap and Retur
 
 - Cap only after the verify pass is recorded (the helper refuses otherwise):
   `node .bee/bin/bee.mjs cells cap --id <id> --outcome "<summary>" --files <a,b> [--deviations-file <f>] [--friction "<text>"]`
-- If the cell is `behavior_change: true`, add `--behavior-change --evidence-stdin` and **pipe** the structured `verification_evidence` (tests inspected, tests added/changed, red-failure/before-state evidence, verification run — see `references/worker-details.md`). It lands in the cell trace; **do not write an evidence file** in `reports/` or anywhere else (decision 0009 — the trace is the single source).
+- If the cell is `behavior_change: true`, add `--behavior-change --evidence-stdin` and **pipe** the structured `verification_evidence` (tests inspected, tests added/changed, red-failure/before-state evidence, verification run — see `references/worker-details.md`). It lands in the cell trace; **do not write an evidence file** in `reports/` or anywhere else (decision 0009 — the trace is the single source; if you ever must, the one canonical scratch home is `.bee/tmp/<feature-or-session>/`, docs/specs/doctrine-layer.md R17).
 - If any Advisor Consults happened on this claim, fold their count and advisor identity into the trace alongside the rest of the evidence — no separate file, same decision 0009 rule.
 - Trace depth follows the cell's lane (tiny = one line; high-risk = full trace). Record friction only when a trigger fired.
 - Make exactly **one commit per cell**, cell id in the message.
@@ -122,7 +122,7 @@ Record every consult in the cap trace and the per-cell report (see Cap and Retur
 ## 9. Return
 
 - Start your final message with exactly one of `[DONE]`, `[BLOCKED]`, `[HANDOFF]`, `[NOOP]`, followed by the result fields.
-- Write a **short** per-cell report to `docs/history/<feature>/reports/<cell-id>.md`: the status token, a one-line outcome, files touched, and a link to `.bee/cells/<cell-id>.json` for the full trace/evidence. Never re-embed the `verification_evidence` JSON or verify output (decision 0009 — the trace is the single source).
+- Write a **short** per-cell report to `docs/history/<feature>/reports/<cell-id>.md`: the status token, a one-line outcome, files touched, and a link to `.bee/cells/<cell-id>.json` for the full trace/evidence. Never re-embed the `verification_evidence` JSON or verify output (decision 0009 — the trace is the single source), and never a separate scratch file elsewhere (docs/specs/doctrine-layer.md R17).
 - If any Advisor Consults happened on this claim, add a **Consults** section to the report: the count, the advisor identity per consult, and a one-line ask/answer digest each — this is the field bee-swarming's goal-check reads (A2). No consults happened → omit the section entirely.
 
 ## Compaction

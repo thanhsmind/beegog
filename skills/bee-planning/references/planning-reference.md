@@ -139,7 +139,7 @@ A cell is an executable prompt a cold worker can pick up with zero session histo
 }
 ```
 
-Create with one batched stdin call for the whole slice (a JSON array; a single object works for a one-cell slice — do not write per-cell scratchpad files):
+Create with one batched stdin call for the whole slice (a JSON array; a single object works for a one-cell slice — do not write per-cell scratchpad files; the one canonical scratch home, if one is ever genuinely needed, is `.bee/tmp/<feature-or-session>/`, docs/specs/doctrine-layer.md R17):
 
 ```bash
 node .bee/bin/bee.mjs cells add --stdin <<'EOF'

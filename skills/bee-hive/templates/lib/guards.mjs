@@ -54,6 +54,80 @@ function docsHistoryCodeDeny(normalized) {
   return HISTORY_CODE_EXTENSIONS.has(ext) ? ext : null;
 }
 
+// ─── scratch-shape guard (tree-hygiene D4/D5, cell th-6) ───────────────────
+// One canonical scratch home (docs/specs/doctrine-layer.md Business Rules,
+// decision f21efe6e): every ephemeral file bee writes for its own working
+// purposes belongs in .bee/tmp/<feature-or-session>/ (feasibility code in
+// .bee/spikes/<feature>/), never a tracked path. This denies a write whose
+// TARGET NAME looks scratch-shaped when it lands anywhere else in the
+// tracked tree — first-hit, same precedence class as direct-edit and
+// docs-history-code above.
+//
+// The hard requirement (plan-review, decision f21efe6e): a FALSE DENY on a
+// real deliverable is worse than the garbage this guard prevents. Two
+// independent safety nets keep this rule narrow:
+//   1. An explicit allow-list runs BEFORE any shape pattern is even
+//      evaluated: the scratch homes themselves, and every known deliverable
+//      store (docs/**, .bee/cells/, .bee/decisions.jsonl, the four rendered
+//      plugin skill trees). Nothing under these paths is ever denied here,
+//      no matter how scratch-shaped its basename looks.
+//   2. The shape patterns themselves are deliberately narrow band, chosen so
+//      a real project source/test file is unlikely to collide:
+//        - SCRATCH_DOTFILE_RE only matches a basename that STARTS WITH "."
+//          and contains debug/stress/scratch — the exact shape of the crash
+//          leak this feature was filed over (.rel1710rc3_stress_debug.sh).
+//          Committed project sources are essentially never dot-prefixed.
+//        - SCRATCH_PREFIX_RE only matches a basename STARTING WITH
+//          verdict-/probe-/digest- — bee's own scratch vocabulary, not
+//          plausible deliverable naming.
+//        - SCRATCH_EXT_RE (bare .tmp/.log/.bak) is the one genuinely
+//          ambiguous shape — a project can legitimately commit a fixture
+//          named `sample.log` or `snapshot.bak` for a test. This is the ONE
+//          pattern additionally exempted whenever the path runs through a
+//          recognized test/fixture directory segment (test/, tests/,
+//          __tests__/, fixtures/, __fixtures__/, testdata/, examples/) — a
+//          project's own `foo.log`-named source/test file is not bee
+//          scratch, and this is how that distinction is drawn: by directory
+//          convention, not by guessing intent from the extension alone.
+const SCRATCH_HOME_PREFIXES = ['.bee/tmp/', '.bee/spikes/', '.bee/logs/', '.bee/workers/'];
+// Deliverable stores that must never be false-denied: docs/** (reports,
+// specs, decisions, backlog), the cell store, the decisions ledger, and the
+// four rendered plugin skill trees (scripts/render_plugin_skill_trees.mjs
+// TARGET_ROOTS + the two skills/ mirrors onboarding also keeps in sync).
+const DELIVERABLE_PREFIXES = [
+  'docs/',
+  '.bee/cells/',
+  '.claude-plugin/skills/',
+  '.codex-plugin/skills/',
+  '.claude/skills/',
+  '.agents/skills/',
+];
+const DELIVERABLE_EXACT = new Set(['.bee/decisions.jsonl']);
+const TEST_FIXTURE_DIR_RE = /(^|\/)(test|tests|__tests__|fixtures|__fixtures__|testdata|examples)(\/|$)/i;
+const SCRATCH_EXT_RE = /\.(tmp|log|bak)$/i;
+const SCRATCH_DOTFILE_RE = /^\.[^/]*(?:debug|stress|scratch)[^/]*$/i;
+const SCRATCH_PREFIX_RE = /^(?:verdict|probe|digest)-/i;
+
+function underAnyPrefix(normalized, prefixes) {
+  return prefixes.some((prefix) => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix));
+}
+
+// Returns a short kind string when `normalized` is a scratch-shaped write
+// landing outside every allowed home/deliverable, else null.
+function scratchShapeDeny(normalized) {
+  if (underAnyPrefix(normalized, SCRATCH_HOME_PREFIXES)) return null;
+  if (DELIVERABLE_EXACT.has(normalized)) return null;
+  if (underAnyPrefix(normalized, DELIVERABLE_PREFIXES)) return null;
+
+  const basename = normalized.slice(normalized.lastIndexOf('/') + 1);
+  if (SCRATCH_DOTFILE_RE.test(basename)) return 'a dotfile named like a debug/stress/scratch script';
+  if (SCRATCH_PREFIX_RE.test(basename)) return 'a verdict-/probe-/digest- style scratch payload';
+  if (SCRATCH_EXT_RE.test(basename) && !TEST_FIXTURE_DIR_RE.test(normalized)) {
+    return `a ${basename.slice(basename.lastIndexOf('.'))} scratch file`;
+  }
+  return null;
+}
+
 const GATED_PHASES = new Set(['exploring', 'planning', 'validating']);
 
 // Phases where no bee work is active: never started ('idle') and finished
@@ -254,6 +328,19 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
         'the tech-agnostic KNOWLEDGE layer (.md only — CONTEXT.md, plan.md, reports, walkthrough). Code never lives there. ' +
         "FIX: put a persistent verify/helper script in the project's own scripts (committed with the product) and point " +
         'the cell\'s verify command at it; put a disposable proof in .bee/spikes/<feature>/. Never docs/history.',
+    };
+  }
+
+  const scratchKind = scratchShapeDeny(normalized);
+  if (scratchKind) {
+    return {
+      allow: false,
+      kind: 'scratch-shape',
+      reason:
+        `bee scratch-shape guard: "${normalized}" looks like ${scratchKind} landing in a tracked directory. ` +
+        'Every ephemeral file bee writes for its own working purposes belongs in .bee/tmp/<feature-or-session>/ ' +
+        '(feasibility code in .bee/spikes/<feature>/), never a tracked path (docs/specs/doctrine-layer.md). ' +
+        'FIX: write it to .bee/tmp/ instead (or .bee/spikes/ for a feasibility proof), and let `bee tmp sweep` clear it later.',
     };
   }
 

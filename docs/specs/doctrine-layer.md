@@ -1,8 +1,8 @@
 ---
 area: doctrine-layer
-updated: 2026-07-19
-sources: [lane-ceremony-v3 cells lcv3-1..lcv3-4 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan freeze, lane work-packet shapes, product-file caps, test-anchored flags, intake-first classification; each RED-first against the doctrine assertion suite); fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cells codex-agent-wait-loop-2/codex-agent-wait-loop-3, 2026-07-15/2026-07-19 — native wait rule plus independently reviewed D6/D7 repair); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17); advisor-and-orchestration Slice 2A-iii (cells ao-2aiii-1/ao-2aiii-2 — dispatch-boundary enforcement + gather-purpose routing prose, 2026-07-17); advisor-and-orchestration Slice 5 (cell ao-5-1 — execution-worker class, tiny/small single-worker execution, AO14, 2026-07-17)]
-decisions: [lane-ceremony-v3 D1-D10 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19); ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface); 040f8ef0 (read-only analyst spawn + partial-return fan-out, B7/R11)]
+updated: 2026-07-21
+sources: [lane-ceremony-v3 cells lcv3-1..lcv3-4 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan freeze, lane work-packet shapes, product-file caps, test-anchored flags, intake-first classification; each RED-first against the doctrine assertion suite); fanout-doctrine (cell fanout-doctrine-1, 2026-07-13, flushed capture stub 2f796f40); terminal-phase-gate (cell tpg-2, 2026-07-13); tier-transport-doctrine (cell tier-transport-doctrine-1, 2026-07-13); codex-agent-wait-loop (cells codex-agent-wait-loop-2/codex-agent-wait-loop-3, 2026-07-15/2026-07-19 — native wait rule plus independently reviewed D6/D7 repair); compounding-fanout-hardening (cell cfh-1, 2026-07-17, flushed capture stub d3417cb2); advisor-and-orchestration Slice 2A-ii (cells ao-2aii-1/ao-2aii-2, 2026-07-17); advisor-and-orchestration Slice 2A-iii (cells ao-2aiii-1/ao-2aiii-2 — dispatch-boundary enforcement + gather-purpose routing prose, 2026-07-17); advisor-and-orchestration Slice 5 (cell ao-5-1 — execution-worker class, tiny/small single-worker execution, AO14, 2026-07-17); tree-hygiene (cell th-6, 2026-07-21 — write-guard scratch-shape denial + the three competing prose homes collapsed into one doctrine rule)]
+decisions: [lane-ceremony-v3 D1-D10 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19); ba5a35f1-981d-4cb5-8a57-234a187f122d (placement rule); c2c46488 (an unblocked write is not an approved write); 1689af1b (silent bookkeeping); D1/D2/D3 delegation contract; 0023 + 6cd34376 (explicit-tier transport rides critical rule 13, B3a); codex-agent-wait-loop D1-D5 + ebb70b72-e5e5-43f2-a692-beb371b99f6c (native empty-wait discipline and live Codex surface); 040f8ef0 (read-only analyst spawn + partial-return fan-out, B7/R11); f21efe6e (tree-hygiene D1/D4 — one canonical scratch home, the write-guard that enforces it)]
 coverage: partial
 ---
 
@@ -289,6 +289,18 @@ route to the external path until it earns its own proof (decisions 34398e69,
   critical-patterns digest stays mandatory in every lane (it already rides the
   session preamble at zero extra cost). The lane decision re-runs upward any
   time evidence demands escalation; de-escalation requires cited evidence.
+- **R17** — There is one canonical scratch home (`f21efe6e`): every ephemeral
+  file bee writes for its own working purposes — judge payloads, evidence/
+  deviation files, batch inputs, digests, verify logs, probe/debug scripts,
+  review manifests — goes to `.bee/tmp/<feature-or-session>/`; disposable
+  feasibility code goes to `.bee/spikes/<feature>/`. Deliverables (reports,
+  specs, decisions, backlog, the cell/decision stores, plugin renders) keep
+  the paths their own workflow stage already requires — never rerouted
+  through scratch. A write-guard denies a scratch-shaped write that targets a
+  tracked directory instead, naming `.bee/tmp/` in the refusal; scratch is
+  swept at feature close and session finish via `bee tmp sweep`. Three
+  procedure references used to each state a partial, competing version of
+  this home — they now cite this rule instead.
 
 - **The verify ladder (cli-performance D4, `e54878b1`):** a cell's verify is its
   TARGETED suite (seconds), run red-first and green by the worker; the full
