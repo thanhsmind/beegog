@@ -46,6 +46,9 @@
     "verification_evidence": null,
     "verify_output": null,
     "verify_passed": null,
-    "claim_session": null
+    "claim_session": null,
+    "claimed_at": null,
+    "verify_command": null,
+    "verified_at": null
   }
 }
