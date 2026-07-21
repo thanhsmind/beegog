@@ -36,6 +36,25 @@
 //   (d) One process against a FRESH (non-stale) held lock -> typed
 //       LockBusyError after the real ~5s retry budget, holder fields match
 //       the seeded holder.
+//
+// hardening-1-7-10 (D2): stale takeover is no longer age-alone — it also
+// requires the recorded owner pid to be dead, below an absolute
+// HARD_STALE_MS ceiling. Three more scenarios prove that:
+//   (e) One process against a lock backdated PAST STALE_MS (45s) but owned
+//       by THIS process's own (real, alive) pid -> still typed LockBusyError
+//       — mtime age alone is no longer enough to steal a live holder's lock
+//       (this is the exact live-holder-steal bug this cell fixes: run it
+//       against the pre-fix code and it fails — the busy child wrongly
+//       succeeds instead of being refused).
+//   (f) N racers under the real lock, but the lock file is pre-seeded stale
+//       PAST the HARD_STALE_MS absolute ceiling, still owned by THIS
+//       process's real, alive pid -> takeover proceeds anyway (pid-reuse
+//       guard of last resort overrides liveness once the ceiling is
+//       crossed), same zero-violation/exact-count invariants as (a)/(c).
+// A standalone, same-process isPidAlive() unit check (missing/unparsable pid
+// -> dead, alive pid -> alive, ESRCH -> dead, EPERM -> alive, an unknown
+// errno -> alive) runs before any of the above, right after the lockFilePath
+// sanitization checks.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -50,6 +69,10 @@ const LOCK_LIB_PATH = path.join(REPO_ROOT, '.bee', 'bin', 'lib', 'lock.mjs');
 const WORKERS = 6;
 const ITERS = 12;
 const HOLD_MS = 5;
+// Mirrors lock.mjs's own HARD_STALE_MS (not exported — this is a black-box
+// value, kept in sync by hand, same discipline as lock.mjs's own duplicated
+// envSessionId chain).
+const HARD_STALE_MS_FOR_TEST = 3_600_000;
 
 function argVal(flag) {
   const found = process.argv.find((a) => a.startsWith(`${flag}=`));
@@ -209,12 +232,55 @@ function readCounterTotal(dir) {
 // ─── orchestrator ────────────────────────────────────────────────────────────
 
 async function runOrchestrator() {
-  const { lockFilePath, withStoreLock } = await import(LOCK_LIB_PATH);
+  const { lockFilePath, withStoreLock, isPidAlive } = await import(LOCK_LIB_PATH);
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'test-store-lock-'));
   fs.mkdirSync(path.join(tmpRoot, '.bee', 'locks'), { recursive: true });
 
   const failures = [];
   const expectedTotal = WORKERS * ITERS;
+
+  // (0e-0h) isPidAlive() unit checks — same process, no spawn needed (it's a
+  // pure synchronous probe). Covers every branch the D2 fix depends on:
+  // missing/unparsable pid, a genuinely alive pid, ESRCH (dead), EPERM
+  // (alive), and an unmapped errno (treated conservatively as alive).
+  {
+    if (isPidAlive(process.pid) !== true) {
+      failures.push(`(0e) isPidAlive(process.pid=${process.pid}) expected true (this process is alive), got false`);
+    }
+    for (const bad of [999999999, 0, -5, 'not-a-pid', undefined, null, NaN]) {
+      if (isPidAlive(bad) !== false) {
+        failures.push(`(0f) isPidAlive(${JSON.stringify(bad)}) expected false (missing/unparsable/dead pid), got true`);
+      }
+    }
+    // Monkeypatch process.kill to simulate ESRCH/EPERM/unmapped-errno without
+    // depending on any real OS process actually being in that state.
+    const realKill = process.kill;
+    try {
+      process.kill = (pid, sig) => {
+        if (pid === 4242001) {
+          const err = new Error('kill ESRCH (simulated)');
+          err.code = 'ESRCH';
+          throw err;
+        }
+        if (pid === 4242002) {
+          const err = new Error('kill EPERM (simulated)');
+          err.code = 'EPERM';
+          throw err;
+        }
+        if (pid === 4242003) {
+          const err = new Error('kill EINVAL (simulated)');
+          err.code = 'EINVAL';
+          throw err;
+        }
+        return realKill.call(process, pid, sig);
+      };
+      if (isPidAlive(4242001) !== false) failures.push('(0g) isPidAlive() with a monkeypatched ESRCH expected false (dead), got true');
+      if (isPidAlive(4242002) !== true) failures.push('(0g) isPidAlive() with a monkeypatched EPERM expected true (alive), got false');
+      if (isPidAlive(4242003) !== true) failures.push('(0h) isPidAlive() with a monkeypatched unmapped errno (EINVAL) expected true (conservatively alive), got false');
+    } finally {
+      process.kill = realKill;
+    }
+  }
 
   // (0) lockFilePath sanitizes logical names for Windows filesystem safety.
   // Runtime lock names include "cells:<id>" (cells.mjs's `cells:${id}`, 4
@@ -402,6 +468,104 @@ async function runOrchestrator() {
     if (elapsedMs > 12_000) {
       failures.push(`(d) busy-attempt took ${elapsedMs}ms — far beyond the ~5s retry budget, may be hanging instead of refusing`);
     }
+
+    // (e) LIVE-HOLDER REGRESSION (D2): a lock backdated past STALE_MS (45s)
+    // but owned by THIS process's own real, alive pid must NOT be taken
+    // over — mtime age alone is no longer sufficient. Pre-fix, this is
+    // exactly the bug: age > STALE_MS was the ONLY check, so the busy child
+    // below would wrongly steal the lock and "succeed" instead of being
+    // refused (run this scenario against the pre-fix tryStaleTakeover to see
+    // it fail).
+    const liveLockName = 'lock-e';
+    const liveLockPath = lockFilePath(tmpRoot, liveLockName);
+    const liveHolder = { pid: process.pid, session: 'live-holder-session', ts: new Date(Date.now() - 45_000).toISOString(), token: 'live-token-e' };
+    fs.writeFileSync(liveLockPath, `${JSON.stringify(liveHolder)}\n`);
+    const liveMs = (Date.now() - 45_000) / 1000;
+    fs.utimesSync(liveLockPath, liveMs, liveMs);
+    const liveStartedAt = Date.now();
+    const liveBusyResult = await spawnRacer(['--role=busy', `--lock-root=${tmpRoot}`, `--lock-name=${liveLockName}`]);
+    const liveElapsedMs = Date.now() - liveStartedAt;
+    const liveLockSurvived = fs.existsSync(liveLockPath);
+    fs.rmSync(liveLockPath, { force: true });
+
+    if (liveBusyResult.code !== 0) {
+      // The 'busy' role's critical-section body throws
+      // 'critical section ran — lock was NOT actually busy' the moment it
+      // ever actually acquires the lock, which is NOT a LockBusyError, so it
+      // falls into the role's generic catch-and-exit(1) path — this is
+      // exactly what the pre-fix bug produces: age > STALE_MS alone stole a
+      // live holder's lock, the busy child's body ran, and THIS is that
+      // failure surfacing.
+      failures.push(
+        `(e) busy-attempt child against a 45s-backdated LIVE-pid lock exited ${liveBusyResult.code}, expected 0 (LOCK_BUSY refusal) — ` +
+          `a live holder's lock was likely stolen by age alone:\n  stdout=${liveBusyResult.stdout.trim()}\n  stderr=${liveBusyResult.stderr.trim()}`,
+      );
+    } else {
+      let parsedLive = null;
+      try {
+        parsedLive = JSON.parse(liveBusyResult.stdout.trim().split('\n').pop());
+      } catch (err) {
+        failures.push(`(e) could not parse live-holder busy-attempt stdout as JSON: ${err.message} :: raw=${liveBusyResult.stdout}`);
+      }
+      if (parsedLive) {
+        if (parsedLive.type !== 'refused' || parsedLive.reason !== 'LOCK_BUSY') {
+          failures.push(`(e) expected {type:'refused',reason:'LOCK_BUSY'}, got ${JSON.stringify({ type: parsedLive.type, reason: parsedLive.reason })}`);
+        } else if (!parsedLive.holder || parsedLive.holder.pid !== liveHolder.pid) {
+          failures.push(`(e) LockBusyError.holder did not name the live seeded holder: got ${JSON.stringify(parsedLive.holder)}, seeded ${JSON.stringify(liveHolder)}`);
+        }
+      }
+    }
+    if (!liveLockSurvived) {
+      failures.push('(e) the live-holder lock file was removed/renamed by the busy attempt — it must be left exactly as the live holder left it');
+    }
+    if (liveElapsedMs < 2500) {
+      failures.push(`(e) live-holder busy-attempt returned after only ${liveElapsedMs}ms — too fast to have exercised the real retry budget`);
+    }
+    if (liveElapsedMs > 12_000) {
+      failures.push(`(e) live-holder busy-attempt took ${liveElapsedMs}ms — far beyond the ~5s retry budget, may be hanging instead of refusing`);
+    }
+
+    // (f) PAST-CEILING REGRESSION (D2): a lock backdated past the absolute
+    // HARD_STALE_MS ceiling, still owned by THIS process's real, alive pid,
+    // MUST be taken over anyway — the pid-reuse guard of last resort
+    // overrides liveness once the ceiling is crossed. Same
+    // zero-violation/exact-count invariants as (a)/(c): progress is never
+    // permanently wedged just because a holder happens to still be alive.
+    resetFixtures(tmpRoot);
+    const ceilingLockPath = lockFilePath(tmpRoot, 'lock-f');
+    const ceilingAgeMs = HARD_STALE_MS_FOR_TEST + 60_000; // safely past the 1h ceiling
+    fs.writeFileSync(
+      ceilingLockPath,
+      `${JSON.stringify({ pid: process.pid, session: 'past-ceiling-live-holder', ts: new Date(Date.now() - ceilingAgeMs).toISOString(), token: 'ceiling-token-f' })}\n`,
+    );
+    const ceilingMs = (Date.now() - ceilingAgeMs) / 1000;
+    fs.utimesSync(ceilingLockPath, ceilingMs, ceilingMs);
+    const ceilingResults = await spawnRacers(WORKERS, (i) => [
+      '--role=locked',
+      `--dir=${tmpRoot}`,
+      `--lock-root=${tmpRoot}`,
+      '--lock-name=lock-f',
+      `--iters=${ITERS}`,
+      `--id=ceiling-${i}`,
+    ]);
+    const crashedCeiling = ceilingResults.filter((r) => r.code !== 0);
+    if (crashedCeiling.length) {
+      failures.push(
+        `(f) ${crashedCeiling.length}/${WORKERS} past-ceiling racer(s) crashed:\n` +
+          crashedCeiling.map((c) => `  ${c.stderr.trim()}`).join('\n'),
+      );
+    }
+    const fViolations = violationCount(tmpRoot);
+    const fTotal = readCounterTotal(tmpRoot);
+    if (fViolations !== 0) {
+      failures.push(`(f) past-ceiling takeover run recorded ${fViolations} mutual-exclusion violation(s)`);
+    }
+    if (fTotal !== expectedTotal) {
+      failures.push(`(f) past-ceiling takeover run counter total is ${fTotal}, expected exactly ${expectedTotal} (a live-but-past-ceiling holder must never wedge progress)`);
+    }
+    if (fs.existsSync(ceilingLockPath)) {
+      failures.push('(f) the pre-seeded past-ceiling lock file was never taken over/cleared — a live-but-past-ceiling holder must not wedge progress permanently');
+    }
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -413,8 +577,10 @@ async function runOrchestrator() {
   }
 
   console.log(
-    `PASS test_store_lock: (a) ${WORKERS}x${ITERS} locked racers zero violations/exact count; ` +
+    `PASS test_store_lock: isPidAlive() unit checks green; (a) ${WORKERS}x${ITERS} locked racers zero violations/exact count; ` +
       `(b) unguarded control demonstrated loss/overlap; (c) ${WORKERS}x${ITERS} racers survived a pre-seeded stale ` +
-      `lock with zero violations/exact count; (d) LOCK_BUSY refusal named the real holder after the real retry budget.`,
+      `lock with zero violations/exact count; (d) LOCK_BUSY refusal named the real holder after the real retry budget; ` +
+      `(e) a 45s-backdated LIVE-pid lock was NOT stolen (LOCK_BUSY refusal); (f) ${WORKERS}x${ITERS} racers took over ` +
+      `a live-but-past-HARD_STALE_MS-ceiling lock anyway, zero violations/exact count.`,
   );
 }

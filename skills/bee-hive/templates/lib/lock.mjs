@@ -5,10 +5,21 @@
 // O_EXCL ('wx') lockfile: reservation/state logical read-check-write verbs
 // run their body inside withStoreLock so two concurrent CLI invocations can
 // no longer both pass a conflict check against the same snapshot and have
-// the later write silently clobber the earlier one. Locked sections MUST
-// stay pure JSON read-check-write, milliseconds-scale — never hold this
-// lock across a child process spawn (~1000x margin under the 30s stale
-// threshold below is there for crashed holders, not slow ones).
+// the later write silently clobber the earlier one.
+//
+// hardening-1-7-10 (D2, amended by advisor consult): a live holder may
+// LEGITIMATELY hold this lock across a long child spawn — e.g.
+// worktree-store.mjs's mergeFeatureWorktree runs the host project's verify
+// via a synchronous spawnSync WHILE holding 'worktree-admin', and that verify
+// can genuinely run for minutes. Because spawnSync blocks the event loop for
+// its own duration, a timer-based heartbeat cannot fire during exactly the
+// long holds this needs to protect (locked: no heartbeat — see
+// tryStaleTakeover below). So takeover is no longer age-alone: the 30s
+// STALE_MS window only ever applies to a CRASHED holder (mtime stale AND the
+// recorded owner pid is provably dead per `isPidAlive`). A pid that is
+// provably alive is never stolen below the HARD_STALE_MS absolute ceiling —
+// past that ceiling (or when liveness is unknowable), takeover proceeds
+// regardless, as a pid-reuse guard of last resort.
 //
 // This module ships the primitive only — msh-1 wires no caller. msh-3/msh-5
 // wrap reservations.mjs and state.mjs's logical-RMW verbs in it.
@@ -20,7 +31,10 @@ import { ensureDir } from './fsutil.mjs';
 
 const RETRY_DELAY_MS = 50;
 const MAX_ATTEMPTS = 100; // ~5s worst-case wait before a typed LOCK_BUSY refusal
-const STALE_MS = 30_000; // any lock older than this is presumed a crashed holder
+const STALE_MS = 30_000; // crashed-holder window: only a candidate once BOTH stale-aged AND pid-dead
+// Absolute ceiling: past this age, takeover proceeds regardless of the pid probe result — a
+// pid-reuse/unknowable-liveness guard of last resort, set far above any real verify duration.
+const HARD_STALE_MS = 3_600_000; // 1h
 
 /** Typed refusal thrown by withStoreLock on timeout — never a silent fall-through. */
 export class LockBusyError extends Error {
@@ -94,6 +108,34 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * isPidAlive(pid) — synchronous liveness probe via the null-signal trick
+ * (`process.kill(pid, 0)` never actually signals anything; it only reports
+ * whether the kernel would let this process signal that pid). Same-host by
+ * construction (locks live under the per-checkout `.bee/locks/`), so a pid
+ * probe is meaningful here.
+ *
+ *   - missing/unparsable pid (not a positive integer)         -> dead
+ *   - process.kill(pid, 0) succeeds (pid exists, ours or not)  -> alive
+ *   - ESRCH (no such process)                                  -> dead
+ *   - EPERM (pid exists, we just can't signal it)              -> alive
+ *   - any other errno                                          -> alive
+ *     (liveness genuinely unknowable; treated conservatively as alive so a
+ *     live holder is never falsely stolen below HARD_STALE_MS — the ceiling
+ *     is exactly the guard for this "unknowable" case)
+ */
+export function isPidAlive(pid) {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return false;
+  try {
+    process.kill(n, 0);
+    return true;
+  } catch (error) {
+    if (error && error.code === 'ESRCH') return false;
+    return true;
+  }
+}
+
 function tryAcquire(lockPath, body) {
   try {
     fs.writeFileSync(lockPath, `${JSON.stringify(body)}\n`, { encoding: 'utf8', flag: 'wx' });
@@ -114,6 +156,15 @@ function tryAcquire(lockPath, body) {
 // consumes its source, so the loser's rename sees the source already gone
 // and fails ENOENT — that is a normal loss, not an error, so it just backs
 // off into the retry loop.
+//
+// hardening-1-7-10 (D2): mtime age alone is no longer sufficient. A lock
+// past STALE_MS is only a takeover CANDIDATE — it becomes eligible only when
+// the recorded owner pid is NOT alive (crashed-holder case), UNLESS the age
+// has also passed the HARD_STALE_MS absolute ceiling, in which case takeover
+// proceeds regardless of liveness (pid-reuse / unknowable-liveness guard of
+// last resort). A pid that is provably alive is therefore never stolen
+// below HARD_STALE_MS, no matter how long a legitimate holder blocks the
+// event loop inside a child spawn.
 function tryStaleTakeover(lockPath, nowMs) {
   let stat;
   try {
@@ -121,7 +172,13 @@ function tryStaleTakeover(lockPath, nowMs) {
   } catch {
     return false; // lock vanished between our EEXIST and this stat — normal retry
   }
-  if (nowMs - stat.mtimeMs <= STALE_MS) return false;
+  const ageMs = nowMs - stat.mtimeMs;
+  if (ageMs <= STALE_MS) return false;
+  if (ageMs <= HARD_STALE_MS) {
+    const holder = readHolder(lockPath);
+    const pid = holder && typeof holder === 'object' ? holder.pid : undefined;
+    if (isPidAlive(pid)) return false; // live holder — legitimately long-running, never stolen
+  }
   const stalePath = `${lockPath}.stale-${process.pid}-${nowMs}`;
   try {
     fs.renameSync(lockPath, stalePath);

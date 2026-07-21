@@ -6,7 +6,7 @@
 // back to main again. Runs the real dispatcher via spawnSync (no mocking),
 // mirroring scripts/test_worktree_grant_resolve.mjs's fixture pattern.
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,6 +14,11 @@ import { fileURLToPath } from 'node:url';
 
 import { resolveRoots } from '../.bee/bin/lib/state.mjs';
 import { createFeatureWorktree, mergeFeatureWorktree } from '../.bee/bin/lib/worktree-store.mjs';
+import { lockFilePath } from '../.bee/bin/lib/lock.mjs';
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, '..');
@@ -1166,6 +1171,134 @@ try {
     record('worktree merge without --cleanup only suggests the cleanup command (no .cleanup field, cleanup_suggested_command present)', ok, r.stdout);
     const stillThere = fs.existsSync(suggestCreated.worktreeRoot);
     record('without --cleanup, the worktree was left in place', stillThere, suggestCreated.worktreeRoot);
+  }
+
+  // ── D2 regression (hardening-1-7-10, cell 1710-2): mergeFeatureWorktree
+  // runs the host project's verify via a SYNCHRONOUS spawnSync while holding
+  // 'worktree-admin' the whole time (comment at BEE_GITIGNORE above) — a
+  // verify slower than STALE_MS (30s) makes the lock file's mtime look
+  // "stale" by age alone, which is exactly the pre-fix bug: age-alone
+  // takeover would steal a legitimately-held, still-live lock mid-verify. A
+  // SECOND, independent worktree-admin-taking CLI call (creating an
+  // unrelated new worktree) fired while the slow merge is still mid-verify
+  // must be refused (typed busy), never silently succeed by stealing the
+  // first merge's lock — proving the pid-liveness gate protects the real
+  // integration, not just the raw lock.mjs primitive in isolation. ─────────
+  {
+    const mainC = path.join(mergeTmp, 'mainC');
+    const SLOW_VERIFY_SECONDS = 45; // comfortably > STALE_MS(30s), leaves margin either side
+    fs.mkdirSync(mainC, { recursive: true });
+    git(mainC, ['init', '-q', '-b', 'main']);
+    git(mainC, ['config', 'user.email', 's@e']);
+    git(mainC, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(mainC, '.gitignore'), BEE_GITIGNORE);
+    fs.mkdirSync(path.join(mainC, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(mainC, '.bee', 'onboarding.json'), JSON.stringify({ schema_version: '1.0', bee_version: '0.0.0' }));
+    fs.writeFileSync(path.join(mainC, '.bee', 'config.json'), JSON.stringify({ commands: { verify: 'node verify-slow.mjs' } }));
+    // Atomics.wait on a SharedArrayBuffer is a genuine, portable (no `sleep`
+    // binary dependency, works on Windows too per D1's cross-platform CI
+    // concern) synchronous block of the main thread — exactly mirroring how
+    // a real slow verify (e.g. a big test suite) blocks the event loop for
+    // its own duration while mergeFeatureWorktree's withStoreLock is held.
+    fs.writeFileSync(
+      path.join(mainC, 'verify-slow.mjs'),
+      `const sab = new SharedArrayBuffer(4);\nconst ia = new Int32Array(sab);\nAtomics.wait(ia, 0, 0, ${SLOW_VERIFY_SECONDS * 1000});\nprocess.exit(0);\n`,
+    );
+    fs.writeFileSync(path.join(mainC, 'f'), 'x');
+    git(mainC, ['add', '.']);
+    git(mainC, ['commit', '-q', '-m', 'init']);
+
+    const slowCreated = mergeNewWorktree(mainC, 'wsr-merge-slow');
+    fs.writeFileSync(path.join(slowCreated.worktreeRoot, 'slow-work.txt'), 'x\n');
+    git(slowCreated.worktreeRoot, ['add', 'slow-work.txt']);
+    git(slowCreated.worktreeRoot, ['commit', '-q', '-m', 'slow merge fixture work']);
+    const preHead = git(mainC, ['log', '-1', '--pretty=%H']).trim();
+
+    // Kick off the real merge in the BACKGROUND — an async spawn (not
+    // spawnSync), so this test script's own event loop stays free to fire
+    // the second attempt while the child's verify is mid-sleep.
+    const slowMergeChild = spawn('node', [BEE_MJS, 'worktree', 'merge', '--id', slowCreated.id, '--json'], { cwd: mainC });
+    let slowMergeStdout = '';
+    let slowMergeStderr = '';
+    slowMergeChild.stdout.on('data', (chunk) => {
+      slowMergeStdout += chunk.toString();
+    });
+    slowMergeChild.stderr.on('data', (chunk) => {
+      slowMergeStderr += chunk.toString();
+    });
+    const slowMergeExit = new Promise((resolve) => {
+      slowMergeChild.on('exit', (code) => resolve(code));
+      slowMergeChild.on('error', (err) => resolve(`spawn-error:${err}`));
+    });
+
+    // Wait past STALE_MS(30s) while the slow merge is still holding
+    // 'worktree-admin' (its verify sleeps SLOW_VERIFY_SECONDS=45s) — this is
+    // exactly the age window the pre-fix code would have misread as a
+    // crashed holder.
+    await sleepMs(33_000);
+    const adminLockPath = lockFilePath(mainC, 'worktree-admin');
+    const lockAgeMsAtCheck = fs.existsSync(adminLockPath) ? Date.now() - fs.statSync(adminLockPath).mtimeMs : null;
+    record(
+      '(D2 regression) worktree-admin lock is still present and older than STALE_MS(30s) while the slow merge is mid-verify (fixture sanity)',
+      lockAgeMsAtCheck !== null && lockAgeMsAtCheck > 30_000,
+      `lockAgeMsAtCheck=${lockAgeMsAtCheck}`,
+    );
+
+    // Second, independent worktree-admin acquisition attempt — a totally
+    // unrelated "create a new worktree" call — fired while the first merge
+    // is still legitimately (and provably, via its own live pid) holding the
+    // lock past STALE_MS. This spawnSync blocks for the CLI's own ~5s retry
+    // budget before returning.
+    const secondAttemptStartedAt = Date.now();
+    const secondAttempt = bee(mainC, ['worktree', 'new', '--feature', 'wsr-merge-slow-second', '--json']);
+    const secondAttemptElapsedMs = Date.now() - secondAttemptStartedAt;
+
+    {
+      const ok = secondAttempt.status !== 0 && /busy/i.test(secondAttempt.stdout + secondAttempt.stderr);
+      record(
+        '(D2 regression) a second worktree-admin acquisition attempt during a slow-but-LIVE merge is refused (typed busy), not a silent steal',
+        ok,
+        `status=${secondAttempt.status} stdout=${secondAttempt.stdout} stderr=${secondAttempt.stderr}`,
+      );
+    }
+    record(
+      '(D2 regression) the refused second attempt actually waited out a real retry budget rather than failing instantly',
+      secondAttemptElapsedMs > 1000,
+      `secondAttemptElapsedMs=${secondAttemptElapsedMs}`,
+    );
+    {
+      const secondWorktreeDir = path.join(path.dirname(mainC), `${path.basename(mainC)}--wt--wsr-merge-slow-second`);
+      const ok = !fs.existsSync(secondWorktreeDir);
+      record('(D2 regression) the refused second attempt created no worktree directory (zero mutation)', ok, secondWorktreeDir);
+    }
+
+    // Let the first (legitimate) merge run to completion and confirm it was
+    // never disturbed by the refused second attempt.
+    const slowMergeCode = await slowMergeExit;
+    let slowMergeJson = null;
+    try {
+      slowMergeJson = JSON.parse(slowMergeStdout.trim());
+    } catch {
+      /* checked below */
+    }
+    record(
+      '(D2 regression) the original slow merge itself still completed successfully (its lock was never stolen out from under it)',
+      slowMergeCode === 0 && slowMergeJson && slowMergeJson.ok === true && slowMergeJson.merged === true,
+      `code=${slowMergeCode} stdout=${slowMergeStdout} stderr=${slowMergeStderr}`,
+    );
+    {
+      const postHead = git(mainC, ['log', '-1', '--pretty=%H']).trim();
+      record('(D2 regression) main advanced past its pre-merge HEAD exactly once (a real merge commit, not corrupted by contention)', postHead !== preHead, `pre=${preHead} post=${postHead}`);
+    }
+    {
+      const ok = fs.existsSync(path.join(mainC, 'slow-work.txt'));
+      record("(D2 regression) the slow merge's committed work landed on main", ok, mainC);
+    }
+    record(
+      '(D2 regression) the worktree-admin lock file was released after the legitimate holder finished',
+      !fs.existsSync(adminLockPath),
+      adminLockPath,
+    );
   }
 } finally {
   fs.rmSync(mergeTmp, { recursive: true, force: true });
