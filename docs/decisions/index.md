@@ -83,6 +83,16 @@ each decision event.
 
 - 0083835c · 2026-07-11 · Standing release flow (human-set, 2026-07-11): every bee update from now on ships as a tagged release — (1) bump BEE_VERSION in templates/lib/state.mjs + .claude-plugin/plugin.json version, (2) onboard --apply --repo-hooks on beegog itself (re-vendor, recheck up_to_date), (3) full verify green, (4) commit 'release: bee X.Y.Z', (5) annotated tag vX.Y.Z, (6) git push origin main --tags, (7) onboard --apply to every anphabe host project except anphabe-crm
 
+## cli-performance
+
+### performance
+
+- 84ca9396 · 2026-07-21 · cli-performance closed: status 660ms -> 245-262ms (D3 <250ms budget met at median), reviews-status 274 -> 147ms, verify ladder live (wave-close full chain caught a real NUL-byte escape its first day), store hygiene run (cells 49->38 active, aged decisions archived); P59 filed for the sub-100ms path (lazy imports, rust write-guard hook trigger-conditioned)
+- 2e224c90 · 2026-07-21 · Rust assessment (user follow-up on perf): full-CLI rust rewrite REJECTED for now — remaining status cost is OS-bound I/O+git (~190ms) not language; node startup ~50ms is the only language tax; memory management irrelevant for one-shot 250ms processes. Cheaper path first: lazy module loading (est. reads ~30ms, status ~200ms) + store hygiene. The RIGHT rust candidate if budgets still miss: a single rust write-guard hook binary (48-53ms x every tool call today -> ~3ms), incremental, keeps node orchestration + copy-in distribution intact
+- df7ba5ef · 2026-07-21 · auto-approved Gate 3 (bypass total): cli-performance slice 1 READY — plan-check BLOCKER (memo must be born in bee.mjs candidate loops, threaded via opts) folded into cp-2; cell verifies switched to targeted-only per D4 (wave dogfoods its own ladder); serialization rationale corrected in validation report (frozen plan untouched)
+- e54878b1 · 2026-07-21 · auto-approved Gates 1-2 (bypass total): cli-performance D1-D5 locked + plan frozen — read-once recovery scan, pass-local git memo, 250ms status budget, verify ladder (targeted per cell, full chain per wave/milestone), store hygiene at close
+- 10a3c5e4 · 2026-07-21 · cli-performance scoping (P58): two-prong fix — (A) status/CLI hot-path cost: status ~733ms idle (vs 56-66ms other reads) and is invoked by hooks every prompt; under 5-way verify load user experiences minute-plus commands; (B) run_verify invocation policy: ~30 full 60s runs in one day (worker red+green + orchestrator re-run + judge occasionally + baseline) — cut to targeted-suite for inner loops, full chain only at baseline/cap/commit milestones
+
 ## codex-agent-wait-loop
 
 ### codex

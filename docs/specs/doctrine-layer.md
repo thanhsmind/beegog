@@ -290,6 +290,19 @@ route to the external path until it earns its own proof (decisions 34398e69,
   session preamble at zero extra cost). The lane decision re-runs upward any
   time evidence demands escalation; de-escalation requires cited evidence.
 
+- **The verify ladder (cli-performance D4, `e54878b1`):** a cell's verify is its
+  TARGETED suite (seconds), run red-first and green by the worker; the full
+  configured chain (~minute) runs at exactly four milestones — session
+  baseline, wave close (once, by the orchestrator, the independent full proof
+  for the whole wave), session finish, and worktree-merge/release gates.
+  Judges and reviewers never run the full chain as part of a verdict. Proven
+  the day it landed: the wave-close run caught a real escape (raw NUL bytes in
+  a lib file) that every targeted suite had missed. Companion performance
+  idiom for derived read paths (D1/D2, cells cp-1/cp-2): shared inputs are
+  read once per call and threaded down — never re-read per item — and
+  repeated child-process answers are memoized in a pass-local map that dies
+  with the pass; no cross-call caches, no TTLs, no daemons.
+
 ## Edge Cases Settled
 
 - **A perfectly written rule can be perfectly ineffective.** The delegation rule

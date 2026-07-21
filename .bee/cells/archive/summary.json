@@ -538,5 +538,15 @@
     "capped": 3,
     "dropped": 0,
     "archived_at": "2026-07-20T11:27:52.532Z"
+  },
+  "decision-propagation": {
+    "capped": 9,
+    "dropped": 0,
+    "archived_at": "2026-07-21T14:05:33.432Z"
+  },
+  "release-1-7-10-rc": {
+    "capped": 5,
+    "dropped": 0,
+    "archived_at": "2026-07-21T14:05:33.501Z"
   }
 }
