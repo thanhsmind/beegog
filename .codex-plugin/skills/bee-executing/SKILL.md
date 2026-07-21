@@ -64,6 +64,7 @@ Package installs **always** checkpoint: stop and return `[BLOCKED]` with the pac
 
 - Run the cell's verify command exactly, then record it **with its output** (decision 0004 — proof, not assertion):
   `node .bee/bin/bee.mjs cells verify --id <id> --command "<cmd>" --output "<what it printed>" --passed true|false` (or `--output-file <f>` for long output)
+- The `verify` field is the cell's **targeted** suite (seconds) — never the full configured `commands.verify` chain (D4, decision `e54878b1`). Run red-first, then green, and stop there: do **not** additionally run the full chain yourself — the orchestrator's own wave-close run (`bee-swarming/SKILL.md`) is the independent full proof that covers your cell, and the full chain stays mandated at session baseline, session finish, worktree merge, and release gates regardless (unchanged `AGENTS.md` sites).
 - The `verify` field must be a runnable command. If the cell shipped with a prose description instead, that is a planning defect — return `[BLOCKED]` naming it; never invent a substitute check.
 - On failure: fix the root cause and rerun the exact command.
   - **No `Advisor` line in the dispatch:** unchanged — after **two serious failed attempts**, return `[BLOCKED]` with the command, failure summary, and diagnosis. A broken verify command in the repo is itself a blocker — never substitute a weaker check and cap anyway.

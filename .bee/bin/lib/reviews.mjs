@@ -412,10 +412,10 @@ function defaultRunGit(root, args) {
 // the real spawnSync-backed runner) — production callers never pass it;
 // tests use it to count real git invocations without faking the answers.
 function coveredByKey(head, ref) {
-  return `covered ${head} ${ref}`;
+  return `covered ${head} ${ref}`;
 }
 function commitsSinceKey(ref) {
-  return `since ${ref}`;
+  return `since ${ref}`;
 }
 
 /**

@@ -236,6 +236,10 @@ The swarming goal-check (P12, decision 0018) gains a **semantic** judge tier by 
 
 The judge returns the D5 schema (`judge-verdict/1`), recorded via `bee cells judge-record`; free-prose output is a failed judge run, re-dispatched once, then recorded `unverified`. This table is the single home for the judge-tier rule (D4+Δ6) — every other 565e68d0-adjacent surface (bee-swarming SKILL + reference, bee-hive SKILL both sites, go-mode, AGENTS.md + its template, bee-scribing SKILL) carries only a one-line pointer back here, never a repeated table.
 
+### Verify Ladder (D4, `e54878b1`)
+
+A cell's `verify` field is always its **targeted** suite (seconds), never the full configured `commands.verify` chain. The full chain runs at exactly four milestones — session baseline, wave close (once, by the orchestrator, per `bee-swarming/SKILL.md` — this replaces any per-cell full-chain re-run), session finish, and worktree merge/release gates (`AGENTS.md`) — targeted-only everywhere else. Judges and reviewers verify against the diff and `must_haves`, never by running the full chain as part of a verdict.
+
 <!-- bee:only codex -->
 ### Native Codex subagent tending
 
