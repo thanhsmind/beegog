@@ -220,6 +220,60 @@ function tryStaleTakeover(lockPath, nowMs) {
  * current holder parsed from the lock body — never a fall-through unlocked
  * write.
  */
+/**
+ * acquireStoreLockOnceSync(root, name) — the SYNCHRONOUS, single-attempt
+ * sibling of withStoreLock, for callers that must stay sync end-to-end
+ * (hardening-1-7-10 D4: writeCell — the single cell-write funnel called
+ * synchronously from addCells' `.map()` at cells.mjs — cannot become async
+ * without cascading `await` through every caller up to that call site).
+ *
+ * Applies the SAME stale-takeover rule as withStoreLock's retry loop
+ * (tryStaleTakeover: mtime > STALE_MS AND owner pid dead, or past the
+ * HARD_STALE_MS absolute ceiling regardless of liveness) but with NO retry
+ * loop and NO sleep: exactly one acquire attempt, and — only if that first
+ * attempt found the lock stale-eligible and won the takeover race — exactly
+ * one follow-up acquire attempt. Anything else (a live holder, or losing the
+ * takeover race to another racer) is reported back as `{ acquired: false }`
+ * rather than waited out; the caller decides how to surface that (cells.mjs
+ * throws a typed CELLS_ARCHIVE_BUSY).
+ *
+ * Returns `{ acquired: true, release }` on success. `release()` is
+ * idempotent and safe to call from a `finally`; it removes the lock file
+ * only if it still matches THIS acquisition's pid + token (same anti-
+ * clobber discipline as withStoreLock's own finally block below — a caller
+ * can never unlink a lock some other holder has since taken over).
+ * Returns `{ acquired: false, holder }` on contention, `holder` being
+ * whatever readHolder could parse from the lock file (possibly null).
+ */
+export function acquireStoreLockOnceSync(root, name) {
+  ensureDir(locksDir(root));
+  const lockPath = lockFilePath(root, name);
+  const token = crypto.randomBytes(8).toString('hex');
+  const session = envSessionId(process.env.BEE_SESSION_ID, process.env.CLAUDE_CODE_SESSION_ID);
+  const nowMs = Date.now();
+  const body = { pid: process.pid, session, ts: new Date(nowMs).toISOString(), token };
+
+  let acquired = tryAcquire(lockPath, body);
+  if (!acquired && tryStaleTakeover(lockPath, nowMs)) {
+    acquired = tryAcquire(lockPath, { ...body, ts: new Date(Date.now()).toISOString() });
+  }
+  if (!acquired) {
+    return { acquired: false, holder: readHolder(lockPath) };
+  }
+  let released = false;
+  return {
+    acquired: true,
+    release: () => {
+      if (released) return;
+      released = true;
+      const holder = readHolder(lockPath);
+      if (holder && holder.token === token && holder.pid === process.pid) {
+        fs.rmSync(lockPath, { force: true });
+      }
+    },
+  };
+}
+
 export async function withStoreLock(root, name, fn, { maxAttempts = MAX_ATTEMPTS, retryDelayMs = RETRY_DELAY_MS } = {}) {
   ensureDir(locksDir(root));
   const lockPath = lockFilePath(root, name);

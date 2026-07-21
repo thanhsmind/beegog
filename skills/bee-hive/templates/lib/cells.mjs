@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { readJson, writeJsonAtomic, ensureDir } from './fsutil.mjs';
+import { readJson, writeJsonAtomic, ensureDir, removeFileIfExists } from './fsutil.mjs';
 import {
   readState,
   gateApproved,
@@ -67,7 +67,7 @@ import { validateJudgeVerdict, deriveModelIndependence } from './judge.mjs';
 // already use. The lock key includes the cell id (not a single 'cells' name)
 // so distinct cells never serialize against each other. Pure readers
 // (readCell, listCells, etc.) stay lock-free.
-import { withStoreLock } from './lock.mjs';
+import { withStoreLock, acquireStoreLockOnceSync } from './lock.mjs';
 
 export const LANES = ['tiny', 'small', 'standard', 'high-risk', 'spike'];
 
@@ -407,6 +407,29 @@ function assertNotArchived(root, verb, id) {
   if (resolveCellFile(root, id)) throw new CellArchivedError(verb, id);
 }
 
+// hardening-1-7-10 (D4): writeCell's own contention refusal. A mutator's
+// read-check-write (assertNotArchived + readCell + ... + writeCell) can
+// still race a concurrent archiveFeature/unarchiveFeature transaction
+// between its own assertNotArchived call and the moment writeCell actually
+// touches disk — archive/unarchive hold the SAME 'cells-archive' lock for
+// their WHOLE transaction (see archiveFeature/unarchiveFeature below), so
+// writeCell's brief acquire of it either succeeds immediately (no live
+// archive txn) or refuses cleanly with this typed error (one IS in
+// flight) — it never blocks and waits (see acquireStoreLockOnceSync).
+class CellsArchiveBusyError extends Error {
+  constructor(id, holder) {
+    const who =
+      holder && typeof holder === 'object'
+        ? `pid=${holder.pid ?? 'unknown'} session=${holder.session ?? 'unknown'} since ${holder.ts ?? 'unknown'}`
+        : 'unknown holder';
+    super(
+      `writeCell: cell "${id}" write refused — the "cells-archive" lock is held by ${who} (a live archive/unarchive transaction). Retry once it completes.`,
+    );
+    this.name = 'CellsArchiveBusyError';
+    this.code = 'CELLS_ARCHIVE_BUSY';
+  }
+}
+
 // resolveCellFile(root, id) — the REAL on-disk path for a cell, active or
 // archived. Unlike cellFile (always the active path, meaning unchanged for
 // every existing caller), this searches .bee/cells/archive/*/<id>.json when
@@ -548,6 +571,88 @@ export function archivedTotals(root) {
   return { capped, dropped, total: capped + dropped };
 }
 
+// ─── hardening-1-7-10 (D4): archive-transaction journal ────────────────────
+// A journal is the crash-recovery record for an in-flight archiveFeature/
+// unarchiveFeature transaction: the FULL set of planned {id, from, to}
+// renames, written to disk BEFORE the first rename runs. If the process
+// dies mid-loop (kill -9, disk full, host reboot) with no chance to run its
+// own in-memory rollback, the journal is what lets the NEXT archiveFeature
+// or unarchiveFeature call on this feature notice the half-migrated state
+// and repair it before doing anything else — see recoverArchiveJournal
+// below, invoked at the top of both functions' locked critical section.
+//
+// Lives at .bee/cells/archive/<feature>/.journal.json — inside the SAME
+// per-feature directory the moves themselves target, so a single
+// `cellsArchiveDir` scan never needs a second path to reason about. Its
+// `op` field ('archive' | 'unarchive') is recorded for audit/debugging but
+// recovery itself is direction-agnostic: recoverArchiveJournal only ever
+// asks "did this specific move complete" (destination present, source
+// absent) and reverses exactly the ones that did — the SAME check restores
+// an interrupted archive (partially in .../archive/<feature>/) back to
+// active, or an interrupted unarchive (partially in the active dir) back to
+// archive, with no branch on `op` at all.
+const ARCHIVE_JOURNAL_FILE = '.journal.json';
+
+function archiveJournalPath(root, feature) {
+  return path.join(cellsArchiveDir(root, feature), ARCHIVE_JOURNAL_FILE);
+}
+
+function writeArchiveJournal(root, feature, op, planned) {
+  writeJsonAtomic(archiveJournalPath(root, feature), { op, feature, planned, started_at: utcNow() });
+}
+
+function clearArchiveJournal(root, feature) {
+  removeFileIfExists(archiveJournalPath(root, feature));
+}
+
+// recoverArchiveJournal(root, feature) — called at the very top of BOTH
+// archiveFeature's and unarchiveFeature's locked critical section (same
+// 'cells-archive' lock both already hold for their whole transaction, so
+// this can never race a live one). A missing or unparsable/malformed
+// journal is "nothing to recover" (fail-open, matching every other tolerant
+// reader in this file) — any leftover corrupt file is simply dropped so it
+// never blocks the caller's own operation. For a well-formed journal: any
+// planned move whose destination exists but whose source does NOT (i.e. it
+// completed before the crash) is renamed back to its origin; a move that
+// never started (source still present, destination absent) needs no repair.
+// Best-effort per move — a single stuck rename during recovery must never
+// crash the caller's own operation; the caller's own preflight/rename loop
+// surfaces any genuinely blocking disk condition on its own terms.
+function recoverArchiveJournal(root, feature) {
+  const journalPath = archiveJournalPath(root, feature);
+  const journal = readJson(journalPath, null);
+  if (!journal || typeof journal !== 'object' || !Array.isArray(journal.planned)) {
+    removeFileIfExists(journalPath);
+    return;
+  }
+  for (const move of journal.planned) {
+    if (!move || typeof move.from !== 'string' || typeof move.to !== 'string') continue;
+    if (fs.existsSync(move.to) && !fs.existsSync(move.from)) {
+      try {
+        fs.renameSync(move.to, move.from);
+      } catch {
+        // best-effort: see function comment above
+      }
+    }
+  }
+  removeFileIfExists(journalPath);
+}
+
+// hardening-1-7-10 (D4): typed refusal shared by archiveFeature's
+// destination-collision preflight and unarchiveFeature's active-destination
+// preflight — never overwrite an existing file, named before any rename.
+class ArchiveDestinationCollisionError extends Error {
+  constructor(verb, feature, ids, kind) {
+    super(
+      `${verb}: feature "${feature}" refused — a ${kind} file already exists for ${ids.join(
+        ', ',
+      )}. Refusing before any file is touched (never overwrite existing data).`,
+    );
+    this.name = 'ArchiveDestinationCollisionError';
+    this.code = 'ARCHIVE_DESTINATION_COLLISION';
+  }
+}
+
 // archiveFeature(root, feature) — moves every cell of a fully-terminal
 // feature (every cell capped or dropped — no open/claimed cell survives)
 // from the hot .bee/cells/ scan path into .bee/cells/archive/<feature>/,
@@ -557,17 +662,33 @@ export function archivedTotals(root) {
 // duplicate that check.
 //
 // Refuses (throws) on: no feature, zero cells for the feature (nothing to
-// archive — named), or any open/claimed cell (named) — archiving is an
-// all-terminal-or-nothing operation, never a partial move that could hide a
-// still-live cell from the hot scan.
+// archive — named), any open/claimed cell (named), or a destination
+// collision (named) — archiving is an all-terminal-or-nothing operation,
+// never a partial move that could hide a still-live cell from the hot scan,
+// and never an overwrite of an existing archived file.
 export async function archiveFeature(root, feature) {
   assertValidFeatureSlug('archiveFeature', feature);
   // hardening-1: the whole read-check-move-summarize body runs under a
-  // cross-process lock (colon-free name — this is a whole-store operation,
-  // not a per-cell one like the `cells:<id>` locks above) so a concurrent
-  // archive/unarchive/mutator on the SAME feature can never interleave with
-  // this move and observe (or create) a half-migrated state.
+  // GLOBAL cross-process lock named 'cells-archive' (colon-free — a
+  // whole-store operation, not a per-cell one like the `cells:<id>` locks
+  // elsewhere in this file). The name is NOT scoped per feature, so this
+  // also serializes archive/unarchive calls across DIFFERENT features, not
+  // only the same one. hardening-1-7-10 (D4) corrects the other half of
+  // this comment, which used to also claim a concurrent MUTATOR could never
+  // interleave — that was false at the time: mutators held no lock against
+  // this at all, which is exactly how a mutator could resurrect a cell
+  // mid-archive (writeCell creating a brand-new active file while this
+  // rename loop was in flight). writeCell now briefly takes this SAME lock
+  // around its own final write (see writeCell above), so a concurrent
+  // mutator's write is now serialized against a live archive/unarchive
+  // transaction too — writeCell never takes `cells:<id>` itself here, so
+  // lock order stays `cells:<id>` -> `cells-archive` and this can never
+  // deadlock against a mutator that holds `cells:<id>`.
   return withStoreLock(root, 'cells-archive', () => {
+    // hardening-1-7-10 (D4): repair any half-migrated leftover from an
+    // interrupted PRIOR transaction on this feature before doing anything
+    // else — see recoverArchiveJournal's own comment.
+    recoverArchiveJournal(root, feature);
     const cells = listCells(root, { feature });
     if (cells.length === 0) {
       throw new Error(`archiveFeature: no cells found for feature "${feature}" — nothing to archive.`);
@@ -588,17 +709,32 @@ export async function archiveFeature(root, feature) {
     const archiveDir = cellsArchiveDir(root, feature);
     assertArchiveDirContained('archiveFeature', root, archiveDir);
     ensureDir(archiveDir);
+    const statusById = new Map(cells.map((cell) => [cell.id, cell.status]));
+    const planned = cells.map((cell) => ({
+      id: cell.id,
+      from: cellFile(root, cell.id),
+      to: path.join(archiveDir, `${cell.id}.json`),
+    }));
+    // hardening-1-7-10 (D4): preflight EVERY destination BEFORE any rename —
+    // a collision refuses the whole batch, named, with nothing touched.
+    const collisions = planned.filter((move) => fs.existsSync(move.to)).map((move) => move.id);
+    if (collisions.length > 0) {
+      throw new ArchiveDestinationCollisionError('archiveFeature', feature, collisions, 'archived');
+    }
+    // Journal written before the first rename (D4) — the crash-recovery
+    // sweep above (this call and every future one on this feature) replays
+    // exactly this plan if the process dies before the loop below finishes.
+    writeArchiveJournal(root, feature, 'archive', planned);
     const moved = [];
     let capped = 0;
     let dropped = 0;
     try {
-      for (const cell of cells) {
-        const from = cellFile(root, cell.id);
-        const to = path.join(archiveDir, `${cell.id}.json`);
-        fs.renameSync(from, to);
-        moved.push({ id: cell.id, from, to });
-        if (cell.status === 'capped') capped += 1;
-        else if (cell.status === 'dropped') dropped += 1;
+      for (const move of planned) {
+        fs.renameSync(move.from, move.to);
+        moved.push(move);
+        const status = statusById.get(move.id);
+        if (status === 'capped') capped += 1;
+        else if (status === 'dropped') dropped += 1;
       }
     } catch (err) {
       // hardening-1: a mid-loop crash (disk full, permission change, a
@@ -615,6 +751,11 @@ export async function archiveFeature(root, feature) {
           // best-effort: the original error below is what the caller needs
         }
       }
+      // hardening-1-7-10 (D4): this in-process rollback already fully
+      // unwound the transaction, so the journal has nothing left to recover
+      // — clear it now rather than leaving a stale file for the next call's
+      // recovery sweep to redundantly (but harmlessly) no-op through.
+      clearArchiveJournal(root, feature);
       throw err;
     }
     // Written LAST, only once every rename above has succeeded — summary.json
@@ -623,6 +764,9 @@ export async function archiveFeature(root, feature) {
     const counts = { capped, dropped };
     summary[feature] = { ...counts, archived_at: utcNow() };
     writeJsonAtomic(archiveSummaryFile(root), summary);
+    // Deleted only after the summary write above succeeds (D4) — until then
+    // the journal is the only record that this transaction is still live.
+    clearArchiveJournal(root, feature);
     return { feature, moved: moved.map((entry) => entry.id), counts };
   });
 }
@@ -632,13 +776,17 @@ export async function archiveFeature(root, feature) {
 // .bee/cells/ dir, drops that feature's summary.json entry, and removes the
 // now-empty archive/<feature> dir (best-effort — a leftover non-.json file
 // left by something else never blocks the unarchive itself). Refuses
-// (throws) when the feature has nothing archived.
+// (throws) when the feature has nothing archived, or when any planned
+// active destination already exists (D4 — never overwrite live data).
 export async function unarchiveFeature(root, feature) {
   assertValidFeatureSlug('unarchiveFeature', feature);
   // hardening-1: same whole-store lock as archiveFeature, same reserved name
   // — archive/unarchive on the same feature (or a concurrent mutator racing
   // an in-flight archive) must never interleave.
   return withStoreLock(root, 'cells-archive', () => {
+    // hardening-1-7-10 (D4): same entry-point recovery sweep as
+    // archiveFeature — repair a half-migrated leftover before proceeding.
+    recoverArchiveJournal(root, feature);
     const archiveDir = cellsArchiveDir(root, feature);
     assertArchiveDirContained('unarchiveFeature', root, archiveDir);
     let files;
@@ -647,17 +795,31 @@ export async function unarchiveFeature(root, feature) {
     } catch {
       throw new Error(`unarchiveFeature: no archived cells found for feature "${feature}".`);
     }
-    const jsonFiles = files.filter((file) => file.endsWith('.json'));
+    // ARCHIVE_JOURNAL_FILE also ends in .json but is never a cell — excluded
+    // explicitly (recoverArchiveJournal above already cleared any leftover
+    // journal, so in practice none survives to this point, but the filter
+    // stays defensive rather than assuming that).
+    const jsonFiles = files.filter((file) => file.endsWith('.json') && file !== ARCHIVE_JOURNAL_FILE);
     if (jsonFiles.length === 0) {
       throw new Error(`unarchiveFeature: no archived cells found for feature "${feature}".`);
     }
+    const planned = jsonFiles.map((file) => ({
+      id: file.slice(0, -'.json'.length),
+      from: path.join(archiveDir, file),
+      to: path.join(cellsDir(root), file),
+    }));
+    // hardening-1-7-10 (D4): refuse to overwrite an existing ACTIVE file —
+    // preflight BEFORE any rename, named, nothing touched on a collision.
+    const collisions = planned.filter((move) => fs.existsSync(move.to)).map((move) => move.id);
+    if (collisions.length > 0) {
+      throw new ArchiveDestinationCollisionError('unarchiveFeature', feature, collisions, 'active');
+    }
+    writeArchiveJournal(root, feature, 'unarchive', planned);
     const moved = [];
     try {
-      for (const file of jsonFiles) {
-        const from = path.join(archiveDir, file);
-        const to = path.join(cellsDir(root), file);
-        fs.renameSync(from, to);
-        moved.push({ id: file.slice(0, -'.json'.length), from, to });
+      for (const move of planned) {
+        fs.renameSync(move.from, move.to);
+        moved.push(move);
       }
     } catch (err) {
       // hardening-1: same rollback discipline as archiveFeature — restore
@@ -669,8 +831,12 @@ export async function unarchiveFeature(root, feature) {
           // best-effort: the original error below is what the caller needs
         }
       }
+      clearArchiveJournal(root, feature); // D4: already fully unwound in-process
       throw err;
     }
+    // The journal's job ends once every rename above lands — clear it before
+    // rmdir so the now-empty archiveDir can actually be removed.
+    clearArchiveJournal(root, feature);
     try {
       fs.rmdirSync(archiveDir);
     } catch {
@@ -686,12 +852,57 @@ export async function unarchiveFeature(root, feature) {
   });
 }
 
+// writeCell — the single write funnel every mutator in this file goes
+// through (hardening-1-7-10, D4). MUST STAY SYNCHRONOUS: addCells maps it
+// synchronously over a batch (`normalized.map((cell) => writeCell(root,
+// cell))`, no awaited cascade), so this can never become `async` without
+// breaking that call site's return shape (an array of promises instead of
+// cells). That is why the archive-boundary guard below uses
+// acquireStoreLockOnceSync — a SYNC, single-attempt O_EXCL acquire, never
+// withStoreLock's async retry/backoff loop.
+//
+// The critical section is deliberately tiny: acquire 'cells-archive' (the
+// SAME lock name archiveFeature/unarchiveFeature hold for their whole
+// transaction), re-check archived-only status ONE LAST TIME under that lock,
+// write, release. Lock order is always `cells:<id>` -> `cells-archive` —
+// every caller here already holds `cells:<id>` (or, for addCell/addCells,
+// no per-cell lock at all) before ever reaching writeCell, and
+// archiveFeature/unarchiveFeature never take `cells:<id>` and never call
+// writeCell (they renameSync the file directly) — so this can never
+// deadlock and never re-enters its own lock.
+//
+// On contention (a live archive/unarchive transaction holding
+// 'cells-archive' right now) this throws typed CELLS_ARCHIVE_BUSY rather
+// than waiting — archive transactions are short, so busy is rare and an
+// honest refusal beats a hidden multi-second stall inside every cell write.
+//
+// The re-check closes the TOCTOU a plain assertNotArchived-at-entry left
+// open: a mutator's own assertNotArchived ran before it read+modified the
+// cell, but archiveFeature could complete its move in the window between
+// that check and this write — without a check HELD UNDER THE SAME LOCK
+// archive uses, the mutator's write would resurrect a brand-new active file
+// for a cell that is now archived. Never taking `cells:<id>` itself,
+// archiveFeature/unarchiveFeature can only ever run their rename either
+// fully before or fully after this critical section, never during it — so
+// this check, taken under the lock, is authoritative.
 export function writeCell(root, cell) {
   if (!cell || !cell.id || !ID_PATTERN.test(String(cell.id))) {
     throw new Error(`writeCell: cell needs a valid id (got ${JSON.stringify(cell?.id)}).`);
   }
-  writeJsonAtomic(cellFile(root, cell.id), cell);
-  return cell;
+  const lock = acquireStoreLockOnceSync(root, 'cells-archive');
+  if (!lock.acquired) {
+    throw new CellsArchiveBusyError(cell.id, lock.holder);
+  }
+  try {
+    const active = cellFile(root, cell.id);
+    if (!fs.existsSync(active) && resolveCellFile(root, cell.id)) {
+      throw new CellArchivedError('writeCell', cell.id);
+    }
+    writeJsonAtomic(active, cell);
+    return cell;
+  } finally {
+    lock.release();
+  }
 }
 
 function validateNewCell(root, cell) {
@@ -1415,6 +1626,7 @@ export async function reopenCell(root, id, reason, { sessionId, forceOwnership =
     throw new Error('reopenCell: a reason is required.');
   }
   const saved = await withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'reopenCell', id); // hardening-1-7-10 (D4): refuse before ever reading/writing
     const cell = readCell(root, id);
     if (!cell) throw new Error(`reopenCell: cell "${id}" not found.`);
     if (cell.status === 'open') {
@@ -1450,6 +1662,7 @@ export async function setTier(root, id, tier) {
     throw new Error(`setTier: tier must be one of ${MODEL_TIERS.join(', ')}, got "${tier}".`);
   }
   return withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'setTier', id); // hardening-1-7-10 (D4): refuse before ever reading/writing
     const cell = readCell(root, id);
     if (!cell) throw new Error(`setTier: cell "${id}" not found.`);
     cell.tier = tier;
@@ -1781,6 +1994,7 @@ export async function resetCellBudget(root, id, reason, { sessionId, operator } 
         ? process.env.BEE_AGENT_NAME.trim()
         : null;
   const saved = await withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'resetCellBudget', id); // hardening-1-7-10 (D4): refuse before ever reading/writing
     const cell = readCell(root, id);
     if (!cell) throw new Error(`resetCellBudget: cell "${id}" not found.`);
     if (!actor) {
@@ -1864,6 +2078,7 @@ export async function recordJudgeVerdict(
   }
   const independence = deriveModelIndependence(builderModel, builderStatus, judgeModel, judgeStatus);
   return withStoreLock(root, `cells:${id}`, () => {
+    assertNotArchived(root, 'recordJudgeVerdict', id); // hardening-1-7-10 (D4): refuse before ever reading/writing
     const cell = readCell(root, id);
     if (!cell) throw new Error(`recordJudgeVerdict: cell "${id}" not found.`);
     const entry = {
