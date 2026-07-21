@@ -1,0 +1,48 @@
+{
+  "id": "dp-9",
+  "feature": "decision-propagation",
+  "lane": "standard",
+  "behavior_change": false,
+  "title": "End-to-end supersede dry-run on a real decision + GH #32/#33/#34 closure evidence",
+  "action": "Per plan slice 4: exercise the full propagation pipeline on a REAL decision in THIS repo, then assemble issue-closure evidence. (1) Target: decision d20f4c96 («hardening-1-7-10 complete … release NOT tagged (user decision)») — factually superseded: v1.7.10-rc was tagged on 4f23f89 with exact-commit CI green on Linux+Windows (rc-1..5). Run `decisions supersede --target d20f4c96… --decision \"hardening-1-7-10 complete AND released as v1.7.10-rc on 4f23f89 (rc-1..5: CPU-count-proof race suites, timeout-capture split, Windows transient-fs retry); exact-tag CI green both platforms\" --rationale …` with appropriate --tags (release,ci) — scope inherits. (2) Observe the sweep output; for every hit, reconcile the citing artifact same-turn (edit the doc so it reads the current truth, citing the NEW short8) or explicitly record a waiver; confirm one capture stub per hit appeared and flush the reconciled ones. (3) Re-render the index (`decisions render`), `--check` clean; confirm the superseded decision left the index and the new one appears under its group. (4) Write the e2e evidence report to docs/history/decision-propagation/reports/e2e-supersede.md: sweep hit list, reconciliation diff summary, stub lifecycle, index before/after lines, search --tag release showing the new event. (5) Draft GH closure comments for #32/#33/#34 into the same reports dir (one md file per issue, referencing commits dp-1..dp-8 and the concrete mechanisms) — do NOT post them; the orchestrator posts at feature close. run_verify green at the end.",
+  "must_haves": {
+    "truths": [
+      "a real supersede ran with sweep output recorded; every hit reconciled or explicitly waived; stubs observed and flushed for reconciled hits",
+      "index re-rendered clean; superseded event absent, successor present",
+      "e2e report + three issue-closure drafts exist under docs/history/decision-propagation/reports/",
+      "run_verify green"
+    ],
+    "prohibitions": [
+      "Never edit .bee/decisions.jsonl by hand",
+      "Do not post to GitHub",
+      "Do not fabricate a reversal — the target decision's 'release NOT tagged' clause is genuinely outdated"
+    ]
+  },
+  "verify": "node .bee/bin/bee.mjs decisions render --check && node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/decision-propagation/CONTEXT.md",
+    "docs/history/decision-propagation/reports/validation-slice1.md"
+  ],
+  "files": [
+    "docs/history/decision-propagation/reports/e2e-supersede.md",
+    "docs/decisions/index.md"
+  ],
+  "deps": [
+    "dp-8"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

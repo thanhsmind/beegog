@@ -145,6 +145,15 @@ each decision event.
 
 - 266dc393 · 2026-07-21 · dp-1 deliberate sibling extension: decisions active gains the same --tag/--scope/--area/--since filters as search (beyond D4a's letter, recorded in validation report and cell text); command-registry schema updated (required:['text'] -> [], structured-filter properties) as a necessary in-scope deviation
 
+### gates
+
+- e230444a · 2026-07-21 · auto-approved slices 3-4 shape+execution (bypass total): dp-8 prose rules (CoS-checked flip + citation discipline), dp-9 e2e supersede dry-run on d20f4c96 + issue-closure drafts
+
+### taxonomy
+
+- e7adaa4c · 2026-07-21 · taxonomy schema corrected: tags[] entries are {name, description} objects per the dp-6 contract (loadTaxonomy maps t.name); dp-7's string-seed made every known tag classify as unknown and leak into candidates — candidates cleared, steady-state re-proven by this event
+- 3ff26b98 · 2026-07-21 · taxonomy bootstrap note: initial seed lacked schema_version — first classify call read it as invalid, treated known tags as unknown, appended gates/planning to candidates and rewrote the file canonically; steady-state behavior verified correct by this very event
+
 ## doctrine-layer
 
 ### codex

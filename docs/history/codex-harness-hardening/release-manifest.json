@@ -167,7 +167,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "938fa2bdf9b6d31919b40f11c8a001c7aeeef2de99fdfd21db64419f9fce0d1c",
+      "sha256": "451b410bfb28c8cb7cf9ae3701d465ab95ffa9003746440ce1c835103563d211",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -734,7 +734,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "sha256": "4fa13f2c08e723c6e48ea5206cdaa4896c401d112cf41e331a533cdb59140d9e",
+      "sha256": "ea654d83062f88eabe0dc324785c1288cc2ec6e2bada7101f5c231e8727cb759",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
@@ -1035,7 +1035,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "114940910d78a894394efcd8ddc0e69cd2836f94a46c33a1d8e1b28b4ace17e5",
+      "sha256": "9f3544ca82b8b85d4c5410c523942a930d34422d14fdfde4cc54e2e52fee2001",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1602,7 +1602,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "sha256": "4fa13f2c08e723c6e48ea5206cdaa4896c401d112cf41e331a533cdb59140d9e",
+      "sha256": "ea654d83062f88eabe0dc324785c1288cc2ec6e2bada7101f5c231e8727cb759",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
@@ -2599,7 +2599,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "sha256": "4fa13f2c08e723c6e48ea5206cdaa4896c401d112cf41e331a533cdb59140d9e",
+      "sha256": "ea654d83062f88eabe0dc324785c1288cc2ec6e2bada7101f5c231e8727cb759",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"

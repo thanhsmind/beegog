@@ -1,0 +1,47 @@
+{
+  "id": "dp-8",
+  "feature": "decision-propagation",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "CoS-checked done-flip + citation discipline in skill prose (D1/D3)",
+  "action": "Per CONTEXT D1 and D3 (docs/history/decision-propagation/CONTEXT.md): (1) bee-scribing SKILL.md — the D11b done-flip rule (line ~96) becomes CoS-checked: at flip time enumerate EVERY CoS clause of the matched backlog row and cite delivered evidence per clause; any clause without evidence -> the row does NOT flip — it stays in-flight and its CoS text gains a 'Delivered:' / 'Remaining:' annotation naming the subset; splitting the remainder into a new row is allowed when the delivered subset is independently shippable; silent full-flip on partial delivery is never allowed. (2) bee-compounding SKILL.md — the D11b fallback (line ~81) inherits the identical per-clause rule (compounding never flips looser than scribing). (3) Citation discipline (D3): in bee-scribing's reference (scribing-reference.md) add the rule that a backlog row / spec section / CONTEXT-plan passage encoding a decision cites its short8 id, so the dp-2 supersede sweep can reach it; note that uncited embodiments are the residual risk. (4) Keep wording tight and in each skill's existing voice; these are prose rules (D7 of scribing: prose-ruled, never hook-enforced). Then render_plugin_skill_trees + release_manifest --write + --check, full run_verify. Proof of wording: grep-visible presence of the per-clause rule, the Delivered/Remaining annotation, and the short8 citation rule in the three touched files.",
+  "must_haves": {
+    "truths": [
+      "scribing D11b text requires per-clause CoS evidence and forbids full-flip on partial delivery, with Delivered:/Remaining: annotation",
+      "compounding fallback carries the identical rule",
+      "citation discipline (short8 in citing artifacts) present in the scribing reference",
+      "render + manifest + run_verify green"
+    ],
+    "prohibitions": [
+      "No hook/mechanical enforcement added (D7: prose-ruled)",
+      "Do not weaken or remove the existing scribing-owns-the-flip ownership"
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/decision-propagation/CONTEXT.md",
+    "skills/bee-scribing/SKILL.md",
+    "skills/bee-compounding/SKILL.md"
+  ],
+  "files": [
+    "skills/bee-scribing/SKILL.md",
+    "skills/bee-compounding/SKILL.md",
+    "skills/bee-scribing/references/scribing-reference.md"
+  ],
+  "deps": [],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

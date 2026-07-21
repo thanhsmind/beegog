@@ -1,46 +1,166 @@
 {
-  "$comment": "Canonical decision-tag taxonomy (decision-propagation D7a, GH #32). tags[] is the approved vocabulary; unknown tags used at log time land in candidates[] for promotion. Scope values are docs/specs/ area slugs (plus 'repo' for repo-wide).",
+  "schema_version": 1,
   "tags": [
-    "advisor",
-    "archive",
-    "backlog",
-    "capture",
-    "cells",
-    "ci",
-    "claims",
-    "cli",
-    "codex",
-    "decisions",
-    "dispatch",
-    "docs",
-    "gates",
-    "hooks",
-    "installer",
-    "judge",
-    "lanes",
-    "locks",
-    "onboarding",
-    "orchestration",
-    "performance",
-    "planning",
-    "privacy",
-    "recall",
-    "recovery",
-    "release",
-    "reservations",
-    "review",
-    "scribing",
-    "search",
-    "sessions",
-    "skills",
-    "specs",
-    "state",
-    "sweep",
-    "taxonomy",
-    "tests",
-    "windows",
-    "workers",
-    "worktree"
+    {
+      "name": "advisor",
+      "description": "Advisor consults and gating preconditions"
+    },
+    {
+      "name": "archive",
+      "description": "Store archiving and aged-out events"
+    },
+    {
+      "name": "backlog",
+      "description": "Product backlog rows and PBI flow"
+    },
+    {
+      "name": "capture",
+      "description": "Capture queue and settlement stubs"
+    },
+    {
+      "name": "cells",
+      "description": "Work cells: authoring, claims, caps"
+    },
+    {
+      "name": "ci",
+      "description": "Continuous integration and runners"
+    },
+    {
+      "name": "claims",
+      "description": "Cross-session claim store"
+    },
+    {
+      "name": "cli",
+      "description": "bee CLI surface and verbs"
+    },
+    {
+      "name": "codex",
+      "description": "Codex runtime parity and bridges"
+    },
+    {
+      "name": "decisions",
+      "description": "The decisions store and its lifecycle"
+    },
+    {
+      "name": "dispatch",
+      "description": "Worker dispatch and tier transport"
+    },
+    {
+      "name": "docs",
+      "description": "Documentation and knowledge layer"
+    },
+    {
+      "name": "gates",
+      "description": "The four human gates and bypass"
+    },
+    {
+      "name": "hooks",
+      "description": "Write-guard and lifecycle hooks"
+    },
+    {
+      "name": "installer",
+      "description": "Installers and version tuples"
+    },
+    {
+      "name": "judge",
+      "description": "Semantic goal-check judging"
+    },
+    {
+      "name": "lanes",
+      "description": "Lane scaling and ceremony"
+    },
+    {
+      "name": "locks",
+      "description": "File and store locking"
+    },
+    {
+      "name": "onboarding",
+      "description": "Onboarding and managed files"
+    },
+    {
+      "name": "orchestration",
+      "description": "Session orchestration patterns"
+    },
+    {
+      "name": "performance",
+      "description": "Performance measurement and logs"
+    },
+    {
+      "name": "planning",
+      "description": "Planning, shaping, and mode gate"
+    },
+    {
+      "name": "privacy",
+      "description": "Secret handling and privacy gates"
+    },
+    {
+      "name": "recall",
+      "description": "Knowledge recall and retrieval"
+    },
+    {
+      "name": "recovery",
+      "description": "Crash recovery and transcript mining"
+    },
+    {
+      "name": "release",
+      "description": "Release flow and tagging"
+    },
+    {
+      "name": "reservations",
+      "description": "File reservations in swarms"
+    },
+    {
+      "name": "review",
+      "description": "Independent review sessions"
+    },
+    {
+      "name": "scribing",
+      "description": "Spec sync and BA capture"
+    },
+    {
+      "name": "search",
+      "description": "Search and filtering mechanics"
+    },
+    {
+      "name": "sessions",
+      "description": "Session identity and heartbeats"
+    },
+    {
+      "name": "skills",
+      "description": "Skill authoring and rendering"
+    },
+    {
+      "name": "specs",
+      "description": "Area specs and reading map"
+    },
+    {
+      "name": "state",
+      "description": "Runtime state and phases"
+    },
+    {
+      "name": "sweep",
+      "description": "Propagation sweeps"
+    },
+    {
+      "name": "taxonomy",
+      "description": "The decision-tag taxonomy itself"
+    },
+    {
+      "name": "tests",
+      "description": "Test suites and verification"
+    },
+    {
+      "name": "windows",
+      "description": "Windows platform behavior"
+    },
+    {
+      "name": "workers",
+      "description": "Execution and I/O workers"
+    },
+    {
+      "name": "worktree",
+      "description": "Worktree parallelism"
+    }
   ],
   "candidates": []
 }

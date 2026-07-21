@@ -1126,7 +1126,20 @@ await check(
     assert(fs.existsSync(p), 'dp-7 bootstrapped the canonical taxonomy — its absence is a regression');
     const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
     assert(Array.isArray(parsed.tags) && parsed.tags.length > 0, 'taxonomy tags[] must be a non-empty array');
+    // Schema contract (dp-6, loadTaxonomy maps t.name): entries are {name}
+    // objects — a plain-string seed silently classifies EVERY known tag as
+    // unknown and leaks the whole vocabulary into candidates[].
+    for (const entry of parsed.tags) {
+      assert(
+        entry && typeof entry === 'object' && typeof entry.name === 'string' && entry.name.length > 0,
+        `taxonomy tags[] entry must be a {name} object, got: ${JSON.stringify(entry)}`,
+      );
+    }
     assert(Array.isArray(parsed.candidates), 'taxonomy candidates[] must be an array');
+    const names = new Set(parsed.tags.map((t) => t.name));
+    for (const c of parsed.candidates) {
+      assert(!names.has(c), `candidates[] must never hold an already-known tag (found "${c}")`);
+    }
   },
 );
 
