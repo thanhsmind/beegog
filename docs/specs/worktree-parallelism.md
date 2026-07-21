@@ -3,8 +3,10 @@
 **Area:** how one session fans independent work into git worktrees, each running its
 own bee lifecycle, reconciled to the main checkout on `git merge`.
 **Status:** shipped 2026-07-16 (unreviewed); enter/return commands + routing rule added
-2026-07-18 (worktree-session-routing, GH #21, unreviewed). History:
-`docs/history/worktree-feature-parallelism/`, `docs/history/worktree-session-routing/`.
+2026-07-18 (worktree-session-routing, GH #21, unreviewed); cross-worktree hold acquisition
+made atomic (single-lock conflict-check + reserve + ledger-insert) and holds gained
+heartbeat-renewal on top of their TTL ceiling, 2026-07-21 (hardening-1-7-10, unreviewed).
+History: `docs/history/worktree-feature-parallelism/`, `docs/history/worktree-session-routing/`.
 
 ## What problem this solves
 
@@ -148,6 +150,21 @@ shared holds ledger closes that gap at WRITE time:
   linked worktree never double-mirrors — its reservations already live in the shared store).
   Before reserving, the seam consults the ledger and refuses with a typed `FOREIGN_HOLD`
   result naming the holding checkout, feature, and expiry.
+- **Acquisition is one atomic step, not three sequential ones (hardening-1-7-10).** Checking
+  the ledger for a conflicting foreign hold, reserving the path in the local (worktree or
+  main) store, and inserting the mirrored row into the shared ledger all run under the SAME
+  single lock acquisition at the main root — never as separate lock-check, lock-reserve,
+  lock-insert steps that could interleave with another checkout's attempt on the identical
+  path. Two checkouts racing the same path can therefore never both come away believing they
+  hold it; exactly one wins, and the loser gets the typed `FOREIGN_HOLD` refusal instead of a
+  hold it does not actually have.
+- **Holds renew, not just expire (hardening-1-7-10).** A hold's TTL ceiling (1 hour) is the
+  same failure-recovery backstop as before, but a live session's own heartbeat now refreshes
+  the timestamp on every cross-worktree hold it owns — a try-once refresh that never blocks
+  the session's primary work. A long-running live worker therefore keeps its holds protected
+  for as long as it stays genuinely active; TTL expiry now fires only for a session that has
+  actually gone silent (a dead or abandoned worker), not for one still working past the old
+  fixed ceiling.
 - **Three read taps, one voice:** (1) `reservations reserve` — typed refusal before any local
   row is written; (2) `claim-next` — silently skips a cell whose declared files overlap a
   foreign hold, so a session always picks conflict-free work instead of waiting; (3) the

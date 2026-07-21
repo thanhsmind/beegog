@@ -1,7 +1,7 @@
 ---
 area: hook-runtime
-updated: 2026-07-20
-sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19); codex-native-transport cell cnt-7 (Claude model-param guard allowlist folds a configured model-shaped adviser's own model, closing a live adviser-dispatch refusal, allow-only-widening; trace in .bee/cells/, report docs/history/codex-native-transport/reports/cnt-7.md, 2026-07-19); multi-session-hardening cell msh-5 (throttled heartbeat-and-lease renewal wired into the per-prompt and post-task-update checkpoints, try-once/skip-on-busy against the coordination lock; trace in .bee/cells/, report docs/history/multi-session-hardening/reports/msh-5.md, 2026-07-19); codex-command-windows cells 1/2 (shell-agnostic Windows command on every codex source-repository fallback entry + both transport forms unified on the committed onboarded handler path; traces in .bee/cells/, 2026-07-20; flushed capture stub a681f64a)]
+updated: 2026-07-21
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19); codex-native-transport cell cnt-7 (Claude model-param guard allowlist folds a configured model-shaped adviser's own model, closing a live adviser-dispatch refusal, allow-only-widening; trace in .bee/cells/, report docs/history/codex-native-transport/reports/cnt-7.md, 2026-07-19); multi-session-hardening cell msh-5 (throttled heartbeat-and-lease renewal wired into the per-prompt and post-task-update checkpoints, try-once/skip-on-busy against the coordination lock; trace in .bee/cells/, report docs/history/multi-session-hardening/reports/msh-5.md, 2026-07-19); codex-command-windows cells 1/2 (shell-agnostic Windows command on every codex source-repository fallback entry + both transport forms unified on the committed onboarded handler path; traces in .bee/cells/, 2026-07-20; flushed capture stub a681f64a); hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — the Windows hook command becomes a shell-agnostic node -e bootstrap that resolves the git root first, exits 0 silently outside a git repo, forwards stdin, and propagates the real handler's exit status, proven by a contract test run from a nested cwd; session-init persists the runtime-provided transcript path into the session record so crash recovery prefers it over layout math)]
 decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated); codex-native-transport D3-D5 (3ceba8f5, D3a c0cba64e, Δ2-amended 760e9b05); 350f1e82 (codex-native-transport cnt-4 rescope — override-field route-check deferred to a documented pass-through-open gap, pending observed evidence); multi-session-hardening D2/D5 with Δ3-amendment (docs/history/multi-session-hardening/CONTEXT.md; audit 12f54e88, locked 17a624dc)]
 coverage: partial
 ---
@@ -333,6 +333,23 @@ opportunistic refresh, and the primary reminder or state-refresh work it
 exists for still runs and is still reported exactly as before
 (multi-session-hardening D5).
 
+**B21 — Session-init persists its own runtime-provided transcript path,
+instead of leaving every later reader to recompute it.** Trigger: the
+session-init checkpoint runs at session start. What happens: whenever the
+active runtime hands the checkpoint a transcript path as part of its own
+session-start payload, that path is written into the session's own durable
+record at the same moment, rather than only being used transiently for the
+checkpoint's own purposes. What each actor observes: any later consumer that
+needs to find this session's transcript — most notably crash recovery
+(workflow-state B33) — can read the stored path directly instead of deriving
+it from the runtime's usual on-disk layout convention. This makes a
+non-Claude, Codex-shaped transcript layout first-class rather than a
+best-effort guess: recovery no longer has to already know, or successfully
+infer, where a second runtime's transcripts live in order to find one that
+was actually reported at session start. A runtime that hands no transcript
+path leaves the field absent, and lookup falls back to layout math exactly as
+it did before this behavior existed (hardening-1-7-10).
+
 **B17 — A passive usage log records every tool call, and enforces nothing.**
 After every tool the assistant runs — any tool, both runtimes — a checkpoint
 appends one line to a machine-local usage log: timestamp, the tool's name, and
@@ -394,10 +411,24 @@ that it reduces anything.
   non-ASCII characters (codex-runtime-parity cells 6a, 6b).
 - R8a — Every second-runtime source-repository fallback entry carries two
   transport forms: the POSIX command (login-shell transport, unchanged) and a
-  Windows-specific command that is shell-agnostic — a bare interpreter
-  invocation of the checkpoint file, relative to the session working
-  directory, with no shell substitution, test, or exec constructs — so it runs
-  identically under both native Windows shells. The Windows form exists only
+  Windows-specific command that is shell-agnostic — with no shell
+  substitution, test, or exec constructs, and no dollar sign, percent sign, or
+  backtick anywhere in the command string, so cmd.exe and PowerShell parse it
+  identically instead of one native shell interpreting a construct the other
+  does not — so it runs identically under both native Windows shells. The
+  command is a small interpreter-language bootstrap, not a raw file
+  invocation: it resolves the git repository root itself before doing
+  anything else, so it works correctly from any nested working directory
+  rather than only from the session's own working directory; outside a git
+  repository it exits zero silently, the same fail-open parity the POSIX form
+  already has; once resolved, it forwards its own stdin through to the real
+  checkpoint handler unchanged and propagates that handler's exit status back
+  as its own, rather than always reporting success (hardening-1-7-10,
+  refining codex-command-windows cell 1's original shape). The contract test
+  for this command executes the real, rendered command string from a nested
+  working directory rather than only asserting on its literal text, so a
+  regression in the git-root resolution itself would fail the suite, not just
+  a text-shape check. The Windows form exists only
   on the second runtime's source-repository target: packaged (plugin)
   projections and all first-runtime projections are byte-unchanged by its
   rendering (codex-command-windows cell 1).
@@ -473,6 +504,18 @@ that it reduces anything.
   change the checkpoint's primary outcome; only a command-line verb's
   read-modify-write waits for the lock (B20; multi-session-hardening D2/D5,
   Δ3-amended).
+- R20 — A Windows fallback checkpoint command resolves the git repository
+  root itself before anything else, so it behaves identically whether the
+  session's cwd is the project root or a nested directory; it contains no
+  dollar sign, percent sign, or backtick, so cmd.exe and PowerShell parse it
+  identically; and its own contract test runs the real rendered command from
+  a nested cwd rather than only checking its literal text (R8a;
+  hardening-1-7-10).
+- R21 — Session-init persists a runtime-provided transcript path into the
+  session record the moment it is available; any later reader (crash
+  recovery above all) prefers that stored path over recomputing a layout,
+  making a second runtime's transcript layout first-class rather than a
+  best-effort guess (B21; hardening-1-7-10).
 
 ## Edge Cases Settled
 

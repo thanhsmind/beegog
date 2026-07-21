@@ -661,3 +661,28 @@ it — polite polling from both sides deadlocks. (2) A returned subagent's
 resumption — track who waits on what, and SendMessage the waiter the moment
 its blocker clears. Corollary CLI gap (filed): reservation release scopes by
 agent/cell only, so releasing ONE path drops all holds.
+
+## [20260721] Local green is worthless if suites inherit harness env — hermeticity must be structural, and the release gate is the exact-tag CI
+**Category:** process
+**Feature:** hardening-1-7-10
+**Tags:** [hermeticity, ci, release-gate, session-env, verify]
+v1.7.9 shipped citing "53/53 green" while the tag's CI was red on every platform: test_state
+passed locally ONLY because Claude Code exports CLAUDE_CODE_SESSION_ID, letting a sessionless
+reserve dodge SESSION_REQUIRED. Proof was one command: `env -u CLAUDE_CODE_SESSION_ID` flipped
+local green to the exact CI red. Structural fixes: run_verify scrubs session env from every child;
+session-sensitive suites also scrub at bootstrap; close-out verifies in BOTH modes. Corollary the
+same day: windows.yml invoked a deleted suite for a full release cycle because nothing tied
+workflow steps to existing files — CI now reuses the runner's own suite discovery. Never cite a
+local green as release evidence; the gate is the exact-tag CI run.
+
+## [20260721] Locks guarding long synchronous child spawns cannot be heartbeat-renewed — probe owner liveness instead
+**Category:** architecture
+**Feature:** hardening-1-7-10
+**Tags:** [locks, concurrency, spawnSync, liveness, stale-takeover, advisor]
+A timer refreshing a lockfile's mtime cannot fire while the holder runs spawnSync (event loop
+blocked) — exactly when protection is needed (worktree merge holding worktree-admin across a
+multi-minute verify). Sync-safe design: stale takeover requires the owner pid provably dead
+(kill(pid,0); EPERM=alive) after 30s, with a 1h absolute ceiling as the pid-reuse guard. The
+mandatory high-risk advisor consult caught this pre-execution — the original 15min ceiling would
+have re-opened the exact mid-verify steal being closed — and also caught a writeCell sync→async
+cascade and a judge-reopen claims-store orphan that would otherwise have surfaced mid-cell.

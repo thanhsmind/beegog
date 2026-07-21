@@ -1,9 +1,9 @@
 ---
 area: workflow-state
-updated: 2026-07-20
+updated: 2026-07-21
 parity_sources: [codex-hook-state-parity cell codex-hook-state-parity-1 (pre-phase routing ownership and review isolation; report and capped trace, 2026-07-16)]
 parity_decisions: [codex-hook-state-parity D4-D6]
-sources: [gh-issue-fixes-172 cells ghf-1/ghf-3..ghf-6 (traces in .bee/cells/, GH #23/#27, 2026-07-20 — group-scoped command help; heartbeat-invariant acquisition identity in the attempt ledger and claim counting; per-unit exclusive gate on all record mutators; budget hard ceilings + authoring validation; actor-required audit-first budget reset; needs-revision judge verdict blocks completion absent an audited override); self-correcting-loop cells scl-1..scl-5 (traces in .bee/cells/, reports docs/history/self-correcting-loop/reports/, 2026-07-19 — append-only attempt ledger, claim-door lifetime budgets, change-classification advisory + behavior-class completion teeth, judge-verdict schema, risk-scaled goal-check judge); lane-ceremony-v3 cells lcv3-1..lcv3-5 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan document frozen at shape approval, slice-in-units, close-out full-chain evidence); worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..5 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15/16 — computed schedule, cycle refusal, schedule query verb, orchestration prose; -5: review fix scoping refusal to introduced/participating cycles), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times), advisor-and-orchestration Slice 2B cells ao-2b-1/ao-2b-2 (AO5 adviser form — ladder and ceiling-skip removed, same-model no-op only; advice-class write-token refusal + promptVia migration; traces in .bee/cells/, reports docs/history/advisor-and-orchestration/reports/, 2026-07-17); advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17); post-advisor-hardening cell pah-2 (cells add/update manifest-lint advisory, 2026-07-18); multi-session-hardening cells msh-1..7 (traces in .bee/cells/, reports docs/history/multi-session-hardening/reports/, 2026-07-19 — coordination lock primitive, every-claim-path exclusivity, session self-derivation, mutator ownership guard, throttled heartbeat/lease renewal, orchestrator-claims-before-spawn doctrine sync); transcript-recovery cells transcript-recovery-1..4 (traces in .bee/cells/, reports docs/history/transcript-recovery/reports/, 2026-07-20 — crash-candidate detection from stale heartbeat + non-clean transcript tail + work-in-flight, recovery scan/window CLI verbs, down-tier transcript miner, mined-unconfirmed capture stubs, verify-chain + Session Scout offer)]
+sources: [gh-issue-fixes-172 cells ghf-1/ghf-3..ghf-6 (traces in .bee/cells/, GH #23/#27, 2026-07-20 — group-scoped command help; heartbeat-invariant acquisition identity in the attempt ledger and claim counting; per-unit exclusive gate on all record mutators; budget hard ceilings + authoring validation; actor-required audit-first budget reset; needs-revision judge verdict blocks completion absent an audited override); self-correcting-loop cells scl-1..scl-5 (traces in .bee/cells/, reports docs/history/self-correcting-loop/reports/, 2026-07-19 — append-only attempt ledger, claim-door lifetime budgets, change-classification advisory + behavior-class completion teeth, judge-verdict schema, risk-scaled goal-check judge); lane-ceremony-v3 cells lcv3-1..lcv3-5 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan document frozen at shape approval, slice-in-units, close-out full-chain evidence); worktree-isolation cells worktree-isolation-1..4 (capped traces and reports 2..4, 2026-07-16 — linked-root resolution, contained writes, dispatch attestation, transactional merge-back); codex-sandbox-baseline cell codex-sandbox-baseline-6 (status-first review history derivation and barrier-synchronized isolated Worker races, 2026-07-16); parallel-scheduler cells parallel-scheduler-1..5 (traces in .bee/cells/, reports docs/history/parallel-scheduler/reports/, 2026-07-15/16 — computed schedule, cycle refusal, schedule query verb, orchestration prose; -5: review fix scoping refusal to introduced/participating cycles), codex-harness-hardening cell codex-harness-hardening-bypass-1 (trace in .bee/cells/, gate_bypass autopilot levels off/normal/full/total, 2026-07-15), codex-runtime-parity Safety foundation — cell codex-parity-5 (trace in .bee/cells/), report docs/history/codex-runtime-parity/reports/codex-parity-5.md, fanout-delegation D1 (cells fanout-1/fanout-4, 2026-07-12), review-on-demand cells review-od-1..3 (traces in .bee/cells/, reports docs/history/review-on-demand/reports/, 2026-07-12), cells-update-verb cell cuv-1 (2026-07-12), harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12), dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b), advisor cells adv-1..adv-3 (traces in .bee/cells/, reports docs/history/advisor/reports/, 2026-07-13), fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13), chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times), advisor-and-orchestration Slice 2B cells ao-2b-1/ao-2b-2 (AO5 adviser form — ladder and ceiling-skip removed, same-model no-op only; advice-class write-token refusal + promptVia migration; traces in .bee/cells/, reports docs/history/advisor-and-orchestration/reports/, 2026-07-17); advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17); post-advisor-hardening cell pah-2 (cells add/update manifest-lint advisory, 2026-07-18); multi-session-hardening cells msh-1..7 (traces in .bee/cells/, reports docs/history/multi-session-hardening/reports/, 2026-07-19 — coordination lock primitive, every-claim-path exclusivity, session self-derivation, mutator ownership guard, throttled heartbeat/lease renewal, orchestrator-claims-before-spawn doctrine sync); transcript-recovery cells transcript-recovery-1..4 (traces in .bee/cells/, reports docs/history/transcript-recovery/reports/, 2026-07-20 — crash-candidate detection from stale heartbeat + non-clean transcript tail + work-in-flight, recovery scan/window CLI verbs, down-tier transcript miner, mined-unconfirmed capture stubs, verify-chain + Session Scout offer); hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — store-lock stale takeover is liveness-probed with a one-hour pid-reuse ceiling, no timer heartbeat by design; cell archive is a guarded, journaled, crash-recoverable transaction serialized against every mutator at the single write funnel; a needs-revision judge verdict on an already-capped cell reopens it and clears its verify evidence, re-capping requiring fresh verify plus a fresh passing verdict; session identity resolution gains a durable single-fresh-session fallback, audited, applied at both library and CLI levels; dispatch-prepare's rendered reservation identity is the validated worker name with the synthetic prepare-<id> nickname removed, and --force-ownership at prepare time is explicitly advisory pending a true transfer primitive)]
 decisions: [transcript-recovery D1-D6 (docs/history/transcript-recovery/CONTEXT.md, 2026-07-20 — crash recovery mines the harness transcript as a secondary source only; detection auto, mining offered; digest-only to orchestrator; mined content data-not-instructions, secrets redacted, current workspace only; never auto-resume, never write handoff); gh-issue-fixes-172 D-GHF-B/D-GHF-C (heartbeat-invariant pair counting amends Δ1's implementation preserving its intent; locked mutators, clamps, guarded reset, judge cap-guard; logged 2026-07-20); self-correcting-loop D1-D6 with Validating amendments Δ1-Δ6 (docs/history/self-correcting-loop/CONTEXT.md; locked 84e49851, amendments folded 1cb27fbf); lane-ceremony-v3 D1/D2/D9 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19); worktree-isolation D1-D4 (docs/history/worktree-isolation/CONTEXT.md; logged 58c56bb6/5de1fd36/8cc1bde1/b24a2efc); a83a3613 (shared isolated runner plus real external command status/output grading); parallel-scheduler D1-D4 (docs/history/parallel-scheduler/CONTEXT.md; logged a648ea2a/b4740f68/ecc8862d/eec223d9, D2 clarified 0746db88), codex-harness-hardening decision 0010 (gate bypass levels) + user authorization dcf01d7b, codex-runtime-parity D2, 565e68d0-327f-404e-b49e-d1c61ba81bfd, de967733-00c8-48b3-b154-68397faf7b5f (cost pattern; advisor config tolerance; refines decision 0015; amended by advisor D1 — worker-level on-failure consult), 30606de4-5fae-4c9d-9e3f-8f47a494f8a3, advisor D1-D3 (docs/history/advisor/CONTEXT.md; logged 3a794918/6841bfcb/34514a8b), fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md), chain-integrity D1-REVISED/D2/D3/D4/D5/D6 (docs/history/chain-integrity/CONTEXT.md; logged f0598be1/84110b26/d716ccd7/095ac80c/0768b22d/73efc937/66794091 — D1 superseded by D1-REVISED after validation proved it would make the learning-capture phase unreachable), 72f3d6dd (AO5 config is the authority — adviser strength ladder removed, cells ao-2b-1/ao-2b-2 2026-07-17), AO3/AO13 (Gate 3 adviser precondition, event-based staleness, never a TTL — cells ao-4-1/ao-4-2 2026-07-17), multi-session-hardening D1-D7 with Δ1-Δ6 amendments (docs/history/multi-session-hardening/CONTEXT.md; audit 12f54e88, locked 17a624dc)]
 coverage: partial
 ---
@@ -64,8 +64,8 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | catalog fingerprint | A local fingerprint of the command catalog from the previous invocation. It detects that the discoverable surface changed without altering a command's normal result. |
 | working session | One terminal's live occupancy of the project, recorded durably with its start time and a heartbeat that renews itself automatically on activity, throttled to a short minimum interval between writes so routine work does not spam the shared store. Claims and file holds name their owning session, and the same automatic renewal carries both of their leases forward at the same moment. |
 | claim | Exclusive ownership of one unit of work by one working session, with a lifetime (TTL) and the owner's heartbeat. Created atomically through the SAME exclusive-creation primitive on every path that claims a unit — a direct claim by identity as well as the cross-session picker — so among any number of simultaneous claimants exactly one wins; every loser receives a typed refusal, never a crash. A claim with no owning session (a single-user, ownerless claim) remains a legal, supported shape. |
-| typed refusal | The uniform "no" every coordination operation answers with on contention: a structured result carrying a refusal code and reason, never an exception. Codes and meanings: `SESSION_EXISTS` — the session record already exists; `SESSION_MISSING` — the named owner has no session record; `CLAIMED` — another live session owns the unit, naming it and its expiry; `GATE_HELD` — someone is mid-mutation on this claim, try again; `NOT_OWNER` — the caller is not the claim's owner; `NOT_FOUND` — no such claim exists; `LOCK_BUSY` — a shared coordination store's lock is held by another process past the wait budget, naming the holder. |
-| coordination lock | The bounded-wait mutual-exclusion primitive guarding a shared coordination store's (holds, the durable workflow record) read-modify-write body against a second concurrent writer. A command-line verb waits for it (bounded retry); a lifecycle checkpoint never waits — it tries once and skips its own update silently when busy, the same fail-open discipline every checkpoint already follows. A holder that goes stale (far past the time any real read-modify-write body could still be running) is taken over by an atomic handoff — staleness is re-verified at every retry, never cached, so at most one process ever believes it holds the lock at once. |
+| typed refusal | The uniform "no" every coordination operation answers with on contention: a structured result carrying a refusal code and reason, never an exception. Codes and meanings: `SESSION_EXISTS` — the session record already exists; `SESSION_MISSING` — the named owner has no session record; `CLAIMED` — another live session owns the unit, naming it and its expiry; `GATE_HELD` — someone is mid-mutation on this claim, try again; `NOT_OWNER` — the caller is not the claim's owner; `NOT_FOUND` — no such claim exists; `LOCK_BUSY` — a shared coordination store's lock is held by another process past the wait budget, naming the holder; `SESSION_REQUIRED` — a claim or reservation was attempted with no resolvable session id while another session's heartbeat is live, naming both the override flag and the env var that would resolve it; `CELL_ARCHIVED` — the targeted cell exists only in the archive tree and cannot be mutated or resurrected by a write; `CELLS_ARCHIVE_BUSY` — an archive transaction is in flight against the targeted cell, so the ordinary write fails fast rather than blocking or racing it. |
+| coordination lock | The bounded-wait mutual-exclusion primitive guarding a shared coordination store's (holds, the durable workflow record) read-modify-write body against a second concurrent writer. A command-line verb waits for it (bounded retry); a lifecycle checkpoint never waits — it tries once and skips its own update silently when busy, the same fail-open discipline every checkpoint already follows. Passing the ordinary staleness age (30s) makes a holder only a takeover **candidate**, never an automatic steal: the candidate is actually stolen only when a liveness probe finds the recorded owner process provably dead, or unconditionally once an absolute one-hour ceiling has passed regardless of what the probe says (a pid-reuse guard, since a dead process's pid can be reassigned to something unrelated after enough wall-clock time). A permission-denied probe result counts as alive, never as dead — an inconclusive probe must never be read as license to steal. A genuinely live holder is therefore entitled to hold the lock across a long synchronous child spawn (a worktree merge running its verify command, for instance) for as long as the one-hour ceiling allows. Staleness (both the candidate age and the liveness/ceiling verdict) is re-verified at every retry, never cached, so at most one process ever believes it holds the lock at once. By design there is no timer-driven heartbeat renewing the hold from inside the holder — the holder's own synchronous child spawns already block its event loop, so a timer could not fire reliably anyway; freshness instead comes from the holder finishing its critical section and releasing (hardening-1-7-10). |
 | adoption | Ownership transfer of a live claim to a successor session (the fresh-session handoff, D1). Performed under the claim's own exclusive gate while the claim record stays continuously present — at no instant does the unit look unclaimed, so no third session can seize it mid-transfer. An automatic lease renewal (the heartbeat above) never fires against a claim mid-transfer — it is skipped that cycle rather than risk reverting the transfer. |
 | reclaim (sweep) | Taking back an abandoned claim. Permitted only when BOTH the claim's lifetime has expired AND its owner's heartbeat is stale, re-verified while holding the claim's gate. A stall signal alone never justifies stealing live work. |
 | lane | One feature's own pipeline record — its feature name, mode, phase (same closed vocabulary), all four gates, summary and next action — living beside the default record so several features can be active at once. The default record is itself a lane: the one every unbound session sees. |
@@ -87,7 +87,7 @@ never inherit the previous feature's approvals or bury its unfinished work**.
 | change classification | The category of change a unit of work makes — formatting, bug fix, behavior change, API change, security change, or migration — set explicitly at authoring or, when absent, derived only from the behavior-change flag (a behavior-changing unit is classified as a behavior change; anything else is left unclassified). |
 | minimum verification standard | An advisory expectation of what "enough" verification looks like for each change classification, checked at authoring time and reported as a warning naming the missing minimum — never a refusal, and never folded into the machine-parseable result of the write. |
 | proof-of-red requirement | The one classification with teeth at completion: a behavior-changing unit's recorded proof that the change actually fixed something real must be substantial (not a token placeholder) and must not duplicate another unit's recorded proof word-for-word; falling short refuses completion, naming the missing minimum or the colliding unit. A unit riding the existing deliberate-exceptions door keeps that door's original contract, with an advisory noting it took that door instead. |
-| judge verdict | A structured record — pass or needs-revision, with one entry per checked truth and its evidence, whether a needs-revision finding looks automatically fixable or needs a person, and how confident the judge is — attached append-only to a unit of work. It stamps which model built the change and which model judged it, and an honest independence status: `confirmed` only when both models were pinned to a specific identity and genuinely differ, `same-model` when they match, `unverified` otherwise — never a guess. Free-form prose is not a verdict; it is a failed judge run, re-dispatched once, then recorded `unverified`. A verdict is not log-only: while a unit's LATEST judge verdict is needs-revision, completion (capping) is refused with a typed error naming the way back — rework and record a passing verdict, or complete with an explicit override reason. An override is always audited twice (an append-only override marker on the unit carrying when, why, and the verdict it overrode, plus a durable decision recorded before the unit is rewritten); a unit with no judge verdicts completes exactly as before. |
+| judge verdict | A structured record — pass or needs-revision, with one entry per checked truth and its evidence, whether a needs-revision finding looks automatically fixable or needs a person, and how confident the judge is — attached append-only to a unit of work. It stamps which model built the change and which model judged it, and an honest independence status: `confirmed` only when both models were pinned to a specific identity and genuinely differ, `same-model` when they match, `unverified` otherwise — never a guess. Free-form prose is not a verdict; it is a failed judge run, re-dispatched once, then recorded `unverified`. A verdict is not log-only: while a unit's LATEST judge verdict is needs-revision, completion (capping) is refused with a typed error naming the way back — rework and record a passing verdict, or complete with an explicit override reason. An override is always audited twice (an append-only override marker on the unit carrying when, why, and the verdict it overrode, plus a durable decision recorded before the unit is rewritten); a unit with no judge verdicts completes exactly as before. A needs-revision verdict recorded AFTER the unit is already capped reopens it to open with its verify evidence cleared (B36) rather than sitting inert against a finished unit — re-capping then requires a fresh verify run and a subsequent passing verdict; the old evidence can never be replayed to satisfy the door again. |
 | goal-check judge | A read-only semantic check dispatched during the swarming goal-check, scaled by the lane's risk: tiny and small lanes stay mechanical-only; standard lanes get one judge per completed behavior-changing unit, checking its claimed truths against the actual change, its cited decisions, and whether the task and the change actually match; high-risk lanes get the same judge with a preference for a model independent from the builder, recording the outcome honestly either way. This judge is part of finishing a unit, never the user-invoked independent review — it can never open, approve, or substitute for a review session. |
 
 ## Behaviors & Operations
@@ -450,12 +450,24 @@ store's coordination lock (Data Dictionary) — acquired by exclusive creation
 with bounded retry, and a stale holder is taken over by an atomic handoff
 rather than an unconditional removal, so a waiter can never delete a fresh
 holder's lock out from under it; staleness is re-verified at every retry,
-never cached. A command-line verb waits for the lock, bounded; a lifecycle
-checkpoint never waits — it tries once and, if busy, skips its own update
-silently, preserving the checkpoint's existing fail-open discipline. On a
-genuine timeout the caller receives the typed `LOCK_BUSY` refusal naming the
-current holder — never a silent fall-through to an unlocked write, because
-mutual exclusion is the entire point. What each actor observes: no hold and no
+never cached. Crossing the ordinary staleness age only makes a holder a
+takeover candidate: the actual steal requires either a liveness probe to find
+the recorded owner process provably dead (a probe that comes back
+permission-denied still counts as alive, never as dead — an inconclusive
+answer is never license to steal) or an absolute one-hour ceiling to have
+passed regardless of what the probe reports, guarding against a reused pid
+being mistaken for the original owner. A holder that is genuinely still alive
+therefore keeps the lock legitimately across a long synchronous child spawn —
+a worktree merge running its verify command is the motivating case — for as
+long as the ceiling allows; no timer heartbeat renews the hold from inside the
+holder by design, since the holder's own synchronous child spawns already
+block the event loop a timer would need (hardening-1-7-10). A command-line
+verb waits for the lock, bounded; a lifecycle checkpoint never waits — it
+tries once and, if busy, skips its own update silently, preserving the
+checkpoint's existing fail-open discipline. On a genuine timeout the caller
+receives the typed `LOCK_BUSY` refusal naming the current holder — never a
+silent fall-through to an unlocked write, because mutual exclusion is the
+entire point. What each actor observes: no hold and no
 coordination-record write is ever silently dropped by a second concurrent
 writer; a checkpoint that loses the race simply skips one opportunistic
 refresh, with the next one along shortly (D2).
@@ -466,11 +478,18 @@ ownership — claiming, holding, or renewing. What happens: the acting session's
 identity is resolved from its own runtime environment at the moment of the
 operation, in a fixed order of preference, with an explicit override reserved
 for tests; nothing else ever substitutes a different party's stated identity
-for the caller's own. What each actor observes: an operation with no
+for the caller's own. Below that environment lookup and above the ownerless
+floor sits one durable fallback: when the session store shows exactly one
+fresh, live-heartbeat session and the environment gave no answer, that lone
+session is adopted as the caller's identity, audited with an `adopted` marker
+rather than adopted silently; two or more fresh live sessions still refuse
+(`SESSION_REQUIRED`) rather than guess between them. What each actor observes:
+an operation with no
 resolvable identity still records an ownerless (sessionless) entry exactly as
 it always could; every other operation is now attributed to the real acting
 session by default rather than only when a caller opted in, so cross-session
-holds and claims become visible without any special handling (D3).
+holds and claims become visible without any special handling (D3;
+durable-fallback tier: hardening-1-7-10).
 
 **B23 — Mutating a claimed unit of work requires the caller to own it, with an
 audited rescue door.** Trigger: any operation that would change a claimed
@@ -721,6 +740,74 @@ can confirm the root was really consulted instead of quietly never checked; a
 workspace that names no extra root behaves exactly as before (hardening-5,
 2026-07-21).
 
+Locating a candidate's transcript no longer relies solely on computing where
+it ought to be from the runtime's usual layout: session start now persists
+the runtime-provided transcript path into the session's own record (hook
+runtime detail: `hook-runtime.md`), and crash recovery prefers that stored
+path over layout math whenever it is present. A transcript layout the
+recovering session's own runtime did not originate (a Codex-shaped session
+being scanned from a Claude-hosted recovery pass, for instance) is therefore
+first-class rather than a guess that only happens to work when the two
+runtimes' conventions line up (hardening-1-7-10).
+
+**B34 — Archiving a cell is a guarded transaction, not a plain file move.**
+Trigger: a cell is archived (moved out of the live cell tree) or unarchived
+(brought back). What happens: before anything moves, a preflight check
+refuses the operation outright if a cell of the same identity already exists
+at the destination — a collision is caught before the first write, never
+discovered after. Once preflight clears, a journal recording the intended
+move is written before the first move happens, so a crash mid-archive leaves
+enough evidence for the very next archive or unarchive call to detect the
+interrupted transaction and roll it back cleanly rather than leaving the cell
+split between two locations. The summary write that records the archive
+outcome sits inside this same guarded section, not after it, so a summary is
+never recorded for a move that did not actually complete. Unarchiving refuses
+to overwrite an existing active cell — the same collision discipline as
+archiving, checked in the other direction. What each actor observes: an
+archive or unarchive either fully happens or leaves a recoverable trail; it
+never leaves a cell silently duplicated, silently missing, or silently
+overwritten (hardening-1-7-10).
+
+**B35 — Archiving is serialized against every other cell mutator at the one
+place all of them write.** Trigger: a cell archive transaction runs at the
+same time as any ordinary mutation (claim, update, verify, cap, reopen, and
+the rest) targeting the same or a related cell. What happens: every mutator
+funnels through the same single write path (`writeCell`), and an archive
+transaction takes a brief synchronous acquire of the archive lock at that
+funnel before it proceeds — so a mutator and an archive transaction can never
+interleave their writes. A cell that exists only in the archive tree can
+never be resurrected by an ordinary write: any mutator attempting to touch it
+receives the typed `CELL_ARCHIVED` refusal instead of silently recreating a
+live record out of an archived one. Conversely, while an archive transaction
+is actually in flight, an ordinary write against the affected cell fails fast
+with the typed `CELLS_ARCHIVE_BUSY` refusal rather than blocking indefinitely
+or racing the transaction. Every mutator — including reopen, tier changes,
+budget reset, and judge-verdict recording — is subject to both refusals
+equally; none of them has a side door around an archived or mid-transaction
+cell. What each actor observes: an archived cell stays archived until
+deliberately unarchived, and a cell mid-archive is never silently mutated out
+from under the transaction (hardening-1-7-10).
+
+**B36 — A needs-revision verdict on an already-capped unit reopens it, and
+re-capping demands fresh proof, never stale evidence.** Trigger: a judge
+verdict of needs-revision (B31) is recorded against a unit that has already
+been capped — a later or asynchronous judge pass catching what an earlier
+pass missed, for example. What happens: the cell is reopened from capped back
+to open, its recorded verify evidence is cleared (a passing verify that the
+judge has just contradicted cannot be allowed to keep satisfying the capping
+requirement), and the claims store is reconciled to match the reopened state.
+The judge ledger and the reopen event itself are both preserved — append-only,
+exactly like every other judge verdict and audit trail — so the history of
+what was found and when is never lost even though the cell's own live status
+just changed. Re-capping the unit afterward is structurally impossible on the
+old evidence alone: the cap door requires a fresh verify run AND a subsequent
+passing verdict on that fresh run before it will accept completion again.
+Stale evidence — the verify result that was true before the needs-revision
+finding — can never be replayed to re-cap the unit. What each actor observes:
+a unit that looked done can be pulled back into open work by a later verdict
+without losing its history, and the only way back to capped is doing the work
+over and proving it again (hardening-1-7-10).
+
 ## Actors & Access
 
 - **The agent** runs every verb itself; the human never runs workflow
@@ -936,7 +1023,13 @@ workspace that names no extra root behaves exactly as before (hardening-5,
   operation from its own runtime environment, never accepted as handed down by
   another party except an explicit test override; an operation with no
   resolvable identity still proceeds, recorded as ownerless
-  (multi-session-hardening D3).
+  (multi-session-hardening D3). Below the environment lookup, exactly one
+  durable fallback applies before falling through to ownerless: when precisely
+  one fresh live session exists in the store, it is adopted and the adoption
+  is audited on both the result and the resulting claim; two or more fresh
+  live sessions refuse rather than guess. The full chain, fallback included,
+  applies at the library level and every CLI surface alike (claim, claim-next,
+  reservations) (hardening-1-7-10).
 - R39 — Mutating a claimed unit of work is refused when a live claim names a
   different session, naming the owner and expiry; an expired, absent,
   ownerless, or matching claim proceeds unchanged, and a forced override
@@ -991,6 +1084,28 @@ workspace that names no extra root behaves exactly as before (hardening-5,
   never loaded into the recovering session, mined settlements enter as
   unconfirmed capture stubs that still pass the normal flush, and recovery never
   resumes work or writes a pause record (transcript-recovery D1–D6, 2026-07-20).
+- R52 — A stale coordination-lock holder is a takeover candidate only; the
+  steal itself requires a liveness probe to find the recorded owner provably
+  dead (a permission-denied answer counts as alive) or an absolute one-hour
+  ceiling to have passed regardless of the probe, so a genuinely live holder
+  keeps the lock across a long synchronous child spawn and no timer heartbeat
+  is needed or attempted (hardening-1-7-10).
+- R53 — Archiving or unarchiving a cell is refused before any move when the
+  destination already holds a cell of the same identity, is journaled before
+  the first move so a crash mid-transaction can be rolled back at the next
+  archive/unarchive call, and is serialized against every other mutator at the
+  single write funnel: a mutator against an archived cell is refused typed
+  `CELL_ARCHIVED`, and a mutator against a cell mid-transaction is refused
+  typed `CELLS_ARCHIVE_BUSY` (hardening-1-7-10).
+- R54 — A needs-revision judge verdict recorded against an already-capped unit
+  reopens it with its verify evidence cleared; re-capping requires a fresh
+  verify run followed by a subsequent passing verdict, so stale evidence can
+  never satisfy the completion door a second time (hardening-1-7-10).
+- R55 — Session identity resolution carries one durable fallback below the
+  environment lookup and above the ownerless floor: exactly one fresh live
+  session in the store is adopted (audited, never silent); two or more refuse
+  rather than guess. The chain applies identically at the library level and
+  every CLI surface that resolves identity (hardening-1-7-10).
 
 ## Edge Cases Settled
 
@@ -1082,11 +1197,22 @@ workspace that names no extra root behaves exactly as before (hardening-5,
 
 ## Hardening 1.7.9 settlements (2026-07-21)
 
-- **Session identity is runtime-neutral.** One resolver chain everywhere a
-  session id is read: explicit flag > `BEE_SESSION_ID` > the first runtime's
-  own env var > null. The store-lock holder label derives from the same chain
-  (inlined — the lock module stays import-light, with the resolver named as
-  canonical in a comment).
+- **Session identity is runtime-neutral, with a durable fallback below the
+  null floor.** One resolver chain everywhere a session id is read: explicit
+  flag > `BEE_SESSION_ID` > the first runtime's own env var > a durable
+  fallback > null. The durable fallback consults the session store directly:
+  when exactly ONE fresh (live-heartbeat) session record exists, that session
+  is adopted as the caller's identity rather than falling through to
+  ownerless — the result and the resulting claim record both carry an
+  `adopted` marker so the substitution is always auditable, never silent. Two
+  or more fresh live sessions still refuse outright (`SESSION_REQUIRED`) since
+  adopting either one would be a guess; zero fresh sessions falls through to
+  null exactly as before. This full chain — including the fallback tier —
+  applies identically at the library level and at every CLI surface that
+  resolves a caller's identity (claim, claim-next, reservations), not only at
+  the library's own internal call sites (hardening-1-7-10). The store-lock
+  holder label derives from the same chain (inlined — the lock module stays
+  import-light, with the resolver named as canonical in a comment).
 - **Sessionless writes refuse under concurrency.** When at least one OTHER
   session record has a live heartbeat, a claim or reservation attempted with
   no resolvable session id is refused with a typed `SESSION_REQUIRED` error
@@ -1110,7 +1236,16 @@ workspace that names no extra root behaves exactly as before (hardening-5,
   requires the worker name, refuses an unclaimed or foreign-claimed cell
   with a typed refusal naming the actual owner/status, and offers an
   audited `--force-ownership` door (same pattern as the mutator ownership
-  guard).
+  guard). The reservation identity carried in the rendered dispatch prompt
+  is the validated worker's own name — a synthetic `prepare-<id>` nickname
+  that used to stand in for it has been removed, so the prompt a worker
+  actually receives never asks it to reserve files under an identity that
+  is not its own. `--force-ownership` at prepare time is explicitly advisory
+  only: the returned envelope carries `transferred: false` plus a note
+  saying so, because forcing a dispatch does not yet actually transfer the
+  underlying claim to the new worker — a true transfer primitive does not
+  exist yet, and the gap is filed as friction rather than silently implied
+  by the flag's name (hardening-1-7-10).
 - **Machine-local config lives in a gitignored overlay.** `readConfig`
   deep-merges `.bee/config.local.json` over the tracked config (overlay
   wins, arrays replace); machine paths (dogfood repos) belong in the
