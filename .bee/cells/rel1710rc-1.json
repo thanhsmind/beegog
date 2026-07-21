@@ -34,9 +34,24 @@
     "capped_at": null,
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
+    "verify_output": "PASS run_verify: 54 suite(s), concurrency=5, wall=57220ms (pre-tag foreground); tag v1.7.10-rc pushed on e6fcee1",
+    "verify_passed": true,
     "claim_session": "c128101f-b597-4f5e-a415-be1a4bb34e81",
-    "claimed_at": "2026-07-21T03:49:20.581Z"
+    "claimed_at": "2026-07-21T03:49:20.581Z",
+    "verify_command": "node scripts/run_verify.mjs",
+    "verified_at": "2026-07-21T03:51:22.666Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-21T03:51:22.666Z",
+        "claim_session": "c128101f-b597-4f5e-a415-be1a4bb34e81",
+        "claimed_at": "2026-07-21T03:49:20.579Z",
+        "acquired_at": "2026-07-21T03:49:20.579Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }

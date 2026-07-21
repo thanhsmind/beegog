@@ -328,6 +328,38 @@ function releaseGate(root, cellId) {
   fs.rmSync(claimGatePath(root, cellId), { force: true });
 }
 
+// hardening-1-7-10 (rel1710rc-3): the gate above is only ever held for the
+// handful of synchronous statements inside ONE releaseClaim/adopt/sweep
+// critical section — never for an unbounded external operation. Under real
+// cross-process contention (observed: scripts/test_claim_race.mjs scenario
+// (d), budget-exhausted racers on a 2-core CI runner) one racer's own
+// releaseClaim can rmSync the claim FILE (a separate file from the gate) a
+// beat before it reaches its own releaseGate; a second racer can win a
+// brand-new claimCellFile in that exact window and then call releaseClaim
+// itself, colliding on the still-held gate. Before this fix, a single-shot
+// GATE_HELD refusal there permanently orphaned that second racer's own claim
+// file — nothing else ever revisits an orphaned claim. Because the gate's
+// true hold time is always sub-millisecond-to-low-tens-of-milliseconds
+// (never a long op, unlike lock.mjs's live-holder case), a short BOUNDED
+// retry closes this window without reintroducing an unbounded wait: it only
+// ever waits out the tail end of ANOTHER release's own critical section, up
+// to GATE_RETRY_ATTEMPTS * GATE_RETRY_DELAY_MS (~300ms worst case) before
+// still returning the typed GATE_HELD refusal exactly as before.
+const GATE_RETRY_ATTEMPTS = 15;
+const GATE_RETRY_DELAY_MS = 20;
+
+function sleepSyncMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function acquireGateWithRetry(root, cellId) {
+  for (let attempt = 0; attempt < GATE_RETRY_ATTEMPTS; attempt++) {
+    if (acquireGate(root, cellId, Date.now())) return true;
+    if (attempt + 1 < GATE_RETRY_ATTEMPTS) sleepSyncMs(GATE_RETRY_DELAY_MS);
+  }
+  return false;
+}
+
 /**
  * One winner per cell via exclusive create. Losing the race — including to a
  * TTL-expired claim, which only sweepExpiredClaims may reclaim — returns the
@@ -505,8 +537,11 @@ export function releaseClaim(root, sessionId, cellId) {
   if (!readClaim(root, cell)) {
     return fail('NOT_FOUND', `cell "${cell}" has no claim to release.`);
   }
-  if (!acquireGate(root, cell, Date.now())) {
-    return fail('GATE_HELD', `claim "${cell}" is gated by another in-flight adopt/sweep — retry later, never wait on the gate.`);
+  if (!acquireGateWithRetry(root, cell)) {
+    return fail(
+      'GATE_HELD',
+      `claim "${cell}" is gated by another in-flight adopt/sweep/release after ${GATE_RETRY_ATTEMPTS} bounded retries — never waited unboundedly.`,
+    );
   }
   try {
     const claim = readClaim(root, cell); // re-read under the gate

@@ -21,7 +21,7 @@
     },
     {
       "path": ".bee/bin/lib/claims.mjs",
-      "sha256": "ad45f0de2f9e2298f31513f7ea5e45271aa815a70b7dcaeea4fc6fa76ba4506e",
+      "sha256": "8371ae9a8fe7aaef8b1a9fbac2808b3e4f6aae780ace363239b848d9a29ddbf1",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -167,7 +167,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "bfbed28654c9354af36554f5c1592707cb9c7bc043cf776f2f8eedc0d30a87ae",
+      "sha256": "34d54f3ed68afead95ae7dc0771313b494c70afe071a5dba96041e3ce79210a1",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -503,7 +503,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/lib/claims.mjs",
-      "sha256": "ad45f0de2f9e2298f31513f7ea5e45271aa815a70b7dcaeea4fc6fa76ba4506e",
+      "sha256": "8371ae9a8fe7aaef8b1a9fbac2808b3e4f6aae780ace363239b848d9a29ddbf1",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/lib/claims.mjs"
@@ -1021,7 +1021,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "c22f67e82ae75a5a1b23601bd9a07617b9a22b588aecdf49a90ba7e03350b95c",
+      "sha256": "2e21cd1c44c76a04403807b2339bce5b8aa105536bb8a7e8f4d61d8b088157f2",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1357,7 +1357,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/lib/claims.mjs",
-      "sha256": "ad45f0de2f9e2298f31513f7ea5e45271aa815a70b7dcaeea4fc6fa76ba4506e",
+      "sha256": "8371ae9a8fe7aaef8b1a9fbac2808b3e4f6aae780ace363239b848d9a29ddbf1",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/lib/claims.mjs"
@@ -2340,7 +2340,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/claims.mjs",
-      "sha256": "ad45f0de2f9e2298f31513f7ea5e45271aa815a70b7dcaeea4fc6fa76ba4506e",
+      "sha256": "8371ae9a8fe7aaef8b1a9fbac2808b3e4f6aae780ace363239b848d9a29ddbf1",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/claims.mjs"

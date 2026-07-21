@@ -136,13 +136,34 @@ async function runWorker(workerRole) {
       const root = argVal('--root');
       const id = argVal('--id');
       const holdPath = argVal('--path');
+      const barrier = argVal('--barrier');
+      const barrierRacers = Number(argVal('--racers') || 0);
       const { readJson, writeJsonAtomic } = await import(FSUTIL_LIB_PATH);
       const storePath = path.join(root, '.bee', 'runtime', 'cross-worktree-holds.json');
       // Pre-fix shape: read, WIDEN the window, then append+write — no store
       // lock in front of it (the exact hazard withStoreLock removes from the
       // real mirrorHold() path).
+      //
+      // rel1710rc-3: a fixed UNSAFE_WIDEN_MS sleep is only a probabilistic
+      // ordering — same class of scheduler-timing-dependent assertion as
+      // this file's own old scenario (c) (fixed in rel1710rc-2 with a
+      // deterministic fs-based barrier). On a slow/contended 2-core runner
+      // all RACERS read-sleep-write sequences can fully serialize instead of
+      // overlapping, collapsing "fewer than RACERS survive" down to "all
+      // RACERS survive" ("DETECTOR DID NOT BITE"). The same ready-file
+      // handshake proves every racer's read happens-before every racer's
+      // write, making the lost-update collapse structural rather than
+      // timing-dependent.
       const store = readJson(storePath, { holds: [] });
-      await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      if (barrier && barrierRacers > 0) {
+        touchFile(path.join(barrier, `read-${id}.ready`));
+        for (let i = 0; i < barrierRacers; i += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await waitForFile(path.join(barrier, `read-${i}.ready`));
+        }
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      }
       store.holds.push({
         path: holdPath,
         holder: `wt-unsafe-${id}`,
@@ -332,14 +353,22 @@ async function runOrchestrator() {
   // (b) DELIBERATE RED — widened-window read-check-write with NO store lock,
   // proving the pre-fix hazard is real (falsifiability: the safe result above
   // is not simply "nothing ever races here"). Runs in its own throwaway dir.
+  // rel1710rc-3: a deterministic fs-based barrier (same technique as the old
+  // scenario (c) fix below) proves every racer's stale read happens-before
+  // every racer's write, making the lost-update collapse structural rather
+  // than timing-dependent.
   {
     const dir = makeRoot();
+    const barrier = path.join(dir, '.race-barrier-b-unsafe');
+    fs.mkdirSync(barrier, { recursive: true });
     try {
       const results = await spawnRacers(RACERS, (i) => [
         '--role=unsafe-racer',
         `--root=${dir}`,
         `--id=${i}`,
         `--path=src/lib/unsafe-${i}.ts`,
+        `--barrier=${barrier}`,
+        `--racers=${RACERS}`,
       ]);
       const crashed = results.filter((r) => r.code !== 0);
       if (crashed.length) {

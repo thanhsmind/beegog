@@ -133,14 +133,37 @@ async function runWorker(workerRole) {
       const root = argVal('--root');
       const cellId = argVal('--cell');
       const id = argVal('--id');
+      const barrier = argVal('--barrier');
+      const barrierRacers = Number(argVal('--racers') || 0);
       const { readJson, writeJsonAtomic } = await import(FSUTIL_LIB_PATH);
       const cellPath = path.join(root, '.bee', 'cells', `${cellId}.json`);
       // Pre-fix shape: read, check open, WIDEN the window, then write — no
       // claim-file gate in front of it (the exact hazard D1 removes from the
       // real `cells claim --id` path).
+      //
+      // rel1710rc-3: a fixed UNSAFE_WIDEN_MS sleep is only a probabilistic
+      // ordering — same class of scheduler-timing-dependent assertion as
+      // test_worktree_holds_race.mjs's old scenario (c) and this file's own
+      // (g-unsafe) control (rel1710rc-2 fixed both with a deterministic
+      // fs-based barrier). Under real OS scheduling on a slow/contended
+      // runner, one racer's full read-sleep-write sequence can complete
+      // before a second racer even takes its own read, collapsing "MORE than
+      // one racer saw open" down to 1/RACERS ("DETECTOR DID NOT BITE",
+      // reproduced locally under `taskset -c 0,1` at high concurrency). The
+      // same ready-file handshake proves every racer's read happens-before
+      // every racer's write, making the multi-racer overlap structural
+      // rather than timing-dependent.
       const seen = readJson(cellPath, null);
       const sawOpen = !!seen && seen.status === 'open';
-      await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      if (barrier && barrierRacers > 0) {
+        touchFile(path.join(barrier, `read-${id}.ready`));
+        for (let i = 0; i < barrierRacers; i += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await waitForFile(path.join(barrier, `read-${i}.ready`));
+        }
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      }
       if (sawOpen) {
         const fresh = readJson(cellPath, seen);
         fresh.status = 'claimed';
@@ -186,14 +209,32 @@ async function runWorker(workerRole) {
       // the existing 'unsafe-racer' role above: proves the ledger-loss
       // hazard class is real independent of whether the real function
       // happens to race under ordinary OS timing.
+      //
+      // rel1710rc-3: same class of scheduler-timing-dependent assertion as
+      // 'unsafe-racer' above — a fixed UNSAFE_WIDEN_MS sleep is only a
+      // probabilistic ordering, and on a slow/contended 2-core runner all
+      // RACERS reads-sleep-writes can fully serialize instead of overlapping,
+      // collapsing "fewer than RACERS survive" down to "exactly RACERS
+      // survive" ("DETECTOR DID NOT BITE"). The same ready-file handshake
+      // proves every racer's stale read happens-before every racer's write.
       const root = argVal('--root');
       const cellId = argVal('--cell');
       const id = argVal('--id');
+      const barrier = argVal('--barrier');
+      const barrierRacers = Number(argVal('--racers') || 0);
       const { readJson, writeJsonAtomic } = await import(FSUTIL_LIB_PATH);
       const cellPath = path.join(root, '.bee', 'cells', `${cellId}.json`);
       const seen = readJson(cellPath, null);
       const staleAttempts = Array.isArray(seen && seen.trace && seen.trace.attempts) ? seen.trace.attempts : [];
-      await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      if (barrier && barrierRacers > 0) {
+        touchFile(path.join(barrier, `read-${id}.ready`));
+        for (let i = 0; i < barrierRacers; i += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await waitForFile(path.join(barrier, `read-${i}.ready`));
+        }
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      }
       const fresh = readJson(cellPath, seen);
       fresh.trace = {
         ...(fresh.trace || {}),
@@ -464,9 +505,16 @@ async function runOrchestrator() {
 
   // (b) DELIBERATE RED — widened-window read-check-write with NO claim-file
   // gate, proving the pre-fix hazard is real (falsifiability: the safe result
-  // above is not simply "nothing ever races here").
+  // above is not simply "nothing ever races here"). rel1710rc-3: a
+  // deterministic fs-based barrier (same as (g-unsafe) below) proves every
+  // racer's stale read happens-before every racer's write, making the
+  // multi-racer overlap structural (exactly RACERS saw "open") rather than
+  // timing-dependent — the old fixed-sleep version could collapse to 1/RACERS
+  // under real scheduler contention ("DETECTOR DID NOT BITE").
   {
     const dir = makeRoot();
+    const barrier = path.join(dir, '.race-barrier-b-unsafe');
+    fs.mkdirSync(barrier, { recursive: true });
     try {
       await writeApprovedState(dir);
       await makeCell(dir, 'race-b');
@@ -476,6 +524,8 @@ async function runOrchestrator() {
         `--root=${dir}`,
         '--cell=race-b',
         `--id=${i}`,
+        `--barrier=${barrier}`,
+        `--racers=${RACERS}`,
       ]);
       const crashed = results.filter((r) => r.code !== 0);
       if (crashed.length) {
@@ -486,10 +536,11 @@ async function runOrchestrator() {
       }
       const parsed = results.map((r) => lastJsonLine(r.stdout));
       const sawOpenCount = parsed.filter((p) => p && p.sawOpen === true).length;
-      if (sawOpenCount <= 1) {
+      if (sawOpenCount !== RACERS) {
         failures.push(
-          `(b) DETECTOR DID NOT BITE: only ${sawOpenCount}/${RACERS} unguarded racer(s) saw the cell "open" — this ` +
-            'negative control must show MORE than one racer believing it won, or the (a) green result proves nothing.',
+          `(b) DETECTOR DID NOT BITE: only ${sawOpenCount}/${RACERS} unguarded racer(s) saw the cell "open" — the ` +
+            'barrier guarantees every read happens before any write, so this negative control must show ALL racers ' +
+            'believing it won, or the (a) green result proves nothing.',
         );
       }
       const finalCell = readJson(path.join(dir, '.bee', 'cells', 'race-b.json'), null);
@@ -657,9 +708,14 @@ async function runOrchestrator() {
   // recordVerify's PRE-FIX read-mutate-write shape (no lock, widened window)
   // proves the ledger-loss hazard class scenario (e) guards against is real,
   // independent of whether the real function happens to race under ordinary
-  // OS timing. Same negative-control discipline as scenario (b).
+  // OS timing. Same negative-control discipline as scenario (b). rel1710rc-3:
+  // a deterministic fs-based barrier (same as (b)'s) proves every racer's
+  // stale read happens-before every racer's write, making the lost-update
+  // collapse structural rather than timing-dependent.
   {
     const dir = makeRoot();
+    const barrier = path.join(dir, '.race-barrier-f-unsafe');
+    fs.mkdirSync(barrier, { recursive: true });
     try {
       await writeApprovedState(dir);
       await makeCell(dir, 'race-f');
@@ -669,6 +725,8 @@ async function runOrchestrator() {
         `--root=${dir}`,
         '--cell=race-f',
         `--id=${i}`,
+        `--barrier=${barrier}`,
+        `--racers=${RACERS}`,
       ]);
       const crashed = results.filter((r) => r.code !== 0);
       if (crashed.length) {
