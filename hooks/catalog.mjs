@@ -88,14 +88,51 @@ function commandFor(script, target) {
 
 // Windows override for the repo target's Codex projection (Codex hook schema
 // optional `commandWindows` field, run with the session cwd as working dir —
-// no `$SHELL -lc`, so the POSIX `command` string above is Windows-broken).
-// Shell-agnostic (works under both cmd.exe and powershell.exe): a bare node
-// invocation, relative to cwd, no `$(...)`, no `[ -n ]`, no `exec`, no
-// env-var expansion. Codex-repo only (see renderProjection's call site) —
-// bee's own hooks live at .bee/bin/hooks/ (the committed, git-tracked
-// vendored location) in that projection.
+// no `$SHELL -lc`, so the POSIX `command` string above is Windows-broken). A
+// bare cwd-relative `node .bee/bin/hooks/<f> --source=repo` (the pre-cell
+// form) breaks the instant Codex's session cwd is a NESTED subdirectory of
+// the repo (MODULE_NOT_FOUND) — cwd-relative resolution assumes the session
+// cwd IS the repo root, which is not guaranteed. windowsBootstrap below
+// resolves the real git root first, exactly like the POSIX command's own
+// `git rev-parse --show-toplevel` step, so both transports share the same
+// cwd-independence guarantee.
+//
+// The bootstrap is `node -e SCRIPT <script>`: SCRIPT is plain JS using ONLY
+// single quotes internally and NO `$`, `%`, or backtick character anywhere —
+// cmd.exe and powershell.exe both parse the outer double-quoted `-e`
+// argument identically as long as none of those three characters appear
+// inside it (cmd treats `%` as a variable sigil, PowerShell treats `$` and
+// backtick specially even inside double quotes). `node -e` is cross-platform,
+// so this same string is also directly executable on POSIX — the contract
+// test runs it for real on Linux CI instead of only pattern-matching it.
+//
+// SCRIPT itself: resolve the git root via `execSync('git rev-parse
+// --show-toplevel')`; on failure (no git root — outside any repo) exit 0
+// SILENTLY, matching the POSIX command's fail-open semantics (no git root =
+// transport unavailable) but with no diagnostic on this arm, since Windows
+// carries no stderr-diagnostic contract today. On success, spawnSync the
+// real hook (process.execPath, so it runs under the SAME node the bootstrap
+// itself is running under) with stdio 'inherit' — this MUST be inherited,
+// never piped, because hooks read their JSON payload from stdin — then
+// process.exit with the child's status (1 if the spawn itself errored).
+function windowsBootstrap(script) {
+  const body = [
+    "var cp=require('child_process');",
+    "var path=require('path');",
+    "var hook=process.argv[1];",
+    "var root='';",
+    "try{root=cp.execSync('git rev-parse --show-toplevel',{stdio:['ignore','pipe','ignore']}).toString().trim();}catch(e){root='';}",
+    "if(!root){process.exit(0);}",
+    "var target=path.join(root,'.bee','bin','hooks',hook);",
+    "var r=cp.spawnSync(process.execPath,[target,'--source=repo'],{stdio:'inherit'});",
+    "if(r.error){process.exit(1);}",
+    "process.exit(r.status===null?1:r.status);",
+  ].join("");
+  return 'node -e "' + body + '" ' + script;
+}
+
 function commandWindowsFor(script, target) {
-  if (target === TARGETS.REPO) return `node .bee/bin/hooks/${script} --source=repo`;
+  if (target === TARGETS.REPO) return windowsBootstrap(script);
   return undefined;
 }
 

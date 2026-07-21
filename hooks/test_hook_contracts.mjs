@@ -96,6 +96,7 @@ const REQUIRED_CATALOG_ROW_IDS = Object.freeze([
   "codex-repo-target-generated-topology",
   "codex-generated-repo-audit-execution",
   "codex-repo-target-byte-identical",
+  "codex-commandWindows-nested-cwd-execution",
 ]);
 
 // Turn "required row is absent or skipped" into a real, visible FAILING row,
@@ -1108,27 +1109,40 @@ function runCatalogDriftChecks() {
     ),
   );
 
-  // cell codex-command-windows-1: the Codex hook schema's optional
-  // `commandWindows` override (run with the session cwd as working dir, no
-  // `$SHELL -lc`) must be present on every codex-repo-target entry as a
-  // BARE node invocation with no shell metacharacters — the POSIX `command`
-  // string above is Windows-broken ($(...), exec, [ -n ] all fail under
-  // cmd.exe/powershell.exe). commandWindows is codex-repo-only: the Codex
+  // cell codex-command-windows-1, tightened by cell 1710-6
+  // (hardening-1-7-10 D6): the Codex hook schema's optional `commandWindows`
+  // override (run with the session cwd as working dir, no `$SHELL -lc`)
+  // must be present on every codex-repo-target entry. The pre-1710-6 bare
+  // `node .bee/bin/hooks/<f> --source=repo` form assumed the session cwd IS
+  // the repo root — from a NESTED cwd it threw MODULE_NOT_FOUND (see the
+  // execution row below and red_failure_evidence at cap). The replacement is
+  // a `node -e SCRIPT <script>` bootstrap that resolves the real git root
+  // first (mirrors the POSIX command's own `git rev-parse
+  // --show-toplevel`), so it is cwd-independent like the POSIX form.
+  // NODE_WINDOWS_BOOTSTRAP pins the exact structural shape (require both
+  // node builtins with SINGLE quotes, resolve the git root, join
+  // .bee/bin/hooks, spawnSync with inherited stdio, exit with the child's
+  // status, trailing hook filename argv); FORBIDDEN_WINDOWS_CHARS
+  // independently asserts none of `$`, `%`, or a backtick appear ANYWHERE —
+  // cmd.exe treats `%` as a variable sigil and PowerShell treats `$`/backtick
+  // specially even inside double quotes, so any of the three breaks one of
+  // the two target shells. commandWindows is codex-repo-only: the Codex
   // plugin manifest omits codex hooks (only .codex/hooks.json, the repo
   // target, ever loads), so neither the codex PLUGIN projection nor the
   // Claude projection may carry it.
   const repoCommandWindowsEntries = Object.values(repoProjection.hooks)
     .flat()
     .flatMap((g) => g.hooks);
-  const NODE_BARE_SOURCE_REPO = /^node \.bee\/bin\/hooks\/bee-[a-z-]+\.mjs --source=repo$/;
-  const SHELL_METACHARS = /\$\(|\[\s*-n|\bexec\b/;
+  const NODE_WINDOWS_BOOTSTRAP =
+    /^node -e "var cp=require\('child_process'\);var path=require\('path'\);var hook=process\.argv\[1\];var root='';try\{root=cp\.execSync\('git rev-parse --show-toplevel',\{stdio:\['ignore','pipe','ignore'\]\}\)\.toString\(\)\.trim\(\);\}catch\(e\)\{root='';\}if\(!root\)\{process\.exit\(0\);\}var target=path\.join\(root,'\.bee','bin','hooks',hook\);var r=cp\.spawnSync\(process\.execPath,\[target,'--source=repo'\],\{stdio:'inherit'\}\);if\(r\.error\)\{process\.exit\(1\);\}process\.exit\(r\.status===null\?1:r\.status\);" bee-[a-z-]+\.mjs$/;
+  const FORBIDDEN_WINDOWS_CHARS = /[$%`]/;
   const repoCommandWindowsOk =
     repoCommandWindowsEntries.length > 0 &&
     repoCommandWindowsEntries.every(
       (h) =>
         typeof h.commandWindows === "string" &&
-        NODE_BARE_SOURCE_REPO.test(h.commandWindows) &&
-        !SHELL_METACHARS.test(h.commandWindows),
+        NODE_WINDOWS_BOOTSTRAP.test(h.commandWindows) &&
+        !FORBIDDEN_WINDOWS_CHARS.test(h.commandWindows),
     );
   const claudeCommandWindowsAbsent = Object.values(claudeProjection.hooks)
     .flat()
@@ -1145,11 +1159,96 @@ function runCatalogDriftChecks() {
       "codex-repo-commandWindows-contract",
       commandWindowsContractOk,
       commandWindowsContractOk
-        ? `all ${repoCommandWindowsEntries.length} codex-repo-target entries carry a bare "node .bee/bin/hooks/<script>.mjs --source=repo" commandWindows (no shell metacharacters); claude and codex-plugin entries carry none`
+        ? `all ${repoCommandWindowsEntries.length} codex-repo-target entries carry the git-root-resolving "node -e SCRIPT <script>" commandWindows bootstrap (no $, %, or backtick anywhere); claude and codex-plugin entries carry none`
         : `DRIFT: commandWindows contract violated: repoOk=${repoCommandWindowsOk} ` +
             `claudeAbsent=${claudeCommandWindowsAbsent} codexPluginAbsent=${codexPluginCommandWindowsAbsent}`,
     ),
   );
+
+  // cell 1710-6: EXECUTION test, not just a pattern match — actually run the
+  // emitted commandWindows string with cwd set to a NESTED subdirectory of a
+  // fixture repo. `node -e` is cross-platform, so this bootstrap (unlike the
+  // POSIX `command` string, which needs `$SHELL -lc`) runs directly on Linux
+  // CI too. Two arms: (1) inside the fixture repo but in a NESTED cwd, the
+  // hook must actually execute (root resolved, hook prints its marker); (2)
+  // outside any git repo entirely, it must exit 0 silently (no git root =
+  // transport unavailable, POSIX parity). Uses a real script from
+  // repoCommandWindowsEntries so this exercises the actual rendered catalog
+  // output, not a hand-rebuilt copy of it.
+  const commandWindowsExecutionRow = (() => {
+    const sampleEntry = repoCommandWindowsEntries.find(
+      (h) => typeof h.commandWindows === "string",
+    );
+    if (!sampleEntry) {
+      return catalogDriftRow(
+        "codex-commandWindows-nested-cwd-execution",
+        false,
+        "no codex-repo-target entry carries a commandWindows string to execute",
+      );
+    }
+    const fixtureRoot = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "bee-commandWindows-nested-")),
+    );
+    const nonGitRoot = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "bee-commandWindows-nongit-")),
+    );
+    try {
+      const nestedDir = path.join(fixtureRoot, "src", "deep", "nest");
+      const hooksDir = path.join(fixtureRoot, ".bee", "bin", "hooks");
+      fs.mkdirSync(nestedDir, { recursive: true });
+      fs.mkdirSync(hooksDir, { recursive: true });
+      const MARKER = "COMMAND_WINDOWS_EXECUTION_MARKER";
+      const scriptName = sampleEntry.command.match(/bee-[a-z-]+\.mjs/)[0];
+      fs.writeFileSync(
+        path.join(hooksDir, scriptName),
+        `process.stdout.write(${JSON.stringify(MARKER)} + "\\n");\nprocess.exit(0);\n`,
+      );
+      const gitInit = spawnSync("git", ["init", "-q", fixtureRoot], {
+        encoding: "utf8",
+        timeout: SPAWN_TIMEOUT_MS,
+      });
+      if (gitInit.status !== 0) {
+        return catalogDriftRow(
+          "codex-commandWindows-nested-cwd-execution",
+          false,
+          `fixture git init failed: status=${gitInit.status} ${gitInit.stderr || gitInit.error?.message || ""}`,
+        );
+      }
+      const nestedResult = spawnSync(ROUTE_SHELL, ["-lc", sampleEntry.commandWindows], {
+        cwd: nestedDir,
+        encoding: "utf8",
+        input: "",
+        timeout: SPAWN_TIMEOUT_MS,
+        maxBuffer: SPAWN_MAX_BUFFER,
+      });
+      const nonGitResult = spawnSync(ROUTE_SHELL, ["-lc", sampleEntry.commandWindows], {
+        cwd: nonGitRoot,
+        encoding: "utf8",
+        input: "",
+        timeout: SPAWN_TIMEOUT_MS,
+        maxBuffer: SPAWN_MAX_BUFFER,
+      });
+      const nestedOk =
+        nestedResult.status === 0 && (nestedResult.stdout || "").includes(MARKER);
+      const nonGitOk =
+        nonGitResult.status === 0 &&
+        !(nonGitResult.stdout || "").trim() &&
+        !(nonGitResult.stdout || "").includes(MARKER);
+      const pass = nestedOk && nonGitOk;
+      return catalogDriftRow(
+        "codex-commandWindows-nested-cwd-execution",
+        pass,
+        pass
+          ? "commandWindows bootstrap executed from a NESTED fixture cwd resolves the git root and runs the real hook; outside any git repo it exits 0 silently"
+          : `commandWindows execution failed: nested(status=${nestedResult.status}, stdout=${truncate(nestedResult.stdout, 300)}, stderr=${truncate(nestedResult.stderr, 300)}) ` +
+              `nonGit(status=${nonGitResult.status}, stdout=${truncate(nonGitResult.stdout, 300)}, stderr=${truncate(nonGitResult.stderr, 300)})`,
+      );
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+      fs.rmSync(nonGitRoot, { recursive: true, force: true });
+    }
+  })();
+  rows.push(commandWindowsExecutionRow);
 
   return rows;
 }
