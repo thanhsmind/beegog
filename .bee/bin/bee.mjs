@@ -1388,13 +1388,41 @@ function handleDecisionsLog(root, flags) {
   return { result: event, text: `Logged decision ${event.id}.` };
 }
 
+// decision-propagation dp-2 (CONTEXT D2): capture stub creation lives here,
+// not in lib/decisions.mjs — capture.mjs already imports the secret/
+// injection pattern constants FROM decisions.mjs, so having decisions.mjs
+// import addCaptureStub back from capture.mjs would create a module cycle.
+// The lock doctrine (sweep computed before the append, written once) is
+// still fully satisfied inside supersedeDecision itself; this is purely a
+// downstream side effect using the sweep result the returned event already
+// carries.
 function handleDecisionsSupersede(root, flags) {
   const event = supersedeDecision(root, {
     supersedes: requireFlag(flags, 'id'),
     decision: requireFlag(flags, 'decision'),
     rationale: requireFlag(flags, 'rationale'),
+    tags: flags.tags !== undefined ? splitList(flags.tags) : undefined,
+    scope: flags.scope !== undefined ? String(flags.scope) : undefined,
   });
-  return { result: event, text: `Superseded ${event.supersedes} with ${event.id}.` };
+
+  const hits = event.sweep?.files || [];
+  for (const hit of hits) {
+    addCaptureStub(root, {
+      outcome: `${hit.file}:${hit.line} still cites superseded decision ${event.supersedes} — reconcile against replacement ${event.id}.`,
+      dids: [event.supersedes, event.id],
+      files: [hit.file],
+      source: 'supersede-sweep',
+    });
+  }
+
+  const header = `Superseded ${event.supersedes} with ${event.id}.`;
+  const sweepLines = hits.length
+    ? [
+        `Propagation sweep: ${hits.length} citation(s) found under docs/** — a capture stub was queued for each.`,
+        ...hits.map((hit) => `  ${hit.file}:${hit.line}  ${hit.excerpt}`),
+      ]
+    : ['Propagation sweep: no citations found under docs/**.'];
+  return { result: event, text: [header, ...sweepLines].join('\n') };
 }
 
 function handleDecisionsRedact(root, flags) {

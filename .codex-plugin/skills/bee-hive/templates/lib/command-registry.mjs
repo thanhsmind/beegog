@@ -491,13 +491,15 @@ export const COMMAND_REGISTRY = [
   {
     name: 'decisions.supersede',
     invoke: 'bee decisions supersede',
-    description: 'Replace an earlier decision with a new one; the earlier decision drops out of the active set.',
+    description: 'Replace an earlier decision with a new one; the earlier decision drops out of the active set. Runs a propagation sweep of docs/** for citations of the superseded id (decision-propagation D2) and queues a capture stub per hit.',
     parameters: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Id of the decision being superseded.' },
         decision: { type: 'string', description: 'The replacement decision text.' },
         rationale: { type: 'string', description: 'Why the replacement supersedes the original.' },
+        tags: { type: 'array', description: 'Comma-separated lowercase slugs. Omit to inherit the superseded target\'s tags (decision-propagation D6).' },
+        scope: { type: 'string', description: 'Decision scope. Omit to inherit the superseded target\'s scope, falling back to "repo" for a metadata-less target (decision-propagation D6).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['id', 'decision', 'rationale'],

@@ -1,6 +1,7 @@
 // decisions.mjs — event-sourced decisions in .bee/decisions.jsonl.
 // Write-time secret & injection rejection; datamarked reads.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { appendJsonl, readJsonl } from './fsutil.mjs';
@@ -107,7 +108,71 @@ export function logDecision(
   return event;
 }
 
-export function supersedeDecision(root, { supersedes, decision, rationale }) {
+// decision-propagation dp-2 (CONTEXT D2/D3): the propagation sweep. Scans
+// docs/** ONLY (D2 pinned root — .bee/spikes/ sits outside docs/ and is
+// excluded by construction, no special-case needed) for text files (md,
+// json, yaml/yml, txt) citing the superseded decision by its full id or its
+// short8 form (the id's first 8 hex chars, e.g. "1178cfce" from a uuid like
+// "1178cfce-...") — a \b...\b word-boundary match so a short8 embedded
+// inside a longer alnum run (e.g. "abc1178cfcedef") never false-positives.
+const SWEEP_TEXT_EXTENSIONS = new Set(['.md', '.json', '.yaml', '.yml', '.txt']);
+const SWEEP_EXCERPT_MAX = 160;
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function collectSweepFiles(dir, out) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      collectSweepFiles(full, out);
+    } else if (entry.isFile() && SWEEP_TEXT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+      out.push(full);
+    }
+  }
+}
+
+/**
+ * Scan docs/** for citations of a superseded decision id (full id and
+ * short8, word-boundary matched). Returns {scanned_at, hit_count, files[]}
+ * with one entry per citing LINE: {file (repo-relative), line (1-based),
+ * excerpt (trimmed, <=160 chars)}. Never edits the citing files — read-only.
+ */
+export function sweepDecisionCitations(root, { id, short8 }) {
+  const docsRoot = path.join(root, 'docs');
+  const candidateFiles = [];
+  collectSweepFiles(docsRoot, candidateFiles);
+
+  const idPattern = new RegExp(`\\b${escapeRegExp(id)}\\b`, 'i');
+  const shortPattern = new RegExp(`\\b${escapeRegExp(short8)}\\b`, 'i');
+  const files = [];
+  for (const file of candidateFiles) {
+    let text;
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
+    const lines = text.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (idPattern.test(line) || shortPattern.test(line)) {
+        const trimmed = line.trim();
+        const excerpt = trimmed.length > SWEEP_EXCERPT_MAX ? `${trimmed.slice(0, SWEEP_EXCERPT_MAX - 3)}...` : trimmed;
+        files.push({ file: path.relative(root, file), line: index + 1, excerpt });
+      }
+    });
+  }
+  return { scanned_at: new Date().toISOString(), hit_count: files.length, files };
+}
+
+export function supersedeDecision(root, { supersedes, decision, rationale, tags = undefined, scope = undefined }) {
   if (typeof supersedes !== 'string' || !supersedes.trim()) {
     throw new Error('supersedeDecision: supersedes (decision id) is required.');
   }
@@ -117,16 +182,54 @@ export function supersedeDecision(root, { supersedes, decision, rationale }) {
   if (typeof rationale !== 'string' || !rationale.trim()) {
     throw new Error('supersedeDecision: rationale is required.');
   }
+  const targetId = supersedes.trim();
   assertSafe({ decision, rationale });
+
+  // decision-propagation dp-2 (CONTEXT D6): resolve scope/tags — an explicit
+  // flag wins; otherwise inherit from the superseded target; a metadata-less
+  // target (or a target id not found in the store at all) falls back to
+  // scope "repo" and no tags key at all, mirroring logDecision's zero-
+  // migration additive shape.
+  const events = readJsonl(decisionsPath(root));
+  const target = events.find((event) => event && event.id === targetId);
+
+  let resolvedScope;
+  if (scope !== undefined && scope !== null && String(scope).trim()) {
+    resolvedScope = String(scope).trim();
+  } else if (target && typeof target.scope === 'string' && target.scope.trim()) {
+    resolvedScope = target.scope.trim();
+  } else {
+    resolvedScope = 'repo';
+  }
+  assertSafeContent('scope', resolvedScope);
+
+  let resolvedTags;
+  if (tags !== undefined) {
+    resolvedTags = normalizeTags(tags);
+  } else if (target && Array.isArray(target.tags) && target.tags.length) {
+    resolvedTags = normalizeTags(target.tags);
+  } else {
+    resolvedTags = null;
+  }
+
+  // decision-propagation dp-2 (CONTEXT D2, lock doctrine): compute the
+  // propagation sweep BEFORE the append below — the event is written to the
+  // store exactly once, already carrying the sweep result inline. Never a
+  // post-append rewrite of an already-written jsonl line.
+  const short8 = targetId.slice(0, 8);
+  const sweep = sweepDecisionCitations(root, { id: targetId, short8 });
 
   const event = {
     id: crypto.randomUUID(),
     type: 'supersede',
     date: new Date().toISOString(),
-    supersedes: supersedes.trim(),
+    supersedes: targetId,
     decision: decision.trim(),
     rationale: rationale.trim(),
+    scope: resolvedScope,
+    sweep,
   };
+  if (resolvedTags) event.tags = resolvedTags;
   appendJsonl(decisionsPath(root), event);
   return event;
 }

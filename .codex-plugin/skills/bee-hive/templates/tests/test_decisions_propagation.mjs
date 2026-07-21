@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
 import {
@@ -21,7 +22,9 @@ import {
   assertThrows,
   printSummaryAndExit,
 } from '../../../../scripts/lib/test-fixture.mjs';
-import { logDecision, activeDecisions } from '../lib/decisions.mjs';
+import { logDecision, activeDecisions, supersedeDecision } from '../lib/decisions.mjs';
+import { appendJsonl } from '../lib/fsutil.mjs';
+import { pendingCaptureStubs } from '../lib/capture.mjs';
 
 const beeMjsModulePath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
 
@@ -277,6 +280,202 @@ await check('empty store: search/active with a structured filter on a fresh repo
   } finally {
     fs.rmSync(emptyRoot, { recursive: true, force: true });
   }
+});
+
+// ─── dp-2: supersede metadata inheritance + propagation sweep + capture
+// stubs (CONTEXT D2/D6). Own temp repo so the docs/** sweep never sees the
+// dp-1 corpus above, and never scans the real repo's docs/ tree. ──────────
+
+const dpRoot = makeTempRepo();
+
+await check('dp-2: supersede without --tags/--scope inherits both from the superseded target', async () => {
+  const target = logDecision(dpRoot, {
+    decision: 'Use queue A',
+    rationale: 'perf',
+    scope: 'billing',
+    tags: ['queue', 'billing'],
+  });
+  const event = supersedeDecision(dpRoot, {
+    supersedes: target.id,
+    decision: 'Use queue B instead',
+    rationale: 'queue A deprecated upstream',
+  });
+  assert(event.scope === 'billing', `expected inherited scope "billing", got ${event.scope}`);
+  assert(
+    Array.isArray(event.tags) && event.tags.join(',') === 'queue,billing',
+    `expected inherited tags, got ${JSON.stringify(event.tags)}`,
+  );
+});
+
+await check('dp-2: supersede of a metadata-less target (no scope/tags field at all) falls back to scope "repo" and carries no tags key', async () => {
+  // Simulate a pre-dp-2 legacy event (or a legacy supersede target) by
+  // appending a raw event that skips logDecision's scope default entirely —
+  // this is the "metadata-less target" case D6 names explicitly.
+  const legacyTargetId = crypto.randomUUID();
+  appendJsonl(path.join(dpRoot, '.bee', 'decisions.jsonl'), {
+    id: legacyTargetId,
+    type: 'decide',
+    date: new Date().toISOString(),
+    decision: 'Legacy target with no scope field',
+    rationale: 'predates D6',
+  });
+  const event = supersedeDecision(dpRoot, {
+    supersedes: legacyTargetId,
+    decision: 'Replace legacy target',
+    rationale: 'D6 fallback path',
+  });
+  assert(event.scope === 'repo', `expected fallback scope "repo", got ${event.scope}`);
+  assert(!('tags' in event), `expected no tags key when target has none, got ${JSON.stringify(event)}`);
+});
+
+await check('dp-2: explicit --tags/--scope on supersede override inheritance from the target', async () => {
+  const target = logDecision(dpRoot, {
+    decision: 'Use queue X',
+    rationale: 'perf',
+    scope: 'billing',
+    tags: ['queue'],
+  });
+  const event = supersedeDecision(dpRoot, {
+    supersedes: target.id,
+    decision: 'Use queue Y',
+    rationale: 'explicit override',
+    tags: ['override-tag'],
+    scope: 'checkout',
+  });
+  assert(event.scope === 'checkout', `expected explicit scope override, got ${event.scope}`);
+  assert(event.tags.join(',') === 'override-tag', `expected explicit tags override, got ${JSON.stringify(event.tags)}`);
+});
+
+const sweepTarget = logDecision(dpRoot, {
+  decision: 'Old sweep target decision',
+  rationale: 'to be superseded',
+  scope: 'checkout',
+});
+const sweepShort8 = sweepTarget.id.slice(0, 8);
+const specDir = path.join(dpRoot, 'docs', 'specs');
+fs.mkdirSync(specDir, { recursive: true });
+const checkoutSpecPath = path.join(specDir, 'checkout.md');
+const specLines = [
+  '# Checkout',
+  '',
+  `Full id citation: ${sweepTarget.id} appears here.`,
+  `Short citation: ${sweepShort8} appears here.`,
+  `False positive embedded: abc${sweepShort8}def should not match.`,
+  '',
+];
+fs.writeFileSync(checkoutSpecPath, specLines.join('\n'));
+// Outside docs/** — must never be scanned (D2 pins the sweep root to docs/**).
+fs.writeFileSync(
+  path.join(dpRoot, 'src', 'notes.md'),
+  `Outside docs/**, also cites ${sweepTarget.id} but must not count.\n`,
+);
+
+await check(
+  'dp-2: propagation sweep finds full-id and standalone short8 citations under docs/**, rejects an embedded (non-boundary) short8, and rides the single append',
+  async () => {
+    const decisionsFile = path.join(dpRoot, '.bee', 'decisions.jsonl');
+    const beforeLineCount = fs.readFileSync(decisionsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim()).length;
+
+    const event = supersedeDecision(dpRoot, {
+      supersedes: sweepTarget.id,
+      decision: 'Replace the sweep target',
+      rationale: 'dp-2 sweep coverage',
+    });
+
+    assert(event.sweep, `expected event.sweep to be present, got ${JSON.stringify(event)}`);
+    assert(
+      event.sweep.hit_count === 2,
+      `expected 2 sweep hits (full id + standalone short8), got ${JSON.stringify(event.sweep)}`,
+    );
+    assert(event.sweep.files.length === 2, `expected 2 hit records, got ${JSON.stringify(event.sweep.files)}`);
+    const relSpecPath = path.relative(dpRoot, checkoutSpecPath);
+    const hitFiles = event.sweep.files.map((h) => h.file);
+    assert(
+      hitFiles.every((f) => f === relSpecPath),
+      `expected every hit under ${relSpecPath}, got ${JSON.stringify(hitFiles)}`,
+    );
+    const hitLines = event.sweep.files.map((h) => h.line).sort((a, b) => a - b);
+    assert(hitLines.join(',') === '3,4', `expected hits on lines 3 and 4 only, got ${JSON.stringify(hitLines)}`);
+    const embeddedHit = event.sweep.files.find((h) => h.line === 5);
+    assert(!embeddedHit, 'the embedded (non-word-boundary) short8 occurrence on line 5 must NOT be a hit');
+
+    // Lock doctrine: sweep computed BEFORE the append — the store gains
+    // exactly one new line, and that line already carries the sweep result
+    // inline (never a post-append rewrite of an already-written line).
+    const afterLines = fs.readFileSync(decisionsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+    assert(
+      afterLines.length === beforeLineCount + 1,
+      `expected exactly one new line appended, before ${beforeLineCount} after ${afterLines.length}`,
+    );
+    const appendedEvent = JSON.parse(afterLines[afterLines.length - 1]);
+    assert(appendedEvent.id === event.id, 'the last line in the store is the returned supersede event');
+    assert(
+      appendedEvent.sweep && appendedEvent.sweep.hit_count === 2,
+      'the appended line already carries the sweep result inline, not a later rewrite',
+    );
+  },
+);
+
+await check(
+  'dp-2 CLI: one capture stub per sweep hit, source "supersede-sweep", outcome naming file:line and the new decision id',
+  async () => {
+    const stubTarget = logDecision(dpRoot, { decision: 'Stub target', rationale: 'isolated stub check', scope: 'billing' });
+    const stubSpecPath = path.join(specDir, 'stub-target.md');
+    fs.writeFileSync(stubSpecPath, `Cites ${stubTarget.id} once.\n`);
+
+    const beforePending = pendingCaptureStubs(dpRoot).length;
+    const run = await runBee(
+      ['decisions', 'supersede', '--id', stubTarget.id, '--decision', 'Stub replacement', '--rationale', 'stub check', '--json'],
+      dpRoot,
+    );
+    assert(run.status === 0, `CLI supersede exited ${run.status} :: ${run.stderr || run.stdout}`);
+    const event = JSON.parse(run.stdout);
+    assert(event.sweep.hit_count === 1, `expected exactly 1 hit, got ${JSON.stringify(event.sweep)}`);
+
+    const pending = pendingCaptureStubs(dpRoot);
+    assert(
+      pending.length === beforePending + 1,
+      `expected exactly one new capture stub, before ${beforePending} after ${pending.length}`,
+    );
+    const stub = pending[pending.length - 1];
+    assert(stub.source === 'supersede-sweep', `expected stub.source "supersede-sweep", got ${stub.source}`);
+    const hit = event.sweep.files[0];
+    assert(stub.outcome.includes(`${hit.file}:${hit.line}`), `expected outcome to name file:line, got ${stub.outcome}`);
+    assert(stub.outcome.includes(event.id), `expected outcome to name the new decision id, got ${stub.outcome}`);
+  },
+);
+
+await check('dp-2 CLI: zero-hits sweep is a clean path — hit_count 0, empty files array, no capture stub, clean human message', async () => {
+  const cleanTarget = logDecision(dpRoot, { decision: 'Never cited anywhere', rationale: 'clean path check' });
+  const beforePending = pendingCaptureStubs(dpRoot).length;
+
+  const jsonRun = await runBee(
+    ['decisions', 'supersede', '--id', cleanTarget.id, '--decision', 'Replace never-cited', '--rationale', 'clean path', '--json'],
+    dpRoot,
+  );
+  assert(jsonRun.status === 0, `CLI supersede exited ${jsonRun.status} :: ${jsonRun.stderr || jsonRun.stdout}`);
+  const event = JSON.parse(jsonRun.stdout);
+  assert(event.sweep.hit_count === 0, `expected 0 hits, got ${JSON.stringify(event.sweep)}`);
+  assert(
+    Array.isArray(event.sweep.files) && event.sweep.files.length === 0,
+    `expected empty files array, got ${JSON.stringify(event.sweep.files)}`,
+  );
+
+  const pending = pendingCaptureStubs(dpRoot);
+  assert(
+    pending.length === beforePending,
+    `expected no new capture stub on a zero-hit sweep, before ${beforePending} after ${pending.length}`,
+  );
+
+  const humanRun = await runBee(
+    ['decisions', 'supersede', '--id', cleanTarget.id, '--decision', 'Replace again', '--rationale', 'human text check'],
+    dpRoot,
+  );
+  assert(humanRun.status === 0, `human supersede exited ${humanRun.status} :: ${humanRun.stderr || humanRun.stdout}`);
+  assert(
+    /no citations/i.test(humanRun.stdout),
+    `expected a clean no-citations message, got ${JSON.stringify(humanRun.stdout)}`,
+  );
 });
 
 printSummaryAndExit();
