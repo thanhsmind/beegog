@@ -22,20 +22,37 @@
     "package.json"
   ],
   "deps": [],
-  "status": "claimed",
+  "status": "capped",
   "decisions": [],
   "trace": {
     "worker": "orch",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "bee 1.8.0 released: tuple synced, tag v1.8.0 on a0111c0, exact-tag CI green on Linux + Windows",
+    "files_changed": [
+      "package.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-21T17:20:57.611Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
+    "verify_output": "local: PASS 56 suites x3 (59.9/59.8/57.3s); exact-tag CI on a0111c0: CI(Linux) success run 29852411653, Windows success run 29852411702 — both green",
+    "verify_passed": true,
     "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
-    "claimed_at": "2026-07-21T15:52:04.300Z"
+    "claimed_at": "2026-07-21T15:52:04.300Z",
+    "verify_command": "node scripts/run_verify.mjs (3x consecutive) + exact-tag CI both workflows",
+    "verified_at": "2026-07-21T17:20:57.558Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-21T17:20:57.558Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T17:20:40.509Z",
+        "acquired_at": "2026-07-21T15:52:04.298Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }
