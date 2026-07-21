@@ -526,6 +526,9 @@ const EXPECTED_STATE_EXPORTS = [
   'KNOWN_PHASES',
   'isKnownPhase',
   'COMMAND_KEYS',
+  // worktree-companion-hook: separate from COMMAND_KEYS on purpose — see the
+  // export's own doc comment in lib/state.mjs for why.
+  'WORKTREE_COMPANION_COMMAND_KEYS',
   'MODEL_TIERS',
   'CONFIGURABLE_TIERS',
   'CONFIGURABLE_SLOTS',
