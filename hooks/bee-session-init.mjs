@@ -58,7 +58,16 @@ async function main() {
     if (sessionId) {
       try {
         const claims = await import(libModuleUrl(root, "claims.mjs"));
-        const created = claims.createSession(root, { id: sessionId });
+        // hardening-1-7-10 D5 (Codex session bridge): persist the real hook
+        // payload's transcript_path onto the session record at creation time
+        // (createSession itself omits it when absent/blank) so recovery.mjs
+        // can resolve THIS session's transcript from the stored path directly
+        // instead of guessing via Claude's encoded-layout math — the piece
+        // that makes Codex transcript resolution real rather than a
+        // relabeled Claude layout.
+        const transcriptPath =
+          typeof ctx.payload.transcript_path === "string" ? ctx.payload.transcript_path : undefined;
+        const created = claims.createSession(root, { id: sessionId, transcript_path: transcriptPath });
         if (!created.ok) {
           claims.heartbeatSession(root, sessionId);
         }

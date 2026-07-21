@@ -306,7 +306,7 @@ await check('isConcurrentMode: false with no session records or only the acting 
   assert(isConcurrentMode(concurrentModeRoot, { excludeSessionId: 'solo-sess' }) === false, 'a stale-heartbeat other session does not count as concurrent');
 });
 
-await check('claimCellFile: sessionless claim still works solo (nobody else live) — byte-unchanged; refuses typed SESSION_REQUIRED once another session goes live, naming --session-id and BEE_SESSION_ID; a real session id still claims fine in concurrent mode', async () => {
+await check('claimCellFile: sessionless claim still works solo (nobody else live) — byte-unchanged, never marked adopted', async () => {
   // 'solo-sess' is still live from the row above (never staled there) — stale
   // every session record here so this actually starts from a genuine solo
   // state before proving the sessionless claim still works unaffected.
@@ -320,11 +320,26 @@ await check('claimCellFile: sessionless claim still works solo (nobody else live
   const solo = claimCellFile(concurrentModeRoot, null, 'cell-solo', 60);
   assert(solo.ok === true, 'sessionless claim still succeeds when nobody else is live');
   assert(!('session' in solo.claim), 'solo sessionless claim still omits the session key entirely');
+  assert(!solo.adopted, 'a genuinely solo claim (zero live sessions anywhere) is never marked adopted');
   releaseClaim(concurrentModeRoot, null, 'cell-solo');
+});
 
-  heartbeatSession(concurrentModeRoot, 'other-sess'); // bring it back to a live heartbeat -> concurrent mode
+await check('claimCellFile (hardening-1-7-10 D5 — Codex session bridge): a sessionless claim with EXACTLY ONE fresh live session auto-adopts that session\'s identity instead of refusing — this is the solo-session SESSION_REQUIRED bug the durable fallback fixes', async () => {
+  heartbeatSession(concurrentModeRoot, 'other-sess'); // bring it back to a live heartbeat -> exactly one fresh session
+  assert(isConcurrentMode(concurrentModeRoot) === true, 'precondition: one other session is live (the pre-fix code refused this outright)');
+  const adopted = claimCellFile(concurrentModeRoot, null, 'cell-single-adopt', 60);
+  assert(adopted.ok === true, `single-fresh-session adoption must succeed instead of refusing SESSION_REQUIRED, got ${JSON.stringify(adopted)}`);
+  assert(adopted.claim.session === 'other-sess', `claim adopts the sole live session's identity, got ${JSON.stringify(adopted.claim)}`);
+  assert(adopted.adopted === true, 'the result surfaces an adopted:true audit marker so call sites can tell this was inferred, not supplied');
+  assert(adopted.claim.adopted === true, 'the on-disk claim record also carries the adopted marker');
+  releaseClaim(concurrentModeRoot, 'other-sess', 'cell-single-adopt');
+});
+
+await check('claimCellFile (hardening-1-7-10 D5): a sessionless claim with TWO OR MORE fresh live sessions still refuses typed SESSION_REQUIRED — real ambiguity is never guessed, naming --session-id and BEE_SESSION_ID; a real session id still claims fine', async () => {
+  heartbeatSession(concurrentModeRoot, 'solo-sess'); // bring a second session back live -> genuine ambiguity (2 fresh)
+  assert(isConcurrentMode(concurrentModeRoot) === true, 'precondition: at least one other session live');
   const refused = claimCellFile(concurrentModeRoot, null, 'cell-concurrent', 60);
-  assert(refused.ok === false, 'sessionless claim refused while another session is live');
+  assert(refused.ok === false, 'sessionless claim refused while two or more sessions are live');
   assert(refused.code === 'SESSION_REQUIRED', `expected typed SESSION_REQUIRED, got ${refused.code}`);
   assert(typeof refused.reason === 'string' && refused.reason.includes('--session-id'), `reason should name --session-id, got ${JSON.stringify(refused.reason)}`);
   assert(refused.reason.includes('BEE_SESSION_ID'), `reason should name BEE_SESSION_ID, got ${JSON.stringify(refused.reason)}`);
@@ -332,6 +347,7 @@ await check('claimCellFile: sessionless claim still works solo (nobody else live
 
   const withSession = claimCellFile(concurrentModeRoot, 'other-sess', 'cell-concurrent', 60);
   assert(withSession.ok === true, 'a real session id claims fine even in concurrent mode');
+  assert(!withSession.adopted, 'an explicitly supplied session id is never marked adopted');
   releaseClaim(concurrentModeRoot, 'other-sess', 'cell-concurrent');
 });
 

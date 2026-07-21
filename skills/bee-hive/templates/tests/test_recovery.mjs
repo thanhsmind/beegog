@@ -49,11 +49,12 @@ function freshRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'recovery-test-'));
 }
 
-function writeSessionRecord(root, id, { started_at, last_heartbeat, lane } = {}) {
+function writeSessionRecord(root, id, { started_at, last_heartbeat, lane, transcript_path } = {}) {
   const dir = path.join(root, '.bee', 'sessions');
   fs.mkdirSync(dir, { recursive: true });
   const rec = { id, started_at, last_heartbeat };
   if (lane) rec.lane = lane;
+  if (transcript_path) rec.transcript_path = transcript_path;
   fs.writeFileSync(path.join(dir, `${id}.json`), `${JSON.stringify(rec, null, 2)}\n`, 'utf8');
 }
 
@@ -578,6 +579,60 @@ check('detectCrashCandidates: no recovery config at all -> byte-identical Claude
   eq(out[0].session_id, sid);
   eq(out[0].work_signal, 'lane');
   eq(out[0].runtime, 'claude', 'default (no config) resolution is tagged with the claude runtime');
+});
+
+// ======================================================================
+// hardening-1-7-10 D5 (Codex session bridge): a session record's own stored
+// transcript_path is resolved directly, bypassing the encoded-layout math
+// entirely — this is what makes Codex transcript resolution real instead of
+// a relabeled Claude layout guess (recovery.mjs + perf.mjs resolveTranscript).
+// ======================================================================
+
+check('detectCrashCandidates: a session record with an explicit transcript_path at a NON-Claude-layout location (true Codex-shaped path) is resolved via the stored path, even with the Claude default root absent and no recovery.transcript_roots configured', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects'); // Claude default root: deliberately absent
+  const sid = 'sess-codex-real';
+  // A genuinely Codex-shaped rollout location — NOT under
+  // projectsRoot/<encodeProjectDir(PROJECT_PATH)>/<sid>.jsonl at all.
+  const codexHome = path.join(root, 'codex-home', 'sessions', '2026', '07', '21');
+  fs.mkdirSync(codexHome, { recursive: true });
+  const realTranscript = path.join(codexHome, `rollout-${sid}.jsonl`);
+  const body = `${dirtyEndEvents(BASE - 4000).map((e) => JSON.stringify(e)).join('\n')}\n`;
+  fs.writeFileSync(realTranscript, body, 'utf8');
+
+  writeSessionRecord(root, sid, {
+    started_at: iso(BASE - 5000),
+    last_heartbeat: STALE_HEARTBEAT,
+    lane: 'feat-codex-real',
+    transcript_path: realTranscript,
+  });
+  writeLaneRecord(root, 'feat-codex-real', { phase: 'swarming' });
+
+  const out = detectCrashCandidates(root, { projectsRoot, projectPath: PROJECT_PATH, now: BASE });
+  eq(out.length, 1, 'stored transcript_path resolves the candidate even though the Claude default root is absent and no recovery.transcript_roots is configured');
+  eq(out[0].session_id, sid);
+  eq(out[0].transcript, realTranscript, 'the resolved transcript is exactly the stored path, never a layout-math guess');
+  eq(out[0].runtime, null, 'no scanned root matches the stored path prefix -> runtime tag is null (unknown); the resolution itself is unaffected');
+});
+
+check('detectCrashCandidates: a stored transcript_path that does NOT exist on disk falls back to layout math exactly as before', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects');
+  const sid = 'sess-stale-path';
+  writeSessionRecord(root, sid, {
+    started_at: iso(BASE - 5000),
+    last_heartbeat: STALE_HEARTBEAT,
+    lane: 'feat-fallback',
+    transcript_path: path.join(root, 'nowhere', 'gone.jsonl'),
+  });
+  writeLaneRecord(root, 'feat-fallback', { phase: 'swarming' });
+  writeTranscript(projectsRoot, PROJECT_PATH, sid, dirtyEndEvents(BASE - 4000));
+
+  const out = detectCrashCandidates(root, { projectsRoot, projectPath: PROJECT_PATH, now: BASE });
+  eq(out.length, 1, 'a stale/missing stored path is never a hard failure — layout math still finds the real transcript');
+  eq(out[0].session_id, sid);
+  assert(out[0].transcript.endsWith(`${sid}.jsonl`), 'fell back to the layout-math transcript, not the missing stored path');
+  eq(out[0].runtime, 'claude', 'layout-math fallback still tags the claude runtime');
 });
 
 console.log(`\ntest_recovery: ${pass} passed, ${fail} failed`);
