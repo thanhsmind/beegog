@@ -22,15 +22,24 @@ import {
   assertThrows,
   printSummaryAndExit,
 } from '../../../../scripts/lib/test-fixture.mjs';
-import { logDecision, activeDecisions, supersedeDecision, redactDecision, archiveDecisions, DECISIONS_LOCK_NAME } from '../lib/decisions.mjs';
+import {
+  logDecision,
+  activeDecisions,
+  supersedeDecision,
+  redactDecision,
+  archiveDecisions,
+  tagDecision,
+  tagDecisionsBatch,
+  DECISIONS_LOCK_NAME,
+} from '../lib/decisions.mjs';
 import { appendJsonl, readJsonl } from '../lib/fsutil.mjs';
 import { pendingCaptureStubs } from '../lib/capture.mjs';
 import { acquireStoreLockOnceSync } from '../lib/lock.mjs';
 
 const beeMjsModulePath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
 
-function runBee(args, cwd) {
-  return runModuleWorker(beeMjsModulePath, { args, cwd });
+function runBee(args, cwd, input) {
+  return runModuleWorker(beeMjsModulePath, { args, cwd, input });
 }
 
 function decisionsFilePath(root) {
@@ -739,6 +748,351 @@ await check('race: log-vs-archive — concurrent loggers and an archiver under t
   const stderr = result.stderr || '(empty)';
   assert(result.status === 0, `log-vs-archive race failed (status ${result.status}): stdout=${stdout} stderr=${stderr}`);
   assert(/^PASS +log-vs-archive/m.test(stdout), `expected a PASS summary line, got: ${stdout}`);
+});
+
+// ─── dp-5: retro-tag event + overlay merge across union reads (CONTEXT D7c)
+// Own temp repo per check group (same isolation discipline as dp-2/dp-3).
+
+function decisionsRawLines(root) {
+  return fs.readFileSync(decisionsFilePath(root), 'utf8').split(/\r?\n/).filter((l) => l.trim());
+}
+
+await check('dp-5: tagDecision resolves a full id target and appends a type:"tag" event carrying target/tags/scope', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'legacy untagged decision', rationale: 'predates tags' });
+  const event = tagDecision(root, { target: target.id, tags: ['retro', 'billing'], scope: 'billing' });
+  assert(event.type === 'tag', `expected type "tag", got ${event.type}`);
+  assert(event.target === target.id, `expected target ${target.id}, got ${event.target}`);
+  assert(event.tags.join(',') === 'retro,billing', `expected tags to round-trip, got ${JSON.stringify(event.tags)}`);
+  assert(event.scope === 'billing', `expected scope to round-trip, got ${event.scope}`);
+  assert(typeof event.id === 'string' && event.id, 'tag event carries its own id');
+  assert(typeof event.date === 'string' && event.date, 'tag event carries a date');
+});
+
+await check('dp-5: tagDecision resolves a short8 target uniquely', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'short8 target', rationale: 'resolution check' });
+  const event = tagDecision(root, { target: target.id.slice(0, 8), tags: ['short8-ok'] });
+  assert(event.target === target.id, `expected short8 to resolve to the full id ${target.id}, got ${event.target}`);
+});
+
+await check('dp-5: tagDecision refuses (typed, naming the target) on an unknown full id or unknown short8', async () => {
+  const root = makeTempRepo();
+  logDecision(root, { decision: 'unrelated', rationale: 'unrelated' });
+  assertThrows(
+    () => tagDecision(root, { target: crypto.randomUUID(), tags: ['x'] }),
+    'resolve',
+    'unknown full id target refuses, naming the resolution failure',
+  );
+  assertThrows(
+    () => tagDecision(root, { target: 'deadbeef', tags: ['x'] }),
+    'resolve',
+    'unknown short8 target refuses, naming the resolution failure',
+  );
+});
+
+await check('dp-5: tagDecision refuses (typed, "ambiguous") when a short8 prefix matches more than one candidate', async () => {
+  const root = makeTempRepo();
+  const decisionsFile = decisionsFilePath(root);
+  appendJsonl(decisionsFile, {
+    id: 'deadbeef-0000-0000-0000-000000000001',
+    type: 'decide',
+    date: new Date().toISOString(),
+    decision: 'dupe-prefix A',
+    rationale: 'ambiguity check',
+    scope: 'repo',
+  });
+  appendJsonl(decisionsFile, {
+    id: 'deadbeef-0000-0000-0000-000000000002',
+    type: 'decide',
+    date: new Date().toISOString(),
+    decision: 'dupe-prefix B',
+    rationale: 'ambiguity check',
+    scope: 'repo',
+  });
+  assertThrows(
+    () => tagDecision(root, { target: 'deadbeef', tags: ['x'] }),
+    'ambiguous',
+    'a short8 prefix matching 2+ candidates refuses as ambiguous, never guesses',
+  );
+});
+
+await check('dp-5: tagDecision target must be a decide/supersede event — a redact or another tag event id never resolves', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'to be redacted', rationale: 'target-type check' });
+  const redactEvent = redactDecision(root, { redacts: target.id, reason: 'target-type check' });
+  assertThrows(
+    () => tagDecision(root, { target: redactEvent.id, tags: ['x'] }),
+    'resolve',
+    'a redact event id is never a valid tag target',
+  );
+  const tagEvent = tagDecision(root, { target: target.id, tags: ['first'] });
+  assertThrows(
+    () => tagDecision(root, { target: tagEvent.id, tags: ['x'] }),
+    'resolve',
+    'a tag event id is never itself a valid tag target',
+  );
+});
+
+await check('dp-5: tagDecision requires --tags (at least one) and validates the same lowercase-slug shape as logDecision', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'tags validation target', rationale: 'x' });
+  assertThrows(() => tagDecision(root, { target: target.id, tags: [] }), 'tag', 'empty tags array refuses');
+  assertThrows(() => tagDecision(root, { target: target.id, tags: undefined }), 'tag', 'missing tags refuses');
+  assertThrows(
+    () => tagDecision(root, { target: target.id, tags: ['Not-Lowercase'] }),
+    'tag',
+    'an invalid slug in tags refuses',
+  );
+});
+
+await check('dp-5: tagDecision never rewrites the target event\'s original jsonl line (append-only integrity)', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'append-only check', rationale: 'x', scope: 'repo' });
+  const before = decisionsRawLines(root);
+  tagDecision(root, { target: target.id, tags: ['appended'] });
+  const after = decisionsRawLines(root);
+  assert(after.length === before.length + 1, `expected exactly one new line, before ${before.length} after ${after.length}`);
+  assert(after[0] === before[0], 'the original target line is byte-identical after tagging (never rewritten)');
+  const appended = JSON.parse(after[after.length - 1]);
+  assert(appended.type === 'tag' && appended.target === target.id, 'the new line is the tag event itself');
+});
+
+// ─── dp-5: batch (--stdin) all-or-nothing ──────────────────────────────────
+
+await check('dp-5: tagDecisionsBatch validates every entry before any write — one invalid target means the WHOLE batch appends nothing', async () => {
+  const root = makeTempRepo();
+  const good = logDecision(root, { decision: 'batch good target', rationale: 'x' });
+  const before = decisionsRawLines(root).length;
+  assertThrows(
+    () =>
+      tagDecisionsBatch(root, [
+        { target: good.id, tags: ['ok'] },
+        { target: crypto.randomUUID(), tags: ['bad-target'] },
+      ]),
+    'resolve',
+    'a batch with any unresolvable target refuses as a whole',
+  );
+  const after = decisionsRawLines(root).length;
+  assert(after === before, `expected zero new lines on a refused batch, before ${before} after ${after}`);
+});
+
+await check('dp-5: tagDecisionsBatch appends a fully-valid batch as new lines in exactly one write', async () => {
+  const root = makeTempRepo();
+  const a = logDecision(root, { decision: 'batch target A', rationale: 'x' });
+  const b = logDecision(root, { decision: 'batch target B', rationale: 'x' });
+  const before = decisionsRawLines(root).length;
+  const events = tagDecisionsBatch(root, [
+    { target: a.id, tags: ['batch-a'] },
+    { target: b.id, tags: ['batch-b'], scope: 'checkout' },
+  ]);
+  assert(events.length === 2, `expected 2 returned tag events, got ${events.length}`);
+  const after = decisionsRawLines(root).length;
+  assert(after === before + 2, `expected exactly 2 new lines, before ${before} after ${after}`);
+});
+
+// ─── dp-5: overlay merge at read time (activeDecisions / search / active) ──
+
+await check('dp-5: activeDecisions overlays a tag event\'s tags/scope onto its target (default, non-all path)', async () => {
+  const root = makeTempRepo();
+  const legacy = logDecision(root, { decision: 'legacy untagged, retro-tagged later', rationale: 'x' });
+  tagDecision(root, { target: legacy.id, tags: ['retro-tagged'], scope: 'retro-scope' });
+  const active = activeDecisions(root);
+  const found = active.find((e) => e.id === legacy.id);
+  assert(found, 'target event still listed among active decisions');
+  assert(found.tags.join(',') === 'retro-tagged', `expected overlaid tags, got ${JSON.stringify(found.tags)}`);
+  assert(found.scope === 'retro-scope', `expected overlaid scope, got ${found.scope}`);
+});
+
+await check('dp-5: overlay REPLACES the whole tags array — never merges/unions with the original tags', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'has original tags', rationale: 'x', tags: ['original-a', 'original-b'] });
+  tagDecision(root, { target: target.id, tags: ['replacement-only'] });
+  const found = activeDecisions(root).find((e) => e.id === target.id);
+  assert(found.tags.join(',') === 'replacement-only', `expected a full replacement, got ${JSON.stringify(found.tags)}`);
+  assert(!found.tags.includes('original-a') && !found.tags.includes('original-b'), 'original tags must not survive alongside the replacement');
+});
+
+await check('dp-5: scope is replaced only when the tag event carries one — a scope-less retro-tag leaves the target scope untouched', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'has an original scope', rationale: 'x', scope: 'original-scope' });
+  tagDecision(root, { target: target.id, tags: ['no-scope-here'] });
+  const found = activeDecisions(root).find((e) => e.id === target.id);
+  assert(found.scope === 'original-scope', `expected the original scope untouched, got ${found.scope}`);
+  assert(found.tags.join(',') === 'no-scope-here', `expected tags overlaid regardless, got ${JSON.stringify(found.tags)}`);
+});
+
+await check('dp-5: latest tag event wins when several retro-tag the same decision (by date, then file order on a tie)', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'multi-tagged over time', rationale: 'x' });
+  const first = tagDecision(root, { target: target.id, tags: ['first-tag'] });
+  const second = tagDecision(root, { target: target.id, tags: ['second-tag'] });
+  // Force a deterministic ordering: second is dated strictly after first.
+  setEventDate(root, first.id, '2020-01-01T00:00:00.000Z');
+  setEventDate(root, second.id, '2020-06-01T00:00:00.000Z');
+  const found = activeDecisions(root).find((e) => e.id === target.id);
+  assert(found.tags.join(',') === 'second-tag', `expected the later tag event to win, got ${JSON.stringify(found.tags)}`);
+
+  // Tie on date: file order (later-appended line) wins.
+  const third = tagDecision(root, { target: target.id, tags: ['third-tag'] });
+  setEventDate(root, third.id, '2020-06-01T00:00:00.000Z'); // same date as `second`
+  const foundAfterTie = activeDecisions(root).find((e) => e.id === target.id);
+  assert(
+    foundAfterTie.tags.join(',') === 'third-tag',
+    `expected the later-in-file tag event to win a date tie, got ${JSON.stringify(foundAfterTie.tags)}`,
+  );
+});
+
+await check('dp-5: tag events are never listed as decisions themselves and are never counted by --recent', async () => {
+  const root = makeTempRepo();
+  const a = logDecision(root, { decision: 'recent-count A', rationale: 'x' });
+  const b = logDecision(root, { decision: 'recent-count B', rationale: 'x' });
+  tagDecision(root, { target: a.id, tags: ['recent-check'] });
+  const active = activeDecisions(root);
+  assert(!active.some((e) => e.type === 'tag'), 'no tag-typed event ever appears in activeDecisions output');
+  const recent = activeDecisions(root, { recent: 2 });
+  assert(recent.length === 2, `expected --recent 2 to still return exactly 2 decide events, got ${recent.length}`);
+  assert(recent.every((e) => e.id === a.id || e.id === b.id), '--recent counts only decide/supersede events, never the tag event');
+});
+
+await check('dp-5 CLI: decisions search --tag / --scope / --area finds a legacy (pre-tag) event via its retro-tag overlay', async () => {
+  const root = makeTempRepo();
+  const legacy = logDecision(root, { decision: 'legacy, findable only after retro-tag', rationale: 'x' });
+  const before = await runBee(['decisions', 'search', '--tag', 'newly-retro', '--json'], root);
+  assert(JSON.parse(before.stdout).decisions.length === 0, 'not yet findable by the tag before retro-tagging');
+
+  const tagRun = await runBee(
+    ['decisions', 'tag', '--target', legacy.id, '--tags', 'newly-retro', '--scope', 'retro-area', '--json'],
+    root,
+  );
+  assert(tagRun.status === 0, `CLI tag exited ${tagRun.status} :: ${tagRun.stderr || tagRun.stdout}`);
+
+  const afterTag = await runBee(['decisions', 'search', '--tag', 'newly-retro', '--json'], root);
+  assert(afterTag.status === 0, `search --tag exited ${afterTag.status} :: ${afterTag.stderr || afterTag.stdout}`);
+  const ids = JSON.parse(afterTag.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(legacy.id), 'search --tag now finds the legacy event via the overlay');
+
+  const byScope = await runBee(['decisions', 'search', '--scope', 'retro-area', '--json'], root);
+  assert(JSON.parse(byScope.stdout).decisions.map((d) => d.id).includes(legacy.id), 'search --scope finds it via the overlaid scope');
+  const byArea = await runBee(['decisions', 'active', '--area', 'retro-area', '--json'], root);
+  assert(JSON.parse(byArea.stdout).decisions.map((d) => d.id).includes(legacy.id), 'active --area finds it via the overlaid scope too');
+});
+
+// ─── dp-5: overlay reaches an archived target through the --all union ─────
+
+await check('dp-5: overlay reaches an archived-then-retro-tagged event through the --all union; tag events themselves are never archived', async () => {
+  const root = makeTempRepo();
+  const old = logDecision(root, { decision: 'will be archived, then retro-tagged', rationale: 'x' });
+  setEventDate(root, old.id, '2020-01-01T00:00:00.000Z');
+  const recent = logDecision(root, { decision: 'stays active, keeps the store non-empty', rationale: 'x' });
+  archiveDecisions(root, { before: '2021-01-01' });
+
+  // Retro-tag the now-archived decision — its own event never moves; the
+  // resolution reads the active+archive union to find it.
+  const tagEvent = tagDecision(root, { target: old.id, tags: ['archived-then-tagged'] });
+
+  const defaultActive = activeDecisions(root);
+  assert(!defaultActive.some((e) => e.id === old.id), 'default (no --all) read still never reaches the archived target');
+
+  const allActive = activeDecisions(root, { all: true });
+  const found = allActive.find((e) => e.id === old.id);
+  assert(found, 'the --all union still reaches the archived target');
+  assert(found.tags.join(',') === 'archived-then-tagged', `expected the overlay to apply even to an archived target, got ${JSON.stringify(found.tags)}`);
+
+  // Age out the tag event's own date far in the past and archive again —
+  // a tag-typed event must never be swept into the archive file (D7c
+  // prohibition: tag events stay in the active file this slice).
+  setEventDate(root, tagEvent.id, '2020-01-01T00:00:00.000Z');
+  try {
+    archiveDecisions(root, { before: '2021-01-01' });
+  } catch {
+    // "nothing qualifies" is an acceptable outcome here — it only proves the
+    // tag event was never a candidate; recentEvent already keeps the active
+    // file non-empty so this branch is not expected, but tolerate it.
+  }
+  const activeRaw = readJsonl(decisionsFilePath(root));
+  assert(activeRaw.some((e) => e.id === tagEvent.id), 'the tag event itself is still in the ACTIVE file, never archived, even when old');
+  assert(recent, 'sanity: recent stays referenced');
+});
+
+// ─── dp-5: locked append routes through the SAME shared primitive ─────────
+
+await check(
+  'dp-5: tagDecision/tagDecisionsBatch share the SAME decisions store lock as log/supersede/redact/archive — refuses while externally held',
+  async () => {
+    const root = makeTempRepo();
+    const target = logDecision(root, { decision: 'lock-sharing target', rationale: 'x' });
+    const before = decisionsRawLines(root);
+
+    const lock = acquireStoreLockOnceSync(root, DECISIONS_LOCK_NAME);
+    assert(lock.acquired, 'precondition: test can acquire the decisions store lock directly');
+    try {
+      assertThrows(
+        () => tagDecision(root, { target: target.id, tags: ['should-never-land'] }),
+        'lock',
+        'tagDecision refuses/times out while the decisions store lock is externally held',
+      );
+      assertThrows(
+        () => tagDecisionsBatch(root, [{ target: target.id, tags: ['should-never-land-batch'] }]),
+        'lock',
+        'tagDecisionsBatch also refuses/times out on the SAME externally-held lock',
+      );
+    } finally {
+      lock.release();
+    }
+
+    const after = decisionsRawLines(root);
+    assert(after.length === before.length, 'a refused tag write under lock contention never partially writes the store');
+
+    const event = tagDecision(root, { target: target.id, tags: ['after-release'] });
+    assert(event.id, 'tagDecision succeeds again once the externally-held lock is released');
+  },
+);
+
+// ─── dp-5 CLI: --stdin batch (all-or-nothing) ──────────────────────────────
+
+await check('CLI: decisions tag --stdin with a fully-valid JSON array appends every entry in one call', async () => {
+  const root = makeTempRepo();
+  const a = logDecision(root, { decision: 'stdin batch target A', rationale: 'x' });
+  const b = logDecision(root, { decision: 'stdin batch target B', rationale: 'x' });
+  const payload = JSON.stringify([
+    { target: a.id, tags: ['stdin-a'] },
+    { target: b.id, tags: ['stdin-b'], scope: 'stdin-scope' },
+  ]);
+  const run = await runBee(['decisions', 'tag', '--stdin', '--json'], root, payload);
+  assert(run.status === 0, `CLI tag --stdin exited ${run.status} :: ${run.stderr || run.stdout}`);
+
+  const activeA = await runBee(['decisions', 'search', '--tag', 'stdin-a', '--json'], root);
+  assert(JSON.parse(activeA.stdout).decisions.map((d) => d.id).includes(a.id), 'batch entry A landed via the overlay');
+  const activeB = await runBee(['decisions', 'search', '--scope', 'stdin-scope', '--json'], root);
+  assert(JSON.parse(activeB.stdout).decisions.map((d) => d.id).includes(b.id), 'batch entry B landed via the overlay');
+});
+
+await check('CLI: decisions tag --stdin with one invalid target in the array appends NOTHING (all-or-nothing)', async () => {
+  const root = makeTempRepo();
+  const good = logDecision(root, { decision: 'stdin batch good target', rationale: 'x' });
+  const before = decisionsRawLines(root).length;
+  const payload = JSON.stringify([
+    { target: good.id, tags: ['should-not-land'] },
+    { target: crypto.randomUUID(), tags: ['bad'] },
+  ]);
+  const run = await runBee(['decisions', 'tag', '--stdin', '--json'], root, payload);
+  assert(run.status !== 0, 'a batch with an unresolvable target exits non-zero');
+  const after = decisionsRawLines(root).length;
+  assert(after === before, `expected zero new lines on a refused CLI batch, before ${before} after ${after}`);
+});
+
+await check('CLI: decisions tag without --tags, or naming an unknown target, exits non-zero with a clear error', async () => {
+  const root = makeTempRepo();
+  const target = logDecision(root, { decision: 'cli refusal check', rationale: 'x' });
+
+  const missingTags = await runBee(['decisions', 'tag', '--target', target.id, '--json'], root);
+  assert(missingTags.status !== 0, 'missing --tags exits non-zero');
+
+  const unknownTarget = await runBee(['decisions', 'tag', '--target', crypto.randomUUID(), '--tags', 'x', '--json'], root);
+  assert(unknownTarget.status !== 0, 'unknown target exits non-zero');
+  const payload = JSON.parse(unknownTarget.stdout);
+  assert(typeof payload.error === 'string' ? /resolve/i.test(payload.error) : true, 'error should hint at target resolution failure when a free-string error is used');
 });
 
 printSummaryAndExit();

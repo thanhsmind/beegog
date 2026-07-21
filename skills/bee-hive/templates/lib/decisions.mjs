@@ -119,6 +119,20 @@ function writeJsonlAtomic(file, events) {
   fs.renameSync(tmp, file);
 }
 
+// decision-propagation dp-5 (CONTEXT D7c, plan-check BLOCKER B1): the batch
+// counterpart of fsutil.mjs's single-event appendJsonl, for tagDecisionsBatch
+// below — every validated entry lands as ONE fs.appendFileSync call (one new
+// jsonl "line group") rather than N sequential appendJsonl calls, matching
+// the cell's "N sequential appends would leave a partial batch on crash"
+// requirement. Local to this module for the same reason writeJsonlAtomic is
+// (fsutil.mjs has no jsonl-batch-append primitive today and is out of this
+// cell's file scope).
+function appendJsonlBatch(file, events) {
+  ensureDir(path.dirname(file));
+  const body = events.map((event) => JSON.stringify(event)).join('\n');
+  fs.appendFileSync(file, `${body}\n`, 'utf8');
+}
+
 // decision-propagation dp-1 (CONTEXT D4a): optional tags[] on a decide
 // event, for structured recall alongside the existing free-string `scope`
 // (which stays the spec-area dimension — no separate `area` field, fresh-
@@ -358,6 +372,183 @@ export function redactDecision(root, { redacts, reason }) {
   return event;
 }
 
+// decision-propagation dp-5 (CONTEXT D7c): the retro-tag event. Append-only
+// {type:'tag', id, date, target, tags, scope?} — never rewrites the target's
+// own jsonl line; activeDecisions overlays tags/scope onto the target at
+// read time (see buildTagOverlay/applyTagOverlay below). Tag events are
+// never archived this slice (D7c prohibition) — archiveDecisions' existing
+// rules (age sweep only for type 'decide'; supersede/redact-id sweep only
+// for ids named by a LATER supersede/redact event) already never touch a
+// 'tag'-typed event, so no change was needed there.
+
+/** Typed refusal from tagDecision/tagDecisionsBatch when a target does not resolve to any decide/supersede event. */
+export class DecisionsTagTargetUnresolvedError extends Error {
+  constructor(target) {
+    super(
+      `decisions tag: target ${JSON.stringify(target)} does not resolve to any decide/supersede event in the active+archive union.`,
+    );
+    this.name = 'DecisionsTagTargetUnresolvedError';
+    this.code = 'DECISIONS_TAG_TARGET_UNRESOLVED';
+    this.target = target;
+  }
+}
+
+/** Typed refusal when a short8 prefix matches more than one candidate — never guesses. */
+export class DecisionsTagTargetAmbiguousError extends Error {
+  constructor(target, matches) {
+    super(
+      `decisions tag: short id ${JSON.stringify(target)} is ambiguous — matches ${matches.length} events (${matches.join(', ')}); use the full id.`,
+    );
+    this.name = 'DecisionsTagTargetAmbiguousError';
+    this.code = 'DECISIONS_TAG_TARGET_AMBIGUOUS';
+    this.target = target;
+    this.matches = matches;
+  }
+}
+
+const SHORT8_PATTERN = /^[0-9a-f]{8}$/i;
+
+// decision-propagation dp-5 (TARGET RESOLUTION): candidates are decide/
+// supersede events from the SAME active+archive union dp-3's activeDecisions
+// already reads (de-dup by id, active copy wins) — a redact or tag event id
+// is never a valid retro-tag target.
+function decisionTargetCandidates(root) {
+  const activeEvents = readJsonl(decisionsPath(root));
+  const archivedEvents = readJsonl(decisionsArchivePath(root));
+  const byId = new Map();
+  for (const event of activeEvents) {
+    if (event && typeof event.id === 'string') byId.set(event.id, event);
+  }
+  for (const event of archivedEvents) {
+    if (event && typeof event.id === 'string' && !byId.has(event.id)) byId.set(event.id, event);
+  }
+  return [...byId.values()].filter((event) => event && (event.type === 'decide' || event.type === 'supersede'));
+}
+
+function resolveTagTarget(candidates, target) {
+  const raw = typeof target === 'string' ? target.trim() : '';
+  if (!raw) {
+    throw new Error('decisions tag: target id (full id or short8) is required.');
+  }
+  const exact = candidates.find((event) => event.id === raw);
+  if (exact) return exact.id;
+  if (SHORT8_PATTERN.test(raw)) {
+    const matches = candidates.filter((event) => event.id.toLowerCase().startsWith(raw.toLowerCase()));
+    if (matches.length === 1) return matches[0].id;
+    if (matches.length > 1) throw new DecisionsTagTargetAmbiguousError(raw, matches.map((event) => event.id));
+  }
+  throw new DecisionsTagTargetUnresolvedError(raw);
+}
+
+// tags is required (unlike logDecision's optional tags[]) — a tag event with
+// zero tags has no purpose; overlay REPLACES the whole array, so this is
+// always a full, validated set.
+function normalizeTagEventTags(tags) {
+  if (!Array.isArray(tags) || tags.length === 0) {
+    throw new Error('decisions tag: --tags is required (at least one lowercase slug, e.g. "billing,nightly-job").');
+  }
+  const cleaned = tags.map((tag) => String(tag).trim());
+  for (const tag of cleaned) {
+    if (!TAG_PATTERN.test(tag)) {
+      throw new Error(
+        `decisions tag: tag ${JSON.stringify(tag)} is not a valid lowercase slug (must match ${TAG_PATTERN}).`,
+      );
+    }
+  }
+  return cleaned;
+}
+
+/**
+ * tagDecisionsBatch(root, entries) — decision-propagation dp-5 (CONTEXT D7c).
+ * `entries` is an array of {target, tags, scope?}. EVERY entry is resolved
+ * and validated BEFORE any write (all-or-nothing — a single unresolvable
+ * target or invalid tags entry anywhere in the array means the WHOLE batch
+ * refuses and nothing is appended). Once validated, every event lands in
+ * exactly ONE locked append (appendJsonlBatch), the SAME
+ * withDecisionsLockSync primitive every other decisions-store writer uses —
+ * never a bare unlocked appendJsonl (plan-check BLOCKER B1).
+ */
+export function tagDecisionsBatch(root, entries) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw new Error('decisions tag: at least one entry ({target, tags, scope?}) is required.');
+  }
+  const candidates = decisionTargetCandidates(root);
+  const now = new Date().toISOString();
+  const events = entries.map((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`decisions tag: batch entry must be an object {target, tags, scope?}, got ${JSON.stringify(entry)}.`);
+    }
+    const targetId = resolveTagTarget(candidates, entry.target);
+    const tags = normalizeTagEventTags(entry.tags);
+    let scope;
+    if (entry.scope !== undefined && entry.scope !== null && String(entry.scope).trim()) {
+      scope = String(entry.scope).trim();
+    }
+    assertSafeContent('scope', scope);
+    const event = {
+      id: crypto.randomUUID(),
+      type: 'tag',
+      date: now,
+      target: targetId,
+      tags,
+    };
+    if (scope) event.scope = scope;
+    return event;
+  });
+
+  // dp-3 lock doctrine (see withDecisionsLockSync's comment above): every
+  // event in the batch is already fully built before the lock is taken —
+  // the critical section is exactly the one appendJsonlBatch write.
+  withDecisionsLockSync(root, () => appendJsonlBatch(decisionsPath(root), events));
+  return events;
+}
+
+/** Single-entry convenience wrapper over tagDecisionsBatch — same all-or-nothing validate-then-append shape, one entry. */
+export function tagDecision(root, { target, tags, scope } = {}) {
+  return tagDecisionsBatch(root, [{ target, tags, scope }])[0];
+}
+
+// decision-propagation dp-5 (OVERLAY MERGE, plan-check W2): the overlay map
+// is built from tag events in the ACTIVE file ONLY (tag events are never
+// archived this slice — see the prohibition above), keyed by target id.
+// "Latest tag event wins ... by event date, then file order": entries are
+// visited oldest-to-newest (ties broken by ascending original file
+// position), and each Map.set overwrites the previous value for that
+// target — so the LAST entry visited (latest date, or the later-in-file
+// entry on an exact-timestamp tie) is what survives in the map.
+function buildTagOverlay(root) {
+  const tagEvents = readJsonl(decisionsPath(root))
+    .map((event, idx) => ({ event, idx }))
+    .filter(({ event }) => event && event.type === 'tag' && typeof event.target === 'string');
+  tagEvents.sort((a, b) => {
+    const aMs = Date.parse(a.event.date);
+    const bMs = Date.parse(b.event.date);
+    if (Number.isFinite(aMs) && Number.isFinite(bMs) && aMs !== bMs) return aMs - bMs;
+    return a.idx - b.idx;
+  });
+  const overlay = new Map();
+  for (const { event } of tagEvents) {
+    overlay.set(event.target, {
+      tags: Array.isArray(event.tags) ? event.tags.slice() : undefined,
+      scope: typeof event.scope === 'string' && event.scope ? event.scope : undefined,
+    });
+  }
+  return overlay;
+}
+
+// Overlay REPLACES the whole tags array (never merges/unions); scope is
+// replaced only when the winning tag event actually carries one. Returns
+// the SAME event object unchanged when there is no overlay for its id —
+// never a defensive clone on the common (untagged) path.
+function applyTagOverlay(event, overlay) {
+  const patch = overlay.get(event.id);
+  if (!patch) return event;
+  const next = { ...event };
+  if (patch.tags !== undefined) next.tags = patch.tags;
+  if (patch.scope !== undefined) next.scope = patch.scope;
+  return next;
+}
+
 /** Typed refusal from archiveDecisions when zero events qualify (never a silent no-op). */
 export class DecisionsArchiveNothingQualifiesError extends Error {
   constructor(before) {
@@ -481,6 +672,15 @@ export function archiveDecisions(root, { before } = {}) {
  * alone once activity happened before AND after `before` on either side).
  */
 export function activeDecisions(root, { recent = null, all = false } = {}) {
+  // decision-propagation dp-5 (D7c OVERLAY MERGE, plan-check W2): built once
+  // per call, from the active file's tag events only, and applied to BOTH
+  // branches below identically — this is what keeps the `all` branch byte-
+  // identical to the default branch whenever there is nothing in the
+  // archive to actually merge (dp-3's existing byte-identity requirement),
+  // and what makes an archived-then-retro-tagged target still read overlaid
+  // (the overlay is keyed by target id, independent of which file that
+  // target's own event currently lives in).
+  const overlay = buildTagOverlay(root);
   if (!all) {
     const events = readJsonl(decisionsPath(root));
     const superseded = new Set();
@@ -496,7 +696,8 @@ export function activeDecisions(root, { recent = null, all = false } = {}) {
           !superseded.has(event.id) &&
           !redacted.has(event.id),
       )
-      .reverse();
+      .reverse()
+      .map((event) => applyTagOverlay(event, overlay));
     return recent != null ? active.slice(0, recent) : active;
   }
 
@@ -539,7 +740,10 @@ export function activeDecisions(root, { recent = null, all = false } = {}) {
       if (Number.isFinite(aMs) && Number.isFinite(bMs) && aMs !== bMs) return bMs - aMs;
       return b.idx - a.idx; // tie -> later-inserted (higher original index) first, matching .reverse()
     })
-    .map(({ event }) => event);
+    // Overlay applied AFTER union de-dup (plan-check W2) — an archived
+    // target that lost the dedup to nothing (i.e. it's the surviving
+    // union entry) still gets its overlay applied here, exactly once.
+    .map(({ event }) => applyTagOverlay(event, overlay));
   return recent != null ? active.slice(0, recent) : active;
 }
 

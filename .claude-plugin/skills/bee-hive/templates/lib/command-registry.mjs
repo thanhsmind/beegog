@@ -584,6 +584,27 @@ export const COMMAND_REGISTRY = [
     examples: ['bee decisions archive --before 2099-01-01 --json'],
     deprecated: null,
   },
+  {
+    name: 'decisions.tag',
+    invoke: 'bee decisions tag',
+    description:
+      'Append a retro-tag event (decision-propagation D7c) that overlays tags/scope onto an existing decide/supersede event WITHOUT rewriting its jsonl line — visible via `decisions active`/`decisions search` (including --all) at read time. --target accepts a full id or a unique short8 prefix. --stdin accepts a JSON array of {target, tags, scope?} for a batch: every entry is validated before any write, and one unresolvable target refuses the WHOLE batch (nothing appended). The latest tag event wins when several target the same decision; overlay REPLACES the whole tags array, and scope only when the tag event carries one.',
+    parameters: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'Full id or short8 prefix of the decide/supersede event to tag. Required unless --stdin is set.' },
+        tags: { type: 'array', description: 'Comma-separated lowercase slugs (e.g. "billing,nightly-job"). Required (unless --stdin) — replaces the target\'s effective tags entirely.' },
+        scope: { type: 'string', description: 'Optional scope to overlay onto the target. Omit to leave the target\'s existing scope untouched.' },
+        stdin: { type: 'boolean', description: 'Read a JSON array of {target, tags, scope?} from stdin for a batch retro-tag (all-or-nothing).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: [
+      'bee decisions tag --target 00000000-0000-0000-0000-000000000000 --tags billing,recall --scope billing --json',
+    ],
+    deprecated: null,
+  },
 
   // ─── state (bee_state.mjs — .bee/state.json mutation verbs) ───────────────
   // Nested worker verbs use a 3-segment name (state.worker.add) resolved by

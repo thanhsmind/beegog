@@ -16,7 +16,7 @@
 //   bee status [--json]
 //   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|judge-record|schedule|archive|unarchive> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
-//   bee decisions <log|supersede|redact|active|search|archive> ... [--json]
+//   bee decisions <log|supersede|redact|active|search|archive|tag> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
 //   bee backlog <add|counts|rank|badges> ... [--json]
 //   bee capture <add|list|flush|count> ... [--json]
@@ -128,7 +128,16 @@ import {
   PINNED_MODEL_STATUS,
 } from './lib/dispatch-guard.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
-import { logDecision, supersedeDecision, redactDecision, activeDecisions, archiveDecisions, datamark } from './lib/decisions.mjs';
+import {
+  logDecision,
+  supersedeDecision,
+  redactDecision,
+  activeDecisions,
+  archiveDecisions,
+  tagDecision,
+  tagDecisionsBatch,
+  datamark,
+} from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
 import {
@@ -1538,6 +1547,41 @@ function handleDecisionsArchive(root, flags) {
     result,
     text: `Archived ${result.archived.length} decision(s) to .bee/decisions-archive.jsonl (kept ${result.kept} active, cutoff ${result.before}).`,
   };
+}
+
+// decision-propagation dp-5 (CONTEXT D7c): `decisions tag --target <id|
+// short8> --tags a,b [--scope s]` appends a retro-tag event; `--stdin`
+// accepts a JSON array of {target, tags, scope?} for a batch. All
+// validation (target resolution + tag shape) and the all-or-nothing
+// atomicity live in lib/decisions.mjs's tagDecisionsBatch — this handler is
+// presentation only, mirroring handleCellsAdd's --stdin-array-is-a-batch
+// shape.
+function tagEventSummary(event) {
+  const scopeSuffix = event.scope ? ` scope=${event.scope}` : '';
+  return `Tagged ${event.target} with [${event.tags.join(', ')}]${scopeSuffix}.`;
+}
+
+function handleDecisionsTag(root, flags) {
+  if (flags.stdin === true) {
+    const text = fs.readFileSync(0, 'utf8');
+    let entries;
+    try {
+      entries = JSON.parse(text);
+    } catch {
+      throw new Error('decisions tag --stdin: input is not valid JSON.');
+    }
+    if (!Array.isArray(entries)) {
+      throw new Error('decisions tag --stdin: input must be a JSON array of {target, tags, scope?}.');
+    }
+    const events = tagDecisionsBatch(root, entries);
+    return { result: events, text: events.map(tagEventSummary).join('\n') };
+  }
+  const event = tagDecision(root, {
+    target: requireFlag(flags, 'target'),
+    tags: splitList(requireFlag(flags, 'tags')),
+    scope: flags.scope !== undefined ? String(flags.scope) : undefined,
+  });
+  return { result: event, text: tagEventSummary(event) };
 }
 
 // ─── state: full port of bee_state.mjs's verb logic (dispatcher-unify du-1).
@@ -4305,7 +4349,7 @@ function reservationsUsageFallback(leading) {
 
 function decisionsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search, archive.`;
+  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search, archive, tag.`;
 }
 
 const GROUP_USAGE_FALLBACKS = {
@@ -4356,6 +4400,7 @@ const HANDLERS = {
   'decisions.active': handleDecisionsActive,
   'decisions.search': handleDecisionsSearch,
   'decisions.archive': handleDecisionsArchive,
+  'decisions.tag': handleDecisionsTag,
   'state.set': handleStateSet,
   'state.gate': handleStateGate,
   'state.worker.add': handleStateWorkerAdd,

@@ -26,7 +26,7 @@ import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { addCell } from '../lib/cells.mjs';
 import { createSession } from '../lib/claims.mjs';
-import { writeJsonAtomic, hashFile } from '../lib/fsutil.mjs';
+import { writeJsonAtomic, hashFile, appendJsonl } from '../lib/fsutil.mjs';
 import { defaultState, writeState, BEE_VERSION } from '../lib/state.mjs';
 import { encodeProjectDir } from '../lib/perf.mjs';
 import {
@@ -111,6 +111,28 @@ writeState(root, {
 // perf resolves an empty window and degrades to zeroed metrics (never throws).
 process.env.BEEHIVE_PERF_DIR = path.join(root, 'perf-global');
 process.env.CLAUDE_CONFIG_DIR = path.join(root, 'fake-claude');
+
+// decision-propagation dp-5 (CONTEXT D7c): unlike supersede/redact, the
+// registry's `decisions tag` example validates that --target actually
+// resolves to a decide/supersede event — a random/placeholder id would
+// refuse. Decision ids are crypto.randomUUID()-generated at write time, so
+// the registry's example string (a fixed, documentation-friendly zero id,
+// matching the supersede/redact convention) can only succeed if a matching
+// event is pre-seeded here, before any example runs — mirrors the "demo-1"
+// cell fixture's same well-known-id shape, one level down at the decisions
+// store. Harmless to the later decisions.supersede/redact examples (which
+// also target this same zero id): decisions tag's target resolution reads
+// the raw active+archive union by TYPE only, never by superseded/redacted/
+// archived status, so this event stays a valid tag target throughout the
+// whole example chain below regardless of what happens to it meanwhile.
+appendJsonl(path.join(root, '.bee', 'decisions.jsonl'), {
+  id: '00000000-0000-0000-0000-000000000000',
+  type: 'decide',
+  date: new Date().toISOString(),
+  decision: 'Fixture target for the decisions.tag registry example',
+  rationale: 'decision-propagation dp-5: a well-known id the tag example can always resolve',
+  scope: 'repo',
+});
 
 const executedNames = new Set();
 
@@ -692,6 +714,24 @@ await check('decisions.archive example runs through the real dispatcher (decisio
   const payload = JSON.parse(result.stdout);
   assert(Array.isArray(payload.archived) && payload.archived.length >= 1, `archive should report at least 1 archived event, got ${result.stdout}`);
   assert(fs.existsSync(path.join(root, '.bee', 'decisions-archive.jsonl')), 'archive should create .bee/decisions-archive.jsonl');
+});
+
+await check('decisions.tag example runs through the real dispatcher (decision-propagation dp-5) — resolves the pre-seeded fixture target even after archive/supersede/redact touched it', async () => {
+  // The fixture target (id 00000000-...) was ALSO the placeholder id for the
+  // decisions.supersede/redact examples above, so by this point it is both
+  // superseded and redacted — correctly excluded from active/search output
+  // regardless of any tag overlay (that exclusion is upstream of the
+  // overlay, unrelated to this example). This check only proves the
+  // registry's own example round-trips end-to-end through the dispatcher;
+  // the overlay-visible-in-search behavior is covered exhaustively by
+  // test_decisions_propagation.mjs's dp-5 section against a non-redacted
+  // target.
+  const result = await assertExampleOk('decisions.tag');
+  const event = JSON.parse(result.stdout);
+  assert(event.type === 'tag', `expected a tag event, got ${result.stdout}`);
+  assert(event.target === '00000000-0000-0000-0000-000000000000', `expected the fixture target id, got ${event.target}`);
+  assert(event.tags.join(',') === 'billing,recall', `expected tags billing,recall, got ${JSON.stringify(event.tags)}`);
+  assert(event.scope === 'billing', `expected scope billing, got ${event.scope}`);
 });
 
 await check('status example runs through the real dispatcher', async () => {
