@@ -425,6 +425,89 @@ function readWorktreeGitVerifiedId(worktreeRoot) {
   return path.basename(gitdir);
 }
 
+// ---------------------------------------------------------------------------
+// syncWorktreeSkills — best-effort: clone the bee-* skill directories
+// (`.claude/skills/bee-*`, `.agents/skills/bee-*`) from the MAIN checkout
+// into a freshly created worktree by plain recursive copy.
+//
+// Those trees are gitignored in a HOST repo (onboard_bee.mjs installs them
+// as "installed tooling, regenerable from their sources"), so `git worktree
+// add` never brings them into a new worktree, and bootstrapWorktreeStore
+// above only ever populated `.bee/` (onboarding.json/config.json/
+// state.json). Left alone, every new worktree ends up with a working `bee`
+// CLI but ZERO discoverable bee-* skill files for the next session opened
+// there — exactly the gap this closes.
+//
+// Deliberately a plain copy, NOT a call into onboard_bee.mjs: that script's
+// source-identity guard refuses to treat a rendered projection as a sync
+// source (`blocked_no_source` — "a projection is never an authoritative
+// source for any target"), and a HOST repo's own `.claude/skills/bee-hive`
+// is exactly such a projection (carries the `.bee-render.json` provenance
+// marker). A worktree copy has a fundamentally different safety profile
+// than an onboarding sync, though: it's not "upgrade this repo from a
+// canonical source," it's "give this sibling worktree the exact same,
+// already-working skill files this checkout already has" — no version
+// authority question to adjudicate, so the plain copy needs none of that
+// script's machinery.
+//
+// NEVER throws and never blocks/rolls back worktree creation on failure:
+// missing/stale skills are regenerable tooling, not a reason to discard an
+// otherwise-successful `git worktree add`.
+// ---------------------------------------------------------------------------
+
+const SKILL_SYNC_ROOTS = [
+  path.join('.claude', 'skills'),
+  path.join('.agents', 'skills'),
+];
+
+export function syncWorktreeSkills(mainRoot, worktreeRoot) {
+  const synced = [];
+  const skipped = [];
+
+  for (const rel of SKILL_SYNC_ROOTS) {
+    const srcRoot = path.join(mainRoot, rel);
+    let entries;
+    try {
+      entries = fs.readdirSync(srcRoot, { withFileTypes: true });
+    } catch {
+      continue; // main checkout has no such root — nothing to sync from it.
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith('bee-')) continue;
+      const relPath = path.join(rel, entry.name);
+      const dest = path.join(worktreeRoot, relPath);
+      if (fs.existsSync(dest)) {
+        skipped.push({ path: relPath, reason: 'already exists in worktree' });
+        continue;
+      }
+      try {
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.cpSync(path.join(srcRoot, entry.name), dest, { recursive: true });
+        synced.push(relPath);
+      } catch (error) {
+        skipped.push({ path: relPath, reason: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  if (synced.length === 0 && skipped.length === 0) {
+    return {
+      attempted: false,
+      applied: false,
+      reason: `no bee-* skill directories found under ${SKILL_SYNC_ROOTS.join(' or ')} in the main checkout.`,
+    };
+  }
+  if (synced.length === 0) {
+    return { attempted: true, applied: false, reason: 'already present in worktree', synced, skipped };
+  }
+  const reason =
+    skipped.length > 0
+      ? `synced ${synced.length} bee-* skill dir(s), ${skipped.length} skipped (see .skipped)`
+      : `synced ${synced.length} bee-* skill dir(s)`;
+  return { attempted: true, applied: true, reason, synced, skipped };
+}
+
 /**
  * Creates a NEW linked git worktree for `feature` — `git worktree add
  * <mainRoot's sibling>--wt--<feature> -b wt/<feature> [baseRefSha]` — then
@@ -438,10 +521,12 @@ function readWorktreeGitVerifiedId(worktreeRoot) {
  *     rev-parse --verify --end-of-options` when given (see
  *     `resolveBaseRefCommit`'s own comment for why not `check-ref-format`;
  *     requires git >= 2.24 for `--end-of-options`).
- *   - `_writeGrant` / `_bootstrapWorktreeStore`: internal test-only injection
- *     points (default to the real `writeGrant` / `bootstrapWorktreeStore`
+ *   - `_writeGrant` / `_bootstrapWorktreeStore` / `_syncWorktreeSkills`:
+ *     internal test-only injection points (default to the real
+ *     `writeGrant` / `bootstrapWorktreeStore` / `syncWorktreeSkills`
  *     exports above) so a test can force the POST-add failure + rollback
- *     path deterministically without needing a real bug.
+ *     path, or stub the skill sync, deterministically without needing a
+ *     real bug.
  *
  * Every pre-flight check below is a typed, ZERO-MUTATION refusal (its own
  * stable `WorktreeCreateError.code`, nothing touched on disk or in git)
@@ -465,15 +550,23 @@ function readWorktreeGitVerifiedId(worktreeRoot) {
  * function is `async` now (previously fully synchronous).
  */
 export async function createFeatureWorktree(mainRoot, options = {}) {
-  const { feature, baseRef, _writeGrant = writeGrantCore, _bootstrapWorktreeStore = bootstrapWorktreeStore } = options;
-  return withStoreLock(mainRoot, 'worktree-admin', () => createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, _bootstrapWorktreeStore }));
+  const {
+    feature,
+    baseRef,
+    _writeGrant = writeGrantCore,
+    _bootstrapWorktreeStore = bootstrapWorktreeStore,
+    _syncWorktreeSkills = syncWorktreeSkills,
+  } = options;
+  return withStoreLock(mainRoot, 'worktree-admin', () =>
+    createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, _bootstrapWorktreeStore, _syncWorktreeSkills }),
+  );
 }
 
 // hardening-4b: the actual body, unchanged apart from `removeGrant` ->
 // `removeGrantCore` in the rollback path below — split out so
 // createFeatureWorktree's own doc comment above stays attached to the public
 // entrypoint while this runs INSIDE its withStoreLock('worktree-admin') hold.
-function createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, _bootstrapWorktreeStore }) {
+function createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, _bootstrapWorktreeStore, _syncWorktreeSkills }) {
   if (typeof feature !== 'string' || !FEATURE_SLUG_RE.test(feature)) {
     refuse(
       'WORKTREE_INVALID_SLUG',
@@ -558,7 +651,19 @@ function createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, 
     id = readWorktreeGitVerifiedId(worktreeRoot);
     _writeGrant(mainStoreRoot, id);
     const bootstrap = _bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature);
-    return { id, worktreeRoot, branch, baseRef: baseRef || null, baseRefSha: baseRefSha || null, bootstrap };
+    // Best-effort: a failed/skipped skill sync never throws (see
+    // syncWorktreeSkills's own doc comment) and so never enters the
+    // rollback path below — it's reported via `skillsSync`, not fatal.
+    const skillsSync = _syncWorktreeSkills(mainRoot, worktreeRoot);
+    return {
+      id,
+      worktreeRoot,
+      branch,
+      baseRef: baseRef || null,
+      baseRefSha: baseRefSha || null,
+      bootstrap,
+      skillsSync,
+    };
   } catch (postAddError) {
     // git worktree add itself succeeded, but deriving the id / writing the
     // grant / bootstrapping the store threw. Roll back best-effort so a
