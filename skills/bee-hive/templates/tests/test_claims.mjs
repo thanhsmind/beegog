@@ -33,6 +33,17 @@ import {
 } from '../lib/claims.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
 
+// Hermeticity (hardening-1-7-10 D1, defense in depth): this suite must never
+// inherit the harness's own session identity. run_verify.mjs already scrubs
+// both vars for every child suite it spawns; deleting them again here means
+// a bare `node skills/bee-hive/templates/tests/test_claims.mjs`, run directly
+// from inside a live Claude Code or bee session, is equally hermetic instead
+// of silently depending on whatever session happens to be live. (The
+// resolveSessionId rows below explicitly set/restore their own values around
+// this — unaffected by this one-time bootstrap delete.)
+delete process.env.CLAUDE_CODE_SESSION_ID;
+delete process.env.BEE_SESSION_ID;
+
 // ─── claims (cross-session sessions + O_EXCL cell claims) ───────────────────
 // fsh-1 (fresh-session-handoff): single-process rows prove post-states and the
 // typed {ok:false, code, reason} contract. The concurrency windows themselves

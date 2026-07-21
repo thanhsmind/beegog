@@ -75,6 +75,36 @@ function argVal(flag) {
   return found ? found.slice(flag.length + 1) : undefined;
 }
 
+// ─── deterministic barrier (hardening-1-7-10 D1) ────────────────────────────
+// The (g-unsafe) negative control used to order its racers with a fixed
+// UNSAFE_WIDEN_MS sleep — real OS scheduling could still let the sole
+// raw-claim racer commit AFTER every unsafe racer's write instead of before
+// it, so the "detector bites" assertion was measured flaky (~3/10 runs) under
+// concurrent-verify CPU contention. An fs-based ready-file handshake between
+// the racer processes replaces the sleep with a real ordering guarantee: every
+// unsafe racer's stale read is proven to happen-before the real claim (each
+// signals a `read-<id>.ready` file; raw-claim waits for all of them before
+// claiming), and every unsafe racer's write is proven to happen-after it (raw-
+// claim signals `claim-committed.ready` only once its own write lands; each
+// unsafe racer waits for that file before writing its stale-snapshot merge).
+// That makes the revert 10/10, not "usually".
+function touchFile(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, '');
+}
+
+async function waitForFile(filePath, { timeoutMs = 10_000, pollMs = 5 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (fs.existsSync(filePath)) return;
+    if (Date.now() > deadline) {
+      throw new Error(`waitForFile: timed out after ${timeoutMs}ms waiting for ${filePath}`);
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
 const role = argVal('--role');
 
 if (role) {
@@ -181,11 +211,26 @@ async function runWorker(workerRole) {
       const root = argVal('--root');
       const cellId = argVal('--cell');
       const id = argVal('--id');
+      const barrier = argVal('--barrier');
+      const barrierRacers = Number(argVal('--racers') || 0);
       const { claimCell } = await import(CELLS_LIB_PATH);
       try {
+        // Deterministic barrier (hardening-1-7-10 D1, g-unsafe only): wait
+        // until every unsafe racer has taken its stale read BEFORE this real
+        // claim commits, so the negative control's revert is guaranteed
+        // rather than timing-dependent. Scenario (g)'s plain raw-update
+        // racers never pass --barrier, so this is a no-op there.
+        if (barrier && barrierRacers > 0) {
+          for (let i = 0; i < barrierRacers; i += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            await waitForFile(path.join(barrier, `read-${i}.ready`));
+          }
+        }
         const cell = await claimCell(root, cellId, `worker-mc-${id}`);
+        if (barrier) touchFile(path.join(barrier, 'claim-committed.ready'));
         process.stdout.write(`${JSON.stringify({ ok: true, id, status: cell.status })}\n`);
       } catch (err) {
+        if (barrier) touchFile(path.join(barrier, 'claim-committed.ready'));
         process.stdout.write(`${JSON.stringify({ ok: false, id, error: String((err && err.message) || err) })}\n`);
       }
       process.exit(0);
@@ -221,10 +266,20 @@ async function runWorker(workerRole) {
       const root = argVal('--root');
       const cellId = argVal('--cell');
       const id = argVal('--id');
+      const barrier = argVal('--barrier');
       const { readJson, writeJsonAtomic } = await import(FSUTIL_LIB_PATH);
       const cellPath = path.join(root, '.bee', 'cells', `${cellId}.json`);
       const seen = readJson(cellPath, null);
-      await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      // Deterministic barrier (hardening-1-7-10 D1): signal this stale read is
+      // done, then wait for the real raw-claim racer's commit signal before
+      // writing — guarantees this write lands strictly after the real claim,
+      // instead of merely hoping a fixed sleep widened the window enough.
+      if (barrier) {
+        touchFile(path.join(barrier, `read-${id}.ready`));
+        await waitForFile(path.join(barrier, 'claim-committed.ready'));
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      }
       const fresh = readJson(cellPath, seen); // "fresh" in name only — merge base below is the STALE `seen`, the pre-fix bug
       const merged = { ...seen, title: `unsafe-update-title-${id}` };
       writeJsonAtomic(cellPath, merged);
@@ -687,22 +742,40 @@ async function runOrchestrator() {
   }
 
   // (g) DELIBERATE RED (falsifiability) — the SAME raw-claim racer, now raced
-  // against RACERS copies of the UNSAFE, unlocked updateCell-shaped proxy
-  // (widened-window read-check-write, no lock). Demonstrates the exact
-  // hazard the fix removes: an unlocked "update" can read the cell BEFORE
-  // the claim commits, then write its stale snapshot's `status: 'open'` back
-  // to disk AFTER the claim committed — silently reverting it. At least one
-  // unsafe racer must have observed "open" pre-claim for the control to be
-  // meaningful; the detector bites when the FINAL status is not "claimed".
+  // against RACERS copies of the UNSAFE, unlocked updateCell-shaped proxy, via
+  // a deterministic fs-based ready-file barrier (not a sleep — see the barrier
+  // helpers near the top of this file). Demonstrates the exact hazard the fix
+  // removes: an unlocked "update" can read the cell BEFORE the claim commits,
+  // then write its stale snapshot's `status: 'open'` back to disk AFTER the
+  // claim committed — silently reverting it. Every unsafe racer is guaranteed
+  // to have observed "open" pre-claim (the barrier ensures ALL of their reads
+  // precede the claim) and every one of their writes is guaranteed to land
+  // after the claim commits, so the revert is deterministic, 10/10 — the
+  // detector bites when the FINAL status is not "claimed".
   {
     const dir = makeRoot();
+    const barrier = path.join(dir, '.race-barrier-g-unsafe');
     try {
       await writeApprovedState(dir);
       await makeCell(dir, 'race-g-unsafe');
+      fs.mkdirSync(barrier, { recursive: true });
 
       const [claimResults, unsafeResults] = await Promise.all([
-        spawnRacers(1, () => ['--role=raw-claim', `--root=${dir}`, '--cell=race-g-unsafe', '--id=claim']),
-        spawnRacers(RACERS, (i) => ['--role=unsafe-update-racer', `--root=${dir}`, '--cell=race-g-unsafe', `--id=${i}`]),
+        spawnRacers(1, () => [
+          '--role=raw-claim',
+          `--root=${dir}`,
+          '--cell=race-g-unsafe',
+          '--id=claim',
+          `--barrier=${barrier}`,
+          `--racers=${RACERS}`,
+        ]),
+        spawnRacers(RACERS, (i) => [
+          '--role=unsafe-update-racer',
+          `--root=${dir}`,
+          '--cell=race-g-unsafe',
+          `--id=${i}`,
+          `--barrier=${barrier}`,
+        ]),
       ]);
       const crashed = [...claimResults, ...unsafeResults].filter((r) => r.code !== 0);
       if (crashed.length) {

@@ -12,12 +12,14 @@ concurrency:
 
 jobs:
   # Only suites that were actually read end-to-end for path-separator and
-  # spawnSync assumptions run here. Each of the three below uses
+  # spawnSync assumptions run here. The bee-hive template suites (below),
+  # `test_portable_paths.mjs`, and `test_config_validate.mjs` all use
   # node:path (path.join/path.resolve) consistently, never a hardcoded "/"
-  # or "\\" separator, and its only child_process call is `spawnSync('git',
-  # [...])` (never a POSIX-shaped shell string) — confirmed by reading the
-  # full source of each file plus its non-trivial imports (e.g.
-  # .bee/bin/lib/commands_detect.mjs already branches on
+  # or "\\" separator, and their only child_process calls are argv-array
+  # `spawnSync('git', [...])` / `spawnSync(process.execPath, [...])` (never a
+  # POSIX-shaped shell string) or in-process `node:worker_threads` — confirmed
+  # by reading the full source of each file plus its non-trivial imports
+  # (e.g. .bee/bin/lib/commands_detect.mjs already branches on
   # `process.platform === 'win32'` for its own direct-invocation check).
   #
   # EXCLUDED from this lane — present in .bee/config.json `commands.verify`
@@ -54,8 +56,28 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: bee-hive template test_lib
-        run: node skills/bee-hive/templates/tests/test_lib.mjs
+      - name: bee-hive template suites (auto-discovered, windows-portable subset)
+        # The former test suite monolith run in this job for a long time (and
+        # already vetted portable) was split into per-topic suites under
+        # skills/bee-hive/templates/tests/ (contention-split, cs-1/cs-2). The
+        # split relocated code — it did not rewrite it — so re-auditing every
+        # resulting suite for the same two hazards this job has always
+        # checked confirms the portability guarantee carries over: every file
+        # uses node:path (never a hardcoded "/" or "\\" separator), and the
+        # only child_process calls anywhere in the set are argv-array
+        # `spawnSync('git', [...])` / `spawnSync(process.execPath, [...])`
+        # (never a POSIX-shaped shell string); multi-process CLI/race
+        # fixtures use in-process `node:worker_threads` instead of real
+        # spawns, which has no shell or path-separator dependency at all.
+        #
+        # BEE_VERIFY_ROOT_FILTER reuses run_verify.mjs's own suite discovery,
+        # restricted to this one root, so a new suite added under
+        # skills/bee-hive/templates/tests/ is picked up here automatically —
+        # zero hand-maintained list to fall out of date, same as the
+        # unfiltered run.
+        env:
+          BEE_VERIFY_ROOT_FILTER: skills/bee-hive/templates/tests
+        run: node scripts/run_verify.mjs
 
       - name: portable paths guard
         run: node scripts/test_portable_paths.mjs

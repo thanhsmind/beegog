@@ -131,12 +131,41 @@ export function skipNote(stdout) {
   return m ? m[1].trim() : null;
 }
 
+// Hermeticity (hardening-1-7-10 D1): a suite must never inherit the calling
+// harness's own session identity. When run_verify.mjs is invoked from inside
+// a live Claude Code or bee session, CLAUDE_CODE_SESSION_ID / BEE_SESSION_ID
+// are set in THIS process's env and would otherwise leak into every spawned
+// child — silently changing sessionless-path behavior (resolveSessionId's
+// env fallback) between "run locally from a live session" and "run in CI
+// with no such env at all". Every child suite gets a scrubbed copy so local
+// runs match CI byte-for-byte, regardless of the parent's own session state.
+function childEnv() {
+  const env = { ...process.env };
+  delete env.CLAUDE_CODE_SESSION_ID;
+  delete env.BEE_SESSION_ID;
+  return env;
+}
+
+// Windows CI (hardening-1-7-10 D1): rather than hand-maintain a second suite
+// list in .github/workflows/windows.yml, that job reuses THIS file's own
+// discovery, restricted to one root via BEE_VERIFY_ROOT_FILTER — a suite
+// added under that root is picked up here automatically, same as it already
+// is for the unfiltered run. Unset (the default, every non-Windows caller):
+// zero behavior change, byte-identical to before this existed.
+function filterSuitesByRoot(suites) {
+  const rootFilter = process.env.BEE_VERIFY_ROOT_FILTER;
+  if (!rootFilter) return suites;
+  const prefix = rootFilter.endsWith('/') ? rootFilter : `${rootFilter}/`;
+  return suites.filter((entry) => entry[0].startsWith(prefix));
+}
+
 export function runOne(entry) {
   const [script, ...args] = entry;
   const start = Date.now();
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], {
       cwd: REPO_ROOT,
+      env: childEnv(),
     });
     let stdout = "";
     let stderr = "";
@@ -208,8 +237,16 @@ async function main() {
     Number(process.env.BEE_VERIFY_CONCURRENCY) || Math.min(5, os.cpus().length),
   );
 
-  const serialEntries = SUITES.filter((entry) => SERIAL_SENSITIVE.has(entry[0]));
-  const parallelEntries = SUITES.filter((entry) => !SERIAL_SENSITIVE.has(entry[0]));
+  const activeSuites = filterSuitesByRoot(SUITES);
+  if (process.env.BEE_VERIFY_ROOT_FILTER && activeSuites.length === 0) {
+    console.error(
+      `run_verify: BEE_VERIFY_ROOT_FILTER="${process.env.BEE_VERIFY_ROOT_FILTER}" matched zero suites — refusing a silent trivial-green run. FIX: check the root prefix.`,
+    );
+    process.exit(1);
+  }
+
+  const serialEntries = activeSuites.filter((entry) => SERIAL_SENSITIVE.has(entry[0]));
+  const parallelEntries = activeSuites.filter((entry) => !SERIAL_SENSITIVE.has(entry[0]));
 
   const units = [];
   if (serialEntries.length > 0) {

@@ -1194,6 +1194,20 @@ await check('resetCellBudget (D-GHF-C): the BEE_AGENT_NAME env fallback supplies
 });
 
 await check('resetCellBudget (D-GHF-C): writes the audit decision BEFORE the cell write — a forced writeCell failure still leaves the decision recorded, and the cell file itself is untouched', async () => {
+  // Root-skip (hardening-1-7-10 D1): this check simulates a write failure by
+  // chmod-ing the cells dir to 0o555 (no write bit). On Linux, root (euid 0 —
+  // some CI/container runners execute as root by default) bypasses directory
+  // permission checks entirely, so the forced write would actually SUCCEED
+  // instead of throwing, and `assert(threw, ...)` below would fail — not
+  // because the audit-order behavior regressed, but because the simulation
+  // itself cannot fire under root. Skip loudly rather than let a root runner
+  // report a false red (or silently weaken the assertion for everyone else).
+  if (process.geteuid?.() === 0) {
+    console.log(
+      'SKIP  resetCellBudget audit-order chmod(0o555) write-failure simulation: running as root (euid 0) — chmod cannot block root writes, so this simulation cannot fire. Skipped loudly, not weakened.',
+    );
+    return;
+  }
   const dir = makeStateRepo('bee-budget-audit-order-');
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
