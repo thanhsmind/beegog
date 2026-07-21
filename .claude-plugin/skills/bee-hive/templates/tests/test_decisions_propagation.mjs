@@ -22,9 +22,10 @@ import {
   assertThrows,
   printSummaryAndExit,
 } from '../../../../scripts/lib/test-fixture.mjs';
-import { logDecision, activeDecisions, supersedeDecision } from '../lib/decisions.mjs';
-import { appendJsonl } from '../lib/fsutil.mjs';
+import { logDecision, activeDecisions, supersedeDecision, redactDecision, archiveDecisions, DECISIONS_LOCK_NAME } from '../lib/decisions.mjs';
+import { appendJsonl, readJsonl } from '../lib/fsutil.mjs';
 import { pendingCaptureStubs } from '../lib/capture.mjs';
+import { acquireStoreLockOnceSync } from '../lib/lock.mjs';
 
 const beeMjsModulePath = fileURLToPath(new URL('../bee.mjs', import.meta.url));
 
@@ -476,6 +477,268 @@ await check('dp-2 CLI: zero-hits sweep is a clean path — hit_count 0, empty fi
     /no citations/i.test(humanRun.stdout),
     `expected a clean no-citations message, got ${JSON.stringify(humanRun.stdout)}`,
   );
+});
+
+// ─── dp-3: archive verb + --all union reads (CONTEXT D4c) ─────────────────
+// Own temp repo per check group to keep the archive split assertions free of
+// the dp-1/dp-2 corpora above.
+
+function decisionsArchiveFilePath(root) {
+  return path.join(root, '.bee', 'decisions-archive.jsonl');
+}
+
+function rewriteEventDate(root, id, isoDate) {
+  setEventDate(root, id, isoDate);
+}
+
+await check('dp-3: archive refuses (typed) when --before is omitted — no default age window', async () => {
+  const root = makeTempRepo();
+  logDecision(root, { decision: 'needs a before', rationale: 'refusal check' });
+  assertThrows(() => archiveDecisions(root, {}), 'before', 'archiveDecisions with no --before at all refuses');
+  assertThrows(() => archiveDecisions(root, { before: '' }), 'before', 'archiveDecisions with an empty --before refuses');
+  assertThrows(
+    () => archiveDecisions(root, { before: 'not-a-date' }),
+    'before',
+    'archiveDecisions with an unparsable --before refuses',
+  );
+
+  const run = await runBee(['decisions', 'archive', '--json'], root);
+  assert(run.status !== 0, 'CLI archive with no --before exits non-zero');
+  const payload = JSON.parse(run.stdout);
+  // The registry's `required: ['before']` schema check intercepts before the
+  // handler ever runs, so the refusal carries the CLI's structured
+  // {field, reason, command} shape (test_bee_cli.mjs:296) rather than a
+  // free-string `error`.
+  const errorField = payload.error && typeof payload.error === 'object' ? payload.error.field : null;
+  assert(errorField === 'before', `error should name field "before", got ${JSON.stringify(payload)}`);
+});
+
+await check('dp-3: archive refuses (typed) when nothing qualifies — a fresh event, --before far in the past', async () => {
+  const root = makeTempRepo();
+  logDecision(root, { decision: 'brand new, nothing to archive', rationale: 'refusal check' });
+  assertThrows(
+    () => archiveDecisions(root, { before: '2000-01-01' }),
+    'nothing qualifies',
+    'archiveDecisions refuses typed when zero events qualify',
+  );
+  assert(!fs.existsSync(decisionsArchiveFilePath(root)), 'a refused archive call never creates the archive file');
+});
+
+await check(
+  'dp-3: archive split — superseded/redacted events move ALWAYS (regardless of age); plain decide events move only when strictly older than --before; everything else stays',
+  async () => {
+    const root = makeTempRepo();
+
+    // Old, still-active decide event — old enough to be swept by age alone.
+    const oldActive = logDecision(root, { decision: 'old active decide', rationale: 'age sweep target', scope: 'archive-test' });
+    rewriteEventDate(root, oldActive.id, '2020-01-01T00:00:00.000Z');
+
+    // Recent, still-active decide event — must survive (not old enough).
+    const recentActive = logDecision(root, { decision: 'recent active decide', rationale: 'must survive', scope: 'archive-test' });
+
+    // Recent supersede target — becomes superseded, must ALWAYS archive even
+    // though it is recent (newer than --before).
+    const supersedeTarget = logDecision(root, { decision: 'to be superseded', rationale: 'supersede target', scope: 'archive-test' });
+    const supersedeEvent = supersedeDecision(root, {
+      supersedes: supersedeTarget.id,
+      decision: 'replacement decision',
+      rationale: 'dp-3 archive split check',
+    });
+
+    // Recent redact target — becomes redacted, must ALWAYS archive even
+    // though it is recent.
+    const redactTarget = logDecision(root, { decision: 'to be redacted', rationale: 'redact target', scope: 'archive-test' });
+    const redactEvent = redactDecision(root, { redacts: redactTarget.id, reason: 'dp-3 archive split check' });
+
+    // --before sits strictly between oldActive's date and everything else's
+    // "now" date — only oldActive should ever be swept by the age rule.
+    const result = archiveDecisions(root, { before: '2021-01-01T00:00:00.000Z' });
+
+    const archivedIds = result.archived.slice().sort();
+    const expectedArchived = [oldActive.id, supersedeTarget.id, redactTarget.id].sort();
+    assert(
+      archivedIds.join(',') === expectedArchived.join(','),
+      `expected exactly [old, supersedeTarget, redactTarget] archived, got ${JSON.stringify(archivedIds)}`,
+    );
+
+    const activeIds = new Set(readJsonl(path.join(root, '.bee', 'decisions.jsonl')).map((e) => e.id));
+    assert(!activeIds.has(oldActive.id), 'old active decide event left the active file');
+    assert(!activeIds.has(supersedeTarget.id), 'superseded target left the active file');
+    assert(!activeIds.has(redactTarget.id), 'redacted target left the active file');
+    assert(activeIds.has(recentActive.id), 'recent active decide event stayed in the active file');
+    assert(activeIds.has(supersedeEvent.id), 'the supersede ACTION record itself stays in the active file');
+    assert(activeIds.has(redactEvent.id), 'the redact ACTION record itself stays in the active file');
+
+    const archivedEvents = readJsonl(decisionsArchiveFilePath(root));
+    const archivedFileIds = new Set(archivedEvents.map((e) => e.id));
+    assert(archivedFileIds.has(oldActive.id) && archivedFileIds.has(supersedeTarget.id) && archivedFileIds.has(redactTarget.id),
+      `archive file missing an expected id, got ${JSON.stringify([...archivedFileIds])}`);
+    assert(archivedFileIds.size === 3, `expected exactly 3 archived events on disk, got ${archivedFileIds.size}`);
+
+    // Never rewrite surviving active events (append-only integrity):
+    // recentActive/supersedeEvent/redactEvent must be byte-identical to
+    // their pre-archive shape.
+    const survivingRecent = readJsonl(path.join(root, '.bee', 'decisions.jsonl')).find((e) => e.id === recentActive.id);
+    assert(
+      JSON.stringify(survivingRecent) === JSON.stringify(recentActive),
+      'surviving active decide event must never be rewritten by archive',
+    );
+  },
+);
+
+await check('dp-3: idempotent second run — nothing new qualifies, refuses cleanly, files untouched', async () => {
+  const root = makeTempRepo();
+  const old = logDecision(root, { decision: 'old one', rationale: 'idempotency check' });
+  rewriteEventDate(root, old.id, '2020-01-01T00:00:00.000Z');
+  const first = archiveDecisions(root, { before: '2021-01-01' });
+  assert(first.archived.includes(old.id), 'first run archives the old event');
+
+  const activeBefore = fs.readFileSync(path.join(root, '.bee', 'decisions.jsonl'), 'utf8');
+  const archiveBefore = fs.readFileSync(decisionsArchiveFilePath(root), 'utf8');
+
+  assertThrows(
+    () => archiveDecisions(root, { before: '2021-01-01' }),
+    'nothing qualifies',
+    'second run with the same cutoff finds nothing left to archive',
+  );
+
+  const activeAfter = fs.readFileSync(path.join(root, '.bee', 'decisions.jsonl'), 'utf8');
+  const archiveAfter = fs.readFileSync(decisionsArchiveFilePath(root), 'utf8');
+  assert(activeAfter === activeBefore, 'a refused idempotent second run never touches the active file');
+  assert(archiveAfter === archiveBefore, 'a refused idempotent second run never touches the archive file');
+});
+
+await check('dp-3: search/active --all reaches archived events; default (no --all) stays limited to the active store', async () => {
+  const root = makeTempRepo();
+  const old = logDecision(root, { decision: 'archived tag target', rationale: 'union read check', tags: ['archived-tag'] });
+  rewriteEventDate(root, old.id, '2020-01-01T00:00:00.000Z');
+  const recent = logDecision(root, { decision: 'recent tag target', rationale: 'union read check', tags: ['archived-tag'] });
+  archiveDecisions(root, { before: '2021-01-01' });
+
+  const defaultActive = await runBee(['decisions', 'active', '--json'], root);
+  assert(defaultActive.status === 0, `default active exited ${defaultActive.status} :: ${defaultActive.stderr || defaultActive.stdout}`);
+  const defaultIds = JSON.parse(defaultActive.stdout).decisions.map((d) => d.id);
+  assert(!defaultIds.includes(old.id), 'default active (no --all) never reaches the archived event');
+  assert(defaultIds.includes(recent.id), 'default active still lists the recent unarchived event');
+
+  const allActive = await runBee(['decisions', 'active', '--all', '--json'], root);
+  assert(allActive.status === 0, `active --all exited ${allActive.status} :: ${allActive.stderr || allActive.stdout}`);
+  const allIds = JSON.parse(allActive.stdout).decisions.map((d) => d.id);
+  assert(allIds.includes(old.id), 'active --all reaches the archived event');
+  assert(allIds.includes(recent.id), 'active --all still includes the recent active event');
+  assert(allIds.indexOf(recent.id) < allIds.indexOf(old.id), 'active --all is newest-first: recent event ranks before the older archived one');
+
+  const defaultSearch = await runBee(['decisions', 'search', '--tag', 'archived-tag', '--json'], root);
+  const defaultSearchIds = JSON.parse(defaultSearch.stdout).decisions.map((d) => d.id);
+  assert(!defaultSearchIds.includes(old.id), 'default search (no --all) never reaches the archived event');
+
+  const allSearch = await runBee(['decisions', 'search', '--tag', 'archived-tag', '--all', '--json'], root);
+  assert(allSearch.status === 0, `search --all exited ${allSearch.status} :: ${allSearch.stderr || allSearch.stdout}`);
+  const allSearchIds = JSON.parse(allSearch.stdout).decisions.map((d) => d.id);
+  assert(allSearchIds.includes(old.id) && allSearchIds.includes(recent.id), 'search --tag --all reaches both the active and archived matches');
+});
+
+await check('dp-3: default reads are byte-identical to today for a store with no archive file at all', async () => {
+  const root = makeTempRepo();
+  logDecision(root, { decision: 'one', rationale: 'byte-identical check', tags: ['parity'] });
+  logDecision(root, { decision: 'two', rationale: 'byte-identical check', tags: ['parity'] });
+  assert(!fs.existsSync(decisionsArchiveFilePath(root)), 'precondition: no archive file exists yet');
+
+  const withoutAll = activeDecisions(root);
+  const withAllButNoArchive = activeDecisions(root, { all: true });
+  assert(
+    JSON.stringify(withoutAll) === JSON.stringify(withAllButNoArchive),
+    'activeDecisions({all:true}) on an unarchived store must equal the default result exactly',
+  );
+
+  const cliDefault = await runBee(['decisions', 'active', '--json'], root);
+  const cliAll = await runBee(['decisions', 'active', '--all', '--json'], root);
+  assert(cliDefault.stdout === cliAll.stdout, 'CLI active --all output is byte-identical to default output on an unarchived store');
+});
+
+await check('dp-3: simulated partial-crash duplicate id — union read de-dupes by id, the ACTIVE copy wins, never a duplicate entry', async () => {
+  const root = makeTempRepo();
+  const dupId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  // Simulate a crash between step (1) archive-append and step (2)
+  // active-prune-rewrite: the same id lands in both files. The two payloads
+  // differ deliberately so the winning copy is observable.
+  appendJsonl(path.join(root, '.bee', 'decisions.jsonl'), {
+    id: dupId,
+    type: 'decide',
+    date: now,
+    decision: 'ACTIVE VERSION (post-crash, still the source of truth)',
+    rationale: 'dp-3 crash-dedup check',
+    scope: 'repo',
+  });
+  appendJsonl(decisionsArchiveFilePath(root), {
+    id: dupId,
+    type: 'decide',
+    date: now,
+    decision: 'ARCHIVE VERSION (stale, pre-crash copy — must lose)',
+    rationale: 'dp-3 crash-dedup check',
+    scope: 'repo',
+  });
+
+  const union = activeDecisions(root, { all: true });
+  const matches = union.filter((event) => event.id === dupId);
+  assert(matches.length === 1, `expected exactly one entry for the duplicated id, got ${matches.length}`);
+  assert(
+    matches[0].decision.startsWith('ACTIVE VERSION'),
+    `expected the active copy to win the dedup, got ${JSON.stringify(matches[0])}`,
+  );
+});
+
+await check(
+  'dp-3: append writers (logDecision) and archive share the SAME store lock — a lock held externally blocks a logDecision call rather than corrupting the file',
+  async () => {
+    const root = makeTempRepo();
+    logDecision(root, { decision: 'seed', rationale: 'lock-sharing check' });
+    const preLockContents = fs.readFileSync(path.join(root, '.bee', 'decisions.jsonl'), 'utf8');
+
+    const lock = acquireStoreLockOnceSync(root, DECISIONS_LOCK_NAME);
+    assert(lock.acquired, 'precondition: test can acquire the decisions store lock directly');
+    try {
+      assertThrows(
+        () => logDecision(root, { decision: 'should never land while the lock is held', rationale: 'lock-sharing check' }),
+        'lock',
+        'logDecision refuses/times out while the decisions store lock is externally held',
+      );
+      assertThrows(
+        () => archiveDecisions(root, { before: '2099-01-01' }),
+        'lock',
+        'archiveDecisions also refuses/times out on the SAME externally-held lock (proves shared lock name)',
+      );
+    } finally {
+      lock.release();
+    }
+
+    const postLockContents = fs.readFileSync(path.join(root, '.bee', 'decisions.jsonl'), 'utf8');
+    assert(postLockContents === preLockContents, 'a refused write under lock contention never partially/corruptly writes the store');
+
+    // Lock released — a normal call now succeeds.
+    const event = logDecision(root, { decision: 'after release', rationale: 'lock-sharing check' });
+    assert(event.id, 'logDecision succeeds again once the externally-held lock is released');
+  },
+);
+
+// ─── dp-3: concurrent log-vs-archive under the shared lock (real OS-thread
+// concurrency — see race_decisions_child.mjs for why this cannot be
+// simulated single-threaded: the lock's bounded retry uses a synchronous
+// Atomics.wait sleep, which blocks the event loop, so no same-thread timer
+// could ever release a simulated holder mid-wait). ───────────────────────
+
+const raceDecisionsChildScript = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'race_decisions_child.mjs',
+);
+
+await check('race: log-vs-archive — concurrent loggers and an archiver under the shared decisions lock lose no writes and never duplicate an id across both files', async () => {
+  const result = await runModuleWorker(raceDecisionsChildScript, { args: ['log-vs-archive'], timeout: 60000 });
+  const stdout = result.stdout || '(empty)';
+  const stderr = result.stderr || '(empty)';
+  assert(result.status === 0, `log-vs-archive race failed (status ${result.status}): stdout=${stdout} stderr=${stderr}`);
+  assert(/^PASS +log-vs-archive/m.test(stdout), `expected a PASS summary line, got: ${stdout}`);
 });
 
 printSummaryAndExit();

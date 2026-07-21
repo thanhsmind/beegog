@@ -16,7 +16,7 @@
 //   bee status [--json]
 //   bee cells <list|ready|show|add|claim|verify|cap|block|drop|tier|judge|claim-next|reset-budget|judge-record|schedule|archive|unarchive> ... [--json]
 //   bee reservations <reserve|release|list|sweep> ... [--json]
-//   bee decisions <log|supersede|redact|active|search> ... [--json]
+//   bee decisions <log|supersede|redact|active|search|archive> ... [--json]
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
 //   bee backlog <add|counts|rank|badges> ... [--json]
 //   bee capture <add|list|flush|count> ... [--json]
@@ -128,7 +128,7 @@ import {
   PINNED_MODEL_STATUS,
 } from './lib/dispatch-guard.mjs';
 import { computeSchedule } from './lib/schedule.mjs';
-import { logDecision, supersedeDecision, redactDecision, activeDecisions, datamark } from './lib/decisions.mjs';
+import { logDecision, supersedeDecision, redactDecision, activeDecisions, archiveDecisions, datamark } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
 import {
@@ -1502,7 +1502,8 @@ function handleDecisionsActive(root, flags) {
   const tag = flags.tag !== undefined ? String(flags.tag) : null;
   const scope = resolveScopeFilter(flags);
   const since = resolveSinceFilter(flags);
-  let decisions = filterDecisionEvents(activeDecisions(root), { tag, scope, since });
+  const all = flags.all !== undefined; // decision-propagation dp-3 (D4c): union read including .bee/decisions-archive.jsonl
+  let decisions = filterDecisionEvents(activeDecisions(root, { all }), { tag, scope, since });
   if (recent != null) decisions = decisions.slice(0, recent);
   const text = decisions.length ? decisions.map(formatDecision).join('\n') : 'No active decisions.';
   return { result: { decisions }, text };
@@ -1513,16 +1514,30 @@ function handleDecisionsSearch(root, flags) {
   const tag = flags.tag !== undefined ? String(flags.tag) : null;
   const scope = resolveScopeFilter(flags);
   const since = resolveSinceFilter(flags);
+  const all = flags.all !== undefined; // decision-propagation dp-3 (D4c): union read including .bee/decisions-archive.jsonl
   if (!text && !tag && !scope && !since) {
     throw new Error(
       'decisions search requires --text, or at least one structured filter (--tag/--scope/--area/--since).',
     );
   }
-  const decisions = filterDecisionEvents(activeDecisions(root), { text, tag, scope, since });
+  const decisions = filterDecisionEvents(activeDecisions(root, { all }), { text, tag, scope, since });
   const resultText = decisions.length
     ? decisions.map(formatDecision).join('\n')
     : 'No active decisions matching the given filters.';
   return { result: { decisions }, text: resultText };
+}
+
+// decision-propagation dp-3 (CONTEXT D4c): moves superseded/redacted events
+// (always) plus decide events strictly older than the explicit --before to
+// .bee/decisions-archive.jsonl. All refusal/crash-safety logic lives in
+// lib/decisions.mjs's archiveDecisions — this is presentation only.
+function handleDecisionsArchive(root, flags) {
+  const before = flags.before !== undefined ? String(flags.before) : undefined;
+  const result = archiveDecisions(root, { before });
+  return {
+    result,
+    text: `Archived ${result.archived.length} decision(s) to .bee/decisions-archive.jsonl (kept ${result.kept} active, cutoff ${result.before}).`,
+  };
 }
 
 // ─── state: full port of bee_state.mjs's verb logic (dispatcher-unify du-1).
@@ -4290,7 +4305,7 @@ function reservationsUsageFallback(leading) {
 
 function decisionsUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search.`;
+  return `Unknown command "${verb || '(missing)'}". Use: log, supersede, redact, active, search, archive.`;
 }
 
 const GROUP_USAGE_FALLBACKS = {
@@ -4340,6 +4355,7 @@ const HANDLERS = {
   'decisions.redact': handleDecisionsRedact,
   'decisions.active': handleDecisionsActive,
   'decisions.search': handleDecisionsSearch,
+  'decisions.archive': handleDecisionsArchive,
   'state.set': handleStateSet,
   'state.gate': handleStateGate,
   'state.worker.add': handleStateWorkerAdd,
@@ -4418,7 +4434,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

@@ -537,11 +537,12 @@ export const COMMAND_REGISTRY = [
         scope: { type: 'string', description: 'Exact scope match, case-insensitive (scope is the spec-area dimension).' },
         area: { type: 'string', description: 'Alias for --scope.' },
         since: { type: 'string', description: 'ISO date; only events on/after this date (inclusive).' },
+        all: { type: 'boolean', description: 'Also reach events archived by `decisions archive` (decision-propagation D4c) — a union read of the active store and .bee/decisions-archive.jsonl, de-duplicated by id. Omit for the default active-store-only read.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a formatted list.' },
       },
       required: [],
     },
-    examples: ['bee decisions active --recent 5 --json', 'bee decisions active --tag billing --json'],
+    examples: ['bee decisions active --recent 5 --json', 'bee decisions active --tag billing --json', 'bee decisions active --all --json'],
     deprecated: null,
   },
   {
@@ -556,11 +557,31 @@ export const COMMAND_REGISTRY = [
         scope: { type: 'string', description: 'Exact scope match, case-insensitive (scope is the spec-area dimension).' },
         area: { type: 'string', description: 'Alias for --scope.' },
         since: { type: 'string', description: 'ISO date; only events on/after this date (inclusive).' },
+        all: { type: 'boolean', description: 'Also reach events archived by `decisions archive` (decision-propagation D4c) — a union read of the active store and .bee/decisions-archive.jsonl, de-duplicated by id. Omit for the default active-store-only read.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a formatted list.' },
       },
       required: [],
     },
-    examples: ['bee decisions search --text "registry" --json', 'bee decisions search --tag billing --since 2026-07-01 --json'],
+    examples: ['bee decisions search --text "registry" --json', 'bee decisions search --tag billing --since 2026-07-01 --json', 'bee decisions search --tag billing --all --json'],
+    deprecated: null,
+  },
+  {
+    name: 'decisions.archive',
+    invoke: 'bee decisions archive',
+    description: 'Move superseded/redacted decision events (always, regardless of age) plus decide events strictly older than --before from .bee/decisions.jsonl to .bee/decisions-archive.jsonl (decision-propagation D4c). --before is always required — there is no default age window. Refuses (typed) when zero events qualify. Use `decisions active --all` / `decisions search --all` to keep reaching archived events afterward.',
+    parameters: {
+      type: 'object',
+      properties: {
+        before: { type: 'string', description: 'ISO date. Plain decide events dated strictly before this are archived; superseded/redacted events are archived regardless of this cutoff. Required.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['before'],
+    },
+    // Far-future sentinel (not a real deadline) so the manifest-as-tested-
+    // contract example (test_bee_cli.mjs) always has something to archive
+    // regardless of when it actually runs — mirrors this repo's other
+    // far-future-ceiling idioms (e.g. lock.mjs's HARD_STALE_MS comment).
+    examples: ['bee decisions archive --before 2099-01-01 --json'],
     deprecated: null,
   },
 

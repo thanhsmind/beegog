@@ -687,6 +687,13 @@ await check('decisions.redact example runs through the real dispatcher (arbitrar
   assert(typeof JSON.parse(result.stdout).id === 'string', 'redact should return the new event id');
 });
 
+await check('decisions.archive example runs through the real dispatcher (decision-propagation dp-3) — the decide event logged above is strictly older than the far-future --before cutoff, so it always has something to archive', async () => {
+  const result = await assertExampleOk('decisions.archive');
+  const payload = JSON.parse(result.stdout);
+  assert(Array.isArray(payload.archived) && payload.archived.length >= 1, `archive should report at least 1 archived event, got ${result.stdout}`);
+  assert(fs.existsSync(path.join(root, '.bee', 'decisions-archive.jsonl')), 'archive should create .bee/decisions-archive.jsonl');
+});
+
 await check('status example runs through the real dispatcher', async () => {
   const result = await assertExampleOk('status');
   assert(JSON.parse(result.stdout).phase === 'swarming', 'status should reflect the fixture repo\'s phase');

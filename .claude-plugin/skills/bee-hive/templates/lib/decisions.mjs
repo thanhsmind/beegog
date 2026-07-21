@@ -4,7 +4,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { appendJsonl, readJsonl } from './fsutil.mjs';
+import { appendJsonl, readJsonl, ensureDir } from './fsutil.mjs';
+import { acquireStoreLockOnceSync } from './lock.mjs';
 
 /** Content patterns that must never enter the decision log. */
 export const SECRET_CONTENT_PATTERNS = [
@@ -26,6 +27,96 @@ export const INJECTION_PATTERNS = [
 
 function decisionsPath(root) {
   return path.join(root, '.bee', 'decisions.jsonl');
+}
+
+// decision-propagation dp-3 (CONTEXT D4c): the archive sidecar. Same
+// directory as the active store, never touched by any reader that doesn't
+// explicitly opt into --all.
+function decisionsArchivePath(root) {
+  return path.join(root, '.bee', 'decisions-archive.jsonl');
+}
+
+// dp-3 CONCURRENCY (plan-checker BLOCKER — same class as cells.mjs's
+// writeCell retrofit at cells.mjs:414-426): archiveDecisions prunes and
+// rewrites the active store, so every writer that APPENDS to it
+// (logDecision/supersedeDecision/redactDecision) must serialize against that
+// rewrite under the SAME cross-process lock — a bare appendJsonl is only
+// safe while nobody else is rewriting the file underneath it, and archive
+// breaks that assumption. One unscoped lock name (not per-id, like
+// cells.mjs's `cells:<id>` locks) because archive operates on the WHOLE
+// store, not a single record.
+export const DECISIONS_LOCK_NAME = 'decisions';
+
+// Bounded synchronous retry on top of lock.mjs's single-attempt
+// acquireStoreLockOnceSync — mirrors claims.mjs's acquireGateWithRetry
+// (GATE_RETRY_ATTEMPTS/GATE_RETRY_DELAY_MS, ~300ms worst case) rather than
+// cells.mjs's writeCell (which refuses instantly on contention): every
+// caller here (logDecision/supersedeDecision/redactDecision/archiveDecisions)
+// must stay fully synchronous (many call sites — cells.mjs's
+// resetCellBudget/recordJudgeVerdict — invoke logDecision synchronously
+// from inside their OWN already-locked `withStoreLock(cells:<id>, ...)`
+// callback, which cannot become async), so this cannot use lock.mjs's async
+// withStoreLock. The decisions store's critical sections are small file
+// reads/writes (never a child spawn), so a short bounded wait is the right
+// shape — an instant refusal would make ordinary concurrent logging flaky
+// under the sub-ms-to-tens-of-ms contention this repo's lock doctrine
+// expects, not a genuine failure.
+const DECISIONS_LOCK_RETRY_ATTEMPTS = 15;
+const DECISIONS_LOCK_RETRY_DELAY_MS = 20; // ~300ms worst-case wait, matching acquireGateWithRetry's budget
+
+function sleepSyncMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Typed refusal thrown by withDecisionsLockSync on timeout — never a silent unlocked write. */
+export class DecisionsLockBusyError extends Error {
+  constructor(holder) {
+    const who =
+      holder && typeof holder === 'object'
+        ? `pid=${holder.pid ?? 'unknown'} session=${holder.session ?? 'unknown'} since ${holder.ts ?? 'unknown'}`
+        : 'unknown holder';
+    super(`decisions store lock "${DECISIONS_LOCK_NAME}" busy: held by ${who}`);
+    this.name = 'DecisionsLockBusyError';
+    this.code = 'DECISIONS_LOCK_BUSY';
+    this.holder = holder ?? null;
+  }
+}
+
+// withDecisionsLockSync(root, fn) — run fn() with the decisions store lock
+// held, via a bounded synchronous retry loop (see comment above). Always
+// releases in `finally`. Throws typed DecisionsLockBusyError after the
+// budget is exhausted — never a fall-through unlocked write.
+function withDecisionsLockSync(root, fn) {
+  let lock = acquireStoreLockOnceSync(root, DECISIONS_LOCK_NAME);
+  let attempt = 0;
+  while (!lock.acquired && attempt < DECISIONS_LOCK_RETRY_ATTEMPTS) {
+    sleepSyncMs(DECISIONS_LOCK_RETRY_DELAY_MS);
+    lock = acquireStoreLockOnceSync(root, DECISIONS_LOCK_NAME);
+    attempt += 1;
+  }
+  if (!lock.acquired) {
+    throw new DecisionsLockBusyError(lock.holder);
+  }
+  try {
+    return fn();
+  } finally {
+    lock.release();
+  }
+}
+
+// writeJsonlAtomic — temp-write+rename the WHOLE active store, for archive's
+// prune step. Local to this module (never added to the shared fsutil.mjs,
+// which has no jsonl-atomic-rewrite primitive today and is out of this
+// cell's file scope) — same atomic-rename shape as fsutil.mjs's own
+// writeJsonAtomic, specialized for a jsonl body.
+let writeJsonlAtomicCounter = 0;
+function writeJsonlAtomic(file, events) {
+  ensureDir(path.dirname(file));
+  const body = events.map((event) => JSON.stringify(event)).join('\n');
+  const unique = `${process.pid}-${(writeJsonlAtomicCounter++).toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  const tmp = `${file}.${unique}.tmp`;
+  fs.writeFileSync(tmp, body.length ? `${body}\n` : '', 'utf8');
+  fs.renameSync(tmp, file);
 }
 
 // decision-propagation dp-1 (CONTEXT D4a): optional tags[] on a decide
@@ -104,7 +195,12 @@ export function logDecision(
     confidence,
   };
   if (normalizedTags) event.tags = normalizedTags;
-  appendJsonl(decisionsPath(root), event);
+  // dp-3: the append itself runs under the SAME store lock archiveDecisions
+  // holds for its whole read-prune-rewrite transaction — see
+  // withDecisionsLockSync's comment above. Either this append lands fully
+  // before archive ever reads the file, or fully after archive's rename —
+  // never mid-transaction, so no write is ever lost or silently clobbered.
+  withDecisionsLockSync(root, () => appendJsonl(decisionsPath(root), event));
   return event;
 }
 
@@ -230,7 +326,12 @@ export function supersedeDecision(root, { supersedes, decision, rationale, tags 
     sweep,
   };
   if (resolvedTags) event.tags = resolvedTags;
-  appendJsonl(decisionsPath(root), event);
+  // dp-3: the append itself runs under the SAME store lock archiveDecisions
+  // holds for its whole read-prune-rewrite transaction — see
+  // withDecisionsLockSync's comment above. Either this append lands fully
+  // before archive ever reads the file, or fully after archive's rename —
+  // never mid-transaction, so no write is ever lost or silently clobbered.
+  withDecisionsLockSync(root, () => appendJsonl(decisionsPath(root), event));
   return event;
 }
 
@@ -248,27 +349,197 @@ export function redactDecision(root, { redacts, reason }) {
     redacts: redacts.trim(),
     reason: reason.trim(),
   };
-  appendJsonl(decisionsPath(root), event);
+  // dp-3: the append itself runs under the SAME store lock archiveDecisions
+  // holds for its whole read-prune-rewrite transaction — see
+  // withDecisionsLockSync's comment above. Either this append lands fully
+  // before archive ever reads the file, or fully after archive's rename —
+  // never mid-transaction, so no write is ever lost or silently clobbered.
+  withDecisionsLockSync(root, () => appendJsonl(decisionsPath(root), event));
   return event;
 }
 
-/** Decide/supersede events not themselves superseded or redacted, newest first. */
-export function activeDecisions(root, { recent = null } = {}) {
-  const events = readJsonl(decisionsPath(root));
+/** Typed refusal from archiveDecisions when zero events qualify (never a silent no-op). */
+export class DecisionsArchiveNothingQualifiesError extends Error {
+  constructor(before) {
+    super(
+      `archiveDecisions: nothing qualifies for archiving — no superseded/redacted events and no decide events strictly older than ${before} (decision-propagation D4c: --before is explicit or the verb refuses; there is never a default age-based purge).`,
+    );
+    this.name = 'DecisionsArchiveNothingQualifiesError';
+    this.code = 'DECISIONS_ARCHIVE_NOTHING_QUALIFIES';
+  }
+}
+
+// decision-propagation dp-3 (CONTEXT D4c): moves (1) every superseded/
+// redacted event ALWAYS, regardless of age — an event is "superseded" or
+// "redacted" the moment some OTHER event's `supersedes`/`redacts` field
+// names its id, and such an event is already permanently excluded from
+// activeDecisions' result, so relocating it changes nothing observable about
+// the active set — and (2) every plain `decide` event strictly older than
+// the explicit `before` cutoff, from .bee/decisions.jsonl to
+// .bee/decisions-archive.jsonl. `supersede`/`redact` ACTION records
+// themselves (the events THAT perform a supersession/redaction) are never
+// swept by the age rule — only by rule (1), if some LATER event also
+// supersedes/redacts them — so the active file's own audit trail of
+// "what superseded what" never ages out silently.
+//
+// CRASH SAFETY (plan-checker BLOCKER): under the SAME store lock every
+// append writer takes (DECISIONS_LOCK_NAME), qualifying events are appended
+// to the archive file FIRST, then the pruned active file is written via
+// temp-write+rename. A crash between those two steps leaves the same id in
+// BOTH files — union reads (activeDecisions({all:true})) de-duplicate by id
+// with the ACTIVE copy winning, so recovery is automatic; there is
+// deliberately no rename-journal (cells.mjs's journal maps to whole-file
+// renames, not jsonl line partitioning — it does not fit this shape).
+//
+// Refuses (typed DecisionsArchiveNothingQualifiesError) when `before` is
+// missing/invalid, or when zero events qualify under either rule — archiving
+// is opt-in and explicit, never a default purge, and a no-op call is never
+// silently accepted as success (this is also what makes a second run over
+// the same cutoff idempotent: nothing new qualifies, so it refuses cleanly
+// and leaves both files byte-untouched).
+export function archiveDecisions(root, { before } = {}) {
+  if (before === undefined || before === null || !String(before).trim()) {
+    throw new Error(
+      'archiveDecisions: --before <ISO date> is required — decisions archive never runs a default age-based purge (decision-propagation D4c).',
+    );
+  }
+  const beforeStr = String(before).trim();
+  const beforeMs = Date.parse(beforeStr);
+  if (!Number.isFinite(beforeMs)) {
+    throw new Error(`archiveDecisions: --before must be a valid ISO date, got ${JSON.stringify(beforeStr)}.`);
+  }
+
+  return withDecisionsLockSync(root, () => {
+    const activePath = decisionsPath(root);
+    const archivePath = decisionsArchivePath(root);
+    const events = readJsonl(activePath);
+
+    const supersededIds = new Set();
+    const redactedIds = new Set();
+    for (const event of events) {
+      if (event && event.type === 'supersede' && event.supersedes) supersededIds.add(event.supersedes);
+      if (event && event.type === 'redact' && event.redacts) redactedIds.add(event.redacts);
+    }
+
+    const toArchive = [];
+    const toKeep = [];
+    for (const event of events) {
+      if (!event || typeof event !== 'object' || typeof event.id !== 'string') {
+        toKeep.push(event); // never drop a malformed-but-parsed line
+        continue;
+      }
+      if (supersededIds.has(event.id) || redactedIds.has(event.id)) {
+        toArchive.push(event);
+        continue;
+      }
+      if (event.type === 'decide') {
+        const eventMs = Date.parse(event.date);
+        if (Number.isFinite(eventMs) && eventMs < beforeMs) {
+          toArchive.push(event);
+          continue;
+        }
+      }
+      toKeep.push(event);
+    }
+
+    if (toArchive.length === 0) {
+      throw new DecisionsArchiveNothingQualifiesError(beforeStr);
+    }
+
+    // Crash ordering (CONCURRENCY note above): archive-append FIRST.
+    ensureDir(path.dirname(archivePath));
+    const archiveBody = toArchive.map((event) => JSON.stringify(event)).join('\n');
+    fs.appendFileSync(archivePath, `${archiveBody}\n`, 'utf8');
+
+    // Then the pruned active file, as a single atomic temp-write+rename —
+    // surviving events are written back VERBATIM (never rewritten/touched).
+    writeJsonlAtomic(activePath, toKeep);
+
+    return {
+      archived: toArchive.map((event) => event.id),
+      kept: toKeep.length,
+      before: beforeStr,
+    };
+  });
+}
+
+/**
+ * Decide/supersede events not themselves superseded or redacted, newest
+ * first. Default (no `all`) is byte-identical to pre-dp-3 behavior — reads
+ * ONLY the active store.
+ *
+ * `all: true` (decision-propagation D4c) additionally unions in
+ * .bee/decisions-archive.jsonl (missing/empty archive file is silently
+ * treated as "nothing extra"): active events first, then any archived event
+ * whose id is not already present in the active file (de-dup by id — the
+ * active copy always wins, matching archiveDecisions' crash-ordering note).
+ * Superseded/redacted resolution runs over the FULL union, since an archived
+ * decide event's supersede/redact record always lives in the active file
+ * (dp-3 never archives an action record purely by age). Ordering is sorted
+ * explicitly by event date descending (never a positional .reverse() —
+ * merging two independently-chronological files cannot rely on file order
+ * alone once activity happened before AND after `before` on either side).
+ */
+export function activeDecisions(root, { recent = null, all = false } = {}) {
+  if (!all) {
+    const events = readJsonl(decisionsPath(root));
+    const superseded = new Set();
+    const redacted = new Set();
+    for (const event of events) {
+      if (event.type === 'supersede' && event.supersedes) superseded.add(event.supersedes);
+      if (event.type === 'redact' && event.redacts) redacted.add(event.redacts);
+    }
+    const active = events
+      .filter(
+        (event) =>
+          (event.type === 'decide' || event.type === 'supersede') &&
+          !superseded.has(event.id) &&
+          !redacted.has(event.id),
+      )
+      .reverse();
+    return recent != null ? active.slice(0, recent) : active;
+  }
+
+  const activeEvents = readJsonl(decisionsPath(root));
+  const archivedEvents = readJsonl(decisionsArchivePath(root));
+  const byId = new Map();
+  for (const event of activeEvents) {
+    if (event && typeof event.id === 'string') byId.set(event.id, event);
+  }
+  for (const event of archivedEvents) {
+    if (event && typeof event.id === 'string' && !byId.has(event.id)) byId.set(event.id, event);
+  }
+  // Indexed BEFORE filtering so same-timestamp ties can break by original
+  // position — two events sharing a millisecond-precision date are common
+  // (back-to-back logDecision calls). On an unarchived store `events` is
+  // exactly `activeEvents` in file (chronological, non-decreasing) order, so
+  // "newest date first, ties broken by higher original index first" is
+  // mathematically identical to `.reverse()` — this is what makes the `all`
+  // path byte-identical to the default path whenever there is nothing in
+  // the archive to actually merge in (D4c's byte-identical-for-unarchived
+  // requirement), not merely usually-identical.
+  const events = [...byId.values()];
+  const indexed = events.map((event, idx) => ({ event, idx }));
   const superseded = new Set();
   const redacted = new Set();
-  for (const event of events) {
+  for (const { event } of indexed) {
     if (event.type === 'supersede' && event.supersedes) superseded.add(event.supersedes);
     if (event.type === 'redact' && event.redacts) redacted.add(event.redacts);
   }
-  const active = events
+  const active = indexed
     .filter(
-      (event) =>
+      ({ event }) =>
         (event.type === 'decide' || event.type === 'supersede') &&
         !superseded.has(event.id) &&
         !redacted.has(event.id),
     )
-    .reverse();
+    .sort((a, b) => {
+      const bMs = Date.parse(b.event.date);
+      const aMs = Date.parse(a.event.date);
+      if (Number.isFinite(aMs) && Number.isFinite(bMs) && aMs !== bMs) return bMs - aMs;
+      return b.idx - a.idx; // tie -> later-inserted (higher original index) first, matching .reverse()
+    })
+    .map(({ event }) => event);
   return recent != null ? active.slice(0, recent) : active;
 }
 
