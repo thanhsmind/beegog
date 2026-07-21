@@ -1,0 +1,57 @@
+{
+  "id": "th-5",
+  "feature": "tree-hygiene",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Crash-leak scratch cleans itself + managed ignore covers the scratch shapes (D3)",
+  "action": "Per CONTEXT D3. (A) scripts/render_plugin_skill_trees.mjs: cleanStaleTmpDirs (~:155-178) matches only `${base}.tmp-`; extend it to sweep `${base}.old-*` under the SAME live-pid discipline (never remove a dir owned by a live pid — a concurrent render's backup), and move the success-path `rmSync(backupRoot)` (~:208) into the `finally` that already guards the tmp dir (~:209-211) so a kill between the swap (~:201) and cleanup cannot leak it. (B) skills/bee-hive/templates/lib/fsutil.mjs writeJsonAtomic (~:87-91) and the jsonl/text atomic variants in templates/lib/decisions.mjs (~:218, ~:983): if the write-or-rename throws, unlink the tmp best-effort and RETHROW the original error unchanged. Do NOT move the tmp out of the target directory (CONTEXT D2 rationale: adjacency is what makes renameSync atomic; a cross-device rename would fail EXDEV). (C) skills/bee-hive/scripts/onboard_bee.mjs GITIGNORE_BLOCK_PATTERNS (~:102-130): add `.bee/tmp/`, `.bee/backups/`, a pattern matching ONLY the atomic-tmp shape (`<pid>-<counter>-<random>.tmp` suffix — a human's hand-made `notes.tmp` MUST stay visible to git), and the four plugin swap-dir patterns (.claude-plugin/skills.tmp-*/, .claude-plugin/skills.old-*/, .codex-plugin/skills.tmp-*/, .codex-plugin/skills.old-*/). Keep the block's existing comment style — say WHY, like the lockfile comment does. Skip any entry th-4 already added. RED-FIRST: checks first, run red, record --passed false, then implement. Checks: a leaked `<base>.old-<deadpid>-x` dir is swept by the next render while a live-pid one survives; a forced rename failure leaves no tmp and rethrows the ORIGINAL error; after onboard --apply the managed block contains the new patterns; `notes.tmp` is NOT ignored while `x.json.12345-0-abcdef.tmp` IS. Mirror fsutil/decisions to .bee/bin, render, manifest --check. TARGETED verify only. NOTE: scripts/test_render_race.mjs scenario (a) is a known WSL2 flake (backlog P2) — rerun once before reporting a failure.",
+  "must_haves": {
+    "truths": [
+      "stale .old-* from a dead pid swept; live-pid .old-* never touched",
+      ".old-* removal sits in the finally path, not only the success path",
+      "a failed atomic rename leaves no tmp AND rethrows the original error unchanged",
+      "managed block ignores .bee/tmp/, .bee/backups/, the atomic-tmp shape and the four swap-dir patterns — while a hand-made notes.tmp stays visible",
+      "RED-FIRST failing run recorded before implementation"
+    ],
+    "prohibitions": [
+      "Never remove a sibling dir owned by a LIVE pid",
+      "Never swallow or replace the original error when cleaning up",
+      "Never add a greedy *.tmp ignore rule",
+      "Do not move atomic tmp files out of their target's directory"
+    ]
+  },
+  "verify": "node scripts/test_render_race.mjs && node skills/bee-hive/scripts/test_onboard_bee.mjs",
+  "read_first": [
+    "docs/history/tree-hygiene/CONTEXT.md",
+    "scripts/render_plugin_skill_trees.mjs",
+    "skills/bee-hive/templates/lib/fsutil.mjs",
+    "skills/bee-hive/scripts/onboard_bee.mjs"
+  ],
+  "files": [
+    "scripts/render_plugin_skill_trees.mjs",
+    "skills/bee-hive/templates/lib/fsutil.mjs",
+    ".bee/bin/lib/fsutil.mjs",
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    ".bee/bin/lib/decisions.mjs",
+    "skills/bee-hive/scripts/onboard_bee.mjs",
+    "skills/bee-hive/scripts/test_onboard_bee.mjs"
+  ],
+  "deps": [
+    "th-4"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

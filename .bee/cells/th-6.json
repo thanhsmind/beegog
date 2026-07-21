@@ -1,0 +1,55 @@
+{
+  "id": "th-6",
+  "feature": "tree-hygiene",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Write-guard enforces the scratch home; three scattered prose rules collapse into one (D4, D5)",
+  "action": "Per CONTEXT D4/D5. (A) .bee/bin/hooks/bee-write-guard.mjs (+ its canonical source under skills/bee-hive/templates/ — find the real source-of-truth path and edit THAT, then mirror): deny a scratch-SHAPED write whose target sits in a tracked directory, and name `.bee/tmp/` in the refusal message (ERROR/WHY/FIX contract). Scratch shapes: *.tmp, *.log, *.bak, files whose basename starts with a dot AND contains debug|stress|scratch, and verdict-*/probe-*/digest-* style payloads written outside .bee/tmp. MUST NOT block: anything under .bee/tmp/, .bee/spikes/, .bee/logs/, .bee/workers/ (already-ignored runtime homes), NOR any deliverable — docs/** (reports/specs/decisions/backlog), .bee/cells/, .bee/decisions.jsonl, plugin renders, or a project's own source/test files. Fail-open on any internal error, exactly like the guard's existing discipline. (B) Collapse the three partial prose rules into ONE doctrine rule in docs/specs/doctrine-layer.md (Business Rules, neighbouring voice), citing D1/D4 (decision `f21efe6e`): every ephemeral file bee writes goes to .bee/tmp/<feature-or-session>/, feasibility code to .bee/spikes/<feature>/, deliverables keep their required paths, and scratch is swept at feature close via `bee tmp sweep`. Then EDIT the three existing sites to cite that rule instead of restating their own variant: skills/bee-executing/SKILL.md:~113,~125 + references/worker-details.md:~90, skills/bee-planning/references/planning-reference.md:~142, skills/bee-validating/SKILL.md:~57 — keep each file's voice, do not delete the useful specifics (evidence-stdin stays the preferred path), just stop three homes from competing. RED-FIRST: guard checks first (test home: find the write-guard suite), run red, record --passed false, then implement. Checks: a debug script into .bee/bin/ is DENIED and the message names .bee/tmp/; the same file into .bee/tmp/ is ALLOWED; a report into docs/history/<feature>/reports/ is ALLOWED; .bee/cells/<id>.json write ALLOWED; guard errors fail open. Mirror, render, manifest. TARGETED verify only.",
+  "must_haves": {
+    "truths": [
+      "scratch-shaped write into a tracked dir is denied with a message naming .bee/tmp/",
+      "the same write into .bee/tmp/ or .bee/spikes/ is allowed",
+      "no deliverable path is ever blocked (docs/**, .bee/cells/, .bee/decisions.jsonl, plugin renders, project source/tests)",
+      "doctrine-layer carries ONE scratch rule citing f21efe6e, and the three former sites cite it instead of restating their own home",
+      "guard fails open on internal error",
+      "RED-FIRST failing run recorded before implementation"
+    ],
+    "prohibitions": [
+      "Never block a deliverable write — a false deny here is worse than the garbage",
+      "No mechanical enforcement beyond the guard (the rule itself stays doctrine)",
+      "Do not delete the evidence-stdin guidance — it stays the preferred path"
+    ]
+  },
+  "verify": "node hooks/test_write_guard.mjs",
+  "read_first": [
+    "docs/history/tree-hygiene/CONTEXT.md",
+    ".bee/bin/hooks/bee-write-guard.mjs",
+    "docs/specs/doctrine-layer.md"
+  ],
+  "files": [
+    ".bee/bin/hooks/bee-write-guard.mjs",
+    "docs/specs/doctrine-layer.md",
+    "skills/bee-executing/SKILL.md",
+    "skills/bee-executing/references/worker-details.md",
+    "skills/bee-planning/references/planning-reference.md",
+    "skills/bee-validating/SKILL.md"
+  ],
+  "deps": [
+    "th-5"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

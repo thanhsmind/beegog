@@ -22,6 +22,7 @@
 //   bee capture <add|list|flush|count> ... [--json]
 //   bee reviews <create|list|show|record|candidate add|candidates|status> ... [--json]
 //   bee feedback <digest|count|collect|rank> ... [--json]
+//   bee tmp <sweep> ... [--json]
 //   bee --help [--json]
 //
 // D3: `bee --help --json` emits {schema_version, commands:[{name, invoke,
@@ -155,6 +156,8 @@ import {
   REVIEW_MODES,
 } from './lib/reviews.mjs';
 import { readJson, writeJsonAtomic, appendJsonl, hashFile, removeFileIfExists } from './lib/fsutil.mjs';
+// tree-hygiene th-4 (D1/D2): the canonical scratch home + its broom.
+import { runSweep } from './lib/scratch.mjs';
 // perf.mjs is imported ONLY here (never by command-registry.mjs) so it stays
 // out of the write-guard fixture's hand-listed VENDORED_LIB_MODULES.
 import {
@@ -3164,6 +3167,32 @@ async function handleWorktreeUnregister(root, flags) {
   return { result: { ok: true, id, main_root: mainRoot }, text: `Removed worktree grant for id ${id}.` };
 }
 
+// ─── tmp sweep (tree-hygiene th-4, CONTEXT D1/D2) ──────────────────────────
+// `bee tmp sweep` — the broom for the one canonical scratch home (.bee/tmp/
+// and .bee/spikes/). All safety (containment, symlink-escape refusal) and
+// target-selection logic lives in lib/scratch.mjs; this handler is
+// presentation + the "no default purge" refusal policy only. Refuses (typed,
+// zero mutation) unless at least one of --feature/--before/--all/--dry-run is
+// given — an all-defaults call would otherwise silently pick a target set,
+// which is exactly the "no default purge" discipline `decisions archive`
+// already established for its own mandatory --before.
+function handleTmpSweep(root, flags) {
+  const feature = flags.feature !== undefined ? String(flags.feature) : undefined;
+  const before = flags.before !== undefined ? String(flags.before) : undefined;
+  const all = flags.all === true;
+  const dryRun = flags['dry-run'] === true;
+  if (!feature && !before && !all && !dryRun) {
+    throw new Error(
+      'tmp sweep requires at least one of --feature/--before/--all/--dry-run — no default purge (same discipline as `decisions archive`). ' +
+        'FIX: pass --dry-run to preview the default (closed/absent-feature) target set, --feature <slug> to target one feature explicitly (even a live one), --before <ISO> to age-gate scratch with no feature/lane record, or --all to clear everything.',
+    );
+  }
+  const result = runSweep(root, { feature, before, all, dryRun });
+  const verb = dryRun ? 'Would remove' : 'Removed';
+  const text = `${verb} ${result.removed.length} scratch dir(s) (${result.bytes_freed} bytes, ${result.files_freed} files) from .bee/tmp/ and .bee/spikes/.`;
+  return { result, text };
+}
+
 // config (ao-2ai-1) — reads the RAW .bee/config.json (readJson fallback
 // `undefined`, never `null`: a missing file is the normal, silent "no config
 // yet" state every other config reader tolerates — only content that was
@@ -4399,6 +4428,11 @@ function recoveryUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: scan, window.`;
 }
 
+function tmpUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: sweep.`;
+}
+
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
 // bee_reservations.mjs/bee_decisions.mjs are now shims, so their own
 // default-case "Unknown command ... Use: ..." messages (previously emitted
@@ -4434,6 +4468,7 @@ const GROUP_USAGE_FALLBACKS = {
   config: configUsageFallback,
   dispatch: dispatchUsageFallback,
   recovery: recoveryUsageFallback,
+  tmp: tmpUsageFallback,
 };
 
 const HANDLERS = {
@@ -4519,6 +4554,7 @@ const HANDLERS = {
   'worktree.unregister': handleWorktreeUnregister,
   'worktree.new': handleWorktreeNew,
   'worktree.merge': handleWorktreeMerge,
+  'tmp.sweep': handleTmpSweep,
   'config.get': handleConfigGet,
   'config.set': handleConfigSet,
   'config.unset': handleConfigUnset,

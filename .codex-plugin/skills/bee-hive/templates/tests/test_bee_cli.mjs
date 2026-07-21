@@ -199,7 +199,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -230,7 +230,7 @@ await check('registry covers every subcommand of the 4 existing helpers', async 
 // prepended, exactly what each shim used to do internally, so the observed
 // "Unknown command" contract line is unchanged.
 
-const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch', 'recovery'];
+const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch', 'recovery', 'tmp'];
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
 // bee.mjs's own `cells update` verb separately emits an unrelated
@@ -302,11 +302,11 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
 });
 
 await check('DA5 bijection: the only dot-free registry entries are "status" and "doctor", and every entry\'s group is one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
-  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery']);
+  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp']);
   const allowedDotFree = new Set(['status', 'doctor']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
-    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config|dispatch`);
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config|dispatch|tmp`);
     if (!entry.name.includes('.')) {
       assert(allowedDotFree.has(entry.name), `dot-free registry entry "${entry.name}" is not one of status|doctor — only those may be dot-free`);
     }
@@ -1423,6 +1423,18 @@ await check('perf.sync example scans + writes the log (transcript-less temp env)
   const result = await assertExampleOk('perf.sync');
   const res = JSON.parse(result.stdout);
   assert(typeof res.sessions === 'number', 'perf sync --json reports a session count');
+});
+
+// ─── tmp group example (tree-hygiene th-4, CONTEXT D1/D2): --all --dry-run is
+// deliberately the registry's own example — it is the one call shape that is
+// always safe to run for real against ANY fixture (never deletes anything,
+// never refuses for lack of a flag) while still exercising the full
+// dispatcher -> lib/scratch.mjs wiring end to end. ─────────────────────────
+await check('tmp.sweep example (--all --dry-run) exits 0 and never deletes anything', async () => {
+  const result = await assertExampleOk('tmp.sweep');
+  const res = JSON.parse(result.stdout);
+  assert(res.dry_run === true, `tmp sweep --dry-run example must report dry_run:true, got ${result.stdout}`);
+  assert(Array.isArray(res.removed), 'tmp sweep --json reports a removed[] array');
 });
 
 // ─── dispatch group example (g22-1, GH #22 P0-3): a read-only "gather" kind

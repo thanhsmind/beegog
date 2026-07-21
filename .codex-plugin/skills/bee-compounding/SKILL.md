@@ -102,7 +102,17 @@ This holds **regardless of whether you recognize the error**. An unfamiliar, nev
 
 **Never skip silently.** If the refresh is not run — for any reason, including context pressure, exhaustion, or an unfamiliar error — say so explicitly in the run summary and Handoff line (e.g. "digest refresh skipped: <reason>"). A silent omission is a violation even when the surrounding handoff template has no field for it; extend the handoff rather than emit a clean-looking close that hides the skip.
 
-## 9. Update State
+## 9. Sweep the Feature's Scratch (tree-hygiene D2)
+
+Feature close is one of the two moments D2 names for sweeping scratch (the other is session finish, AGENTS.md). Run it for the finishing feature:
+
+```
+node .bee/bin/bee.mjs tmp sweep --feature <feature>
+```
+
+This clears `.bee/tmp/<feature>/` and `.bee/spikes/<feature>/` for the feature that just closed — the one documented override that sweeps a named feature's scratch even though compounding still treats it as "current" at the moment this runs. **Warn, never block** — same discipline as the digest refresh (§8): a failing or absent sweep (the command throws, the feature had no scratch dir, `bee.mjs` predates this verb) is a one-line warning in the run summary and nothing more. It never blocks, fails, delays, or reverses the feature close.
+
+## 10. Update State
 
 Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner compounding --phase compounding-complete --next-action "<next action>" --summary "learnings: <file path>; promoted: <count>"`.
 
@@ -135,6 +145,7 @@ Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner c
 - blocking or failing a host project's feature close because `bee.mjs feedback digest` threw — telemetry never stops the line; warn and file friction (Scenario 2)
 - treating an *unfamiliar* digest error as exempt from warn-never-block — "I must understand this throw before I can close" is the loophole; a digest error never gates a close, understanding it is post-close cleanup (Scenario 2 REFACTOR)
 - skipping the digest refresh under context/exhaustion pressure and saying nothing — a silent skip is a violation; disclose it in the summary and Handoff (Scenario 3)
+- skipping the scratch sweep (§9) silently, or letting it block/fail/delay the close — same warn-never-block discipline as the digest refresh (tree-hygiene D2)
 
 Violating the letter of these rules is violating the spirit of these rules.
 

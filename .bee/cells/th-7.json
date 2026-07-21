@@ -1,0 +1,45 @@
+{
+  "id": "th-7",
+  "feature": "tree-hygiene",
+  "lane": "standard",
+  "behavior_change": false,
+  "title": "Clear the existing 171MB scratch backlog with a reviewed dry-run (D6)",
+  "action": "Per CONTEXT D6 — the rule must not only apply to future files; the reported mess goes too. Steps: (1) `node .bee/bin/bee.mjs tmp sweep --all --dry-run --json` and SAVE the plan under .bee/tmp/tree-hygiene/ (dogfood the new home — never a hand-picked path); (2) read the plan and sanity-check every entry: each must be a closed/absent feature's scratch under .bee/tmp or .bee/spikes, nothing belonging to a LIVE feature (tree-hygiene itself is live — its own scratch must be preserved or explicitly re-created after), nothing outside the two roots; (3) run the real sweep; (4) re-measure with `du -sh .bee/spikes .bee/tmp` and record before/after bytes+file counts; (5) confirm `git status --porcelain` is unchanged by the sweep (scratch was ignored, so removing it must not alter tracked state) and that docs/**, .bee/cells/, .bee/decisions.jsonl are untouched (`git status` + a spot `ls`); (6) write the numbers into docs/history/tree-hygiene/reports/sweep-backlog.md (a deliverable — reports keep their required path). Expected scale at authoring time: ~171.5MB / 9162 files / 20 dirs, dominated by a 146MB nested clean-clone.",
+  "must_haves": {
+    "truths": [
+      "dry-run plan reviewed and saved under .bee/tmp/tree-hygiene/ before any deletion",
+      "before/after sizes and file counts recorded in docs/history/tree-hygiene/reports/sweep-backlog.md",
+      "git status --porcelain unchanged by the sweep; docs/**, .bee/cells/, .bee/decisions.jsonl intact",
+      "the live feature's own scratch is not silently destroyed"
+    ],
+    "prohibitions": [
+      "Never delete anything the dry-run did not list",
+      "Never hand-pick a scratch path — the plan file itself lives in .bee/tmp/tree-hygiene/"
+    ]
+  },
+  "verify": "node .bee/bin/bee.mjs tmp sweep --all --dry-run --json",
+  "read_first": [
+    "docs/history/tree-hygiene/CONTEXT.md"
+  ],
+  "files": [
+    "docs/history/tree-hygiene/reports/sweep-backlog.md"
+  ],
+  "deps": [
+    "th-6"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
