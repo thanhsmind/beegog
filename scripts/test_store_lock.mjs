@@ -744,6 +744,133 @@ async function runOrchestrator() {
       }
     }
 
+    // (g2) THIRD-RACER VACANCY EXPLOIT (rel190-2, fix-first — CI-observed
+    // mutual-exclusion violation in scenario (f), backlog-equivalent):
+    // rel180-4's post-rename identity check (settleTakeover) prevents a
+    // takeover from PERMANENTLY losing a live holder's lock, but the rename
+    // itself still runs FIRST, unconditionally, against whatever currently
+    // occupies lockPath — even a lock that was refreshed and is ACTIVELY
+    // held by another racer's still-running critical section. For the
+    // instant between that rename and the mismatch decision, lockPath is
+    // genuinely EMPTY on disk. This scenario forces exactly that window
+    // deterministically via a SECOND seam (_postRenameSeam, lock.mjs's
+    // tryStaleTakeoverAsync — test-only, never set by any production
+    // caller), positioned right after the rename and before the mismatch
+    // decision: racer1 pauses there and, from inside the seam, a completely
+    // unrelated racer3 attempts an ORDINARY tryAcquire (no takeover
+    // involved) against the same lock name while racer2 is still active. If
+    // the rename vacated racer2's live lock, racer3's plain acquire can win
+    // it and enter its own critical section while racer2 is still inside
+    // its — the exact double-entry the CI failure reported. rel190-2's fix
+    // (re-verify identity immediately BEFORE the rename, never touch a lock
+    // whose content no longer matches what was judged) means the seam
+    // should never even fire in this exact setup once fixed: racer1's own
+    // re-verification aborts before ever reaching the rename, so no vacancy
+    // is ever opened for racer3 to exploit. Runs FORCED_ITERS2 times fresh,
+    // same discipline as (g): no real concurrency, no timing luck.
+    {
+      const FORCED_ITERS2 = 10;
+      let forcedPassed2 = 0;
+      for (let iter = 0; iter < FORCED_ITERS2; iter++) {
+        const raceLockName = `race-vacancy-${iter}`;
+        const raceLockPath = lockFilePath(tmpRoot, raceLockName);
+        fs.writeFileSync(
+          raceLockPath,
+          `${JSON.stringify({ pid: 999999999, session: 'vacancy-forced-stale-holder', ts: new Date(Date.now() - 45_000).toISOString(), token: `vacancy-forced-token-${iter}` })}\n`,
+        );
+        const forcedStaleMs = (Date.now() - 45_000) / 1000;
+        fs.utimesSync(raceLockPath, forcedStaleMs, forcedStaleMs);
+
+        let racer2Active = false;
+        let racer3SeenOverlap = false;
+        let postRenameSeamFired = false;
+
+        let seamResolve;
+        const seamGate = new Promise((resolve) => {
+          seamResolve = resolve;
+        });
+        let racer2Resolve;
+        const racer2Gate = new Promise((resolve) => {
+          racer2Resolve = resolve;
+        });
+
+        const racer1Promise = withStoreLock(
+          tmpRoot,
+          raceLockName,
+          async () => {}, // racer1's own critical section is irrelevant to this scenario's assertion
+          {
+            _takeoverSeam: () => seamGate,
+            _postRenameSeam: async () => {
+              postRenameSeamFired = true;
+              try {
+                // Uncontended, ordinary acquire — no takeover involved at
+                // all. If racer1's rename just vacated racer2's live lock,
+                // this plain tryAcquire can win the empty slot outright.
+                await withStoreLock(tmpRoot, raceLockName, async () => {
+                  if (racer2Active) racer3SeenOverlap = true;
+                });
+              } finally {
+                // Let racer2 finish only once racer3's attempt has fully
+                // resolved, so the overlap window is unambiguous either way.
+                racer2Resolve();
+              }
+            },
+            maxAttempts: 300,
+            retryDelayMs: 10,
+          },
+        ).catch((err) => ({ __racer1Error: err }));
+
+        const racer2Promise = withStoreLock(tmpRoot, raceLockName, async () => {
+          racer2Active = true;
+          await racer2Gate;
+          racer2Active = false;
+        }).catch((err) => ({ __racer2Error: err }));
+
+        // Same microtask-tick-bound caveat as (g) above: an already-resolved
+        // promise still defers its continuation once.
+        for (let tick = 0; tick < 50 && !racer2Active; tick++) {
+          await Promise.resolve();
+        }
+        if (!racer2Active) {
+          failures.push(
+            `(g2) iter ${iter}: racer2 did not report itself active within 50 microtask ticks — forced setup did not hold (test infrastructure issue, not the fix under test)`,
+          );
+        }
+
+        // Resume racer1. Pre-fix, it proceeds straight through the rename
+        // and fires _postRenameSeam. Post-fix, its own re-verification
+        // aborts before ever reaching the rename, so the seam never fires —
+        // detected by the bounded poll below, which then lets racer2 finish
+        // on its own rather than waiting on a seam that will never run.
+        seamResolve();
+        for (let tick = 0; tick < 50 && !postRenameSeamFired; tick++) {
+          await Promise.resolve();
+        }
+        if (!postRenameSeamFired) {
+          racer2Resolve();
+        }
+
+        const [r1, r2] = await Promise.all([racer1Promise, racer2Promise]);
+        if (r1 && r1.__racer1Error) {
+          failures.push(`(g2) iter ${iter}: racer1 threw unexpectedly: ${(r1.__racer1Error && r1.__racer1Error.stack) || r1.__racer1Error}`);
+        }
+        if (r2 && r2.__racer2Error) {
+          failures.push(`(g2) iter ${iter}: racer2 threw unexpectedly: ${(r2.__racer2Error && r2.__racer2Error.stack) || r2.__racer2Error}`);
+        }
+        if (racer3SeenOverlap) {
+          failures.push(
+            `(g2) iter ${iter}: racer3 (an ordinary, non-takeover acquire) entered its critical section WHILE racer2 was still active — racer1's takeover rename vacated a live holder's lock and a third racer exploited it (mutual-exclusion violation under forced interleaving)`,
+          );
+        } else if (!(r1 && r1.__racer1Error) && !(r2 && r2.__racer2Error)) {
+          forcedPassed2 += 1;
+        }
+        fs.rmSync(raceLockPath, { force: true });
+      }
+      if (forcedPassed2 !== FORCED_ITERS2) {
+        failures.push(`(g2) forced third-racer vacancy exploit: only ${forcedPassed2}/${FORCED_ITERS2} iterations passed cleanly`);
+      }
+    }
+
     // (h) SIMULATED EPERM TRANSIENT RETRY (rel180-4, Windows CI hazard fix):
     // stubs fs.writeFileSync/renameSync/rmSync to throw a transient EPERM
     // exactly once, then behave normally — reproducing the Windows "another
@@ -868,7 +995,8 @@ async function runOrchestrator() {
       `lock with zero violations/exact count; (d) LOCK_BUSY refusal named the real holder after the real retry budget; ` +
       `(e) a 45s-backdated LIVE-pid lock was NOT stolen (LOCK_BUSY refusal); (f) ${WORKERS}x${ITERS} racers took over ` +
       `a live-but-past-HARD_STALE_MS-ceiling lock anyway, zero violations/exact count; (g) 10/10 forced-interleaving ` +
-      `stale-takeover races held mutual exclusion deterministically; (h) simulated transient/permanent EPERM on ` +
+      `stale-takeover races held mutual exclusion deterministically; (g2) 10/10 forced third-racer vacancy-exploit ` +
+      `attempts held mutual exclusion deterministically; (h) simulated transient/permanent EPERM on ` +
       `acquire/release/takeover-rename retried and surfaced correctly, bounded.`,
   );
 }
