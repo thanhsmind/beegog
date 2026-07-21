@@ -135,7 +135,17 @@ export async function reserve(root, { agent, cell, path: reservedPath, ttl = DEF
   if (typeof reservedPath !== 'string' || !reservedPath.trim()) {
     throw new Error('reserve: path is required.');
   }
-  const resolvedSession = resolveSessionId({ flag: session });
+  // hardening-1-7-10 D5/1710-10: `root` is passed through so
+  // resolveSessionId's durable single-live-session fallback can adopt an
+  // identity here too — a solo native Codex session has a real session
+  // record but no env var identifying it, so without `root` this call
+  // always fell through to the SESSION_REQUIRED check below and refused
+  // (isConcurrentMode(root) sees that session's own live heartbeat and, with
+  // no id to exclude it by, reads it as "another" session). Exactly one
+  // fresh live session now resolves and adopts before isConcurrentMode is
+  // ever consulted; two-or-more still leaves resolvedSession null and hits
+  // the unchanged refusal below.
+  const resolvedSession = resolveSessionId({ flag: session, root });
   // hardening-4a: mirrors claimCellFile's typed refusal — a solo caller
   // (nobody else live) keeps today's sessionless-reserve behavior
   // byte-unchanged; `conflicts: []` is included defensively alongside `code`

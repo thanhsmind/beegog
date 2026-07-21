@@ -25,6 +25,7 @@ import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { addCell } from '../lib/cells.mjs';
+import { createSession } from '../lib/claims.mjs';
 import { writeJsonAtomic, hashFile } from '../lib/fsutil.mjs';
 import { defaultState, writeState, BEE_VERSION } from '../lib/state.mjs';
 import { encodeProjectDir } from '../lib/perf.mjs';
@@ -2733,6 +2734,151 @@ await check('bee cells claim-next: --session-id omitted resolves from CLAUDE_COD
   });
   assert(withoutEnv.status !== 0, 'claim-next with neither --session-id nor env must refuse');
   assert(/session-id|CLAUDE_CODE_SESSION_ID/.test(withoutEnv.stderr), `refusal should name the missing session source, got ${withoutEnv.stderr}`);
+});
+
+// hardening-1-7-10 D5/1710-10: a solo native Codex session has a real
+// .bee/sessions/<id>.json record (written by the session-init hook) but no
+// CLAUDE_CODE_SESSION_ID/BEE_SESSION_ID env var identifying it — before this
+// cell, handleCellsClaimNext resolved its session id WITHOUT `root`, so
+// claims.mjs's durable single-live-session fallback never got a chance to
+// fire and this exact scenario refused every time. Own isolated roots (not
+// root2) so the session records this test writes never leak into any other
+// check in this file.
+await check('bee cells claim-next: sessionless call with exactly ONE fresh live session record adopts it (no --session-id, no env)', async () => {
+  const soloRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-claimnext-solo-'));
+  fs.mkdirSync(path.join(soloRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(soloRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(soloRoot, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'claimnext-solo',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  addCell(soloRoot, {
+    id: 'claim-next-solo-1',
+    feature: 'claimnext-solo',
+    title: 'CLI claim-next solo-session adoption fixture',
+    lane: 'small',
+    action: 'Exercise the claim-next single-live-session adoption fallback.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  createSession(soloRoot, { id: 'solo-native-codex-session' });
+
+  const { CLAUDE_CODE_SESSION_ID: _dropSolo, BEE_SESSION_ID: _dropSoloBee, ...envNoSessionSolo } = process.env;
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'claim-next', '--worker', 'worker-solo-adopt', '--json'],
+    cwd: soloRoot,
+    env: envNoSessionSolo,
+  });
+  assert(result.status === 0, `sessionless claim-next with one live session should adopt and succeed, got ${result.status}: ${result.stderr}`);
+  const parsed = JSON.parse(result.stdout);
+  assert(parsed.ok === true && parsed.cell.id === 'claim-next-solo-1', `expected claim-next-solo-1 claimed, got ${result.stdout}`);
+  assert(
+    parsed.cell.trace.claim_session === 'solo-native-codex-session',
+    `expected the claim to be adopted under the sole live session, got ${result.stdout}`,
+  );
+});
+
+await check('bee cells claim-next: sessionless call with TWO fresh live session records still refuses (real ambiguity, unchanged)', async () => {
+  const twoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-claimnext-two-'));
+  fs.mkdirSync(path.join(twoRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(twoRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(twoRoot, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'claimnext-two',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  addCell(twoRoot, {
+    id: 'claim-next-two-1',
+    feature: 'claimnext-two',
+    title: 'CLI claim-next two-live-session fixture',
+    lane: 'small',
+    action: 'Exercise the claim-next refusal when adoption is genuinely ambiguous.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  createSession(twoRoot, { id: 'live-session-a' });
+  createSession(twoRoot, { id: 'live-session-b' });
+
+  const { CLAUDE_CODE_SESSION_ID: _dropTwo, BEE_SESSION_ID: _dropTwoBee, ...envNoSessionTwo } = process.env;
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['cells', 'claim-next', '--worker', 'worker-two-refuse'], // no --json: refusal lands on stderr as plain text
+    cwd: twoRoot,
+    env: envNoSessionTwo,
+  });
+  assert(result.status !== 0, 'claim-next with two fresh live sessions and no explicit identity must still refuse');
+  assert(/session-id|CLAUDE_CODE_SESSION_ID/.test(result.stderr), `refusal should name the missing session source, got ${result.stderr}`);
+});
+
+// Same fallback, threaded through the reservations path (reservations.mjs's
+// reserve()) — the cell's second call site. A solo live session adopts and
+// the reservation row carries its session id; two live sessions still
+// refuses SESSION_REQUIRED, unchanged.
+await check('bee reservations reserve: sessionless call with exactly ONE fresh live session record adopts it', async () => {
+  const soloRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-reserve-solo-'));
+  fs.mkdirSync(path.join(soloRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(soloRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(soloRoot, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'reserve-solo',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  addCell(soloRoot, {
+    id: 'reserve-solo-1',
+    feature: 'reserve-solo',
+    title: 'CLI reserve solo-session adoption fixture',
+    lane: 'small',
+    action: 'Exercise the reservations reserve single-live-session adoption fallback.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  createSession(soloRoot, { id: 'solo-native-codex-session-2' });
+
+  const { CLAUDE_CODE_SESSION_ID: _dropRes, BEE_SESSION_ID: _dropResBee, ...envNoSessionRes } = process.env;
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['reservations', 'reserve', '--agent', 'solo-reserve-agent', '--cell', 'reserve-solo-1', '--path', 'src/solo-adopt-test.js', '--json'],
+    cwd: soloRoot,
+    env: envNoSessionRes,
+  });
+  assert(result.status === 0, `sessionless reserve with one live session should adopt and succeed, got ${result.status}: ${result.stderr}`);
+  const parsed = JSON.parse(result.stdout);
+  assert(parsed.ok === true, `expected reserve ok:true, got ${result.stdout}`);
+  assert(
+    parsed.reservation.session === 'solo-native-codex-session-2',
+    `expected the reservation to be adopted under the sole live session, got ${result.stdout}`,
+  );
+});
+
+await check('bee reservations reserve: sessionless call with TWO fresh live session records still refuses SESSION_REQUIRED', async () => {
+  const twoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-reserve-two-'));
+  fs.mkdirSync(path.join(twoRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(twoRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(twoRoot, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'reserve-two',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  addCell(twoRoot, {
+    id: 'reserve-two-1',
+    feature: 'reserve-two',
+    title: 'CLI reserve two-live-session fixture',
+    lane: 'small',
+    action: 'Exercise the reservations reserve refusal when adoption is genuinely ambiguous.',
+    verify: 'node -e "process.exit(0)"',
+  });
+  createSession(twoRoot, { id: 'live-reserve-session-a' });
+  createSession(twoRoot, { id: 'live-reserve-session-b' });
+
+  const { CLAUDE_CODE_SESSION_ID: _dropTwoRes, BEE_SESSION_ID: _dropTwoResBee, ...envNoSessionTwoRes } = process.env;
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['reservations', 'reserve', '--agent', 'two-reserve-agent', '--cell', 'reserve-two-1', '--path', 'src/two-refuse-test.js', '--json'],
+    cwd: twoRoot,
+    env: envNoSessionTwoRes,
+  });
+  assert(result.status === 1, `expected exit 1 on SESSION_REQUIRED, got ${result.status}: ${result.stdout} ${result.stderr}`);
+  const parsed = JSON.parse(result.stdout);
+  assert(parsed.ok === false && parsed.code === 'SESSION_REQUIRED', `expected typed SESSION_REQUIRED refusal, got ${result.stdout}`);
 });
 
 await check('bee cells verify --passed true (explicit "true" argument, not a bare flag) records a passing verify', async () => {

@@ -1124,8 +1124,17 @@ async function handleCellsClaimNext(root, flags) {
   // session id (it resolves the acting session's bound lane), so — unlike
   // the sessionless-claim relaxation in `cells claim` — neither source
   // resolving is still a refusal, just from one of two places now.
+  // hardening-1-7-10 D5/1710-10: `root` is threaded through so
+  // resolveSessionId's durable single-live-session fallback (claims.mjs) can
+  // fire here too — a solo native Codex session has a real session record
+  // (from the session-init hook) but no CLAUDE_CODE_SESSION_ID/BEE_SESSION_ID
+  // env var, so without `root` this call site refused it every time even
+  // though claimCellFile's own fallback (a layer deeper) would have adopted
+  // it. Two-or-more fresh live sessions still resolves null here (real
+  // ambiguity) and falls through to the unchanged refusal below.
   const sessionId = resolveSessionId({
     flag: flags['session-id'] !== undefined ? String(flags['session-id']) : undefined,
+    root,
   });
   if (!sessionId) {
     throw new Error('claim-next: --session-id or CLAUDE_CODE_SESSION_ID env is required.');
