@@ -1,0 +1,60 @@
+{
+  "id": "dp-6",
+  "feature": "decision-propagation",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Taxonomy + write-time classification enforcement + ranked multi-term search (D7a/b, D8b)",
+  "action": "Per CONTEXT D7a/b and D8b. RED-FIRST as dp-5. TAXONOMY: docs/decisions/taxonomy.json {schema_version, tags:[{name, description}], candidates:[string]} — hand-curated, read by the CLI when present, written by the CLI only to append unknown-tag candidates (temp-write+rename, never partial). ENFORCEMENT: once taxonomy.json exists, `decisions log` refuses a decide event with zero tags (typed refusal naming --tags); without the file it warns only (bootstrap-safe). Unknown tags (not in tags[] or candidates[]) are ACCEPTED on the event and appended to candidates[] in the same call — never a refusal loop. INHERITANCE (plan-check W3): `decisions supersede` inheritance consults the OVERLAY-APPLIED target — a legacy target classified only via a dp-5 tag event (raw tags undefined) inherits its overlaid tags/scope; with taxonomy present this must NOT produce a false zero-tag refusal (tested). Audit-source events follow the same rule — callers pass tags. SEARCH (plan-check W5): `decisions search --text` upgrades from single substring to multi-term: whitespace-split terms, case-insensitive, OR across terms, matched over decision/rationale/alternatives AND overlaid tags; ranked by deterministic term-hit count descending, then date descending — no wall-clock, byte-stable ordering for a fixed store; single-term results remain a superset of today's substring match; ranking spans the --all archive union (dp-3) with the dp-5 overlay applied. Zero-filter refusal and --tag/--scope/--since AND-composition unchanged. Add `--untagged` filter to search/active listing events with no tags AFTER overlay (the D7d completeness check), composable with --all. Mirror to .bee/bin, update command-registry (both mirrors), render + manifest.",
+  "must_haves": {
+    "truths": [
+      "with taxonomy present, an untagged decide log is refused with a typed error; without taxonomy it warns and proceeds",
+      "an unknown tag is accepted and lands in taxonomy candidates in the same call",
+      "supersede inherits overlaid tags from a retro-tagged raw-untagged target — no false zero-tag refusal",
+      "multi-term search ranks by term-hit count then date, deterministically, across the --all union with overlay applied; single-term results include everything today's substring search returns",
+      "search matches overlaid tags, not just raw event fields",
+      "--untagged lists exactly the events with no tags after overlay, composable with --all",
+      "RED-FIRST: failing run against unmodified code recorded as red evidence before implementation"
+    ],
+    "prohibitions": [
+      "Never refuse an unknown tag (only zero tags, only when taxonomy exists)",
+      "Never write taxonomy.json partially — temp-write+rename only",
+      "Never let ranking depend on wall-clock or map iteration order",
+      "Do not break dp-1 filter semantics or dp-2 supersede inheritance"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    "docs/history/decision-propagation/CONTEXT.md"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/lib/decisions.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    ".bee/bin/lib/command-registry.mjs",
+    "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+  ],
+  "deps": [
+    "dp-2",
+    "dp-3",
+    "dp-5"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

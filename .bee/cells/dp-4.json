@@ -4,11 +4,12 @@
   "lane": "standard",
   "behavior_change": true,
   "title": "Derived decision index: decisions render -> docs/decisions/index.md (D4b)",
-  "action": "Per CONTEXT D4b/D6: new `decisions render` verb writes docs/decisions/index.md from the active store (superseded/redacted excluded; archived excluded unless --all): grouped by scope then tag (untagged last), newest-first inside each group, one line per decision `short8 · YYYY-MM-DD · first line of decision text`; supersede events appear under their (inherited) scope. File carries a provenance header naming the generator + timestamp-free determinism note; output is byte-stable for the same store (no wall-clock in the body). Add a --check mode diffing current file vs computed (exit non-zero on drift) for future verify wiring — but do NOT add it to run_verify in this cell. Mirror to .bee/bin, extend tests (grouping, determinism byte-stability across two renders, supersede placement, empty store), render + manifest.",
+  "action": "Per CONTEXT D4b/D6: new `decisions render` verb writes docs/decisions/index.md from the active store (superseded/redacted excluded; archived excluded unless --all): grouped by scope then tag (untagged last), newest-first inside each group, one line per decision `short8 · YYYY-MM-DD · first line of decision text`; supersede events appear under their (inherited) scope. OVERLAY-AWARE (slice-2 plan-check B2, CONTEXT D7/D8): the renderer consumes the overlay-applied read path defined by dp-5/dp-6 — tags/scope AFTER tag-event overlay; 'untagged' grouping means untagged after overlay; a retro-tagged legacy event renders under its overlaid scope/tags, asserted by a test. File carries a provenance header naming the generator + timestamp-free determinism note; output is byte-stable for the same store (no wall-clock in the body). Add a --check mode diffing current file vs computed (exit non-zero on drift) for future verify wiring — but do NOT add it to run_verify in this cell. REGISTRY: update command-registry (both mirrors) for the render verb. Mirror to .bee/bin, extend tests (grouping, determinism byte-stability across two renders, supersede placement, overlay placement, empty store), render + manifest.",
   "must_haves": {
     "truths": [
       "two consecutive renders over the same store are byte-identical",
       "superseded decisions never appear in the index",
+      "a retro-tagged legacy event renders under its overlaid tags/scope, never under untagged",
       "--check exits non-zero on hand-edited drift",
       "RED-FIRST: failing run against unmodified code recorded as red evidence before implementation"
     ],
@@ -33,7 +34,9 @@
   "deps": [
     "dp-1",
     "dp-2",
-    "dp-3"
+    "dp-3",
+    "dp-5",
+    "dp-6"
   ],
   "status": "open",
   "decisions": [],

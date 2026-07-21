@@ -6,7 +6,7 @@ approved_gate2: 2026-07-21 (auto-approved, gate bypass total)
 
 # plan — decision-propagation
 
-Source: `docs/history/decision-propagation/CONTEXT.md` (D1–D6, GH #32/#33/#34).
+Source: `docs/history/decision-propagation/CONTEXT.md` (D1–D8, GH #32/#33/#34). **Amended 2026-07-21:** D7/D8 (reporter follow-up on #32) moved the non-semantic decision memory layer IN scope — mandatory classification + retro-tag backfill + index-as-recall-surface + ranked multi-term search; embedding recall stays deferred.
 
 ## Mode-gate record
 
@@ -31,7 +31,7 @@ Flags counted: **data model** (decide/supersede event schema gains `tags[]`, `sc
 
 **Prose layer (slice 2):** bee-scribing D11b gains the per-CoS-clause evidence rule (D1) — flip only when every clause has cited evidence; otherwise annotate `Delivered:`/`Remaining:` in the row and keep `in-flight`; bee-compounding fallback inherits the same rule. Citation discipline (D3) lands in scribing's reference (spec sections and backlog rows cite short8 ids). Specs sync + GH issue closure ride the normal scribing close.
 
-**Rejected alternatives:** stored graph / relation store (recreates the two-sources-of-truth bug — D5); semantic memory layer (deferred, CONTEXT Deferred Ideas); a new `area` field (collides with existing `scope` — fresh-eyes P2, folded into D4).
+**Rejected alternatives:** stored graph / relation store (recreates the two-sources-of-truth bug — D5); embedding/vector memory (still deferred — D8c; the non-semantic memory layer itself is now D7/D8 scope); a new `area` field (collides with existing `scope` — fresh-eyes P2, folded into D4).
 
 **Risk map:**
 - store lock + append-only integrity under archive split — MEDIUM → proof: concurrency test reusing `test_state_write_concurrency` pattern; all-or-nothing archive txn.
@@ -43,9 +43,10 @@ Flags counted: **data model** (decide/supersede event schema gains `tags[]`, `sc
 
 ## Slices
 
-- **Slice 1 (current): store + CLI core** — 4 cells: (c1) tags/scope + search filters; (c2) supersede inheritance + propagation sweep + stub fallout; (c3) archive verb + union search; (c4) index render. Each: lib + dispatcher + template mirrors + manifest render + tests; `run_verify` green.
-- **Slice 2: prose rules + specs** — scribing/compounding D1/D3 amendments, spec sync, backlog/issue closure.
-- **Slice 3: end-to-end proof** — one real supersede dry-run in this repo exercising sweep→reconcile→stub→index, then GH #32/#33/#34 closed with evidence.
+- **Slice 1 (in flight): store + CLI core** — 4 cells: (dp-1, capped) tags/scope + search filters; (dp-2) supersede inheritance + propagation sweep + stub fallout; (dp-3) archive verb + union search + shared locked-append primitive; (dp-4, patched overlay-aware) index render. Each: lib + dispatcher + template mirrors + manifest render + tests; `run_verify` green.
+- **Slice 2 (shaped 2026-07-21, plan-checked): memory layer (D7/D8)** — 3 cells: (dp-5) retro-tag event `decisions tag` + overlay merge across union reads + locked-append routing; (dp-6) taxonomy + write-time classification enforcement + ranked multi-term search + `--untagged`; (dp-7) legacy backfill (agent-run extraction batches) + index re-render + recall-surface promotion in skill prose. Plan-check iter-1: BLOCKER B1 (tag append outside dp-3's lock) resolved via the shared-primitive contract in dp-3/dp-5; W2/W3/W5 folded into cell text; dp-4 gained deps dp-5/dp-6.
+- **Slice 3: prose rules + specs** — scribing/compounding D1/D3 amendments, spec sync, backlog/issue closure.
+- **Slice 4: end-to-end proof** — one real supersede dry-run in this repo exercising sweep→reconcile→stub→index, then GH #32/#33/#34 closed with evidence.
 
 ## Test matrix sketch (edge dimensions)
 

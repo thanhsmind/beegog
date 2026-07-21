@@ -1,0 +1,60 @@
+{
+  "id": "dp-5",
+  "feature": "decision-propagation",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Retro-tag event: decisions tag + overlay merge across union reads (D7c)",
+  "action": "Per CONTEXT D7c: new `decisions tag <id|short8> --tags a,b [--scope s]` appends an append-only event {type:'tag', id, date, target, tags, scope?} to .bee/decisions.jsonl. RED-FIRST: extend test_decisions_propagation.mjs with the new checks FIRST, run red against unmodified code, record via cells verify, then implement. LOCKED APPEND (plan-check B1): the tag append routes through the SAME locked append path dp-3 established — if dp-3 shipped a shared appendDecisionEvent(root, event) primitive, use it; if dp-3 shipped per-writer locking instead, EXTRACT that primitive in this cell and route ALL decision-store writers (log/supersede/redact/tag) through it — the boundary is the primitive, never a name list (critical-patterns 20260710); bare appendJsonl against the decisions store is forbidden from this cell on because archive's temp-write+rename can otherwise eat a concurrent append (lost write). BATCH: `decisions tag --stdin` accepts a JSON array of {target, tags, scope?}; validate EVERY entry first, then append all lines in ONE write under the lock (all-or-nothing — N sequential appends would leave a partial batch on crash). TARGET RESOLUTION: target must resolve to an existing decide/supersede event across the active+archive union (de-dup by id, same reader dp-3 built); unresolvable target → typed refusal naming it, and in batch mode nothing is appended. OVERLAY MERGE (plan-check W2): activeDecisions, filterDecisionEvents AND the --all union path overlay the LATEST tag event's tags/scope (by event date, then file order) onto the target at read time — the overlay map is built from tag events (active file only — tag events are never archived this slice) and applied AFTER union de-dup, so an archived-then-retro-tagged event still reads overlaid. Overlay REPLACES the whole tags array; scope replaced only when the tag event carries one. Tag events are never listed as decisions and never counted by --recent. Mirror to .bee/bin, update command-registry (both mirrors), render + manifest.",
+  "must_haves": {
+    "truths": [
+      "a tag event overlays tags/scope onto its target at read time — --tag/--scope filters, active/search, and --all union output all see the overlaid values (archived target included)",
+      "latest tag event wins when several target the same decision",
+      "batch stdin validates every entry before any write and appends the whole batch in one locked write — an invalid target appends nothing, a crash leaves no partial batch",
+      "every decision-store append (log/supersede/redact/tag) routes through the single locked append primitive",
+      "legacy events become filterable via retro-tag without any jsonl line being rewritten",
+      "RED-FIRST: failing run against unmodified code recorded as red evidence before implementation"
+    ],
+    "prohibitions": [
+      "Never rewrite or delete existing jsonl lines (append-only integrity)",
+      "No tag add/remove semantics — overlay replaces the whole tags array",
+      "Tag events are never archived in this slice (they stay in the active file; revisit only if bloat is demonstrated)",
+      "No bare appendJsonl against the decisions store from this cell on"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/lib/lock.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    "docs/history/decision-propagation/CONTEXT.md"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/lib/decisions.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    ".bee/bin/lib/command-registry.mjs",
+    "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+  ],
+  "deps": [
+    "dp-1",
+    "dp-2",
+    "dp-3"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
