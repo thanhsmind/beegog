@@ -33,6 +33,7 @@ import {
   cellsArchiveDir,
   resolveCellFile,
   archiveFeature,
+  unarchiveFeature,
   archivedSummary,
   readyCells,
   claimCell,
@@ -42,10 +43,13 @@ import {
   dropCell,
   unclaimCell,
   reopenCell,
+  setTier,
+  resetCellBudget,
+  recordJudgeVerdict,
+  writeCell,
   claimNextCell,
   claimCellCrossSession,
   normalizeFailureSignature,
-  resetCellBudget,
   resolveCellBudgets,
   checkCellBudgets,
   deriveChangeClass,
@@ -54,6 +58,8 @@ import {
 import { claimCellFile, readClaim, claimPath } from '../lib/claims.mjs';
 import { activeDecisions } from '../lib/decisions.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
+import { acquireStoreLockOnceSync } from '../lib/lock.mjs';
+import { JUDGE_VERDICT_SCHEMA } from '../lib/judge.mjs';
 
 const root = makeTempRepo();
 
@@ -80,6 +86,22 @@ function makeStateRepo(prefix) {
 // a raw cell file (bypassing addCell's validation) so the budget/claim-next
 // rows below can seed a specific trace.attempts shape directly — verbatim
 // copy, same shape, zero check weakened.
+// hardening-1-7-10 (D4): a small local helper — assertThrows/assertRejects
+// (test-fixture.mjs) only check the error MESSAGE substring, but this file's
+// new typed-error tests (CELL_ARCHIVED, CELLS_ARCHIVE_BUSY,
+// ARCHIVE_DESTINATION_COLLISION) need to pin the actual `.code` a caller
+// would branch on, not just wording that could drift. Local rather than
+// added to the shared fixture — no other suite needs it yet.
+function assertThrowsCode(fn, code, message) {
+  try {
+    fn();
+  } catch (error) {
+    assert(error && error.code === code, `${message} — threw, but error.code is "${error && error.code}", not "${code}"`);
+    return;
+  }
+  throw new Error(`${message} — expected an error, none thrown`);
+}
+
 function makeCellFile(dir, id, extra = {}) {
   fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
   const cell = {
@@ -711,8 +733,185 @@ await check('mutating an archived cell id (updateCell/claimCell/capCell) refuses
   }
 });
 
-await check('archiveFeature is atomic: a mid-loop rename failure rolls back every already-moved file and leaves summary.json untouched', async () => {
-  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-rollback-'));
+// hardening-1-7-10 (D4): reopenCell/setTier/resetCellBudget/recordJudgeVerdict
+// were the FOUR mutators that still forked a duplicate active file for an
+// archived-only id, exactly the bug the test above already pins for
+// updateCell/claimCell/capCell — this extends the same net to the remaining
+// four.
+await check('the 4 newly guarded mutators (reopenCell/setTier/resetCellBudget/recordJudgeVerdict) refuse an archived cell, never forking a duplicate active file', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-mutate4-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'mut4-1.json'),
+      JSON.stringify(makeCell('mut4-1', { feature: 'mut4-feat', status: 'capped' })),
+    );
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'mut4-2.json'),
+      JSON.stringify(makeCell('mut4-2', { feature: 'mut4-feat', status: 'capped' })),
+    );
+
+    // assertNotArchived refuses before any of these mutators ever look at
+    // the cell's status, so the archived-only file's on-disk status is
+    // irrelevant to the refusal below — only its LOCATION (archive tree,
+    // not active) matters.
+    const archived = await archiveFeature(aRoot, 'mut4-feat');
+    assert(
+      archived.moved.includes('mut4-1') && archived.moved.includes('mut4-2'),
+      `both cells should be archived, got ${JSON.stringify(archived)}`,
+    );
+    const activePath = path.join(cellsDirPath, 'mut4-1.json');
+    assert(!fs.existsSync(activePath), 'sanity: the active copy is gone after archiving');
+    assert(readCell(aRoot, 'mut4-1') !== null, 'sanity: readCell still resolves the id via the archive fallback');
+
+    await assertRejects(() => reopenCell(aRoot, 'mut4-1', 'rework needed'), 'archived', 'reopenCell on an archived id refuses');
+    assert(!fs.existsSync(activePath), 'reopenCell must not fork a duplicate active file');
+
+    await assertRejects(() => setTier(aRoot, 'mut4-1', 'generation'), 'archived', 'setTier on an archived id refuses');
+    assert(!fs.existsSync(activePath), 'setTier must not fork a duplicate active file');
+
+    await assertRejects(
+      () => resetCellBudget(aRoot, 'mut4-1', 'why a retry is warranted', { operator: 'op-x' }),
+      'archived',
+      'resetCellBudget on an archived id refuses',
+    );
+    assert(!fs.existsSync(activePath), 'resetCellBudget must not fork a duplicate active file');
+
+    await assertRejects(
+      () =>
+        recordJudgeVerdict(aRoot, 'mut4-1', {
+          schema: JUDGE_VERDICT_SCHEMA,
+          verdict: 'PASS',
+          checks: [{ id: 'c1', status: 'PASS', evidence: 'looks good' }],
+          fixability: 'automatic',
+          confidence: 'high',
+        }),
+      'archived',
+      'recordJudgeVerdict on an archived id refuses',
+    );
+    assert(!fs.existsSync(activePath), 'recordJudgeVerdict must not fork a duplicate active file');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('writeCell throws typed CELL_ARCHIVED (never resurrects) when called directly on an id that resolves ONLY in the archive tree', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-writecell-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'wc-1.json'),
+      JSON.stringify(makeCell('wc-1', { feature: 'wc-feat', status: 'capped' })),
+    );
+    const archived = await archiveFeature(aRoot, 'wc-feat');
+    assert(archived.moved.includes('wc-1'), `wc-1 should be archived, got ${JSON.stringify(archived)}`);
+    const activePath = path.join(cellsDirPath, 'wc-1.json');
+    assert(!fs.existsSync(activePath), 'sanity: the active copy is gone after archiving');
+
+    // Simulates the TOCTOU a mutator's own read-modify-write window leaves
+    // open: it read the cell BEFORE the archive move (or otherwise built a
+    // cell object with this id by hand) and now calls writeCell directly —
+    // writeCell's own final check, held under the 'cells-archive' lock, must
+    // refuse rather than silently creating a brand-new active file.
+    assertThrowsCode(
+      () => writeCell(aRoot, makeCell('wc-1', { feature: 'wc-feat', status: 'capped', title: 'resurrected' })),
+      'CELL_ARCHIVED',
+      'writeCell must refuse to resurrect an archived-only id',
+    );
+    assert(!fs.existsSync(activePath), 'writeCell must never fork a duplicate active file for an archived id');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('writeCell throws typed CELLS_ARCHIVE_BUSY when the "cells-archive" lock is already held (a live archive/unarchive transaction)', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-busy-'));
+  try {
+    fs.mkdirSync(path.join(aRoot, '.bee', 'cells'), { recursive: true });
+    const held = acquireStoreLockOnceSync(aRoot, 'cells-archive');
+    assert(held.acquired, 'test setup: must acquire the cells-archive lock to simulate a live archive/unarchive transaction');
+    try {
+      assertThrowsCode(
+        () => writeCell(aRoot, makeCell('busy-1', { feature: 'busy-feat' })),
+        'CELLS_ARCHIVE_BUSY',
+        'writeCell must refuse (never wait) while the cells-archive lock is held',
+      );
+      assert(
+        !fs.existsSync(path.join(aRoot, '.bee', 'cells', 'busy-1.json')),
+        'no active file must appear when writeCell refuses on contention',
+      );
+    } finally {
+      held.release();
+    }
+    // Once the lock is free again, the exact same write succeeds normally.
+    const cell = writeCell(aRoot, makeCell('busy-1', { feature: 'busy-feat' }));
+    assert(cell.id === 'busy-1', 'writeCell succeeds once the cells-archive lock is released');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('unarchiveFeature refuses to overwrite an existing active file, typed, before any rename', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-unarchive-collision-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'ua-1.json'),
+      JSON.stringify(makeCell('ua-1', { feature: 'ua-feat', status: 'capped' })),
+    );
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'ua-2.json'),
+      JSON.stringify(makeCell('ua-2', { feature: 'ua-feat', status: 'capped' })),
+    );
+    const archived = await archiveFeature(aRoot, 'ua-feat');
+    assert(
+      archived.moved.includes('ua-1') && archived.moved.includes('ua-2'),
+      `both cells should be archived, got ${JSON.stringify(archived)}`,
+    );
+    // A DIFFERENT active cell now happens to occupy ua-1's would-be
+    // destination — e.g. the id was reused after the original archive, or a
+    // stray file was left behind some other way. unarchiveFeature must
+    // refuse the WHOLE batch rather than overwrite it.
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'ua-1.json'),
+      JSON.stringify(makeCell('ua-1', { feature: 'ua-feat', status: 'open', title: 'reused id, different cell' })),
+    );
+
+    await assertRejects(
+      () => unarchiveFeature(aRoot, 'ua-feat'),
+      'refused',
+      'unarchiveFeature must refuse a collision against an existing active file',
+    );
+
+    const collided = JSON.parse(fs.readFileSync(path.join(cellsDirPath, 'ua-1.json'), 'utf8'));
+    assert(collided.title === 'reused id, different cell', 'the existing active file must be untouched, never overwritten');
+    assert(
+      fs.existsSync(path.join(cellsArchiveDir(aRoot, 'ua-feat'), 'ua-2.json')),
+      'ua-2 must stay archived — the whole batch refuses, nothing partially unarchived',
+    );
+    assert('ua-feat' in archivedSummary(aRoot), 'summary entry must be untouched by a refused unarchive');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+// hardening-1-7-10 (D4): this test used to inject a MID-LOOP rename failure
+// (a pre-created directory sitting at roll-2's destination made renameSync
+// throw EISDIR once the loop reached it) and assert the in-process catch
+// block rolled roll-1 back. That exact setup — a destination that already
+// exists before archiveFeature is ever called — is now caught by the NEW
+// preflight collision check BEFORE any rename runs at all, so nothing ever
+// gets renamed in the first place; the assertions below (nothing moved, no
+// journal, summary untouched) reflect that, and the typed refusal replaces
+// the old bare EISDIR propagation. The in-process rollback path this test
+// used to cover is still exercised structurally by the journal-recovery test
+// below, which simulates the harder case a preflight check can never catch —
+// a process killed mid-loop with no chance to run its own rollback at all.
+await check('archiveFeature preflights EVERY destination collision before any rename — typed refusal, nothing moved, no journal left behind', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-preflight-'));
   try {
     const cellsDirPath = path.join(aRoot, '.bee', 'cells');
     fs.mkdirSync(cellsDirPath, { recursive: true });
@@ -722,29 +921,131 @@ await check('archiveFeature is atomic: a mid-loop rename failure rolls back ever
         JSON.stringify(makeCell(id, { feature: 'roll-feat', status: 'capped' })),
       );
     }
-    // listCells sorts by id, so the loop visits roll-1, roll-2, roll-3 in
-    // that order. Pre-creating a DIRECTORY at roll-2's destination path makes
-    // fs.renameSync throw EISDIR when the loop reaches the second cell —
-    // 'file onto an existing directory' is refused by the OS rename(2) call
-    // itself, a clean, deterministic, permission-free way to inject a
-    // mid-loop failure without mocking fs.
+    // Pre-creating ANYTHING at roll-2's destination — a directory works just
+    // as well as a stray file — must refuse the WHOLE batch before touching
+    // roll-1 or roll-3 at all, never partway through the loop.
     const archiveDir = cellsArchiveDir(aRoot, 'roll-feat');
     fs.mkdirSync(path.join(archiveDir, 'roll-2.json'), { recursive: true });
 
     await assertRejects(
       () => archiveFeature(aRoot, 'roll-feat'),
-      'eisdir',
-      'the injected mid-loop rename failure must propagate, not be swallowed',
+      'refused',
+      'a pre-existing destination must refuse the whole archive batch, typed, before any rename',
     );
 
-    assert(fs.existsSync(path.join(cellsDirPath, 'roll-1.json')), 'roll-1 (already moved) must be rolled back to active');
-    assert(!fs.existsSync(path.join(archiveDir, 'roll-1.json')), 'roll-1 must not be left behind in the archive tree');
-    assert(fs.existsSync(path.join(cellsDirPath, 'roll-2.json')), 'roll-2 (never moved — its slot was blocked) stays active');
-    assert(fs.existsSync(path.join(cellsDirPath, 'roll-3.json')), 'roll-3 (never reached) stays active');
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-1.json')), 'roll-1 must never be touched — preflight refuses before the first rename');
+    assert(!fs.existsSync(path.join(archiveDir, 'roll-1.json')), 'roll-1 must not appear in the archive tree');
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-2.json')), 'roll-2 stays active — its slot was the collision');
+    assert(fs.existsSync(path.join(cellsDirPath, 'roll-3.json')), 'roll-3 stays active — never reached');
     assert(
       !('roll-feat' in archivedSummary(aRoot)),
-      'summary.json must be untouched — it is written only after every move succeeds',
+      'summary.json must be untouched — a preflight refusal never gets as far as writing it',
     );
+    assert(
+      !fs.existsSync(path.join(archiveDir, '.journal.json')),
+      'no journal is ever written for a refusal that happens before the first rename',
+    );
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('archiveFeature journal rollback recovers a simulated half-archive (crash mid-loop, no in-process rollback ever ran)', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-journal-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    const archiveDir = cellsArchiveDir(aRoot, 'jrn-feat');
+    fs.mkdirSync(archiveDir, { recursive: true });
+    const ids = ['jrn-1', 'jrn-2', 'jrn-3'];
+    const cellsById = {};
+    for (const id of ids) {
+      cellsById[id] = makeCell(id, { feature: 'jrn-feat', status: 'capped' });
+    }
+    // Simulate a process killed HALFWAY through a real archiveFeature run:
+    // jrn-1 already landed in the archive tree, jrn-2/jrn-3 are still active,
+    // and a journal describing the FULL planned batch is left behind exactly
+    // as writeArchiveJournal would leave it before the crash — no in-process
+    // catch/rollback ever ran (that is the scenario a preflight check can
+    // never protect against: the process is simply gone).
+    fs.writeFileSync(path.join(archiveDir, 'jrn-1.json'), JSON.stringify(cellsById['jrn-1']));
+    fs.writeFileSync(path.join(cellsDirPath, 'jrn-2.json'), JSON.stringify(cellsById['jrn-2']));
+    fs.writeFileSync(path.join(cellsDirPath, 'jrn-3.json'), JSON.stringify(cellsById['jrn-3']));
+    const planned = ids.map((id) => ({
+      id,
+      from: path.join(cellsDirPath, `${id}.json`),
+      to: path.join(archiveDir, `${id}.json`),
+    }));
+    fs.writeFileSync(
+      path.join(archiveDir, '.journal.json'),
+      JSON.stringify({ op: 'archive', feature: 'jrn-feat', planned, started_at: new Date().toISOString() }),
+    );
+
+    // The NEXT archiveFeature call for this feature must first notice the
+    // leftover journal, restore jrn-1 back to active (the only move that
+    // actually completed), delete the stale journal, and THEN proceed with
+    // a clean, fresh archive of all three cells.
+    const result = await archiveFeature(aRoot, 'jrn-feat');
+    assert(
+      result.moved.slice().sort().join(',') === 'jrn-1,jrn-2,jrn-3',
+      `all three cells must be archived after recovery, got ${JSON.stringify(result.moved)}`,
+    );
+    for (const id of ids) {
+      assert(fs.existsSync(path.join(archiveDir, `${id}.json`)), `${id} must end up archived after recovery + fresh archive`);
+      assert(!fs.existsSync(path.join(cellsDirPath, `${id}.json`)), `${id} must not remain active`);
+    }
+    assert(!fs.existsSync(path.join(archiveDir, '.journal.json')), 'the journal must be gone once the fresh archive completes');
+    assert(archivedSummary(aRoot)['jrn-feat'].capped === 3, 'summary reflects the fresh archive, not the half-migrated leftover');
+  } finally {
+    fs.rmSync(aRoot, { recursive: true, force: true });
+  }
+});
+
+await check('unarchiveFeature journal rollback also recovers a simulated half-unarchive, symmetric to the archive direction', async () => {
+  const aRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-archive-hard-journal-un-'));
+  try {
+    const cellsDirPath = path.join(aRoot, '.bee', 'cells');
+    fs.mkdirSync(cellsDirPath, { recursive: true });
+    const archiveDir = cellsArchiveDir(aRoot, 'jru-feat');
+    fs.mkdirSync(archiveDir, { recursive: true });
+    // Simulate a crash HALFWAY through unarchiving: jru-1 already landed
+    // active, jru-2 is still archived, with a journal describing both moves
+    // — no in-process rollback ever ran (the process is simply gone).
+    fs.writeFileSync(
+      path.join(cellsDirPath, 'jru-1.json'),
+      JSON.stringify(makeCell('jru-1', { feature: 'jru-feat', status: 'capped' })),
+    );
+    fs.writeFileSync(
+      path.join(archiveDir, 'jru-2.json'),
+      JSON.stringify(makeCell('jru-2', { feature: 'jru-feat', status: 'dropped' })),
+    );
+    const planned = [
+      { id: 'jru-1', from: path.join(archiveDir, 'jru-1.json'), to: path.join(cellsDirPath, 'jru-1.json') },
+      { id: 'jru-2', from: path.join(archiveDir, 'jru-2.json'), to: path.join(cellsDirPath, 'jru-2.json') },
+    ];
+    fs.writeFileSync(
+      path.join(archiveDir, '.journal.json'),
+      JSON.stringify({ op: 'unarchive', feature: 'jru-feat', planned, started_at: new Date().toISOString() }),
+    );
+    // Seed the summary as archiveFeature would have left it, so the
+    // subsequent unarchiveFeature call has a coherent entry to clear.
+    const summaryFile = path.join(aRoot, '.bee', 'cells', 'archive', 'summary.json');
+    fs.writeFileSync(summaryFile, JSON.stringify({ 'jru-feat': { capped: 1, dropped: 1, archived_at: new Date().toISOString() } }));
+
+    // The NEXT unarchiveFeature call must first notice the leftover journal,
+    // restore jru-1 back to the archive tree (the only move that actually
+    // completed), delete the stale journal, and THEN proceed with a clean,
+    // fresh unarchive of both cells.
+    const moved = await unarchiveFeature(aRoot, 'jru-feat');
+    assert(
+      moved.slice().sort().join(',') === 'jru-1,jru-2',
+      `both cells must end up active after recovery, got ${JSON.stringify(moved)}`,
+    );
+    for (const id of ['jru-1', 'jru-2']) {
+      assert(fs.existsSync(path.join(cellsDirPath, `${id}.json`)), `${id} must end up active after recovery + fresh unarchive`);
+    }
+    assert(!fs.existsSync(path.join(archiveDir, '.journal.json')), 'the journal must be gone once the fresh unarchive completes');
+    assert(!('jru-feat' in archivedSummary(aRoot)), 'summary entry must be cleared by the fresh unarchive');
   } finally {
     fs.rmSync(aRoot, { recursive: true, force: true });
   }
@@ -1194,6 +1495,20 @@ await check('resetCellBudget (D-GHF-C): the BEE_AGENT_NAME env fallback supplies
 });
 
 await check('resetCellBudget (D-GHF-C): writes the audit decision BEFORE the cell write — a forced writeCell failure still leaves the decision recorded, and the cell file itself is untouched', async () => {
+  // Root-skip (hardening-1-7-10 D1): this check simulates a write failure by
+  // chmod-ing the cells dir to 0o555 (no write bit). On Linux, root (euid 0 —
+  // some CI/container runners execute as root by default) bypasses directory
+  // permission checks entirely, so the forced write would actually SUCCEED
+  // instead of throwing, and `assert(threw, ...)` below would fail — not
+  // because the audit-order behavior regressed, but because the simulation
+  // itself cannot fire under root. Skip loudly rather than let a root runner
+  // report a false red (or silently weaken the assertion for everyone else).
+  if (process.geteuid?.() === 0) {
+    console.log(
+      'SKIP  resetCellBudget audit-order chmod(0o555) write-failure simulation: running as root (euid 0) — chmod cannot block root writes, so this simulation cannot fire. Skipped loudly, not weakened.',
+    );
+    return;
+  }
   const dir = makeStateRepo('bee-budget-audit-order-');
   try {
     writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {

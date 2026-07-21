@@ -68,8 +68,10 @@ import {
   frozenJudgeHits,
   FROZEN_JUDGE_PATTERNS,
   recordJudgeVerdict,
+  claimCellCrossSession,
 } from '../lib/cells.mjs';
 import { validateJudgeVerdict, deriveModelIndependence, JUDGE_VERDICT_SCHEMA } from '../lib/judge.mjs';
+import { readClaim, claimCellFile } from '../lib/claims.mjs';
 import { PINNED_MODEL_STATUS } from '../lib/dispatch-guard.mjs';
 import { reserve, release, findConflicts } from '../lib/reservations.mjs';
 import {
@@ -2616,8 +2618,8 @@ await check('validateJudgeVerdict rejects an inconsistent PASS (a FAIL check pre
   assert(consistentRevision.ok === true, `a consistent NEEDS_REVISION (>=1 FAIL + failure_signature) must still validate, got ${JSON.stringify(consistentRevision)}`);
 });
 
-await check('recordJudgeVerdict: a NEEDS_REVISION verdict recorded against a capped cell reopens it to claimed (rework), logged in trace.reopened_for_rework; a NEEDS_REVISION on an open/claimed cell leaves status untouched; a PASS on a capped cell leaves it capped', async () => {
-  // Case 1: NEEDS_REVISION on a CAPPED cell -> reopens to claimed.
+await check('recordJudgeVerdict (hardening-1-7-10 D7): a NEEDS_REVISION verdict recorded against a capped cell reopens it to OPEN (not claimed) with claim + verify evidence cleared, and the judge ledger + reopened_for_rework preserved; a NEEDS_REVISION on an open/claimed cell leaves status untouched; a PASS on a capped cell leaves it capped', async () => {
+  // Case 1: NEEDS_REVISION on a CAPPED cell -> reopens to OPEN, clean slate.
   addCell(root, makeCell('jr-reopen-1'));
   await claimCell(root, 'jr-reopen-1', 'worker-e');
   await recordVerify(root, 'jr-reopen-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
@@ -2625,10 +2627,26 @@ await check('recordJudgeVerdict: a NEEDS_REVISION verdict recorded against a cap
   const beforeReopen = readCell(root, 'jr-reopen-1');
   assert(beforeReopen.status === 'capped', 'precondition: cell must be capped before the reopening verdict');
   const reopened = await recordJudgeVerdict(root, 'jr-reopen-1', NEEDS_REVISION_VERDICT_EARLY, {});
-  assert(reopened.status === 'claimed', `a NEEDS_REVISION verdict on a capped cell must reopen it to claimed, got status ${JSON.stringify(reopened.status)}`);
+  assert(
+    reopened.status === 'open',
+    `D7: a NEEDS_REVISION verdict on a capped cell must reopen it to "open" (not "claimed" — no owner survives a NEEDS_REVISION), got status ${JSON.stringify(reopened.status)}`,
+  );
   assert(
     reopened.trace.reopened_for_rework && typeof reopened.trace.reopened_for_rework.at === 'string',
     `the reopen must be logged in trace.reopened_for_rework, got ${JSON.stringify(reopened.trace.reopened_for_rework)}`,
+  );
+  // D7: the claim + verify evidence must be cleared (releaseTrace) — this is
+  // what closes the stale-evidence re-cap hole (a later PASS verdict with no
+  // fresh verify must never be able to re-cap on the OLD evidence).
+  assert(reopened.trace.worker === null, `D7: trace.worker must be cleared on reopen, got ${JSON.stringify(reopened.trace.worker)}`);
+  assert(reopened.trace.claim_session === null, `D7: trace.claim_session must be cleared on reopen, got ${JSON.stringify(reopened.trace.claim_session)}`);
+  assert(reopened.trace.verify_passed === null, `D7: trace.verify_passed must be cleared on reopen, got ${JSON.stringify(reopened.trace.verify_passed)}`);
+  assert(reopened.trace.verify_output === null, `D7: trace.verify_output must be cleared on reopen, got ${JSON.stringify(reopened.trace.verify_output)}`);
+  assert(reopened.trace.verify_command === null, `D7: trace.verify_command must be cleared on reopen, got ${JSON.stringify(reopened.trace.verify_command)}`);
+  // The judge ledger itself is NEVER dropped on reopen — only claim/verify evidence is.
+  assert(
+    Array.isArray(reopened.trace.semantic_judge) && reopened.trace.semantic_judge.length === 1,
+    `the judge ledger must survive the reopen intact, got ${JSON.stringify(reopened.trace.semantic_judge)}`,
   );
   const decisionsAfterReopen = activeDecisions(root, { recent: 1 });
   assert(
@@ -2654,6 +2672,69 @@ await check('recordJudgeVerdict: a NEEDS_REVISION verdict recorded against a cap
   await capCell(root, 'jr-reopen-4', { files_changed: ['a.js'], outcome: 'shipped' });
   const stillCapped = await recordJudgeVerdict(root, 'jr-reopen-4', VALID_VERDICT, {});
   assert(stillCapped.status === 'capped', `a PASS verdict on a capped cell must leave it capped, got ${JSON.stringify(stillCapped.status)}`);
+});
+
+await check('recordJudgeVerdict (hardening-1-7-10 D7, stale-evidence hole closed): after a NEEDS_REVISION reopen, capCell refuses to re-cap until a FRESH verify is recorded — a PASS verdict recorded with no new verify can never re-cap on the old (now-cleared) evidence; the honest reclaim -> reverify -> re-PASS path still caps cleanly', async () => {
+  addCell(root, makeCell('jr-reopen-fresh'));
+  await claimCell(root, 'jr-reopen-fresh', 'worker-fresh-1');
+  await recordVerify(root, 'jr-reopen-fresh', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+  await capCell(root, 'jr-reopen-fresh', { files_changed: ['a.js'], outcome: 'shipped' });
+
+  await recordJudgeVerdict(root, 'jr-reopen-fresh', NEEDS_REVISION_VERDICT_EARLY, {});
+  const afterReopen = readCell(root, 'jr-reopen-fresh');
+  assert(afterReopen.status === 'open', `precondition: reopen must land on "open", got ${afterReopen.status}`);
+  assert(afterReopen.trace.verify_passed === null, 'precondition: verify_passed must already be cleared');
+
+  // Recording a PASS verdict immediately — with NO new claim and NO new verify
+  // run at all — must never let capCell succeed on the stale (now-cleared)
+  // evidence. This is the exact hole D7 closes: before the fix, verify_passed
+  // survived the reopen as `true`, so this exact sequence re-capped for free.
+  await recordJudgeVerdict(root, 'jr-reopen-fresh', VALID_VERDICT, {});
+  await assertRejects(
+    () => capCell(root, 'jr-reopen-fresh', { files_changed: ['a.js'], outcome: 'reshipped without a fresh verify' }),
+    'no passing verify result',
+    'capCell must refuse to re-cap on stale/cleared verify evidence — a fresh verify is structurally required after a NEEDS_REVISION reopen',
+  );
+
+  // The honest, fully-reworked path still caps cleanly: re-claim (a
+  // DIFFERENT worker this time — "open" never remembers who owned it
+  // before), re-verify, and the PASS verdict already on record clears the
+  // judge gate.
+  await claimCell(root, 'jr-reopen-fresh', 'worker-fresh-2');
+  await recordVerify(root, 'jr-reopen-fresh', { command: 'node -e "process.exit(0)"', output: 'ok, fresh run', passed: true });
+  const recapped = await capCell(root, 'jr-reopen-fresh', { files_changed: ['a.js'], outcome: 'reshipped after real rework' });
+  assert(recapped.status === 'capped', `a fresh verify + the recorded PASS verdict must re-cap cleanly, got ${recapped.status}`);
+});
+
+await check('recordJudgeVerdict (hardening-1-7-10 D7): reopening a capped cell reconciles the claims-store defensively — a DIFFERENT session can claim the reopened cell with no orphaned claim file left behind', async () => {
+  addCell(root, makeCell('jr-reopen-orphan'));
+  const claimed = await claimCellCrossSession(root, { sessionId: 'sess-old', worker: 'worker-orphan-1', cellId: 'jr-reopen-orphan' });
+  assert(claimed.ok === true, `precondition: cross-session claim must succeed, got ${JSON.stringify(claimed)}`);
+  await recordVerify(root, 'jr-reopen-orphan', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: 'sess-old' });
+  await capCell(root, 'jr-reopen-orphan', { files_changed: ['a.js'], outcome: 'shipped', sessionId: 'sess-old' });
+
+  // capCell already clears the claims-store file on cap (releaseClaimFileBestEffort).
+  // Simulate the exact hazard the defensive reconcile in recordJudgeVerdict guards
+  // against: a claims-store entry that somehow survives to reopen time anyway (a
+  // missed release, manual recreation, or any other cells-store/claims-store drift).
+  // Sessionless (D1 Δ2 shape, no `session` key) on purpose: checkClaimOwnership
+  // treats a claim with no owner as ok:true for ANY caller (`if (!owner) return
+  // {ok:true}`), so this stray entry does not itself block the recordJudgeVerdict
+  // call below — it is purely there to prove the reconcile clears it regardless.
+  assert(readClaim(root, 'jr-reopen-orphan') === null, 'precondition: cap must already have cleared the claim file');
+  claimCellFile(root, null, 'jr-reopen-orphan', 3600);
+  assert(readClaim(root, 'jr-reopen-orphan') !== null, 'precondition: the simulated stray claim file must exist before reopen');
+
+  await recordJudgeVerdict(root, 'jr-reopen-orphan', NEEDS_REVISION_VERDICT_EARLY, {});
+  assert(
+    readClaim(root, 'jr-reopen-orphan') === null,
+    'D7: reopening a capped cell must reconcile (clear) the claims-store defensively, even a stray orphaned entry it did not itself create',
+  );
+
+  // A DIFFERENT session can now claim the reopened cell cleanly — no orphan blocks it.
+  const reclaimed = await claimCellCrossSession(root, { sessionId: 'sess-new', worker: 'worker-orphan-2', cellId: 'jr-reopen-orphan' });
+  assert(reclaimed.ok === true, `a different session must be able to claim the reopened cell with no orphan blocking it, got ${JSON.stringify(reclaimed)}`);
+  assert(reclaimed.cell.trace.claim_session === 'sess-new', `the new claim must carry the new session id, got ${JSON.stringify(reclaimed.cell.trace.claim_session)}`);
 });
 
 // ─── D-GHF-C (GH #27.5): a NEEDS_REVISION semantic-judge verdict blocks cap

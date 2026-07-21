@@ -104,9 +104,20 @@ function checkCellClaimOwnership(cell, worker) {
 // template-consistent minimal shapes"). Cell context comes from the loaded
 // cell; gather/reviewer/advisor get a goal + paths + digest contract shape —
 // the caller fills in the exact paths/question before dispatch.
-function cellPromptBody(cell) {
+//
+// hardening-1-7-10 (D7): the reservation identity rendered into the prompt is
+// the CALLER-supplied, validated `worker` name (the same name
+// checkCellClaimOwnership above just checked against the cell's own
+// trace.worker) — never the synthetic `prepare-<cell.id>` nickname this used
+// to render. That placeholder never matched any reservation a real worker
+// would take out (reservations are keyed by agent name, not by cell id), so
+// a worker following this prompt verbatim would reserve files under an
+// identity nobody else could recognize as theirs. `worker` is required
+// whenever `kind === 'cell'` (prepareDispatch already throws before this is
+// called if it is missing), so this is always a real, trimmed name here.
+function cellPromptBody(cell, worker) {
   return [
-    `Nickname (reservation identity): prepare-${cell.id}`,
+    `Nickname (reservation identity): ${worker}`,
     `Assigned cell id: ${cell.id}`,
     `Feature: ${cell.feature}`,
     '',
@@ -147,8 +158,8 @@ function gatherShapedPromptBody(kind) {
   ].join('\n');
 }
 
-function promptBodyFor(kind, cell) {
-  return kind === 'cell' ? cellPromptBody(cell) : gatherShapedPromptBody(kind);
+function promptBodyFor(kind, cell, worker) {
+  return kind === 'cell' ? cellPromptBody(cell, worker) : gatherShapedPromptBody(kind);
 }
 
 // PREPARE-TIME RECORD (advisor R2): one line per prepared dispatch, appended
@@ -216,6 +227,7 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, worker, for
 
   let cell = null;
   let ownershipOverride = null;
+  let resolvedWorker = null;
   if (kind === 'cell') {
     if (!cellId) {
       throw new Error('dispatch prepare: --cell is required when --kind cell.');
@@ -228,6 +240,7 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, worker, for
       throw new Error('dispatch prepare: --worker is required when --kind cell.');
     }
     const trimmedWorker = worker.trim();
+    resolvedWorker = trimmedWorker;
     const ownership = checkCellClaimOwnership(cell, trimmedWorker);
     if (!ownership.ok && !forceOwnership) {
       return {
@@ -244,12 +257,34 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, worker, for
       // hardening-7 (msh-4 mirror): logs whether or not there was actually a
       // conflict to bypass — "force always leaves an audit line", never
       // conditional on whether it turned out to be needed.
+      //
+      // hardening-1-7-10 (D7): `transferred` is ALWAYS false here — this is
+      // advisory-only, on purpose. cells.mjs's claims.mjs exposes
+      // adoptClaim(root, cellId, newSessionId), a real transfer primitive,
+      // but it operates on a DIFFERENT ownership axis: the SESSION-based
+      // claims-store file cells.mjs's own checkClaimOwnership reads. This
+      // function's ownership check (checkCellClaimOwnership, above) is on
+      // the CELL RECORD's own trace.worker string — a plain name, no session
+      // concept, never touching the claims.mjs store at all (see this
+      // module's own docstring). Calling adoptClaim here would transfer the
+      // wrong record and silently leave cell.trace.worker exactly as it was,
+      // which would be worse than doing nothing — a caller reading
+      // "transferred" would believe the cell's real owner changed when it
+      // did not. There is no simple, correct transfer primitive on this
+      // axis (it would mean a new cells.mjs mutator to rewrite trace.worker
+      // on an already-claimed cell, an architectural addition out of scope
+      // for this cell), so `forceOwnership` stays a bypass of THIS
+      // function's own refusal only: the caller may build and use the
+      // payload, but the cell's actual claim ownership (trace.worker) is
+      // untouched by this call.
       ownershipOverride = {
         forced_by: trimmedWorker,
         bypassed: !ownership.ok,
         code: ownership.ok ? null : ownership.code,
         owner_bypassed: ownership.ok ? null : ownership.owner,
         status_bypassed: ownership.ok ? null : ownership.status,
+        transferred: false,
+        note: 'advisory bypass only — cell.trace.worker (the actual claim owner) was NOT transferred; no correct transfer primitive exists on this ownership axis (see comment above).',
       };
     }
   }
@@ -274,7 +309,7 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, worker, for
     }
   }
 
-  const promptBody = promptBodyFor(kind, cell);
+  const promptBody = promptBodyFor(kind, cell, resolvedWorker);
   const requestedModel = resolved.type === 'model' ? resolved.model : null;
   const pinnedType = PINNED_AGENT_TYPE[tierToken] || 'general-purpose';
 
@@ -415,5 +450,18 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, worker, for
     ...economics,
   });
 
-  return { tool, payload, dispatch_id, economics, ...envelopeExtra };
+  return {
+    tool,
+    payload,
+    dispatch_id,
+    economics,
+    ...envelopeExtra,
+    // hardening-1-7-10 (D7): surfaced to the CALLER, not only logged into
+    // .bee/logs/dispatch.jsonl via appendPrepareRecord below — a caller
+    // that passed --force-ownership must be able to see, from the returned
+    // envelope itself, that ownership was bypassed for THIS call only and
+    // never actually transferred (ownershipOverride.transferred is always
+    // false; see the comment where it is built, above).
+    ...(ownershipOverride ? { ownership_override: ownershipOverride } : {}),
+  };
 }

@@ -108,8 +108,12 @@ import { reserve, release, listReservations, sweepExpired } from './lib/reservat
 // xwh-2: wires the cross-worktree holds ledger (xwh-1, worktree-holds.mjs)
 // into the reservation seam below (handleReservationsReserve/Release/Sweep/
 // List) — see resolveHoldTopology's own comment for the holder/mainRoot
-// resolution this relies on.
-import { mirrorHold, findForeignHolds, releaseHolds, sweepExpiredHolds } from './lib/worktree-holds.mjs';
+// resolution this relies on. hardening-1-7-10 (D3): handleReservationsReserve
+// now composes findForeignHolds + reserve() + insertHold() as ONE atomic
+// section under withHoldsLock (the standalone, self-locking `mirrorHold` is
+// no longer used there — calling it from inside a withHoldsLock section
+// would self-deadlock on the same lock; `insertHold` is its unlocked core).
+import { findForeignHolds, releaseHolds, sweepExpiredHolds, withHoldsLock, insertHold } from './lib/worktree-holds.mjs';
 // D6 — the state.set/gate/worker-add|update|remove/scribing-run verbs below
 // each wrap their read-check-write body in this lock (startFeature already
 // wraps its own body inside lib/state.mjs); CLI verbs WAIT normally, so no
@@ -1120,8 +1124,17 @@ async function handleCellsClaimNext(root, flags) {
   // session id (it resolves the acting session's bound lane), so — unlike
   // the sessionless-claim relaxation in `cells claim` — neither source
   // resolving is still a refusal, just from one of two places now.
+  // hardening-1-7-10 D5/1710-10: `root` is threaded through so
+  // resolveSessionId's durable single-live-session fallback (claims.mjs) can
+  // fire here too — a solo native Codex session has a real session record
+  // (from the session-init hook) but no CLAUDE_CODE_SESSION_ID/BEE_SESSION_ID
+  // env var, so without `root` this call site refused it every time even
+  // though claimCellFile's own fallback (a layer deeper) would have adopted
+  // it. Two-or-more fresh live sessions still resolves null here (real
+  // ambiguity) and falls through to the unchanged refusal below.
   const sessionId = resolveSessionId({
     flag: flags['session-id'] !== undefined ? String(flags['session-id']) : undefined,
+    root,
   });
   if (!sessionId) {
     throw new Error('claim-next: --session-id or CLAUDE_CODE_SESSION_ID env is required.');
@@ -1176,62 +1189,80 @@ async function handleReservationsReserve(root, flags) {
     throw new Error('--ttl must be a positive integer (seconds).');
   }
   const requestedPath = requireFlag(flags, 'path');
-
-  // xwh-2: BEFORE the local reserve, check the shared cross-worktree ledger
-  // for a hold on this path owned by a DIFFERENT checkout — a typed refusal,
-  // not a crash, and it fires before any local reservation row is written
-  // (topology === null, e.g. an ungranted linked worktree or a repo with no
-  // worktrees at all, skips this entirely: byte-identical to today).
   const topology = resolveHoldTopology(root);
+
+  const doReserve = () =>
+    reserve(root, {
+      agent: requireFlag(flags, 'agent'),
+      cell: requireFlag(flags, 'cell'),
+      path: requestedPath,
+      ...(ttl !== undefined ? { ttl } : {}),
+      ...(flags.session ? { session: String(flags.session) } : {}),
+    });
+
+  // hardening-1-7-10 (D3): when a topology exists, the foreign-hold check,
+  // the local reserve, and the mirror-insert all run as ONE atomic section
+  // under withHoldsLock(topology.mainRoot, ...) — the shared cross-worktree
+  // lock outermost, reserve()'s own local 'reservations' lock taken inside
+  // it (a DIFFERENT lock name/often a different root, so no self-deadlock).
+  // Before D3 this was check-then-act: an UNLOCKED findForeignHolds read,
+  // then reserve(), then a separately-locked mirrorHold — three independent
+  // critical sections with real gaps between them, so two checkouts racing
+  // the SAME path could both pass the foreign-hold check before either had
+  // mirrored, and both land an active grant (test_worktree_holds_race.mjs's
+  // same-path scenario (c) demonstrates the double-grant against that old
+  // shape; scenario (d) proves this atomic section yields exactly one
+  // winner). reserve() only performs fs reads/writes, never spawns a child
+  // process, so it is safe to run while holding this lock (never hold the
+  // shared lock across a child-process spawn).
+  let sectionResult;
   if (topology) {
-    const foreignHolds = findForeignHolds(topology.mainRoot, topology.holder, [requestedPath]);
-    if (foreignHolds.length > 0) {
-      const hold = foreignHolds[0];
-      const result = {
-        ok: false,
-        code: 'FOREIGN_HOLD',
-        holder: hold.holder,
-        feature: hold.feature,
-        cell: hold.cell,
-        path: hold.path,
-        expires: holdForeignExpiry(hold),
-      };
-      const text =
-        `bee cross-worktree hold: "${hold.path}" is held by checkout "${hold.holder}" ` +
-        `(feature ${hold.feature || 'unknown'}, cell ${hold.cell || 'unknown'}), ${holdForeignExpiry(hold)}. ` +
-        'Wait for the hold to expire or coordinate with that checkout — a cross-worktree hold is a hard block.';
-      return { result, text, exitCode: 1 };
-    }
+    sectionResult = await withHoldsLock(topology.mainRoot, async () => {
+      const foreignHolds = findForeignHolds(topology.mainRoot, topology.holder, [requestedPath]);
+      if (foreignHolds.length > 0) {
+        return { refusal: foreignHolds[0] };
+      }
+      const reserveResult = await doReserve();
+      if (reserveResult.ok) {
+        insertHold(topology.mainRoot, {
+          path: reserveResult.reservation.path,
+          holder: topology.holder,
+          session: reserveResult.reservation.session || null,
+          cell: reserveResult.reservation.cell,
+          ttl: reserveResult.reservation.ttl_seconds,
+        });
+      }
+      return { reserveResult };
+    });
+  } else {
+    sectionResult = { reserveResult: await doReserve() };
   }
 
-  const result = await reserve(root, {
-    agent: requireFlag(flags, 'agent'),
-    cell: requireFlag(flags, 'cell'),
-    path: requestedPath,
-    ...(ttl !== undefined ? { ttl } : {}),
-    ...(flags.session ? { session: String(flags.session) } : {}),
-  });
+  if (sectionResult.refusal) {
+    const hold = sectionResult.refusal;
+    const result = {
+      ok: false,
+      code: 'FOREIGN_HOLD',
+      holder: hold.holder,
+      feature: hold.feature,
+      cell: hold.cell,
+      path: hold.path,
+      expires: holdForeignExpiry(hold),
+    };
+    const text =
+      `bee cross-worktree hold: "${hold.path}" is held by checkout "${hold.holder}" ` +
+      `(feature ${hold.feature || 'unknown'}, cell ${hold.cell || 'unknown'}), ${holdForeignExpiry(hold)}. ` +
+      'Wait for the hold to expire or coordinate with that checkout — a cross-worktree hold is a hard block.';
+    return { result, text, exitCode: 1 };
+  }
+
+  const result = sectionResult.reserveResult;
   const text = result.ok
     ? `Reserved "${result.reservation.path}" for ${result.reservation.agent} (cell ${result.reservation.cell}, ttl ${result.reservation.ttl_seconds}s).`
     : [
         'Reservation CONFLICT — return [BLOCKED] to the orchestrator:',
         ...result.conflicts.map((c) => `- ${c.agent} holds "${c.path}" (cell ${c.cell})`),
       ].join('\n');
-
-  // xwh-2: mirror the SAME successful reservation into the shared ledger so
-  // a different checkout can see it as a foreign hold, per the same
-  // topology check above. Runs AFTER the local reserve succeeds, never
-  // before — a conflict inside THIS store must never leave a mirrored row
-  // behind for a reservation that was never actually granted.
-  if (result.ok && topology) {
-    await mirrorHold(topology.mainRoot, {
-      path: result.reservation.path,
-      holder: topology.holder,
-      session: result.reservation.session || null,
-      cell: result.reservation.cell,
-      ttl: result.reservation.ttl_seconds,
-    });
-  }
 
   return { result, text, exitCode: result.ok ? 0 : 1 };
 }

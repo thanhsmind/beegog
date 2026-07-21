@@ -84,6 +84,66 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "1-atomic-section",
+            "status": "PASS",
+            "evidence": "bee.mjs:1210-1227 runs findForeignHolds+reserve+insertHold inside withHoldsLock; held section is fs-only, no child spawn."
+          },
+          {
+            "id": "2-no-self-deadlock",
+            "status": "PASS",
+            "evidence": "insertHold never locks; mirrorHold is the locked wrapper; the section calls insertHold, not mirrorHold."
+          },
+          {
+            "id": "3-renewal-scoped",
+            "status": "PASS",
+            "evidence": "renewHolds rewrites mirrored_at only for isActive && session match under the shared lock; test (e) proves unrelated sessions untouched."
+          },
+          {
+            "id": "4-heartbeat-try-once",
+            "status": "PASS",
+            "evidence": "bee-state-sync calls renewHolds maxAttempts:1 in try/catch that only logCrash — renewal failure cannot fail the hook."
+          },
+          {
+            "id": "5-header-corrected",
+            "status": "PASS",
+            "evidence": "worktree-holds.mjs:1-4 header now says WIRED since xwh-2, corrected in hardening-1-7-10 D3."
+          },
+          {
+            "id": "6-race-tests-production-fns",
+            "status": "PASS",
+            "evidence": "(c) permanent negative control on real OLD flow asserts 2+ grants; (d) new flow exactly 1 winner of 8; suite EXIT=0 (judge re-ran)."
+          },
+          {
+            "id": "7-red-evidence",
+            "status": "PASS",
+            "evidence": "trace records pre-fix 8/8 same-path double-grant (exit 1)."
+          },
+          {
+            "id": "8-mirrors-identical",
+            "status": "PASS",
+            "evidence": "cmp clean for bee.mjs, worktree-holds.mjs, bee-state-sync.mjs template/mirror pairs."
+          },
+          {
+            "id": "9-scope",
+            "status": "PASS",
+            "evidence": "53df537: 4 scoped sources + 3 mirrors + bookkeeping; bee-state-sync is the documented substitute for nonexistent bee-heartbeat.mjs."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T02:59:57.521Z"
+      }
     ]
   }
 }

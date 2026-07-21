@@ -64,18 +64,45 @@ function utcNow(nowMs) {
  * never handed down: explicit flag (highest, for tests/CLI callers) ->
  * BEE_SESSION_ID env (runtime-neutral — set by any harness, not just
  * Claude Code) -> CLAUDE_CODE_SESSION_ID env (legacy, kept for back-compat)
- * -> absent (null). A blank/whitespace-only flag or env value is treated as
- * absent, same as omitting it. Callers that require a session (claim-next)
- * still enforce non-null themselves; this helper only resolves, it never
- * refuses. lock.mjs's withStoreLock duplicates this exact chain inline
- * (deliberately, to stay import-light) — keep the two in sync by hand.
+ * -> hardening-1-7-10 D5's durable fallback (below) -> absent (null). A
+ * blank/whitespace-only flag or env value is treated as absent, same as
+ * omitting it. Callers that require a session (claim-next) still enforce
+ * non-null themselves; this helper only resolves, it never refuses. lock.mjs's
+ * withStoreLock duplicates the flag/env portion of this chain inline
+ * (deliberately, to stay import-light, and never sees `root` — the durable
+ * fallback is claims.mjs-only) — keep the two in sync by hand.
+ *
+ * D5 (Codex session bridge) — durable fallback: a native Codex session never
+ * gets CLAUDE_CODE_SESSION_ID/BEE_SESSION_ID set the way Claude Code does, so
+ * every mutation used to resolve null even though the session-init hook had
+ * already registered a real, live session record for it — the "solo-session
+ * SESSION_REQUIRED" bug. When `root` is supplied and flag/env both resolve to
+ * nothing, list every LIVE (non-stale, same freshness predicate as
+ * isConcurrentMode/heartbeatStale) session record: exactly ONE -> adopt its
+ * id (the caller has no identity of its own, but there is exactly one live
+ * worker in this checkout, so it is safe to infer that is who's asking); zero
+ * or two-or-more is left null — a genuinely solo caller with nothing to adopt
+ * stays null (existing sessionless-claim behavior), and real multi-session
+ * ambiguity is never guessed at. Callers that pass no `root` (the large
+ * majority — CLI flag/env resolution) see byte-identical behavior; passing an
+ * `audit` object (mutated with `adopted: true` only on a successful adopt)
+ * lets a caller like claimCellFile below tell an inferred identity apart from
+ * an explicitly supplied one, without changing this function's plain
+ * string|null return type for everyone else.
  */
-export function resolveSessionId({ flag } = {}) {
+export function resolveSessionId({ flag, root, audit } = {}) {
   if (typeof flag === 'string' && flag.trim()) return flag.trim();
   const beeEnv = process.env.BEE_SESSION_ID;
   if (typeof beeEnv === 'string' && beeEnv.trim()) return beeEnv.trim();
   const env = process.env.CLAUDE_CODE_SESSION_ID;
   if (typeof env === 'string' && env.trim()) return env.trim();
+  if (root) {
+    const fresh = listSessionRecords(root).filter((session) => !heartbeatStale(session));
+    if (fresh.length === 1) {
+      if (audit && typeof audit === 'object') audit.adopted = true;
+      return fresh[0].id;
+    }
+  }
   return null;
 }
 
@@ -117,13 +144,20 @@ export function claimGatePath(root, cellId) {
 
 // ─── sessions ────────────────────────────────────────────────────────────────
 
-export function createSession(root, { id = randomUUID(), now = Date.now() } = {}) {
+// D5 (Codex session bridge) — `transcript_path` is OPTIONAL and OMITTED when
+// absent/blank (same "never write a placeholder" convention as `lane` above):
+// the session-init hook passes the real hook payload's transcript_path
+// through here so recovery.mjs can resolve a session's transcript from the
+// stored path directly instead of guessing via Claude's encoded-layout math
+// (recovery.mjs prefers this when present; layout math stays the fallback).
+export function createSession(root, { id = randomUUID(), now = Date.now(), transcript_path } = {}) {
   const sessionId = requireId(id, 'session id');
   ensureDir(sessionsDir(root));
   const session = {
     id: sessionId,
     started_at: utcNow(now),
     last_heartbeat: utcNow(now),
+    ...(typeof transcript_path === 'string' && transcript_path.trim() ? { transcript_path: transcript_path.trim() } : {}),
   };
   try {
     fs.writeFileSync(sessionPath(root, sessionId), `${JSON.stringify(session, null, 2)}\n`, {
@@ -314,15 +348,34 @@ function releaseGate(root, cellId) {
  * (--session-id flag, BEE_SESSION_ID env) BEFORE any claim file is written —
  * a solo caller (nobody else live) is completely unaffected, byte-identical
  * to before this cell.
+ *
+ * hardening-1-7-10 D5 (Codex session bridge): before refusing, the concurrent
+ * case first tries resolveSessionId's durable fallback (this file, above) —
+ * exactly ONE fresh live session record anywhere in the checkout means the
+ * caller almost certainly IS that session (it just has no env var identifying
+ * it), so the claim is auto-adopted under that session's identity instead of
+ * refused; the result and the on-disk claim both carry `adopted: true` so
+ * callers can audit that the identity was inferred. Two or more fresh live
+ * sessions is real ambiguity and still refuses SESSION_REQUIRED exactly as
+ * before — this durable fallback never guesses among multiple candidates.
  */
 export function claimCellFile(root, sessionId, cellId, ttl = DEFAULT_CLAIM_TTL_SECONDS, { now = Date.now() } = {}) {
-  const session = sessionId == null ? null : requireId(sessionId, 'session id');
+  const explicitSession = sessionId == null ? null : requireId(sessionId, 'session id');
   const cell = requireId(cellId, 'cell id');
-  if (session == null && isConcurrentMode(root)) {
-    return fail(
-      'SESSION_REQUIRED',
-      `cell "${cell}" cannot be claimed without identifying the acting session while another session is active — pass --session-id or set BEE_SESSION_ID (CLAUDE_CODE_SESSION_ID is also honored).`,
-    );
+  let session = explicitSession;
+  let adopted = false;
+  if (session == null) {
+    const audit = {};
+    const candidate = resolveSessionId({ root, audit });
+    if (candidate && audit.adopted) {
+      session = candidate;
+      adopted = true;
+    } else if (isConcurrentMode(root)) {
+      return fail(
+        'SESSION_REQUIRED',
+        `cell "${cell}" cannot be claimed without identifying the acting session while another session is active — pass --session-id or set BEE_SESSION_ID (CLAUDE_CODE_SESSION_ID is also honored).`,
+      );
+    }
   }
   ensureDir(claimsDir(root));
   const claim = {
@@ -336,6 +389,10 @@ export function claimCellFile(root, sessionId, cellId, ttl = DEFAULT_CLAIM_TTL_S
     // acquired_at never changes for the life of this claim file, so
     // checkCellBudgets can key off it and stay heartbeat-invariant.
     acquired_at: utcNow(now),
+    // D5: OMITTED (never false) when the session was explicitly supplied —
+    // only a durable-fallback adoption ever sets this, same "omit rather than
+    // write a placeholder" convention as `session` itself above.
+    ...(adopted ? { adopted: true } : {}),
   };
   try {
     fs.writeFileSync(claimPath(root, cell), `${JSON.stringify(claim, null, 2)}\n`, {
@@ -354,7 +411,7 @@ export function claimCellFile(root, sessionId, cellId, ttl = DEFAULT_CLAIM_TTL_S
     }
     throw error;
   }
-  return { ok: true, claim };
+  return { ok: true, claim, ...(adopted ? { adopted: true } : {}) };
 }
 
 /**

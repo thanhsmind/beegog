@@ -38,6 +38,15 @@ import * as laneBinding from '../lib/claims.mjs';
 import { shouldInject, markInjected } from '../lib/inject.mjs';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.mjs';
 
+// Hermeticity (hardening-1-7-10 D1, defense in depth): this suite must never
+// inherit the harness's own session identity. run_verify.mjs already scrubs
+// both vars for every child suite it spawns; deleting them again here means
+// a bare `node skills/bee-hive/templates/tests/test_state.mjs`, run directly
+// from inside a live Claude Code or bee session, is equally hermetic instead
+// of silently depending on whatever session happens to be live.
+delete process.env.CLAUDE_CODE_SESSION_ID;
+delete process.env.BEE_SESSION_ID;
+
 const root = makeTempRepo();
 
 // Self-containment fix (cs-2b split): makeStateRepo is defined in test_lib.mjs's
@@ -560,7 +569,15 @@ await check('lanes: a lane start declaring intended paths refuses on overlap wit
     assert(!fs.existsSync(laneFile(dir, 'lane-j')), 'refusal writes nothing');
     const own = await startFeature(dir, { feature: 'lane-k', lane: true, sessionId: 'sess-them', paths: ['src/app.ts'] });
     assert(own.feature === 'lane-k', 'the holder\'s own session is never blocked by its own claim');
-    await reserve(dir, { agent: 'worker-z', cell: 'z-1', path: 'src/lib/*' });
+    // Explicit session (hardening-1-7-10 D1): two live sessions already exist
+    // in this fixture (sess-me, sess-them), so a sessionless reserve() would
+    // hit the typed SESSION_REQUIRED refusal hermetically (no env fallback to
+    // silently supply an identity) and never create the hold at all — the
+    // test's intent is proving reservation-overlap refusal, not exercising
+    // the sessionless path (that is covered elsewhere), so give it a real
+    // session identity and assert the hold actually landed.
+    const reserved = await reserve(dir, { agent: 'worker-z', cell: 'z-1', path: 'src/lib/*', session: 'sess-them' });
+    assert(reserved.ok === true, `precondition: worker-z's reservation must actually be created, got ${JSON.stringify(reserved)}`);
     await assertRejects(
       () => startFeature(dir, { feature: 'lane-l', lane: true, sessionId: 'sess-me', paths: ['src/lib/util.ts'] }),
       'worker-z',

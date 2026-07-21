@@ -111,7 +111,7 @@ await check('findSessionConflicts: an expired session-owned hold never conflicts
 
 // ─── hardening-4a: sessionless reserve refuses in concurrent mode ──────────
 
-await check('reserve: sessionless reserve still works solo (nobody else live) — byte-unchanged; refuses typed SESSION_REQUIRED once another session goes live, naming --session-id and BEE_SESSION_ID; a real session id still reserves fine in concurrent mode', async () => {
+await check('reserve: sessionless reserve still works solo (nobody else live) — byte-unchanged; ADOPTS the single fresh live session once exactly one goes live; refuses typed SESSION_REQUIRED once TWO OR MORE fresh sessions are live, naming --session-id and BEE_SESSION_ID; a real session id still reserves fine in concurrent mode', async () => {
   const savedLegacyEnv = process.env.CLAUDE_CODE_SESSION_ID;
   const savedBeeEnv = process.env.BEE_SESSION_ID;
   try {
@@ -123,18 +123,31 @@ await check('reserve: sessionless reserve still works solo (nobody else live) �
     assert(!('session' in solo.reservation), 'solo sessionless reserve still omits the session key entirely');
     await release(root, { agent: 'worker-solo', cell: 'concurrent-1' });
 
-    createSession(root, { id: 'other-live-sess' }); // fresh heartbeat -> concurrent mode
-    const refused = await reserve(root, { agent: 'worker-solo', cell: 'concurrent-2', path: 'src/hold/refused.ts' });
-    assert(refused.ok === false, 'sessionless reserve refused while another session is live');
+    // hardening-1-7-10 D5/1710-10: exactly ONE fresh live session means the
+    // caller almost certainly IS that session (no env identifying it, but
+    // nobody else is live either) — resolveSessionId's durable fallback
+    // adopts its id instead of refusing, so this reserve now SUCCEEDS.
+    createSession(root, { id: 'other-live-sess' }); // fresh heartbeat -> exactly one other live session
+    const adopted = await reserve(root, { agent: 'worker-solo', cell: 'concurrent-2', path: 'src/hold/refused.ts' });
+    assert(adopted.ok === true, 'sessionless reserve now ADOPTS the one fresh live session instead of refusing');
+    assert(adopted.reservation.session === 'other-live-sess', 'the adopted reservation carries the sole live session id');
+    await release(root, { agent: 'worker-solo', cell: 'concurrent-2' });
+
+    // TWO OR MORE fresh live sessions is real ambiguity: the durable fallback
+    // never guesses among multiple candidates, so the typed refusal stands
+    // exactly as before.
+    createSession(root, { id: 'second-live-sess' }); // now two fresh live sessions
+    const refused = await reserve(root, { agent: 'worker-solo', cell: 'concurrent-3', path: 'src/hold/refused2.ts' });
+    assert(refused.ok === false, 'sessionless reserve refused once TWO OR MORE sessions are live');
     assert(refused.code === 'SESSION_REQUIRED', `expected typed SESSION_REQUIRED, got ${refused.code}`);
     assert(typeof refused.reason === 'string' && refused.reason.includes('--session-id'), `reason should name --session-id, got ${JSON.stringify(refused.reason)}`);
     assert(refused.reason.includes('BEE_SESSION_ID'), `reason should name BEE_SESSION_ID, got ${JSON.stringify(refused.reason)}`);
     assert(Array.isArray(refused.conflicts) && refused.conflicts.length === 0, 'refusal carries an empty conflicts array so an existing !ok caller reading .conflicts never crashes');
-    assert(listReservations(root, { activeOnly: true }).filter((r) => r.cell === 'concurrent-2').length === 0, 'the refusal never leaves a reservation row behind');
+    assert(listReservations(root, { activeOnly: true }).filter((r) => r.cell === 'concurrent-3').length === 0, 'the refusal never leaves a reservation row behind');
 
-    const withSession = await reserve(root, { agent: 'worker-solo', cell: 'concurrent-2', path: 'src/hold/refused.ts', session: 'other-live-sess' });
-    assert(withSession.ok === true, 'a real session id reserves fine even in concurrent mode');
-    await release(root, { agent: 'worker-solo', cell: 'concurrent-2' });
+    const withSession = await reserve(root, { agent: 'worker-solo', cell: 'concurrent-3', path: 'src/hold/refused2.ts', session: 'other-live-sess' });
+    assert(withSession.ok === true, 'a real session id reserves fine even with two-or-more sessions live');
+    await release(root, { agent: 'worker-solo', cell: 'concurrent-3' });
   } finally {
     if (savedLegacyEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
     else process.env.CLAUDE_CODE_SESSION_ID = savedLegacyEnv;

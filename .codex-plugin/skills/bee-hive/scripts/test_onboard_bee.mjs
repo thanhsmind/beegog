@@ -943,21 +943,30 @@ try {
   check(codexStateSyncCommandCount === 3 && codexStateSyncCommandWindowsCount === 3,
     "bee-state-sync.mjs appears exactly 3x in command AND 3x in commandWindows (canonical PostToolUse/SubagentStop/Stop; seeded stale Stop twin dropped)",
     `command: ${codexStateSyncCommandCount}, commandWindows: ${codexStateSyncCommandWindowsCount}`);
-  // Regression guard for the Windows contract itself (cell codex-command-windows-1):
-  // every codex-repo entry's commandWindows is a BARE node invocation with no
-  // shell metacharacters — no $(...), no [ -n ], no exec.
+  // Regression guard for the Windows contract itself (hardening-1-7-10 D6,
+  // tightened by cell 1710-6): every codex-repo entry's commandWindows is now
+  // the git-root-resolving "node -e SCRIPT <script>" bootstrap, not the old
+  // bare "node .bee/bin/hooks/<file>.mjs --source=repo" form (that form
+  // assumed the session cwd IS the repo root and threw MODULE_NOT_FOUND from
+  // a nested cwd). This mirrors the NODE_WINDOWS_BOOTSTRAP structural regex +
+  // FORBIDDEN_WINDOWS_CHARS check hooks/test_hook_contracts.mjs's
+  // runCatalogDriftChecks pins for the exact same contract — that file is not
+  // importable here (its top-level `await main()` runs the whole suite as a
+  // side effect of being loaded), so the same structural shape is duplicated
+  // rather than shared, and must be kept in sync by hand with that file.
   const allCodexRepoHooks2 = Object.values(codexRepo2.hooks || {})
     .flat()
     .flatMap((e) => e.hooks || [])
     .filter((h) => String(h.command || "").includes("hooks/bee-"));
+  const NODE_WINDOWS_BOOTSTRAP =
+    /^node -e "var cp=require\('child_process'\);var path=require\('path'\);var hook=process\.argv\[1\];var root='';try\{root=cp\.execSync\('git rev-parse --show-toplevel',\{stdio:\['ignore','pipe','ignore'\]\}\)\.toString\(\)\.trim\(\);\}catch\(e\)\{root='';\}if\(!root\)\{process\.exit\(0\);\}var target=path\.join\(root,'\.bee','bin','hooks',hook\);var r=cp\.spawnSync\(process\.execPath,\[target,'--source=repo'\],\{stdio:'inherit'\}\);if\(r\.error\)\{process\.exit\(1\);\}process\.exit\(r\.status===null\?1:r\.status\);" bee-[a-z-]+\.mjs$/;
+  const FORBIDDEN_WINDOWS_CHARS = /[$%`]/;
   const bareNodeNoShellMeta = allCodexRepoHooks2.every((h) =>
     typeof h.commandWindows === "string" &&
-    /^node \.bee\/bin\/hooks\/bee-[a-z-]+\.mjs --source=repo$/.test(h.commandWindows) &&
-    !h.commandWindows.includes("$(") &&
-    !h.commandWindows.includes("[ -n") &&
-    !/\bexec\b/.test(h.commandWindows));
+    NODE_WINDOWS_BOOTSTRAP.test(h.commandWindows) &&
+    !FORBIDDEN_WINDOWS_CHARS.test(h.commandWindows));
   check(bareNodeNoShellMeta,
-    "every bee .codex/hooks.json entry's commandWindows is a bare \"node .bee/bin/hooks/<file>.mjs --source=repo\" with no shell metacharacters ($(, [ -n, exec)",
+    "every bee .codex/hooks.json entry's commandWindows is the git-root-resolving \"node -e SCRIPT <script>\" bootstrap (D6), with no $, %, or backtick anywhere",
     JSON.stringify(allCodexRepoHooks2.map((h) => h.commandWindows)));
 
   // --- 9e. Codex user-config status line (machine-level, add-only) -----------

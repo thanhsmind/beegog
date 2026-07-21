@@ -19,6 +19,7 @@
 // must stay byte-identical.
 
 import fs from 'node:fs';
+import path from 'node:path';
 import { readJsonl } from './fsutil.mjs';
 import { claudeProjectsRoot, resolveTranscript } from './perf.mjs';
 import {
@@ -308,13 +309,38 @@ export function detectCrashCandidates(
 
     let transcript = null;
     let transcriptRuntime = null;
-    for (const r of roots) {
-      if (!r.scanned) continue; // missing/unreadable root — already warned (if configured) by scanTranscriptRoots
-      const found = resolveTranscript(r.path, projectPath, { sessionId: session.id });
+    // hardening-1-7-10 D5 (Codex session bridge): a session's own recorded
+    // transcript_path (persisted by the session-init hook from the real hook
+    // payload — claims.mjs createSession) is authoritative and checked FIRST,
+    // independent of whether any transcript root is even scanned — it is
+    // already an absolute path, so it works for a runtime (Codex) whose
+    // rollout files live nowhere near Claude's encoded-layout roots at all.
+    // The runtime tag is a best-effort match against a scanned root's path
+    // (never a gate): no scanned root's path is a prefix of the stored path
+    // -> tagged null (unknown), the resolution itself is unaffected either way.
+    const storedPath =
+      typeof session.transcript_path === 'string' && session.transcript_path.trim()
+        ? session.transcript_path.trim()
+        : null;
+    if (storedPath) {
+      const found = resolveTranscript(null, null, { transcriptPath: storedPath });
       if (found) {
         transcript = found;
-        transcriptRuntime = r.runtime;
-        break;
+        const matchedRoot = roots.find(
+          (r) => r.scanned && found.startsWith(r.path.endsWith(path.sep) ? r.path : `${r.path}${path.sep}`),
+        );
+        transcriptRuntime = matchedRoot ? matchedRoot.runtime : null;
+      }
+    }
+    if (!transcript) {
+      for (const r of roots) {
+        if (!r.scanned) continue; // missing/unreadable root — already warned (if configured) by scanTranscriptRoots
+        const found = resolveTranscript(r.path, projectPath, { sessionId: session.id });
+        if (found) {
+          transcript = found;
+          transcriptRuntime = r.runtime;
+          break;
+        }
       }
     }
     if (!transcript) continue; // D1: transcript must exist to prove an abrupt stop

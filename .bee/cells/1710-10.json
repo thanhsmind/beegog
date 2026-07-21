@@ -65,6 +65,56 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "1-claim-next-root",
+            "status": "PASS",
+            "evidence": "handleCellsClaimNext resolves with {flag, root}; refusal untouched so 2+ fresh still refuse."
+          },
+          {
+            "id": "2-reserve-root",
+            "status": "PASS",
+            "evidence": "reservations.mjs reserve() threads root before the SESSION_REQUIRED refusal."
+          },
+          {
+            "id": "3-atomic-section-intact",
+            "status": "PASS",
+            "evidence": "withHoldsLock still wraps findForeignHolds + reserve + insertHold; diff touched only handleCellsClaimNext."
+          },
+          {
+            "id": "4-four-new-tests",
+            "status": "PASS",
+            "evidence": "4 rows (solo adopts / two refuse, for claim-next AND reserve); suite 225/0."
+          },
+          {
+            "id": "5-mirrors-identical",
+            "status": "PASS",
+            "evidence": "cmp IDENTICAL for bee.mjs and reservations.mjs pairs."
+          },
+          {
+            "id": "6-red-evidence",
+            "status": "PASS",
+            "evidence": "pre-fix solo-session claim-next exit 1 with session-required error recorded."
+          },
+          {
+            "id": "7-scope",
+            "status": "PASS",
+            "evidence": "79f0b46 touches only scoped sources + mirrors + bookkeeping."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T03:11:03.878Z"
+      }
     ]
   }
 }

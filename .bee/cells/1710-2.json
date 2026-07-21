@@ -61,6 +61,61 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "1-tryStaleTakeover-semantics",
+            "status": "PASS",
+            "evidence": "lock.mjs:175-182 gates takeover: age<=STALE_MS false; between STALE_MS and HARD_STALE_MS reads holder.pid and returns false if isPidAlive; past ceiling steals regardless. isPidAlive: non-positive/unparsable dead, kill success alive, ESRCH dead, EPERM/other alive."
+          },
+          {
+            "id": "2-no-heartbeat",
+            "status": "PASS",
+            "evidence": "no setInterval/new timers in templates/lib/lock.mjs; only pre-existing promise sleep helper."
+          },
+          {
+            "id": "3-mirror-byte-identical",
+            "status": "PASS",
+            "evidence": "cmp templates/lib/lock.mjs .bee/bin/lib/lock.mjs IDENTICAL exit 0."
+          },
+          {
+            "id": "4-store-lock-tests",
+            "status": "PASS",
+            "evidence": "isPidAlive units incl EPERM=alive/ESRCH=dead/unmapped=alive via monkeypatch; scenario (e) live-holder 45s-backdate not stolen (LOCK_BUSY); scenario (f) past-ceiling live pid taken over; dead-holder takeover preserved."
+          },
+          {
+            "id": "5-worktree-merge-regression",
+            "status": "PASS",
+            "evidence": "real worktree merge holds worktree-admin across 45s Atomics.wait verify; second acquisition 33s past STALE_MS refused typed busy, zero mutation, original merge completes."
+          },
+          {
+            "id": "6-store-lock-green",
+            "status": "PASS",
+            "evidence": "node scripts/test_store_lock.mjs green 3/3 rerun; one first-run scenario-(c) concurrency flake is the pre-existing takeover path under swarm load (documented rerun-once class), not the new liveness gate."
+          },
+          {
+            "id": "7-red-evidence",
+            "status": "PASS",
+            "evidence": "trace red_failure_evidence: pre-fix age-only variant let a busy child steal a live-holder lock in 49ms instead of LOCK_BUSY."
+          },
+          {
+            "id": "8-no-unrelated-files",
+            "status": "PASS",
+            "evidence": "git show --stat d532b9c: only the 4 scoped files + cell bookkeeping."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T02:41:56.278Z"
+      }
     ]
   }
 }

@@ -70,6 +70,66 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "1-adoption-only-one-fresh",
+            "status": "PASS",
+            "evidence": "resolveSessionId fallback filters listSessionRecords via !heartbeatStale (claims.mjs:100), same predicate isConcurrentMode uses; stale records excluded from the fresh count."
+          },
+          {
+            "id": "2-two-fresh-still-refuse",
+            "status": "PASS",
+            "evidence": "claimCellFile: with 2+ fresh, resolveSessionId null -> isConcurrentMode -> SESSION_REQUIRED; test row green."
+          },
+          {
+            "id": "3-adoption-auditable",
+            "status": "PASS",
+            "evidence": "adopted:true on both the returned object and the on-disk claim record; test asserts both."
+          },
+          {
+            "id": "4-transcript-path-persisted",
+            "status": "PASS",
+            "evidence": "createSession stores transcript_path; bee-session-init passes ctx.payload.transcript_path through."
+          },
+          {
+            "id": "5-perf-stored-path-first",
+            "status": "PASS",
+            "evidence": "resolveTranscript returns the stored path when it exists BEFORE any layout math; falls back otherwise."
+          },
+          {
+            "id": "6-recovery-codex-layout",
+            "status": "PASS",
+            "evidence": "detectCrashCandidates checks storedPath independent of scanned roots; test uses genuine non-Claude layout codex-home/sessions/2026/07/21/rollout-<sid>.jsonl with Claude root absent."
+          },
+          {
+            "id": "7-verify-green",
+            "status": "PASS",
+            "evidence": "env-scrubbed test_claims 23/0 and test_recovery 37/0 exit 0 (judge re-ran)."
+          },
+          {
+            "id": "8-red-evidence",
+            "status": "PASS",
+            "evidence": "trace records pre-fix SESSION_REQUIRED refusal on the adoption row (22 passed, 1 failed)."
+          },
+          {
+            "id": "9-scope-and-order",
+            "status": "PASS",
+            "evidence": "commit f39407a touches only scoped files + bookkeeping; resolution order flag -> BEE_SESSION_ID -> CLAUDE_CODE_SESSION_ID -> root fallback -> null."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T02:49:18.966Z"
+      }
     ]
   }
 }

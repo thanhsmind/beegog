@@ -64,6 +64,61 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "1-reopen-path",
+            "status": "PASS",
+            "evidence": "NEEDS_REVISION over capped sets status open, stamps reopened_for_rework + appends semantic_judge BEFORE releaseTrace clears worker/claim_session/verify fields; releaseClaimFileBestEffort reconciles claims-store."
+          },
+          {
+            "id": "2-stale-hole-closed",
+            "status": "PASS",
+            "evidence": "test row: capCell refuses re-cap until a FRESH verify is recorded; honest reclaim->reverify->re-PASS still caps."
+          },
+          {
+            "id": "3-different-session-reclaim",
+            "status": "PASS",
+            "evidence": "test row: a DIFFERENT session claims the reopened cell with no orphaned claim file."
+          },
+          {
+            "id": "4-dispatch-worker-identity",
+            "status": "PASS",
+            "evidence": "dispatch-prepare.mjs:120 renders the validated worker as reservation identity; no prepare-<id> remains."
+          },
+          {
+            "id": "5-force-ownership-advisory",
+            "status": "PASS",
+            "evidence": "envelope carries transferred:false + explicit advisory note; friction row filed in backlog."
+          },
+          {
+            "id": "6-test-misc-expected-single-fail",
+            "status": "PASS",
+            "evidence": "94 passed, 1 failed — only the vendored byte-identity row owned by close-out 1710-9."
+          },
+          {
+            "id": "7-red-evidence",
+            "status": "PASS",
+            "evidence": "pre-fix script re-capped on stale verify evidence; post-fix fails at first assertion (status open, verify_passed null)."
+          },
+          {
+            "id": "8-scope",
+            "status": "PASS",
+            "evidence": "fc71869 touches only the 3 scoped sources + bookkeeping; .bee/bin sync deliberately deferred to D9."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T03:10:41.329Z"
+      }
     ]
   }
 }

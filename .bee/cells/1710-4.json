@@ -64,6 +64,71 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "1-writeCell-sync",
+            "status": "PASS",
+            "evidence": "writeCell export function (cells.mjs:888, sync); addCells maps synchronously (cells.mjs:1070) — no Promises."
+          },
+          {
+            "id": "2-sync-lock-same-rules",
+            "status": "PASS",
+            "evidence": "acquireStoreLockOnceSync calls the SAME tryStaleTakeover as withStoreLock (1710-2 pid-liveness semantics), no retry/sleep."
+          },
+          {
+            "id": "3-typed-errors",
+            "status": "PASS",
+            "evidence": "CELL_ARCHIVED at cells.mjs:897-900; CELLS_ARCHIVE_BUSY at :895; tests test_cells.mjs:799/:829."
+          },
+          {
+            "id": "4-four-guards",
+            "status": "PASS",
+            "evidence": "assertNotArchived inside reopenCell:1626, setTier:1662, resetCellBudget:1994, recordJudgeVerdict:2078; no-fork test :741."
+          },
+          {
+            "id": "5-archive-txn",
+            "status": "PASS",
+            "evidence": "recoverArchiveJournal at both entries; collision preflight before any rename; journal pre-loop, cleared after summary writeJsonAtomic, all inside cells-archive lock."
+          },
+          {
+            "id": "6-unarchive-refusal",
+            "status": "PASS",
+            "evidence": "ArchiveDestinationCollisionError('active') before any rename; test :856 — typed refusal, existing file untouched."
+          },
+          {
+            "id": "7-no-lock-inversion",
+            "status": "PASS",
+            "evidence": "archive/unarchive use only cells-archive lock, no cells:<id>, no writeCell call."
+          },
+          {
+            "id": "8-suite-green",
+            "status": "PASS",
+            "evidence": "test_cells 98/0 exit 0 (judge re-ran)."
+          },
+          {
+            "id": "9-red-evidence",
+            "status": "PASS",
+            "evidence": "pre-fix reopenCell resurrected an archived cell as a live duplicate — captured in trace."
+          },
+          {
+            "id": "10-scope",
+            "status": "PASS",
+            "evidence": "9d24ae7 touches only cells.mjs, lock.mjs (additive sync helper), test_cells.mjs + bookkeeping."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T02:53:44.215Z"
+      }
     ]
   }
 }

@@ -65,6 +65,61 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "both-generators-emit-identical-bootstrap-(no-divergence)",
+            "status": "PASS",
+            "evidence": "catalog.mjs windowsBootstrap and onboard_bee.mjs codexWindowsBootstrap bodies compared programmatically: bodies identical: true; both replace the old node .bee/bin/hooks form"
+          },
+          {
+            "id": "no-dollar/percent/backtick-or-shell-divergent-metachars",
+            "status": "PASS",
+            "evidence": "emitted commandWindows uses only single quotes internally; FORBIDDEN_WINDOWS_CHARS regex asserts none present; contract row green across all 13 entries"
+          },
+          {
+            "id": "exit-0-silent-outside-git-repo-(POSIX-parity),-tested",
+            "status": "PASS",
+            "evidence": "if(!root){process.exit(0);} with catch setting root empty; nonGit arm asserts status 0, empty stdout — row green"
+          },
+          {
+            "id": "stdin-reaches-child-hook",
+            "status": "PASS",
+            "evidence": "spawnSync(process.execPath,[target,'--source=repo'],{stdio:'inherit'}) passes the payload stream to the child"
+          },
+          {
+            "id": "contract-test-truly-executes-from-nested-cwd;-old-form-would",
+            "status": "PASS",
+            "evidence": "nested-cwd-execution row spawnSync-runs the live rendered commandWindows from nestedDir asserting MARKER+status0; old form reproduced MODULE_NOT_FOUND exit 1"
+          },
+          {
+            "id": ".codex/hooks.json-regenerated,-not-hand-edited",
+            "status": "PASS",
+            "evidence": "diff of committed file against renderProjectionText codex repo output = IDENTICAL"
+          },
+          {
+            "id": "node-hooks/test_hook_contracts.mjs-green",
+            "status": "PASS",
+            "evidence": "180 rows across 19 check groups, 0 failing — ALL PASS (judge re-ran)"
+          },
+          {
+            "id": "no-unrelated-files-touched",
+            "status": "PASS",
+            "evidence": "git show --stat cc79d8b: only the 4 scoped files + the cell bookkeeping record"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T02:32:42.296Z"
+      }
     ]
   }
 }

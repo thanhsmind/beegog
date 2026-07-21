@@ -42,7 +42,21 @@ export function claudeProjectsRoot(env = process.env, homedir = os.homedir()) {
 // resolveTranscript — the session transcript file for a project. With sessionId,
 // return <root>/<enc>/<sessionId>.jsonl (or null if absent). Otherwise the
 // newest-mtime top-level *.jsonl in that dir (the live session), or null.
-export function resolveTranscript(projectsRoot, projectPath, { sessionId } = {}) {
+//
+// hardening-1-7-10 D5 (Codex session bridge): `transcriptPath` — when it is a
+// non-empty string AND exists on disk — is returned directly, BEFORE any
+// layout math runs at all (so it works even when `projectsRoot`/`projectPath`
+// don't apply to this runtime, e.g. a real Codex rollout file living nowhere
+// near Claude's encoded-project-dir layout). This is what makes a session's
+// own stored transcript_path (claims.mjs createSession/recovery.mjs) real
+// transcript resolution instead of a relabeled Claude-layout guess. Absent or
+// non-existent transcriptPath falls straight through to the pre-existing
+// layout math below — byte-identical to before this cell.
+export function resolveTranscript(projectsRoot, projectPath, { sessionId, transcriptPath } = {}) {
+  if (typeof transcriptPath === 'string' && transcriptPath.trim() && fs.existsSync(transcriptPath.trim())) {
+    return transcriptPath.trim();
+  }
+  if (!projectsRoot || !projectPath) return null;
   const dir = path.join(projectsRoot, encodeProjectDir(projectPath));
   if (sessionId) {
     const file = path.join(dir, `${sessionId}.jsonl`);
