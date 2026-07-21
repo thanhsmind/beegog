@@ -260,8 +260,12 @@ function buildReviewBlock(root) {
     const sessions = listReviews(root);
     const counts = { total: candidates.length, unreviewed: 0, in_review: 0, reviewed: 0, stale: 0 };
     let highRiskUnreviewed = 0;
+    // D2 (cli-performance CONTEXT): one pass-local memo for the whole loop —
+    // candidates sharing a covering session's (head,ref)/(ref) pair answer
+    // the underlying git question once instead of once per candidate.
+    const gitMemo = new Map();
     for (const candidate of candidates) {
-      const derived = deriveCandidateStatus(root, candidate, { sessions });
+      const derived = deriveCandidateStatus(root, candidate, { sessions, gitMemo });
       if (derived.status === 'unreviewed') counts.unreviewed += 1;
       else if (derived.status === 'in review') counts.in_review += 1;
       else if (derived.status === 'reviewed') counts.reviewed += 1;
@@ -2461,8 +2465,11 @@ function buildReviewsStatusSummary(root, { feature } = {}) {
   const counts = { verified: candidates.length };
   for (const label of CANDIDATE_STATUSES) counts[label] = 0;
 
+  // D2 (cli-performance CONTEXT): same pass-local gitMemo idiom as
+  // buildReviewBlock above — born once per summary pass, never persisted.
+  const gitMemo = new Map();
   const rows = candidates.map((candidate) => {
-    const derived = deriveCandidateStatus(root, candidate, { sessions });
+    const derived = deriveCandidateStatus(root, candidate, { sessions, gitMemo });
     counts[derived.status] += 1;
     return {
       ...candidate,
