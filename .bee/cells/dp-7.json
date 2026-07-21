@@ -37,19 +37,45 @@
     "dp-4",
     "dp-6"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
-    "deviations": [],
+    "worker": "orch",
+    "outcome": "Backfill complete: 406/406 legacy events classified (zero untagged across active+archive), taxonomy bootstrapped, index rendered as recall surface, skills promote index+structured filters over bare grep",
+    "files_changed": [
+      "docs/decisions/taxonomy.json",
+      "docs/decisions/index.md",
+      "skills/bee-hive/references/routing-and-contracts.md",
+      "skills/bee-planning/SKILL.md",
+      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+    ],
+    "deviations": [
+      "apply batch ran twice (first invocation output was piped away, looked failed, re-ran) -> each target carries 2 identical tag events; overlay latest-wins makes it semantically idempotent, append-only store integrity intact",
+      "dp-6-era CAUTION check (taxonomy absent) retired by design and replaced with the steady-state guard (taxonomy exists+parses+non-empty) — the expiry was the cell plan itself",
+      "4 events missed by batch classifiers were classified by the orchestrator inline (hook-runtime/codex/hooks family)"
+    ],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-21T12:34:36.048Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "verify_output": "untagged remaining: {decisions:[]} (ZERO across active+archive); index rendered 828 lines, --check 'up to date' (byte-stable); 5-event spot check: each found via search --tag AND present in index under overlaid group (39be1227:223, 21cdbe43:416, 5fff1591:260, 66794091:758, 461491de:526); untagged log now refuses typed in THIS repo; suite 84/84; run_verify PASS 55 suites wall=60392ms",
+    "verify_passed": true,
+    "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+    "claimed_at": "2026-07-21T09:36:25.587Z",
+    "verify_command": "decisions tag --stdin (406 targets, 11 haiku extraction batches + 4 orchestrator-classified); decisions search --untagged --all; decisions render + --check; test_decisions_propagation; run_verify",
+    "verified_at": "2026-07-21T12:34:35.981Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-21T12:34:35.981Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T09:40:57.790Z",
+        "acquired_at": "2026-07-21T09:36:25.585Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }

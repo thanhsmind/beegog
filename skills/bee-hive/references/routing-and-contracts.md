@@ -97,7 +97,7 @@ Retrieval triggers, not reading lists. Token budgets by lane:
 | standard | ≈ 5K tokens | + recent active decisions, CONTEXT.md | touching schema → schema decisions first; touching auth → auth decisions |
 | high-risk | ≈ 10K tokens | + full decision search on tags, plan history | + high-risk template, prior spikes in `.bee/spikes/`, related learnings files |
 
-Reading order per area (state layer, decision 0001): **spec → decisions → history**. `docs/specs/reading-map.md` answers "where does X live" before any broad grep.
+Reading order per area (state layer, decision 0001; recall surface per decision-propagation D8): **spec → decision index (the area's section of `docs/decisions/index.md`, complete by construction; drill into events via `decisions search --tag/--scope`) → history**. `docs/specs/reading-map.md` answers "where does X live" before any broad grep.
 
 Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `coverage/` — the scout guard blocks them anyway.
 

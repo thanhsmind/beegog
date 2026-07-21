@@ -1112,18 +1112,21 @@ function writeTaxonomyFixture(root, { tags = [], candidates = [] } = {}) {
   fs.writeFileSync(file, `${JSON.stringify({ schema_version: 1, tags, candidates }, null, 2)}\n`, 'utf8');
 }
 
-// ─── CAUTION (self-hosting hazard): this repo must never gain a real
-// taxonomy.json as a side effect of this suite — that would flip every
-// sibling session's ordinary `decisions log` calls into typed refusals.
+// ─── Self-hosting steady state: dp-7 bootstrapped this repo's real
+// taxonomy.json (the dp-6-era absence guard expired by design when the
+// backfill landed). From here on the file must exist, parse, and carry a
+// non-empty canonical vocabulary — classification is mandatory at write
+// time in THIS repo now.
 // ────────────────────────────────────────────────────────────────────────
 
 await check(
-  'dp-6 CAUTION: this repo has no docs/decisions/taxonomy.json — bootstrapping it is dp-7\'s job, not dp-6\'s',
+  'dp-7: this repo\'s docs/decisions/taxonomy.json exists, parses, and carries a non-empty tags[] vocabulary',
   async () => {
-    assert(
-      !fs.existsSync(taxonomyFilePath(REPO_ROOT)),
-      'a taxonomy.json here would refuse every sibling session\'s untagged `decisions log` bookkeeping calls',
-    );
+    const p = taxonomyFilePath(REPO_ROOT);
+    assert(fs.existsSync(p), 'dp-7 bootstrapped the canonical taxonomy — its absence is a regression');
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    assert(Array.isArray(parsed.tags) && parsed.tags.length > 0, 'taxonomy tags[] must be a non-empty array');
+    assert(Array.isArray(parsed.candidates), 'taxonomy candidates[] must be an array');
   },
 );
 
