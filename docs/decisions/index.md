@@ -136,6 +136,7 @@ each decision event.
 
 ### decisions
 
+- d5f997ca · 2026-07-21 · decision-propagation closed: dp-1..dp-9 capped (7 opus-judged PASS where behavior-changing), spec docs/specs/decision-memory.md written, P57 flipped done under the new per-clause CoS rule itself, GH #32/#33/#34 closure evidence assembled
 - f5869918 · 2026-07-21 · auto-approved Gate 3 (bypass total): decision-propagation slice 1 (dp-1..4) READY — plan-checker iter-1 BLOCKER (append/archive lost-write) + 4 warnings resolved in cell text, iter-2 CLEAN; cell review FIX-FIRST -> recheck CLEAN; red-first mandated per cell
 - a40a6a86 · 2026-07-21 · auto-approved Gate 2 (bypass total): decision-propagation standard-lane plan frozen (docs/history/decision-propagation/plan.md) — slice 1 = store+CLI core (tags/scope recall, supersede sweep+inheritance, archive verb, index render), slices 2-3 prose/specs + e2e proof
 - bd700f44 · 2026-07-21 · auto-approved Gate 1 (bypass total): decision-propagation CONTEXT.md locked

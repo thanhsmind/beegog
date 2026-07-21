@@ -4,6 +4,12 @@ Where things live. Read the touched area's spec before its code.
 
 ## Area specs
 
+- [`decision-memory.md`](./decision-memory.md) — what the system remembers about its own
+  decisions: mandatory write-time classification against a canonical taxonomy, append-only
+  retro-tagging with read-time overlay, the derived index as the guaranteed recall surface
+  (reading order spec → decision index → history), the supersede citation sweep that makes a
+  reversal reach every citing artifact, the archive split with union reads, and the
+  per-CoS-clause done-flip rule (GH #32/#33/#34).
 - [`feedback-digest.md`](./feedback-digest.md) — how a repository turns its own workflow records into a
   safe portable snapshot, how the maintainers' repository reads other repositories' snapshots
   without trusting them, and how the collected view is ranked and fed to the gated
