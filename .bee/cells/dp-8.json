@@ -29,19 +29,89 @@
     "skills/bee-scribing/references/scribing-reference.md"
   ],
   "deps": [],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "orch",
+    "outcome": "CoS-checked done-flip in scribing + identical never-looser compounding fallback + short8 citation discipline in the scribing reference",
+    "files_changed": [
+      "skills/bee-scribing/SKILL.md",
+      "skills/bee-compounding/SKILL.md",
+      "skills/bee-scribing/references/scribing-reference.md"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "capped_at": "2026-07-21T12:47:28.165Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\"run_verify skill-render + manifest suites (prose has no behavioral test)\"],\n  \"tests_added\": [\"none — prose-rule cell; acceptance = grep-visible truths (per-clause rule at scribing:96, identical never-looser fallback at compounding:81, Citation Discipline section at scribing-reference:159) + plugin-mirror byte-match + manifest --check\"],\n  \"red_failure_evidence\": \"Not applicable to prose (no runnable test can go red on skill text); honest substitute recorded per judge check behavior-change-red-first-evidence-honesty: pre-change text lacked every new clause (the amended lines replace the exact passages quoted in CONTEXT evidence #34).\",\n  \"verification_run\": \"render 122+122 files, release_manifest --write/--check 417 match, run_verify PASS 55 suites (worker wall=60969ms) + orchestrator re-run PASS 55 wall=60852ms; opus judge PASS 7/7 incl. the semantic bar (the GH #34 subset scenario is refused by the amended text alone), independence confirmed.\"\n}\n",
+    "verify_output": "grep proofs (must_haves truths):\nskills/bee-scribing/SKILL.md:96: check the flip against the row's CoS ... enumerate every CoS clause and cite the delivered evidence per clause (D1, decision `b9b9fee3`) ... Delivered:/Remaining: annotation ... Silent full-flip on partial delivery is never allowed.\nskills/bee-compounding/SKILL.md:81: under the identical per-clause CoS check as scribing, never looser (D1, decision `b9b9fee3`) ... Delivered:/Remaining: annotation ... silent full-flip on partial delivery is never allowed here either.\nskills/bee-scribing/references/scribing-reference.md:159-161: new \"## Citation Discipline (D3)\" — artifacts encoding a decision cite the short8 id; uncited embodiments are the residual risk. Also amended lines 106/140/152 to point at short8.\n\nPipeline:\nnode scripts/render_plugin_skill_trees.mjs -> WROTE .claude-plugin/skills: 122 file(s), WROTE .codex-plugin/skills: 122 file(s)\nnode scripts/release_manifest.mjs --write -> WROTE docs/history/codex-harness-hardening/release-manifest.json: 417 file(s)\nnode scripts/release_manifest.mjs --check -> 417 file(s) match stored manifest (exit 0)\nnode scripts/run_verify.mjs -> PASS run_verify: 55 suite(s), concurrency=5, wall=60969ms (all 55 PASS, 0 FAIL)",
+    "verify_passed": true,
+    "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+    "claimed_at": "2026-07-21T12:39:13.512Z",
+    "verify_command": "node scripts/render_plugin_skill_trees.mjs && node scripts/release_manifest.mjs --write && node scripts/release_manifest.mjs --check && node scripts/run_verify.mjs",
+    "verified_at": "2026-07-21T12:43:57.484Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-21T12:43:57.484Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T12:39:46.272Z",
+        "acquired_at": "2026-07-21T12:39:13.511Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "scribing-per-clause-cos-refuses-premature-flip",
+            "status": "PASS",
+            "evidence": "SKILL.md:96 enumerate-every-clause + only-when-every-clause-evidenced flips + Delivered:/Remaining: + split-when-shippable + silent-full-flip-never; the GH #34 subset scenario is refused by the text alone."
+          },
+          {
+            "id": "compounding-fallback-identical-never-looser",
+            "status": "PASS",
+            "evidence": "SKILL.md:81 identical rule + explicit 'never looser' bind."
+          },
+          {
+            "id": "citation-discipline-short8-present-with-real-ids",
+            "status": "PASS",
+            "evidence": "scribing-reference.md:159-161 Citation Discipline (D3): short8 alongside CONTEXT-local labels; sweep reach + residual-risk note; worked examples b9b9fee3/e230444a at :109-110, :106, :140."
+          },
+          {
+            "id": "scribing-owns-flip-ownership-preserved",
+            "status": "PASS",
+            "evidence": "Ownership sentences retained in both skills; only conditioned on the per-clause check."
+          },
+          {
+            "id": "d7-prose-only-no-mechanical-enforcement",
+            "status": "PASS",
+            "evidence": "Diff touches only 3 skill md files; zero lib/hook/CLI changes; 'prose-ruled (D7)' retained."
+          },
+          {
+            "id": "render-manifest-verify-green",
+            "status": "PASS",
+            "evidence": "Plugin mirrors byte-match the amended text (claude+codex spot checks); release_manifest --check 417 match; run_verify 55/55."
+          },
+          {
+            "id": "behavior-change-red-first-evidence-honesty",
+            "status": "PASS",
+            "evidence": "Prose cell: grep-visible truths + mirror/manifest integrity are the honest matrix substitute; nothing dressed up as a red-capable test."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T12:47:28.084Z"
+      }
+    ]
   }
 }

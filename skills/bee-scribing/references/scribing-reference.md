@@ -103,11 +103,11 @@ they can see, do, call, or receive. Include anonymous visitors when relevant.>
 
 ## Business Rules
 
-<Numbered, one sentence each, citing the deciding D-ID. Rules live here even
-when the code enforces them only implicitly.>
+<Numbered, one sentence each, citing the deciding D-ID and its short8 (Citation
+Discipline, D3). Rules live here even when the code enforces them only implicitly.>
 
-- **R1.** A posting can never return from `closed` to any other status (per D4).
-- **R2.** … (per D7)
+- **R1.** A posting can never return from `closed` to any other status (per D4, `b9b9fee3`).
+- **R2.** … (per D7, `e230444a`)
 - **R3 (not yet implemented — backlog b-12).** …
 
 ## Edge Cases Settled
@@ -137,7 +137,7 @@ Deleting this section must not remove any business meaning.>
 
 - **Purpose:** who uses it and what for. No feature history.
 - **Entry Points & Triggers:** if a link, screen, schedule, event, or call exists that this table doesn't explain, the spec fails the rebuild bar.
-- **Data Dictionary:** display order is part of the spec for UI areas (the owner's requirement: "field nào trước field nào sau"). Validation limits live in the Meaning/Values cells in business terms ("≤120 chars"), not as regexes. Config values whose numbers were *chosen* (thresholds, windows, retry counts) cite the deciding D-ID — a tuned number without its why is half-lost knowledge.
+- **Data Dictionary:** display order is part of the spec for UI areas (the owner's requirement: "field nào trước field nào sau"). Validation limits live in the Meaning/Values cells in business terms ("≤120 chars"), not as regexes. Config values whose numbers were *chosen* (thresholds, windows, retry counts) cite the deciding D-ID and its short8 (Citation Discipline, D3) — a tuned number without its why is half-lost knowledge.
 - **Behaviors & Operations:** the four sub-answers (blocked-when or runs-when / what changes / side effects / afterwards-per-actor) are mandatory for every action and operation; "afterwards" must name what EACH affected actor or consuming system observes, not just the acting user. System operations additionally state their failure behavior (what happens mid-run, what retries, what stays consistent).
 - **Actors & Access:** prefer one matrix; consuming/producing systems are actors too; footnote row-level subtleties ("owner of THIS posting, not any owner").
 - **Business Rules vs Behaviors:** a Behavior is what the system observably does; a Rule is the policy behind it. A rule approved but not yet shipped is marked "not yet implemented" with a backlog id — never written as a Behavior.
@@ -149,12 +149,16 @@ Deleting this section must not remove any business meaning.>
 - **Locate before create:** resolve every delta to an existing spec via `docs/specs/reading-map.md` (and a scan of `docs/specs/*.md` frontmatter/Pointers) before considering a new file. A renamed screen, moved route, or refactored module is still the SAME area — update its spec and its reading-map line; do not fork a new one. Creating is the exception, reserved for genuinely new surfaces.
 - Deltas come from `behavior_change` cells + `verification_evidence`, UAT records, and worker reports — never from plan.md, never from memory.
 - A delta that contradicts an existing line **replaces** it; do not keep both.
-- Update `updated`, append the feature to `sources`, reconcile `decisions` against the active set (`node .bee/bin/bee.mjs decisions active`).
+- Update `updated`, append the feature to `sources`, reconcile `decisions` against the active set (`node .bee/bin/bee.mjs decisions active`) — cited by short8 id (see Citation Discipline below), so this reconcile step is itself sweepable.
 - Present tense only. "Was", "previously", "changed from" are banned words.
 - If the feature added/removed an area, or changed shared entities, the role model, or a cross-area flow: sync `system-overview.md` in the same pass (decision 0003).
 - UI areas: when a delta made a screen visibly different, refresh its snapshot under `visuals/<area>/`; cannot produce one → Open Gap with the reason.
 - Standard commands are a Pointers-level fact: when a synced change alters how the project is set up, started, tested, or verified, update `.bee/config.json` `commands` in the same pass (docs/09 item 1) — one record, never a second location.
 - After merging, run the rebuild self-check (below) on every touched spec.
+
+## Citation Discipline (D3)
+
+Any artifact that encodes a decision — a spec's Business Rules line, a `docs/backlog.md` row's Story/CoS, a CONTEXT/plan passage — cites the decision's **short8 id** (the log entry's id, first 8 hex chars, e.g. `b9b9fee3`) alongside any CONTEXT-local label (`D4`, `D11b`); the label alone is not enough. The `decisions supersede` propagation sweep (dp-2) matches short8 word-boundary hits across `docs/**` — it finds only what is cited that way, so a passage carrying only a `D4`-style label is invisible to the scan. An uncited embodiment is the residual risk: the decision changes, but nothing points a sweep at the passage that assumed it.
 
 ## Harvest Interview Protocol
 
