@@ -1,0 +1,50 @@
+{
+  "id": "dp-4",
+  "feature": "decision-propagation",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Derived decision index: decisions render -> docs/decisions/index.md (D4b)",
+  "action": "Per CONTEXT D4b/D6: new `decisions render` verb writes docs/decisions/index.md from the active store (superseded/redacted excluded; archived excluded unless --all): grouped by scope then tag (untagged last), newest-first inside each group, one line per decision `short8 · YYYY-MM-DD · first line of decision text`; supersede events appear under their (inherited) scope. File carries a provenance header naming the generator + timestamp-free determinism note; output is byte-stable for the same store (no wall-clock in the body). Add a --check mode diffing current file vs computed (exit non-zero on drift) for future verify wiring — but do NOT add it to run_verify in this cell. Mirror to .bee/bin, extend tests (grouping, determinism byte-stability across two renders, supersede placement, empty store), render + manifest.",
+  "must_haves": {
+    "truths": [
+      "two consecutive renders over the same store are byte-identical",
+      "superseded decisions never appear in the index",
+      "--check exits non-zero on hand-edited drift"
+    ],
+    "prohibitions": [
+      "index.md is never hand-edited source — regenerated only",
+      "No wall-clock timestamps in the rendered body"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/lib/decisions.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/lib/decisions.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+  ],
+  "deps": [
+    "dp-1",
+    "dp-2",
+    "dp-3"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

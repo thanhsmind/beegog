@@ -1,0 +1,49 @@
+{
+  "id": "dp-3",
+  "feature": "decision-propagation",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Archive verb: decisions archive + --all union reads (D4c)",
+  "action": "Per CONTEXT D4c: new `decisions archive` verb moves superseded/redacted events (always) plus decide events strictly older than an explicit --before <ISO date> (never a default purge) from .bee/decisions.jsonl to .bee/decisions-archive.jsonl, all-or-nothing under the store lock (mirror the cells archive journaled-txn pattern). Refuses (typed) when nothing qualifies. `decisions search`/`active` gain --all to read the union (active file first, then archive, de-duplicated by id, ordering preserved newest-first). activeDecisions default behavior (no --all) is byte-identical to today for an unarchived store. Idempotent: second archive run with same args is a clean no-op. Mirror to .bee/bin, extend tests (archive split, union read, idempotency, missing archive file, concurrent log-vs-archive under lock), render + manifest.",
+  "must_haves": {
+    "truths": [
+      "archive is all-or-nothing under the store lock",
+      "search --all reaches archived events; default search unchanged for unarchived stores",
+      "second run is a no-op"
+    ],
+    "prohibitions": [
+      "No default age window — --before is explicit or the verb refuses",
+      "Never rewrite surviving active events (append-only integrity)"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/lib/cells.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/lib/decisions.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+  ],
+  "deps": [
+    "dp-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

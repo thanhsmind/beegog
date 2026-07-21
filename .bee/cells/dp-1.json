@@ -1,0 +1,47 @@
+{
+  "id": "dp-1",
+  "feature": "decision-propagation",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Decision recall: tags[] + scope-as-area + search filters (D4a)",
+  "action": "Per CONTEXT D4a (docs/history/decision-propagation/CONTEXT.md): extend the decisions store for structured recall. In skills/bee-hive/templates/lib/decisions.mjs: logDecision accepts optional tags (array of lowercase slugs, validated), stored on the decide event; scope keeps its existing free-string semantics but is now documented as the spec-area dimension. In skills/bee-hive/templates/bee.mjs: `decisions log` gains --tags (comma-separated); `decisions search` gains --tag (exact, case-insensitive), --scope with alias --area (exact, case-insensitive), --since (ISO date, inclusive) — all composable with the existing --text substring filter; `decisions active` gains the same filters. Legacy events without tags match only when no --tag filter is given. Mirror byte-identically into .bee/bin/lib/decisions.mjs and .bee/bin/bee.mjs; add tests in a new skills/bee-hive/templates/tests/test_decisions_propagation.mjs covering: tags round-trip, filter composition, legacy-event behavior, empty store. Rerun render_plugin_skill_trees + release_manifest --write.",
+  "must_haves": {
+    "truths": [
+      "decisions log --tags a,b round-trips; search --tag/--scope/--since/--text compose",
+      "legacy metadata-less events still searchable by text",
+      "test_lib_mirror + release_manifest --check green"
+    ],
+    "prohibitions": [
+      "No migration/rewrite of existing decisions.jsonl events",
+      "No new area field — scope IS the area dimension (fresh-eyes P2)"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/decision-propagation/CONTEXT.md",
+    "skills/bee-hive/templates/lib/decisions.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/lib/decisions.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+  ],
+  "deps": [],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

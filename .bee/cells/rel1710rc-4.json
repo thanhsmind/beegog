@@ -1,0 +1,43 @@
+{
+  "id": "rel1710rc-4",
+  "feature": "release-1-7-10-rc",
+  "lane": "tiny",
+  "behavior_change": false,
+  "title": "Deterministic shared-Worker timeout capture test (onboard suite) for slow runners",
+  "action": "CI verify(22) on 2-core runner: skills/bee-hive/scripts/test_onboard_bee.mjs 'shared Worker timeout preserves captured stdout and stderr' FAILs because the hanging-module case uses timeout:100 — the child can be SIGTERMed before node even boots and prints, so captured output is legitimately empty. Fix the CLASS per rel1710rc-3 discipline (structure over scheduler timing): split the two properties — (1) timeout semantics (null status, SIGTERM, ETIMEDOUT) may keep a short timeout but must NOT assert output; (2) capture-preservation-on-timeout uses a prints-then-hangs module with a GENEROUS timeout (>=5000ms) so the kill always lands after the child's first-millisecond prints. Sweep the rest of test_onboard_bee.mjs for other short-timeout output assertions. Prove: taskset -c 0,1 node skills/bee-hive/scripts/test_onboard_bee.mjs 10/10 green, full run_verify green.",
+  "must_haves": {
+    "truths": [
+      "taskset -c 0,1 test_onboard_bee 10/10 green",
+      "timeout semantics checks still assert null/SIGTERM/ETIMEDOUT",
+      "node scripts/run_verify.mjs green"
+    ],
+    "prohibitions": [
+      "Do not delete the capture-preservation assertion",
+      "Do not weaken SIGTERM/ETIMEDOUT semantics checks"
+    ]
+  },
+  "verify": "taskset -c 0,1 node skills/bee-hive/scripts/test_onboard_bee.mjs && node scripts/run_verify.mjs",
+  "read_first": [
+    "skills/bee-hive/scripts/test_onboard_bee.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/scripts/test_onboard_bee.mjs"
+  ],
+  "deps": [],
+  "status": "claimed",
+  "decisions": [],
+  "trace": {
+    "worker": "orch",
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+    "claimed_at": "2026-07-21T06:59:58.417Z"
+  }
+}

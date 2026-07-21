@@ -1,0 +1,50 @@
+{
+  "id": "dp-2",
+  "feature": "decision-propagation",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Supersede: metadata inheritance + propagation sweep + capture stubs (D2/D6)",
+  "action": "Per CONTEXT D2 and D6: `decisions supersede` accepts --tags/--scope, inheriting BOTH from the superseded target when omitted (target metadata-less -> scope falls back to the target's scope or 'repo'). After writing the supersede event, run the propagation sweep: recursively scan docs/** text files (md/json/yaml/txt) for the superseded id — full uuid AND short8 with word-boundary regex (no hex false positives) — collect {file, line, excerpt<=160ch}. Print the hit list in the human output and --json payload; store a `sweep` summary {scanned_at, hit_count, files[]} on the supersede event; append one capture stub per hit via the capture module (source \"supersede-sweep\", outcome naming file:line + the new decision id) so unreconciled hits surface at every flush. Zero hits prints a clean no-citations line. Mirror to .bee/bin, extend test_decisions_propagation.mjs (inheritance, sweep hit/no-hit, short8 word-boundary negative, stub creation), render + manifest.",
+  "must_haves": {
+    "truths": [
+      "supersede inherits tags/scope from target when flags omitted",
+      "sweep finds full-id and short8 citations under docs/** and writes one stub per hit",
+      "short8 embedded in a longer hex string does NOT match"
+    ],
+    "prohibitions": [
+      "Sweep never edits the citing files itself",
+      "Sweep scope is docs/** only (CONTEXT pinned; .bee/spikes excluded)"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/decision-propagation/CONTEXT.md",
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/lib/capture.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/decisions.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/lib/decisions.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+  ],
+  "deps": [
+    "dp-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
