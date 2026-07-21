@@ -30,19 +30,38 @@
   "deps": [
     "dp-8"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "orch",
+    "outcome": "E2E proven live: real supersede of d20f4c96 -> 257ab1e5 with sweep (2 hits: 1 reconciled via render, 1 waived with recorded reason), stub lifecycle exercised, index self-corrected, issue-closure drafts written",
+    "files_changed": [
+      "docs/history/decision-propagation/reports/e2e-supersede.md",
+      "docs/decisions/index.md"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-21T12:54:30.793Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "verify_output": "decisions render --check: docs/decisions/index.md is up to date. run_verify: PASS 55 suite(s), concurrency=5, wall=59863ms. Real supersede: d20f4c96 -> 257ab1e5-e6ec-46fd-9ba1-ac52bc08601c. Sweep hits=2 (docs/decisions/index.md:150,699); line 699 reconciled by index re-render (stub d4faffe3 flushed); line 150 waived (citation inside immutable e230444a decide-event text, stub 09bf2874 left pending with reason). Index before/after grep confirmed old entry gone, successor present under workflow-state. decisions search --tag release shows 257ab1e5. Reports: docs/history/decision-propagation/reports/e2e-supersede.md, issue-32-closure.md, issue-33-closure.md, issue-34-closure.md",
+    "verify_passed": true,
+    "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+    "claimed_at": "2026-07-21T12:47:28.294Z",
+    "verify_command": "node .bee/bin/bee.mjs decisions render --check && node scripts/run_verify.mjs",
+    "verified_at": "2026-07-21T12:52:45.090Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-21T12:52:45.091Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T12:48:01.658Z",
+        "acquired_at": "2026-07-21T12:47:28.293Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }

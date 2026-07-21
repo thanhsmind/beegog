@@ -696,7 +696,6 @@ each decision event.
 
 ### cells
 
-- d20f4c96 · 2026-07-21 · hardening-1-7-10 complete: 11 cells capped (1710-1..11), each red-first, orchestrator-re-verified, and opus-judged PASS where behavior-changing; full verify 54/54 green normal AND hermetic; claim_race 10/10; release NOT tagged (user decision)
 - 0746db88 · 2026-07-15 · parallel-scheduler D2 clarified: cycle refusal covers every dep-mutating write — cells add AND cells update when deps change — not add alone. Empty files resolved as overlaps-nothing (forced by D3 + claimNextCell precedent). Glob semantics: trailing-* only, per pathsOverlap; mid-path globs are literals, planning adds a files-authoring note.
 - eec223d9 · 2026-07-15 · parallel-scheduler D4: scope boundary — this feature ships plan-time computation only: schedule CLI verb + cycle refusal in cells add + wiring into bee-validating (check) and bee-swarming (default wave order). Per-worker git worktree isolation and a wait/queue primitive to replace write-time deny are OUT, deferred to their own backlog rows.
 - ecc8862d · 2026-07-15 · parallel-scheduler D3: one overlap semantics — the plan-time overlap matrix reuses the exact pathsOverlap logic the reservation/hold runtime uses (lib/reservations.mjs), so the schedule's prediction and the write-guard's enforcement can never drift apart.
@@ -744,6 +743,7 @@ each decision event.
 
 ### release
 
+- 257ab1e5 · 2026-07-21 · hardening-1-7-10 complete AND released as v1.7.10-rc on 4f23f89 (rc-1..5: CPU-count-proof race suites, timeout-capture split, Windows transient-fs retry); exact-tag CI green both platforms
 - 8650ff81 · 2026-07-20 · hardening-1-7-9-rc: no new features, address the v1.7.8 external review's 8 recommendations as sequenced slices; do NOT tag until verify reproduces green on a clean checkout (RC-then-dogfood, stop per-feature bumping). Gates auto-approved (bypass total).
 - 9da38503 · 2026-07-15 · Merged shape+execution gate (release-1-3-0, small lane) auto-approved under gate_bypass=total: minor bump 1.2.1->1.3.0 (parallel scheduler), tuple+fixture+manifest+self-onboard+tag+push, anphabe propagation skipped per user instruction. Release proceeds unreviewed (parallel-scheduler candidate registered; review remains user-invoked, bypass never creates one).
 
