@@ -1,0 +1,11 @@
+# 2026-07-22 — Three lock bugs in one day: fix the class, and prove it with the right number of racers
+
+**Feature:** release-1-9-0 (cells rel180-2, rel180-4, rel190-2) · **Tags:** [locks, concurrency, tests, release, ci]
+
+Three genuine mutual-exclusion/ownership bugs surfaced in `lib/lock.mjs` and `lib/claims.mjs` within a single day, each found by an exact-tag CI run that local green had already passed.
+
+1. **They were one class, not three incidents.** All three are *read-then-act on shared state*: a heartbeat write uncoordinated with the sweep's gate (rel180-2); a takeover renaming a lock away and deleting whatever it renamed (rel180-4); a takeover renaming *before* verifying identity, briefly vacating a live lock (rel190-2). **Rule:** when a decision and its mutation are separated by any I/O, either hold one lock across both or re-verify identity at the mutation — and when one instance is found, audit every sibling path in the same module before closing.
+2. **A fix aimed at an instance leaves the class alive.** rel180-4 verified identity *after* the rename; that prevented losing a live holder's lock but not two holders existing at once. The next CI run failed in what looked like a different scenario and was actually the same function. **Rule:** state the invariant the fix establishes ("the lock path is never vacated while a live holder exists"), not the symptom it removes.
+3. **The test needs the right number of parties, not more runs.** The 2-racer forced test could never observe the vacancy bug — exploiting it requires a *third*, uninvolved racer doing an ordinary acquire. No amount of repetition would have found it. **Rule:** when a race is not reproducing, ask how many independent parties the hazard actually needs before adding iterations.
+4. **Local green three times running is not the release gate; exact-tag CI on every platform is.** Every one of these was invisible locally (many cores, warm cache) and deterministic enough on a 2-core runner to block a tag. The tag was re-pointed twice, which is the correct outcome, not a failure of process.
+5. **Consequence recorded in the migration strategy** (`docs/decisions/0025`): the concurrency layer is ported **last**. It is the least safe code in the repo to rewrite and its cost is I/O and waiting, not CPU — so it is also where a rewrite buys the least.
