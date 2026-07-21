@@ -3025,6 +3025,7 @@ async function handleWorktreeRegister(_root, flags) {
 async function handleWorktreeNew(_root, flags) {
   const feature = requireFlag(flags, 'feature');
   const baseRef = flags['base-ref'] !== undefined ? String(flags['base-ref']) : undefined;
+  const withCompanion = flags['with-companion'] === true;
   let resolution;
   try {
     resolution = resolveRoots(process.cwd());
@@ -3039,9 +3040,28 @@ async function handleWorktreeNew(_root, flags) {
     );
   }
   const mainRoot = resolution.workRoot;
+  // worktree-companion-hook: resolved HERE (readConfig(mainRoot).commands.*)
+  // and passed down as plain option strings, same posture as verifyCommand
+  // below in handleWorktreeMerge — worktree-store.mjs stays zero-deps-beyond-
+  // node-builtins. --with-companion with no commands.worktree_companion_start
+  // configured is refused HERE, before any worktree is created, rather than
+  // surfacing as a less obvious failure from inside createFeatureWorktree.
+  let companionStartCommand;
+  let companionMountPath;
+  if (withCompanion) {
+    const commands = readConfig(mainRoot).commands;
+    companionStartCommand = commands.worktree_companion_start || undefined;
+    companionMountPath = commands.worktree_companion_mount || undefined;
+    if (!companionStartCommand) {
+      throw new Error('--with-companion requires commands.worktree_companion_start to be set in .bee/config.json.');
+    }
+    if (!companionMountPath) {
+      throw new Error('--with-companion requires commands.worktree_companion_mount to be set in .bee/config.json.');
+    }
+  }
   // hardening-4b: createFeatureWorktree now runs its whole body inside
   // withStoreLock('worktree-admin') (async).
-  const created = await createFeatureWorktree(mainRoot, { feature, baseRef });
+  const created = await createFeatureWorktree(mainRoot, { feature, baseRef, companionStartCommand, companionMountPath });
   // GH #31 (wux-1, messaging only): the explicit session-boundary next-step —
   // this session (in mainRoot) never cd's into the new worktree itself, so
   // the success output has to say so plainly: open a NEW session there, and
@@ -3053,6 +3073,7 @@ async function handleWorktreeNew(_root, flags) {
     branch: created.branch,
     baseRef: created.baseRef,
     baseRefSha: created.baseRefSha,
+    companion: created.companion || null,
     next_step: nextStep,
   };
   const text = [
@@ -3063,8 +3084,13 @@ async function handleWorktreeNew(_root, flags) {
     created.bootstrap.created
       ? `  bootstrapped ${created.bootstrap.worktreeStoreRoot} (phase idle, gates unapproved).`
       : `  worktree .bee/state.json already existed — left untouched (${created.bootstrap.reason}).`,
+    created.companion
+      ? `  companion:   mounted at ${created.companion.mountPath} (${created.companion.worktreePath}${created.companion.sessionId ? `, session ${created.companion.sessionId}` : ''}).`
+      : null,
     nextStep,
-  ].join('\n');
+  ]
+    .filter((line) => line !== null)
+    .join('\n');
   return { result, text };
 }
 
@@ -3080,6 +3106,9 @@ async function handleWorktreeNew(_root, flags) {
 // verifyCommand is resolved HERE (readConfig(mainRoot).commands.verify) and
 // passed down as a plain option, per worktree-store.mjs's zero-deps-beyond-
 // node-builtins module contract (see mergeFeatureWorktree's header comment).
+// companionEndCommand (worktree-companion-hook) is resolved the same way,
+// from commands.worktree_companion_end — see teardownCompanionIfPresent's
+// own doc comment in worktree-store.mjs for why it runs unconditionally.
 async function handleWorktreeMerge(_root, flags) {
   const id = requireFlag(flags, 'id');
   const cleanup = flags.cleanup === true;
@@ -3097,11 +3126,20 @@ async function handleWorktreeMerge(_root, flags) {
     );
   }
   const mainRoot = resolution.workRoot;
-  const verifyCommand = readConfig(mainRoot).commands.verify || undefined;
+  const configCommands = readConfig(mainRoot).commands;
+  const verifyCommand = configCommands.verify || undefined;
+  // worktree-companion-hook: no --with-companion flag here — unlike `new`,
+  // where a bare worktree is a real, valid choice, `merge` needs none: the
+  // worktree's own .bee/companion-session.json marker (written by `new
+  // --with-companion`) is the only signal teardownCompanionIfPresent needs.
+  // Resolved unconditionally (cheap) so a worktree WITH a marker still gets
+  // torn down even if this specific merge invocation forgets to opt in to
+  // anything — there is nothing to opt in to.
+  const companionEndCommand = configCommands.worktree_companion_end || undefined;
   // xwh-2: mergeFeatureWorktree is now async (its --cleanup path awaits
   // releaseAllForHolder) — the dispatcher already does `await handler(...)`
   // for every command, so this only needed the local await.
-  const mergeResultValue = await mergeFeatureWorktree(mainRoot, { id, cleanup, verifyCommand });
+  const mergeResultValue = await mergeFeatureWorktree(mainRoot, { id, cleanup, verifyCommand, companionEndCommand });
 
   const lines = [];
   if (mergeResultValue.ok && mergeResultValue.code === 'ALREADY_UP_TO_DATE') {
@@ -3109,6 +3147,13 @@ async function handleWorktreeMerge(_root, flags) {
   } else if (mergeResultValue.ok) {
     lines.push(`Merged worktree ${id} (branch ${mergeResultValue.branch}) into ${mainRoot}.`);
     lines.push(`  verify: ${mergeResultValue.verify}`);
+    if (mergeResultValue.companion) {
+      lines.push(
+        mergeResultValue.companion.warning
+          ? `  companion: WARNING — ${mergeResultValue.companion.warning}`
+          : `  companion: ended${mergeResultValue.companion.sessionId ? ` (session ${mergeResultValue.companion.sessionId})` : ''}.`,
+      );
+    }
     if (mergeResultValue.warning) {
       lines.push(`  WARNING (${mergeResultValue.warning.code}): ${mergeResultValue.warning.message}`);
     }
@@ -4584,7 +4629,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

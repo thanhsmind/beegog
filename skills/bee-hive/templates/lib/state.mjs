@@ -93,12 +93,28 @@ export function checkScribingRunPhase(from) {
 
 // Host-project standard commands (docs/09 item 1, decision D1): the record is
 // the primitive — .bee/config.json `commands`, no init.sh, no second location.
+// onboard_bee.mjs keeps its OWN copy of this exact array (commandsNotices'
+// "any standard command recorded?" check) — test_onboard_bee.mjs asserts the
+// two stay byte-identical, so this stays the 4 core lifecycle keys only.
 export const COMMAND_KEYS = ['setup', 'start', 'test', 'verify'];
+
+// worktree_companion_start/_end/_mount (worktree-companion-hook): the SAME
+// per-repo `commands` record, extended for `worktree new --with-companion` /
+// `worktree merge` to compose with a project-configured nested-repo session
+// tool (fgos, or anything else) without bee's own code ever naming one. bee
+// never assumes what the companion tool is — only that `_start` prints JSON
+// `{worktreePath, sessionId?}` to stdout, `_end` accepts a literal `<id>`
+// token to substitute, and `_mount` is a relative path inside the worktree.
+// Deliberately a SEPARATE list from COMMAND_KEYS above, not merged into it:
+// these are optional feature config, not "standard lifecycle commands" —
+// onboarding's notice (has the host project recorded setup/test/verify?)
+// must not read a companion-only config as satisfying that check.
+export const WORKTREE_COMPANION_COMMAND_KEYS = ['worktree_companion_start', 'worktree_companion_end', 'worktree_companion_mount'];
 
 function normalizeCommands(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const commands = {};
-  for (const key of COMMAND_KEYS) {
+  for (const key of [...COMMAND_KEYS, ...WORKTREE_COMPANION_COMMAND_KEYS]) {
     if (typeof raw[key] === 'string' && raw[key].trim()) commands[key] = raw[key].trim();
   }
   return commands;

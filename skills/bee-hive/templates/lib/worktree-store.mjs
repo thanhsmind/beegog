@@ -465,20 +465,124 @@ function readWorktreeGitVerifiedId(worktreeRoot) {
  * function is `async` now (previously fully synchronous).
  */
 export async function createFeatureWorktree(mainRoot, options = {}) {
-  const { feature, baseRef, _writeGrant = writeGrantCore, _bootstrapWorktreeStore = bootstrapWorktreeStore } = options;
-  return withStoreLock(mainRoot, 'worktree-admin', () => createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, _bootstrapWorktreeStore }));
+  const {
+    feature,
+    baseRef,
+    companionStartCommand,
+    companionMountPath,
+    _writeGrant = writeGrantCore,
+    _bootstrapWorktreeStore = bootstrapWorktreeStore,
+  } = options;
+  return withStoreLock(mainRoot, 'worktree-admin', () =>
+    createFeatureWorktreeLocked(mainRoot, { feature, baseRef, companionStartCommand, companionMountPath, _writeGrant, _bootstrapWorktreeStore }),
+  );
+}
+
+/**
+ * Validates a `commands.worktree_companion_mount` value: a non-empty,
+ * relative path with no leading "/" and no ".." segment — it becomes a
+ * symlink target INSIDE the new worktree, so an absolute path or a
+ * traversal segment would place (or escape) it somewhere the worktree
+ * doesn't own. Typed refusal, zero mutation, same posture as every other
+ * pre-check in createFeatureWorktreeLocked below.
+ */
+function validateCompanionMountPath(mountPath) {
+  if (typeof mountPath !== 'string' || !mountPath.trim()) {
+    refuse('WORKTREE_COMPANION_CONFIG_INVALID', `commands.worktree_companion_mount must be a non-empty relative path string, got ${JSON.stringify(mountPath)}.`);
+  }
+  const normalized = mountPath.trim();
+  if (path.isAbsolute(normalized) || normalized.split(/[\\/]/).includes('..')) {
+    refuse(
+      'WORKTREE_COMPANION_CONFIG_INVALID',
+      `commands.worktree_companion_mount ${JSON.stringify(normalized)} must be a relative path inside the worktree (no leading "/" and no ".." segments).`,
+    );
+  }
+  return normalized;
+}
+
+/**
+ * Runs the project-configured `commands.worktree_companion_start` (worktree-
+ * companion-hook) and wires its result into the freshly created worktree.
+ * bee never hardcodes what the companion tool is — a host project's own
+ * `.bee/config.json` value is the only place any tool-specific knowledge
+ * lives; this function's only contract on stdout is JSON with a non-empty
+ * `worktreePath` string (and, optionally, `sessionId` — carried through to
+ * the marker file for `worktree merge` to substitute into
+ * `worktree_companion_end`, never required: a companion tool need not have a
+ * "session id" concept at all).
+ *
+ * Runs with `mainRoot` as cwd — same root `handleWorktreeNew` resolves the
+ * command from — so the configured command is responsible for its own `cd`
+ * into whatever nested tree it isolates (mirrors how `commands.verify` is
+ * already resolved and run against `mainRoot`, never the worktree).
+ *
+ * On success: symlinks `worktreePath` at `<worktreeRoot>/<mountPath>` and
+ * writes `<worktreeRoot>/.bee/companion-session.json` (`{sessionId,
+ * worktreePath, mountPath}`) so `worktree merge` can find and tear it down
+ * again without needing any flag of its own — the marker's mere presence is
+ * the signal (see `teardownCompanionIfPresent` below).
+ *
+ * Throws a plain Error on non-zero exit, unparseable stdout, or a missing
+ * `worktreePath` — the caller (createFeatureWorktreeLocked's existing
+ * try/catch) folds that into the SAME post-add rollback path as any other
+ * failure after `git worktree add` itself succeeded: a worktree is never
+ * left half-configured (created, but silently missing its companion).
+ */
+function runCompanionStart(mainRoot, worktreeRoot, companionStartCommand, mountPath) {
+  const spawned = spawnSync(companionStartCommand, { cwd: mainRoot, shell: true, encoding: 'utf8' });
+  if (spawned.status !== 0) {
+    throw new Error(
+      `commands.worktree_companion_start failed (exit ${spawned.status}): ${(spawned.stderr || spawned.stdout || '').trim() || '(no output)'}`,
+    );
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(spawned.stdout);
+  } catch (parseError) {
+    throw new Error(
+      `commands.worktree_companion_start must print JSON with a "worktreePath" field to stdout — got unparseable output (${parseError instanceof Error ? parseError.message : String(parseError)}). Raw stdout: ${spawned.stdout.slice(0, 500)}`,
+    );
+  }
+  if (!parsed || typeof parsed.worktreePath !== 'string' || !parsed.worktreePath) {
+    throw new Error(`commands.worktree_companion_start's JSON output must include a non-empty "worktreePath" string — got ${JSON.stringify(parsed)}.`);
+  }
+  const sessionId = typeof parsed.sessionId === 'string' && parsed.sessionId ? parsed.sessionId : null;
+  const mountFullPath = path.join(worktreeRoot, mountPath);
+  fs.mkdirSync(path.dirname(mountFullPath), { recursive: true });
+  fs.symlinkSync(parsed.worktreePath, mountFullPath, 'dir');
+  const markerPath = path.join(worktreeRoot, '.bee', 'companion-session.json');
+  fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+  fs.writeFileSync(markerPath, `${JSON.stringify({ sessionId, worktreePath: parsed.worktreePath, mountPath }, null, 2)}\n`);
+  return { sessionId, worktreePath: parsed.worktreePath, mountPath };
 }
 
 // hardening-4b: the actual body, unchanged apart from `removeGrant` ->
 // `removeGrantCore` in the rollback path below — split out so
 // createFeatureWorktree's own doc comment above stays attached to the public
 // entrypoint while this runs INSIDE its withStoreLock('worktree-admin') hold.
-function createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, _bootstrapWorktreeStore }) {
+function createFeatureWorktreeLocked(mainRoot, { feature, baseRef, companionStartCommand, companionMountPath, _writeGrant, _bootstrapWorktreeStore }) {
   if (typeof feature !== 'string' || !FEATURE_SLUG_RE.test(feature)) {
     refuse(
       'WORKTREE_INVALID_SLUG',
       `feature slug ${JSON.stringify(feature)} must match ${FEATURE_SLUG_RE} (lowercase letters/digits, starting with a letter or digit, hyphens allowed after that).`,
     );
+  }
+
+  // worktree-companion-hook: both or neither — a start command with no mount
+  // path (or vice versa) is a config error, caught here as a zero-mutation
+  // refusal rather than surfacing later as a confusing symlink failure.
+  // (The CLI handler already refuses this earlier when --with-companion is
+  // passed without commands.worktree_companion_start; this is the defensive
+  // invariant for any OTHER caller of createFeatureWorktree directly.)
+  let companionMount;
+  if (companionStartCommand || companionMountPath) {
+    if (!companionStartCommand || !companionMountPath) {
+      refuse(
+        'WORKTREE_COMPANION_CONFIG_INCOMPLETE',
+        'commands.worktree_companion_start and commands.worktree_companion_mount must both be configured to use --with-companion — only one was found.',
+      );
+    }
+    companionMount = validateCompanionMountPath(companionMountPath);
   }
 
   // Resolved once here (not re-derived later): the SAME sha this refusal
@@ -558,7 +662,13 @@ function createFeatureWorktreeLocked(mainRoot, { feature, baseRef, _writeGrant, 
     id = readWorktreeGitVerifiedId(worktreeRoot);
     _writeGrant(mainStoreRoot, id);
     const bootstrap = _bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature);
-    return { id, worktreeRoot, branch, baseRef: baseRef || null, baseRefSha: baseRefSha || null, bootstrap };
+    // worktree-companion-hook: deliberately INSIDE this try — a companion
+    // start failure folds into the exact same post-add rollback below as any
+    // other post-`git worktree add` failure, so a worktree is never left
+    // half-configured (created, registered, but silently missing the
+    // companion its caller asked for).
+    const companion = companionStartCommand ? runCompanionStart(mainRoot, worktreeRoot, companionStartCommand, companionMount) : null;
+    return { id, worktreeRoot, branch, baseRef: baseRef || null, baseRefSha: baseRefSha || null, bootstrap, companion };
   } catch (postAddError) {
     // git worktree add itself succeeded, but deriving the id / writing the
     // grant / bootstrapping the store threw. Roll back best-effort so a
@@ -937,6 +1047,13 @@ async function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id
  *     pass a falsy value) when the host project has no `commands.verify`
  *     recorded — the CLI handler is what resolves this from
  *     `readConfig(mainRoot).commands.verify` (see module header note above).
+ *   - `companionEndCommand` (optional, worktree-companion-hook): a shell
+ *     command string (`commands.worktree_companion_end`), run — with its
+ *     literal `<id>` token substituted for the real session id — whenever
+ *     the worktree being merged carries a `.bee/companion-session.json`
+ *     marker (written by `worktree new --with-companion`). No flag gates
+ *     this on the merge side: the marker's presence IS the signal. See
+ *     `teardownCompanionIfPresent` below for exactly when this runs and why.
  *
  * "Own worktree" refusal: running merge from inside a linked worktree —
  * including the very worktree named by `id` — is caught by the SAME
@@ -966,11 +1083,80 @@ export async function mergeFeatureWorktree(mainRoot, options = {}) {
   return withStoreLock(mainRoot, 'worktree-admin', () => mergeFeatureWorktreeLocked(mainRoot, options));
 }
 
+/**
+ * Best-effort companion teardown (worktree-companion-hook), run
+ * unconditionally at the very START of a merge attempt — before either
+ * dirty-tree pre-check, and regardless of `--cleanup` or of how the merge
+ * attempt itself ultimately resolves (conflict, red verify, or success
+ * alike). Two independent reasons this can't wait until after a successful
+ * merge the way `attachCleanupOutcome`'s bee-worktree removal does:
+ *
+ *   1. A companion's mounted symlink (`commands.worktree_companion_mount`)
+ *      is untracked, and `isTreeDirty(worktreeRoot)` below (`git status
+ *      --porcelain`, deliberately without `--ignored`) sees it regardless of
+ *      whether a same-named path is gitignored elsewhere in the project — a
+ *      directory-only pattern like "repo/" does NOT match a symlink of the
+ *      same name (confirmed empirically against a real git worktree, not
+ *      assumed). Left in place, every merge of a `--with-companion` worktree
+ *      would refuse WORKTREE_MERGE_WORKTREE_DIRTY, cleanup or not.
+ *   2. The companion session itself has no reason to keep living past the
+ *      moment its worktree is being merged back — `--cleanup` only controls
+ *      whether the BEE worktree infrastructure is also removed afterward, a
+ *      separate, later concern this function does not touch.
+ *
+ * No flag gates this — the marker file's mere presence on the worktree being
+ * merged is the only signal needed; a worktree created without
+ * `--with-companion` has no marker and this is a silent no-op (returns
+ * `null`). A missing/failed end command is never fatal to the merge itself:
+ * this always returns (never throws), and the symlink + marker are removed
+ * best-effort either way so the dirty-check that follows is never blocked by
+ * a companion problem — a failure is carried as `.warning` on the returned
+ * object for the caller to surface, not swallowed.
+ */
+function teardownCompanionIfPresent(mainRoot, worktreeRoot, companionEndCommand) {
+  const markerPath = path.join(worktreeRoot, '.bee', 'companion-session.json');
+  let marker;
+  try {
+    marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+  } catch {
+    return null; // no companion on this worktree — nothing to do.
+  }
+
+  let warning;
+  if (companionEndCommand) {
+    const substituted = companionEndCommand.replace('<id>', marker.sessionId || '');
+    const spawned = spawnSync(substituted, { cwd: mainRoot, shell: true, encoding: 'utf8' });
+    if (spawned.status !== 0) {
+      warning =
+        `commands.worktree_companion_end failed (exit ${spawned.status}): ${(spawned.stderr || spawned.stdout || '').trim() || '(no output)'}` +
+        ' — the mounted symlink was still removed so the merge itself is not blocked; the companion session may need manual teardown.';
+    }
+  } else {
+    warning =
+      'a companion marker exists on this worktree but commands.worktree_companion_end is not configured — the mounted symlink was removed so the merge is not blocked, but the companion session (if the tool has one) was never explicitly ended.';
+  }
+
+  try {
+    fs.unlinkSync(path.join(worktreeRoot, marker.mountPath));
+  } catch {
+    // best-effort: already gone, or never a real symlink — either way the
+    // dirty-check right after this call is the authoritative signal, not
+    // this cleanup attempt.
+  }
+  try {
+    fs.unlinkSync(markerPath);
+  } catch {
+    // best-effort, same reasoning.
+  }
+
+  return { ended: !warning, sessionId: marker.sessionId || null, warning };
+}
+
 // hardening-4b: the actual body, unchanged apart from running INSIDE
 // mergeFeatureWorktree's withStoreLock('worktree-admin') hold — split out so
 // the public entrypoint's doc comment above stays attached to it.
 async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
-  const { id, cleanup = false, verifyCommand } = options;
+  const { id, cleanup = false, verifyCommand, companionEndCommand } = options;
 
   if (typeof id !== 'string' || !id) {
     refuseMerge('WORKTREE_MERGE_INVALID_ID', `id ${JSON.stringify(id)} must be a non-empty string.`);
@@ -997,6 +1183,11 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
     );
   }
   const { worktreeRoot } = resolved;
+
+  // worktree-companion-hook: must run BEFORE the worktree-dirty check right
+  // below — see teardownCompanionIfPresent's own doc comment for why this
+  // can't wait until after a successful merge like bee-worktree cleanup can.
+  const companion = teardownCompanionIfPresent(mainRoot, worktreeRoot, companionEndCommand);
 
   if (isTreeDirty(mainRoot)) {
     refuseMerge('WORKTREE_MERGE_MAIN_DIRTY', `the MAIN checkout at ${mainRoot} has uncommitted changes ("git status --porcelain" is non-empty) — commit or stash before merging.`);
@@ -1054,6 +1245,7 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
       worktreeRoot,
       message: `"git merge --no-ff ${branch}" hit a textual conflict — the merge was aborted and ${mainRoot} was left byte-untouched (HEAD unchanged, no MERGE_HEAD, clean tracked status); bee does not auto-resolve a textual conflict.`,
       output: `${mergeResult.stdout || ''}${mergeResult.stderr || ''}`,
+      ...(companion ? { companion } : {}),
     };
   }
 
@@ -1070,6 +1262,7 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
       code: 'ALREADY_UP_TO_DATE',
       verify: 'skipped',
       message: `"${branch}" is already up to date with ${mainRoot} — nothing to merge.`,
+      ...(companion ? { companion } : {}),
     };
   }
 
@@ -1105,6 +1298,7 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
           message:
             `the merge was textually clean but the post-merge verify failed against the merged-but-uncommitted tree — this is the semantic-conflict alarm: behavior broke even though git found no textual conflict. The merge was aborted and ${mainRoot} was left byte-untouched (HEAD unchanged, no MERGE_HEAD, clean tracked status); no merge commit exists. Fix-first before release.`,
           output_tail: tail,
+          ...(companion ? { companion } : {}),
         };
       }
     }
@@ -1122,7 +1316,15 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
     }
     committed = true;
 
-    const result = { ok: true, merged: true, id, branch, worktreeRoot, verify: verifyCommand ? 'green' : 'skipped' };
+    const result = {
+      ok: true,
+      merged: true,
+      id,
+      branch,
+      worktreeRoot,
+      verify: verifyCommand ? 'green' : 'skipped',
+      ...(companion ? { companion } : {}),
+    };
 
     // Post-commit guard (D2-REVISED): the commit above only ever contains
     // what git staged for the merge itself. If the verify command mutated
