@@ -25,9 +25,9 @@ import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
 import { addCell } from '../lib/cells.mjs';
-import { createSession } from '../lib/claims.mjs';
+import { createSession, bindSessionLane } from '../lib/claims.mjs';
 import { writeJsonAtomic, hashFile, appendJsonl } from '../lib/fsutil.mjs';
-import { defaultState, writeState, BEE_VERSION } from '../lib/state.mjs';
+import { defaultState, writeState, writeLane, BEE_VERSION } from '../lib/state.mjs';
 import { encodeProjectDir } from '../lib/perf.mjs';
 import {
   splitCommandTokens,
@@ -745,6 +745,120 @@ await check('decisions.render example runs through the real dispatcher (decision
 await check('status example runs through the real dispatcher', async () => {
   const result = await assertExampleOk('status');
   assert(JSON.parse(result.stdout).phase === 'swarming', 'status should reflect the fixture repo\'s phase');
+});
+
+// ─── lpsp-2 (P2): default `lanes` summarizes (active lane in full + counts +
+// ids for the rest); `--lanes-full` restores today's full per-lane array.
+// USER-REPORTED: the `lanes` block alone was 58% of a full `status --json`
+// payload on this repo, paid on every session start (AGENTS.md step 3). The
+// HARD CONSTRAINT under test: every OTHER top-level field a router needs
+// (phase/mode/feature/gates/cells/recommended_next) must be byte-identical
+// whether or not --lanes-full is passed — only `lanes` itself may change
+// shape/size. A dedicated fixture repo (not the shared `root`/`rootState`)
+// keeps this independent of every other example's mutations.
+
+const rootLanes = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-status-lanes-cli-'));
+fs.mkdirSync(path.join(rootLanes, '.bee'), { recursive: true });
+writeJsonAtomic(path.join(rootLanes, '.bee', 'onboarding.json'), {
+  schema_version: '1.0',
+  bee_version: '0.1.0',
+});
+writeState(rootLanes, {
+  ...defaultState(),
+  phase: 'swarming',
+  feature: 'demo-lanes',
+  approved_gates: { context: true, shape: true, execution: true, review: false },
+});
+// Two lane records: "lane-active" is bound to the sole live session in this
+// checkout (so buildStatus can identify it as THE active lane, same
+// resolveSessionId root-inference path claims/reservations already use with
+// no --session-id/env identity supplied); "lane-other" stays unbound — it is
+// exactly the kind of historical record the default payload must summarize,
+// not carry in full.
+writeLane(rootLanes, {
+  schema_version: '1.0',
+  feature: 'lane-active',
+  mode: 'standard',
+  phase: 'swarming',
+  approved_gates: { context: true, shape: true, execution: true, review: false },
+  summary: 'the lane this session is actually working',
+  next_action: 'keep swarming',
+  created_at: new Date().toISOString(),
+});
+writeLane(rootLanes, {
+  schema_version: '1.0',
+  feature: 'lane-other',
+  mode: 'standard',
+  phase: 'exploring',
+  approved_gates: { context: true, shape: false, execution: false, review: false },
+  summary: 'a DIFFERENT lane — full record must NOT leak into the default payload',
+  next_action: 'lock decisions',
+  created_at: new Date().toISOString(),
+});
+// runModuleWorker inherits process.env by default (see the BEEHIVE_PERF_DIR
+// comment above) — when THIS test process is itself running inside a bee
+// session (BEE_SESSION_ID/CLAUDE_CODE_SESSION_ID set, e.g. under bee-swarming),
+// that ambient id reaches the spawned `bee status` call too and wins over
+// root-inference in resolveSessionId's own precedence chain. The fixture
+// session must therefore be created under WHATEVER id resolveSessionId will
+// actually resolve for that spawned call — the real id when ambient, else the
+// literal fallback id root-inference then adopts (exactly one fresh session
+// on disk) — never a fixed literal that only happens to work standalone.
+const laneEffectiveSessionId = process.env.BEE_SESSION_ID?.trim() || process.env.CLAUDE_CODE_SESSION_ID?.trim() || 'sess-lanes-cli';
+const laneSession = createSession(rootLanes, { id: laneEffectiveSessionId });
+assert(laneSession.ok, `fixture session creation should succeed: ${JSON.stringify(laneSession)}`);
+const laneBind = bindSessionLane(rootLanes, laneEffectiveSessionId, 'lane-active');
+assert(laneBind.ok, `fixture session->lane bind should succeed: ${JSON.stringify(laneBind)}`);
+
+const ROUTING_FIELDS = ['phase', 'mode', 'feature', 'gates', 'cells', 'recommended_next'];
+
+await check('status --json (default) summarizes lanes: active lane in full, counts+ids for the rest, no historical full records', async () => {
+  const result = await runBee(['status', '--json'], rootLanes);
+  assert(result.status === 0, `status --json should succeed: ${result.stderr}`);
+  const payload = JSON.parse(result.stdout);
+  assert(!Array.isArray(payload.lanes), `default lanes must NOT be the old full-array shape, got ${JSON.stringify(payload.lanes)}`);
+  assert(payload.lanes && typeof payload.lanes === 'object', `default lanes must be a summary object, got ${JSON.stringify(payload.lanes)}`);
+  assert(payload.lanes.active && payload.lanes.active.feature === 'lane-active', `default lanes.active should be the session-bound lane in full, got ${JSON.stringify(payload.lanes.active)}`);
+  assert(payload.lanes.active.approved_gates && payload.lanes.active.approved_gates.execution === true, 'active lane record keeps its own full approved_gates');
+  assert(payload.lanes.active.summary === 'the lane this session is actually working', 'active lane keeps its full record (summary field) — it is the one thing a session routes on');
+  assert(payload.lanes.counts && payload.lanes.counts.exploring === 1, `counts by phase for the rest, got ${JSON.stringify(payload.lanes.counts)}`);
+  assert(Array.isArray(payload.lanes.ids) && payload.lanes.ids.includes('lane-other') && !payload.lanes.ids.includes('lane-active'), `ids should name the non-active lane(s) only, got ${JSON.stringify(payload.lanes.ids)}`);
+  const stringified = JSON.stringify(payload.lanes);
+  assert(!stringified.includes('lock decisions'), `default payload must not carry lane-other's full record (its next_action leaked), got ${stringified}`);
+  assert(!stringified.includes('DIFFERENT lane'), `default payload must not carry lane-other's full record (its summary text leaked), got ${stringified}`);
+});
+
+await check('status --lanes-full --json restores today\'s full per-lane array, byte-unchanged shape', async () => {
+  const result = await runBee(['status', '--lanes-full', '--json'], rootLanes);
+  assert(result.status === 0, `status --lanes-full --json should succeed: ${result.stderr}`);
+  const payload = JSON.parse(result.stdout);
+  assert(Array.isArray(payload.lanes) && payload.lanes.length === 2, `--lanes-full should restore the full array of both lane records, got ${JSON.stringify(payload.lanes)}`);
+  const other = payload.lanes.find((l) => l.feature === 'lane-other');
+  assert(other && other.summary === 'a DIFFERENT lane — full record must NOT leak into the default payload', `--lanes-full row must carry its full summary text, got ${JSON.stringify(other)}`);
+  assert(Array.isArray(other.bound_sessions) && other.bound_sessions.length === 0, 'lane-other has no bound session');
+  const active = payload.lanes.find((l) => l.feature === 'lane-active');
+  assert(Array.isArray(active.bound_sessions) && active.bound_sessions.includes(laneEffectiveSessionId), `--lanes-full row still carries bound_sessions exactly as today, got ${JSON.stringify(active)}`);
+});
+
+await check('a router reading phase/mode/feature/gates/cells/recommended_next sees byte-identical values with or without --lanes-full', async () => {
+  const withoutFlag = JSON.parse((await runBee(['status', '--json'], rootLanes)).stdout);
+  const withFlag = JSON.parse((await runBee(['status', '--lanes-full', '--json'], rootLanes)).stdout);
+  for (const field of ROUTING_FIELDS) {
+    assert(
+      JSON.stringify(withoutFlag[field]) === JSON.stringify(withFlag[field]),
+      `field "${field}" must be byte-identical regardless of --lanes-full — default=${JSON.stringify(withoutFlag[field])} vs --lanes-full=${JSON.stringify(withFlag[field])}`,
+    );
+  }
+});
+
+await check('status --lanes-full is a registered flag with a runnable example', async () => {
+  const entry = entryByName('status');
+  assert(entry.parameters.properties['lanes-full'], 'registry entry "status" must register a --lanes-full property');
+  assert(entry.parameters.properties['lanes-full'].type === 'boolean', '--lanes-full must be typed boolean');
+  const idx = entry.examples.findIndex((ex) => ex.includes('--lanes-full'));
+  assert(idx !== -1, `status registry entry must carry a runnable --lanes-full example, got ${JSON.stringify(entry.examples)}`);
+  const result = await assertExampleOk('status', { exampleIndex: idx, cwd: rootLanes });
+  assert(Array.isArray(JSON.parse(result.stdout).lanes), `the registered --lanes-full example should actually restore the full array, got ${result.stdout}`);
 });
 
 // ─── state.* examples: run in a dedicated fresh repo (dispatcher-unify du-1) ─

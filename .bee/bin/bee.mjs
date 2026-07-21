@@ -329,6 +329,36 @@ function buildLaneRows(root) {
   return lanes.map((lane) => ({ ...lane, bound_sessions: boundBy[lane.feature] || [] }));
 }
 
+// lpsp-2 (P2, payload-size): the `lanes` block was measured at 58% of a full
+// `status --json` payload on this repo — a per-session context tax paid at
+// EVERY session start/compaction (AGENTS.md step 3), not just this call's
+// latency. Default `status` now summarizes: the ACTIVE lane in full (the one
+// the CALLING session is bound to — resolveSessionId's own env/root-inference
+// chain, the exact identity primitive claims/reservations already use, so no
+// new precondition logic here), plus counts-by-phase and bare ids for every
+// OTHER lane record. `--lanes-full` (buildStatus's lanesFull option) restores
+// buildLaneRows's full array unchanged — today's exact shape, byte-for-byte.
+// This is a payload-size change only: it never touches what any OTHER
+// top-level status field means (phase/mode/feature/gates/cells/
+// recommended_next stay byte-identical whichever way this function is
+// called).
+function buildLaneSummary(root) {
+  const lanes = buildLaneRows(root);
+  if (lanes.length === 0) return { active: null, counts: {}, ids: [] };
+  const sessionId = resolveSessionId({ root });
+  let active = null;
+  if (sessionId) {
+    const session = readSession(root, sessionId);
+    if (session && typeof session.lane === 'string' && session.lane) {
+      active = lanes.find((l) => l.feature === session.lane) || null;
+    }
+  }
+  const rest = active ? lanes.filter((l) => l.feature !== active.feature) : lanes;
+  const counts = {};
+  for (const l of rest) counts[l.phase] = (counts[l.phase] || 0) + 1;
+  return { active, counts, ids: rest.map((l) => l.feature) };
+}
+
 // Honest runtime drift (codex-harness-hardening 1c, decisions 485e949a /
 // 579bbad7). The false-green it replaces compared only the ledger version
 // string against the running constant — both of which a downgrade rewrites in
@@ -449,7 +479,7 @@ function ungrantedWorktreeNotice(root) {
   );
 }
 
-function buildStatus(root) {
+function buildStatus(root, { lanesFull = false } = {}) {
   const state = readState(root);
   const onboardingRaw = readOnboarding(root);
   const handoff = readHandoff(root);
@@ -569,7 +599,9 @@ function buildStatus(root) {
     ceiling_scarcity: ceilingScarcityWarning(root),
     handoff,
     cells: { ...counts, archived },
-    lanes: buildLaneRows(root),
+    // lpsp-2: summarized by default (active lane in full + counts/ids for the
+    // rest); --lanes-full restores buildLaneRows's full array unchanged.
+    lanes: lanesFull ? buildLaneRows(root) : buildLaneSummary(root),
     review,
     recovery,
     scribing_debt: scribingDebt(root),
@@ -608,6 +640,31 @@ function formatSlot(value) {
   return 'null';
 }
 
+// One full lane row's text rendering (fsh-6, D4) — shared by the legacy
+// full-array render (--lanes-full) and, for the active lane only, the lpsp-2
+// default summary render below.
+function formatLaneRow(l) {
+  const gates = GATE_NAMES.map((g) => `${g}=${l.approved_gates[g] ? 'approved' : 'pending'}`).join(' ');
+  const bound = l.bound_sessions.length ? ` sessions=${l.bound_sessions.join(',')}` : '';
+  return `${l.feature} [${l.phase}] ${gates}${bound}`;
+}
+
+// lpsp-2: text-render counterpart of buildLaneSummary's {active, counts, ids}
+// shape. null when there is nothing to report (zero lanes on disk) — same
+// additive, no-line-at-all convention the legacy array render already uses,
+// so a zero-lane text render stays byte-identical to before this cell.
+function formatLaneSummaryLine(summary) {
+  const parts = [];
+  if (summary.active) parts.push(`active: ${formatLaneRow(summary.active)}`);
+  if (summary.ids.length > 0) {
+    const countsStr = Object.entries(summary.counts)
+      .map(([phase, n]) => `${phase}=${n}`)
+      .join(' ');
+    parts.push(`${summary.ids.length} other lane(s) [${countsStr}] (ids: ${summary.ids.join(', ')})`);
+  }
+  return parts.length > 0 ? `Lanes: ${parts.join(' | ')}` : null;
+}
+
 function renderStatusText(status) {
   const lines = [
     // GH #30 (wux-1): prepended ONLY when buildStatus set the field (ungranted
@@ -626,17 +683,17 @@ function renderStatusText(status) {
     `Cells: open=${status.cells.open} claimed=${status.cells.claimed} capped=${status.cells.capped} blocked=${status.cells.blocked} archived=${status.cells.archived.total} (total capped=${status.cells.capped + status.cells.archived.capped})`,
     // Lanes (fsh-6, D4): additive — zero lanes on disk renders no line at
     // all, keeping every zero-lane text render byte-identical to today.
-    ...(status.lanes && status.lanes.length > 0
-      ? [
-          `Lanes: ${status.lanes
-            .map((l) => {
-              const gates = GATE_NAMES.map((g) => `${g}=${l.approved_gates[g] ? 'approved' : 'pending'}`).join(' ');
-              const bound = l.bound_sessions.length ? ` sessions=${l.bound_sessions.join(',')}` : '';
-              return `${l.feature} [${l.phase}] ${gates}${bound}`;
-            })
-            .join(' | ')}`,
-        ]
-      : []),
+    // lpsp-2: `status.lanes` is either the legacy full array (--lanes-full,
+    // byte-identical rendering to before this cell) or the new default
+    // summary object ({active, counts, ids}) — Array.isArray tells them apart
+    // without buildStatus threading a second flag through here.
+    ...(() => {
+      if (Array.isArray(status.lanes)) {
+        return status.lanes.length > 0 ? [`Lanes: ${status.lanes.map(formatLaneRow).join(' | ')}`] : [];
+      }
+      const line = formatLaneSummaryLine(status.lanes);
+      return line ? [line] : [];
+    })(),
     // §9 — reaching a post-execution phase with unreviewed candidates is the
     // NORMAL truthful close (R3): informational, never a staleness warning.
     ...(POST_EXECUTION_REVIEW_PHASES.includes(status.phase) && status.review?.candidates?.unreviewed > 0
@@ -694,8 +751,9 @@ function renderStatusText(status) {
 // same lib functions (D5) — every handler's {result, text} matches the
 // original byte-for-byte in the steady state (no manifest drift). ──────────
 
-function handleStatus(root) {
-  const status = buildStatus(root);
+function handleStatus(root, flags) {
+  const lanesFull = Boolean(flags && flags['lanes-full'] === true);
+  const status = buildStatus(root, { lanesFull });
   return { result: status, text: renderStatusText(status) };
 }
 
@@ -4693,7 +4751,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

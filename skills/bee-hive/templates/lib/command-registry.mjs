@@ -38,15 +38,20 @@ export const COMMAND_REGISTRY = [
     name: 'status',
     invoke: 'bee status',
     description:
-      'Read-only snapshot: onboarding health, phase, gates, handoff, cell counts, reservations, decisions, staleness warnings, recommended next step.',
+      'Read-only snapshot: onboarding health, phase, gates, handoff, cell counts, reservations, decisions, staleness warnings, recommended next step. `lanes` is summarized by default (lpsp-2, payload-size): the ACTIVE lane (the one this session is bound to) in full, plus counts-by-phase and bare ids for every other lane record — pass --lanes-full for the full per-lane array.',
     parameters: {
       type: 'object',
       properties: {
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of the text report.' },
+        'lanes-full': {
+          type: 'boolean',
+          description:
+            'Restore the `lanes` field to its full per-lane array (every lane record in full, including bound_sessions) instead of the default summary ({active, counts, ids}). Payload-size only — every other top-level field (phase/mode/feature/gates/cells/recommended_next/...) is unaffected either way.',
+        },
       },
       required: [],
     },
-    examples: ['bee status --json'],
+    examples: ['bee status --json', 'bee status --lanes-full --json'],
     deprecated: null,
   },
 

@@ -928,19 +928,41 @@ function beeMjsModulePath() {
   return fileURLToPath(new URL('../bee.mjs', import.meta.url));
 }
 
-function runBeeMjs(cwd, args) {
-  return runModuleWorker(beeMjsModulePath(), { args, cwd });
+function runBeeMjs(cwd, args, opts = {}) {
+  return runModuleWorker(beeMjsModulePath(), { args, cwd, ...opts });
 }
 
-await check('bee.mjs status --json carries a `lanes` block (per-lane phase/gates/bound sessions) while zero lanes on disk renders an empty array and every pre-existing status field keeps its exact shape', async () => {
+// lpsp-2 (P2, payload-size): the `lanes` block was measured at 58% of a full
+// `status --json` payload on this repo — a per-session context tax paid at
+// every session start/compaction (AGENTS.md step 3). `lanes` now summarizes
+// by DEFAULT (active lane in full + counts/ids for the rest); `--lanes-full`
+// restores the pre-cell full per-lane array unchanged. This whole worker
+// process may itself be running inside a bee session (BEE_SESSION_ID /
+// CLAUDE_CODE_SESSION_ID set in the ambient env that runModuleWorker inherits
+// by default), which would otherwise leak in as the "acting session" for the
+// spawned `bee status` call and shadow the fixture's own `sess-lx` identity —
+// CLEAN_ENV strips both so resolveSessionId falls through to root-inference
+// (exactly one live session on disk -> adopts it), deterministic either way.
+const CLEAN_ENV = { ...process.env };
+delete CLEAN_ENV.BEE_SESSION_ID;
+delete CLEAN_ENV.CLAUDE_CODE_SESSION_ID;
+
+await check('bee.mjs status --json summarizes `lanes` by default (active lane in full + counts/ids for the rest); --lanes-full restores the full per-lane array; zero lanes on disk renders the empty shape either way; every pre-existing status field keeps its exact shape', async () => {
   const dir = makeStateRepo('bee-status-lanes-');
   try {
-    const zero = await runBeeMjs(dir, ['status', '--json']);
+    const zero = await runBeeMjs(dir, ['status', '--json'], { env: CLEAN_ENV });
     assert(zero.status === 0, `bee.mjs status --json exited ${zero.status} :: ${zero.stderr}`);
     const zeroPayload = JSON.parse(zero.stdout);
-    assert(Array.isArray(zeroPayload.lanes) && zeroPayload.lanes.length === 0, `zero lanes on disk renders an empty lanes array, got ${JSON.stringify(zeroPayload.lanes)}`);
+    assert(
+      zeroPayload.lanes && typeof zeroPayload.lanes === 'object' && !Array.isArray(zeroPayload.lanes)
+        && zeroPayload.lanes.active === null && Object.keys(zeroPayload.lanes.counts).length === 0 && zeroPayload.lanes.ids.length === 0,
+      `zero lanes on disk renders the empty summary shape {active:null,counts:{},ids:[]}, got ${JSON.stringify(zeroPayload.lanes)}`,
+    );
     assert(zeroPayload.phase === 'idle', 'pre-existing top-level phase field keeps its exact zero-lane shape');
-    assert(!/Lanes:/.test((await runBeeMjs(dir, ['status'])).stdout), 'text render carries no Lanes line when no lanes exist (zero-lane byte parity)');
+    assert(!/Lanes:/.test((await runBeeMjs(dir, ['status'], { env: CLEAN_ENV })).stdout), 'text render carries no Lanes line when no lanes exist (zero-lane byte parity)');
+
+    const zeroFull = await runBeeMjs(dir, ['status', '--lanes-full', '--json'], { env: CLEAN_ENV });
+    assert(Array.isArray(JSON.parse(zeroFull.stdout).lanes) && JSON.parse(zeroFull.stdout).lanes.length === 0, '--lanes-full on zero lanes still renders the pre-cell empty ARRAY shape, unchanged');
 
     laneStore.writeLane(dir, {
       schema_version: '1.0',
@@ -955,18 +977,34 @@ await check('bee.mjs status --json carries a `lanes` block (per-lane phase/gates
     laneBinding.createSession(dir, { id: 'sess-lx' });
     laneBinding.bindSessionLane(dir, 'sess-lx', 'lane-x');
 
-    const withLane = await runBeeMjs(dir, ['status', '--json']);
-    const payload = JSON.parse(withLane.stdout);
-    assert(Array.isArray(payload.lanes) && payload.lanes.length === 1, `lanes block lists the one lane record, got ${JSON.stringify(payload.lanes)}`);
-    const row = payload.lanes[0];
+    // --lanes-full: today's exact pre-cell shape, byte-unchanged.
+    const withLaneFull = await runBeeMjs(dir, ['status', '--lanes-full', '--json'], { env: CLEAN_ENV });
+    const fullPayload = JSON.parse(withLaneFull.stdout);
+    assert(Array.isArray(fullPayload.lanes) && fullPayload.lanes.length === 1, `--lanes-full lists the one lane record, got ${JSON.stringify(fullPayload.lanes)}`);
+    const row = fullPayload.lanes[0];
     assert(row.feature === 'lane-x' && row.phase === 'swarming', `lane row carries feature/phase, got ${JSON.stringify(row)}`);
     assert(row.approved_gates && row.approved_gates.execution === true, 'lane row carries its own approved_gates');
     assert(Array.isArray(row.bound_sessions) && row.bound_sessions.includes('sess-lx'), `lane row names the bound session, got ${JSON.stringify(row.bound_sessions)}`);
-    assert(payload.phase === 'idle', 'the pre-existing top-level phase field is untouched by the lanes block (it stays the default pipeline)');
+    assert(fullPayload.phase === 'idle', 'the pre-existing top-level phase field is untouched by --lanes-full (it stays the default pipeline)');
 
-    const text = (await runBeeMjs(dir, ['status'])).stdout;
-    assert(/Lanes: lane-x \[swarming\]/.test(text), `text render carries a Lanes line once a lane exists, got:\n${text}`);
-    assert(/sessions=sess-lx/.test(text), `text Lanes line names the bound session, got:\n${text}`);
+    const textFull = (await runBeeMjs(dir, ['status', '--lanes-full'], { env: CLEAN_ENV })).stdout;
+    assert(/Lanes: lane-x \[swarming\]/.test(textFull), `--lanes-full text render carries a Lanes line once a lane exists, got:\n${textFull}`);
+    assert(/sessions=sess-lx/.test(textFull), `--lanes-full text Lanes line names the bound session, got:\n${textFull}`);
+
+    // default: summarized — the session-bound lane is THE active lane, in
+    // full; with only one lane total, counts/ids for "the rest" are empty.
+    const withLane = await runBeeMjs(dir, ['status', '--json'], { env: CLEAN_ENV });
+    const payload = JSON.parse(withLane.stdout);
+    assert(!Array.isArray(payload.lanes), `default lanes must summarize, not the full array, got ${JSON.stringify(payload.lanes)}`);
+    assert(payload.lanes.active && payload.lanes.active.feature === 'lane-x' && payload.lanes.active.phase === 'swarming', `default lanes.active should be the session-bound lane in full, got ${JSON.stringify(payload.lanes.active)}`);
+    assert(payload.lanes.active.approved_gates && payload.lanes.active.approved_gates.execution === true, 'default active lane keeps its own full approved_gates');
+    assert(Array.isArray(payload.lanes.active.bound_sessions) && payload.lanes.active.bound_sessions.includes('sess-lx'), `default active lane still names the bound session, got ${JSON.stringify(payload.lanes.active)}`);
+    assert(Object.keys(payload.lanes.counts).length === 0 && payload.lanes.ids.length === 0, `with only one (active) lane, counts/ids for "the rest" stay empty, got ${JSON.stringify(payload.lanes)}`);
+    assert(payload.phase === 'idle', 'the pre-existing top-level phase field is untouched by the default lanes summary (it stays the default pipeline)');
+
+    const text = (await runBeeMjs(dir, ['status'], { env: CLEAN_ENV })).stdout;
+    assert(/Lanes: active: lane-x \[swarming\]/.test(text), `default text render carries an "active:" Lanes line once a lane exists, got:\n${text}`);
+    assert(/sessions=sess-lx/.test(text), `default text Lanes line names the bound session, got:\n${text}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

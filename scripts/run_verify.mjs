@@ -56,6 +56,12 @@ const EXCLUDE = new Set([]);
 const EXTRA_SUITES = [
   ["scripts/release_manifest.mjs", "--selftest"],
   ["scripts/release_manifest.mjs", "--check"],
+  // lpsp-1: guards the third copy relationship — .bee/bin/** vs the
+  // .bee/onboarding.json managed-hash ledger — so a release can never tag a
+  // commit whose ledger was not refreshed by self-onboard (the drift:true
+  // false-lead shipped in 1.9.0, hand-fixed in 6412017). Same idiom as
+  // release_manifest.mjs --check just above.
+  ["scripts/ledger_parity.mjs", "--check"],
   ["scripts/census_stale_spawn_syntax.mjs"],
   ["scripts/test_installers_e2e.mjs", "--installer", "bash"],
 ];
