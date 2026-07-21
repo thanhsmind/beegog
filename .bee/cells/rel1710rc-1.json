@@ -1,0 +1,42 @@
+{
+  "id": "rel1710rc-1",
+  "feature": "release-1-7-10-rc",
+  "lane": "tiny",
+  "behavior_change": false,
+  "title": "Release 1.7.10-rc: bump + onboard + render + manifest + verify + commit + tag + push, then exact-tag CI green",
+  "action": "Standard release flow on main: node scripts/bump_version.mjs 1.7.10-rc; self-onboard --apply --repo-hooks (expect up_to_date); render_plugin_skill_trees THEN release_manifest --write; run_verify FOREGROUND green; stage everything EXCEPT .claude/settings.json; commit with cell id; annotated tag v1.7.10-rc; push origin main --tags; then poll the exact-tag GitHub CI (Linux + Windows workflows) until green — the release is not done until the tag CI is green (learning 20260721).",
+  "must_haves": {
+    "truths": [
+      "Tag v1.7.10-rc exists on the release commit and is pushed",
+      "run_verify green recorded pre-tag",
+      "exact-tag CI green confirmed on GitHub (both workflows)"
+    ],
+    "prohibitions": [
+      "Do NOT commit .claude/settings.json",
+      "Do not force-push"
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [],
+  "files": [
+    "package.json",
+    "skills/bee-hive/templates/lib/state.mjs"
+  ],
+  "deps": [],
+  "status": "claimed",
+  "decisions": [],
+  "trace": {
+    "worker": "orch",
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": "c128101f-b597-4f5e-a415-be1a4bb34e81",
+    "claimed_at": "2026-07-21T03:49:20.581Z"
+  }
+}
