@@ -1383,6 +1383,7 @@ function handleDecisionsLog(root, flags) {
     scope: flags.scope ? String(flags.scope) : 'repo',
     source: flags.source ? String(flags.source) : 'user',
     confidence,
+    tags: flags.tags !== undefined ? splitList(flags.tags) : undefined,
   });
   return { result: event, text: `Logged decision ${event.id}.` };
 }
@@ -1404,28 +1405,96 @@ function handleDecisionsRedact(root, flags) {
   return { result: event, text: `Redacted ${event.redacts}.` };
 }
 
+// decision-propagation dp-1 (CONTEXT D4a, GH #32): structured recall filters
+// shared by `decisions search` and `decisions active` (the latter a
+// deliberate sibling extension beyond D4a's letter — logged as a decision at
+// implementation time). --scope/--area is one filter (--area is an exact
+// alias, never a second dimension — no new `area` field, fresh-eyes P2).
+// Every filter is exact-match case-insensitive except --since (inclusive
+// lower bound on event.date) and --text (substring, unchanged from the
+// pre-dp-1 behavior). A legacy event with no `tags` array never matches a
+// --tag filter (it has nothing to match), but is untouched by every other
+// filter — so it stays reachable via --text/--scope/--since exactly as
+// before.
+function filterDecisionEvents(decisions, { text, tag, scope, since } = {}) {
+  let result = decisions;
+  if (tag) {
+    const needle = tag.toLowerCase();
+    result = result.filter(
+      (event) => Array.isArray(event.tags) && event.tags.some((t) => String(t).toLowerCase() === needle),
+    );
+  }
+  if (scope) {
+    const needle = scope.toLowerCase();
+    result = result.filter((event) => typeof event.scope === 'string' && event.scope.toLowerCase() === needle);
+  }
+  if (since) {
+    const sinceMs = Date.parse(since);
+    result = result.filter((event) => {
+      const eventMs = Date.parse(event.date);
+      return Number.isFinite(eventMs) && eventMs >= sinceMs;
+    });
+  }
+  if (text) {
+    const needle = text.toLowerCase();
+    result = result.filter((event) =>
+      [event.decision, event.rationale, event.alternatives]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(needle)),
+    );
+  }
+  return result;
+}
+
+// --scope/--area share one filter value; --area is an exact alias (D4a: no
+// second navigation dimension). An explicit --scope wins if both are somehow
+// passed (matches how most other dual-flag call sites in this file resolve
+// ties — first-named flag wins).
+function resolveScopeFilter(flags) {
+  if (flags.scope !== undefined) return String(flags.scope);
+  if (flags.area !== undefined) return String(flags.area);
+  return null;
+}
+
+function resolveSinceFilter(flags) {
+  if (flags.since === undefined) return null;
+  const since = String(flags.since);
+  if (!Number.isFinite(Date.parse(since))) {
+    throw new Error(`--since must be a valid ISO date, got ${JSON.stringify(since)}.`);
+  }
+  return since;
+}
+
 function handleDecisionsActive(root, flags) {
   const recent =
     flags.recent !== undefined ? Number.parseInt(String(flags.recent), 10) : null;
   if (flags.recent !== undefined && (!Number.isFinite(recent) || recent <= 0)) {
     throw new Error('--recent must be a positive integer.');
   }
-  const decisions = activeDecisions(root, { recent });
+  const tag = flags.tag !== undefined ? String(flags.tag) : null;
+  const scope = resolveScopeFilter(flags);
+  const since = resolveSinceFilter(flags);
+  let decisions = filterDecisionEvents(activeDecisions(root), { tag, scope, since });
+  if (recent != null) decisions = decisions.slice(0, recent);
   const text = decisions.length ? decisions.map(formatDecision).join('\n') : 'No active decisions.';
   return { result: { decisions }, text };
 }
 
 function handleDecisionsSearch(root, flags) {
-  const needle = requireFlag(flags, 'text').toLowerCase();
-  const decisions = activeDecisions(root).filter((event) =>
-    [event.decision, event.rationale, event.alternatives]
-      .filter(Boolean)
-      .some((field) => String(field).toLowerCase().includes(needle)),
-  );
-  const text = decisions.length
+  const text = flags.text !== undefined ? String(flags.text) : null;
+  const tag = flags.tag !== undefined ? String(flags.tag) : null;
+  const scope = resolveScopeFilter(flags);
+  const since = resolveSinceFilter(flags);
+  if (!text && !tag && !scope && !since) {
+    throw new Error(
+      'decisions search requires --text, or at least one structured filter (--tag/--scope/--area/--since).',
+    );
+  }
+  const decisions = filterDecisionEvents(activeDecisions(root), { text, tag, scope, since });
+  const resultText = decisions.length
     ? decisions.map(formatDecision).join('\n')
-    : `No active decisions matching "${needle}".`;
-  return { result: { decisions }, text };
+    : 'No active decisions matching the given filters.';
+  return { result: { decisions }, text: resultText };
 }
 
 // ─── state: full port of bee_state.mjs's verb logic (dispatcher-unify du-1).

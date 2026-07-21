@@ -27,6 +27,33 @@ function decisionsPath(root) {
   return path.join(root, '.bee', 'decisions.jsonl');
 }
 
+// decision-propagation dp-1 (CONTEXT D4a): optional tags[] on a decide
+// event, for structured recall alongside the existing free-string `scope`
+// (which stays the spec-area dimension — no separate `area` field, fresh-
+// eyes P2). Lowercase-slug shape mirrors the repo's existing feature-slug
+// convention (worktree-store.mjs's FEATURE_SLUG_RE): one leading alnum,
+// then alnum/hyphen.
+export const TAG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+// undefined/null tags -> null (event gains NO tags key at all — additive,
+// zero-migration parity with the 400+ pre-dp-1 events that never had one).
+// Anything else must be a non-empty array of TAG_PATTERN-valid strings.
+function normalizeTags(tags) {
+  if (tags === undefined || tags === null) return null;
+  if (!Array.isArray(tags)) {
+    throw new Error('logDecision: tags must be an array of lowercase slugs (e.g. ["billing", "nightly-job"]).');
+  }
+  const cleaned = tags.map((tag) => String(tag).trim());
+  for (const tag of cleaned) {
+    if (!TAG_PATTERN.test(tag)) {
+      throw new Error(
+        `logDecision: tag ${JSON.stringify(tag)} is not a valid lowercase slug (must match ${TAG_PATTERN}).`,
+      );
+    }
+  }
+  return cleaned.length ? cleaned : null;
+}
+
 function assertSafeContent(field, value) {
   if (typeof value !== 'string' || !value) return;
   for (const pattern of SECRET_CONTENT_PATTERNS) {
@@ -53,7 +80,7 @@ function assertSafe(fields) {
 
 export function logDecision(
   root,
-  { decision, rationale, alternatives = null, scope = 'repo', source = 'user', confidence = null },
+  { decision, rationale, alternatives = null, scope = 'repo', source = 'user', confidence = null, tags = undefined },
 ) {
   if (typeof decision !== 'string' || !decision.trim()) {
     throw new Error('logDecision: decision text is required.');
@@ -62,6 +89,7 @@ export function logDecision(
     throw new Error('logDecision: rationale is required.');
   }
   assertSafe({ decision, rationale, alternatives, scope, source });
+  const normalizedTags = normalizeTags(tags);
 
   const event = {
     id: crypto.randomUUID(),
@@ -74,6 +102,7 @@ export function logDecision(
     source,
     confidence,
   };
+  if (normalizedTags) event.tags = normalizedTags;
   appendJsonl(decisionsPath(root), event);
   return event;
 }
