@@ -71,6 +71,47 @@ function argVal(flag) {
   return found ? found.slice(flag.length + 1) : undefined;
 }
 
+// ─── deterministic barrier (rel1710rc-2, same technique scripts/test_claim_race.mjs
+// uses for its (g-unsafe) negative control) ─────────────────────────────────
+// Scenario (c) below used to order its racers with a fixed UNSAFE_WIDEN_MS
+// sleep between each racer's unlocked findForeignHolds read and its later
+// reserve+mirrorHold write. On a fast/many-core box every racer's sleep
+// overlaps every other racer's, so all 8 checks land on the still-empty
+// ledger before any write commits — the double grant is reliable. On a slow
+// 2-core CI runner, real OS-process scheduling can let the FIRST racer's
+// entire check-sleep-reserve-mirror sequence complete before the SECOND
+// racer even starts its check; that second racer's findForeignHolds then
+// correctly sees the first racer's already-mirrored hold and refuses,
+// collapsing the negative control to only 1 winner ("DETECTOR DID NOT BITE"
+// on Linux CI, all Node versions — reproduced locally here under `taskset -c
+// 0,1`, run 4/5 flaky). An fs-based ready-file handshake between the racer
+// processes replaces the sleep with a real ordering guarantee: every racer
+// signals its own `check-<id>.ready` file the instant its findForeignHolds
+// read completes (seeing the empty ledger), then waits for every OTHER
+// racer's ready file before proceeding to reserve+mirrorHold — so ALL 8
+// checks are proven to happen-before ANY of the 8 writes, making the double
+// grant structural (every racer's own mirrorHold never re-checks for a
+// foreign hold — see worktree-holds.mjs's insertHold comment — so once every
+// racer has passed the check on the same empty ledger, every one of their
+// writes lands unconditionally). That makes scenario (c) 10/10, not
+// "usually".
+function touchFile(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, '');
+}
+
+async function waitForFile(filePath, { timeoutMs = 10_000, pollMs = 5 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (fs.existsSync(filePath)) return;
+    if (Date.now() > deadline) {
+      throw new Error(`waitForFile: timed out after ${timeoutMs}ms waiting for ${filePath}`);
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
 const role = argVal('--role');
 
 if (role) {
@@ -130,6 +171,8 @@ async function runWorker(workerRole) {
       const ownRoot = argVal('--own-root');
       const id = argVal('--id');
       const holdPath = argVal('--path');
+      const barrier = argVal('--barrier');
+      const barrierRacers = Number(argVal('--racers') || 0);
       const holder = `wt-old-${id}`;
       const { findForeignHolds, mirrorHold } = await import(WORKTREE_HOLDS_LIB_PATH);
       const { reserve } = await import(RESERVATIONS_LIB_PATH);
@@ -138,7 +181,22 @@ async function runWorker(workerRole) {
         process.stdout.write(`${JSON.stringify({ id, ok: false, reason: 'foreign-hold-seen' })}\n`);
         process.exit(0);
       }
-      await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      // Deterministic barrier (rel1710rc-2): signal this racer's
+      // findForeignHolds check is done (it saw the empty ledger), then wait
+      // for every other racer to also finish its own check before ANY racer
+      // proceeds to reserve+mirrorHold. This makes the double-grant
+      // structural — every racer is PROVEN to have passed its check on the
+      // SAME empty ledger before any write lands — instead of merely hoping
+      // a fixed sleep widened the window enough under real OS scheduling.
+      if (barrier && barrierRacers > 0) {
+        touchFile(path.join(barrier, `check-${id}.ready`));
+        for (let i = 0; i < barrierRacers; i += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await waitForFile(path.join(barrier, `check-${i}.ready`));
+        }
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, UNSAFE_WIDEN_MS));
+      }
       const reserveResult = await reserve(ownRoot, { agent: `agent-old-${id}`, cell: 'race-old', path: holdPath });
       if (reserveResult.ok) {
         await mirrorHold(mainRoot, { path: holdPath, holder, cell: 'race-old', session: `sess-old-${id}` });
@@ -312,15 +370,38 @@ async function runOrchestrator() {
   // red_failure_evidence cell 1710-3 captures: the old flow must let 2+
   // racers land an active grant on the identical path (a double grant) —
   // exactly the hazard the D3 atomic section (scenario (d) below) closes.
+  //
+  // rel1710rc-2: this negative control used to rely on a fixed
+  // UNSAFE_WIDEN_MS sleep to order every racer's check before every racer's
+  // write, which is only a probabilistic ordering — on slow 2-core CI
+  // runners the racers can serialize naturally instead (the first racer's
+  // full check+reserve+mirror sequence finishes before the second racer even
+  // starts its check), so only 1 of 8 wins and the detector "does not bite"
+  // (observed on Linux CI, all Node versions; reproduced locally under
+  // `taskset -c 0,1`). The fs-barrier below (touchFile/waitForFile, same
+  // technique scripts/test_claim_race.mjs's (g-unsafe) control uses) proves
+  // ALL racers complete their findForeignHolds check — seeing the SAME empty
+  // ledger — BEFORE ANY racer performs its reserve+mirrorHold write, making
+  // the double grant structural rather than timing-dependent.
   {
     const mainRoot = makeRoot();
     const ownRoots = [];
+    const barrier = path.join(mainRoot, '.race-barrier-c-old');
+    fs.mkdirSync(barrier, { recursive: true });
     const contestedPath = 'src/shared/contested-old.ts';
     try {
       const results = await spawnRacers(RACERS, (i) => {
         const ownRoot = makeRoot();
         ownRoots.push(ownRoot);
-        return ['--role=same-path-old-racer', `--main-root=${mainRoot}`, `--own-root=${ownRoot}`, `--id=${i}`, `--path=${contestedPath}`];
+        return [
+          '--role=same-path-old-racer',
+          `--main-root=${mainRoot}`,
+          `--own-root=${ownRoot}`,
+          `--id=${i}`,
+          `--path=${contestedPath}`,
+          `--barrier=${barrier}`,
+          `--racers=${RACERS}`,
+        ];
       });
       const crashed = results.filter((r) => r.code !== 0);
       if (crashed.length) {

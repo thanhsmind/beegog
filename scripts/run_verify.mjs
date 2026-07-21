@@ -159,6 +159,33 @@ function filterSuitesByRoot(suites) {
   return suites.filter((entry) => entry[0].startsWith(prefix));
 }
 
+// Per-run exclusion (rel1710rc-2): a small, comma-separated list of exact
+// repo-relative suite paths to drop from THIS invocation's active run,
+// without touching the discovered SUITES export or the global (compile-time)
+// EXCLUDE set above — those stay the single source every platform/caller
+// sees, so a suite excluded here for one CI lane never silently vanishes
+// from test_verify_manifest.mjs's mandatory/floor checks (which read the raw
+// SUITES export, unaffected by this env var) or from any other caller's
+// unfiltered run. Exists so .github/workflows/windows.yml can drop suites
+// with a genuine, named, honestly-documented Windows-only failure (see that
+// file's own loud comment block) without hand-maintaining a second suite
+// list there — new suites under the discovery roots are still picked up
+// automatically; only the named exclusions are ever skipped, and only in the
+// job that sets this env var. Unset (the default, every non-Windows caller):
+// zero behavior change, byte-identical to before this existed.
+function filterExcludedSuites(suites) {
+  const raw = process.env.BEE_VERIFY_EXCLUDE;
+  if (!raw) return suites;
+  const excluded = new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  if (excluded.size === 0) return suites;
+  return suites.filter((entry) => !excluded.has(entry[0]));
+}
+
 export function runOne(entry) {
   const [script, ...args] = entry;
   const start = Date.now();
@@ -237,10 +264,18 @@ async function main() {
     Number(process.env.BEE_VERIFY_CONCURRENCY) || Math.min(5, os.cpus().length),
   );
 
-  const activeSuites = filterSuitesByRoot(SUITES);
-  if (process.env.BEE_VERIFY_ROOT_FILTER && activeSuites.length === 0) {
+  const rootFilteredSuites = filterSuitesByRoot(SUITES);
+  if (process.env.BEE_VERIFY_ROOT_FILTER && rootFilteredSuites.length === 0) {
     console.error(
       `run_verify: BEE_VERIFY_ROOT_FILTER="${process.env.BEE_VERIFY_ROOT_FILTER}" matched zero suites — refusing a silent trivial-green run. FIX: check the root prefix.`,
+    );
+    process.exit(1);
+  }
+
+  const activeSuites = filterExcludedSuites(rootFilteredSuites);
+  if (process.env.BEE_VERIFY_EXCLUDE && activeSuites.length === 0) {
+    console.error(
+      `run_verify: BEE_VERIFY_EXCLUDE="${process.env.BEE_VERIFY_EXCLUDE}" excluded every remaining suite — refusing a silent trivial-green run. FIX: check the excluded paths.`,
     );
     process.exit(1);
   }
