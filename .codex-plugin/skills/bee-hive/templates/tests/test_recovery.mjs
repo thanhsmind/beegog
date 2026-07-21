@@ -19,6 +19,8 @@ import {
 } from '../lib/recovery.mjs';
 import { encodeProjectDir } from '../lib/perf.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
+import { cellsDir } from '../lib/cells.mjs';
+import { captureQueuePath } from '../lib/capture.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -127,6 +129,62 @@ function writeClaim(root, { cellId, sessionId, claimed_at, ttl_seconds = 3600 })
     `${JSON.stringify({ cell: cellId, session: sessionId, ttl_seconds, claimed_at, acquired_at: claimed_at }, null, 2)}\n`,
     'utf8',
   );
+}
+
+// withReadCounts — spies on fs.readFileSync/fs.readdirSync for the duration
+// of `fn`, counting exactly the calls that touch `root`'s decisions.jsonl,
+// capture-queue.jsonl, and .bee/cells listing (cp-1: D1 read-once regression
+// probe). Patches the shared `fs` module object (mutable across all ESM
+// importers of 'node:fs') rather than any lib's own binding, so it observes
+// real call counts made by activeDecisions/listCells/readJsonl without
+// touching their exports.
+function withReadCounts(root, fn) {
+  const decisionsFile = path.join(root, '.bee', 'decisions.jsonl');
+  const captureFile = captureQueuePath(root);
+  const cellsDirPath = cellsDir(root);
+  const counts = { decisions: 0, capture: 0, cellsList: 0 };
+  const origReadFileSync = fs.readFileSync;
+  const origReaddirSync = fs.readdirSync;
+  fs.readFileSync = function (file, ...rest) {
+    if (file === decisionsFile) counts.decisions += 1;
+    else if (file === captureFile) counts.capture += 1;
+    return origReadFileSync.call(fs, file, ...rest);
+  };
+  fs.readdirSync = function (dir, ...rest) {
+    if (dir === cellsDirPath) counts.cellsList += 1;
+    return origReaddirSync.call(fs, dir, ...rest);
+  };
+  try {
+    fn();
+  } finally {
+    fs.readFileSync = origReadFileSync;
+    fs.readdirSync = origReaddirSync;
+  }
+  return counts;
+}
+
+// buildMultiSessionRoot — N laneless, heartbeat-stale sessions, each holding
+// an active claim on its own cell (guarantees work_signal 'claimed_cells'
+// deterministically, independent of settlement-vs-transcript timing races)
+// and a dirty (non-clean-end) transcript, so every session reaches the
+// detectCrashCandidates code path that (pre-cp-1) called lastDurableSettlement
+// once per session. Also seeds one global decision/capture-stub/capped-cell
+// so the shared stores are non-empty and the settlement math is exercised.
+function buildMultiSessionRoot(n) {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects');
+  writeDecision(root, { id: 'd1', date: iso(BASE - 50000) });
+  writeCaptureStub(root, { id: 'c1', at: iso(BASE - 40000) });
+  writeCappedCell(root, { id: 'other-1', feature: 'other-feat', capped_at: iso(BASE - 30000) });
+  const sessionIds = [];
+  for (let i = 0; i < n; i++) {
+    const sid = `sess-multi-${i}`;
+    sessionIds.push(sid);
+    writeSessionRecord(root, sid, { started_at: iso(BASE - 20000 - i * 1000), last_heartbeat: STALE_HEARTBEAT });
+    writeClaim(root, { cellId: `multi-cell-${i}`, sessionId: sid, claimed_at: iso(BASE - 15000 - i * 1000) });
+    writeTranscript(projectsRoot, PROJECT_PATH, sid, dirtyEndEvents(BASE - 10000 - i * 1000));
+  }
+  return { root, projectsRoot, sessionIds };
 }
 
 function cleanEndEvents(t0) {
@@ -464,6 +522,99 @@ check('detectCrashCandidates: no settlement anywhere falls back to session start
   eq(out.length, 1, 'activity after started_at, with zero durable settlement anywhere -> still a candidate');
   eq(out[0].since, startedAt, 'since falls back to the session started_at (D3)');
 });
+
+// ======================================================================
+// cp-1 (D1, docs/history/cli-performance/CONTEXT.md): shared inputs
+// (activeDecisions, capture queue, listCells) computed ONCE per
+// detectCrashCandidates call, not once per stale session.
+// ======================================================================
+
+check(
+  'detectCrashCandidates: decisions/capture/cells reads happen a CONSTANT number of times per call, not once per stale session',
+  () => {
+    const two = buildMultiSessionRoot(2);
+    const countsTwo = withReadCounts(two.root, () => {
+      const out = detectCrashCandidates(two.root, { projectsRoot: two.projectsRoot, projectPath: PROJECT_PATH, now: BASE });
+      eq(out.length, 2, 'sanity: both sessions are candidates (2-session fixture)');
+    });
+
+    const six = buildMultiSessionRoot(6);
+    const countsSix = withReadCounts(six.root, () => {
+      const out = detectCrashCandidates(six.root, { projectsRoot: six.projectsRoot, projectPath: PROJECT_PATH, now: BASE });
+      eq(out.length, 6, 'sanity: all six sessions are candidates (6-session fixture)');
+    });
+
+    eq(
+      countsTwo.decisions,
+      countsSix.decisions,
+      `decisions.jsonl read count must not scale with stale-session count (2-session: ${countsTwo.decisions}, 6-session: ${countsSix.decisions})`,
+    );
+    eq(
+      countsTwo.capture,
+      countsSix.capture,
+      `capture-queue read count must not scale with stale-session count (2-session: ${countsTwo.capture}, 6-session: ${countsSix.capture})`,
+    );
+    eq(
+      countsTwo.cellsList,
+      countsSix.cellsList,
+      `cells-listing (readdirSync) count must not scale with stale-session count (2-session: ${countsTwo.cellsList}, 6-session: ${countsSix.cellsList})`,
+    );
+    // Bounded, not "exactly 1": activeDecisions() itself reads decisions.jsonl
+    // twice per call (buildTagOverlay + its own main-branch read) — pre-
+    // existing, out of this cell's scope. The regression this guards is
+    // O(N) re-reads across N stale sessions, not activeDecisions' own
+    // internal read count.
+    assert(
+      countsSix.decisions <= 2,
+      `decisions.jsonl must be read O(1) times per call (<=2), saw ${countsSix.decisions} across 6 stale sessions`,
+    );
+    eq(countsSix.capture, 1, `capture-queue must be read exactly once per call, saw ${countsSix.capture}`);
+    eq(countsSix.cellsList, 1, `cells must be listed exactly once per call, saw ${countsSix.cellsList}`);
+  },
+);
+
+check('detectCrashCandidates: zero stale sessions never touches the decisions/capture/cells stores (fast path unchanged)', () => {
+  const root = freshRoot();
+  const projectsRoot = path.join(root, 'projects');
+  const sid = 'sess-fresh-only';
+  writeSessionRecord(root, sid, { started_at: iso(BASE - 5000), last_heartbeat: FRESH_HEARTBEAT });
+  writeDecision(root, { id: 'd1', date: iso(BASE) }); // present but must never be read
+  writeCaptureStub(root, { id: 'c1', at: iso(BASE) });
+  writeCappedCell(root, { id: 'x-1', feature: 'x', capped_at: iso(BASE) });
+
+  const counts = withReadCounts(root, () => {
+    const out = detectCrashCandidates(root, { projectsRoot, projectPath: PROJECT_PATH, now: BASE });
+    eq(out.length, 0, 'fresh heartbeat, no candidates');
+  });
+  eq(counts.decisions, 0, 'no stale session -> decisions store never read at all');
+  eq(counts.capture, 0, 'no stale session -> capture queue never read');
+  eq(counts.cellsList, 0, 'no stale session -> cells never listed');
+});
+
+check(
+  'detectCrashCandidates: candidate output is unchanged by the refactor — every field deep-equals the value derivable from the deterministic fixture (frozen pre-refactor shape)',
+  () => {
+    const { root, projectsRoot, sessionIds } = buildMultiSessionRoot(6);
+    const out = detectCrashCandidates(root, { projectsRoot, projectPath: PROJECT_PATH, now: BASE });
+    eq(out.length, 6, 'one candidate per stale session');
+
+    // Global settlement = max(decision d1 @ -50000, capture c1 @ -40000,
+    // cell other-1 @ -30000) = BASE-30000 — every session here is laneless,
+    // so all three sources are in-scope and identical across all 6 candidates.
+    const expectedSince = iso(BASE - 30000);
+
+    const bySession = new Map(out.map((c) => [c.session_id, c]));
+    for (const sid of sessionIds) {
+      const c = bySession.get(sid);
+      assert(c, `candidate present for ${sid}`);
+      eq(c.lane, null, `${sid}: laneless session`);
+      eq(c.runtime, 'claude', `${sid}: default root resolution`);
+      eq(c.work_signal, 'claimed_cells', `${sid}: active claim drives the work signal`);
+      eq(c.since, expectedSince, `${sid}: since is the shared global settlement, unaffected by which session asked`);
+      assert(typeof c.transcript === 'string' && c.transcript.endsWith(`${sid}.jsonl`), `${sid}: transcript path recorded`);
+    }
+  },
+);
 
 // ======================================================================
 // scanTranscriptRoots + detectCrashCandidates (hardening-5: config-driven

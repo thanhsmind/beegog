@@ -1,0 +1,49 @@
+{
+  "id": "cp-3",
+  "feature": "cli-performance",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Verify ladder in skill prose: targeted per cell, full chain per wave/milestone (D4)",
+  "action": "Per CONTEXT D4 — the full-verify multiplier is policy prose. Amend: (1) skills/bee-swarming/SKILL.md:~125 — for standard/high-risk the orchestrator re-runs each behavior-change CELL's targeted verify independently, and runs the FULL configured verify chain exactly ONCE at wave close (the wave-close run is the independent full proof); per-cell full-chain re-runs are explicitly retired. (2) skills/bee-executing/SKILL.md:~65 — a cell's verify field is its TARGETED suite (seconds); workers run it red-first and green and do NOT run the full chain (the orchestrator's wave-close run covers it); note that the full chain remains mandated at session baseline, session finish, worktree merge, and release gates (unchanged AGENTS.md sites). (3) skills/bee-hive/references/routing-and-contracts.md — add a short Verify Ladder note stating the four full-chain milestones and that judges/reviewers never run the full chain as part of a verdict. Keep each file's voice; cite D4 (decision e54878b1) short8 per citation discipline. Render + manifest + full run_verify green. Grep-proof each truth.",
+  "must_haves": {
+    "truths": [
+      "swarming text mandates ONE wave-close full chain and retires per-cell full re-runs (grep-visible)",
+      "executing text pins cell verify = targeted suite and drops the worker full-chain run (grep-visible)",
+      "routing reference carries the Verify Ladder milestones incl. judges-never-full-chain (grep-visible)",
+      "AGENTS.md baseline/finish/merge sites untouched"
+    ],
+    "prohibitions": [
+      "Never weaken red-first or the fresh-evidence-at-cap requirement",
+      "No hook/mechanical enforcement (prose-ruled)"
+    ]
+  },
+  "verify": "node scripts/release_manifest.mjs --check",
+  "read_first": [
+    "docs/history/cli-performance/CONTEXT.md",
+    "skills/bee-swarming/SKILL.md",
+    "skills/bee-executing/SKILL.md"
+  ],
+  "files": [
+    "skills/bee-swarming/SKILL.md",
+    "skills/bee-executing/SKILL.md",
+    "skills/bee-hive/references/routing-and-contracts.md"
+  ],
+  "deps": [
+    "cp-2"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

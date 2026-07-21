@@ -1,0 +1,50 @@
+{
+  "id": "cp-2",
+  "feature": "cli-performance",
+  "lane": "standard",
+  "behavior_change": true,
+  "title": "Pass-local memo for review-candidate git derivation (D2)",
+  "action": "Per CONTEXT D2 (profiling: deriveCandidateStatus ~212ms, up to 2 git spawns per candidate x covering-session with zero caching; reviews.mjs:400,410,423). ARCHITECTURE (plan-check BLOCKER resolution): the repeats are CROSS-CANDIDATE — within one deriveCandidateStatus call each head is distinct, so the memo MUST be born in the candidate LOOPS in bee.mjs (buildReviewBlock ~:252 and buildReviewsStatusSummary ~:2458) and threaded into deriveCandidateStatus(root, candidate, {sessions, gitMemo}) via the existing opts param; reviews.mjs's runGit/headCoveredBy/commitsSince accept the memo (Map keyed (head,ref) for headCoveredBy, (ref) for commitsSince). RED-FIRST: extend skills/bee-hive/templates/tests/test_reviews.mjs with (a) fixture where multiple candidates share the same covering-session head -> underlying git runner invoked at most once per unique key per PASS (count via injected runner), (b) derived statuses unchanged vs pre-change frozen expectations, (c) unresolvable-ancestry degradation unchanged; run red against unmodified code, record --passed false, then implement. Memo NEVER outlives the pass. Mirror all 4 files (reviews.mjs + bee.mjs, templates + .bee/bin), render + manifest. Record before/after `bee reviews status --json` and `bee status --json` wall (advisory).",
+  "must_haves": {
+    "truths": [
+      "at most one git invocation per unique (head, ref) pair per derivation pass (asserted via injected runner on fixture)",
+      "derived candidate statuses unchanged on fixtures incl. the degraded unresolvable path",
+      "RED-FIRST failing run recorded before implementation"
+    ],
+    "prohibitions": [
+      "No cross-call/persistent cache, no TTL (pass-local Map only)",
+      "Never change what a status derives to — only how many times git is asked"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_reviews.mjs",
+  "read_first": [
+    "docs/history/cli-performance/CONTEXT.md",
+    "skills/bee-hive/templates/lib/reviews.mjs",
+    "skills/bee-hive/templates/tests/test_reviews.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/reviews.mjs",
+    ".bee/bin/lib/reviews.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/tests/test_reviews.mjs"
+  ],
+  "deps": [
+    "cp-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
