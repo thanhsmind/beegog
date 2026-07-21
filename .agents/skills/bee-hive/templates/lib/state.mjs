@@ -19,7 +19,7 @@ import { withStoreLock } from './lock.mjs';
 // advisorRefAnchors reads the newest active decision id through it (AO13).
 import { activeDecisions } from './decisions.mjs';
 
-export const BEE_VERSION = '1.8.0';
+export const BEE_VERSION = '1.9.0';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
@@ -1334,6 +1334,35 @@ export function readConfig(root) {
 export function hookEnabled(root, name) {
   const config = readConfig(root);
   return config.hooks[name] !== false;
+}
+
+// ── Local-only config namespaces (D2, intake-gate-git-exemption) ───────────
+// guards.* / hooks.* are machine-local safety toggles (idle_gate, per-hook
+// enable/disable, ...). `bee config set/unset` routes these two namespaces
+// to the gitignored overlay ONLY — never to the tracked, team-shared
+// .bee/config.json — so a temporary local safety lift is structurally
+// incapable of reaching a teammate. This is the exact defect behind
+// incident a7d2069 (corrected in 63a41e0): the documented escape hatch
+// (`bee config set --key guards.idle_gate --value false`) wrote into the
+// tracked file, and a commit staged before the gate was restored shipped
+// the intake gate disabled to everyone. Read precedence is UNCHANGED —
+// readConfig() above already lets the overlay win over the tracked value
+// for every namespace, this one included; only the WRITE destination moves.
+export const LOCAL_ONLY_CONFIG_NAMESPACES = ['guards', 'hooks'];
+
+export function isLocalOnlyConfigKey(keyPath) {
+  const top = String(keyPath).split('.')[0];
+  return LOCAL_ONLY_CONFIG_NAMESPACES.includes(top);
+}
+
+// One-line warning surfaced by `bee config get/set/unset` when a guards.*/
+// hooks.* key is still found sitting in the TRACKED config.json (e.g. from
+// before this routing existed, or hand-edited back in). The value keeps
+// working — read precedence is unchanged — but per CONTEXT D2's open
+// question this is NEVER auto-migrated or auto-edited; a human moves it
+// deliberately.
+export function trackedLocalOnlyKeyWarning(keyPath) {
+  return `config: "${keyPath}" is set in the TRACKED .bee/config.json — guards.*/hooks.* values are machine-local only now (.bee/config.local.json). It still works (read precedence unchanged), but this CLI will never write to or remove it from the tracked file again; move it yourself.`;
 }
 
 // ── Gate-bypass autopilot levels (total-autopilot, decision dcf01d7b) ────────

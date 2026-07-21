@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.8.0",
+  "bee_version": "1.9.0",
   "managed": {
     "agents_block": "84d1532386c14df08ad5483efd9b76b835e12567381a7005cfdfaa09f590df49",
     "gitignore_block": "3da1a6176ae8b85a98b6779f7f314e7647bdc854969b1c2d0fa5fd7e97d4c69f",
     "helpers": {
-      "bee.mjs": "9d624e84bdfef1d2ac5c45e773e18f8e5042e9b0b8ba9c9f53e8b429e3ace593"
+      "bee.mjs": "f2b67043848f89454cfa505df76935ec7e41d5e03f6266d5323c40860bbb59f9"
     },
     "lib": {
       "backlog.mjs": "9e5b852c7b72fdb1d5d2f530e32cdc63a8271a83dba09d6407b30900d58990cd",
@@ -19,7 +19,7 @@
       "dispatch-prepare.mjs": "9ae99701d47589d3a1c05986e7c1ce691db568d3e6f49e3dfdd9684e838548d2",
       "feedback.mjs": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
       "fsutil.mjs": "c0a65d8aebfca7f7423f10cc9e13fa8ca43234c4a7b7e7ea1f05619b18e06af0",
-      "guards.mjs": "8630bfebb5ee3b6dd075aa45feba86bbf58759725e616bebad6d2bb5a95f78d0",
+      "guards.mjs": "ccddada5859386ccd6bbe64f5f9b148e1a9188ece9bf968b7fde2647e22e257e",
       "inject.mjs": "f788e09556da85d04967f55119a21124e15f50fce3eb7747332a21d809921be0",
       "judge.mjs": "5057e17a6bcd3dacff21fe479e13570620cfe1b9c821c0ff5c8254f39e3c6ed1",
       "lock.mjs": "8e9dd19f3ab535908cc8489b1903e9e079fe75c3386a3dac432028718f204335",
@@ -30,7 +30,7 @@
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "scratch.mjs": "db94b27d1d148c98df5bdc0e8f16fd55eaae71d48e5cc1111559d3d3c7d6c26f",
       "source-identity.mjs": "716740641e1f6bfbb5ccc5b4fe7827f1165c2a1f1127ee3800f52a47ac09fc7a",
-      "state.mjs": "218ec75c0a7c63e8ab8edf872001109a3f39f7da53a62a07b88c7712764bee2a",
+      "state.mjs": "2d63a8f961036042d24191bac864f835b795be1090df95203e1e8bd74cfb6b72",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
       "worktree-holds.mjs": "942d180f0c04c156adf19f76992652c7907320e708dfb91da4587de407a00b55",
       "worktree-store.mjs": "d078dfcc63a90bd52c593072fe80c363fa7216e2e886640b800342e539ee8fbc"
@@ -40,7 +40,7 @@
       "bee-codex-subagent-audit.mjs": "f9f6900705aa20dfc0035a8c8c5c4b22fc56c9d0a4953e1b0ba3fd9466dec85e",
       "bee-session-init.mjs": "c08b8329ff8b193600e195a7d7ffac739b0bac347515261396b535bb17f74673",
       "bee-prompt-context.mjs": "3c28aa777c7a392f4514d0a9dcd78fc795d7e63b5497ed2619bc224385b9fd8c",
-      "bee-write-guard.mjs": "fd76ccce86100be793efa59731ffdab036b2cb92eaa6ea14f97785152f845f9f",
+      "bee-write-guard.mjs": "1f61ddf4504ba53ee89dc963e4732df47568f4b37dd87a84c9de4a07c4ca167b",
       "bee-state-sync.mjs": "9f996676e532233f68c08fe56a2a533cd6d2e3b54d2e34f3c5216389aeaa6357",
       "bee-chain-nudge.mjs": "0520c71fad2513d93666ad4c3353b7196faeeac382430b1e1395fabd0febd9cb",
       "bee-session-close.mjs": "201073ddce795525ee6ec7bab0297f4adef01830bac8935b528b694e03dea2e6",
@@ -54,7 +54,7 @@
     }
   },
   "agents_sync": {
-    "bee_version": "1.8.0",
+    "bee_version": "1.9.0",
     "files": [
       ".claude/agents/bee-extract.md",
       ".claude/agents/bee-gather.md",
@@ -71,5 +71,5 @@
     }
   },
   "created_at": "2026-07-21T17:36:03.955Z",
-  "updated_at": "2026-07-21T17:36:03.956Z"
+  "updated_at": "2026-07-21T18:31:42.501Z"
 }

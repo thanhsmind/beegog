@@ -1670,16 +1670,22 @@ await check('config set: nested dot-key, string coercion, refuse-on-invalid, no-
   try {
     fs.mkdirSync(path.join(cfgRoot, '.bee'), { recursive: true });
     writeJsonAtomic(path.join(cfgRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
-    // nested dot-key -> creates guards.idle_gate = false
-    let r = await runModuleWorker(BEE_MJS, { args: ['config', 'set', '--key', 'guards.idle_gate', '--value', 'false', '--json'], cwd: cfgRoot });
+    // nested dot-key -> creates ui.theme = false
+    // (was guards.idle_gate before D2/intake-gate-git-exemption forced ALL
+    // guards.*/hooks.* keys to the local overlay — see the dedicated "config
+    // set/get/unset routes guards.*/hooks.* to the local overlay" test below
+    // and skills/bee-hive/templates/tests/test_config_validate.mjs for that
+    // namespace's own coverage; this test is about nested dot-key mechanics
+    // on the TRACKED file generally, so it now uses a neutral namespace.)
+    let r = await runModuleWorker(BEE_MJS, { args: ['config', 'set', '--key', 'ui.theme', '--value', 'false', '--json'], cwd: cfgRoot });
     assert(r.status === 0, `nested set exit ${r.status}: ${r.stderr}`);
     let disk = JSON.parse(fs.readFileSync(path.join(cfgRoot, '.bee', 'config.json'), 'utf8'));
-    assert(disk.guards && disk.guards.idle_gate === false, `guards.idle_gate should be false, got ${JSON.stringify(disk)}`);
-    // unset prunes the now-empty parent: no stray "guards": {} left behind
-    r = await runModuleWorker(BEE_MJS, { args: ['config', 'unset', '--key', 'guards.idle_gate', '--json'], cwd: cfgRoot });
+    assert(disk.ui && disk.ui.theme === false, `ui.theme should be false, got ${JSON.stringify(disk)}`);
+    // unset prunes the now-empty parent: no stray "ui": {} left behind
+    r = await runModuleWorker(BEE_MJS, { args: ['config', 'unset', '--key', 'ui.theme', '--json'], cwd: cfgRoot });
     assert(r.status === 0 && JSON.parse(r.stdout).removed === true, `nested unset exit ${r.status}: ${r.stdout}`);
     disk = JSON.parse(fs.readFileSync(path.join(cfgRoot, '.bee', 'config.json'), 'utf8'));
-    assert(!('guards' in disk), `unset should prune the empty guards parent, got ${JSON.stringify(disk)}`);
+    assert(!('ui' in disk), `unset should prune the empty ui parent, got ${JSON.stringify(disk)}`);
     // a non-JSON value stays a string
     r = await runModuleWorker(BEE_MJS, { args: ['config', 'set', '--key', 'product_root', '--value', 'repo', '--json'], cwd: cfgRoot });
     assert(r.status === 0 && JSON.parse(r.stdout).value === 'repo', `product_root should be string "repo", got ${r.stdout}`);
