@@ -42,19 +42,134 @@
     "dp-3",
     "dp-5"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "orch",
+    "outcome": "Taxonomy + write-time classification enforcement (typed refusal only once taxonomy exists; warn-only bootstrap), unknown tags -> candidates, ranked multi-term OR search over text+tags, --untagged listing",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/decisions.mjs",
+      "skills/bee-hive/templates/bee.mjs",
+      "skills/bee-hive/templates/lib/command-registry.mjs",
+      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+      ".bee/bin/lib/decisions.mjs",
+      ".bee/bin/bee.mjs",
+      ".bee/bin/lib/command-registry.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "capped_at": "2026-07-21T09:18:13.382Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\"test_decisions_propagation.mjs dp-1/2/3/5 baseline 45 checks\", \"test_bee_cli.mjs registry example coverage (assertExampleOk semantics verified — no additions needed)\"],\n  \"tests_added\": [\"28 dp-6 checks (suite now 73): taxonomy-present zero-tag typed refusal vs bootstrap-safe warn path, unknown-tag -> candidates append + dedup + non-partial JSON, overlay-aware supersede inheritance (no false refusal for retro-tagged targets), ranked multi-term OR search (hit-count desc, stable date-desc secondary, tags in haystack, --all union + overlay, superset-of-substring), --untagged on search/active post-overlay composable with --all, THIS-REPO regression guard (no taxonomy file -> own decisions log unchanged)\"],\n  \"red_failure_evidence\": \"Suite against UNMODIFIED code (trace attempt n:1 fail, signature 02bfe93a5fd1): 59 passed, 14 failed — zero-tag refusal not thrown, candidates not appended, supersede overlay-inheritance undefined tags, multi-term search [], --untagged unrecognized.\",\n  \"verification_run\": \"After implementation: suite 73/73; render + release_manifest --write/--check clean; full run_verify PASS 55 suites (worker) and orchestrator re-run PASS 55 wall=58097ms; opus judge PASS 12/12 incl. safety check (no real taxonomy.json in repo), independence confirmed, confidence high.\"\n}\n",
+    "verify_output": "test_decisions_propagation.mjs: 73 passed, 0 failed (45 pre-existing dp-1/dp-2/dp-3/dp-5 + 28 new dp-6 checks). Full run_verify.mjs: 55 suite(s) all PASS, wall~57-58s, including test_bee_cli.mjs (registry examples), test_skill_render.mjs and release_manifest --check (mirror byte-identity).",
+    "verify_passed": true,
+    "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+    "claimed_at": "2026-07-21T08:56:44.643Z",
+    "verify_command": "node skills/bee-hive/templates/tests/test_decisions_propagation.mjs && node scripts/run_verify.mjs",
+    "verified_at": "2026-07-21T09:12:13.187Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-21T09:06:11.332Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T08:57:18.082Z",
+        "acquired_at": "2026-07-21T08:56:44.641Z",
+        "worker": "orch",
+        "verdict": "fail",
+        "failure_signature": "02bfe93a5fd1",
+        "note": null
+      },
+      {
+        "n": 2,
+        "at": "2026-07-21T09:12:13.187Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-21T08:57:18.082Z",
+        "acquired_at": "2026-07-21T08:56:44.641Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "truth-1-taxonomy-gate-refuse-vs-warn",
+            "status": "PASS",
+            "evidence": "classifyDecisionTags decisions.mjs:192-206: no taxonomy -> never refuses; taxonomy present + zero tags -> typed DecisionS_UNTAGGED_REFUSED (:135-143) naming --tags; wired into logDecision :305. CLI refusal + bootstrap-safe warn tests PASS."
+          },
+          {
+            "id": "truth-2-unknown-tag-accepted-lands-in-candidates",
+            "status": "PASS",
+            "evidence": ":200-205 unknown tags append via appendTaxonomyCandidatesSync same call; dedup on reuse. Tests PASS."
+          },
+          {
+            "id": "truth-3-supersede-inherits-overlaid-tags",
+            "status": "PASS",
+            "evidence": "supersedeDecision consults overlay-applied target (:418-420) before inheritance (:435) and classification (:444). No false zero-tag refusal for retro-tagged targets; untagged target still refused with taxonomy unless --tags. Tests PASS."
+          },
+          {
+            "id": "truth-4-multiterm-rank-hitcount-then-date-all-union-superset",
+            "status": "PASS",
+            "evidence": "bee.mjs:1508-1519 whitespace-split OR hit-count, stable sort hitCount desc with date-desc falling out of stable order (comment 1476-1482). Ranking, --all union + overlay, superset-of-substring tests PASS."
+          },
+          {
+            "id": "truth-5-search-matches-overlaid-tags",
+            "status": "PASS",
+            "evidence": "haystacks include event.tags (:1509); overlay applied upstream in activeDecisions (:804,821,867). Test PASS."
+          },
+          {
+            "id": "truth-6-untagged-after-overlay-composable",
+            "status": "PASS",
+            "evidence": "--untagged on search+active (:1564-1570,:1551-1552), post-overlay, composable with --all, satisfies at-least-one-filter alone. Tests PASS."
+          },
+          {
+            "id": "truth-7-red-first",
+            "status": "PASS",
+            "evidence": "trace.attempts n=1 fail (02bfe93a5fd1) 09:06:11Z before n=2 pass 09:12:13Z."
+          },
+          {
+            "id": "prohibition-1-never-refuse-unknown-tag",
+            "status": "PASS",
+            "evidence": "Throws only on zero tags (:197-199); unknown path appends and returns. Tests PASS."
+          },
+          {
+            "id": "prohibition-2-never-partial-taxonomy-write",
+            "status": "PASS",
+            "evidence": "appendTaxonomyCandidatesSync locked read-modify-write with writeJsonAtomic (:157-172). Valid-JSON test PASS."
+          },
+          {
+            "id": "prohibition-3-ranking-no-wallclock-no-map-order",
+            "status": "PASS",
+            "evidence": "Comparator hitCount only (:1518); no wall-clock, no Map-order dependence. Byte-stable ordering asserted."
+          },
+          {
+            "id": "prohibition-4-no-break-dp1-dp2",
+            "status": "PASS",
+            "evidence": "73/73 (45 pre-existing + 28 new); warn-only inheritance path unchanged; mirrors byte-identical (25 files)."
+          },
+          {
+            "id": "safety-no-real-taxonomy-own-log-succeeds",
+            "status": "PASS",
+            "evidence": "No docs/decisions/taxonomy.json tracked or untracked; repo on bootstrap warn-only path; proof via fixture-repo test, no real decision logged by judge."
+          },
+          {
+            "id": "deviation-no-test_bee_cli-additions",
+            "status": "PASS",
+            "evidence": "examples[0] unchanged for both touched registry entries (assertExampleOk runs index 0 only, test_bee_cli.mjs:145); test_bee_cli 227/227; --untagged covered by CLI-level checks in the propagation suite. No coverage gap."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-21T09:18:13.318Z"
+      }
+    ]
   }
 }

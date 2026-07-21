@@ -1095,4 +1095,337 @@ await check('CLI: decisions tag without --tags, or naming an unknown target, exi
   assert(typeof payload.error === 'string' ? /resolve/i.test(payload.error) : true, 'error should hint at target resolution failure when a free-string error is used');
 });
 
+// ─── dp-6 (CONTEXT D7a/b, D8b): taxonomy + write-time classification
+// enforcement + ranked multi-term search ────────────────────────────────────
+
+const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+
+function taxonomyFilePath(root) {
+  return path.join(root, 'docs', 'decisions', 'taxonomy.json');
+}
+
+function writeTaxonomyFixture(root, { tags = [], candidates = [] } = {}) {
+  const file = taxonomyFilePath(root);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify({ schema_version: 1, tags, candidates }, null, 2)}\n`, 'utf8');
+}
+
+// ─── CAUTION (self-hosting hazard): this repo must never gain a real
+// taxonomy.json as a side effect of this suite — that would flip every
+// sibling session's ordinary `decisions log` calls into typed refusals.
+// ────────────────────────────────────────────────────────────────────────
+
+await check(
+  'dp-6 CAUTION: this repo has no docs/decisions/taxonomy.json — bootstrapping it is dp-7\'s job, not dp-6\'s',
+  async () => {
+    assert(
+      !fs.existsSync(taxonomyFilePath(REPO_ROOT)),
+      'a taxonomy.json here would refuse every sibling session\'s untagged `decisions log` bookkeeping calls',
+    );
+  },
+);
+
+// ─── bootstrap-safe path: no taxonomy file -> warn only, never refuse ──────
+
+await check('dp-6: without a taxonomy file, logDecision with zero tags still succeeds (bootstrap-safe warn-only, unchanged shape)', async () => {
+  const r = makeTempRepo();
+  assert(!fs.existsSync(taxonomyFilePath(r)), 'sanity: fresh repo has no taxonomy file');
+  const event = logDecision(r, { decision: 'No taxonomy yet', rationale: 'bootstrap' });
+  assert(!('tags' in event), 'untagged event still has no tags key at all, unchanged from pre-dp-6 shape');
+});
+
+await check('dp-6 CLI: decisions log --json without --tags and without a taxonomy file still succeeds (never blocks)', async () => {
+  const r = makeTempRepo();
+  const run = await runBee(['decisions', 'log', '--decision', 'no tags json mode', '--rationale', 'x', '--json'], r);
+  assert(run.status === 0, `expected success exit, got ${run.status} :: ${run.stderr || run.stdout}`);
+  const event = JSON.parse(run.stdout);
+  assert(!('tags' in event), 'still no tags key, unchanged shape');
+});
+
+await check('dp-6 CLI: decisions log (non-JSON text) without --tags and without a taxonomy file warns and proceeds', async () => {
+  const r = makeTempRepo();
+  const run = await runBee(['decisions', 'log', '--decision', 'no tags no taxonomy', '--rationale', 'x'], r);
+  assert(run.status === 0, `expected success exit, got ${run.status} :: ${run.stderr || run.stdout}`);
+  assert(/warn/i.test(run.stdout), `expected a warning in the human-readable text output, got ${JSON.stringify(run.stdout)}`);
+});
+
+// ─── enforcement: taxonomy present -> zero tags refused, typed, names --tags ─
+
+await check('dp-6: with a taxonomy file present, logDecision with zero tags is refused with a typed error naming --tags', async () => {
+  const r = makeTempRepo();
+  writeTaxonomyFixture(r, { tags: [{ name: 'billing', description: 'Billing' }] });
+  assertThrows(
+    () => logDecision(r, { decision: 'Should be refused', rationale: 'no tags supplied' }),
+    '--tags',
+    'zero-tag decide log refused once taxonomy exists',
+  );
+});
+
+await check('dp-6 CLI: decisions log with a taxonomy file present and zero tags exits non-zero, error names --tags', async () => {
+  const r = makeTempRepo();
+  writeTaxonomyFixture(r, { tags: [{ name: 'billing', description: 'Billing' }] });
+  const run = await runBee(['decisions', 'log', '--decision', 'x', '--rationale', 'y', '--json'], r);
+  assert(run.status !== 0, 'zero-tag decide log refused via CLI once taxonomy exists');
+  const payload = JSON.parse(run.stdout);
+  assert(/--tags/.test(payload.error || ''), `error should name --tags, got ${JSON.stringify(payload)}`);
+});
+
+await check('dp-6: with a taxonomy file present, logDecision with a known tag succeeds and never touches candidates', async () => {
+  const r = makeTempRepo();
+  writeTaxonomyFixture(r, { tags: [{ name: 'billing', description: 'Billing' }] });
+  const event = logDecision(r, { decision: 'Reconcile invoices', rationale: 'x', tags: ['billing'] });
+  assert(event.tags.join(',') === 'billing', 'known tag round-trips onto the event');
+  const taxonomy = JSON.parse(fs.readFileSync(taxonomyFilePath(r), 'utf8'));
+  assert(taxonomy.candidates.length === 0, 'a known tag never lands in candidates');
+});
+
+// ─── unknown tags: never refused, accepted + appended to candidates ───────
+
+await check('dp-6: an unknown tag is accepted on the event AND appended to taxonomy candidates in the same call', async () => {
+  const r = makeTempRepo();
+  writeTaxonomyFixture(r, { tags: [{ name: 'billing', description: 'Billing' }], candidates: [] });
+  const event = logDecision(r, { decision: 'Adopt a new discipline', rationale: 'x', tags: ['brand-new-tag'] });
+  assert(event.tags.join(',') === 'brand-new-tag', 'unknown tag accepted on the event, never refused');
+  const taxonomy = JSON.parse(fs.readFileSync(taxonomyFilePath(r), 'utf8'));
+  assert(
+    taxonomy.candidates.includes('brand-new-tag'),
+    `expected candidates to include the unknown tag, got ${JSON.stringify(taxonomy.candidates)}`,
+  );
+  assert(taxonomy.tags.length === 1 && taxonomy.tags[0].name === 'billing', 'hand-curated tags[] left untouched');
+});
+
+await check('dp-6: an unknown tag already sitting in candidates is not duplicated on reuse', async () => {
+  const r = makeTempRepo();
+  writeTaxonomyFixture(r, { tags: [], candidates: ['seen-once'] });
+  logDecision(r, { decision: 'Reuse a pending candidate tag', rationale: 'x', tags: ['seen-once'] });
+  const taxonomy = JSON.parse(fs.readFileSync(taxonomyFilePath(r), 'utf8'));
+  assert(taxonomy.candidates.filter((c) => c === 'seen-once').length === 1, 'candidate tag not duplicated');
+});
+
+await check('dp-6: mixing a known and an unknown tag on one event never refuses — only zero tags refuses', async () => {
+  const r = makeTempRepo();
+  writeTaxonomyFixture(r, { tags: [{ name: 'billing', description: 'Billing' }] });
+  const event = logDecision(r, { decision: 'Mixed tags', rationale: 'x', tags: ['billing', 'net-new'] });
+  assert(event.tags.join(',') === 'billing,net-new', 'both tags land on the event');
+  const taxonomy = JSON.parse(fs.readFileSync(taxonomyFilePath(r), 'utf8'));
+  assert(taxonomy.candidates.includes('net-new'), 'the unknown tag was appended to candidates');
+});
+
+await check('dp-6: repeated unknown-tag appends leave taxonomy.json as valid, non-partial JSON with every candidate present', async () => {
+  const r = makeTempRepo();
+  writeTaxonomyFixture(r, { tags: [] });
+  for (const tag of ['t-one', 't-two', 't-three']) {
+    logDecision(r, { decision: `Decision for ${tag}`, rationale: 'x', tags: [tag] });
+  }
+  const raw = fs.readFileSync(taxonomyFilePath(r), 'utf8');
+  const taxonomy = JSON.parse(raw); // throws if the file were ever left mid-write/partial
+  assert(
+    ['t-one', 't-two', 't-three'].every((t) => taxonomy.candidates.includes(t)),
+    `expected all three candidates present, got ${JSON.stringify(taxonomy.candidates)}`,
+  );
+});
+
+// ─── supersede inheritance consults the OVERLAY-APPLIED target ────────────
+
+await check(
+  'dp-6: supersede inherits OVERLAY-APPLIED tags from a raw-untagged, retro-tagged target — no false zero-tag refusal once taxonomy exists',
+  async () => {
+    const r = makeTempRepo();
+    const legacyId = crypto.randomUUID();
+    appendJsonl(path.join(r, '.bee', 'decisions.jsonl'), {
+      id: legacyId,
+      type: 'decide',
+      date: new Date().toISOString(),
+      decision: 'Legacy raw-untagged decision',
+      rationale: 'predates tags',
+    });
+    tagDecision(r, { target: legacyId, tags: ['billing', 'retro'] });
+
+    // Taxonomy now exists — inheritance reading the RAW (untagged) event
+    // instead of the overlay-applied one would wrongly refuse this call.
+    writeTaxonomyFixture(r, { tags: [{ name: 'billing', description: 'Billing' }], candidates: ['retro'] });
+
+    const event = supersedeDecision(r, {
+      supersedes: legacyId,
+      decision: 'Replace the legacy decision',
+      rationale: 'dp-6 inheritance check',
+    });
+    assert(
+      Array.isArray(event.tags) && event.tags.join(',') === 'billing,retro',
+      `expected supersede to inherit the OVERLAID tags [billing, retro], got ${JSON.stringify(event.tags)}`,
+    );
+  },
+);
+
+await check(
+  'dp-6: supersede of a target with no tags at all (raw or overlaid) is refused once taxonomy exists, unless --tags is given explicitly',
+  async () => {
+    const r = makeTempRepo();
+    const target = logDecision(r, { decision: 'Untagged target, no taxonomy yet', rationale: 'x' });
+    writeTaxonomyFixture(r, { tags: [{ name: 'billing', description: 'Billing' }] });
+    assertThrows(
+      () => supersedeDecision(r, { supersedes: target.id, decision: 'Replacement', rationale: 'x' }),
+      '--tags',
+      'supersede with nothing to inherit and no --tags is refused once taxonomy exists',
+    );
+    const event = supersedeDecision(r, {
+      supersedes: target.id,
+      decision: 'Replacement with explicit tags',
+      rationale: 'x',
+      tags: ['billing'],
+    });
+    assert(event.tags.join(',') === 'billing', 'explicit --tags satisfies the classification requirement');
+  },
+);
+
+await check('dp-6: supersede with an explicit unknown tag is accepted (never refused) and appended to taxonomy candidates', async () => {
+  const r = makeTempRepo();
+  const target = logDecision(r, { decision: 'Target for supersede unknown-tag test', rationale: 'x' });
+  writeTaxonomyFixture(r, { tags: [{ name: 'billing', description: 'Billing' }] });
+  const event = supersedeDecision(r, {
+    supersedes: target.id,
+    decision: 'Replacement',
+    rationale: 'x',
+    tags: ['billing', 'supersede-new-tag'],
+  });
+  assert(event.tags.join(',') === 'billing,supersede-new-tag', 'unknown tag accepted on the supersede event');
+  const taxonomy = JSON.parse(fs.readFileSync(taxonomyFilePath(r), 'utf8'));
+  assert(taxonomy.candidates.includes('supersede-new-tag'), 'unknown tag from supersede also lands in taxonomy candidates');
+});
+
+await check('dp-6: supersede without a taxonomy file still inherits raw target tags exactly as dp-2 (unchanged, warn-only path)', async () => {
+  const r = makeTempRepo();
+  const target = logDecision(r, { decision: 'Use queue A', rationale: 'perf', tags: ['queue'] });
+  const event = supersedeDecision(r, { supersedes: target.id, decision: 'Use queue B', rationale: 'perf' });
+  assert(event.tags.join(',') === 'queue', 'dp-2 inheritance behavior unchanged when no taxonomy file exists');
+});
+
+// ─── ranked multi-term OR search (D8b) ─────────────────────────────────────
+
+const rankRoot = makeTempRepo();
+
+const rOld = logDecision(rankRoot, {
+  decision: 'Use exponential backoff for webhook retries',
+  rationale: 'billing reliability',
+  tags: ['billing', 'webhooks'],
+});
+setEventDate(rankRoot, rOld.id, '2026-01-01T00:00:00.000Z');
+
+const rMid = logDecision(rankRoot, {
+  decision: 'Adopt structured logging for the queue',
+  rationale: 'observability',
+  tags: ['observability'],
+});
+setEventDate(rankRoot, rMid.id, '2026-02-01T00:00:00.000Z');
+
+const rBest = logDecision(rankRoot, {
+  decision: 'Retry billing webhooks with backoff and structured logging',
+  rationale: 'billing observability improvements',
+  tags: ['billing', 'webhooks', 'observability'],
+});
+setEventDate(rankRoot, rBest.id, '2026-01-15T00:00:00.000Z');
+
+await check('dp-6: multi-term search ranks by deterministic term-hit count descending, then date descending', async () => {
+  const run = await runBee(['decisions', 'search', '--text', 'billing webhooks observability', '--json'], rankRoot);
+  assert(run.status === 0, `search exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids[0] === rBest.id, `expected the 3-term hit first, got order ${JSON.stringify(ids)}`);
+  const oldIdx = ids.indexOf(rOld.id);
+  const midIdx = ids.indexOf(rMid.id);
+  assert(
+    oldIdx !== -1 && midIdx !== -1 && oldIdx < midIdx,
+    `expected higher hit-count (rOld, 2 terms) to rank before lower hit-count (rMid, 1 term) regardless of date, got ${JSON.stringify(ids)}`,
+  );
+});
+
+await check('dp-6: multi-term search matches OVERLAID tags, not just decision/rationale/alternatives text', async () => {
+  const r = makeTempRepo();
+  const legacyId = crypto.randomUUID();
+  appendJsonl(path.join(r, '.bee', 'decisions.jsonl'), {
+    id: legacyId,
+    type: 'decide',
+    date: new Date().toISOString(),
+    decision: 'Text with no matching words at all',
+    rationale: 'unrelated rationale text',
+  });
+  tagDecision(r, { target: legacyId, tags: ['zorbatag'] });
+  const run = await runBee(['decisions', 'search', '--text', 'zorbatag', '--json'], r);
+  assert(run.status === 0, `search exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(legacyId), `expected the tag-only term to match via the overlay, got ${JSON.stringify(ids)}`);
+});
+
+await check('dp-6: single-term search results remain a superset of the pre-dp-6 substring match', async () => {
+  const run = await runBee(['decisions', 'search', '--text', 'billing', '--json'], rankRoot);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(rOld.id) && ids.includes(rBest.id), 'both events whose text contains "billing" still match under a single term');
+});
+
+await check('dp-6: multi-term ranking spans the --all archive union with the overlay applied', async () => {
+  const r = makeTempRepo();
+  const oldEvent = logDecision(r, { decision: 'Archived billing webhook decision', rationale: 'x', tags: ['billing'] });
+  setEventDate(r, oldEvent.id, '2020-01-01T00:00:00.000Z');
+  archiveDecisions(r, { before: '2021-01-01' });
+
+  const noAll = await runBee(['decisions', 'search', '--text', 'billing webhook', '--json'], r);
+  assert(
+    !JSON.parse(noAll.stdout).decisions.map((d) => d.id).includes(oldEvent.id),
+    'archived event absent from the default (non-all) read',
+  );
+
+  const withAll = await runBee(['decisions', 'search', '--text', 'billing webhook', '--all', '--json'], r);
+  assert(
+    JSON.parse(withAll.stdout).decisions.map((d) => d.id).includes(oldEvent.id),
+    'archived event reachable and ranked via --all',
+  );
+});
+
+await check('dp-6: zero-filter search (no --text/--tag/--scope/--since/--untagged) still refuses exactly as before', async () => {
+  const r = makeTempRepo();
+  logDecision(r, { decision: 'x', rationale: 'y' });
+  const run = await runBee(['decisions', 'search', '--json'], r);
+  assert(run.status !== 0, 'zero-filter search still refuses');
+});
+
+// ─── --untagged listing (D7d completeness check), composable with --all ───
+
+await check('dp-6: --untagged lists exactly the events with no tags AFTER overlay, composable with --all', async () => {
+  const r = makeTempRepo();
+  const tagged = logDecision(r, { decision: 'Tagged event', rationale: 'x', tags: ['billing'] });
+  const untaggedRaw = logDecision(r, { decision: 'Untagged event', rationale: 'x' });
+  const retroTagged = logDecision(r, { decision: 'Will be retro-tagged', rationale: 'x' });
+  tagDecision(r, { target: retroTagged.id, tags: ['retro'] });
+
+  const run = await runBee(['decisions', 'search', '--untagged', '--json'], r);
+  assert(run.status === 0, `search --untagged exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(untaggedRaw.id), 'raw-untagged event listed');
+  assert(!ids.includes(tagged.id), 'raw-tagged event excluded');
+  assert(!ids.includes(retroTagged.id), 'retro-tagged event excluded once its overlay tags apply');
+
+  const oldUntagged = logDecision(r, { decision: 'Old untagged event', rationale: 'x' });
+  setEventDate(r, oldUntagged.id, '2020-01-01T00:00:00.000Z');
+  archiveDecisions(r, { before: '2021-01-01' });
+  const runAll = await runBee(['decisions', 'search', '--untagged', '--all', '--json'], r);
+  const allIds = JSON.parse(runAll.stdout).decisions.map((d) => d.id);
+  assert(allIds.includes(oldUntagged.id), 'archived untagged event reachable via --untagged --all');
+});
+
+await check('dp-6: decisions active --untagged filters the same way as search --untagged', async () => {
+  const r = makeTempRepo();
+  const tagged = logDecision(r, { decision: 'Tagged', rationale: 'x', tags: ['billing'] });
+  const untagged = logDecision(r, { decision: 'Untagged', rationale: 'x' });
+  const run = await runBee(['decisions', 'active', '--untagged', '--json'], r);
+  assert(run.status === 0, `active --untagged exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(untagged.id) && !ids.includes(tagged.id), `expected only the untagged event, got ${JSON.stringify(ids)}`);
+});
+
+await check('dp-6: search --untagged alone satisfies the "needs at least one filter" requirement — no --text required', async () => {
+  const r = makeTempRepo();
+  logDecision(r, { decision: 'Untagged only', rationale: 'x' });
+  const run = await runBee(['decisions', 'search', '--untagged', '--json'], r);
+  assert(run.status === 0, `search --untagged alone should not require --text, got exit ${run.status} :: ${run.stderr || run.stdout}`);
+});
+
 printSummaryAndExit();

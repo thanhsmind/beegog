@@ -137,6 +137,7 @@ import {
   tagDecision,
   tagDecisionsBatch,
   datamark,
+  taxonomyFileExists,
 } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
@@ -1394,7 +1395,15 @@ function handleDecisionsLog(root, flags) {
     confidence,
     tags: flags.tags !== undefined ? splitList(flags.tags) : undefined,
   });
-  return { result: event, text: `Logged decision ${event.id}.` };
+  // decision-propagation dp-6 (CONTEXT D7b): bootstrap-safe warn-only path —
+  // no docs/decisions/taxonomy.json means logDecision never refused a
+  // zero-tag event above; surface that as a human-readable warning (JSON
+  // output stays data-only, see emit()'s result-vs-text split).
+  const warning =
+    !taxonomyFileExists(root) && !(Array.isArray(event.tags) && event.tags.length)
+      ? '\nWarning: no taxonomy.json found — this decision was logged without tags. Create docs/decisions/taxonomy.json to require classification going forward.'
+      : '';
+  return { result: event, text: `Logged decision ${event.id}.${warning}` };
 }
 
 // decision-propagation dp-2 (CONTEXT D2): capture stub creation lives here,
@@ -1448,13 +1457,34 @@ function handleDecisionsRedact(root, flags) {
 // implementation time). --scope/--area is one filter (--area is an exact
 // alias, never a second dimension — no new `area` field, fresh-eyes P2).
 // Every filter is exact-match case-insensitive except --since (inclusive
-// lower bound on event.date) and --text (substring, unchanged from the
-// pre-dp-1 behavior). A legacy event with no `tags` array never matches a
-// --tag filter (it has nothing to match), but is untouched by every other
-// filter — so it stays reachable via --text/--scope/--since exactly as
-// before.
-function filterDecisionEvents(decisions, { text, tag, scope, since } = {}) {
+// lower bound on event.date) and --text. A legacy event with no `tags`
+// array never matches a --tag filter (it has nothing to match), but is
+// untouched by every other filter — so it stays reachable via
+// --text/--scope/--since exactly as before.
+//
+// decision-propagation dp-6 (CONTEXT D7d): --untagged keeps exactly the
+// events with no tags AFTER overlay (the events already passed in here
+// carry their dp-5 overlay applied — see activeDecisions) — composable with
+// every other filter, including --all upstream.
+//
+// decision-propagation dp-6 (CONTEXT D8b): --text upgrades from a single
+// substring match to multi-term: whitespace-split, case-insensitive, OR
+// across terms, matched over decision/rationale/alternatives AND (now)
+// tags — a single term still matches everything the old substring check
+// matched (decision/rationale/alternatives are still searched), so
+// single-term results are a strict superset of the pre-dp-6 behavior.
+// Matches are ranked by deterministic term-hit count descending; the sort
+// is STABLE (spec-guaranteed since ES2019), so it preserves the incoming
+// newest-first order (activeDecisions' own date-desc, index-tiebroken
+// ordering) as the secondary key — "hit count desc, then date desc" falls
+// out of "stable-sort the already-date-ordered list by hit count" with no
+// separate date comparison, no wall-clock read, and no dependence on Map or
+// object iteration order.
+function filterDecisionEvents(decisions, { text, tag, scope, since, untagged } = {}) {
   let result = decisions;
+  if (untagged) {
+    result = result.filter((event) => !(Array.isArray(event.tags) && event.tags.length > 0));
+  }
   if (tag) {
     const needle = tag.toLowerCase();
     result = result.filter(
@@ -1473,12 +1503,18 @@ function filterDecisionEvents(decisions, { text, tag, scope, since } = {}) {
     });
   }
   if (text) {
-    const needle = text.toLowerCase();
-    result = result.filter((event) =>
-      [event.decision, event.rationale, event.alternatives]
-        .filter(Boolean)
-        .some((field) => String(field).toLowerCase().includes(needle)),
-    );
+    const terms = String(text).toLowerCase().split(/\s+/).filter(Boolean);
+    const scored = result
+      .map((event) => {
+        const haystacks = [event.decision, event.rationale, event.alternatives, ...(Array.isArray(event.tags) ? event.tags : [])]
+          .filter((v) => v !== null && v !== undefined && v !== '')
+          .map((v) => String(v).toLowerCase());
+        const hitCount = terms.reduce((count, term) => (haystacks.some((h) => h.includes(term)) ? count + 1 : count), 0);
+        return { event, hitCount };
+      })
+      .filter(({ hitCount }) => hitCount > 0);
+    scored.sort((a, b) => b.hitCount - a.hitCount);
+    result = scored.map(({ event }) => event);
   }
   return result;
 }
@@ -1512,7 +1548,8 @@ function handleDecisionsActive(root, flags) {
   const scope = resolveScopeFilter(flags);
   const since = resolveSinceFilter(flags);
   const all = flags.all !== undefined; // decision-propagation dp-3 (D4c): union read including .bee/decisions-archive.jsonl
-  let decisions = filterDecisionEvents(activeDecisions(root, { all }), { tag, scope, since });
+  const untagged = flags.untagged !== undefined; // decision-propagation dp-6 (D7d): events with no tags after overlay
+  let decisions = filterDecisionEvents(activeDecisions(root, { all }), { tag, scope, since, untagged });
   if (recent != null) decisions = decisions.slice(0, recent);
   const text = decisions.length ? decisions.map(formatDecision).join('\n') : 'No active decisions.';
   return { result: { decisions }, text };
@@ -1524,12 +1561,13 @@ function handleDecisionsSearch(root, flags) {
   const scope = resolveScopeFilter(flags);
   const since = resolveSinceFilter(flags);
   const all = flags.all !== undefined; // decision-propagation dp-3 (D4c): union read including .bee/decisions-archive.jsonl
-  if (!text && !tag && !scope && !since) {
+  const untagged = flags.untagged !== undefined; // decision-propagation dp-6 (D7d): events with no tags after overlay
+  if (!text && !tag && !scope && !since && !untagged) {
     throw new Error(
-      'decisions search requires --text, or at least one structured filter (--tag/--scope/--area/--since).',
+      'decisions search requires --text, or at least one structured filter (--tag/--scope/--area/--since/--untagged).',
     );
   }
-  const decisions = filterDecisionEvents(activeDecisions(root, { all }), { text, tag, scope, since });
+  const decisions = filterDecisionEvents(activeDecisions(root, { all }), { text, tag, scope, since, untagged });
   const resultText = decisions.length
     ? decisions.map(formatDecision).join('\n')
     : 'No active decisions matching the given filters.';
@@ -4479,7 +4517,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

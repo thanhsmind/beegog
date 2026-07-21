@@ -468,7 +468,8 @@ export const COMMAND_REGISTRY = [
   {
     name: 'decisions.log',
     invoke: 'bee decisions log',
-    description: 'Append a decision event to the append-only decision log. Rejects secret-shaped or instruction-like content.',
+    description:
+      'Append a decision event to the append-only decision log. Rejects secret-shaped or instruction-like content. Once docs/decisions/taxonomy.json exists, a zero-tag event is refused (typed, names --tags); without that file it warns and proceeds (decision-propagation D7b). An unknown tag is always accepted and appended to the taxonomy\'s candidates[] in the same call — never refused, never a second call.',
     parameters: {
       type: 'object',
       properties: {
@@ -491,7 +492,8 @@ export const COMMAND_REGISTRY = [
   {
     name: 'decisions.supersede',
     invoke: 'bee decisions supersede',
-    description: 'Replace an earlier decision with a new one; the earlier decision drops out of the active set. Runs a propagation sweep of docs/** for citations of the superseded id (decision-propagation D2) and queues a capture stub per hit.',
+    description:
+      'Replace an earlier decision with a new one; the earlier decision drops out of the active set. Runs a propagation sweep of docs/** for citations of the superseded id (decision-propagation D2) and queues a capture stub per hit. Tag/scope inheritance (D6) consults the OVERLAY-APPLIED target, so a legacy target classified only via a retro-tag event still counts as tagged. Once docs/decisions/taxonomy.json exists, the final (explicit-or-inherited) tag set follows the same zero-tag refusal / unknown-tag-accepted rule as `decisions log` (decision-propagation D7b).',
     parameters: {
       type: 'object',
       properties: {
@@ -538,31 +540,34 @@ export const COMMAND_REGISTRY = [
         area: { type: 'string', description: 'Alias for --scope.' },
         since: { type: 'string', description: 'ISO date; only events on/after this date (inclusive).' },
         all: { type: 'boolean', description: 'Also reach events archived by `decisions archive` (decision-propagation D4c) — a union read of the active store and .bee/decisions-archive.jsonl, de-duplicated by id. Omit for the default active-store-only read.' },
+        untagged: { type: 'boolean', description: 'List only events with no tags AFTER the dp-5 overlay is applied (decision-propagation D7d). Composable with every other filter, including --all.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a formatted list.' },
       },
       required: [],
     },
-    examples: ['bee decisions active --recent 5 --json', 'bee decisions active --tag billing --json', 'bee decisions active --all --json'],
+    examples: ['bee decisions active --recent 5 --json', 'bee decisions active --tag billing --json', 'bee decisions active --all --json', 'bee decisions active --untagged --json'],
     deprecated: null,
   },
   {
     name: 'decisions.search',
     invoke: 'bee decisions search',
-    description: 'Search active decisions by substring match and/or structured filters (decision-propagation D4a). --text is required only when no structured filter (--tag/--scope/--area/--since) is given.',
+    description:
+      'Search active decisions by multi-term text match and/or structured filters (decision-propagation D4a, D8b). --text is required only when no structured filter (--tag/--scope/--area/--since/--untagged) is given. --text is whitespace-split into terms, case-insensitive, OR across terms, matched over decision/rationale/alternatives AND (overlay-applied) tags — results are ranked by deterministic term-hit count descending, then date descending; a single term matches everything the old substring search matched, and more.',
     parameters: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'Substring to search for (case-insensitive). Optional when a structured filter is present.' },
+        text: { type: 'string', description: 'Whitespace-separated search terms (case-insensitive, OR-matched, ranked by hit count). Optional when a structured filter is present.' },
         tag: { type: 'string', description: 'Exact tag match, case-insensitive.' },
         scope: { type: 'string', description: 'Exact scope match, case-insensitive (scope is the spec-area dimension).' },
         area: { type: 'string', description: 'Alias for --scope.' },
         since: { type: 'string', description: 'ISO date; only events on/after this date (inclusive).' },
         all: { type: 'boolean', description: 'Also reach events archived by `decisions archive` (decision-propagation D4c) — a union read of the active store and .bee/decisions-archive.jsonl, de-duplicated by id. Omit for the default active-store-only read.' },
+        untagged: { type: 'boolean', description: 'List only events with no tags AFTER the dp-5 overlay is applied (decision-propagation D7d) — the classification-completeness check (should reach zero once a backfill is done). Composable with every other filter, including --all; satisfies the "at least one filter" requirement on its own.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a formatted list.' },
       },
       required: [],
     },
-    examples: ['bee decisions search --text "registry" --json', 'bee decisions search --tag billing --since 2026-07-01 --json', 'bee decisions search --tag billing --all --json'],
+    examples: ['bee decisions search --text "registry" --json', 'bee decisions search --tag billing --since 2026-07-01 --json', 'bee decisions search --tag billing --all --json', 'bee decisions search --untagged --json'],
     deprecated: null,
   },
   {

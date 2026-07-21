@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { appendJsonl, readJsonl, ensureDir } from './fsutil.mjs';
+import { appendJsonl, readJsonl, ensureDir, readJson, writeJsonAtomic } from './fsutil.mjs';
 import { acquireStoreLockOnceSync } from './lock.mjs';
 
 /** Content patterns that must never enter the decision log. */
@@ -104,6 +104,107 @@ function withDecisionsLockSync(root, fn) {
   }
 }
 
+// decision-propagation dp-6 (CONTEXT D7a/b): the hand-curated tag taxonomy.
+// Read by the CLI whenever docs/decisions/taxonomy.json exists; the CLI
+// itself only ever appends unknown-tag names to `candidates[]` — it never
+// touches the hand-curated `tags[]` vocabulary. Absence of the file is the
+// bootstrap-safe state (dp-7 owns creating it for this repo; see the CAUTION
+// note in the dp-6 cell — this module must never create it either).
+function taxonomyPath(root) {
+  return path.join(root, 'docs', 'decisions', 'taxonomy.json');
+}
+
+/** True when a taxonomy file exists at docs/decisions/taxonomy.json — the bootstrap/enforced boundary (D7b). */
+export function taxonomyFileExists(root) {
+  return fs.existsSync(taxonomyPath(root));
+}
+
+// readJson already fails open (returns the fallback) on a missing OR
+// malformed file, warning to stderr on malformed JSON — reused here rather
+// than a second bespoke parse-or-null implementation (fsutil.mjs is already
+// imported by this module for appendJsonl/readJsonl/ensureDir).
+function loadTaxonomy(root) {
+  const raw = readJson(taxonomyPath(root), null);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const tags = Array.isArray(raw.tags) ? raw.tags : [];
+  const candidates = Array.isArray(raw.candidates) ? raw.candidates.filter((c) => typeof c === 'string') : [];
+  return { schema_version: raw.schema_version ?? 1, tags, candidates };
+}
+
+/** Typed refusal from classifyDecisionTags when a taxonomy exists but zero tags were supplied — decision-propagation D7b. */
+export class DecisionsUntaggedRefusedError extends Error {
+  constructor() {
+    super(
+      'decisions: docs/decisions/taxonomy.json exists — this decision event needs at least one tag. Pass --tags (e.g. "billing,recall").',
+    );
+    this.name = 'DecisionsUntaggedRefusedError';
+    this.code = 'DECISIONS_UNTAGGED_REFUSED';
+  }
+}
+
+// appendTaxonomyCandidatesSync — the CLI's only write path onto
+// taxonomy.json: append previously-unseen tag names to `candidates[]`,
+// de-duplicated against BOTH the hand-curated `tags[]` and the existing
+// candidates. Runs under the SAME decisions store lock every other writer in
+// this module uses (critical rule: "every store write keeps routing through
+// the shared lock primitive") and re-reads the file fresh under that lock —
+// a classic locked read-modify-write, so two concurrent unknown-tag appends
+// can never lose one of them. The write itself is fsutil.mjs's own
+// writeJsonAtomic (temp-write+rename) — reused rather than duplicated, so
+// there is exactly one atomic-JSON-write implementation in this codebase,
+// and a crash mid-write can never leave a partially-written taxonomy.json.
+function appendTaxonomyCandidatesSync(root, unknownTags) {
+  withDecisionsLockSync(root, () => {
+    const fresh = loadTaxonomy(root);
+    if (!fresh) return; // taxonomy vanished between the read and the write — nothing to append to
+    const known = new Set([...fresh.tags.map((t) => t && t.name), ...fresh.candidates]);
+    const nextCandidates = fresh.candidates.slice();
+    for (const tag of unknownTags) {
+      if (!known.has(tag) && !nextCandidates.includes(tag)) nextCandidates.push(tag);
+    }
+    if (nextCandidates.length !== fresh.candidates.length) {
+      writeJsonAtomic(taxonomyPath(root), {
+        schema_version: fresh.schema_version,
+        tags: fresh.tags,
+        candidates: nextCandidates,
+      });
+    }
+  });
+}
+
+// classifyDecisionTags — decision-propagation dp-6 (CONTEXT D7b): the single
+// write-time classification gate shared by logDecision and supersedeDecision
+// (never source-exempted — "audit-source events follow the same rule,
+// callers pass tags"). `tags` here is always the FINAL resolved array for
+// the event about to be written (for supersede: after inheritance from the
+// OVERLAY-APPLIED target — see supersedeDecision below).
+//
+//   - no taxonomy.json at all -> bootstrap-safe: never refuses, never writes
+//     candidates. This is the unconditional current state of THIS repo (no
+//     docs/decisions/taxonomy.json exists here — see the dp-6 cell's
+//     self-hosting CAUTION), so every existing caller's behavior is
+//     byte-unchanged until some later feature (dp-7) creates that file.
+//   - taxonomy.json exists + zero tags -> typed refusal (DecisionsUntaggedRefusedError).
+//   - taxonomy.json exists + at least one tag -> never refuses. Any tag not
+//     already in tags[] or candidates[] is accepted onto the event AND
+//     appended to candidates[] in this same call — never a second call, never
+//     a refusal loop.
+function classifyDecisionTags(root, tags) {
+  const taxonomy = loadTaxonomy(root);
+  if (!taxonomy) {
+    return { taxonomyPresent: false };
+  }
+  if (!Array.isArray(tags) || tags.length === 0) {
+    throw new DecisionsUntaggedRefusedError();
+  }
+  const known = new Set([...taxonomy.tags.map((t) => t && t.name), ...taxonomy.candidates]);
+  const unknown = tags.filter((tag) => !known.has(tag));
+  if (unknown.length) {
+    appendTaxonomyCandidatesSync(root, unknown);
+  }
+  return { taxonomyPresent: true, unknownTags: unknown };
+}
+
 // writeJsonlAtomic — temp-write+rename the WHOLE active store, for archive's
 // prune step. Local to this module (never added to the shared fsutil.mjs,
 // which has no jsonl-atomic-rewrite primitive today and is out of this
@@ -196,6 +297,12 @@ export function logDecision(
   }
   assertSafe({ decision, rationale, alternatives, scope, source });
   const normalizedTags = normalizeTags(tags);
+
+  // decision-propagation dp-6 (CONTEXT D7b): write-time classification gate.
+  // Bootstrap-safe (no taxonomy.json -> never refuses); once a taxonomy
+  // exists, a zero-tag decide event is refused (typed) and an unknown tag is
+  // accepted onto the event while landing in taxonomy.json's candidates[].
+  classifyDecisionTags(root, normalizedTags || []);
 
   const event = {
     id: crypto.randomUUID(),
@@ -300,8 +407,17 @@ export function supersedeDecision(root, { supersedes, decision, rationale, tags 
   // target (or a target id not found in the store at all) falls back to
   // scope "repo" and no tags key at all, mirroring logDecision's zero-
   // migration additive shape.
+  //
+  // decision-propagation dp-6 (plan-check W3): inheritance consults the
+  // OVERLAY-APPLIED target, not the raw event — a legacy target classified
+  // only via a dp-5 retro-tag event (raw event.tags undefined) must still be
+  // seen as tagged here, or a taxonomy-present supersede would wrongly
+  // refuse it as zero-tag. applyTagOverlay returns the SAME object unchanged
+  // when there is no overlay for that id, so this is a no-op for every
+  // target dp-2's existing tests already cover.
   const events = readJsonl(decisionsPath(root));
-  const target = events.find((event) => event && event.id === targetId);
+  const rawTarget = events.find((event) => event && event.id === targetId);
+  const target = rawTarget ? applyTagOverlay(rawTarget, buildTagOverlay(root)) : null;
 
   let resolvedScope;
   if (scope !== undefined && scope !== null && String(scope).trim()) {
@@ -321,6 +437,11 @@ export function supersedeDecision(root, { supersedes, decision, rationale, tags 
   } else {
     resolvedTags = null;
   }
+
+  // decision-propagation dp-6 (CONTEXT D7b): same write-time classification
+  // gate as logDecision, applied to the FINAL resolved (explicit-or-
+  // inherited) tags — audit-source callers get no exemption.
+  classifyDecisionTags(root, resolvedTags || []);
 
   // decision-propagation dp-2 (CONTEXT D2, lock doctrine): compute the
   // propagation sweep BEFORE the append below — the event is written to the
