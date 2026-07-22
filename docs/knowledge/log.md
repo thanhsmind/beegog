@@ -76,3 +76,29 @@
   decision-memory` (D35), now a chain suite. `scripts/test_okf_pins.mjs`'s refusal assertions for
   decision-memory were retired (it is no longer unscheme'd) and replaced with a pass assertion,
   leaving worktree-parallelism as the sole remaining refused area.
+
+- Fourth area migrated (cell f2-6, feature `okf-migration-f2`, slice S4b):
+  `docs/specs/verify-pipeline.md` re-authored into two `bee.area` concepts, split by TOPIC rather
+  than the old spec's headings — `areas/verify-pipeline/suite-topology-and-discovery.md` (how
+  suites are shaped and found: per-module suites with no monolith, the shared fixture helper,
+  convention-based discovery, the loud deletion guard, Windows CI proving the real suites through
+  that same discovery mechanism) and `areas/verify-pipeline/concurrency-and-hermetic-runs.md`
+  (how a run itself stays safe: locked atomic-swapped regeneration, multi-worker checkout
+  etiquette, hermetic session-id scrubbing proven by deterministic race/isolation suites). Ground
+  truth is DERIVED (F8): pin `{72fd828, docs/specs/verify-pipeline.md, blob eab70d7,
+  ba-nine-section, 14 anchors (0 B / 5 R / 4 E / 5 P), unparsed_blocks: 7}`, with the
+  pre-migration source committed verbatim at
+  `docs/history/okf-migration-f2/sources/verify-pipeline.md`. The 7 unparsed blocks are the
+  source's entire "Behaviors & Operations" section — 7 bold-lead bullets with no B-id at all —
+  and none is invented into an anchor (D10); their content still travels into whichever concept's
+  topic it matches. Two concepts over 14 anchors and 133 source lines land anchors_per_concept at
+  7.00 and concepts_per_100_source_lines at 1.50, both inside the [0.5x, 2x] band across the four
+  now-pinned "area"-shaped sources — a single consolidated concept (the decision-memory shape)
+  was tried first and found to push concepts_per_100_source_lines to roughly half the running
+  median, outside the band; splitting by the source's two genuinely distinct concerns (what
+  suites there are and how they're found, vs. how a run stays concurrency-safe and hermetic)
+  fixed both ratios without touching a single anchor's wording. Fidelity: min/median/max 1.000
+  (verbatim re-homing). RED-FIRST: with the R4 claim deliberately removed from
+  `concurrency-and-hermetic-runs.md`'s `bee.sources`, `--check verify-pipeline` failed with the
+  real coverage-loss finding (`LOST in concepts: R4`), then was restored to green. Coverage is
+  machine-checked by `scripts/okf_migrate.mjs --check verify-pipeline` (D35), now a chain suite.

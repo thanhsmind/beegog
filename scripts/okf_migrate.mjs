@@ -240,6 +240,32 @@ export const PIN_REGISTRY = {
     note: "the 39-line BA spec as of 8710d03 (f2-3), immediately before f2-5 turned it into a D37 pointer stub — nine business rules, no behaviors/edges/pointers sections",
   },
 
+  "verify-pipeline": {
+    kind: "area",
+    // The pin is HEAD at the moment f2-6 ran, taken BEFORE the stub replaced
+    // the content — same rule as doctrine-layer's and decision-memory's pins:
+    // pin the parent, copy the bytes, hash both.
+    commit: "72fd8284fa1e1303d026eb4f94e31fed07a30542",
+    path: "docs/specs/verify-pipeline.md",
+    blob_sha: "eab70d7e665ec73a5a8dc227bee5c16ada74dbe8",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      behaviors: 0,
+      rules: 5,
+      edges: 4,
+      pointers: 5,
+      total: 14,
+      // The source's "Behaviors & Operations" section carries 7 bold-lead
+      // bullets with no B-id at all — none is invented into an anchor (D10).
+      // Every Business Rules / Edge Cases / Pointers bullet IS a classified
+      // block start, so the 7 unparsed blocks are entirely those unnumbered
+      // behaviors, confirmed by --inventory before any edit.
+      unparsed_blocks: 7,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/verify-pipeline.md",
+    note: "the 132-line BA spec as of 72fd828 (f2-5), immediately before f2-6 turned it into a D37 pointer stub — 5 rules, 4 edge cases, 5 pointers, and 7 unnumbered behavior bullets",
+  },
+
   // ─── declared, not yet pinned (the migrating cell authors the pin) ────────
   // Listed — rather than merely absent — so the gate refuses them BY NAME with
   // a reason, instead of the generic "unknown area" shrug.

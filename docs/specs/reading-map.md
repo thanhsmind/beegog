@@ -112,11 +112,17 @@ Where things live. Read the touched area's spec before its code.
 - `docs/history/research/` — standalone bee-xia research briefs (topic-slug files; each leads with its Bottom Line).
 - `hooks/` — the catalog and handlers for the installed plugin projection and generated repository fallback. It declares the pre-spawn model-tier guard on both runtimes (Claude via its dispatch tools, Codex via its native spawn call on the observed envelope — unobserved shapes pass through open) and the paired Codex-only child-start/child-stop audit; onboarding activates exactly one source. Vendored handlers live under `.bee/bin/hooks/`.
 - `skills/bee-hive/scripts/plugin_distribution.mjs` and `test_plugin_distribution.mjs` — shared strict distribution planner/prover and transaction suite. `scripts/install.sh`, `scripts/install.ps1`, and release-inventory tests are the two platform entrypoints and package proof.
-- `docs/specs/verify-pipeline.md` — test topology & discovery: per-module suites (the
-  monolith is deleted; 430-check conservation), convention-based suite discovery in
-  `scripts/run_verify.mjs` (zero-registration; serial by filename convention), the
-  floor+existence manifest guard, the shared fixture helper (`scripts/lib/test-fixture.mjs`),
-  and the lock+tmp-swap plugin-tree render. Read before adding/moving any test file.
+- [`docs/knowledge/areas/verify-pipeline/`](../knowledge/areas/verify-pipeline/index.md) — test
+  topology & discovery, migrated into the knowledge bundle (okf-foundation D20/D29;
+  okf-migration-f2 F9): per-module suites (the monolith is deleted; 430-check conservation),
+  convention-based suite discovery in `scripts/run_verify.mjs` (zero-registration; serial by
+  filename convention), the floor+existence manifest guard, and the shared fixture helper
+  (`scripts/lib/test-fixture.mjs`) split by TOPIC into `suite-topology-and-discovery.md`; the
+  lock+tmp-swap plugin-tree render, multi-worker checkout etiquette, and hermetic session-id
+  scrubbing proven by deterministic race/isolation suites into
+  `concurrency-and-hermetic-runs.md`. The legacy path
+  [`verify-pipeline.md`](./verify-pipeline.md) remains as a pointer stub carrying the full
+  14-anchor map (D37). Read before adding/moving any test file.
 - `docs/specs/performance-log.md` — the global cross-project performance log: sections
   summarizing a piece of work's per-model token cost (new/cached/total), parallelism, and
   active running time, plus a cross-project HTML matrix (`~/.config/beehive/performance.html`)

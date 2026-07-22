@@ -22,6 +22,7 @@ its pinned hash is refused too.
 | `critical-patterns.md` | `a0ea0cc` (okf-5, the commit before `b0d495d` migrated it) | `2bf1120…` | `flat-pattern-list` | 47 (PAT1–PAT47) |
 | `doctrine-layer.md` | `ed65720` (f2-4, the commit before f2-3 stubbed it) | `351bf72…` | `ba-nine-section` | 39 (10 B / 17 R / 5 E / 7 P), 2 unparsed blocks |
 | `decision-memory.md` | `8710d03` (f2-3, the commit before f2-5 stubbed it) | `2e8ec59…` | `ba-nine-section` | 9 (0 B / 9 R / 0 E / 0 P), 0 unparsed blocks |
+| `verify-pipeline.md` | `72fd828` (f2-5, the commit before f2-6 stubbed it) | `eab70d7…` | `ba-nine-section` | 14 (0 B / 5 R / 4 E / 5 P), 7 unparsed blocks |
 
 Re-derive and re-assert every pin at any time:
 

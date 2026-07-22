@@ -109,6 +109,15 @@ const EXTRA_SUITES = [
   // matched the source's true size instead of splitting a 39-line spec by the
   // heading list.
   ["scripts/okf_migrate.mjs", "--check", "decision-memory"],
+  // f2-6 (F6/F9): verify-pipeline's own D35 coverage gate. 14 anchors (0 B /
+  // 5 R / 4 E / 5 P) derived from blob eab70d7 at 72fd828 with
+  // expected_counts.unparsed_blocks: 7 asserted — this source's "Behaviors &
+  // Operations" section carries 7 bold-lead bullets with no B-id at all, and
+  // none is invented into an anchor (D10). Two concepts, split by TOPIC (how
+  // suites are shaped/found vs how a run itself stays concurrency-safe and
+  // hermetic) keep the F12 drift telemetry inside its band across the four
+  // pinned "area"-shaped sources.
+  ["scripts/okf_migrate.mjs", "--check", "verify-pipeline"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

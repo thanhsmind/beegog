@@ -293,6 +293,15 @@ for (const [area, pin] of Object.entries(M.PIN_REGISTRY)) {
   ok(/^PASS okf_migrate --check decision-memory: /m.test(cli.out), "the chain PASS wording names decision-memory", cli.out);
 }
 
+// f2-6: verify-pipeline's own coverage gate now exits 0 — 14 anchors (0 B /
+// 5 R / 4 E / 5 P), 7 unparsed blocks (the unnumbered Behaviors & Operations
+// bullets, never invented into ids — D10), split across two topic concepts.
+{
+  const cli = runCli(["--check", "verify-pipeline"]);
+  ok(cli.code === 0, "`--check verify-pipeline` exits 0 now that its pin (14 anchors, 7 unparsed) is authored", `exit ${cli.code}: ${cli.err}${cli.out}`);
+  ok(/^PASS okf_migrate --check verify-pipeline: /m.test(cli.out), "the chain PASS wording names verify-pipeline", cli.out);
+}
+
 // ─── 12. unparsed-block reporting makes format-blindness VISIBLE ────────────
 
 {
