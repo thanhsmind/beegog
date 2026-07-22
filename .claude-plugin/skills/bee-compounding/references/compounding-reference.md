@@ -102,7 +102,7 @@ node .bee/bin/bee.mjs decisions log --decision "..." --rationale "..." [--altern
 
 ## State-Layer Guard (decisions 0001, 0002)
 
-The area-spec and reading-map templates live in `bee-scribing/references/scribing-reference.md` — compounding never writes `docs/specs/` itself. The guard check reads `.bee/state.json` for the feature's scribing record; absent while `behavior_change` cells were capped → invoke `bee-scribing`, then resume.
+The area-concept, area-spec, and reading-map templates live in `bee-scribing/references/scribing-reference.md` — compounding never writes the state layer itself (`docs/knowledge/` when the repo has a bundle, else `docs/specs/`). The guard check reads `.bee/state.json` for the feature's scribing record; absent while `behavior_change` cells were capped → invoke `bee-scribing`, then resume.
 
 ## Friction Backlog Entry
 
@@ -146,4 +146,4 @@ Merge these fields into `.bee/state.json`; do not drop `approved_gates` or other
 - an analysis subagent writing durable files directly
 - an analyst spawned with a write-capable agent type, or a failing/denied dispatch looped or waited-on forever instead of synthesizing from what returned (§2 spawn/wait contract)
 - unredacted secrets or PII in any durable record
-- compounding writing `docs/specs/` itself instead of invoking bee-scribing
+- compounding writing the state layer itself (`docs/knowledge/` or `docs/specs/`) instead of invoking bee-scribing

@@ -1,0 +1,61 @@
+{
+  "id": "f4-3",
+  "feature": "okf-integration-close-f4",
+  "lane": "standard",
+  "behavior_change": true,
+  "tier": "ceiling",
+  "title": "D1/D2/D3: the session preamble stops printing the retired model — and D9's four derived artifacts",
+  "action": "The preamble is what every agent reads before doing anything, and two of its sections currently teach the model f3 retired. BOTH gaps were confirmed by direct observation of a live session preamble, not inferred. (D1) `skills/bee-hive/templates/lib/inject.mjs:44` `criticalPatternsDigest()` reads `docs/history/learnings/critical-patterns.md` and injects its first 10 non-blank lines under `### Critical patterns (digest)` (call site :327-331). That file is now a POINTER STUB, so every session receives the stub's redirect boilerplate as its 'digest' — dead weight where the lessons should be. Make it resolve through `bundleMode`: in bundle mode build the digest from the bundle's own generated root index `docs/knowledge/index.md`, its `## Critical patterns` section (the live equivalent D21/D34 established — read the stub at docs/history/learnings/critical-patterns.md to confirm the pointer before you code against it); with NO bundle, behavior byte-identical to today. Same line cap in both branches. (D2) `projectMapLines()` (:68-106) always reports `- Specced areas: N (docs/specs/ — read the spec before the code)` off a flat `docs/specs/*.md` count, with no bundle branch — it counts the compatibility surface and instructs the reader to do what G4 replaced. Branch it on `bundleMode`: bundle mode names the BUNDLE as the thing to read before the code and counts what the bundle actually holds (areas and concepts), and describes `docs/specs/` as the read-only compatibility surface if it names it at all; no bundle = byte-identical to today INCLUDING the missing-map warning branch. The PBI line rides BOTH branches as it does today, and the section's 2-5 line cap (preamble contract D5/D10) holds in both. (D3) the scribing-debt nudge at :303 hardcodes `settled behavior belongs in docs/specs/` — make it name the resolved target. Both doc trees resolve through `resolveProductRoot` as they already do here (:69-71) — never join them yourself (G13). TESTS: `skills/bee-hive/templates/tests/test_misc.mjs:290,311` pin `Specced areas: N`; update them and ADD bundle-mode coverage for all three changes, including a no-bundle fixture proving byte-identical legacy behavior (the fallback is untestable in this repo, which HAS a bundle — use the fixture discipline test_bundle_mode.mjs already established). RED-FIRST: capture the current preamble output showing the stub boilerplate and the `Specced areas` line BEFORE changing anything, and quote it in the evidence. D9 — THIS CELL OWNS THE DERIVED-ARTIFACT REGEN FOR THE WHOLE FEATURE, after f4-1 and f4-2 have landed: (1) copy every touched `templates/lib/*.mjs` to its `.bee/bin/lib/` sibling, (2) `node scripts/render_plugin_skill_trees.mjs`, (3) `node scripts/release_manifest.mjs --write`, (4) `node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply` to refresh the managed-hash ledger. Then run the FULL chain as the LAST action — a cap-time verify expires the moment anything else is edited (pattern 20260715, fourth recurrence, and the exact failure that left the previous session red).",
+  "must_haves": {
+    "truths": [
+      "node scripts/run_verify.mjs exits 0 — run as the LAST action, after every edit and all four regens",
+      "red evidence: the CURRENT preamble output quoted, showing both the pointer-stub boilerplate under '### Critical patterns (digest)' and the 'Specced areas: N (docs/specs/ — read the spec before the code)' line",
+      "green evidence: the NEW preamble output quoted, showing the digest sourced from the bundle and the project map naming the bundle",
+      "a no-bundle fixture proves the legacy branch of ALL THREE changes is byte-identical to today",
+      "test_lib_mirror, release_manifest --check, test_plugin_distribution and ledger_parity --check are all green (the four derived artifacts, D9)"
+    ],
+    "prohibitions": [
+      "never decide bundle mode by existsSync or by re-deriving the rule in prose — bundleMode is the only answer (G12)",
+      "never join docs/knowledge or docs/specs off a bare root — resolveProductRoot, as this file already does (G13)",
+      "do not exceed the preamble project-map section's 2-5 line cap in either branch",
+      "do not delete or rewrite the critical-patterns pointer stub (D20)",
+      "do not weaken or delete the existing test_misc assertions — update them and ADD coverage"
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/okf-integration-close-f4/CONTEXT.md",
+    "skills/bee-hive/templates/lib/inject.mjs",
+    "skills/bee-hive/templates/tests/test_misc.mjs",
+    "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+    "docs/history/learnings/critical-patterns.md",
+    "docs/knowledge/index.md"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/inject.mjs",
+    "skills/bee-hive/templates/tests/test_misc.mjs",
+    "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+    ".bee/bin/lib/inject.mjs",
+    ".bee/onboarding.json",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "deps": [
+    "f4-1",
+    "f4-2"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

@@ -49,7 +49,7 @@ On every session start:
 1. Confirm onboarding is current via `.bee/onboarding.json` (see SKILL.md onboarding protocol).
 2. Run `node .bee/bin/bee.mjs status --json`.
 3. If `.bee/HANDOFF.json` exists, check its kind: a pause handoff (or any kindless record) is presented and waited on — do not auto-resume. A planned-next handoff is adopted only at this fresh-session boundary (see Resume Logic below).
-4. Read `docs/history/learnings/critical-patterns.md` when present.
+4. **Critical patterns (bundleMode, D1):** with a bundle, read `docs/knowledge/index.md`'s `## Critical patterns` section — the live equivalent, generated from the bundle. With no bundle — today's guidance stands, unchanged: read `docs/history/learnings/critical-patterns.md` when present.
 5. Surface recent active decisions: `node .bee/bin/bee.mjs decisions active --recent 3`.
 6. Check active reservations when workers may be in flight: `node .bee/bin/bee.mjs reservations list --active-only`.
 
@@ -93,11 +93,14 @@ Retrieval triggers, not reading lists. Token budgets by lane:
 
 | Lane | Harness-context budget | Always read | Trigger-based reads |
 |---|---|---|---|
-| tiny / small | ≈ 2K tokens | bee_status, critical-patterns digest, touched area's `docs/specs/<area>.md` when present | touched-file neighborhood only |
+| tiny / small | ≈ 2K tokens | bee_status, critical-patterns digest, touched area's state-layer doc — with a bundle: `docs/knowledge/areas/<area>/index.md`; with no bundle: `docs/specs/<area>.md` when present, unchanged | touched-file neighborhood only |
 | standard | ≈ 5K tokens | + recent active decisions, CONTEXT.md | touching schema → schema decisions first; touching auth → auth decisions |
 | high-risk | ≈ 10K tokens | + full decision search on tags, plan history | + high-risk template, prior spikes in `.bee/spikes/`, related learnings files |
 
-Reading order per area (state layer, decision 0001; recall surface per decision-propagation D8): **spec → decision index (the area's section of `docs/decisions/index.md`, complete by construction; drill into events via `decisions search --tag/--scope`) → history**. `docs/specs/reading-map.md` answers "where does X live" before any broad grep.
+**Reading order per area (state layer, bundleMode; recall surface per decision-propagation D8):**
+
+- **With a bundle** — read `docs/knowledge/areas/<area>/` FIRST: its `index.md` names the area's concepts. Then decision index (the area's section of `docs/decisions/index.md`, complete by construction; drill into events via `decisions search --tag/--scope`) → history. `docs/specs/<area>.md` is named for exactly one job — the read-only compatibility surface: a legacy citation resolves through its pointer stub to the concept that owns the anchor now; never read there for current truth.
+- **With no bundle** — today's guidance stands, unchanged: **spec → decision index (the area's section of `docs/decisions/index.md`, complete by construction; drill into events via `decisions search --tag/--scope`) → history**. `docs/specs/reading-map.md` answers "where does X live" before any broad grep.
 
 Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `coverage/` — the scout guard blocks them anyway.
 
@@ -113,7 +116,7 @@ Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `c
 | swarming | validated cells, state, reservations | worker registry in state, HANDOFF at ~65%, wave results |
 | executing | assigned cell, CONTEXT.md, reservations | implementation commits (one per cell, cell id in message), verify record, cap, report in `docs/history/<feature>/reports/` |
 | reviewing | user-selected immutable scope (a `bee_reviews` session — never triggered by phase or cell completion) | session findings (P1/P2/P3) and the Gate 4 decision recorded on that session, backlog items, `residual-findings.md` fallback |
-| scribing | `behavior_change` cells + verification evidence, CONTEXT.md, active decisions, UAT/worker reports, code + user interview (harvest) | `docs/specs/<area>.md` (BA-grade merge), `docs/specs/reading-map.md`, capture-mode decision log entries, state record |
+| scribing | `behavior_change` cells + verification evidence, CONTEXT.md, active decisions, UAT/worker reports, code + user interview (harvest) | with a bundle: `docs/knowledge/areas/<area>/` concepts (BA-grade merge); with no bundle, unchanged: `docs/specs/<area>.md` (BA-grade merge), `docs/specs/reading-map.md`; either way: capture-mode decision log entries, state record |
 | compounding | feature history, traces, findings, commits, scribing state record | `docs/history/learnings/YYYYMMDD-<slug>.md`, critical-patterns promotions, decision log, backlog friction, state-layer guard verdict |
 | grooming | entropy inputs, backlog, traces, diffs | kill proposals, tiny/small cells, outcome records |
 
@@ -301,8 +304,12 @@ docs/history/<feature>/
 docs/history/learnings/
   critical-patterns.md  YYYYMMDD-<slug>.md
 
+docs/knowledge/                                       ← state layer when a bundle exists (bundleMode)
+  areas/<area>/  index.md  <subject-slug>.md   patterns/  work/<id>/
+
 docs/specs/
-  <area>.md  reading-map.md
+  <area>.md  reading-map.md                            ← read-only compat surface when a bundle exists;
+                                                          state layer itself when no bundle (unchanged)
 
 .bee/spikes/<feature>/
 ```

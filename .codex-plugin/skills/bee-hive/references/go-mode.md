@@ -10,7 +10,8 @@ Trigger: `/go [feature]`, "run the full pipeline", or "go mode".
 User: "/go [feature]"
        │
        ▼
-[BOOTSTRAP] onboarding check, bee_status scout, critical-patterns.md, recent decisions
+[BOOTSTRAP] onboarding check, bee_status scout, critical patterns (bundle: docs/knowledge/index.md
+            digest; no bundle: critical-patterns.md, unchanged), recent decisions
        │
        ▼
 [STEP 1] bee-exploring        → docs/history/<feature>/CONTEXT.md
@@ -35,7 +36,8 @@ User: "/go [feature]"
        │
        ├── more approved work remains → return to STEP 3 for the next slice
        ▼
-[STEP 6] bee-scribing         → docs/specs/<area>.md BA-grade sync, reading map (feature closes unreviewed)
+[STEP 6] bee-scribing         → knowledge sync: docs/knowledge/ concepts, else docs/specs/<area>.md
+                                 (closes unreviewed)
        ▼
 [STEP 7] bee-compounding      → docs/history/learnings/, decision log, review-candidate report
        ▼

@@ -72,7 +72,7 @@ Log choices future planning must honor. Supersede outdated decisions (`bee.mjs d
 
 ## 6. Guard the State Layer (decisions 0001, 0002)
 
-`bee-scribing` owns `docs/specs/`; compounding only verifies the handoff happened:
+`bee-scribing` owns the state layer — `docs/knowledge/` when the repo has a bundle, else `docs/specs/`; compounding only verifies the handoff happened:
 
 1. Check `.bee/state.json` for the feature's scribing record ("scribing: N specs synced" or "scribing: no sync needed").
 2. Record present → note it in the run summary and move on.
@@ -140,7 +140,7 @@ Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner c
 - an analyst spawned as `general-purpose` (or any write-capable type) instead of the runtime read-only type — "write no files" is a prompt string, not a tool restriction (D1 §2)
 - waiting past a denied/errored analyst dispatch, or re-looping the same failing call, instead of synthesizing from what returned after one retry (D2 §2)
 - an API key, token, or credential in an evidence snippet
-- `behavior_change` cells capped but no scribing record — and compounding "fixing" it by editing `docs/specs/` itself
+- `behavior_change` cells capped but no scribing record — and compounding "fixing" it by editing the state layer itself (`docs/knowledge/` or `docs/specs/`)
 - closing without running the digest refresh because "the skill/teammate didn't ask for it" — it is a step, not an optional extra (Scenario 1)
 - blocking or failing a host project's feature close because `bee.mjs feedback digest` threw — telemetry never stops the line; warn and file friction (Scenario 2)
 - treating an *unfamiliar* digest error as exempt from warn-never-block — "I must understand this throw before I can close" is the loophole; a digest error never gates a close, understanding it is post-close cleanup (Scenario 2 REFACTOR)

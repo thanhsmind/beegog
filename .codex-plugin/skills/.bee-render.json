@@ -12,7 +12,7 @@
     },
     {
       "name": "bee-compounding",
-      "sha256": "0624874926646832c280f7d3c9ab003d4bf9a927327693dbe5ddaf8feec906a9"
+      "sha256": "123c77c8872c789d85a575f615fde3a87df359cb9e54758e0ce149c64d69366f"
     },
     {
       "name": "bee-evolving",
@@ -28,15 +28,15 @@
     },
     {
       "name": "bee-grooming",
-      "sha256": "01d1b7af08b2d864b079363d30aaa4f83122a57b1edbc0be8aabc6f5a64b63a5"
+      "sha256": "97ce8be467f43b26fdd336a0e6c0fecf3bf81e5d0c73ad22fce4b58aa66eecd9"
     },
     {
       "name": "bee-hive",
-      "sha256": "4a1cb97d29ae1ade72949358a4e9f7f2104a31d2138d96e6f244f7124bda284d"
+      "sha256": "ca7e68c187b0ebe0ce5ef7c2ec7de27b1e740f3f0bbe9aa9c205209c7fdda5e4"
     },
     {
       "name": "bee-planning",
-      "sha256": "6c344327235ed4572bc947eb738f34eccdd9b8b0f3426b2a0b7dde1b0c5e4a63"
+      "sha256": "54c531b387ac9103a9e8d8229e0e12c9894b7e7f451519a3d3e6f09365926b9b"
     },
     {
       "name": "bee-reviewing",
