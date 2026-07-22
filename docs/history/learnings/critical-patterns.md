@@ -13,11 +13,12 @@ concept carries `bee.critical: true`, so the bundle's own generated root index
 list this file used to hand-maintain — regenerate it with `bee knowledge index` instead of
 appending here.
 
-`AGENTS.md` step 5 ("If `docs/history/learnings/critical-patterns.md` exists, read it before any
-planning or execution work") still resolves through this path — this stub stays alive and is
-**never deleted** in this feature (D20) — but the current, curated content is the bundle, not this
-file. Read `docs/knowledge/patterns/` (or the generated index's "Critical patterns" section) for
-the mandatory pre-planning context instead.
+`AGENTS.md` step 6 now branches (okf-integration-close-f4): **with a bundle** it sends the reader to
+the generated index's "Critical patterns" section, not here; **with no bundle** it still reads this
+path, unchanged. Either way this stub stays alive and is **never deleted** (D20), so every existing
+citation of it keeps resolving. But in a repo that has a bundle, the curated content is the bundle:
+read `docs/knowledge/patterns/` for the mandatory pre-planning context, and treat anything below as
+a forwarding address rather than a lesson.
 
 Coverage is machine-checked by `scripts/okf_migrate.mjs --check-patterns` in the verify chain
 (D35): every numbered anchor below is claimed by exactly one concept, and the map agrees with each

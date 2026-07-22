@@ -28,11 +28,11 @@
     },
     {
       "name": "bee-grooming",
-      "sha256": "97ce8be467f43b26fdd336a0e6c0fecf3bf81e5d0c73ad22fce4b58aa66eecd9"
+      "sha256": "fd3e6017ecfc2459b589a947ab04a9d8f8410dd9b558588c80ff05762a8f756f"
     },
     {
       "name": "bee-hive",
-      "sha256": "f74e8e32c5634a59098c0f39dda43182049c0e2095ea9012066eb4557f671b43"
+      "sha256": "9c619246140e7f993c1d3d7e399890fe232dae046cbb0906d5df687d8b97dec5"
     },
     {
       "name": "bee-planning",
@@ -44,7 +44,7 @@
     },
     {
       "name": "bee-scribing",
-      "sha256": "3259c8f1c7a347ab2244d344f0314efbfdd80bf80315f76dcd9c5f6308ab8251"
+      "sha256": "938cc4dd1c69421b96590157e9e75ab2977be8e12d1d59566985fe83f5db756c"
     },
     {
       "name": "bee-swarming",

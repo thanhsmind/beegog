@@ -2,6 +2,8 @@
 
 Load after `bee-scribing` is selected. The workflow lives in SKILL.md; the template, per-section rules, and protocols live here.
 
+**The templates below, through Reading Map, are written against the no-bundle spec tree** — `docs/specs/<area>.md`, `system-overview.md`, `reading-map.md` — exactly as they have always been (SKILL.md §2 states the single predicate; do not re-derive it here). **With a bundle**, the equivalent state layer is `docs/knowledge/areas/<area>/*.md` — one `bee.area` concept per subject, authored per SKILL.md §2a via `scribingTarget()`, with `emitFrontmatter` producing every frontmatter block and the full worked examples living in `docs/knowledge/areas/okf-profile/concept-model-and-authoring.md` §Templates. In that mode `docs/specs/` is the **read-only compatibility surface**: a legacy citation resolves through its pointer stub to the concept that owns the anchor now, and it is never written for new content. The nine sections, the rebuild bar, the tech-agnostic rule, and every per-section rule below are the same body contract in both modes (SKILL.md §3) — only the file layout and frontmatter mechanics differ, and each section below states its own bundle counterpart at the point where the two diverge.
+
 ## Area Shapes
 
 An area is any long-lived unit with observable behavior: a screen/form, an API, a background job, an integration with an external system, a data pipeline, a CLI command, a business process. The template below fits all of them — the sections stay, the content shifts:
@@ -17,9 +19,11 @@ A section with genuinely no content for the area's shape gets one line — "Not 
 
 ## Area Spec Template (BA grade, decision 0002)
 
+**With a bundle**, this template's nine sections are the body contract for a `bee.area` concept — write `docs/knowledge/areas/<area>/<subject-slug>.md` (or `overview.md` for a new area) per SKILL.md §2a instead of the file below, and skip straight to Per-Section Rules for the section-by-section content rules, which are unchanged. **With no bundle**, today's guidance stands, unchanged:
+
 Path: `docs/specs/<area>.md`. Area name: kebab-case, chosen at first write, stable thereafter. Overwrite/merge freely — this file always describes *now*; history lives in git and `docs/history/`.
 
-`docs/specs/` holds ONLY the state layer: area specs, `system-overview.md`, `reading-map.md`, `visuals/`. Never write other artifacts (scripts, exports, survey notes) here; when found, flag them for grooming to relocate — they pollute coverage counting and spec scans.
+`docs/specs/` holds ONLY this layer's content: area specs, `system-overview.md`, `reading-map.md`, `visuals/`. Never write other artifacts (scripts, exports, survey notes) here; when found, flag them for grooming to relocate — they pollute coverage counting and spec scans.
 
 ```markdown
 ---
@@ -146,15 +150,17 @@ Deleting this section must not remove any business meaning.>
 
 ## Merge Rules (sync mode)
 
+**With a bundle, "locate before create" resolves through `scribingTarget()`, never a spec scan** (SKILL.md §2): ask it for the area/subject, write exactly the `path`/`action` it returns, and regenerate the index when it says to. Everything else below — deltas never from plan.md, present tense only, a contradicting delta replaces rather than doubles, frontmatter reconciled (via `emitFrontmatter`, not by hand) — is the same discipline in both modes. **With no bundle**, today's guidance stands, unchanged:
+
 - **Locate before create:** resolve every delta to an existing spec via `docs/specs/reading-map.md` (and a scan of `docs/specs/*.md` frontmatter/Pointers) before considering a new file. A renamed screen, moved route, or refactored module is still the SAME area — update its spec and its reading-map line; do not fork a new one. Creating is the exception, reserved for genuinely new surfaces.
 - Deltas come from `behavior_change` cells + `verification_evidence`, UAT records, and worker reports — never from plan.md, never from memory.
 - A delta that contradicts an existing line **replaces** it; do not keep both.
 - Update `updated`, append the feature to `sources`, reconcile `decisions` against the active set (`node .bee/bin/bee.mjs decisions active`) — cited by short8 id (see Citation Discipline below), so this reconcile step is itself sweepable.
 - Present tense only. "Was", "previously", "changed from" are banned words.
-- If the feature added/removed an area, or changed shared entities, the role model, or a cross-area flow: sync `system-overview.md` in the same pass (decision 0003).
+- If the feature added/removed an area, or changed shared entities, the role model, or a cross-area flow: sync `system-overview.md` in the same pass (decision 0003). **With a bundle**, the same duty falls on the area's `overview` concept and the generated area index instead (SKILL.md §3).
 - UI areas: when a delta made a screen visibly different, refresh its snapshot under `visuals/<area>/`; cannot produce one → Open Gap with the reason.
 - Standard commands are a Pointers-level fact: when a synced change alters how the project is set up, started, tested, or verified, update `.bee/config.json` `commands` in the same pass (docs/09 item 1) — one record, never a second location.
-- After merging, run the rebuild self-check (below) on every touched spec.
+- After merging, run the rebuild self-check (below) on every touched spec (or concept).
 
 ## Citation Discipline (D3)
 
@@ -179,7 +185,7 @@ Budget the interview: batch the inventory first, then ask only the questions who
 
 ## Bootstrap Mode (D2 of harness10)
 
-Bootstrap exists for one situation: `docs/specs/` lacks `system-overview.md` or `reading-map.md` — typically a repo fresh from onboarding, before any harvest has run. It is **offered, never auto-run**: the agent names the missing file(s) and asks; only user approval starts the pass. Bootstrap creates ONLY the missing map file(s) — an existing `system-overview.md` or `reading-map.md` is never touched by bootstrap (in-place-never-fork holds; improving an existing map belongs to sync or harvest).
+**No-bundle only.** A repo with a bundle has no equivalent bootstrap: `docs/knowledge/index.md` and `docs/knowledge/areas/index.md` are pure functions of the bundle's own concepts, regenerated on demand with `node .bee/bin/bee.mjs knowledge index` — never hand-bootstrapped from a skeleton. Bootstrap exists for one situation: `docs/specs/` lacks `system-overview.md` or `reading-map.md` — typically a repo fresh from onboarding, before any harvest has run. It is **offered, never auto-run**: the agent names the missing file(s) and asks; only user approval starts the pass. Bootstrap creates ONLY the missing map file(s) — an existing `system-overview.md` or `reading-map.md` is never touched by bootstrap (in-place-never-fork holds; improving an existing map belongs to sync or harvest).
 
 Binding rules:
 
@@ -220,6 +226,8 @@ Cover the Pointers section and verify:
 Any failure: fix it now, or file it as an Open Gap with `coverage: partial` — silently shipping a hole is the red flag, not having one.
 
 ## System Overview Spec (decision 0003)
+
+**With a bundle**, there is no separate system-overview file to author: the cross-area glue is the area's own `overview` concept plus the generated `docs/knowledge/areas/index.md`, kept current by regenerating the index (`bee.mjs knowledge index`) after any area or concept change — never hand-edited. Fresh sessions read the bundle's root index FIRST (`docs/knowledge/index.md`), before any area concept. **With no bundle**, today's guidance stands, unchanged:
 
 Path: `docs/specs/system-overview.md`. One file, singular — the cross-area glue no per-area spec owns. Same write discipline as any spec (present tense, overwrite to match reality, tech-agnostic above Pointers, never fork). Fresh sessions read it FIRST, before any area spec.
 
@@ -270,6 +278,8 @@ outcome each actor observes. Single-area behavior stays in the area spec.>
 Sync triggers: a feature adds or removes an area; a shared entity's meaning changes; the role model changes; a cross-area flow is created, removed, or rerouted. Anything else NOOPs — the overview is glue, not a duplicate of the area specs.
 
 ## Reading Map
+
+**With a bundle**, the generated indexes carry the per-area map instead (SKILL.md §7) — run `node .bee/bin/bee.mjs knowledge index` after any new concept or new area (the run is a pure function of the bundle, so re-running it is always safe), and keep the hand-written reading map below pointing only at the areas that exist. **With no bundle**, today's guidance stands, unchanged:
 
 Path: `docs/specs/reading-map.md`. One line per location, grep-friendly:
 
