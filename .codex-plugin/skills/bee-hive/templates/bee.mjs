@@ -22,7 +22,7 @@
 //   bee capture <add|list|flush|count> ... [--json]
 //   bee reviews <create|list|show|record|candidate add|candidates|status> ... [--json]
 //   bee feedback <digest|count|collect|rank> ... [--json]
-//   bee knowledge <check> ... [--json]
+//   bee knowledge <check|index|list> ... [--json]
 //   bee tmp <sweep> ... [--json]
 //   bee --help [--json]
 //
@@ -146,7 +146,7 @@ import {
   decisionIndexDrift,
 } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
-import { checkBundle } from './lib/knowledge.mjs';
+import { checkBundle, knowledgeIndexDrift, renderKnowledgeIndexes, listConcepts } from './lib/knowledge.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
 import {
   createReview,
@@ -2508,6 +2508,51 @@ function handleKnowledgeCheck(root, flags) {
   };
 }
 
+// index (okf-4, D21): write mode renders the full generated-index set —
+// index writes ONLY generated index.md files inside docs/knowledge/, never a
+// .bee store (D2). --check is the read-only decisions-render idiom: re-render
+// in memory, byte-compare against disk, exit non-zero NAMING each stale file.
+function handleKnowledgeIndex(root, flags) {
+  if (flags.check === true) {
+    const { stale, checked } = knowledgeIndexDrift(root);
+    const drift = stale.length > 0;
+    const lines = stale.map((file) => `STALE ${file}`);
+    lines.push(
+      `knowledge index --check: ${checked} expected index file(s), ${stale.length} stale — ` +
+        `${drift ? 'FAIL (regenerate: bee knowledge index)' : 'OK'}`,
+    );
+    return {
+      result: { checked, stale, drift },
+      text: lines.join('\n'),
+      exitCode: drift ? 1 : 0,
+    };
+  }
+  const { written, count } = renderKnowledgeIndexes(root);
+  return {
+    result: { written, count },
+    text: `Rendered ${count} generated index file(s) under docs/knowledge/.`,
+  };
+}
+
+// list (okf-4, D15): one row per concept — path, id, type, lifecycle, title —
+// never file content. Filters are exact; --area matches bee.areas membership.
+function handleKnowledgeList(root, flags) {
+  const filters = {
+    type: typeof flags.type === 'string' ? flags.type : null,
+    lifecycle: typeof flags.lifecycle === 'string' ? flags.lifecycle : null,
+    area: typeof flags.area === 'string' ? flags.area : null,
+  };
+  const rows = listConcepts(root, filters);
+  const lines = rows.map(
+    (row) => `${row.path} · ${row.id ?? '-'} · ${row.type ?? '-'} · ${row.lifecycle ?? '-'} · ${row.title ?? '-'}`,
+  );
+  lines.push(`${rows.length} concept(s).`);
+  return {
+    result: { concepts: rows, count: rows.length },
+    text: lines.join('\n'),
+  };
+}
+
 // ─── reviews: full port of bee_reviews.mjs's create/list/show/record/
 // candidate add/candidates/status verbs (dispatcher-unify du-3). Reuses
 // lib/reviews.mjs's exports exactly as bee_reviews.mjs did — no logic change
@@ -4633,7 +4678,7 @@ function tmpUsageFallback(leading) {
 
 function knowledgeUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: check.`;
+  return `Unknown command "${verb || '(missing)'}". Use: check, index, list.`;
 }
 
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
@@ -4736,6 +4781,8 @@ const HANDLERS = {
   'capture.flush': handleCaptureFlush,
   'capture.count': handleCaptureCount,
   'knowledge.check': handleKnowledgeCheck,
+  'knowledge.index': handleKnowledgeIndex,
+  'knowledge.list': handleKnowledgeList,
   'reviews.create': handleReviewsCreate,
   'reviews.list': handleReviewsList,
   'reviews.show': handleReviewsShow,

@@ -69,6 +69,11 @@ const EXTRA_SUITES = [
   // until F2): docs/knowledge/ OKF errors fail the chain (exit 1), profile
   // warnings do not (exit 0, D13).
   [".bee/bin/bee.mjs", "knowledge", "check"],
+  // okf-4: index freshness joins the chain per D21/D4 (stale generated
+  // index). Read-only re-render + byte-diff against disk — the same idiom as
+  // `bee decisions render --check`; a stale or missing generated index under
+  // docs/knowledge/ fails the chain naming the file. No --strict here either.
+  [".bee/bin/bee.mjs", "knowledge", "index", "--check"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

@@ -1294,10 +1294,11 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
 
-  // ─── knowledge (okf-foundation S1, lib/knowledge.mjs) — OKF v0.1 bundle
+  // ─── knowledge (okf-foundation S1/S3, lib/knowledge.mjs) — OKF v0.1 bundle
   // verbs over docs/knowledge/ (D17/D23). check is the two-level D4 validator;
-  // index/list/context arrive in later slices. Read-only: knowledge never
-  // writes .bee/*.json(l) stores (D2). ──────────────────────────────────────
+  // index (D21) and list (D15) landed in S3; context arrives in S5. knowledge
+  // never writes .bee/*.json(l) stores (D2) — index writes ONLY generated
+  // index.md files inside the bundle. ───────────────────────────────────────
   {
     name: 'knowledge.check',
     invoke: 'bee knowledge check',
@@ -1312,6 +1313,40 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: ['bee knowledge check --json', 'bee knowledge check --strict --json'],
+    deprecated: null,
+  },
+  {
+    name: 'knowledge.index',
+    invoke: 'bee knowledge index',
+    description:
+      'Generate the docs/knowledge/ index.md set (D21): one index per directory level whose subtree contains at least one concept, plus the root index.md — the sole carrier of okf_version frontmatter (OKF §9/D4); every generated index opens with an HTML-comment provenance header, and the root additionally carries a "## Critical patterns" section over every bee.critical: true concept. Byte-identical for identical bundle contents: path-sorted entries, LF endings, never a timestamp or any other wall-clock value. With --check, re-renders in memory and byte-compares against disk without writing: any drift (a stale or missing index) exits non-zero naming the file — the same freshness idiom as `bee decisions render --check`.',
+    parameters: {
+      type: 'object',
+      properties: {
+        check: { type: 'boolean', description: 'Read-only freshness check: exit non-zero naming each stale index instead of writing (D21/D4 stale-generated-index).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON ({written,count} or, with --check, {checked,stale,drift}) instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee knowledge index --json', 'bee knowledge index --check --json'],
+    deprecated: null,
+  },
+  {
+    name: 'knowledge.list',
+    invoke: 'bee knowledge list',
+    description:
+      'List the bundle\'s concepts (D15): one row per concept — path, bee.id, type, bee.lifecycle, title — path-sorted, never file content. Filters are exact matches: --type on the concept type, --lifecycle on bee.lifecycle, --area on membership in bee.areas. A concept with missing or unparseable frontmatter still rows (null fields) — hiding files is not this verb\'s job; grading them is `knowledge check`\'s (D4).',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', description: 'Keep only concepts whose type equals this value (e.g. bee.pattern — D18 vocabulary).' },
+        lifecycle: { type: 'string', description: 'Keep only concepts whose bee.lifecycle equals this value (draft|active|superseded|archived — D19).' },
+        area: { type: 'string', description: 'Keep only concepts whose bee.areas array contains this value.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON ({concepts,count}) instead of one row per line.' },
+      },
+      required: [],
+    },
+    examples: ['bee knowledge list --json', 'bee knowledge list --type bee.pattern --lifecycle active --json'],
     deprecated: null,
   },
 

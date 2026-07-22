@@ -16,8 +16,18 @@
 //   D23 — a concept is any non-reserved .md INSIDE docs/knowledge/; this
 //         module never reads a file outside the bundle directory.
 //   D2  — the bundle is the knowledge layer, never a write path into
-//         .bee/*.json(l) runtime stores; this module performs no writes at
-//         all.
+//         .bee/*.json(l) runtime stores; check and list perform no writes at
+//         all, and index writes ONLY generated index.md files inside
+//         docs/knowledge/ — never a runtime store, never a file outside the
+//         bundle.
+//   D21 — `index` (cell okf-4, S3) generates index.md at every directory
+//         level with concepts plus the root index.md (sole okf_version
+//         carrier), byte-identically from concept frontmatter: path-sorted
+//         ordering, LF endings, no wall-clock values. `index --check`
+//         re-renders in memory and diffs against disk — the decisions.mjs
+//         render --check idiom.
+//   D15 — `list` emits one row per concept (path, id, type, lifecycle,
+//         title), never content.
 //   D4  — check reports two levels: OKF errors (the spec's own MUSTs) and
 //         profile warnings (bee's SHOULD layer); --strict promotes warnings.
 //   D13 — the CLI handler (bee.mjs) emits {okf:{errors},profile:{warnings},
@@ -657,4 +667,191 @@ export function checkBundle(root, { strict = false } = {}) {
   };
   const ok = errors.length === 0 && (!strict || warnings.length === 0);
   return { okf: { errors }, profile: { warnings }, counts, ok, strict };
+}
+
+// ─── concept inventory (shared by list and index; read-only, D23) ───────────
+
+/**
+ * Every concept in the bundle as { path, data }, path-sorted (bundle-relative,
+ * '/' separators from listBundleMarkdown). Robustness over judgment: a concept
+ * whose frontmatter is missing or unparseable still appears — with data {} —
+ * so list/index never hide a file; grading those files is check's job (D4),
+ * not this inventory's.
+ */
+export function collectConcepts(root) {
+  const dir = bundleDir(root);
+  const concepts = [];
+  for (const rel of listBundleMarkdown(dir)) {
+    const base = rel.includes('/') ? rel.slice(rel.lastIndexOf('/') + 1) : rel;
+    if (RESERVED_BASENAMES.has(base)) continue;
+    let data = {};
+    try {
+      const parsed = parseFrontmatter(fs.readFileSync(path.join(dir, rel), 'utf8'));
+      if (parsed.ok && parsed.present) data = parsed.data;
+    } catch {
+      // unreadable file: keep the row with empty data (check reports it)
+    }
+    concepts.push({ path: rel, data });
+  }
+  return concepts;
+}
+
+// ─── list (D15): one row per concept, filters, never content ────────────────
+
+/**
+ * listConcepts(root, {type, lifecycle, area}) — D15: rows of
+ * {path, id, type, lifecycle, title}, path-sorted, NEVER file content.
+ * Filters are exact matches; --area matches membership in bee.areas.
+ */
+export function listConcepts(root, { type = null, lifecycle = null, area = null } = {}) {
+  const rows = [];
+  for (const concept of collectConcepts(root)) {
+    const data = concept.data;
+    const bee = data.bee && typeof data.bee === 'object' ? data.bee : {};
+    const row = {
+      path: concept.path,
+      id: typeof bee.id === 'string' && bee.id ? bee.id : null,
+      type: typeof data.type === 'string' && data.type ? data.type : null,
+      lifecycle: typeof bee.lifecycle === 'string' && bee.lifecycle ? bee.lifecycle : null,
+      title: typeof data.title === 'string' && data.title ? data.title : null,
+    };
+    if (type !== null && row.type !== type) continue;
+    if (lifecycle !== null && row.lifecycle !== lifecycle) continue;
+    if (area !== null) {
+      const areas = Array.isArray(bee.areas) ? bee.areas : [];
+      if (!areas.includes(area)) continue;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ─── index (D21): per-level generated indexes, byte-identical ───────────────
+
+// Same idiom as decisions.mjs DECISION_INDEX_HEADER: an HTML comment (never
+// frontmatter — frontmatter in a non-root index.md is an OKF error, D4), and
+// deliberately NO generation timestamp or any other wall-clock value: the
+// must-have is "two consecutive renders over the same bundle are
+// byte-identical", so every generated index is a pure function of the
+// bundle's own contents.
+const KNOWLEDGE_INDEX_HEADER = [
+  '<!--',
+  'GENERATED FILE — do not hand-edit.',
+  'Rendered by `bee knowledge index` from concept frontmatter inside docs/knowledge/ (okf-foundation D21).',
+  'Regenerate: `bee knowledge index`. Check freshness: `bee knowledge index --check`.',
+  'Deterministic: byte-identical for the same bundle contents — path-sorted entries, LF endings,',
+  'never a generation timestamp or any other wall-clock value.',
+  '-->',
+].join('\n');
+
+function conceptEntryLine(concept, fromDir) {
+  const target = fromDir === '' ? concept.path : concept.path.slice(fromDir.length + 1);
+  const base = concept.path.slice(concept.path.lastIndexOf('/') + 1);
+  const title = typeof concept.data.title === 'string' && concept.data.title ? concept.data.title : base;
+  const description = typeof concept.data.description === 'string' && concept.data.description ? concept.data.description : null;
+  return `- [${title}](${target})${description ? ` — ${description}` : ''}`;
+}
+
+/**
+ * Compute the full generated-index set in memory: [{rel, content}] with rel
+ * bundle-relative ('/' separators), path-sorted. One index per directory
+ * level whose subtree contains at least one concept, plus the root index
+ * always (sole carrier of okf_version — OKF §9/D4; every other index carries
+ * NO frontmatter). The root additionally carries the '## Critical patterns'
+ * section over every bee.critical: true concept (D21 — the generated
+ * replacement for a hand-maintained critical-patterns list).
+ */
+export function computeIndexFiles(root) {
+  const concepts = collectConcepts(root);
+
+  // Every directory that owns an index: root always, plus each ancestor
+  // directory of a concept path.
+  const indexDirs = new Set(['']);
+  for (const concept of concepts) {
+    const segments = concept.path.split('/');
+    for (let i = 1; i < segments.length; i += 1) {
+      indexDirs.add(segments.slice(0, i).join('/'));
+    }
+  }
+
+  const files = [];
+  for (const dir of [...indexDirs].sort()) {
+    const directConcepts = concepts.filter((c) => {
+      const parent = c.path.includes('/') ? c.path.slice(0, c.path.lastIndexOf('/')) : '';
+      return parent === dir;
+    });
+    const childDirs = [...indexDirs]
+      .filter((d) => d !== '' && (dir === '' ? !d.includes('/') : d.startsWith(`${dir}/`) && !d.slice(dir.length + 1).includes('/')))
+      .sort();
+
+    const sections = [];
+    if (directConcepts.length > 0) {
+      sections.push(['## Concepts', '', ...directConcepts.map((c) => conceptEntryLine(c, dir))].join('\n'));
+    }
+    if (childDirs.length > 0) {
+      const bullets = childDirs.map((child) => {
+        const name = dir === '' ? child : child.slice(dir.length + 1);
+        const count = concepts.filter((c) => c.path.startsWith(`${child}/`)).length;
+        return `- [${name}/](${name}/index.md) — ${count} concept(s)`;
+      });
+      sections.push(['## Sections', '', ...bullets].join('\n'));
+    }
+    if (dir === '') {
+      const critical = concepts.filter((c) => {
+        const bee = c.data.bee && typeof c.data.bee === 'object' ? c.data.bee : {};
+        return bee.critical === true;
+      });
+      sections.push(
+        ['## Critical patterns', '', ...(critical.length > 0 ? critical.map((c) => conceptEntryLine(c, '')) : ['None.'])].join('\n'),
+      );
+    }
+
+    const heading = dir === '' ? '# Knowledge Bundle' : `# ${dir}/`;
+    const body = [heading, ...sections].join('\n\n');
+    const frontmatter = dir === '' ? emitFrontmatter({ okf_version: OKF_VERSION }) : '';
+    files.push({
+      rel: dir === '' ? 'index.md' : `${dir}/index.md`,
+      content: `${frontmatter}${KNOWLEDGE_INDEX_HEADER}\n\n${body}\n`,
+    });
+  }
+  return files;
+}
+
+/**
+ * knowledgeIndexDrift(root) — read-only --check half of the decisions.mjs
+ * render --check idiom: re-render every expected index in memory and
+ * byte-compare against disk (a missing file counts as drift). Returns
+ * { stale: [repo-relative paths], checked }. Never writes, never throws.
+ */
+export function knowledgeIndexDrift(root) {
+  const dir = bundleDir(root);
+  const expected = computeIndexFiles(root);
+  const stale = [];
+  for (const file of expected) {
+    let onDisk = null;
+    try {
+      onDisk = fs.readFileSync(path.join(dir, file.rel), 'utf8');
+    } catch {
+      onDisk = null;
+    }
+    if (onDisk !== file.content) stale.push(`docs/knowledge/${file.rel}`);
+  }
+  return { stale, checked: expected.length };
+}
+
+/**
+ * renderKnowledgeIndexes(root) — write the full generated-index set to disk.
+ * The ONLY write path in this module, and it touches ONLY generated index.md
+ * files inside docs/knowledge/ (D2/D23). Returns { written, count }.
+ */
+export function renderKnowledgeIndexes(root) {
+  const dir = bundleDir(root);
+  const written = [];
+  for (const file of computeIndexFiles(root)) {
+    const abs = path.join(dir, file.rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, file.content, 'utf8');
+    written.push(`docs/knowledge/${file.rel}`);
+  }
+  return { written, count: written.length };
 }

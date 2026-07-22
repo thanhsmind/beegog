@@ -70,6 +70,9 @@ const MANDATORY_SUITES = [
   "skills/bee-hive/templates/tests/test_recovery.mjs",
   // okf-3: knowledge check joins the chain as a chain-failing suite (D22/D34)
   // — pinned here so it can never silently drop out of commands.verify again.
+  // okf-4: the same pinned path also carries `knowledge index --check`
+  // (D21 stale-generated-index freshness) — one dispatcher, two chain
+  // entries, both protected by this exact-path pin.
   ".bee/bin/bee.mjs",
 ];
 

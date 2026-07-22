@@ -2337,6 +2337,40 @@ await check('knowledge.check example: an empty bundle (no docs/knowledge/) exits
   assert(report.counts && report.counts.concepts === 0 && report.counts.files === 0, `expected zeroed counts, got ${result.stdout}`);
 });
 
+// ─── knowledge.index / knowledge.list (okf-foundation S3, cell okf-4): run
+// against their OWN fresh fixture repo, never `root` — the knowledge.check
+// example above asserts root has zero bundle files, and `knowledge index`
+// would create docs/knowledge/index.md there.
+
+const rootKnowledge = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-knowledge-'));
+fs.mkdirSync(path.join(rootKnowledge, '.bee'), { recursive: true });
+writeJsonAtomic(path.join(rootKnowledge, '.bee', 'onboarding.json'), {
+  schema_version: '1.0',
+  bee_version: '0.1.0',
+});
+
+await check('knowledge.index example: generates the root index on an empty bundle (D21)', async () => {
+  const result = await assertExampleOk('knowledge.index', { cwd: rootKnowledge });
+  const report = JSON.parse(result.stdout);
+  assert(Array.isArray(report.written) && report.written.includes('docs/knowledge/index.md'), `expected written to include docs/knowledge/index.md, got ${result.stdout}`);
+  assert(report.count === 1, `an empty bundle must render the root index only, got ${result.stdout}`);
+  assert(fs.existsSync(path.join(rootKnowledge, 'docs', 'knowledge', 'index.md')), 'the root index must exist on disk after the example');
+});
+
+await check('knowledge.index --check example (examples[1]) passes right after a render, with the {checked,stale,drift} shape', async () => {
+  const { entry, result } = await runExample('knowledge.index', { exampleIndex: 1, cwd: rootKnowledge });
+  assert(result.status === 0, `${entry.name} example "${entry.examples[1]}" exited ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const report = JSON.parse(result.stdout);
+  assert(report.drift === false && Array.isArray(report.stale) && report.stale.length === 0, `a fresh render must have zero drift, got ${result.stdout}`);
+  assert(report.checked === 1, `expected 1 checked index file, got ${result.stdout}`);
+});
+
+await check('knowledge.list example: {concepts,count} rows carry path,id,type,lifecycle,title and never content (D15)', async () => {
+  const result = await assertExampleOk('knowledge.list', { cwd: rootKnowledge });
+  const report = JSON.parse(result.stdout);
+  assert(Array.isArray(report.concepts) && report.count === 0, `the empty fixture bundle has zero concepts (index.md is reserved, never a row), got ${result.stdout}`);
+});
+
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {
   const allNames = new Set(COMMAND_REGISTRY.map((e) => e.name));
   const missing = [...allNames].filter((name) => !executedNames.has(name));

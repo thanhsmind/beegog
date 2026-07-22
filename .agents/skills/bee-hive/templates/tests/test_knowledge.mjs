@@ -438,6 +438,183 @@ await check('CLI: knowledge.check appears in the bee --help --json manifest (tes
   assert(entry.parameters && entry.parameters.type === 'object' && entry.parameters.properties.strict, 'parameters must be JSON-Schema with a strict flag');
 });
 
+// ═══ okf-4 (S3): bee knowledge index + bee knowledge list ═══════════════════
+// RED-FIRST (cell okf-4): these checks are written and run red (the index and
+// list verbs do not exist yet) BEFORE any implementation.
+
+/** Collect every index.md under the fixture bundle: Map rel -> content. */
+function collectIndexFiles(root) {
+  const dir = bundleDir(root);
+  const out = new Map();
+  const walk = (abs, rel) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(abs, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(path.join(abs, entry.name), childRel);
+      else if (entry.isFile() && entry.name === 'index.md') out.set(childRel, fs.readFileSync(path.join(abs, entry.name), 'utf8'));
+    }
+  };
+  if (fs.existsSync(dir)) walk(dir, '');
+  return out;
+}
+
+/** Fixture bundle exercising nested dirs, criticality, and every list filter. */
+function makeIndexFixture() {
+  const root = makeRepo();
+  writeBundleFile(root, 'areas/demo/overview.md', conceptText({
+    type: 'bee.area', id: 'demo-overview', title: 'Demo overview', description: 'Overview of the demo area',
+    extraBee: { areas: ['routing'], authoritative_for: 'demo-overview' },
+  }));
+  writeBundleFile(root, 'areas/demo/rules.md', conceptText({
+    type: 'bee.area', id: 'demo-rules', title: 'Demo rules', description: 'Rules of the demo area', lifecycle: 'draft',
+    extraBee: { areas: ['routing'], authoritative_for: 'demo-rules' },
+  }));
+  writeBundleFile(root, 'patterns/critical-one.md', conceptText({
+    id: 'critical-one', title: 'A critical pattern', description: 'Always in context',
+    extraBee: { critical: true },
+  }));
+  writeBundleFile(root, 'patterns/plain.md', conceptText({
+    id: 'plain-one', title: 'A plain pattern', description: 'Not critical',
+  }));
+  writeBundleFile(root, 'log.md', '# Log\n\n## 2026-07-22\n\n- Fixture bundle created.\n');
+  return root;
+}
+
+await check('CLI: knowledge index generates an index at every level with concepts (root included); two consecutive runs are byte-identical, LF-only (D21)', async () => {
+  const root = makeIndexFixture();
+  const first = await runBee(['knowledge', 'index', '--json'], root);
+  assert(first.status === 0, `first index run must exit 0, got ${first.status}: stdout=${first.stdout} stderr=${first.stderr}`);
+  const snapshot1 = collectIndexFiles(root);
+  const expected = ['areas/demo/index.md', 'areas/index.md', 'index.md', 'patterns/index.md'];
+  assert(JSON.stringify([...snapshot1.keys()].sort()) === JSON.stringify(expected), `expected exactly ${JSON.stringify(expected)}, got ${JSON.stringify([...snapshot1.keys()].sort())}`);
+  for (const [rel, content] of snapshot1) {
+    assert(!content.includes('\r'), `${rel}: generated index must be LF-only`);
+    assert(!/\d{2}:\d{2}:\d{2}/.test(content), `${rel}: generated index must carry no wall-clock value`);
+  }
+  const second = await runBee(['knowledge', 'index', '--json'], root);
+  assert(second.status === 0, `second index run must exit 0, got ${second.status}: ${second.stderr}`);
+  const snapshot2 = collectIndexFiles(root);
+  assert(snapshot2.size === snapshot1.size, `run 2 must generate the same file set, got ${JSON.stringify([...snapshot2.keys()])}`);
+  for (const [rel, content] of snapshot1) {
+    assert(snapshot2.get(rel) === content, `${rel}: two consecutive runs must be byte-identical`);
+  }
+});
+
+await check('CLI: index --check exits non-zero naming a doctored stale index; regeneration heals it (decisions render --check idiom)', async () => {
+  const root = makeIndexFixture();
+  const render = await runBee(['knowledge', 'index'], root);
+  assert(render.status === 0, `render must exit 0, got ${render.status}: ${render.stderr}`);
+  const fresh = await runBee(['knowledge', 'index', '--check', '--json'], root);
+  assert(fresh.status === 0, `--check on a fresh render must exit 0, got ${fresh.status}: ${fresh.stdout}`);
+  const doctored = path.join(bundleDir(root), 'areas', 'demo', 'index.md');
+  fs.appendFileSync(doctored, '\nHand-edited drift.\n', 'utf8');
+  const stale = await runBee(['knowledge', 'index', '--check'], root);
+  assert(stale.status !== 0, `--check over a doctored index must exit non-zero, got ${stale.status}: ${stale.stdout}`);
+  assert(/areas\/demo\/index\.md/.test(stale.stdout), `--check must NAME the stale file, got ${stale.stdout}`);
+  const heal = await runBee(['knowledge', 'index'], root);
+  assert(heal.status === 0, `regeneration must exit 0, got ${heal.status}: ${heal.stderr}`);
+  const healed = await runBee(['knowledge', 'index', '--check', '--json'], root);
+  assert(healed.status === 0, `--check after regeneration must exit 0 (healed), got ${healed.status}: ${healed.stdout}`);
+});
+
+await check('generated non-root indexes carry NO frontmatter — only the HTML provenance comment (D4/D21)', async () => {
+  const root = makeIndexFixture();
+  await runBee(['knowledge', 'index'], root);
+  for (const rel of ['areas/index.md', 'areas/demo/index.md', 'patterns/index.md']) {
+    const content = fs.readFileSync(path.join(bundleDir(root), rel), 'utf8');
+    const parsed = parseFrontmatter(content);
+    assert(parsed.ok === true && parsed.present === false, `${rel}: a non-root index must carry no frontmatter, got ${JSON.stringify(parsed)}`);
+    assert(content.startsWith('<!--'), `${rel}: must open with the HTML provenance comment, got ${JSON.stringify(content.slice(0, 40))}`);
+    assert(/GENERATED FILE — do not hand-edit/.test(content), `${rel}: provenance header must say GENERATED FILE — do not hand-edit`);
+    assert(/bee knowledge index/.test(content), `${rel}: provenance header must name the regenerate command`);
+  }
+});
+
+await check('generated root index keeps okf_version-only frontmatter + provenance comment, and the generated bundle passes knowledge check', async () => {
+  const root = makeIndexFixture();
+  await runBee(['knowledge', 'index'], root);
+  const content = fs.readFileSync(path.join(bundleDir(root), 'index.md'), 'utf8');
+  const parsed = parseFrontmatter(content);
+  assert(parsed.ok === true && parsed.present === true, `root index must carry frontmatter, got ${JSON.stringify(parsed)}`);
+  assert(JSON.stringify(Object.keys(parsed.data)) === JSON.stringify(['okf_version']), `root index frontmatter must carry ONLY okf_version, got ${JSON.stringify(parsed.data)}`);
+  assert(parsed.data.okf_version === '0.1', `okf_version must be "0.1", got ${JSON.stringify(parsed.data.okf_version)}`);
+  assert(/GENERATED FILE — do not hand-edit/.test(content), 'root index must carry the provenance comment');
+  const checkResult = await runBee(['knowledge', 'check', '--json'], root);
+  assert(checkResult.status === 0, `generated bundle must pass knowledge check, got ${checkResult.status}: ${checkResult.stdout}`);
+  const report = JSON.parse(checkResult.stdout);
+  assert(report.okf.errors.length === 0, `generated indexes must produce zero OKF errors, got ${JSON.stringify(report.okf.errors)}`);
+});
+
+await check('root index carries a "## Critical patterns" section listing exactly the bee.critical concepts (D21)', async () => {
+  const root = makeIndexFixture();
+  await runBee(['knowledge', 'index'], root);
+  const content = fs.readFileSync(path.join(bundleDir(root), 'index.md'), 'utf8');
+  const start = content.indexOf('## Critical patterns');
+  assert(start !== -1, `root index must carry a "## Critical patterns" section, got ${content}`);
+  const rest = content.slice(start + '## Critical patterns'.length);
+  const nextHeading = rest.indexOf('\n## ');
+  const section = nextHeading === -1 ? rest : rest.slice(0, nextHeading);
+  assert(/\(patterns\/critical-one\.md\)/.test(section), `critical section must link the critical concept, got ${section}`);
+  assert(/A critical pattern/.test(section), `critical section must carry the concept's title, got ${section}`);
+  assert(!/patterns\/plain\.md/.test(section), `a non-critical concept must NOT appear in the critical section, got ${section}`);
+});
+
+await check('empty bundle: knowledge index generates the root index only', async () => {
+  const root = makeRepo();
+  const result = await runBee(['knowledge', 'index', '--json'], root);
+  assert(result.status === 0, `index over an empty bundle must exit 0, got ${result.status}: ${result.stderr}`);
+  const files = collectIndexFiles(root);
+  assert(JSON.stringify([...files.keys()]) === JSON.stringify(['index.md']), `an empty bundle must generate the root index only, got ${JSON.stringify([...files.keys()])}`);
+  const checkResult = await runBee(['knowledge', 'check', '--json'], root);
+  assert(checkResult.status === 0, `the generated empty-bundle root index must pass check, got ${checkResult.status}: ${checkResult.stdout}`);
+});
+
+// ─── bee knowledge list (D15): rows, filters, never content ────────────────
+
+await check('CLI: knowledge list --json rows carry exactly path,id,type,lifecycle,title — never file content (D15)', async () => {
+  const root = makeIndexFixture();
+  const result = await runBee(['knowledge', 'list', '--json'], root);
+  assert(result.status === 0, `list must exit 0, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const report = JSON.parse(result.stdout);
+  assert(Array.isArray(report.concepts) && report.count === 4, `expected 4 concept rows, got ${result.stdout}`);
+  for (const row of report.concepts) {
+    assert(JSON.stringify(Object.keys(row).sort()) === JSON.stringify(['id', 'lifecycle', 'path', 'title', 'type']), `row keys must be exactly path,id,type,lifecycle,title — got ${JSON.stringify(row)}`);
+  }
+  const overview = report.concepts.find((r) => r.path === 'areas/demo/overview.md');
+  assert(overview && overview.id === 'demo-overview' && overview.type === 'bee.area' && overview.lifecycle === 'active' && overview.title === 'Demo overview', `overview row wrong: ${JSON.stringify(overview)}`);
+  assert(!result.stdout.includes('Body.'), `list output must never carry file content, got ${result.stdout}`);
+});
+
+await check('CLI: knowledge list filters --type/--lifecycle/--area narrow the rows (D15)', async () => {
+  const root = makeIndexFixture();
+  const byType = JSON.parse((await runBee(['knowledge', 'list', '--type', 'bee.area', '--json'], root)).stdout);
+  assert(byType.count === 2 && byType.concepts.every((r) => r.type === 'bee.area'), `--type bee.area must yield the 2 area rows, got ${JSON.stringify(byType)}`);
+  const byLifecycle = JSON.parse((await runBee(['knowledge', 'list', '--lifecycle', 'draft', '--json'], root)).stdout);
+  assert(byLifecycle.count === 1 && byLifecycle.concepts[0].id === 'demo-rules', `--lifecycle draft must yield only demo-rules, got ${JSON.stringify(byLifecycle)}`);
+  const byArea = JSON.parse((await runBee(['knowledge', 'list', '--area', 'routing', '--json'], root)).stdout);
+  assert(byArea.count === 2 && byArea.concepts.every((r) => r.path.startsWith('areas/demo/')), `--area routing must yield the 2 routing rows, got ${JSON.stringify(byArea)}`);
+  const combined = JSON.parse((await runBee(['knowledge', 'list', '--type', 'bee.area', '--lifecycle', 'active', '--json'], root)).stdout);
+  assert(combined.count === 1 && combined.concepts[0].id === 'demo-overview', `combined filters must intersect, got ${JSON.stringify(combined)}`);
+});
+
+await check('CLI: knowledge.index and knowledge.list appear in the bee --help --json manifest (test_bee_cli conformance)', async () => {
+  const result = await runBee(['--help', '--json'], makeRepo());
+  assert(result.status === 0, `--help --json must exit 0, got ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  for (const [name, invoke] of [['knowledge.index', 'bee knowledge index'], ['knowledge.list', 'bee knowledge list']]) {
+    const entry = manifest.commands.find((c) => c.name === name);
+    assert(entry, `manifest must carry ${name}`);
+    assert(entry.invoke === invoke, `${name}: invoke must be "${invoke}", got ${entry.invoke}`);
+    assert(Array.isArray(entry.examples) && entry.examples.length > 0, `${name}: entry must carry runnable examples`);
+    assert(entry.examples.every((e) => !e.includes('--strict')), `${name}: no --strict anywhere in examples`);
+  }
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed`);
