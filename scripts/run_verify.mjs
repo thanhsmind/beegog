@@ -99,6 +99,16 @@ const EXTRA_SUITES = [
   // A migration gate that exists but is not in the chain protects nothing after
   // its cell closes, so it lands here in the same commit as the stub.
   ["scripts/okf_migrate.mjs", "--check", "doctrine-layer"],
+  // f2-5 (F6/F9): decision-memory's own D35 coverage gate. 9 anchors (0 B / 9 R
+  // / 0 E / 0 P) derived from blob 2e8ec59 at 8710d03 with
+  // expected_counts.unparsed_blocks: 0 asserted — this source's nine rules,
+  // written `- **R1 — …**`, were derivable all along; the earlier "shapeless,
+  // 0 anchors" verdict was an artifact of a classifier the f2-4 widening fixed.
+  // One concept owns all nine (the source is one coherent topic at this size);
+  // the F12 drift telemetry stayed inside its band once the concept count
+  // matched the source's true size instead of splitting a 39-line spec by the
+  // heading list.
+  ["scripts/okf_migrate.mjs", "--check", "decision-memory"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

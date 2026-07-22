@@ -6,10 +6,8 @@ Deterministic: byte-identical for the same bundle contents — path-sorted entri
 never a generation timestamp or any other wall-clock value.
 -->
 
-# areas/
+# areas/decision-memory/
 
-## Sections
+## Concepts
 
-- [advisor-protocol/](advisor-protocol/index.md) — 4 concept(s)
-- [decision-memory/](decision-memory/index.md) — 1 concept(s)
-- [doctrine-layer/](doctrine-layer/index.md) — 7 concept(s)
+- [Decision Memory — what the system remembers about its own decisions](overview.md) — How a decision event is classified, reversed and reconciled against its citing artifacts, recalled through a derived index, kept bounded by an explicit archive, and honored by a backlog row's own done-flip rule — all one topic at this source's size.

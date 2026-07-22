@@ -213,24 +213,36 @@ export const PIN_REGISTRY = {
     note: "the 703-line flat dated pattern list as of okf-5, immediately before okf-6 (b0d495d) migrated it into docs/knowledge/patterns/",
   },
 
+  "decision-memory": {
+    kind: "area",
+    // The pin is HEAD at the moment f2-5 ran, taken BEFORE the stub replaced
+    // the content — same rule as doctrine-layer's pin: pin the parent, copy
+    // the bytes, hash both.
+    commit: "8710d03afa1d0253124fbbb081fde47ad5b3209e",
+    path: "docs/specs/decision-memory.md",
+    blob_sha: "2e8ec59cfa540827cc568cfefcb5f81bebe2d822",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      behaviors: 0,
+      rules: 9,
+      edges: 0,
+      pointers: 0,
+      total: 9,
+      // f2-4 widened the id forms and this area's nine rules — written
+      // `- **R1 — …**` — were derivable all along; "shapeless" was a verdict
+      // about the reader, not the file. Zero unparsed blocks: the cleanest
+      // area of the nine (no Behaviors/Edge Cases/Pointers sections exist in
+      // the source at all, and every Business Rules bullet is a numbered
+      // block start the classifier can already see).
+      unparsed_blocks: 0,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/decision-memory.md",
+    note: "the 39-line BA spec as of 8710d03 (f2-3), immediately before f2-5 turned it into a D37 pointer stub — nine business rules, no behaviors/edges/pointers sections",
+  },
+
   // ─── declared, not yet pinned (the migrating cell authors the pin) ────────
   // Listed — rather than merely absent — so the gate refuses them BY NAME with
   // a reason, instead of the generic "unknown area" shrug.
-  //
-  // f2-4 CORRECTED WHAT THIS LIST MEANS. It used to say both areas were
-  // "free-form prose" that "produced ZERO anchors". For worktree-parallelism
-  // that is still true and measured. For decision-memory it was never true:
-  // its nine rules are written `- **R1 — …**` and the narrow classifier simply
-  // could not see them. "Shapeless" was a verdict about the reader, not the
-  // file — the same lie the derived gate exists to prevent, one level up. It
-  // now derives 9 rules with ZERO unparsed blocks under `ba-nine-section`; all
-  // that is missing is its pin, which its own migration cell authors.
-  "decision-memory": {
-    kind: "area",
-    scheme: null,
-    refusal:
-      "decision-memory has no pin yet. It is NOT shapeless: since f2-4 widened the id forms it derives 9 `ba-nine-section` rules (R1-R9) with zero unparsed blocks — the earlier '0 anchors, needs a bespoke scheme' verdict was an artifact of a classifier that could not read `- **R1 — …**`. Authoring its {commit, path, blob_sha, expected_counts} pin belongs to its migration cell; until then, refusing is correct, because passing it 0/0 would be the exact lie this gate exists to prevent.",
-  },
   "worktree-parallelism": {
     kind: "area",
     scheme: null,

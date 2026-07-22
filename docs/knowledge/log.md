@@ -57,3 +57,22 @@
   median was being drawn across incomparable shapes — a `flat-pattern-list` migration is 1
   anchor per concept by construction, so pooling it with nine-section areas reported drift in
   already-shipped work no cell had touched. The median is now taken per pin `kind`.
+
+- Third area migrated, the cleanest of the nine (cell f2-5, feature `okf-migration-f2`, slice
+  S4a): `docs/specs/decision-memory.md` re-authored into a single `bee.area` concept,
+  `areas/decision-memory/overview.md`, owning all nine anchors. Ground truth is DERIVED (F8):
+  pin `{8710d03, docs/specs/decision-memory.md, blob 2e8ec59, ba-nine-section, 9 anchors
+  (0 B / 9 R / 0 E / 0 P), unparsed_blocks: 0}`, with the pre-migration source committed
+  verbatim at `docs/history/okf-migration-f2/sources/decision-memory.md`. This source had been
+  filed by an earlier blind sweep as "shapeless, 0 anchors" — it was never shapeless, its nine
+  `- **R1 — …**` rules were simply invisible to the pre-f2-4 classifier. Splitting the 39-line
+  source into topic concepts (as doctrine-layer's 386 lines warranted) drove F12's drift
+  telemetry outside its band the moment a third `area`-kind pin activated the running median: 4
+  concepts over 9 anchors read as both too few anchors per concept and too many concepts per
+  source line next to advisor-protocol and doctrine-layer's much larger sources. Consolidating
+  to one concept — genuinely the right shape at this size, not a fit to the metric — brought
+  both ratios back inside the [0.5x, 2x] band with content unchanged and fidelity at min/median/
+  max 1.000 (verbatim re-homing). Coverage is machine-checked by `scripts/okf_migrate.mjs --check
+  decision-memory` (D35), now a chain suite. `scripts/test_okf_pins.mjs`'s refusal assertions for
+  decision-memory were retired (it is no longer unscheme'd) and replaced with a pass assertion,
+  leaving worktree-parallelism as the sole remaining refused area.

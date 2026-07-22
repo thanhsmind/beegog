@@ -266,12 +266,12 @@ for (const [area, pin] of Object.entries(M.PIN_REGISTRY)) {
 }
 
 // ─── 11. an area with NO declared scheme is refused, never passed 0/0 ───────
+//
+// f2-5: decision-memory is no longer in this set — its migration cell
+// authored its pin (9 rules, 0 unparsed) — so only worktree-parallelism (still
+// genuinely undecided) is asserted refused here now.
 
 {
-  const r = await M.derivePinForArea("decision-memory");
-  ok(r.ok === false, "decision-memory (no declared anchor scheme) is REFUSED");
-  ok(codes(r).includes("PIN_NO_SCHEME"), "an undeclared scheme reports the typed code PIN_NO_SCHEME", codes(r));
-
   const r2 = await M.derivePinForArea("worktree-parallelism");
   ok(r2.ok === false, "worktree-parallelism (no declared anchor scheme) is REFUSED");
   ok(codes(r2).includes("PIN_NO_SCHEME"), "worktree-parallelism reports PIN_NO_SCHEME", codes(r2));
@@ -285,10 +285,12 @@ for (const [area, pin] of Object.entries(M.PIN_REGISTRY)) {
   ok(codes(r4).includes("PIN_UNKNOWN_SCHEME"), "an unknown scheme reports PIN_UNKNOWN_SCHEME", codes(r4));
 }
 
+// f2-5: decision-memory's own coverage gate now exits 0 — asserted alongside
+// the other two shipped areas in section "f2-3/f2-5 pin assertions" below.
 {
   const cli = runCli(["--check", "decision-memory"]);
-  ok(cli.code === 1, "`--check decision-memory` exits 1 rather than passing an unscheme'd area", `exit ${cli.code}`);
-  ok(/PIN_NO_SCHEME/.test(cli.err + cli.out), "`--check decision-memory` names PIN_NO_SCHEME", cli.err + cli.out);
+  ok(cli.code === 0, "`--check decision-memory` exits 0 now that its pin (9 rules, 0 unparsed) is authored", `exit ${cli.code}: ${cli.err}${cli.out}`);
+  ok(/^PASS okf_migrate --check decision-memory: /m.test(cli.out), "the chain PASS wording names decision-memory", cli.out);
 }
 
 // ─── 12. unparsed-block reporting makes format-blindness VISIBLE ────────────
