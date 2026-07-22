@@ -88,6 +88,19 @@ const MANDATORY_SUITES = [
   "scripts/test_okf_pins.mjs",
 ];
 
+// f2-3 (F6): a migration cell's coverage gate must be in the chain, and the
+// MANDATORY_SUITES pin above is an exact-PATH pin — "scripts/okf_migrate.mjs"
+// already protects the dispatcher from dropping out, but not any individual
+// `--check <area>` argument variant riding it. These are the argument variants
+// the chain must carry, checked verbatim against EXTRA_SUITES so that deleting
+// one area's gate while leaving another's is a loud failure instead of a
+// silent hole in coverage.
+export const MANDATORY_SUITE_ARGS = [
+  ["scripts/okf_migrate.mjs", "--check", "advisor-protocol"],
+  ["scripts/okf_migrate.mjs", "--check-patterns"],
+  ["scripts/okf_migrate.mjs", "--check", "doctrine-layer"],
+];
+
 // Floor count: total discovered suites must never silently drop below this
 // number. Frozen at the count run_verify.mjs actually discovered the moment
 // this guard flipped from hand-listing to convention-based discovery (cs-4,
@@ -98,7 +111,8 @@ const MANDATORY_SUITES = [
 // = 50. Bump this UP whenever a suite is intentionally added; it should
 // never need to go down.
 // f2-1b: +1 for scripts/test_okf_pins.mjs (the derived-pin honesty suite) = 51.
-const SUITE_FLOOR_COUNT = 51;
+// f2-3: +1 for the `okf_migrate --check doctrine-layer` coverage gate = 52.
+const SUITE_FLOOR_COUNT = 52;
 
 /**
  * Checks a discovered suite list against a mandatory list and a floor count.
@@ -126,6 +140,21 @@ function checkDiscovery(suitePaths, mandatory, floor) {
     missingOnDisk,
     missingFromSuites,
   };
+}
+
+/**
+ * The mandatory ARGUMENT VARIANTS missing from a discovered suite list.
+ * `suites` is the raw SUITES array (entries are string or string[]); each
+ * mandatory entry must appear as an exact, element-for-element match — a
+ * dispatcher path alone never satisfies it, which is the whole point.
+ */
+function missingArgVariants(suites, mandatoryArgs) {
+  const present = new Set(
+    (Array.isArray(suites) ? suites : []).map((entry) =>
+      JSON.stringify(Array.isArray(entry) ? entry : [entry]),
+    ),
+  );
+  return mandatoryArgs.filter((entry) => !present.has(JSON.stringify(entry)));
 }
 
 // ─── internal self-test: prove the checker actually bites, all three ways ─
@@ -166,11 +195,24 @@ function checkDiscovery(suitePaths, mandatory, floor) {
     selfTestFailed = true;
   }
 
+  // (d) argument variant: the dispatcher path IS present, but the specific
+  // `--check <area>` variant that carries one area's coverage gate is not.
+  // This is the hole the exact-PATH pin cannot see (f2-3).
+  const argVariantResult = missingArgVariants(
+    [["scripts/okf_migrate.mjs", "--check", "advisor-protocol"], "scripts/okf_migrate.mjs"],
+    [["scripts/okf_migrate.mjs", "--check", "doctrine-layer"]],
+  );
+  if (argVariantResult.length !== 1) {
+    console.error("FAIL test_verify_manifest: internal self-test did not catch a mandatory suite ARGUMENT VARIANT missing while its dispatcher path was present");
+    console.error(`      checker result: ${JSON.stringify(argVariantResult)}`);
+    selfTestFailed = true;
+  }
+
   if (selfTestFailed) {
     process.exit(1);
   }
 
-  console.log("PASS test_verify_manifest: internal self-test — checker correctly flags floor-count, membership, and on-disk-existence regressions");
+  console.log("PASS test_verify_manifest: internal self-test — checker correctly flags floor-count, membership, on-disk-existence, and argument-variant regressions");
 }
 
 // ─── real check: THIS repo's real .bee/config.json + run_verify.mjs ───────
@@ -236,4 +278,11 @@ if (!result.ok) {
   process.exit(1);
 }
 
-console.log(`PASS test_verify_manifest: run_verify.mjs discovered ${result.count} suites (floor ${SUITE_FLOOR_COUNT}); all ${MANDATORY_SUITES.length} mandatory suites present on disk and wired in, exact-path matched (${MANDATORY_SUITES.join(", ")})`);
+const missingArgs = missingArgVariants(suites, MANDATORY_SUITE_ARGS);
+if (missingArgs.length > 0) {
+  console.error(`FAIL test_verify_manifest: ${missingArgs.length} mandatory suite ARGUMENT VARIANT(s) are missing from run_verify.mjs's SUITES array: ${missingArgs.map((e) => e.join(" ")).join(" | ")}`);
+  console.error(`      a coverage gate whose dispatcher is pinned but whose own --check entry was dropped protects nothing (F6)`);
+  process.exit(1);
+}
+
+console.log(`PASS test_verify_manifest: run_verify.mjs discovered ${result.count} suites (floor ${SUITE_FLOOR_COUNT}); all ${MANDATORY_SUITES.length} mandatory suites present on disk and wired in, exact-path matched (${MANDATORY_SUITES.join(", ")}); all ${MANDATORY_SUITE_ARGS.length} mandatory argument variants wired in (${MANDATORY_SUITE_ARGS.map((e) => e.join(" ")).join(" | ")})`);

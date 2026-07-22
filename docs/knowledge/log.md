@@ -34,3 +34,26 @@
   "## Templates" section with three canonical worked examples (`bee.work-item`, `bee.plan`,
   `bee.delivery`) — round-trip proven by pasting the `bee.delivery` example into a temp bundle
   file and confirming `bee knowledge check` reported zero `not_canonical` before removing it.
+
+- Second area migrated, and the first under the honest derived gate (cell f2-3, feature
+  `okf-migration-f2`, slice S3): `docs/specs/doctrine-layer.md` re-authored into seven
+  `bee.area` concepts under `areas/doctrine-layer/` — `overview.md`,
+  `placement-and-anchoring.md`, `unenforced-obedience.md`, `delegation-threshold.md`,
+  `helper-classes-and-transports.md`, `native-wait-discipline.md`,
+  `lane-and-working-discipline.md` — split by **topic** (what each rule governs) rather than
+  by the BA template's headings, per the promoted surface-structure pattern. Frontmatter
+  carried per D33, emitted canonically. The legacy path is now a pointer stub carrying the
+  full 39-anchor map (D37: B1-B8 incl. B3a/B7a, R1-R17, E1-E5, P1-P7). Ground truth is
+  DERIVED, not hand-listed (F8): pin `{ed65720, docs/specs/doctrine-layer.md, blob 351bf72,
+  ba-nine-section, 39 anchors, unparsed_blocks: 2}`, with the pre-migration source committed
+  verbatim at `docs/history/okf-migration-f2/sources/doctrine-layer.md`. The two id-less block
+  starts the source really carries — a bold-lead continuation inside B8 and the unnumbered
+  verify-ladder bullet after R17 — are pinned as unparsed rather than invented into anchors
+  (D10); each still travels with the anchor whose block it sits in, so the F11 fidelity floor
+  measures it. Coverage is machine-checked by `scripts/okf_migrate.mjs --check doctrine-layer`
+  (D35), now a chain suite. Two gate defects surfaced and were closed in the same cell: the
+  stub-row parser and the `bee.sources` claim matcher had not been widened alongside f2-4's
+  letter-suffixed ids (so `B3a`/`B7a` could never be claimed by anything), and F12's drift
+  median was being drawn across incomparable shapes — a `flat-pattern-list` migration is 1
+  anchor per concept by construction, so pooling it with nine-section areas reported drift in
+  already-shipped work no cell had touched. The median is now taken per pin `kind`.

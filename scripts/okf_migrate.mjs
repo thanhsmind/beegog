@@ -172,6 +172,36 @@ export const PIN_REGISTRY = {
     source_copy: "docs/history/okf-migration-f2/sources/advisor-protocol.md",
     note: "the 202-line BA spec as of okf-4, immediately before okf-5 (a0ea0cc) turned it into a D37 pointer stub",
   },
+  "doctrine-layer": {
+    kind: "area",
+    // The pin is HEAD at the moment f2-3 ran, taken BEFORE the stub replaced
+    // the content — the same "the commit before the migrating commit" rule the
+    // two shipped pins follow, expressed the only way a cell can express it
+    // about its own commit: pin the parent, copy the bytes, hash both.
+    commit: "ed65720b726333ce6fafe5a9470e1d6c490e04c7",
+    path: "docs/specs/doctrine-layer.md",
+    blob_sha: "351bf72adc2c34f9f18d9f3612735a6c92efac02",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      behaviors: 10,
+      rules: 17,
+      edges: 5,
+      pointers: 7,
+      total: 39,
+      // NOT zero, and deliberately pinned at what it really is. Two block
+      // starts in this source carry no id and none is invented for them (D10):
+      // a bold-lead continuation line inside B8 (`**for unit execution** …`,
+      // L176) and the unnumbered `- **The verify ladder …**` bullet at L305.
+      // Both are unparsed for ID purposes and BOTH still travel with the
+      // anchor whose block they sit in — B8 and R17 respectively — so the
+      // fidelity floor measures them and no content is homeless. Asserting 2
+      // here is what makes a future classifier change that swallows or splits
+      // them a loud failure instead of a silent re-shaping.
+      unparsed_blocks: 2,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/doctrine-layer.md",
+    note: "the 386-line BA spec as of ed65720 (f2-4, the classifier widening), immediately before f2-3 turned it into a D37 pointer stub — the cleanest conforming area of the nine",
+  },
   "critical-patterns": {
     kind: "patterns",
     commit: "a0ea0cc40bf199192c40d425cdc11f50d4b943e5",
@@ -889,12 +919,17 @@ export function fidelityReport({ expected, texts, claims, bodies, floor = FIDELI
 /** Where an area's concepts live and how it cites its source. One place, so
  *  --check, --check-patterns, the fidelity floor and the telemetry can never
  *  disagree about what a given area's wiring is. */
+/** The claim-suffix form a nine-section area's anchors can take, kept in ONE
+ *  place so the extractor, the stub-row parser and the claim matcher can never
+ *  drift apart again (f2-3). `[a-z]?` is f2-4's letter suffix: B3a, B7a, R8a. */
+export const AREA_ANCHOR_PATTERN = "[A-Z]\\d+[a-z]?";
+
 export function wiringFor(area) {
   const pin = PIN_REGISTRY[area];
   if (pin?.kind === "patterns") {
     return { dir: PATTERNS_CONCEPT_DIR, source: PATTERNS_SOURCE, anchorPattern: "[A-Z]+\\d+" };
   }
-  return { dir: `docs/knowledge/areas/${area}`, source: `docs/specs/${area}.md`, anchorPattern: "[A-Z]\\d+" };
+  return { dir: `docs/knowledge/areas/${area}`, source: `docs/specs/${area}.md`, anchorPattern: AREA_ANCHOR_PATTERN };
 }
 
 function conceptFilesIn(dir) {
@@ -959,7 +994,18 @@ export async function areaFidelity(area) {
 // [0.5x, 2x] band. With fewer than three pinned areas there is no median worth
 // the name, so telemetry REPORTS and never fails — a two-sample "median" is a
 // coin flip, and a gate that fails on a coin flip teaches everyone to ignore
-// it. That is the repo's state today (2 gateable pins).
+// it.
+//
+// f2-3: THE MEDIAN IS TAKEN OVER COMPARABLE SHAPES ONLY. F12 says "the running
+// median of already-migrated AREAS", and the moment a third pin made a median
+// exist at all, the reason for that wording became measurable: critical-patterns
+// is a `flat-pattern-list` migration where one anchor IS one concept by
+// construction (okf-6), so its anchors_per_concept is pinned at 1.00 forever and
+// can never sit inside a band drawn around nine-section AREAS (5.57, 6.5). Left
+// pooled, the guard reported drift in already-shipped, already-reviewed work
+// that no cell had touched — and would have gone on reporting it whatever any
+// future migration did. Rows are still reported for every pinned source; only
+// the comparison population is restricted, to pins of the same `kind`.
 
 export const TELEMETRY_MIN_SAMPLES = 3;
 export const TELEMETRY_METRICS = ["anchors_per_concept", "concepts_per_100_source_lines"];
@@ -978,6 +1024,9 @@ export function collectTelemetry() {
     if (!concepts || !sourceLines) continue;
     rows.push({
       area,
+      // "area" | "patterns" — the comparability key (f2-3). Shape ratios are
+      // only meaningful against migrations of the same shape.
+      kind: pin.kind || "area",
       anchors: derived.counts.total,
       concepts,
       source_lines: sourceLines,
@@ -1081,7 +1130,15 @@ export function parseStubAnchorMap(text) {
   const map = new Map();
   const issues = [];
   for (const line of text.split("\n")) {
-    const row = /^\|\s*`?([A-Z]+\d+)`?\s*\|\s*(.+?)\s*\|\s*$/.exec(line);
+    // `[a-z]?` (f2-3): f2-4 widened the EXTRACTOR to the letter-suffixed id
+    // form (B3a, B7a, R8a) but not the two readers that have to agree with it
+    // — this row parser and the bee.sources claim matcher below. Left narrow,
+    // a derived `B3a` could never be matched by any stub row or any concept
+    // claim, so the gate would report it LOST no matter how faithfully it had
+    // been migrated: an unsatisfiable red, which is just the format-blindness
+    // defect wearing the opposite sign. Strict no-op on both shipped pins
+    // (advisor-protocol carries no suffixed id; `PAT1`..`PAT47` are unchanged).
+    const row = /^\|\s*`?([A-Z]+\d+[a-z]?)`?\s*\|\s*(.+?)\s*\|\s*$/.exec(line);
     if (!row) continue;
     const anchor = row[1];
     const cell = row[2];
@@ -1196,11 +1253,13 @@ async function runGuards(area, claims, bodies, derived) {
 
   const telemetry = collectTelemetry();
   const current = telemetry.find((r) => r.area === area) || null;
+  // Same-shape comparison only (f2-3) — see the F12 header note.
+  const comparable = current ? telemetry.filter((r) => r.kind === current.kind) : [];
   const telemetryNote =
-    telemetry.length < TELEMETRY_MIN_SAMPLES
-      ? `${telemetry.length} pinned area(s) — fewer than ${TELEMETRY_MIN_SAMPLES}, so there is no running median yet and telemetry REPORTS ONLY (never fails)`
-      : `running median across ${telemetry.length} pinned areas; outlier band [0.5x, 2x]`;
-  issues.push(...telemetryIssues({ current, samples: telemetry }));
+    comparable.length < TELEMETRY_MIN_SAMPLES
+      ? `${comparable.length} pinned "${current ? current.kind : "?"}"-shaped source(s) of ${telemetry.length} pinned in total — fewer than ${TELEMETRY_MIN_SAMPLES} comparable samples, so there is no running median yet and telemetry REPORTS ONLY (never fails)`
+      : `running median across ${comparable.length} pinned "${current.kind}"-shaped sources; outlier band [0.5x, 2x]`;
+  issues.push(...telemetryIssues({ current, samples: comparable }));
 
   issues.push(...runBundleInvariants().issues);
 
@@ -1246,11 +1305,10 @@ export async function runCheck(area) {
     stubMap = parsedStub.map;
     issues.push(...parsedStub.issues);
   }
-  const { claims, issues: claimIssues } = await collectClaims({
-    dir: `docs/knowledge/areas/${area}`,
-    source: `docs/specs/${area}.md`,
-    anchorPattern: "[A-Z]\\d+",
-  });
+  // wiringFor is the single source of the dir/source/anchor-pattern triple —
+  // re-stating it here is exactly how the claim matcher fell a widening behind
+  // the extractor (f2-3).
+  const { claims, issues: claimIssues } = await collectClaims(wiringFor(area));
   issues.push(...claimIssues);
 
   const cov = coverageIssues({
@@ -1482,7 +1540,15 @@ async function main() {
         {
           pinned_areas: rows.length,
           min_samples_for_a_median: TELEMETRY_MIN_SAMPLES,
-          median_available: rows.length >= TELEMETRY_MIN_SAMPLES,
+          // Per shape, not overall (f2-3): a median is only drawn across pins
+          // of the same `kind`, so this reports which shapes have enough
+          // comparable samples to gate on rather than one global boolean.
+          median_available_by_kind: Object.fromEntries(
+            [...new Set(rows.map((r) => r.kind))].map((kind) => [
+              kind,
+              rows.filter((r) => r.kind === kind).length >= TELEMETRY_MIN_SAMPLES,
+            ]),
+          ),
           rows,
           bundle_issues: bundle.issues,
         },

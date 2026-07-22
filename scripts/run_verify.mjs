@@ -91,6 +91,14 @@ const EXTRA_SUITES = [
   // the BA-spec B*/R*/E*/P* shape (critical-patterns.md is a flat dated
   // pattern list, not a nine-section BA spec). Binary check; no --strict.
   ["scripts/okf_migrate.mjs", "--check-patterns"],
+  // f2-3 (F6): doctrine-layer's own D35 coverage gate — the first area migrated
+  // under the honest, derived, self-reporting pin. 39 anchors {B10, R17, E5, P7}
+  // derived from blob 351bf72 at ed65720 with expected_counts.unparsed_blocks: 2
+  // asserted, so the two id-less block starts this source really carries stay
+  // VISIBLE instead of being invented into anchors (D10) or silently dropped.
+  // A migration gate that exists but is not in the chain protects nothing after
+  // its cell closes, so it lands here in the same commit as the stub.
+  ["scripts/okf_migrate.mjs", "--check", "doctrine-layer"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

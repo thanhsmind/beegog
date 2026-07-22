@@ -20,6 +20,7 @@ its pinned hash is refused too.
 |---|---|---|---|---|
 | `advisor-protocol.md` | `19c0e50` (okf-4, the commit before `a0ea0cc` stubbed it) | `f3f1231…` | `ba-nine-section` | 26 (4 B / 9 R / 6 E / 7 P) |
 | `critical-patterns.md` | `a0ea0cc` (okf-5, the commit before `b0d495d` migrated it) | `2bf1120…` | `flat-pattern-list` | 47 (PAT1–PAT47) |
+| `doctrine-layer.md` | `ed65720` (f2-4, the commit before f2-3 stubbed it) | `351bf72…` | `ba-nine-section` | 39 (10 B / 17 R / 5 E / 7 P), 2 unparsed blocks |
 
 Re-derive and re-assert every pin at any time:
 

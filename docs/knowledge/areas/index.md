@@ -11,3 +11,4 @@ never a generation timestamp or any other wall-clock value.
 ## Sections
 
 - [advisor-protocol/](advisor-protocol/index.md) — 4 concept(s)
+- [doctrine-layer/](doctrine-layer/index.md) — 7 concept(s)

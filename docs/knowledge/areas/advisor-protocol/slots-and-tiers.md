@@ -111,7 +111,8 @@ bee:
   member. Canary rows: `hooks/test_model_guard.mjs` rows 21-22.
 - **P5 —** Resolution: `resolveAdvisor` (state.mjs); external gather contract:
   `skills/bee-hive/references/routing-and-contracts.md` (cli gather branch)
-  and `docs/specs/doctrine-layer.md` B8/R12.
+  and `docs/knowledge/areas/doctrine-layer/helper-classes-and-transports.md`
+  B8/R12.
 - **P7 —** Native-override transport (config shape, capability probe, dispatch
   prepare's native branch): capability classification and the doctor unlock
   row are specced in `docs/specs/hook-runtime.md`; the resolver's native leaf

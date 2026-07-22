@@ -1,0 +1,47 @@
+---
+type: bee.area
+title: Doctrine Layer — unenforced obedience and the human boundary
+description: "The rules with no runtime behind them: obey where no guard covers the action, amend doctrine even when the phase gate is shut, run the machinery yourself, and keep its vocabulary out of the conversation."
+timestamp: 2026-07-21
+bee:
+  id: doctrine-layer-unenforced-obedience
+  lifecycle: active
+  areas: [doctrine-layer]
+  required_context: [areas/doctrine-layer/overview.md]
+  decisions: [c2c46488 (an unblocked write is not an approved write), 1689af1b (silent bookkeeping)]
+  sources: ["terminal-phase-gate (cell tpg-2, 2026-07-13)", "docs/specs/doctrine-layer.md#B5", "docs/specs/doctrine-layer.md#R6", "docs/specs/doctrine-layer.md#R7", "docs/specs/doctrine-layer.md#R8", "docs/specs/doctrine-layer.md#E3"]
+  authoritative_for: "doctrine-layer: unenforced obedience and the human boundary"
+---
+
+# Doctrine Layer — Unenforced Obedience and the Human Boundary
+
+Doctrine has no runtime: nothing *executes* these rules, so nothing fails loudly
+when one is broken. Each rule here is observed only by the human — obedience
+where no automated guard covers the action, a layer that stays amendable when
+every source gate is shut, and the two rules about who runs the machinery and
+whose words the conversation is held in.
+
+## Behaviors & Operations
+
+**B5 — Doctrine binds the assistant even where no mechanism enforces it.**
+Trigger: an action doctrine forbids, in a project or runtime where no automated
+guard covers that action. What happens: the assistant obeys anyway. What each
+actor observes: nothing — which is the point. A guard's silence is not an
+approval, and a gap in a guard is not a gap in the rules; treating the guard as
+the authority makes the guard's coverage the real protocol and quietly deletes
+every rule it fails to cover (decision c2c46488).
+
+## Business Rules
+
+- **R6** — An unblocked action is not an approved action. Automated guards catch
+  what the assistant forgets; their silence grants nothing (c2c46488).
+- **R7** — The workflow's own machinery is run by the assistant, never handed to
+  the human. The human's only actions are approvals, decisions, and permissions.
+- **R8** — The workflow's internal vocabulary stays out of the conversation. The
+  human hears the work in their own terms; the machinery runs silently (1689af1b).
+
+## Edge Cases Settled
+
+- **Doctrine is not gated.** Amending the standing sheet is knowledge work, and
+  knowledge locations stay writable in every phase, including the terminal ones
+  where source edits are shut (hook-runtime B12).

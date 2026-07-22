@@ -21,14 +21,23 @@ Where things live. Read the touched area's spec before its code.
   catalog of record rendered into per-runtime projections, hostile-input immunity, advisory
   encoding, per-target batch-write guarding, three declared runtime differences, paired Codex
   child lifecycle audit, exclusive source ownership, and named coverage gaps (`coverage: partial`).
-- [`doctrine-layer.md`](./doctrine-layer.md) — the standing instructions an assistant always
-  carries: what belongs on the always-loaded sheet versus a stage's procedure reference (a rule
-  needed when no stage is running is silently absent from every such turn if buried in a
-  reference), how doctrine reaches every project by copy, the delegation threshold
-  (gather delegates, deciding never does), the lane-ceremony contract (work-packet-first
-  tiny/small shapes, product-file-only caps, test-anchored risk flags, intake-first
-  classification), and the anchor tests that keep a rule from drifting back out of the
-  layer (`coverage: partial`).
+- [`docs/knowledge/areas/doctrine-layer/`](../knowledge/areas/doctrine-layer/index.md) — the
+  standing instructions an assistant always carries, migrated into the knowledge bundle
+  (okf-foundation D20/D29): purpose, vocabulary, actors and open gaps (`overview.md`); what
+  belongs on the always-loaded sheet versus a stage's procedure reference — a rule needed when
+  no stage is running is silently absent from every such turn if buried in a reference — how
+  doctrine reaches every project by copy, and the anchor tests that keep a rule from drifting
+  back out of the layer (`placement-and-anchoring.md`); the rules with nothing enforcing them —
+  an unblocked action is not an approved action, doctrine is not gated, the machinery is run by
+  the assistant, its vocabulary stays out of the conversation (`unenforced-obedience.md`); the
+  delegation threshold, gather delegates and deciding never does (`delegation-threshold.md`);
+  the two helper classes, the read-only capability surface and the gather-only external-command
+  tier (`helper-classes-and-transports.md`); the native Codex empty-wait discipline
+  (`native-wait-discipline.md`); the lane-ceremony contract — work-packet-first tiny/small
+  shapes, product-file-only caps, test-anchored risk flags, intake-first classification — plus
+  the one canonical scratch home and the verify ladder (`lane-and-working-discipline.md`). The
+  legacy path [`doctrine-layer.md`](./doctrine-layer.md) remains as a pointer stub carrying the
+  full 39-anchor map (D37).
 - [`docs/knowledge/areas/advisor-protocol/`](../knowledge/areas/advisor-protocol/index.md) —
   second opinions for workers and the orchestrator, migrated into the knowledge bundle
   (okf-foundation D20/D29): purpose, vocabulary, and actors (`overview.md`); who may consult
@@ -89,7 +98,8 @@ Where things live. Read the touched area's spec before its code.
   hive law 11 (`skills/bee-hive/SKILL.md`) and host critical rule 11 (`templates/AGENTS.block.md`).
   The *placement* rule behind every such mirror — always-applies doctrine belongs in
   `AGENTS.block.md`, a stage's own procedure detail may stay in `references/` — is specced in
-  `doctrine-layer.md` (R1/B2); read it before authoring or relocating any rule.
+  `docs/knowledge/areas/doctrine-layer/placement-and-anchoring.md` (R1/B2); read it before
+  authoring or relocating any rule.
 - `docs/history/learnings/critical-patterns.md` — mandatory pre-work rules for agents.
 - `docs/history/<feature>/` — how a feature was decided, planned, validated, reviewed, and shipped.
 - `docs/decisions/` — numbered design decisions. `.bee/decisions.jsonl` — the live decision log.
