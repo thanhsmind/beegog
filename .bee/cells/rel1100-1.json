@@ -23,20 +23,37 @@
     "package.json"
   ],
   "deps": [],
-  "status": "claimed",
+  "status": "capped",
   "decisions": [],
   "trace": {
     "worker": "orch",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "bee 1.10.0 released: tag on 84287d9, exact-tag CI green both platforms first try",
+    "files_changed": [
+      "package.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-22T00:11:49.825Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
+    "verify_output": "ledger + manifest clean pre-tag; local PASS 60 suites x3; exact-tag CI on 84287d9: Linux run 29879403692 success, Windows run 29879403747 success — green on the FIRST attempt, no tag re-point needed",
+    "verify_passed": true,
     "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
-    "claimed_at": "2026-07-22T00:06:04.205Z"
+    "claimed_at": "2026-07-22T00:06:04.205Z",
+    "verify_command": "ledger_parity --check; release_manifest --check; run_verify x3; exact-tag CI both workflows",
+    "verified_at": "2026-07-22T00:11:49.765Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-22T00:11:49.765Z",
+        "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+        "claimed_at": "2026-07-22T00:11:31.748Z",
+        "acquired_at": "2026-07-22T00:06:04.204Z",
+        "worker": "orch",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }
