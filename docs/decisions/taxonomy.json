@@ -162,5 +162,7 @@
       "description": "Worktree parallelism"
     }
   ],
-  "candidates": []
+  "candidates": [
+    "verify"
+  ]
 }
