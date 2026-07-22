@@ -31,8 +31,12 @@
       "sha256": "7f9acb5d91c5ff86cc976f6b885282742fb7dbef8c37e85fe809709117c8fd65"
     },
     {
+      "name": "bee-herding",
+      "sha256": "82cd8797bf99e22f1b2d8a40635a72ad233b59f69503adc129fb3badeb996e59"
+    },
+    {
       "name": "bee-hive",
-      "sha256": "009a7893cd2067dc29db1d76122dbc1bf3038d2b18ab6f5f13af11d3523de3f4"
+      "sha256": "5f3c4d28edfd4129399b5a18a6d5a295f98a7075bd618476547483a64fbd270d"
     },
     {
       "name": "bee-planning",
