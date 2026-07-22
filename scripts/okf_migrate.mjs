@@ -79,8 +79,37 @@
 //   --check-patterns         The same coverage law for critical-patterns.md's
 //                            migration into docs/knowledge/patterns/ (okf-6),
 //                            against the flat-pattern-list scheme.
+//   --fidelity <area>        The F11 per-anchor overlap table for one area.
+//                            Diagnostic view of a guard --check already runs.
+//   --telemetry              The F12 shape ratios for every pinned area, plus
+//                            the whole-bundle invariants.
 //
 // No --strict flag exists here on purpose: the check is already binary.
+//
+// ─── what f2-2 added (F11/F12, and the f2-1b judge's residual gap) ──────────
+//
+// f2-1b made the ground truth DERIVED. That closes "was this anchor claimed?"
+// but not "was it actually carried across?" — a concept that summarises its
+// anchor into one sentence still satisfies every count, which is precisely the
+// degradation mode of a long serial re-authoring run. Three additions:
+//
+//   F11 FIDELITY FLOOR. Every anchor's text in the pinned blob must survive in
+//       the body of the concept that claims it, at >= 0.60 normalized token
+//       overlap. Below the floor names the anchor, its owner, the ratio, and
+//       the missing tokens. The tuning rule is inverted from the usual
+//       instinct and is enforced by the suite: both shipped areas clear it
+//       UNEDITED — a failure means the NORMALIZATION is wrong, never the
+//       migrated content, and never the threshold.
+//   F12 DRIFT TELEMETRY. Per area, anchors_per_concept and
+//       concepts_per_100_source_lines, compared against the running median of
+//       the pinned areas outside a [0.5x, 2x] band. Fewer than three pinned
+//       areas is no median at all, so it reports and never fails. Plus the
+//       whole-bundle invariants — authority uniqueness, zero not_canonical,
+//       index freshness — on EVERY check.
+//   MANDATORY unparsed_blocks. A pin omitting expected_counts.unparsed_blocks
+//       is PIN_INCOMPLETE. `total` only asserts the counts still add up;
+//       unparsed_blocks is what asserts the extractor still SEES the same
+//       shape, and opting out of that guard silently was still possible.
 
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -347,6 +376,18 @@ export function inventorySpec(text) {
   const unparsed = emptyUnparsed();
   let lineNo = 0;
 
+  // f2-2 (F11): the anchor's own BYTES, not only its id. An anchor's text runs
+  // from its block-starting line up to the next block start or the next `##`
+  // heading, so wrapped continuation prose and nested bullets travel with the
+  // anchor they belong to. Ids alone can only prove an anchor was CLAIMED; the
+  // text is what makes "was it actually carried across?" a measurable question.
+  const texts = new Map();
+  let current = null;
+  const openAnchor = (id) => {
+    current = [];
+    texts.set(id, current);
+  };
+
   for (const line of lines) {
     lineNo += 1;
     const heading = /^##\s+(.*)$/.exec(line);
@@ -356,6 +397,7 @@ export function inventorySpec(text) {
       else if (h.startsWith("pointers")) section = "pointers";
       else section = null;
       anchorSection = baSectionOf(heading[1]);
+      current = null;
       continue;
     }
 
@@ -363,24 +405,33 @@ export function inventorySpec(text) {
     const bold = /^\*\*(B\d+)\s+—/.exec(line);
     if (bold) {
       behaviors.push(bold[1]);
+      openAnchor(bold[1]);
       classified = true;
     } else {
       const rule = /^-\s+(R\d+)\s+—/.exec(line);
       if (rule) {
         rules.push(rule[1]);
+        openAnchor(rule[1]);
         classified = true;
       } else if (/^-\s+/.test(line)) {
         if (section === "edges") {
           edgeBullets += 1;
+          openAnchor(`E${edgeBullets}`);
           classified = true;
         } else if (section === "pointers") {
           pointerBullets += 1;
+          openAnchor(`P${pointerBullets}`);
           classified = true;
         }
       }
     }
 
-    if (classified || !anchorSection) continue;
+    if (classified) {
+      current.push(line);
+      continue;
+    }
+    if (current && anchorSection) current.push(line);
+    if (!anchorSection) continue;
     if (!line.trim()) continue;
     if (/^#/.test(line)) continue; // structural sub-headings, not content
 
@@ -403,6 +454,7 @@ export function inventorySpec(text) {
     edges,
     pointers,
     all: [...behaviors, ...rules, ...edges, ...pointers],
+    texts: new Map([...texts].map(([id, buf]) => [id, buf.join("\n").trim()])),
     unparsed,
   };
 }
@@ -423,19 +475,25 @@ export function inventoryPatterns(text) {
   };
   let lineNo = 0;
   let seenFirst = false;
+  const texts = new Map();
+  let current = null;
   for (const line of text.split("\n")) {
     lineNo += 1;
     if (headingRe.test(line)) {
       n += 1;
       seenFirst = true;
+      current = [line];
+      texts.set(`PAT${n}`, current);
       continue;
     }
     if (anyH2Re.test(line)) {
+      current = null;
       unparsed.blocks.headings += 1;
       unparsed.blocks.total += 1;
       if (unparsed.samples.length < 12) unparsed.samples.push(`L${lineNo}: ${line.trim().slice(0, 100)}`);
       continue;
     }
+    if (current) current.push(line);
     if (!seenFirst) continue; // front matter / document title, before any pattern
     if (/^#/.test(line)) continue;
     if (!line.trim()) continue;
@@ -443,7 +501,12 @@ export function inventoryPatterns(text) {
     unparsed.lines.total += 1;
   }
   const all = Array.from({ length: n }, (_, i) => `PAT${i + 1}`);
-  return { patterns: all, all, unparsed };
+  return {
+    patterns: all,
+    all,
+    texts: new Map([...texts].map(([id, buf]) => [id, buf.join("\n").trim()])),
+    unparsed,
+  };
 }
 
 export const SCHEMES = {
@@ -531,6 +594,20 @@ export function derivePin(pin, label = "<pin>") {
   if (typeof pin.expected_counts?.total !== "number") {
     return fail(issue("PIN_INCOMPLETE", `"${label}" declares no expected_counts.total — a pin that expects nothing proves nothing`));
   }
+  // f2-2: unparsed_blocks is MANDATORY, closing the f2-1b judge's residual
+  // gap. `total` alone only asserts that the counts still add up; it is
+  // unparsed_blocks that asserts the extractor still SEES the same shape. A
+  // pin omitting it opts out of the format-blindness guard silently — exactly
+  // the "absence read as a pass" this file exists to prevent — so omission is
+  // a refusal, not a default.
+  if (typeof pin.expected_counts.unparsed_blocks !== "number") {
+    return fail(
+      issue(
+        "PIN_INCOMPLETE",
+        `"${label}" declares no expected_counts.unparsed_blocks — a pin that does not assert how much of its source the extractor could NOT classify cannot detect format-blindness, and silently opting out of that guard is the failure this gate exists to prevent (f2-2). Declare it, even when it is 0`,
+      ),
+    );
+  }
 
   const resolved = resolvePinnedSource(pin);
   if (!resolved.ok) return fail(...resolved.issues);
@@ -609,6 +686,334 @@ export function derivePinForArea(area) {
 function reportPinFailure(label, result) {
   console.error(`FAIL okf_migrate pin ${label}: ${result.issues.length} problem(s) — the derived ground truth is NOT trustworthy`);
   for (const i of result.issues) console.error(`  - ${i.code}: ${i.message}`);
+}
+
+// ─── F11: the per-anchor fidelity floor ─────────────────────────────────────
+//
+// Set-equality answers "was this anchor CLAIMED by exactly one concept?". It
+// cannot answer "was the anchor actually CARRIED ACROSS?" — a concept that
+// summarises its anchor into a sentence still satisfies every count. That is
+// the degradation mode of a long serial re-authoring run: anchor-shaped
+// compliance. F11 makes it mechanically detectable without a judge.
+//
+// For each anchor: normalized token overlap between the anchor's text in the
+// PINNED BLOB and the body of the concept that claims it.
+//
+//   overlap = |anchor_tokens ∩ concept_tokens| / |anchor_tokens|
+//
+// The denominator is the ANCHOR, never the concept: a concept is free to be
+// longer, better organised, or to merge several anchors — it is not free to
+// drop the anchor's content.
+//
+// ─── the tuning rule, which is inverted from the usual instinct ─────────────
+//
+// advisor-protocol's 26 anchors and critical-patterns' 47 must ALL clear this
+// floor with ZERO edits to their concepts. If one fails, the NORMALIZATION is
+// wrong — never the migrated content, never the threshold. Both are asserted
+// in scripts/test_okf_pins.mjs, which also asserts that the MEDIAN sits well
+// clear of the floor: a median barely above 0.60 would itself mean the
+// normalization had become too strict and the floor was measuring the metric
+// rather than the migration. Measured as shipped:
+//
+//   advisor-protocol   n=26  min 0.977  median 1.000  max 1.000
+//   critical-patterns  n=47  min 0.771  median 0.900  max 0.955
+export const FIDELITY_FLOOR = 0.6;
+
+// Deliberately small: articles, prepositions, conjunctions, pronouns and
+// auxiliaries only. Every dropped word makes the metric STRICTER (it removes
+// a cheap hit from the anchor's denominator), so this list is kept to words
+// that carry no domain meaning. Modal/negation words — never, always, must,
+// only, refuses — are NOT stopwords: in this repo they are the content.
+export const FIDELITY_STOPWORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "been", "being", "but", "by", "did", "do", "does",
+  "for", "from", "had", "has", "have", "he", "her", "here", "hers", "him", "his", "how", "i",
+  "in", "into", "is", "it", "its", "me", "my", "of", "on", "onto", "or", "our", "ours", "out",
+  "she", "so", "than", "that", "the", "their", "theirs", "them", "then", "there", "these",
+  "they", "this", "those", "to", "up", "us", "was", "we", "were", "what", "when", "where",
+  "which", "who", "whom", "with", "you", "your", "yours",
+]);
+
+/**
+ * lowercase → strip markdown emphasis, backticks and all punctuation → split
+ * on whitespace → drop one-character tokens and the stopword set → dedupe.
+ *
+ * Collapsing every non-alphanumeric run to a space is what makes the two
+ * sides comparable at all: `--runtime`, "read-only", `docs/specs/x.md` and
+ * **bold** all normalize identically whether the source hyphenated, quoted,
+ * backticked or bolded them, so a concept is never punished for reformatting
+ * what it faithfully kept.
+ */
+export function normalizeTokens(text) {
+  const tokens = new Set();
+  for (const raw of String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ")) {
+    if (raw.length < 2) continue; // single characters are noise, never content
+    if (FIDELITY_STOPWORDS.has(raw)) continue;
+    tokens.add(raw);
+  }
+  return tokens;
+}
+
+/** Fraction of the ANCHOR's normalized tokens that survive in the concept.
+ *  An anchor with no meaningful tokens at all scores 1 — there is nothing to
+ *  lose, and a divide-by-zero must never read as a failure. */
+export function tokenOverlap(anchorText, conceptText) {
+  const anchor = normalizeTokens(anchorText);
+  if (anchor.size === 0) return 1;
+  const concept = normalizeTokens(conceptText);
+  let hit = 0;
+  for (const token of anchor) if (concept.has(token)) hit += 1;
+  return hit / anchor.size;
+}
+
+export function medianOf(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Pure: measure every expected anchor against its owning concept's body.
+ *
+ *   expected  anchor ids (the derived ground truth)
+ *   texts     Map anchor -> the anchor's text in the pinned blob
+ *   claims    Map anchor -> [owner path, ...] (collectClaims' shape)
+ *   bodies    Map owner path -> that concept's body text
+ *
+ * Anchors with no owner, or with more than one, are NOT reported here — that
+ * is coverageIssues' job, and reporting them twice would bury the fidelity
+ * signal under duplicates of a failure already named.
+ */
+export function fidelityReport({ expected, texts, claims, bodies, floor = FIDELITY_FLOOR }) {
+  const get = (map, key) => (map instanceof Map ? map.get(key) : map?.[key]);
+  const rows = [];
+  const issues = [];
+  for (const anchor of expected) {
+    const ownersRaw = get(claims, anchor);
+    const owners = Array.isArray(ownersRaw) ? ownersRaw : ownersRaw ? [ownersRaw] : [];
+    if (owners.length !== 1) continue;
+    const owner = owners[0];
+    const anchorText = get(texts, anchor);
+    const body = get(bodies, owner);
+    if (typeof anchorText !== "string") {
+      issues.push(
+        `FIDELITY UNMEASURABLE: ${anchor} has no extracted text from the pinned blob — the extractor produced an id it cannot show the bytes for (F11)`,
+      );
+      continue;
+    }
+    if (typeof body !== "string") {
+      issues.push(`FIDELITY UNMEASURABLE: ${anchor}'s owner "${owner}" could not be read (F11)`);
+      continue;
+    }
+    const anchorTokens = normalizeTokens(anchorText);
+    const conceptTokens = normalizeTokens(body);
+    const missing = [...anchorTokens].filter((t) => !conceptTokens.has(t));
+    const ratio = anchorTokens.size === 0 ? 1 : (anchorTokens.size - missing.length) / anchorTokens.size;
+    rows.push({ anchor, owner, ratio, anchor_tokens: anchorTokens.size, missing_tokens: missing.length, missing });
+    if (ratio < floor) {
+      issues.push(
+        `FIDELITY BELOW FLOOR: ${anchor} (owner ${owner}) retains ${ratio.toFixed(3)} normalized token overlap with its text in the pinned blob — the floor is ${floor.toFixed(2)} (F11). ` +
+          `${missing.length} of ${anchorTokens.size} anchor tokens are absent from the owning concept: ${missing.slice(0, 15).join(", ")}${missing.length > 15 ? ", …" : ""}. ` +
+          `The anchor was summarised away, not migrated — restore the content; never lower the floor`,
+      );
+    }
+  }
+  const ratios = rows.map((r) => r.ratio);
+  return {
+    issues,
+    rows,
+    stats: {
+      n: rows.length,
+      min: ratios.length ? Math.min(...ratios) : null,
+      median: medianOf(ratios),
+      max: ratios.length ? Math.max(...ratios) : null,
+      floor,
+    },
+  };
+}
+
+/** Where an area's concepts live and how it cites its source. One place, so
+ *  --check, --check-patterns, the fidelity floor and the telemetry can never
+ *  disagree about what a given area's wiring is. */
+export function wiringFor(area) {
+  const pin = PIN_REGISTRY[area];
+  if (pin?.kind === "patterns") {
+    return { dir: PATTERNS_CONCEPT_DIR, source: PATTERNS_SOURCE, anchorPattern: "[A-Z]+\\d+" };
+  }
+  return { dir: `docs/knowledge/areas/${area}`, source: `docs/specs/${area}.md`, anchorPattern: "[A-Z]\\d+" };
+}
+
+function conceptFilesIn(dir) {
+  const abs = path.join(REPO_ROOT, ...dir.split("/"));
+  if (!fs.existsSync(abs)) return [];
+  return fs
+    .readdirSync(abs)
+    .filter((n) => n.endsWith(".md") && n !== "index.md" && n !== "log.md")
+    .sort();
+}
+
+async function readConceptBodies(dir, owners) {
+  const knowledge = await import(
+    pathToFileURL(path.join(REPO_ROOT, ".bee", "bin", "lib", "knowledge.mjs")).href
+  );
+  const bodies = new Map();
+  for (const owner of new Set(owners)) {
+    const abs = path.join(REPO_ROOT, ...owner.split("/"));
+    if (!fs.existsSync(abs)) continue;
+    const raw = fs.readFileSync(abs, "utf8");
+    const parsed = knowledge.parseFrontmatter(raw);
+    // The BODY only — frontmatter would smuggle the anchor id itself and the
+    // source citation into the token pool, letting a stub score above the
+    // floor on its own bookkeeping.
+    bodies.set(owner, parsed.ok && parsed.present ? parsed.body : raw);
+  }
+  return bodies;
+}
+
+/** The F11 floor for one registered area, end to end: derive the pin, collect
+ *  the claims, read the owning bodies, measure. */
+export async function areaFidelity(area) {
+  const derived = derivePinForArea(area);
+  if (!derived.ok) {
+    return { ok: false, area, rows: [], stats: null, issues: derived.issues.map((i) => `${i.code}: ${i.message}`) };
+  }
+  const { dir, source, anchorPattern } = wiringFor(area);
+  const { claims, issues: claimIssues } = await collectClaims({ dir, source, anchorPattern });
+  const owners = [...claims.values()].flat();
+  const bodies = await readConceptBodies(dir, owners);
+  const report = fidelityReport({
+    expected: derived.anchors.all,
+    texts: derived.anchors.texts,
+    claims,
+    bodies,
+  });
+  return { ok: true, area, rows: report.rows, stats: report.stats, issues: [...claimIssues, ...report.issues] };
+}
+
+// ─── F12: drift telemetry ───────────────────────────────────────────────────
+//
+// Drift should land as a chain red at cell 4, not be discovered at cell 10.
+// Two shape ratios per area, both cheap and both directional:
+//
+//   anchors_per_concept            too high = a dumping-ground concept
+//                                  swallowing a section; too low = concepts
+//                                  shredded past usefulness
+//   concepts_per_100_source_lines  the same drift measured against the source
+//                                  rather than against the anchor count
+//
+// Compared against the running MEDIAN of already-pinned areas, outside a
+// [0.5x, 2x] band. With fewer than three pinned areas there is no median worth
+// the name, so telemetry REPORTS and never fails — a two-sample "median" is a
+// coin flip, and a gate that fails on a coin flip teaches everyone to ignore
+// it. That is the repo's state today (2 gateable pins).
+
+export const TELEMETRY_MIN_SAMPLES = 3;
+export const TELEMETRY_METRICS = ["anchors_per_concept", "concepts_per_100_source_lines"];
+
+/** One telemetry row per gateable pinned area (an unscheme'd pin has no
+ *  derived anchors, so it contributes no shape). */
+export function collectTelemetry() {
+  const rows = [];
+  for (const [area, pin] of Object.entries(PIN_REGISTRY)) {
+    if (!pin.scheme) continue;
+    const derived = derivePin(pin, area);
+    if (!derived.ok) continue;
+    const resolved = resolvePinnedSource(pin);
+    const sourceLines = resolved.ok ? resolved.text.split("\n").length : 0;
+    const concepts = conceptFilesIn(wiringFor(area).dir).length;
+    if (!concepts || !sourceLines) continue;
+    rows.push({
+      area,
+      anchors: derived.counts.total,
+      concepts,
+      source_lines: sourceLines,
+      anchors_per_concept: derived.counts.total / concepts,
+      concepts_per_100_source_lines: (concepts * 100) / sourceLines,
+    });
+  }
+  return rows;
+}
+
+/** Pure: is `current` an outlier against the running median of `samples`? */
+export function telemetryIssues({ current, samples, minSamples = TELEMETRY_MIN_SAMPLES }) {
+  if (!current || !Array.isArray(samples) || samples.length < minSamples) return [];
+  const issues = [];
+  for (const metric of TELEMETRY_METRICS) {
+    const values = samples.map((s) => s[metric]).filter((v) => typeof v === "number" && v > 0);
+    if (values.length < minSamples) continue;
+    const median = medianOf(values);
+    if (!median) continue;
+    const value = current[metric];
+    if (typeof value !== "number" || value <= 0) continue;
+    const ratio = value / median;
+    if (ratio > 2 || ratio < 0.5) {
+      issues.push(
+        `TELEMETRY OUTLIER (F12): ${current.area}'s ${metric} is ${value.toFixed(2)}, ${ratio.toFixed(2)}x the running median ${median.toFixed(2)} across ${values.length} pinned areas — outside the [0.5x, 2x] band. Either this area's decomposition drifted from every area before it, or the areas before it did`,
+      );
+    }
+  }
+  return issues;
+}
+
+// ─── F12: whole-bundle invariants, run on EVERY check ───────────────────────
+//
+// Three properties that must hold for the bundle as a whole, not per area:
+// authority uniqueness (D31), zero not_canonical concepts, and fresh
+// generated indexes (D21). The bundle's own checker already computes all
+// three — but two of them are PROFILE WARNINGS there (D13 keeps `knowledge
+// check` in the chain non-strict on purpose), so a drifting bundle would stay
+// green forever. The coverage gate graduates exactly those two codes to
+// gate-failing for itself, without touching the chain's own `knowledge check`
+// entry or D13's warning/error split.
+
+const BUNDLE_FATAL_WARNINGS = new Set(["duplicate_authoritative_for", "duplicate_id", "not_canonical"]);
+
+/** Pure: given a parsed `knowledge check --json` payload and the result of
+ *  `knowledge index --check`, is the bundle healthy? */
+export function bundleInvariantIssues({ check, index }) {
+  const issues = [];
+  if (!check || typeof check !== "object") {
+    issues.push(`BUNDLE UNHEALTHY: \`bee knowledge check --json\` produced no readable report — the bundle's health is unknown, which is never a pass (F12)`);
+  } else {
+    for (const error of check.okf?.errors || []) {
+      issues.push(`BUNDLE UNHEALTHY: OKF error ${error.code} in ${error.file} — ${error.message}`);
+    }
+    for (const warning of check.profile?.warnings || []) {
+      if (!BUNDLE_FATAL_WARNINGS.has(warning.code)) continue;
+      issues.push(
+        `BUNDLE UNHEALTHY: ${warning.code} in ${warning.file} — ${warning.message}. This is a profile warning to \`knowledge check\` (D13) but a hard failure to the coverage gate: a migration cannot be verified against a bundle whose authority or canonicality has drifted (F12)`,
+      );
+    }
+  }
+  if (index && index.ok === false) {
+    issues.push(
+      `BUNDLE UNHEALTHY: the generated indexes are stale (D21) — \`bee knowledge index --check\` reports: ${String(index.output || "").trim().split("\n").slice(0, 4).join(" / ")}`,
+    );
+  }
+  return issues;
+}
+
+function beeCli(args) {
+  const r = spawnSync(process.execPath, [path.join(REPO_ROOT, ".bee", "bin", "bee.mjs"), ...args], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return { code: r.status, out: r.stdout || "", err: r.stderr || "" };
+}
+
+/** Run the whole-bundle invariants against the live bundle. */
+export function runBundleInvariants() {
+  const checkRun = beeCli(["knowledge", "check", "--json"]);
+  let check = null;
+  try {
+    check = JSON.parse(checkRun.out);
+  } catch {
+    check = null;
+  }
+  const indexRun = beeCli(["knowledge", "index", "--check"]);
+  const index = { ok: indexRun.code === 0, output: `${indexRun.out}${indexRun.err}` };
+  return { issues: bundleInvariantIssues({ check, index }), check, index };
 }
 
 // ─── check mode helpers ─────────────────────────────────────────────────────
@@ -718,6 +1123,53 @@ function coverageIssues({ expected, stubMap, claims, stubLabel, registryLabel })
   return { issues, owned, duplicated, lost };
 }
 
+/**
+ * The three f2-2 guards, run identically for every area (F11 + F12). Returns
+ * { issues, fidelity, telemetry, telemetryNote } — the issues join the
+ * coverage issues, and the reports are printed on green too, because a floor
+ * whose margin nobody can see is a floor nobody can tune.
+ */
+async function runGuards(area, claims, bodies, derived) {
+  const issues = [];
+
+  const fidelity = fidelityReport({
+    expected: derived.anchors.all,
+    texts: derived.anchors.texts,
+    claims,
+    bodies,
+  });
+  issues.push(...fidelity.issues);
+
+  const telemetry = collectTelemetry();
+  const current = telemetry.find((r) => r.area === area) || null;
+  const telemetryNote =
+    telemetry.length < TELEMETRY_MIN_SAMPLES
+      ? `${telemetry.length} pinned area(s) — fewer than ${TELEMETRY_MIN_SAMPLES}, so there is no running median yet and telemetry REPORTS ONLY (never fails)`
+      : `running median across ${telemetry.length} pinned areas; outlier band [0.5x, 2x]`;
+  issues.push(...telemetryIssues({ current, samples: telemetry }));
+
+  issues.push(...runBundleInvariants().issues);
+
+  return { issues, fidelity, telemetry, current, telemetryNote };
+}
+
+function printGuards(guards) {
+  const s = guards.fidelity.stats;
+  if (s.n > 0) {
+    console.log(
+      `     fidelity floor ${s.floor.toFixed(2)} (F11): ${s.n} anchors measured against their owning concept — min ${s.min.toFixed(3)}, median ${s.median.toFixed(3)}, max ${s.max.toFixed(3)} normalized token overlap with the pinned blob`,
+    );
+  }
+  if (guards.current) {
+    console.log(
+      `     telemetry (F12): anchors_per_concept ${guards.current.anchors_per_concept.toFixed(2)}, concepts_per_100_source_lines ${guards.current.concepts_per_100_source_lines.toFixed(2)} (${guards.current.anchors} anchors, ${guards.current.concepts} concepts, ${guards.current.source_lines} source lines) — ${guards.telemetryNote}`,
+    );
+  }
+  console.log(
+    `     bundle invariants (F12): authority uniqueness, zero not_canonical, and index freshness all hold across docs/knowledge/`,
+  );
+}
+
 export async function runCheck(area) {
   // Ground truth first: a pin that cannot be asserted stops the check dead.
   // There is no path from here to a green without a verified extraction.
@@ -756,6 +1208,10 @@ export async function runCheck(area) {
   });
   issues.push(...cov.issues);
 
+  const bodies = await readConceptBodies(`docs/knowledge/areas/${area}`, [...claims.values()].flat());
+  const guards = await runGuards(area, claims, bodies, derived);
+  issues.push(...guards.issues);
+
   if (issues.length > 0) {
     console.error(`FAIL okf_migrate --check ${area}: ${expected.length} anchors, ${cov.owned} owned, ${cov.duplicated} duplicated, ${cov.lost} lost`);
     for (const i of issues) console.error(`  - ${i}`);
@@ -763,6 +1219,7 @@ export async function runCheck(area) {
   }
   console.log(`PASS okf_migrate --check ${area}: ${expected.length} anchors, ${cov.owned} owned, 0 duplicated, 0 lost — every source anchor lands in exactly one concept and the stub map agrees (D35/D37)`);
   console.log(`     ground truth DERIVED from pinned blob ${derived.blob_sha} (${derived.commit.slice(0, 8)}:${PIN_REGISTRY[area].path}, via ${derived.via}, scheme ${PIN_REGISTRY[area].scheme}) — counts asserted ${JSON.stringify(derived.counts)}`);
+  printGuards(guards);
   return 0;
 }
 
@@ -801,6 +1258,10 @@ export async function runCheckPatterns() {
   });
   issues.push(...cov.issues);
 
+  const bodies = await readConceptBodies(PATTERNS_CONCEPT_DIR, [...claims.values()].flat());
+  const guards = await runGuards("critical-patterns", claims, bodies, derived);
+  issues.push(...guards.issues);
+
   if (issues.length > 0) {
     console.error(`FAIL okf_migrate --check-patterns: ${expected.length} anchors, ${cov.owned} owned, ${cov.duplicated} duplicated, ${cov.lost} lost`);
     for (const i of issues) console.error(`  - ${i}`);
@@ -808,6 +1269,7 @@ export async function runCheckPatterns() {
   }
   console.log(`PASS okf_migrate --check-patterns: ${expected.length} anchors, ${cov.owned} owned, 0 duplicated, 0 lost — every critical-patterns.md heading lands in exactly one bee.pattern concept and the stub map agrees (D35/D37)`);
   console.log(`     ground truth DERIVED from pinned blob ${derived.blob_sha} (${derived.commit.slice(0, 8)}:${PATTERNS_SOURCE}, via ${derived.via}, scheme flat-pattern-list) — counts asserted ${JSON.stringify(derived.counts)}`);
+  printGuards(guards);
   return 0;
 }
 
@@ -928,6 +1390,55 @@ async function main() {
     return 0;
   }
 
+  if (args[0] === "--fidelity" && args[1]) {
+    const result = await areaFidelity(args[1]);
+    console.log(
+      JSON.stringify(
+        {
+          area: args[1],
+          ok: result.ok && result.issues.length === 0,
+          floor: FIDELITY_FLOOR,
+          stats: result.stats,
+          rows: result.rows.map((r) => ({
+            anchor: r.anchor,
+            owner: r.owner,
+            ratio: Number(r.ratio.toFixed(4)),
+            anchor_tokens: r.anchor_tokens,
+            missing_tokens: r.missing_tokens,
+          })),
+          issues: result.issues,
+        },
+        null,
+        2,
+      ),
+    );
+    if (!result.ok || result.issues.length > 0) {
+      for (const i of result.issues) console.error(`  - ${i}`);
+      console.error(`FAIL okf_migrate --fidelity ${args[1]}: ${result.issues.length} anchor(s) below the ${FIDELITY_FLOOR} floor (F11)`);
+      return 1;
+    }
+    return 0;
+  }
+
+  if (args[0] === "--telemetry") {
+    const rows = collectTelemetry();
+    const bundle = runBundleInvariants();
+    console.log(
+      JSON.stringify(
+        {
+          pinned_areas: rows.length,
+          min_samples_for_a_median: TELEMETRY_MIN_SAMPLES,
+          median_available: rows.length >= TELEMETRY_MIN_SAMPLES,
+          rows,
+          bundle_issues: bundle.issues,
+        },
+        null,
+        2,
+      ),
+    );
+    return bundle.issues.length > 0 ? 1 : 0;
+  }
+
   if (args[0] === "--check" && args[1]) {
     return runCheck(args[1]);
   }
@@ -935,7 +1446,7 @@ async function main() {
     return runCheckPatterns();
   }
   console.error(
-    "usage: okf_migrate.mjs (--inventory <spec-path> | --inventory-pin <area> | --derive <pin-json> | --verify-pins | --check <area> | --check-patterns)",
+    "usage: okf_migrate.mjs (--inventory <spec-path> | --inventory-pin <area> | --derive <pin-json> | --verify-pins | --fidelity <area> | --telemetry | --check <area> | --check-patterns)",
   );
   return 1;
 }
