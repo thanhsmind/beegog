@@ -19,7 +19,16 @@ jobs:
       matrix:
         node-version: [18, 20, 22]
     steps:
+      # fetch-depth: 0 — the OKF pin suite (scripts/test_okf_pins.mjs) verifies
+      # that each content-addressed pin resolves through git (`git show
+      # <blob>:<path>`), not only through its committed-copy fallback. A default
+      # shallow (depth-1) checkout cannot reach the old pinned blobs, so those
+      # git-resolution assertions fail on CI while passing locally. Full history
+      # gives the suite what it asserts against; the production fallback keeps a
+      # real --depth 1 host working regardless (that path is its own test).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
