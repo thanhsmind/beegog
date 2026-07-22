@@ -79,6 +79,13 @@ const MANDATORY_SUITES = [
   // drop out of commands.verify (it does not match the test_*.mjs discovery
   // glob, so EXTRA_SUITES membership is its only way into the chain).
   "scripts/okf_migrate.mjs",
+  // f2-1b (F8): the suite that proves that coverage gate is HONEST — pins are
+  // content-addressed and fully asserted, an empty/mismatched/unresolvable/
+  // unscheme'd extraction exits 1 instead of reading as 0/0 green, and
+  // onboarding.md's non-zero unparsed-block count proves the extractor is no
+  // longer format-blind. The gate above can pass while lying; this is the
+  // suite that catches that, so it must never drop out of the chain either.
+  "scripts/test_okf_pins.mjs",
 ];
 
 // Floor count: total discovered suites must never silently drop below this
@@ -90,7 +97,8 @@ const MANDATORY_SUITES = [
 // skills/bee-hive/templates/tests/test_perf.mjs, hooks/test_bypass_stop_net.mjs)
 // = 50. Bump this UP whenever a suite is intentionally added; it should
 // never need to go down.
-const SUITE_FLOOR_COUNT = 50;
+// f2-1b: +1 for scripts/test_okf_pins.mjs (the derived-pin honesty suite) = 51.
+const SUITE_FLOOR_COUNT = 51;
 
 /**
  * Checks a discovered suite list against a mandatory list and a floor count.

@@ -75,10 +75,16 @@ const EXTRA_SUITES = [
   // docs/knowledge/ fails the chain naming the file. No --strict here either.
   [".bee/bin/bee.mjs", "knowledge", "index", "--check"],
   // okf-5: the D35 coverage gate for the advisor-protocol migration — the
-  // frozen source anchor inventory, the pointer stub's anchor map
+  // source anchor inventory, the pointer stub's anchor map
   // (docs/specs/advisor-protocol.md, D37), and the concepts' bee.sources
   // claims must stay in exact set-equality: every anchor owned by exactly one
   // concept, no loss, no duplication. Binary check; no --strict exists.
+  // f2-1b (F8): the inventory is no longer a hand-authored constant — it is
+  // DERIVED at check time from a content-addressed pin (commit + path +
+  // blob_sha + scheme + expected_counts, all asserted, with a committed
+  // verbatim source copy as the shallow-clone fallback). An empty, failed,
+  // unresolvable, or unscheme'd extraction now exits 1 instead of reporting
+  // 0/0 green. scripts/test_okf_pins.mjs (auto-discovered) is what proves it.
   ["scripts/okf_migrate.mjs", "--check", "advisor-protocol"],
   // okf-6: the D35 coverage gate for critical-patterns.md's migration into
   // docs/knowledge/patterns/ — same coverage law, PATn anchors instead of
