@@ -28,6 +28,13 @@
 //         render --check idiom.
 //   D15 — `list` emits one row per concept (path, id, type, lifecycle,
 //         title), never content.
+//   D27 — `context` (cell okf-7, S5) resolves a work item by bee.id, walks
+//         required_context transitively with a cycle guard (a cycle is
+//         deduped silently, never an error), adds the area decisions and
+//         every bee.critical concept, ranks, and cuts at a token budget
+//         estimated as bytes/4 — the estimator is NAMED in the output. The
+//         result is an ordered manifest of paths, sizes and one-line reasons:
+//         never file content.
 //   D4  — check reports two levels: OKF errors (the spec's own MUSTs) and
 //         profile warnings (bee's SHOULD layer); --strict promotes warnings.
 //   D13 — the CLI handler (bee.mjs) emits {okf:{errors},profile:{warnings},
@@ -854,4 +861,181 @@ export function renderKnowledgeIndexes(root) {
     written.push(`docs/knowledge/${file.rel}`);
   }
   return { written, count: written.length };
+}
+
+// ─── context (D27): the budget-aware manifest — paths, never content ───────
+
+/**
+ * The estimator's NAME, carried in every manifest (D27/D12). Bee vendors no
+ * tokenizer, so the budget is spent in bytes/4 and the output declares that
+ * rather than dressing an estimate as a token count.
+ */
+export const CONTEXT_ESTIMATOR = 'bytes/4';
+
+/** bytes/4, rounded up — the only sizing arithmetic in this module. */
+export function estimateTokens(bytes) {
+  return Math.ceil(bytes / 4);
+}
+
+function beeOf(data) {
+  return data && data.bee && typeof data.bee === 'object' && !Array.isArray(data.bee) ? data.bee : {};
+}
+
+function dirOf(rel) {
+  return rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+}
+
+/** A bundle-relative required_context target (D19) normalized back to a
+ *  bundle-relative concept path, or null when it would escape the bundle
+ *  (D23 — a link out of docs/knowledge/ is never followed). */
+function normalizeBundleTarget(dir, target) {
+  const resolved = resolveInsideBundle(dir, target);
+  if (!resolved) return null;
+  const rel = path.relative(path.resolve(dir), resolved).split(path.sep).join('/');
+  return rel === '' ? null : rel;
+}
+
+/**
+ * buildContextManifest(root, {work, budget}) — the D27 consumer.
+ *
+ * Resolves `work` to the bee.work-item concept whose bee.id matches, then
+ * assembles an ORDERED manifest under the ranking law:
+ *   1. the work item itself
+ *   2. its bee.plan sibling in the same work/<id>/ directory, when present
+ *   3. required_context, walked TRANSITIVELY in BFS depth order — an already
+ *      selected path is skipped SILENTLY, so a cycle (A→B→A) is deduped and
+ *      never an error, and a link that dangles or escapes the bundle is
+ *      tolerated (OKF §5; `knowledge check` is what grades it, D4)
+ *   4. every bee.critical: true concept, path-sorted
+ *   5. every bee.decision concept whose bee.areas overlaps the work item's,
+ *      path-sorted
+ * and cuts the ranked list at `budget` estimated tokens.
+ *
+ * The cut is a PREFIX cut: the first entry that would overshoot ends the
+ * manifest, and it plus every lower-ranked entry is named in `truncated`.
+ * Skipping an overshooting entry to squeeze in a smaller lower-ranked one
+ * would make the output stop meaning "the highest-ranked context that fits".
+ *
+ * The BFS is seeded with the work item AND its plan sibling: the plan is in
+ * the manifest, so what the plan itself requires is required context too —
+ * every reason still names its parent, so the provenance stays auditable.
+ *
+ * Returns {work, decisions, budget, estimator, total_est, entries, truncated}
+ * where each entry is {path (repo-relative), bytes, est_tokens, reason} —
+ * NEVER file content (D27). `decisions` is informational: the work item's own
+ * bee.decisions list, read from its frontmatter, never from a .bee/ store
+ * (D2/D23). Read-only end to end; throws a typed Error the CLI surfaces as a
+ * non-zero exit when `work` resolves to nothing.
+ */
+export function buildContextManifest(root, { work, budget } = {}) {
+  const workId = typeof work === 'string' ? work.trim() : '';
+  if (!workId) {
+    throw new Error('knowledge context: missing_work — --work <id> is required (D27).');
+  }
+  const budgetTokens = Number(budget);
+  if (!Number.isFinite(budgetTokens) || budgetTokens < 0) {
+    throw new Error(
+      `knowledge context: bad_budget — --budget must be a non-negative token count, got ${JSON.stringify(budget)} (D27).`,
+    );
+  }
+
+  const dir = bundleDir(root);
+  const concepts = collectConcepts(root); // ONE inventory path, shared with list/index
+  const byPath = new Map(concepts.map((concept) => [concept.path, concept]));
+
+  const workConcept = concepts.find(
+    (concept) => concept.data.type === 'bee.work-item' && beeOf(concept.data).id === workId,
+  );
+  if (!workConcept) {
+    throw new Error(
+      `knowledge context: unknown_work — no bee.work-item concept in docs/knowledge/ carries bee.id "${workId}" (D27).`,
+    );
+  }
+
+  const ranked = [];
+  const selected = new Set();
+  const select = (rel, reason) => {
+    if (selected.has(rel) || !byPath.has(rel)) return false;
+    selected.add(rel);
+    ranked.push({ rel, reason });
+    return true;
+  };
+
+  // (1) the work item
+  select(workConcept.path, 'work item');
+
+  // (2) the plan sibling in the same work/<id>/ directory
+  const workDir = dirOf(workConcept.path);
+  const planConcept = concepts.find(
+    (concept) => concept.data.type === 'bee.plan' && dirOf(concept.path) === workDir,
+  );
+  if (planConcept) select(planConcept.path, `plan sibling in ${workDir}/`);
+
+  // (3) required_context, transitive, BFS depth order, cycles deduped silently
+  const queue = ranked.map((entry) => ({ rel: entry.rel, depth: 0 }));
+  while (queue.length > 0) {
+    const node = queue.shift();
+    const targets = beeOf(byPath.get(node.rel).data).required_context;
+    if (!Array.isArray(targets)) continue;
+    for (const target of targets) {
+      if (typeof target !== 'string') continue;
+      const rel = normalizeBundleTarget(dir, target);
+      if (!rel || !byPath.has(rel) || selected.has(rel)) continue;
+      select(rel, `required_context depth ${node.depth + 1} via ${node.rel}`);
+      queue.push({ rel, depth: node.depth + 1 });
+    }
+  }
+
+  // (4) every critical concept
+  for (const concept of concepts) {
+    if (beeOf(concept.data).critical === true) select(concept.path, 'critical pattern');
+  }
+
+  // (5) decisions whose areas overlap the work item's areas
+  const workAreas = Array.isArray(beeOf(workConcept.data).areas)
+    ? beeOf(workConcept.data).areas.filter((area) => typeof area === 'string')
+    : [];
+  for (const concept of concepts) {
+    if (concept.data.type !== 'bee.decision') continue;
+    const areas = Array.isArray(beeOf(concept.data).areas) ? beeOf(concept.data).areas : [];
+    const overlap = areas.filter((area) => workAreas.includes(area));
+    if (overlap.length === 0) continue;
+    select(concept.path, `decision for area ${overlap.join(', ')}`);
+  }
+
+  const entries = [];
+  const truncated = [];
+  let totalEst = 0;
+  let cutting = false;
+  for (const item of ranked) {
+    const repoRel = `docs/knowledge/${item.rel}`;
+    let bytes = 0;
+    try {
+      bytes = fs.statSync(path.join(dir, item.rel)).size;
+    } catch {
+      bytes = 0;
+    }
+    const est = estimateTokens(bytes);
+    if (cutting || totalEst + est > budgetTokens) {
+      cutting = true;
+      truncated.push(repoRel);
+      continue;
+    }
+    totalEst += est;
+    entries.push({ path: repoRel, bytes, est_tokens: est, reason: item.reason });
+  }
+
+  const decisions = Array.isArray(beeOf(workConcept.data).decisions)
+    ? beeOf(workConcept.data).decisions.filter((entry) => typeof entry === 'string')
+    : [];
+
+  return {
+    work: workId,
+    decisions,
+    budget: budgetTokens,
+    estimator: CONTEXT_ESTIMATOR,
+    total_est: totalEst,
+    entries,
+    truncated,
+  };
 }

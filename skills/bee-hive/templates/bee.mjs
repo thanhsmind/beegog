@@ -22,7 +22,7 @@
 //   bee capture <add|list|flush|count> ... [--json]
 //   bee reviews <create|list|show|record|candidate add|candidates|status> ... [--json]
 //   bee feedback <digest|count|collect|rank> ... [--json]
-//   bee knowledge <check|index|list> ... [--json]
+//   bee knowledge <check|index|list|context> ... [--json]
 //   bee tmp <sweep> ... [--json]
 //   bee --help [--json]
 //
@@ -146,7 +146,13 @@ import {
   decisionIndexDrift,
 } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
-import { checkBundle, knowledgeIndexDrift, renderKnowledgeIndexes, listConcepts } from './lib/knowledge.mjs';
+import {
+  checkBundle,
+  knowledgeIndexDrift,
+  renderKnowledgeIndexes,
+  listConcepts,
+  buildContextManifest,
+} from './lib/knowledge.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
 import {
   createReview,
@@ -2553,6 +2559,32 @@ function handleKnowledgeList(root, flags) {
   };
 }
 
+// context (okf-7, D27): the budget-aware consumer. Read-only end to end —
+// buildContextManifest resolves the work item by bee.id, walks required_context
+// transitively (cycles deduped silently), adds the critical concepts and the
+// area decisions, ranks, and cuts at --budget using the NAMED bytes/4
+// estimator. The human form is a table of the same rows the --json manifest
+// carries; neither ever carries file content. An unresolvable --work id
+// throws the typed unknown_work error, which the dispatcher's catch turns
+// into exit 1 ({"error":...} on stdout under --json, stderr otherwise).
+function handleKnowledgeContext(root, flags) {
+  const manifest = buildContextManifest(root, { work: flags.work, budget: flags.budget });
+  const lines = [
+    `work: ${manifest.work} · budget: ${manifest.budget} token(s) · estimator: ${manifest.estimator}`,
+  ];
+  if (manifest.decisions.length > 0) lines.push(`decisions: ${manifest.decisions.join(' · ')}`);
+  lines.push('PATH · BYTES · EST TOKENS · REASON');
+  for (const entry of manifest.entries) {
+    lines.push(`${entry.path} · ${entry.bytes} · ${entry.est_tokens} · ${entry.reason}`);
+  }
+  for (const cut of manifest.truncated) lines.push(`TRUNCATED ${cut}`);
+  lines.push(
+    `knowledge context: ${manifest.entries.length} entry(ies), ${manifest.total_est} est token(s) ` +
+      `of ${manifest.budget} budget (estimator ${manifest.estimator}), ${manifest.truncated.length} truncated.`,
+  );
+  return { result: manifest, text: lines.join('\n') };
+}
+
 // ─── reviews: full port of bee_reviews.mjs's create/list/show/record/
 // candidate add/candidates/status verbs (dispatcher-unify du-3). Reuses
 // lib/reviews.mjs's exports exactly as bee_reviews.mjs did — no logic change
@@ -4678,7 +4710,7 @@ function tmpUsageFallback(leading) {
 
 function knowledgeUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: check, index, list.`;
+  return `Unknown command "${verb || '(missing)'}". Use: check, index, list, context.`;
 }
 
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
@@ -4783,6 +4815,7 @@ const HANDLERS = {
   'knowledge.check': handleKnowledgeCheck,
   'knowledge.index': handleKnowledgeIndex,
   'knowledge.list': handleKnowledgeList,
+  'knowledge.context': handleKnowledgeContext,
   'reviews.create': handleReviewsCreate,
   'reviews.list': handleReviewsList,
   'reviews.show': handleReviewsShow,

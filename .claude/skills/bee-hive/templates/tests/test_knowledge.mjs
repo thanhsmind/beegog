@@ -615,6 +615,176 @@ await check('CLI: knowledge.index and knowledge.list appear in the bee --help --
   }
 });
 
+// ═══ okf-7 (S5): bee knowledge context --work <id> --budget <tokens> ═══════
+// RED-FIRST (cell okf-7): these checks are written and run red (the context
+// verb does not exist yet) BEFORE any implementation.
+//
+// D27 is the whole contract: resolve the work item by bee.id, walk
+// required_context TRANSITIVELY with a cycle guard (a cycle is deduped
+// SILENTLY, never an error), add the area decisions and every bee.critical
+// concept, rank, cut at --budget using bytes/4 — and return an ordered
+// MANIFEST of paths/sizes/reasons that NEVER carries file content.
+
+/** Fixture bundle for `context`: a work item with a plan sibling, a 2-level
+ *  required_context chain, TWO cycles (plan -> work item, and one <-> two), a
+ *  critical pattern, a non-critical pattern (must be excluded), an area
+ *  decision (must be included) and an off-area decision (must be excluded). */
+function makeContextFixture() {
+  const root = makeRepo();
+  writeBundleFile(root, 'work/demo/work-item.md', conceptText({
+    type: 'bee.work-item', id: 'demo-work', title: 'Demo work item', description: 'The work item context resolves',
+    extraBee: { areas: ['alpha'], required_context: ['areas/alpha/one.md'], decisions: ['D1', 'D2 (the cited rationale)'] },
+  }));
+  writeBundleFile(root, 'work/demo/plan.md', conceptText({
+    type: 'bee.plan', id: 'demo-plan', title: 'Demo plan', description: 'The plan sibling in the same work dir',
+    extraBee: { areas: ['alpha'], required_context: ['work/demo/work-item.md'] },
+  }));
+  writeBundleFile(root, 'areas/alpha/one.md', conceptText({
+    type: 'bee.area', id: 'alpha-one', title: 'Alpha one', description: 'Depth 1 required context',
+    extraBee: { areas: ['alpha'], required_context: ['areas/alpha/two.md'], authoritative_for: 'alpha-one' },
+  }));
+  writeBundleFile(root, 'areas/alpha/two.md', conceptText({
+    type: 'bee.area', id: 'alpha-two', title: 'Alpha two', description: 'Depth 2 required context, cycling back to one',
+    extraBee: { areas: ['alpha'], required_context: ['areas/alpha/one.md'], authoritative_for: 'alpha-two' },
+  }));
+  writeBundleFile(root, 'patterns/critical.md', conceptText({
+    id: 'crit-pattern', title: 'A critical pattern', description: 'Always in context',
+    extraBee: { areas: ['unrelated'], critical: true },
+  }));
+  writeBundleFile(root, 'patterns/plain.md', conceptText({
+    id: 'plain-pattern', title: 'A plain pattern', description: 'Never in context',
+    extraBee: { areas: ['unrelated'] },
+  }));
+  writeBundleFile(root, 'decisions/alpha.md', conceptText({
+    type: 'bee.decision', id: 'dec-alpha', title: 'An alpha decision', description: 'Overlaps the work item areas',
+    extraBee: { areas: ['alpha'] },
+  }));
+  writeBundleFile(root, 'decisions/beta.md', conceptText({
+    type: 'bee.decision', id: 'dec-beta', title: 'A beta decision', description: 'No area overlap',
+    extraBee: { areas: ['beta'] },
+  }));
+  return root;
+}
+
+const CONTEXT_EXPECTED_ORDER = [
+  'docs/knowledge/work/demo/work-item.md',
+  'docs/knowledge/work/demo/plan.md',
+  'docs/knowledge/areas/alpha/one.md',
+  'docs/knowledge/areas/alpha/two.md',
+  'docs/knowledge/patterns/critical.md',
+  'docs/knowledge/decisions/alpha.md',
+];
+
+await check('CLI: knowledge context --json on a large budget returns the full ranked manifest in D27 order, cycles deduped silently', async () => {
+  const root = makeContextFixture();
+  const result = await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '100000', '--json'], root);
+  assert(result.status === 0, `context must exit 0, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  assert(JSON.stringify(Object.keys(manifest).sort()) === JSON.stringify(['budget', 'decisions', 'entries', 'estimator', 'total_est', 'truncated', 'work'].sort()), `manifest keys must be exactly {work,decisions,budget,estimator,total_est,entries,truncated}, got ${JSON.stringify(Object.keys(manifest))}`);
+  assert(manifest.work === 'demo-work', `work must echo the resolved id, got ${JSON.stringify(manifest.work)}`);
+  assert(JSON.stringify(manifest.decisions) === JSON.stringify(['D1', 'D2 (the cited rationale)']), `the header must surface the work item's OWN bee.decisions list, got ${JSON.stringify(manifest.decisions)}`);
+  assert(manifest.budget === 100000, `budget must echo the request, got ${JSON.stringify(manifest.budget)}`);
+  assert(manifest.estimator === 'bytes/4', `the estimator must be NAMED as bytes/4 (D27/D12), got ${JSON.stringify(manifest.estimator)}`);
+  assert(JSON.stringify(manifest.entries.map((e) => e.path)) === JSON.stringify(CONTEXT_EXPECTED_ORDER), `ranking law violated.\nexpected ${JSON.stringify(CONTEXT_EXPECTED_ORDER)}\ngot      ${JSON.stringify(manifest.entries.map((e) => e.path))}`);
+  assert(manifest.truncated.length === 0, `a large budget truncates nothing, got ${JSON.stringify(manifest.truncated)}`);
+  const seen = new Set(manifest.entries.map((e) => e.path));
+  assert(seen.size === manifest.entries.length, 'a cycle must be deduped: no path may appear twice');
+  assert(!seen.has('docs/knowledge/patterns/plain.md'), 'a non-critical pattern must never be included');
+  assert(!seen.has('docs/knowledge/decisions/beta.md'), 'a decision whose areas do not overlap must never be included');
+});
+
+await check('knowledge context manifest entries carry path/bytes/est_tokens/reason — never content (D27)', async () => {
+  const root = makeContextFixture();
+  const result = await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '100000', '--json'], root);
+  assert(result.status === 0, `context must exit 0, got ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  let sum = 0;
+  for (const entry of manifest.entries) {
+    assert(JSON.stringify(Object.keys(entry).sort()) === JSON.stringify(['bytes', 'est_tokens', 'path', 'reason']), `entry keys must be exactly path,bytes,est_tokens,reason — got ${JSON.stringify(entry)}`);
+    const abs = path.join(root, entry.path);
+    assert(fs.existsSync(abs), `every manifest path must exist on disk: ${entry.path}`);
+    assert(entry.bytes === fs.statSync(abs).size, `bytes must be the file's real size, got ${JSON.stringify(entry)}`);
+    assert(entry.est_tokens === Math.ceil(entry.bytes / 4), `est_tokens must be ceil(bytes/4), got ${JSON.stringify(entry)}`);
+    assert(typeof entry.reason === 'string' && entry.reason.trim(), `every entry needs a one-line reason, got ${JSON.stringify(entry)}`);
+    assert(!entry.reason.includes('\n'), `the reason must be ONE line, got ${JSON.stringify(entry.reason)}`);
+    sum += entry.est_tokens;
+  }
+  assert(manifest.total_est === sum, `total_est must equal the sum of included est_tokens, got ${manifest.total_est} vs ${sum}`);
+  assert(!result.stdout.includes('Body.'), `the manifest must NEVER carry file content, got ${result.stdout}`);
+  const human = await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '100000'], root);
+  assert(human.status === 0, `human form must exit 0, got ${human.status}: ${human.stderr}`);
+  assert(!human.stdout.includes('Body.'), `the human table must NEVER carry file content, got ${human.stdout}`);
+  assert(/bytes\/4/.test(human.stdout), `the human form must name the estimator, got ${human.stdout}`);
+  assert(/work\/demo\/work-item\.md/.test(human.stdout), `the human table must row every entry, got ${human.stdout}`);
+});
+
+await check('knowledge context reasons name the tier and, for required_context, the depth and the parent (D27)', async () => {
+  const root = makeContextFixture();
+  const manifest = JSON.parse((await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '100000', '--json'], root)).stdout);
+  const reasonOf = (p) => (manifest.entries.find((e) => e.path === p) || {}).reason;
+  assert(reasonOf('docs/knowledge/work/demo/work-item.md') === 'work item', `expected "work item", got ${JSON.stringify(reasonOf('docs/knowledge/work/demo/work-item.md'))}`);
+  assert(/plan/.test(reasonOf('docs/knowledge/work/demo/plan.md')), `the plan sibling's reason must say so, got ${JSON.stringify(reasonOf('docs/knowledge/work/demo/plan.md'))}`);
+  assert(/required_context depth 1 via .*work\/demo\/work-item\.md/.test(reasonOf('docs/knowledge/areas/alpha/one.md')), `depth-1 reason must name depth and parent, got ${JSON.stringify(reasonOf('docs/knowledge/areas/alpha/one.md'))}`);
+  assert(/required_context depth 2 via .*areas\/alpha\/one\.md/.test(reasonOf('docs/knowledge/areas/alpha/two.md')), `depth-2 reason must name depth and parent, got ${JSON.stringify(reasonOf('docs/knowledge/areas/alpha/two.md'))}`);
+  assert(reasonOf('docs/knowledge/patterns/critical.md') === 'critical pattern', `expected "critical pattern", got ${JSON.stringify(reasonOf('docs/knowledge/patterns/critical.md'))}`);
+  assert(/decision/.test(reasonOf('docs/knowledge/decisions/alpha.md')) && /alpha/.test(reasonOf('docs/knowledge/decisions/alpha.md')), `the area-decision reason must name the area, got ${JSON.stringify(reasonOf('docs/knowledge/decisions/alpha.md'))}`);
+});
+
+await check('knowledge context cuts at --budget: total_est <= budget, the cut entries are NAMED in truncated (D27)', async () => {
+  const root = makeContextFixture();
+  const full = JSON.parse((await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '100000', '--json'], root)).stdout);
+  assert(full.entries.length === 6, `fixture must yield 6 entries before the cut, got ${full.entries.length}`);
+  const tightBudget = full.entries[0].est_tokens + full.entries[1].est_tokens;
+  const result = await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', String(tightBudget), '--json'], root);
+  assert(result.status === 0, `a budget cut is not an error, got ${result.status}: ${result.stderr}`);
+  const cut = JSON.parse(result.stdout);
+  assert(cut.entries.length === 2, `exactly the two highest-ranked entries must survive, got ${JSON.stringify(cut.entries.map((e) => e.path))}`);
+  assert(cut.total_est <= tightBudget, `total_est ${cut.total_est} must be <= budget ${tightBudget}`);
+  assert(JSON.stringify(cut.entries.map((e) => e.path)) === JSON.stringify(CONTEXT_EXPECTED_ORDER.slice(0, 2)), `the survivors must be the top of the ranking, got ${JSON.stringify(cut.entries.map((e) => e.path))}`);
+  assert(JSON.stringify(cut.truncated) === JSON.stringify(CONTEXT_EXPECTED_ORDER.slice(2)), `truncated must NAME every cut path, got ${JSON.stringify(cut.truncated)}`);
+
+  const zero = JSON.parse((await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '0', '--json'], root)).stdout);
+  assert(zero.entries.length === 0 && zero.total_est === 0, `a zero budget includes nothing, got ${JSON.stringify(zero.entries)}`);
+  assert(JSON.stringify(zero.truncated) === JSON.stringify(CONTEXT_EXPECTED_ORDER), `a zero budget truncates everything, got ${JSON.stringify(zero.truncated)}`);
+});
+
+await check('knowledge context: an unknown --work id exits 1 with a typed error (D27)', async () => {
+  const root = makeContextFixture();
+  const result = await runBee(['knowledge', 'context', '--work', 'no-such-work', '--budget', '1000', '--json'], root);
+  assert(result.status === 1, `an unknown work id must exit 1, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const payload = JSON.parse(result.stdout);
+  assert(typeof payload.error === 'string' && /unknown_work/.test(payload.error), `the failure must carry the typed unknown_work code, got ${result.stdout}`);
+  assert(/no-such-work/.test(payload.error), `the failure must name the id it could not resolve, got ${result.stdout}`);
+  const human = await runBee(['knowledge', 'context', '--work', 'no-such-work', '--budget', '1000'], root);
+  assert(human.status === 1 && /unknown_work/.test(human.stderr), `the human form must fail on stderr with the typed code, got status=${human.status} stderr=${human.stderr}`);
+});
+
+await check('knowledge context: a bundle with no plan sibling and no decisions still resolves (tolerant, never a throw)', async () => {
+  const root = makeRepo();
+  writeBundleFile(root, 'work/lonely/work-item.md', conceptText({
+    type: 'bee.work-item', id: 'lonely', title: 'A lonely work item', description: 'No plan, no areas, one dangling link',
+    extraBee: { areas: [], required_context: ['areas/ghost/missing.md'], decisions: [] },
+  }));
+  const result = await runBee(['knowledge', 'context', '--work', 'lonely', '--budget', '5000', '--json'], root);
+  assert(result.status === 0, `a lonely work item must still resolve, got ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  assert(manifest.entries.length === 1 && manifest.entries[0].path === 'docs/knowledge/work/lonely/work-item.md', `expected the work item alone, got ${JSON.stringify(manifest.entries)}`);
+  assert(JSON.stringify(manifest.decisions) === JSON.stringify([]), `an empty decisions list stays empty, got ${JSON.stringify(manifest.decisions)}`);
+});
+
+await check('CLI: knowledge.context appears in the bee --help --json manifest with a runnable example (test_bee_cli conformance)', async () => {
+  const result = await runBee(['--help', '--json'], makeRepo());
+  assert(result.status === 0, `--help --json must exit 0, got ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  const entry = manifest.commands.find((c) => c.name === 'knowledge.context');
+  assert(entry, 'manifest must carry knowledge.context');
+  assert(entry.invoke === 'bee knowledge context', `invoke must be "bee knowledge context", got ${entry.invoke}`);
+  assert(Array.isArray(entry.examples) && entry.examples.length > 0, 'entry must carry runnable examples');
+  assert(entry.examples.every((e) => !e.includes('--strict')), 'no --strict anywhere in examples');
+  assert(entry.parameters && entry.parameters.properties.work && entry.parameters.properties.budget, 'parameters must carry work and budget');
+  assert(JSON.stringify([...entry.parameters.required].sort()) === JSON.stringify(['budget', 'work']), `--work and --budget are both required, got ${JSON.stringify(entry.parameters.required)}`);
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed`);

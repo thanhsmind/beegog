@@ -2371,6 +2371,40 @@ await check('knowledge.list example: {concepts,count} rows carry path,id,type,li
   assert(Array.isArray(report.concepts) && report.count === 0, `the empty fixture bundle has zero concepts (index.md is reserved, never a row), got ${result.stdout}`);
 });
 
+// ─── knowledge.context (okf-foundation S5, cell okf-7): the registry example
+// is `bee knowledge context --work okf-foundation --budget 20000 --json`, so
+// the fixture bundle must carry a work item with that bee.id before it runs.
+// Seeded HERE (after the list example asserted the bundle was empty) rather
+// than against this checkout's real docs/knowledge/ — the isolation law at the
+// top of this file holds for every example, read-only ones included.
+
+fs.mkdirSync(path.join(rootKnowledge, 'docs', 'knowledge', 'work', 'okf-foundation'), { recursive: true });
+fs.mkdirSync(path.join(rootKnowledge, 'docs', 'knowledge', 'patterns'), { recursive: true });
+fs.writeFileSync(
+  path.join(rootKnowledge, 'docs', 'knowledge', 'work', 'okf-foundation', 'work-item.md'),
+  '---\ntype: bee.work-item\ntitle: Fixture work item for the knowledge.context example\ndescription: Fixture so the registry example resolves inside the isolated repo\nbee:\n  id: okf-foundation\n  lifecycle: active\n  areas: [okf]\n  required_context: [patterns/fixture-critical.md]\n  decisions: [D27]\n---\n\n# Fixture work item\n\nFixture prose.\n',
+  'utf8',
+);
+fs.writeFileSync(
+  path.join(rootKnowledge, 'docs', 'knowledge', 'patterns', 'fixture-critical.md'),
+  '---\ntype: bee.pattern\ntitle: Fixture critical pattern\ndescription: Always in context\nbee:\n  id: fixture-critical\n  lifecycle: active\n  areas: [okf]\n  critical: true\n---\n\n# Fixture critical pattern\n\nFixture prose.\n',
+  'utf8',
+);
+
+await check('knowledge.context example: --work okf-foundation --budget 20000 returns a budget-fitting manifest of paths, never content (D27)', async () => {
+  const result = await assertExampleOk('knowledge.context', { cwd: rootKnowledge });
+  const manifest = JSON.parse(result.stdout);
+  assert(manifest.work === 'okf-foundation', `expected the resolved work id, got ${result.stdout}`);
+  assert(manifest.estimator === 'bytes/4', `the estimator must be named bytes/4, got ${result.stdout}`);
+  assert(manifest.budget === 20000 && manifest.total_est <= 20000, `total_est must fit the budget, got ${result.stdout}`);
+  assert(manifest.entries.length === 2 && manifest.entries[0].path === 'docs/knowledge/work/okf-foundation/work-item.md', `the work item must head the manifest, got ${result.stdout}`);
+  assert(manifest.entries[1].path === 'docs/knowledge/patterns/fixture-critical.md', `required_context must follow the work item, got ${result.stdout}`);
+  for (const entry of manifest.entries) {
+    assert(fs.existsSync(path.join(rootKnowledge, entry.path)), `every manifest path must exist on disk: ${entry.path}`);
+  }
+  assert(!result.stdout.includes('Fixture prose.'), `the manifest must never carry file content, got ${result.stdout}`);
+});
+
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {
   const allNames = new Set(COMMAND_REGISTRY.map((e) => e.name));
   const missing = [...allNames].filter((name) => !executedNames.has(name));

@@ -1296,7 +1296,7 @@ export const COMMAND_REGISTRY = [
 
   // ─── knowledge (okf-foundation S1/S3, lib/knowledge.mjs) — OKF v0.1 bundle
   // verbs over docs/knowledge/ (D17/D23). check is the two-level D4 validator;
-  // index (D21) and list (D15) landed in S3; context arrives in S5. knowledge
+  // index (D21) and list (D15) landed in S3; context (D27) in S5. knowledge
   // never writes .bee/*.json(l) stores (D2) — index writes ONLY generated
   // index.md files inside the bundle. ───────────────────────────────────────
   {
@@ -1347,6 +1347,23 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: ['bee knowledge list --json', 'bee knowledge list --type bee.pattern --lifecycle active --json'],
+    deprecated: null,
+  },
+  {
+    name: 'knowledge.context',
+    invoke: 'bee knowledge context',
+    description:
+      'Assemble the budget-aware context manifest for a work item (D27). Resolves --work <id> to the bee.work-item concept whose bee.id matches, then ranks: (1) the work item, (2) its bee.plan sibling in the same work/<id>/ directory, (3) bee.required_context walked TRANSITIVELY in BFS depth order — an already selected path is skipped silently, so a cycle is deduped and never an error, and a dangling or out-of-bundle link is tolerated (OKF §5; grading it is `knowledge check`\'s job), (4) every bee.critical: true concept, (5) every bee.decision concept whose bee.areas overlaps the work item\'s. The ranked list is then cut at --budget <tokens>: the first entry that would overshoot ends the manifest, and it plus every lower-ranked entry is named in `truncated`. Sizes are estimated as bytes/4 and the output NAMES that estimator — bee vendors no tokenizer. The output is an ordered MANIFEST — per entry: repo-relative path, bytes, est_tokens, and a one-line inclusion reason — and NEVER file content; the agent decides what to read. `decisions` in the header is informational: the work item\'s own bee.decisions list, read from its frontmatter, never from a .bee/ store. An unresolvable --work id exits 1 with a typed unknown_work error.',
+    parameters: {
+      type: 'object',
+      properties: {
+        work: { type: 'string', description: 'The work item to assemble context for — matched against bee.id on a bee.work-item concept (D32: the id is identity).' },
+        budget: { type: 'number', description: 'Context budget in estimated tokens; sizes are bytes/4 (D27/D12 — no tokenizer dependency).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON ({work,decisions,budget,estimator,total_est,entries,truncated}) instead of the human table.' },
+      },
+      required: ['work', 'budget'],
+    },
+    examples: ['bee knowledge context --work okf-foundation --budget 20000 --json'],
     deprecated: null,
   },
 
