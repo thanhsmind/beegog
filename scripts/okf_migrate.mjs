@@ -266,6 +266,36 @@ export const PIN_REGISTRY = {
     note: "the 132-line BA spec as of 72fd828 (f2-5), immediately before f2-6 turned it into a D37 pointer stub — 5 rules, 4 edge cases, 5 pointers, and 7 unnumbered behavior bullets",
   },
 
+  "performance-log": {
+    kind: "area",
+    // The pin is HEAD at the moment f2-7 ran, taken BEFORE the stub replaced
+    // the content — same rule as doctrine-layer's, decision-memory's, and
+    // verify-pipeline's pins: pin the parent, copy the bytes, hash both.
+    commit: "46a56a4172eea71958728fac67b6436d7e8cdd11",
+    path: "docs/specs/performance-log.md",
+    blob_sha: "efdc9f2149cb6ae64f0a4f4a416de539dab82d93",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      behaviors: 0,
+      rules: 11,
+      edges: 5,
+      pointers: 7,
+      total: 23,
+      // The source's entire "Behaviors & Operations" section — 7 bold-lead
+      // paragraphs (Opening/Closing/One-shot/Reading-rendering/Populating the
+      // store/Building the matrix/Measurement rules) plus 3 of Measurement
+      // rules' own un-ided sub-bullets — carries no B-id at all, so none of
+      // it is invented into an anchor (D10). Every Business Rules bullet is a
+      // `- **Rn — …**` block start the classifier already sees, and every
+      // Edge Cases / Pointers bullet is a top-level `- ` block start, so the
+      // 10 unparsed blocks are entirely those Behaviors & Operations blocks,
+      // confirmed by --inventory before any edit.
+      unparsed_blocks: 10,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/performance-log.md",
+    note: "the 225-line BA spec as of 46a56a4 (f2-6), immediately before f2-7 turned it into a D37 pointer stub — 11 rules, 5 edge cases, 7 pointers, and 10 unparsed Behaviors & Operations blocks",
+  },
+
   // ─── declared, not yet pinned (the migrating cell authors the pin) ────────
   // Listed — rather than merely absent — so the gate refuses them BY NAME with
   // a reason, instead of the generic "unknown area" shrug.

@@ -123,12 +123,17 @@ Where things live. Read the touched area's spec before its code.
   `concurrency-and-hermetic-runs.md`. The legacy path
   [`verify-pipeline.md`](./verify-pipeline.md) remains as a pointer stub carrying the full
   14-anchor map (D37). Read before adding/moving any test file.
-- `docs/specs/performance-log.md` — the global cross-project performance log: sections
-  summarizing a piece of work's per-model token cost (new/cached/total), parallelism, and
-  active running time, plus a cross-project HTML matrix (`~/.config/beehive/performance.html`)
-  that auto-refreshes at session close. Driven by the `bee perf start|stop|section|log|render|report`
-  command group + `maybePerfRefresh` in `hooks/bee-session-close.mjs`. Core, cross-project scan,
-  and HTML renderer live in `templates/lib/perf.mjs`.
+- [`docs/knowledge/areas/performance-log/`](../knowledge/areas/performance-log/index.md) — the
+  global cross-project performance log, migrated into the knowledge bundle (okf-foundation
+  D20/D29; okf-migration-f2 F9): sections summarizing a piece of work's per-model token cost
+  (new/cached/total), parallelism, and active running time, plus a cross-project HTML matrix
+  (`~/.config/beehive/performance.html`) that auto-refreshes at session close. Driven by the
+  `bee perf start|stop|section|log|render|report` command group + `maybePerfRefresh` in
+  `hooks/bee-session-close.mjs`. Core, cross-project scan, and HTML renderer live in
+  `templates/lib/perf.mjs`. Split by TOPIC into `sections-lifecycle-and-measurement.md`,
+  `persistent-store-and-sync.md`, and `cross-project-matrix.md`. The legacy path
+  [`performance-log.md`](./performance-log.md) remains as a pointer stub carrying the full
+  23-anchor map (D37).
 - `skills/bee-hive/templates/bee.mjs` + `templates/lib/command-registry.mjs` — the sole shipped CLI (`bee.mjs <group> <verb>` over all 10 command groups, the 10th being `perf`; originated as an additive dispatcher in harness-integration-adopt, decision 30606de4, `docs/decisions/0024`, then made the sole canonical *and* sole shipped surface by shim-retire, D1, decision bbc6bcea — the 9 legacy per-group shims are deleted); `command-registry.mjs` is the single source of truth for the command surface. Contract in `docs/07-contracts.md`; spec-before-code still applies — read the touched area's spec before this code.
 - `skills/bee-hive/templates/lib/schedule.mjs` — the computed work schedule (`computeSchedule`/`detectCycles`: dep layering + declared-path overlap packing into waves; consumed by `bee cells schedule`, cycle refusal in `cells.mjs` add/update, and the swarming/validating prose). Spec: `docs/specs/workflow-state.md` B17/B18, R26/R27.
 - `skills/bee-hive/templates/lib/recovery.mjs` — crash-recovery transcript mining (`detectCrashCandidates`/`readTranscriptTail`/`hasCleanEndTrio`/`lastDurableSettlement`/`computeMiningWindow`/`buildMiningPrompt`: stale-heartbeat + non-clean-transcript-tail + work-in-flight detection; bounded mining window; the down-tier miner prompt). Consumed by `bee recovery scan|window` and the `status` recovery block; imports `perf.mjs` (transcript resolution) + `claims.mjs` (heartbeat/session), never imported by `command-registry.mjs`. Spec: `docs/specs/workflow-state.md` B33, R51.

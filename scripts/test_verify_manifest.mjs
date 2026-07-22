@@ -101,6 +101,7 @@ export const MANDATORY_SUITE_ARGS = [
   ["scripts/okf_migrate.mjs", "--check", "doctrine-layer"],
   ["scripts/okf_migrate.mjs", "--check", "decision-memory"],
   ["scripts/okf_migrate.mjs", "--check", "verify-pipeline"],
+  ["scripts/okf_migrate.mjs", "--check", "performance-log"],
 ];
 
 // Floor count: total discovered suites must never silently drop below this
@@ -116,7 +117,8 @@ export const MANDATORY_SUITE_ARGS = [
 // f2-3: +1 for the `okf_migrate --check doctrine-layer` coverage gate = 52.
 // f2-5: +1 for the `okf_migrate --check decision-memory` coverage gate = 53.
 // f2-6: +1 for the `okf_migrate --check verify-pipeline` coverage gate = 54.
-const SUITE_FLOOR_COUNT = 54;
+// f2-7: +1 for the `okf_migrate --check performance-log` coverage gate = 55.
+const SUITE_FLOOR_COUNT = 55;
 
 /**
  * Checks a discovered suite list against a mandatory list and a floor count.

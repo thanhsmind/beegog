@@ -118,6 +118,17 @@ const EXTRA_SUITES = [
   // hermetic) keep the F12 drift telemetry inside its band across the four
   // pinned "area"-shaped sources.
   ["scripts/okf_migrate.mjs", "--check", "verify-pipeline"],
+  // f2-7 (F6/F9): performance-log's own D35 coverage gate. 23 anchors (0 B /
+  // 11 R / 5 E / 7 P) derived from blob efdc9f2 at 46a56a4 with
+  // expected_counts.unparsed_blocks: 10 asserted — this source's entire
+  // "Behaviors & Operations" section (7 bold-lead paragraphs plus 3 un-ided
+  // Measurement-rules sub-bullets) carries no id at all, and none is
+  // invented into an anchor (D10). Three concepts, split by TOPIC (the
+  // operator-driven section lifecycle and its measurement rules; the
+  // automatic persistent store and sync; the read-only cross-project
+  // matrix) keep the F12 drift telemetry inside its band across the five
+  // pinned "area"-shaped sources.
+  ["scripts/okf_migrate.mjs", "--check", "performance-log"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

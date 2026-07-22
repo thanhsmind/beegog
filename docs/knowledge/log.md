@@ -102,3 +102,31 @@
   `concurrency-and-hermetic-runs.md`'s `bee.sources`, `--check verify-pipeline` failed with the
   real coverage-loss finding (`LOST in concepts: R4`), then was restored to green. Coverage is
   machine-checked by `scripts/okf_migrate.mjs --check verify-pipeline` (D35), now a chain suite.
+
+- Fifth area migrated (cell f2-7, feature `okf-migration-f2`, slice S4c):
+  `docs/specs/performance-log.md` re-authored into three `bee.area` concepts, split by TOPIC
+  rather than the old spec's headings — `areas/performance-log/sections-lifecycle-and-measurement.md`
+  (the operator-driven lifecycle of a named section: opening, closing, one-shot recording,
+  reading/rendering, the section data dictionary, and the measurement rules that make its
+  token/timing numbers trustworthy), `areas/performance-log/persistent-store-and-sync.md` (the one
+  shared, append-only, per-machine store every section lands in, and the automatic sync mechanism
+  that populates it from real session activity without the operator running anything), and
+  `areas/performance-log/cross-project-matrix.md` (the read-only cross-project rollup view built
+  from that same store, grouped by last folder name). Ground truth is DERIVED (F8): pin `{46a56a4,
+  docs/specs/performance-log.md, blob efdc9f2, ba-nine-section, 23 anchors (0 B / 11 R / 5 E /
+  7 P), unparsed_blocks: 10}`, with the pre-migration source committed verbatim at
+  `docs/history/okf-migration-f2/sources/performance-log.md`. The 10 unparsed blocks are the
+  source's entire "Behaviors & Operations" section — 7 bold-lead paragraphs plus 3 of Measurement
+  rules' own un-ided sub-bullets — and none is invented into an anchor (D10); their content still
+  travels into whichever concept's topic it matches. The source's own text already separates
+  "Populating the store (sync)" and "Building the matrix (read-only view)" into two distinct
+  behavior paragraphs, so three concepts follows the source's own structure rather than forcing
+  one; three concepts over 23 anchors and 226 source lines land anchors_per_concept at 7.67 and
+  concepts_per_100_source_lines at 1.33, both inside the [0.5x, 2x] band across the five now-pinned
+  "area"-shaped sources — a 2-concept shape (folding store+sync and matrix together) was checked
+  first and found to put concepts_per_100_source_lines at 0.89, a 0.49x outlier just outside the
+  band, confirming the 3-way split as the honest shape rather than a forced one. Fidelity:
+  min/median/max 1.000 (verbatim re-homing). RED-FIRST: with the R4 claim deliberately removed from
+  `sections-lifecycle-and-measurement.md`'s `bee.sources`, `--check performance-log` failed with
+  the real coverage-loss finding (`LOST in concepts: R4`), then was restored to green. Coverage is
+  machine-checked by `scripts/okf_migrate.mjs --check performance-log` (D35), now a chain suite.
