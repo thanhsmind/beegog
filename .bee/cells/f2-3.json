@@ -1,0 +1,87 @@
+{
+  "id": "f2-3",
+  "feature": "okf-migration-f2",
+  "lane": "high-risk",
+  "behavior_change": true,
+  "title": "S3: migrate doctrine-layer (39 anchors) — the first real area under the honest, widened gate",
+  "action": "Per F9 and the D20/D33/D35/D37 loop proven on advisor-protocol. CORRECTED PREMISE: an earlier attempt at this cell returned [BLOCKED] because the classifier could not read doctrine-layer's bold-wrapped rule ids; cell f2-4 (ed65720) widened it. doctrine-layer now inventories 39 anchors {B10, R17, E5, P7} with only 2 unparsed blocks (a wrapped continuation line at ~L176 and one unnumbered '- **The verify ladder ...**' bullet at ~L305) — it is the cleanest conforming area of the nine. STEP 0 — capture the pin BEFORE any edit: record `git rev-parse HEAD` as the pin commit, copy docs/specs/doctrine-layer.md verbatim to docs/history/okf-migration-f2/sources/doctrine-layer.md, compute blob_sha with `git hash-object`, run --inventory and record counts AND unparsed_blocks, then add the pin to PIN_REGISTRY with scheme ba-nine-section and full expected_counts INCLUDING unparsed_blocks (mandatory). Expect ~39/2 — if the numbers differ materially from that, stop and report rather than adjusting expected_counts to whatever you got. STEP 1 — author concepts under docs/knowledge/areas/doctrine-layer/, splitting by TOPIC not by heading (docs/knowledge/patterns/20260722-surface-structure-planning-is-reviewed-before-scope-locks.md). Read the source fully first and derive the split from what governs what; every one of the 39 anchors lands in exactly one concept's bee.sources. Frontmatter per D19/D32/D33 in canonical emitter form (the round-trip guard WILL catch hand-written frontmatter — author through emitFrontmatter or normalize after). Unique bee.id, one bee.authoritative_for per subject (D31). Carry-over: area->bee.areas, decisions->bee.decisions, sources+parity_*->bee.sources, updated->timestamp, coverage dropped. KEEP THE SOURCE'S TERMINOLOGY VERBATIM — the fidelity floor is lexical, so renaming a term reads as a fidelity failure; migration re-homes content, it does not rewrite it. STEP 2 — replace docs/specs/doctrine-layer.md with a pointer stub carrying the FULL 39-row anchor map (D37), update its reading-map.md row, and grep skills/ scripts/ hooks/ .bee/bin/ AGENTS.md docs/specs/ for anchor citations into doctrine-layer, rewiring live ones (docs/history/** stays archive). STEP 3 — add the --check doctrine-layer entry to EXTRA_SUITES and pin in MANDATORY_SUITES. STEP 4 — `bee knowledge index`, log.md dated entry, full chain. The fidelity floor and telemetry now run automatically; report doctrine-layer's min/median overlap and its telemetry row.",
+  "must_haves": {
+    "truths": [
+      "node scripts/run_verify.mjs exits 0 (67 suites incl. the doctrine-layer gate)",
+      "red evidence: the doctrine-layer gate was RED before the concepts existed (run it against an incomplete draft with one anchor unassigned) — output quoted",
+      "coverage: every anchor of the pinned blob lands in exactly one concept — counts quoted (N anchors, N owned, 0 dup, 0 lost)",
+      "fidelity: doctrine-layer clears the 0.60 floor with min and median quoted; no concept was edited to make it pass",
+      "bee knowledge check --json: zero errors, zero warnings; index --check green",
+      "the stub keeps docs/specs/doctrine-layer.md alive with the full anchor map; zero dangling citations outside docs/history/",
+      "the pin declares unparsed_blocks and the committed source copy's git hash-object matches blob_sha"
+    ],
+    "prohibitions": [
+      "never delete docs/specs/doctrine-layer.md — the stub replaces its content, the path stays (D20)",
+      "no invented content — every concept sentence traces to the source or is marked Open Gap (D10)",
+      "never edit a concept to clear the fidelity floor; never lower the floor",
+      "docs/history/** citations are not rewired; docs/decisions/index.md untouched (D11)",
+      "if the inventory shows the area is not actually nine-section conforming, return [BLOCKED] — do not force a scheme"
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/okf-migration-f2/CONTEXT.md",
+    "docs/history/okf-migration-f2/plan.md",
+    "docs/specs/doctrine-layer.md",
+    "docs/knowledge/areas/advisor-protocol/overview.md",
+    "docs/specs/advisor-protocol.md",
+    "docs/knowledge/patterns/20260722-surface-structure-planning-is-reviewed-before-scope-locks.md",
+    "scripts/okf_migrate.mjs"
+  ],
+  "files": [
+    "docs/knowledge/areas/doctrine-layer/",
+    "docs/knowledge/index.md",
+    "docs/knowledge/areas/index.md",
+    "docs/knowledge/log.md",
+    "docs/specs/doctrine-layer.md",
+    "docs/specs/reading-map.md",
+    "docs/history/okf-migration-f2/sources/doctrine-layer.md",
+    "scripts/okf_migrate.mjs",
+    "scripts/run_verify.mjs",
+    "scripts/test_verify_manifest.mjs"
+  ],
+  "deps": [
+    "f2-4"
+  ],
+  "tier": "ceiling",
+  "status": "claimed",
+  "decisions": [],
+  "trace": {
+    "worker": "worker-f2-3b",
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": "bbed69a9-bb81-4fe7-9894-160429484b5a",
+    "claimed_at": "2026-07-22T07:22:20.360Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-22T07:06:01.137Z",
+        "claim_session": "bbed69a9-bb81-4fe7-9894-160429484b5a",
+        "claimed_at": "2026-07-22T07:03:38.044Z",
+        "acquired_at": "2026-07-22T07:01:14.424Z",
+        "worker": "worker-f2-3",
+        "verdict": "blocked",
+        "failure_signature": "62020c9407a0",
+        "note": "STEP 0 inventory falsifies the cell's premise: doctrine-layer is NOT nine-section conforming under the shipped ba-nine-section scheme, so F9's \"do not force a scheme\" prohibition fires and no concept was authored.\n\nMEASURED (node scripts/okf_migrate.mjs --inventory docs/specs/doctrine-layer.md, against blob 351bf72adc2c34f9f18d9f3612735a6c92efac02 at commit f8f8a66):\n  counts   : behaviors 8, rules 0, edges 5, pointers 7, total 20\n  unparsed : blocks {behaviors 3, rules 18, edges 0, pointers 0, total 21}; lines 265\n\nunparsed_blocks (21) EXCEEDS derived anchors (20) — 51.2% of block starts in anchor-bearing sections are unclassified. The precedent pin advisor-protocol derives 26 anchors with unparsed_blocks 0.\n\nROOT CAUSE: doctrine-layer writes all 17 of its numbered business rules as `- **R1** — ...` (bold-wrapped id). The shipped classifier is /^-\\s+(R\\d+)\\s+—/, which requires a bare id, so the Business Rules section derives ZERO anchors while carrying R1-R17. This is byte-identical to the format-blindness okf_migrate.mjs's own header documents for docs/specs/onboarding.md (\"22 rules, written `- **R1** — ...`, inventoried as R0\"). The remaining 4 unparsed blocks: B3a and B7a (letter-suffixed ids rejected by /^\\*\\*(B\\d+)\\s+—/), one bold-lead continuation line inside B8, and the unnumbered \"verify ladder\" bullet.\n\nCONSEQUENCE IF FORCED: pinning at total 20 would make the coverage gate go GREEN while 17 business rules and 2 behaviours sat outside the ground truth entirely — lost content reading as content that never existed. That is precisely the defect F1/F8 exist to prevent.\n\nSIZED THE FIX (diagnostic probe .bee/tmp/okf-migration-f2/f2-3-scheme-probe.mjs, shipped extractor untouched): widening the two patterns to /^\\*\\*(B\\d+[a-z]?)\\s+—/ and /^-\\s+\\*{0,2}(R\\d+)\\*{0,2}\\s+—/ takes doctrine-layer from 20 anchors/21 unparsed to 39 anchors/2 unparsed, and is a STRICT NO-OP on the pinned advisor-protocol blob (still exactly 26 anchors, 0 unparsed). So the fix is available and provably non-disturbing to the shipped pin — but revising the shipped ground-truth extractor and the expected_counts.unparsed_blocks: 0 assertions is scheme-definition work (F9, decide-altitude), not something this worker may do inside a migration cell.\n\nRECOMMENDATION: file a gate cell ahead of f2-3 that widens ba-nine-section (or declares a doctrine-layer scheme), re-asserts both shipped pins at 26/47, and re-runs --inventory across the remaining areas — the same bold-id form almost certainly also hides onboarding's 22 rules and others. Then re-open f2-3 against a pin of ~39 anchors.\n\nBaseline verified green and untouched: node scripts/run_verify.mjs -> PASS 66 suites, wall=58897ms. Zero source files edited; working tree carries no f2-3 changes."
+      }
+    ],
+    "blocked_reason": null,
+    "verify_command": null,
+    "verified_at": null,
+    "dropped_reason": null,
+    "reopened_at": "2026-07-22T07:22:02.252Z",
+    "reopened_reason": "unblocked by f2-4 (ed65720): the classifier now reads bold-wrapped and letter-suffixed ids, so doctrine-layer inventories 39 anchors / 2 unparsed instead of 20 / 21. The strict no-op on both shipped pins is proven. Re-open against the corrected pin"
+  }
+}

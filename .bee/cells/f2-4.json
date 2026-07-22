@@ -72,6 +72,61 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "strict-no-op-real",
+            "status": "PASS",
+            "evidence": "--verify-pins exit 0; advisor 26 {4,9,6,7} unparsed 0, patterns 47; diff touches ZERO expected_counts values (:160,:181 unchanged) — only prose, 2 refusal strings, 2 regexes"
+          },
+          {
+            "id": "widening-did-not-leak",
+            "status": "PASS",
+            "evidence": "residual unparsed 80 across 9 areas exactly as claimed, anchors 393; section-tracked re-run: 0 anchors classified outside anchor-bearing sections; judge adversarial fixture of 10 near-miss forms yielded zero inventions (R2ab correctly refused)"
+          },
+          {
+            "id": "anchor-text-preserved",
+            "status": "PASS",
+            "evidence": ":459-484 matches on unbold(line) but pushes the RAW line, so text travels; §24 asserts the text of R2/B3a. Matters because :865 scores an empty anchor text as ratio 1"
+          },
+          {
+            "id": "sweep-honesty",
+            "status": "PASS",
+            "evidence": "worktree-parallelism has 10 narrative headings and zero anchor-bearing sections (0 anchors AND 0 unparsed) — verdict rests on section absence, not readability; verify-pipeline and decision-memory spot-checked the same way"
+          },
+          {
+            "id": "duplicate-id-finding",
+            "status": "PASS",
+            "evidence": "hook-runtime R14 at :450/:477; workflow-state R19/R20/R21 at :891-899/:916-925. Consequence correct: texts is a Map so last-write-wins and the FIRST member text is unmeasurable by the floor. Partial pre-existing mitigation: counts use array length, so a vanished duplicate still trips PIN_COUNT_MISMATCH — nothing mitigates the text collapse"
+          },
+          {
+            "id": "deviation-3-assertion-moved",
+            "status": "PASS",
+            "evidence": "the NON-ZERO unparsed assertion at :306 stands; the edited half replaced a now-false clause with a STRICTER positive (rules>=27 and includes R20b). Net strength increased — moved with the truth"
+          },
+          {
+            "id": "red-first-genuine",
+            "status": "PASS",
+            "evidence": "6 of 180 failed with exact expected/got lists; judge independently re-derived the same got-lists and unparsed counts from the pre-change regexes — arithmetically consistent, not narrated"
+          },
+          {
+            "id": "no-weakened-assertions",
+            "status": "PASS",
+            "evidence": "exactly one modifying hunk (deviation 3); FIDELITY_FLOOR stays 0.6; 4 files touched, none under docs/knowledge"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T07:25:36.717Z"
+      }
     ]
   }
 }

@@ -69,6 +69,71 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "floor-discriminates",
+            "status": "PASS",
+            "evidence": "3 shipped fixtures + judge built 5 more: faithful re-wording 0.815 and markdown-table 0.963 PASS; summarised 0.000, paraphrase 0.296, synonym-swap 0.037 FAIL with anchor/owner/ratio named"
+          },
+          {
+            "id": "no-content-was-bent",
+            "status": "PASS",
+            "evidence": "f8f8a66 --stat: only the two scripts + cell bookkeeping; zero bytes under docs/knowledge or docs/specs. Independently measured 26 min .977 med 1.0 / 47 min .795 med .907"
+          },
+          {
+            "id": "stopword-honesty",
+            "status": "PASS",
+            "evidence": "okf_migrate.mjs:727-734 stopwords are articles/preps/pronouns/auxiliaries only; never/always/must/only/refuses/not/cannot all retained"
+          },
+          {
+            "id": "frontmatter-excluded",
+            "status": "PASS",
+            "evidence": "okf_migrate.mjs:864-868 body-only; probe on a stub restating the anchor in its title: body 0.000 vs whole-file 1.000 — exclusion is load-bearing"
+          },
+          {
+            "id": "median-guard",
+            "status": "PASS",
+            "evidence": "test_okf_pins.mjs:489-493 asserts median>=0.75 per area; a normalization hugging the floor goes red"
+          },
+          {
+            "id": "unparsed-blocks-mandatory",
+            "status": "PASS",
+            "evidence": "okf_migrate.mjs:603-613 PIN_INCOMPLETE fires BEFORE resolvePinnedSource:615; deviation-1 fixture keeps both original assertions byte-unchanged"
+          },
+          {
+            "id": "telemetry-quiet-until-3",
+            "status": "PASS",
+            "evidence": "returns [] below 3 samples (:938); both >2x and <0.5x sides fail at 3; live run median_available=false"
+          },
+          {
+            "id": "bundle-invariants-wired",
+            "status": "PASS",
+            "evidence": "end-to-end: spawns real CLI, writes a real non-canonical concept, exit 0->1 naming BUNDLE UNHEALTHY, rmSync finally, exit 0 after. Deviation 2 judged LEGITIMATE SCOPING: knowledge.mjs untouched, chain entry still non-strict, and an unrelated warning is asserted NOT to fail the gate"
+          },
+          {
+            "id": "red-first-genuine",
+            "status": "PASS",
+            "evidence": "9 missing-export + 13 behavioural failures then a hard TypeError mid-suite — only happens when tests precede implementation"
+          },
+          {
+            "id": "no-weakened-assertions",
+            "status": "PASS",
+            "evidence": "exactly one removed line (the deviation-1 fixture); +362 additive, assertions 145->167"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T07:03:58.394Z"
+      }
     ]
   }
 }
