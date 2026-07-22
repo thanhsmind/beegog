@@ -305,3 +305,4 @@
 {"ts":"2026-07-22T05:39:41.856Z","type":"friction","title":"write-guard CLI-shape parser fires on command TEXT inside heredocs and node -e bodies","detail":"","severity":"P2","layer":"hooks","feature":""}
 {"ts":"2026-07-22T06:00:18.337Z","type":"friction","title":"promote verifySummary falls back to raw evidence JSON when trace has no verify_tail key","detail":"","severity":"P3","layer":"cli","feature":""}
 {"ts":"2026-07-22T06:07:43.534Z","type":"friction","title":"no bee knowledge normalize verb — the round-trip warning names the fix but nothing performs it","detail":"","severity":"P2","layer":"cli","feature":""}
+{"ts":"2026-07-22T06:44:03.067Z","type":"friction","title":"derivePin does not require expected_counts.unparsed_blocks — the regression-catch rests on authoring convention","detail":"","severity":"P2","layer":"tests","feature":""}

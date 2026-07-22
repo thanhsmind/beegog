@@ -78,6 +78,66 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "cannot-launder-green",
+            "status": "PASS",
+            "evidence": "derivePin :509-584 gates every exit; PIN_EMPTY_EXTRACTION :549 pushed BEFORE the count loop :558 and additive not early-return, so total:0 cannot cancel it; 7 negative paths all EXIT=1 live"
+          },
+          {
+            "id": "blindness-now-visible",
+            "status": "PASS",
+            "evidence": "onboarding unparsed blocks 48 / lines 507 vs pinned advisor-protocol 0; unparsed_blocks:0 declared :135,:146 and compared :558-568 — ad-hoc pin over onboarding gave PIN_COUNT_MISMATCH EXIT=1"
+          },
+          {
+            "id": "shipped-areas-unchanged",
+            "status": "PASS",
+            "evidence": "26 {4,9,6,7} and 47 via DERIVED path; chain PASS lines byte-identical to fb3bba4^ modulo a variable rename; new line additive"
+          },
+          {
+            "id": "pin-is-content-addressed",
+            "status": "PASS",
+            "evidence": "PIN_REGISTRY :118-170 all five keys asserted; git hash-object on both committed copies matches declared blob_shas exactly"
+          },
+          {
+            "id": "shallow-clone-fallback-real",
+            "status": "PASS",
+            "evidence": "40-zero commit + copy present => PASS via committed-copy EXIT=0; copy missing => PIN_COPY_MISSING EXIT=1; both missing => PIN_UNRESOLVED EXIT=1"
+          },
+          {
+            "id": "no-scheme-refused",
+            "status": "PASS",
+            "evidence": "decision-memory and worktree-parallelism both PIN_NO_SCHEME EXIT=1; verify-pins reports SKIP-REFUSED, never counts them"
+          },
+          {
+            "id": "regexes-untouched",
+            "status": "PASS",
+            "evidence": "classification regexes byte-identical to fb3bba4^; only accounting added. Restraint CORRECT: no blind area is gated today (unpinned/unschemed both exit 1), so the deferral cannot hide a false green"
+          },
+          {
+            "id": "red-first-genuine",
+            "status": "PASS",
+            "evidence": "red is the API probe at test_okf_pins.mjs:86-92; exactly the 5 new export names would fail against fb3bba4^"
+          },
+          {
+            "id": "no-weakened-assertions",
+            "status": "PASS",
+            "evidence": "test_verify_manifest purely additive, floor 50->51 RAISED; run_verify diff comment-only; 83 assertions PASS"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T06:44:03.002Z"
+      }
     ]
   }
 }
