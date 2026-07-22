@@ -102,6 +102,66 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "no-content-loss",
+            "status": "PASS",
+            "evidence": "B3 triggers.md:39-47, R9 slots-and-tiers.md:48-69, E5 :82-85, P2 triggers.md:62-65 — verbatim in owning concepts"
+          },
+          {
+            "id": "no-invention",
+            "status": "PASS",
+            "evidence": "only new prose is navigational split note overview.md:28-32; Open Gaps carried from source"
+          },
+          {
+            "id": "coverage-gate-honest",
+            "status": "PASS",
+            "evidence": "live --inventory of a0ea0cc~1 = 4B/9R/6E/7P total 26, byte-matches ANCHOR_REGISTRY okf_migrate.mjs:51-62"
+          },
+          {
+            "id": "stub-integrity",
+            "status": "PASS",
+            "evidence": "all 26 stub targets exist+match owners; reading-map:32 bundle; inject.mjs count filename-based"
+          },
+          {
+            "id": "hook-widening",
+            "status": "PASS",
+            "evidence": "bee-session-close.mjs:157 Math.max(specs flat, knowledge recursive); mirror IDENTICAL"
+          },
+          {
+            "id": "authority-rules",
+            "status": "PASS",
+            "evidence": "0 errors 0 warnings; 4 unique ids + 4 unique authoritative_for"
+          },
+          {
+            "id": "red-first-genuine",
+            "status": "PASS",
+            "evidence": "red output matches okf_migrate.mjs:200/229 format; consistent with --omit P7"
+          },
+          {
+            "id": "chain-wiring",
+            "status": "PASS",
+            "evidence": "EXTRA_SUITES + MANDATORY_SUITES additive; no --strict"
+          },
+          {
+            "id": "d11-and-history-untouched",
+            "status": "PASS",
+            "evidence": "only declared release-manifest regen touches docs/history; decisions index absent"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T04:42:18.532Z"
+      }
     ]
   }
 }

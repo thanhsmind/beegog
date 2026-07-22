@@ -64,6 +64,51 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "chain-entry-plain",
+            "status": "PASS",
+            "evidence": "run_verify.mjs:69 adds [\".bee/bin/bee.mjs\",\"knowledge\",\"check\"] to EXTRA_SUITES, no --strict"
+          },
+          {
+            "id": "manifest-pin",
+            "status": "PASS",
+            "evidence": "test_verify_manifest.mjs:71 appends \".bee/bin/bee.mjs\" to MANDATORY_SUITES; diff purely additive"
+          },
+          {
+            "id": "gate-bites-evidence",
+            "status": "PASS",
+            "evidence": "okf-3.json:48 red_failure_evidence: fixture forced knowledge check EXIT=1 and chain FAILED SUITES (2); never committed"
+          },
+          {
+            "id": "chain-green",
+            "status": "PASS",
+            "evidence": "test_verify_manifest PASS 62 suites; knowledge check --json errors:[] EXIT=0"
+          },
+          {
+            "id": "side-effect-honest",
+            "status": "PASS",
+            "evidence": "trace declares release-manifest regen; git show --stat: 1 hash line"
+          },
+          {
+            "id": "floor-count-reasoning",
+            "status": "PASS",
+            "evidence": "SUITE_FLOOR_COUNT=50 loose floor per L86 comment; 62>50"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T04:04:37.543Z"
+      }
     ]
   }
 }

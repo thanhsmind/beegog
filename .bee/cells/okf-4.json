@@ -103,6 +103,71 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "index-determinism",
+            "status": "PASS",
+            "evidence": "computeIndexFiles pure, path-sorted, no Date/now in render path; LF-only; index --check exit 0"
+          },
+          {
+            "id": "index-check-idiom",
+            "status": "PASS",
+            "evidence": "knowledgeIndexDrift re-renders in memory, byte-compares, STALE naming + exit 1"
+          },
+          {
+            "id": "root-index-conformance",
+            "status": "PASS",
+            "evidence": "check --json errors:[] warnings:[]; okf_version-only frontmatter + HTML provenance"
+          },
+          {
+            "id": "non-root-no-frontmatter",
+            "status": "PASS",
+            "evidence": "frontmatter = dir===\"\" ? emit : \"\" — non-root branch empty"
+          },
+          {
+            "id": "critical-section",
+            "status": "PASS",
+            "evidence": "## Critical patterns over bee.critical===true; test asserts include/exclude"
+          },
+          {
+            "id": "list-d15",
+            "status": "PASS",
+            "evidence": "listConcepts {path,id,type,lifecycle,title} only; filters + --json; test asserts never content"
+          },
+          {
+            "id": "chain-wiring",
+            "status": "PASS",
+            "evidence": "EXTRA_SUITES knowledge index --check, no --strict; pin additive"
+          },
+          {
+            "id": "red-first-genuine",
+            "status": "PASS",
+            "evidence": "27 passed/9 failed pre-impl, Unknown command list"
+          },
+          {
+            "id": "no-weakened-assertions",
+            "status": "PASS",
+            "evidence": "zero deletions across the three test files"
+          },
+          {
+            "id": "d11-untouched",
+            "status": "PASS",
+            "evidence": "docs/decisions/index.md absent from commit"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T04:23:39.621Z"
+      }
     ]
   }
 }

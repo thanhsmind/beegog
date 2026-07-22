@@ -1,0 +1,68 @@
+{
+  "id": "okf-7",
+  "feature": "okf-foundation",
+  "lane": "high-risk",
+  "behavior_change": true,
+  "title": "S5: bee knowledge context --work --budget — the budget-aware consumer, dogfooded on real data",
+  "action": "Per D27, extend knowledge.mjs (templates/lib SOURCE OF TRUTH, same atomic propagation as okf-1/okf-4) with `context`: resolve --work <id> to the bee.work-item concept whose bee.id matches; walk its bee.required_context TRANSITIVELY (each visited concept's own required_context too) with a cycle guard — a cycle is deduped silently, never an error; add every bundle concept of type bee.decision whose bee.areas overlaps the work item's areas (informational: also surface the work item's bee.decisions id list in the output header); add EVERY concept with bee.critical true; rank: (1) the work item itself, (2) its bee.plan sibling in the same work/<id>/ dir when present, (3) required_context in BFS depth order, (4) critical patterns, (5) area decisions; cut at --budget <tokens> using bytes/4 (estimator NAMED in output as bytes/4); OUTPUT = ordered MANIFEST — one entry per concept: path, bytes, est_tokens, one-line reason ('work item', 'required_context depth 1 via <parent>', 'critical pattern', ...) — NEVER file content. --json emits {work,decisions,budget,estimator,total_est,entries:[...],truncated:[paths]}; human form is a table. Unknown --work id = typed error exit 1. Register knowledge.context in command-registry (runnable example: --work okf-foundation --budget 20000); wire HANDLERS. RED-FIRST: extend test_knowledge.mjs — fixture bundle with a work item, 2-level required_context chain, a cycle (A->B->A), a critical pattern, a non-critical pattern (excluded), an area decision, budget large (all in, order asserted), budget tiny (cut asserted, truncated list named), unknown id error, manifest never contains body text. Then the atomic propagation sequence (onboard --apply, render trees, manifest --write) as LAST mutations; ONE commit sweeping everything.",
+  "must_haves": {
+    "truths": [
+      "node scripts/run_verify.mjs exits 0 (65 suites; test_knowledge extended in place)",
+      "red evidence: new tests failed before implementation (verbatim)",
+      "DOGFOOD (S5 acceptance, integration review): `node .bee/bin/bee.mjs knowledge context --work okf-foundation --budget 20000 --json` returns a manifest whose entries all exist on disk, headed by work-item.md and plan.md, including areas/advisor-protocol via required_context and every critical pattern that fits; total_est <= 20000; full output quoted in the trace",
+      "manifest entries carry path/bytes/est_tokens/reason and never content",
+      "cycle fixture dedupes silently; unknown --work exits 1 with a typed error"
+    ],
+    "prohibitions": [
+      "never emit file content in the manifest (D27)",
+      "no tokenizer dependency — bytes/4 only, named (D12/D27)",
+      "no reads outside docs/knowledge/ except resolving nothing — the verb is bundle-only (D23); the decisions id list comes from the work item's own frontmatter, never from .bee/ stores",
+      "no --strict; docs/decisions/index.md untouched (D11)"
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/okf-foundation/CONTEXT.md",
+    "skills/bee-hive/templates/lib/knowledge.mjs",
+    "docs/knowledge/work/okf-foundation/work-item.md",
+    "skills/bee-hive/templates/tests/test_knowledge.mjs"
+  ],
+  "files": [
+    "skills/bee-hive/templates/lib/knowledge.mjs",
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    "skills/bee-hive/templates/tests/test_knowledge.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+    ".bee/bin/lib/knowledge.mjs",
+    ".bee/bin/lib/command-registry.mjs",
+    ".bee/bin/bee.mjs",
+    ".bee/onboarding.json",
+    ".claude-plugin/",
+    ".codex-plugin/",
+    ".claude/skills/",
+    ".agents/skills/",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "deps": [
+    "okf-6"
+  ],
+  "tier": "ceiling",
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null,
+    "claimed_at": null,
+    "verify_command": null,
+    "verified_at": null
+  }
+}
