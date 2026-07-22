@@ -153,6 +153,7 @@ import {
   listConcepts,
   buildContextManifest,
   buildPromotion,
+  bundleMode,
 } from './lib/knowledge.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
 import {
@@ -1876,12 +1877,33 @@ async function handleStateSet(root, flags) {
   // is append-only and outside the 'state' lock's store scope, so this stays
   // after the lock releases, unchanged from before.
   if (waived && waived.length > 0) {
+    // jrt-2: this audit record was itself UNTAGGED — the one internal
+    // decision-logging call the widened census (test_cells.mjs) was written
+    // to catch. It is the worst-placed of the five: the comment above already
+    // notes the write happens after the 'state' lock releases, so a throw
+    // here would leave the close half-done — state already mutated, the
+    // record explaining the waiver never written. Tags drawn from the
+    // existing taxonomy (docs/decisions/taxonomy.json): 'scribing' (this IS
+    // scribing debt) + 'state' (this IS a feature-close phase transition).
+    //
+    // Second, separate defect found on this same line: the decision text
+    // named "docs/specs/" unconditionally, which is false in a repo that has
+    // migrated to a knowledge bundle — docs/specs/ is then the retired,
+    // read-only compat surface (see docs/specs/reading-map.md), and the
+    // settled behavior actually lives under docs/knowledge/. Resolved the
+    // same way hooks/bee-session-close.mjs's capture nudge already does —
+    // branching on knowledge.mjs's bundleMode(root) — rather than inventing a
+    // second convention. `.bee/bin/**` sits outside the instruction fence's
+    // covered surfaces (docs/specs/ and docs/knowledge/ content only), which
+    // is why no gate caught this drift when the bundle migration landed.
+    const stateLayer = bundleMode(root) ? 'the knowledge bundle (docs/knowledge/)' : 'docs/specs/';
     logDecision(root, {
-      decision: `Closed feature "${state.feature}" with scribing debt WAIVED for ${waived.length} capped behavior_change cell(s): ${waived.join(', ')}. Their settled behavior is NOT in docs/specs/.`,
+      decision: `Closed feature "${state.feature}" with scribing debt WAIVED for ${waived.length} capped behavior_change cell(s): ${waived.join(', ')}. Their settled behavior is NOT in ${stateLayer}.`,
       rationale:
         'Explicitly waived via `state set --phase compounding-complete --waive-scribing-debt`. bee refuses this close by default (chain-integrity D2); the waiver is the sanctioned door, and this record is its price.',
       scope: 'repo',
       source: 'agent',
+      tags: ['scribing', 'state'],
     });
   }
   const waiverNote = waived && waived.length > 0

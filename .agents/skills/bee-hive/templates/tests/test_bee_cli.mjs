@@ -29,6 +29,7 @@ import { createSession, bindSessionLane } from '../lib/claims.mjs';
 import { writeJsonAtomic, hashFile, appendJsonl } from '../lib/fsutil.mjs';
 import { defaultState, writeState, writeLane, BEE_VERSION } from '../lib/state.mjs';
 import { encodeProjectDir } from '../lib/perf.mjs';
+import { emitFrontmatter } from '../lib/knowledge.mjs';
 import {
   splitCommandTokens,
   resolveCommand,
@@ -1281,6 +1282,64 @@ await check('--waive-scribing-debt permits the close but is never silent: it log
     );
     const log = fs.readFileSync(path.join(dir, '.bee', 'decisions.jsonl'), 'utf8');
     assert(/d-1/.test(log) && /d-2/.test(log), `the waiver decision must name every waived cell, got: ${log}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('--waive-scribing-debt under a taxonomy: the waiver audit itself does not throw DECISIONS_UNTAGGED_REFUSED, and lands correctly tagged (jrt-2 — this was the fifth untagged internal logDecision call, and the worst-placed of the five: it fires after the state write already landed)', async () => {
+  const dir = makeDebtRepo();
+  try {
+    fs.mkdirSync(path.join(dir, 'docs', 'decisions'), { recursive: true });
+    writeJsonAtomic(path.join(dir, 'docs', 'decisions', 'taxonomy.json'), {
+      schema_version: 1,
+      tags: [
+        { name: 'scribing', description: 'Spec sync and BA capture' },
+        { name: 'state', description: 'Runtime state and phases' },
+      ],
+      candidates: [],
+    });
+    const ok = await runBee(['state', 'set', '--owner', 'compounding', '--phase', 'compounding-complete', '--waive-scribing-debt', '--json'], dir);
+    assert(
+      ok.status === 0,
+      `before the jrt-2 fix this threw DECISIONS_UNTAGGED_REFUSED after the state write already landed — got status ${ok.status}: ${ok.stdout}${ok.stderr}`,
+    );
+    assert(
+      JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8')).phase === 'compounding-complete',
+      'the waived close must still write the terminal phase under a taxonomy',
+    );
+    const log = fs.readFileSync(path.join(dir, '.bee', 'decisions.jsonl'), 'utf8');
+    const event = JSON.parse(log.trim().split('\n').pop());
+    assert(/d-1/.test(event.decision) && /d-2/.test(event.decision), `the waiver decision must name every waived cell, got: ${event.decision}`);
+    assert(
+      Array.isArray(event.tags) && event.tags.includes('scribing') && event.tags.includes('state'),
+      `waiver decision should be tagged scribing+state (what the event IS), got ${JSON.stringify(event.tags)}`,
+    );
+    assert(/docs\/specs\//.test(event.decision), 'this fixture has no bundle — the decision text still names docs/specs/, unchanged');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('--waive-scribing-debt in a repo with a knowledge bundle: the decision text names the bundle, not docs/specs/ (jrt-2 — the second, separate defect on the same line)', async () => {
+  const dir = makeDebtRepo();
+  try {
+    const bee = { id: 'demo-area-overview', lifecycle: 'active', areas: ['demo'], authoritative_for: 'demo: purpose' };
+    const data = { type: 'bee.area', title: 'Demo area — purpose', description: 'A fixture concept.', tags: ['demo'], timestamp: '2026-07-22', bee };
+    fs.mkdirSync(path.join(dir, 'docs', 'knowledge', 'areas', 'demo'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'docs', 'knowledge', 'areas', 'demo', 'overview.md'),
+      `${emitFrontmatter(data)}\n# Demo area — purpose\n\nBody.\n`,
+      'utf8',
+    );
+    const ok = await runBee(['state', 'set', '--owner', 'compounding', '--phase', 'compounding-complete', '--waive-scribing-debt', '--json'], dir);
+    assert(ok.status === 0, `the waiver must still permit the close in a bundle repo, got: ${ok.stdout}${ok.stderr}`);
+    const log = fs.readFileSync(path.join(dir, '.bee', 'decisions.jsonl'), 'utf8');
+    const event = JSON.parse(log.trim().split('\n').pop());
+    assert(
+      /docs\/knowledge/.test(event.decision) && !/NOT in docs\/specs\//.test(event.decision),
+      `in a bundle repo the waiver text must name docs/knowledge/, not the unconditional docs/specs/ wording — got: ${event.decision}`,
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

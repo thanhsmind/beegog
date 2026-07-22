@@ -2260,12 +2260,19 @@ function lineOf(text, index) {
   return text.slice(0, index).split('\n').length;
 }
 
-function collectMjsFiles(dir) {
+// jrt-2: `excludeDirNames` is structural, not a hand-maintained path list — it
+// names directories to prune from the walk (by basename, at any depth), the
+// walk itself still discovers every .mjs file by scanning. Used to prune
+// `tests/` (see the census below for why) without hand-listing the files
+// inside it.
+function collectMjsFiles(dir, excludeDirNames = []) {
   let out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) out = out.concat(collectMjsFiles(full));
-    else if (entry.isFile() && entry.name.endsWith('.mjs')) out.push(full);
+    if (entry.isDirectory()) {
+      if (excludeDirNames.includes(entry.name)) continue;
+      out = out.concat(collectMjsFiles(full, excludeDirNames));
+    } else if (entry.isFile() && entry.name.endsWith('.mjs')) out.push(full);
   }
   return out;
 }
@@ -2293,12 +2300,24 @@ await check('census scanner: findLogDecisionCalls flags a tagless call, passes a
   assert(findLogDecisionCalls(declarationOnly).length === 0, 'the function logDecision( declaration itself must never be counted as a call site');
 });
 
-await check('census: every logDecision( call inside .bee/bin/lib/** and skills/bee-hive/templates/lib/** carries at least one tag (jrt-1 — the sweep this cell exists to add)', () => {
+// jrt-2: jrt-1's census above scoped itself to `.bee/bin/lib/**` and
+// `skills/bee-hive/templates/lib/**` from ASSUMPTION, not measurement — one
+// directory too narrow. A repo-wide grep for `logDecision(` finds real
+// callers directly in `bee.mjs` too (the CLI entrypoints, one level up from
+// `lib/`). Widened to every non-test .mjs under `.bee/bin/**` and
+// `skills/bee-hive/templates/**` — still DERIVED by scanning source, never a
+// hand-maintained path list (see collectMjsFiles's excludeDirNames param
+// above). `templates/tests/` is pruned structurally: a test fixture's
+// tagless logDecision( call (e.g. the injected snippet in the scanner-proof
+// check above, or a future fixture like it) is its subject matter, not a
+// production call site the taxonomy gate must ever see — flagging it would
+// be a false positive, not a real offender.
+await check('census: every logDecision( call inside .bee/bin/** and skills/bee-hive/templates/** (excluding templates/tests/) carries at least one tag (jrt-2 — widened from jrt-1s lib/**-only scope, which measurement showed was too narrow)', () => {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-  const dirs = [path.join(repoRoot, '.bee', 'bin', 'lib'), path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'lib')];
+  const dirs = [path.join(repoRoot, '.bee', 'bin'), path.join(repoRoot, 'skills', 'bee-hive', 'templates')];
   const offenders = [];
   for (const dir of dirs) {
-    for (const file of collectMjsFiles(dir)) {
+    for (const file of collectMjsFiles(dir, ['tests'])) {
       const text = fs.readFileSync(file, 'utf8');
       for (const call of findLogDecisionCalls(text)) {
         if (!/\btags\s*:/.test(call.args)) {
