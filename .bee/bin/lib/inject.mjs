@@ -381,7 +381,7 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
     for (const key of recordedKeys) lines.push(`- ${key}: \`${commands[key]}\``);
     if (commands.verify) {
       lines.push(
-        '- Baseline gate: run the verify command once per session before claiming any cell; a red baseline is surfaced and becomes its own fix-first tiny cell — never build on red.',
+        '- Baseline gate: before your first `cells claim` of this session, run the verify command once; a red baseline is surfaced and becomes its own fix-first tiny cell — never build on red. The claim is the trigger, not arrival: a session that claims no cell owes no baseline run.',
       );
     }
   }
@@ -453,7 +453,7 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
   }
 
   lines.push('');
-  lines.push('Run `node .bee/bin/bee.mjs status --json` yourself for detail (agent-run — never hand bee commands to the user). Route via bee-hive.');
+  lines.push('Everything above is already read — do not re-fetch it. Run `node .bee/bin/bee.mjs status --json` (and `decisions active`) yourself when you are about to ROUTE WORK — claim, plan, change phase — or need detail this block does not carry (agent-run — never hand bee commands to the user). Route via bee-hive.');
   return lines.join('\n');
 }
 

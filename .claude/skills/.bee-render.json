@@ -12,7 +12,7 @@
     },
     {
       "name": "bee-compounding",
-      "sha256": "3d0122c5f02ef0eb775eed82d869c2290b1a531944c8cac70598cb03e97eb0d7"
+      "sha256": "436f106996c51f7ca47e67228faee123ee2afec6dcaf1adda6854255b8d221a9"
     },
     {
       "name": "bee-evolving",
@@ -32,7 +32,7 @@
     },
     {
       "name": "bee-hive",
-      "sha256": "ce4f7a6160feb0fd29973d68f664acf34ac66ed719fc4b15802c8f114933aac1"
+      "sha256": "bfe4b15deaf6d924b3a28d7d8c8b86dc5aa3d55cbe26d46310baec9fcec75ebd"
     },
     {
       "name": "bee-planning",

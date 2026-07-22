@@ -455,6 +455,104 @@ await check('finding 4 (pinned): a CLOSED record sweeps even when --before preda
   assert(names.includes('closed-feat'), `a closed record must sweep even when --before predates it, got included=${JSON.stringify(names)}`);
 });
 
+// ─── issue #53's adjacent finding (issues-46-53 D7): LOOSE FILES at the ────
+// scratch ROOT are entries too. The broom used to list only directories and
+// symlinks, so the helper scripts and evidence dumps agents write straight
+// into `.bee/tmp/` — the exact directory guards.mjs's refusal message tells
+// them to use — were unsweepable by every flag, `--all` included. Measured on
+// the bee checkout at the time of the fix: 58 of 76 entries in `.bee/tmp/`
+// were loose files, and `tmp sweep --all --dry-run` reported 18.
+
+await check('#53 finding: a LOOSE FILE at the scratch root is a sweep entry — --all clears it ("clears the lot" means the lot)', async () => {
+  const root = makeFixtureRepo();
+  writeDefaultState(root, { feature: null, phase: 'idle' });
+  fs.mkdirSync(path.join(root, '.bee', 'tmp'), { recursive: true });
+  makeScratchDir(root, '.bee/tmp', 'a-dir', { 'a.txt': 'dir scratch' });
+  fs.writeFileSync(path.join(root, '.bee', 'tmp', 'build_helper.mjs'), 'console.log(1)\n');
+  fs.writeFileSync(path.join(root, '.bee', 'tmp', 'f2-2-evidence.json'), '{"x":1}\n');
+
+  const plan = computeSweepPlan(root, { all: true });
+  const names = plan.included.map((c) => c.name).sort();
+  assert(
+    names.join(',') === 'a-dir,build_helper.mjs,f2-2-evidence.json',
+    `--all must include loose root files, got included=${JSON.stringify(names)}`,
+  );
+
+  const result = runSweep(root, { all: true, dryRun: false });
+  assert(!fs.existsSync(path.join(root, '.bee', 'tmp', 'build_helper.mjs')), '--all must actually remove a loose root script');
+  assert(!fs.existsSync(path.join(root, '.bee', 'tmp', 'f2-2-evidence.json')), '--all must actually remove a loose root evidence file');
+  assert(result.files_freed === 3, `files_freed must count the loose files, got ${result.files_freed}`);
+});
+
+await check('#53 finding: --feature <f> sweeps the feature\'s per-cell dirs and its loose <f>-* root files, not just a dir named exactly <f>', async () => {
+  const root = makeFixtureRepo();
+  writeLaneFixture(root, 'featx', 'compounding-complete');
+  makeScratchDir(root, '.bee/tmp', 'featx', { 'a.txt': 'feature home' });
+  makeScratchDir(root, '.bee/tmp', 'featx-3', { 'b.txt': 'per-cell scratch' });
+  fs.writeFileSync(path.join(root, '.bee', 'tmp', 'featx-3-evidence.json'), '{"x":1}\n');
+  fs.writeFileSync(path.join(root, '.bee', 'tmp', 'featx.log'), 'log\n');
+  // unrelated neighbours that must survive: no separator boundary, and a
+  // different feature entirely.
+  fs.writeFileSync(path.join(root, '.bee', 'tmp', 'featxtra.json'), '{"keep":1}\n');
+  makeScratchDir(root, '.bee/tmp', 'other', { 'c.txt': 'someone else' });
+
+  const result = runSweep(root, { feature: 'featx', dryRun: false });
+  const names = result.removed.map((r) => r.name).sort();
+  assert(
+    names.join(',') === 'featx,featx-3,featx-3-evidence.json,featx.log',
+    `--feature must sweep the feature's dir, per-cell dirs and loose files, got removed=${JSON.stringify(names)}`,
+  );
+  assert(fs.existsSync(path.join(root, '.bee', 'tmp', 'featxtra.json')), 'a name without a separator boundary must survive (featx vs featxtra)');
+  assert(fs.existsSync(path.join(root, '.bee', 'tmp', 'other')), 'an unrelated feature must survive --feature');
+});
+
+await check('#53 finding, safety: a prefix match never eats a LIVE sibling — --feature auth leaves auth-v2 alone and REPORTS the refusal', async () => {
+  const root = makeFixtureRepo();
+  writeLaneFixture(root, 'auth', 'compounding-complete');
+  writeLaneFixture(root, 'auth-v2', 'swarming');
+  makeScratchDir(root, '.bee/tmp', 'auth', { 'a.txt': 'closed' });
+  makeScratchDir(root, '.bee/tmp', 'auth-v2', { 'b.txt': 'LIVE sibling — must survive' });
+
+  assert(isLiveFeature(root, 'auth-v2') === true, 'fixture sanity: auth-v2 must be live');
+  const plan = computeSweepPlan(root, { feature: 'auth' });
+  const names = plan.included.map((c) => c.name);
+  assert(names.join(',') === 'auth', `only the exact name may sweep here, got included=${JSON.stringify(names)}`);
+  assert(
+    plan.skipped.some((s) => s.name === 'auth-v2' && s.reason === 'live_sibling'),
+    `a live sibling refused by the prefix rule must be REPORTED, got skipped=${JSON.stringify(plan.skipped)}`,
+  );
+
+  runSweep(root, { feature: 'auth', dryRun: false });
+  assert(fs.existsSync(path.join(root, '.bee', 'tmp', 'auth-v2')), 'a LIVE sibling must survive a prefix sweep');
+  assert(!fs.existsSync(path.join(root, '.bee', 'tmp', 'auth')), 'the exactly-named feature must still be swept');
+});
+
+await check('#53 finding: an EXACT --feature name still sweeps live scratch (the documented override is untouched by the prefix rule)', async () => {
+  const root = makeFixtureRepo();
+  writeDefaultState(root, { feature: 'live-feat', phase: 'swarming' });
+  makeScratchDir(root, '.bee/tmp', 'live-feat', { 'a.txt': 'live' });
+  fs.writeFileSync(path.join(root, '.bee', 'tmp', 'live-feat-1.txt'), 'live cell scratch\n');
+
+  const result = runSweep(root, { feature: 'live-feat', dryRun: false });
+  const names = result.removed.map((r) => r.name).sort();
+  assert(names.join(',') === 'live-feat,live-feat-1.txt', `exact override plus its own loose files, got ${JSON.stringify(names)}`);
+});
+
+await check('#53 finding: loose root files stay behind the same no-default-purge discipline as dirs (absent, no --before → never swept)', async () => {
+  const root = makeFixtureRepo();
+  writeDefaultState(root, { feature: null, phase: 'idle' });
+  fs.mkdirSync(path.join(root, '.bee', 'tmp'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.bee', 'tmp', 'stray.json'), '{"x":1}\n');
+
+  const plan = computeSweepPlan(root, {});
+  assert(plan.included.length === 0, `no flags must sweep nothing, got ${JSON.stringify(plan.included)}`);
+  assert(
+    plan.skipped.some((s) => s.name === 'stray.json' && s.reason === 'absent_no_before'),
+    `a loose file with no record must be reported absent_no_before, got ${JSON.stringify(plan.skipped)}`,
+  );
+  assert(fs.existsSync(path.join(root, '.bee', 'tmp', 'stray.json')), 'nothing swept without a flag');
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed`);

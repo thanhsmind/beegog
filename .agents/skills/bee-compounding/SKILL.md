@@ -110,9 +110,26 @@ Feature close is one of the two moments D2 names for sweeping scratch (the other
 node .bee/bin/bee.mjs tmp sweep --feature <feature>
 ```
 
-This clears `.bee/tmp/<feature>/` and `.bee/spikes/<feature>/` for the feature that just closed — the one documented override that sweeps a named feature's scratch even though compounding still treats it as "current" at the moment this runs. **Warn, never block** — same discipline as the digest refresh (§8): a failing or absent sweep (the command throws, the feature had no scratch dir, `bee.mjs` predates this verb) is a one-line warning in the run summary and nothing more. It never blocks, fails, delays, or reverses the feature close.
+This clears the finished feature's scratch under `.bee/tmp/` and `.bee/spikes/` — both a `<feature>/` directory and the loose `<feature>-*` files agents write straight into the scratch root. It is the one documented override that sweeps a named feature's scratch even though compounding still treats it as "current" at the moment this runs. **Warn, never block** — same discipline as the digest refresh (§8): a failing or absent sweep (the command throws, the feature had no scratch dir, `bee.mjs` predates this verb) is a one-line warning in the run summary and nothing more. It never blocks, fails, delays, or reverses the feature close.
 
-## 10. Update State
+## 10. Commit the Close (issue #48)
+
+**Everything this skill wrote is still uncommitted at this point.** The dated learnings file, the promoted critical patterns, the logged decisions, the backlog rows, and whatever scribing synced are all sitting dirty in the tree. Commit them **before** the state update below — otherwise the phase says `compounding-complete` while the close's own output exists nowhere but the working tree, and the next session (or a crash, a `git checkout`, a worktree merge) loses it with no trace that anything was lost.
+
+```
+git add -A
+git commit -m "docs(learnings): <feature> close — <one line> [<feature> close]"
+```
+
+Rules:
+- **One commit, and it is the close's own commit** — never fold the close into a cell's commit, and never leave it for "the next commit to pick up". Per-cell commits (critical rule 8) already landed during execution; this one carries the compounding artifacts.
+- **The commit message names the feature and the close**, so the close is findable in the log: `[<feature> close]`.
+- **Nothing outside the close belongs in it.** If `git status` shows unrelated dirty files, commit only the close's paths (`docs/history/learnings/`, `docs/knowledge/` or `docs/specs/`, `docs/backlog.md`, `.bee/`) and report the rest in the run summary rather than sweeping it in.
+- **Warn, never block, on a refusal you cannot resolve** (a hook rejects the commit, the repo is mid-rebase, nothing is dirty because a cell already committed it): one line in the run summary naming the reason, and the close proceeds. What is never acceptable is setting the phase in §11 while silently leaving the close's artifacts uncommitted and unmentioned.
+
+## 11. Update State
+
+The phase is set **after** the commit in §10 has landed, never before: `compounding-complete` is the claim that the close is durable, and it is only true once the close's artifacts are in a commit.
 
 Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner compounding --phase compounding-complete --next-action "<next action>" --summary "learnings: <file path>; promoted: <count>"`.
 
@@ -146,6 +163,7 @@ Record the completed compounding run: `node .bee/bin/bee.mjs state set --owner c
 - treating an *unfamiliar* digest error as exempt from warn-never-block — "I must understand this throw before I can close" is the loophole; a digest error never gates a close, understanding it is post-close cleanup (Scenario 2 REFACTOR)
 - skipping the digest refresh under context/exhaustion pressure and saying nothing — a silent skip is a violation; disclose it in the summary and Handoff (Scenario 3)
 - skipping the scratch sweep (§9) silently, or letting it block/fail/delay the close — same warn-never-block discipline as the digest refresh (tree-hygiene D2)
+- setting the phase to `compounding-complete` (§11) with the close's own output — learnings file, decisions, backlog rows, synced state layer — still uncommitted: the phase claims the close is durable, and a dirty tree is not durable (issue #48, §10)
 
 Violating the letter of these rules is violating the spirit of these rules.
 

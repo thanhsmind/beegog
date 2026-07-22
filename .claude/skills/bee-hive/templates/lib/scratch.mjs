@@ -38,6 +38,19 @@
 // no age check needed, since its closure is already the definitive signal.
 // A LIVE feature's scratch is swept only when named explicitly via
 // --feature; --all sweeps everything, live or not — D2's "clears the lot".
+//
+// WHAT COUNTS AS AN ENTRY (issues-46-53 D7, issue #53's adjacent finding):
+// every top-level entry under a scratch root — directories, symlinks, AND
+// plain files. Agents write loose evidence dumps and helper scripts straight
+// into `.bee/tmp/` because that is the directory bee's own write guard tells
+// them to use; a broom that only saw directories left them there forever. See
+// listEntries below for the measurement and the reasoning.
+//
+// WHAT --feature MATCHES: the exact name (the documented live-scratch
+// override), plus `<feature><sep>...` prefixes — bee's own `<feature>-<n>`
+// cell-id convention, which is how the per-cell dirs and evidence files of
+// one feature are actually named. See matchFeature below, including why a
+// prefix match refuses to eat a LIVE sibling and an exact match does not.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -204,6 +217,25 @@ function hasRecord(root, name) {
   return readLane(root, name) != null;
 }
 
+// A top-level scratch entry is ANY entry sitting directly under a scratch
+// root — a directory, a symlink, or a PLAIN FILE.
+//
+// Files used to be filtered out here, and that is the whole of issue #53's
+// adjacent finding (issues-46-53 D7). The documented promise is that
+// `.bee/tmp/` is the scratch home and `bee tmp sweep` clears it — guards.mjs
+// tells every agent, in its own refusal message, to "write it to .bee/tmp/
+// instead ... and let `bee tmp sweep` clear it later", naming the ROOT, not a
+// per-feature subdirectory. Agents did exactly that. The broom then never saw
+// any of it: measured on this repo, 58 of 76 scratch entries were loose files
+// at the root, permanently unsweepable — not by `--feature`, not by
+// `--before`, and not even by `--all`, the flag D2 documents as "clears the
+// lot". The documented behavior and the real behavior disagreed, and the
+// documented one is the one that was right.
+//
+// Nothing about the safety doctrine changes: every entry returned here is
+// still proved canonically contained (containedRoot) at plan time AND
+// re-proved immediately before removal, so a loose file gets exactly the same
+// treatment a directory always got.
 function listEntries(rootInfo) {
   let dirents = [];
   try {
@@ -211,9 +243,34 @@ function listEntries(rootInfo) {
   } catch {
     return [];
   }
-  return dirents
-    .filter((d) => d.isDirectory() || d.isSymbolicLink())
-    .map((d) => ({ scratchRoot: rootInfo.rel, name: d.name, absPath: path.join(rootInfo.abs, d.name) }));
+  return dirents.map((d) => ({ scratchRoot: rootInfo.rel, name: d.name, absPath: path.join(rootInfo.abs, d.name) }));
+}
+
+// Separators that end a feature prefix. A boundary character is REQUIRED, so
+// `--feature rel1` never matches `rel1100`.
+const FEATURE_PREFIX_SEPARATORS = new Set(['-', '.', '_']);
+
+/** Does scratch entry `name` belong to `feature`?
+ *
+ * Exact name — always, unchanged: that is the one documented override that
+ * sweeps even a LIVE feature's scratch.
+ *
+ * `<feature><sep>...` prefix — also yes, because that is bee's own cell-id
+ * convention (`<feature>-<n>`) and it is how agents actually name what they
+ * leave behind: `f3-1/`, `f3-3-evidence.json`, `okf6-run-verify.log`. Without
+ * it, `tmp sweep --feature <f>` at close swept a single directory and left
+ * every per-cell artifact of the same feature sitting at the root.
+ *
+ * A prefix match is an INFERENCE, never the documented override — so unlike
+ * an exact match it refuses to eat a sibling that is itself a live feature or
+ * lane (`--feature auth` must not delete `auth-v2/` while auth-v2 is live).
+ * Returns {qualifies, reason} so that refusal is reported, never silent. */
+function matchFeature(root, name, feature) {
+  if (name === feature) return { qualifies: true, reason: null };
+  if (!name.startsWith(feature)) return { qualifies: false, reason: null };
+  if (!FEATURE_PREFIX_SEPARATORS.has(name.charAt(feature.length))) return { qualifies: false, reason: null };
+  if (isLiveFeature(root, name)) return { qualifies: false, reason: 'live_sibling' };
+  return { qualifies: true, reason: null };
 }
 
 /** Compute the sweep plan: which top-level scratch entries (feature-or-
@@ -251,7 +308,9 @@ export function computeSweepPlan(root, { feature, before, all } = {}) {
       if (all) {
         qualifies = true;
       } else if (feature) {
-        qualifies = entry.name === feature;
+        const match = matchFeature(root, entry.name, feature);
+        qualifies = match.qualifies;
+        skipReason = match.reason;
       } else {
         const live = isLiveFeature(root, entry.name);
         if (live) {
@@ -286,7 +345,12 @@ export function computeSweepPlan(root, { feature, before, all } = {}) {
       }
 
       if (!qualifies) {
-        if (!all && !feature) skipped.push({ scratchRoot: rootInfo.rel, name: entry.name, reason: skipReason });
+        // A prefix match refused for liveness is a SAFETY refusal and is
+        // always reported, even in --feature mode where the ordinary
+        // "wasn't this feature" noise stays out of the result.
+        if ((!all && !feature) || skipReason === 'live_sibling') {
+          skipped.push({ scratchRoot: rootInfo.rel, name: entry.name, reason: skipReason });
+        }
         continue;
       }
 

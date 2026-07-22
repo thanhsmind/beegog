@@ -3502,7 +3502,7 @@ function handleTmpSweep(root, flags) {
   }
   const result = runSweep(root, { feature, before, all, dryRun });
   const verb = dryRun ? 'Would remove' : 'Removed';
-  const text = `${verb} ${result.removed.length} scratch dir(s) (${result.bytes_freed} bytes, ${result.files_freed} files) from .bee/tmp/ and .bee/spikes/.`;
+  const text = `${verb} ${result.removed.length} scratch entr(y|ies) (${result.bytes_freed} bytes, ${result.files_freed} files) from .bee/tmp/ and .bee/spikes/.`;
   return { result, text };
 }
 

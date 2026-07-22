@@ -44,15 +44,15 @@ If onboarding is not complete, do not continue into the rest of the bee workflow
 
 ## Session Scout
 
-After onboarding succeeds, run the read-only scout on every session start and after compaction:
+**The preamble is the scout's first source, and usually its only one.** The session preamble injected at session start already carries onboarding health, phase, mode, feature, gate states, cell counts, PBI counts, the recent critical-patterns digest and the recent active decisions (`inject.mjs` renders all of it). Read what arrived; never re-fetch what it just told you.
+
+Re-run the read-only scout when you are about to **route work** — claim a cell, plan, or change phase — or when no preamble arrived, or it went stale after a compaction:
 
 ```bash
 node .bee/bin/bee.mjs status --json
 ```
 
-Orient on: onboarding health, phase, mode, feature, gate states, cell counts, active reservations, staleness warnings, and `recommended_next`.
-
-**Baseline gate (docs/09 item 1):** if `.bee/config.json` records `commands.verify`, run it once per session before any cell is claimed. A red baseline is surfaced to the user and becomes its own fix-first tiny cell — never build on red. Commands come free in the session preamble; when none are recorded, `bee_status` warns and the capture belongs to exploring or onboarding, never to guesswork.
+That run adds what the preamble does not carry: active reservations, staleness warnings, and `recommended_next`. Answering a question, reading code, or explaining something is not routing work — for those, the preamble has already answered, and `status --json` plus `decisions active --recent 3` are pure duplication.
 
 **Knowledge context (okf-foundation D38):** when the active feature has a `bee.work-item` concept in `docs/knowledge/`, the session preamble says so and names the command — run `bee knowledge context --work <feature> --budget 20000` and read the manifest's files before planning or execution; that manifest is the feature's curated context and it replaces scanning `docs/history/`. When the feature is active but has no work item, offer to author one (`docs/knowledge/areas/okf-profile/concept-model-and-authoring.md`, Templates section) — one line, user chooses, never silent and never auto-written.
 
@@ -64,7 +64,7 @@ Orient on: onboarding health, phase, mode, feature, gate states, cell counts, ac
 
 **Review candidates (decision 565e68d0):** `bee_status --json` carries a `review` block — candidate counts by derived status (`unreviewed`/`in_review`/`reviewed`/`stale`) and any open review sessions. Independent review is user-invoked only (SPEC R1/R7): never self-dispatch a reviewer wave because candidates exist. When `high_risk_unreviewed > 0`, surface it plainly — a hard-gate change (auth, data loss, security, external provider) is sitting unreviewed — state the merge/release consequence and offer to start a review; do not label anything reviewed or approved until the user calls it.
 
-Then read the critical patterns — with a bundle, `docs/knowledge/index.md`'s `## Critical patterns` section (the live equivalent, generated from the bundle); with no bundle, `docs/history/learnings/critical-patterns.md` — and surface recent active decisions (`node .bee/bin/bee.mjs decisions active --recent 3`).
+Then read the critical patterns — but the preamble's `### Critical patterns (digest)` and `### Recent decisions` sections have already delivered the recent ones and the same three active decisions `decisions active --recent 3` would return, so open the full source only when the digest is missing, or when you need more than it shows: with a bundle, `docs/knowledge/index.md`'s `## Critical patterns` section (the live equivalent, generated from the bundle); with no bundle, `docs/history/learnings/critical-patterns.md`. The re-fetch (`node .bee/bin/bee.mjs decisions active --recent 3`) belongs to routing work, not to answering a question.
 
 **State layer (reading order, G4):** note the state layer in the orientation summary. Which layer that is depends on one predicate — `bundleMode` (`docs/knowledge/` holding at least one concept that actually parses; a directory alone is not a bundle). Both branches below are live guidance, not a migration path:
 
@@ -155,6 +155,8 @@ Lane exceptions (Modes and Lanes table): `docs` lane has no gates; `tiny` and `s
 **Presentation:** every gate is presented per the Gate Presentation Contract (`references/routing-and-contracts.md`): the chat message is the plain-language layer only — what I'm about to do / why it's trustworthy / if it goes wrong / what you are deciding, in the user's language — then the fixed question. The full mechanical report goes to `docs/history/<feature>/reports/` and is linked, never pasted. Litmus: the user can restate what they are approving in their own words.
 
 Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it. Disagreement → quote both positions to the user. Never auto-resolve.
+
+**Baseline gate — before your first `cells claim`, never on arrival (docs/09 item 1).** Not one of the four, and not a scout step: the trigger is the *claim*. Before your first `cells claim` of a session, if `.bee/config.json` records `commands.verify`, run it once. A red baseline is surfaced to the user and becomes its own fix-first tiny cell — **never build on red**; the gate's strength is unchanged. What changed is when it fires: a session that answers a question, reads code, or explores without ever claiming a cell owes no baseline run, and must not burn 30–90 s on one. Commands come free in the session preamble; when none are recorded, `bee_status` warns and the capture belongs to exploring or onboarding, never to guesswork.
 
 ## Priority Rules (hive law)
 
