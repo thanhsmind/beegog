@@ -1,0 +1,42 @@
+{
+  "id": "rel1100-1",
+  "feature": "release-1-10-0",
+  "lane": "tiny",
+  "behavior_change": false,
+  "title": "Release 1.10.0",
+  "action": "bump 1.10.0; render THEN manifest --write; self-onboard --apply --repo-hooks (MUST be after any .bee/bin change — ledger_parity --check now enforces this in the chain); run_verify green 3x; commit excluding .claude/settings.json; annotated tag v1.10.0 with the lanes-shape compatibility note; push --tags; exact-tag CI green both workflows before capping.",
+  "must_haves": {
+    "truths": [
+      "tuple 1.10.0 across all four members",
+      "ledger_parity --check green before tagging",
+      "verify green 3x pre-tag",
+      "exact-tag CI green both platforms"
+    ],
+    "prohibitions": [
+      "Do NOT commit .claude/settings.json",
+      "Do not tag before re-onboarding if .bee/bin changed"
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [],
+  "files": [
+    "package.json"
+  ],
+  "deps": [],
+  "status": "claimed",
+  "decisions": [],
+  "trace": {
+    "worker": "orch",
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": "83c38091-b589-48e1-b368-1a9f95892969",
+    "claimed_at": "2026-07-22T00:06:04.205Z"
+  }
+}

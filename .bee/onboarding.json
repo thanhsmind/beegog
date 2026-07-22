@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "bee_version": "1.9.0",
+  "bee_version": "1.10.0",
   "managed": {
     "agents_block": "84d1532386c14df08ad5483efd9b76b835e12567381a7005cfdfaa09f590df49",
     "gitignore_block": "3da1a6176ae8b85a98b6779f7f314e7647bdc854969b1c2d0fa5fd7e97d4c69f",
@@ -30,7 +30,7 @@
       "schedule.mjs": "9f46b580f71f6be9e38740124d3e7745af972c37fad91ce99433f405eae16351",
       "scratch.mjs": "db94b27d1d148c98df5bdc0e8f16fd55eaae71d48e5cc1111559d3d3c7d6c26f",
       "source-identity.mjs": "716740641e1f6bfbb5ccc5b4fe7827f1165c2a1f1127ee3800f52a47ac09fc7a",
-      "state.mjs": "2d63a8f961036042d24191bac864f835b795be1090df95203e1e8bd74cfb6b72",
+      "state.mjs": "c12c0c471d9c87f068ef9a4d551ec8e18d014b2313f22c4e09c319c9b658ecdd",
       "validate-args.mjs": "bcdb59f528ec56b3290ee75bf63d7bb018cb22ec5d1381e85a5d2c0cf3b1dd23",
       "worktree-holds.mjs": "942d180f0c04c156adf19f76992652c7907320e708dfb91da4587de407a00b55",
       "worktree-store.mjs": "d078dfcc63a90bd52c593072fe80c363fa7216e2e886640b800342e539ee8fbc"
@@ -54,7 +54,7 @@
     }
   },
   "agents_sync": {
-    "bee_version": "1.9.0",
+    "bee_version": "1.10.0",
     "files": [
       ".claude/agents/bee-extract.md",
       ".claude/agents/bee-gather.md",
@@ -71,5 +71,5 @@
     }
   },
   "created_at": "2026-07-21T17:36:03.955Z",
-  "updated_at": "2026-07-21T23:51:08.950Z"
+  "updated_at": "2026-07-22T00:06:10.386Z"
 }
