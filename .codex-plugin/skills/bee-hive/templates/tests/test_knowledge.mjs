@@ -28,6 +28,7 @@ import {
   checkBundle,
   bundleDir,
   buildPromotion,
+  CRITICAL_RELEVANCE,
 } from '../lib/knowledge.mjs';
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -82,12 +83,14 @@ function conceptText({
   lifecycle = 'active',
   omitRoot = [],
   extraBee = {},
+  tags = ['demo'],
+  body = 'Body.',
 } = {}) {
   const data = {
     type,
     title,
     description,
-    tags: ['demo'],
+    tags,
     timestamp: '2026-07-22',
     bee: {
       id,
@@ -100,7 +103,7 @@ function conceptText({
     },
   };
   for (const key of omitRoot) delete data[key];
-  return `${emitFrontmatter(data)}\n# ${title}\n\nBody.\n`;
+  return `${emitFrontmatter(data)}\n# ${title}\n\n${body}\n`;
 }
 
 function findingCodes(list) {
@@ -681,7 +684,9 @@ await check('CLI: knowledge context --json on a large budget returns the full ra
   const result = await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '100000', '--json'], root);
   assert(result.status === 0, `context must exit 0, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
   const manifest = JSON.parse(result.stdout);
-  assert(JSON.stringify(Object.keys(manifest).sort()) === JSON.stringify(['budget', 'decisions', 'entries', 'estimator', 'total_est', 'truncated', 'work'].sort()), `manifest keys must be exactly {work,decisions,budget,estimator,total_est,entries,truncated}, got ${JSON.stringify(Object.keys(manifest))}`);
+  // f3-1/G11 widened this key set: the conservation and audit fields are part
+  // of the contract now, so a payload that drops one is a regression.
+  assert(JSON.stringify(Object.keys(manifest).sort()) === JSON.stringify(['budget', 'critical_total', 'decisions', 'entries', 'estimator', 'excluded', 'floor', 'total_est', 'truncated', 'work', 'zero_signal_count'].sort()), `manifest keys must be exactly {work,decisions,budget,estimator,total_est,entries,truncated,excluded,floor,critical_total,zero_signal_count}, got ${JSON.stringify(Object.keys(manifest))}`);
   assert(manifest.work === 'demo-work', `work must echo the resolved id, got ${JSON.stringify(manifest.work)}`);
   assert(JSON.stringify(manifest.decisions) === JSON.stringify(['D1', 'D2 (the cited rationale)']), `the header must surface the work item's OWN bee.decisions list, got ${JSON.stringify(manifest.decisions)}`);
   assert(manifest.budget === 100000, `budget must echo the request, got ${JSON.stringify(manifest.budget)}`);
@@ -727,25 +732,36 @@ await check('knowledge context reasons name the tier and, for required_context, 
   assert(/plan/.test(reasonOf('docs/knowledge/work/demo/plan.md')), `the plan sibling's reason must say so, got ${JSON.stringify(reasonOf('docs/knowledge/work/demo/plan.md'))}`);
   assert(/required_context depth 1 via .*work\/demo\/work-item\.md/.test(reasonOf('docs/knowledge/areas/alpha/one.md')), `depth-1 reason must name depth and parent, got ${JSON.stringify(reasonOf('docs/knowledge/areas/alpha/one.md'))}`);
   assert(/required_context depth 2 via .*areas\/alpha\/one\.md/.test(reasonOf('docs/knowledge/areas/alpha/two.md')), `depth-2 reason must name depth and parent, got ${JSON.stringify(reasonOf('docs/knowledge/areas/alpha/two.md'))}`);
-  assert(reasonOf('docs/knowledge/patterns/critical.md') === 'critical pattern', `expected "critical pattern", got ${JSON.stringify(reasonOf('docs/knowledge/patterns/critical.md'))}`);
+  // f3-1/G5: a critical's reason now carries the number that put it there and
+  // the rank it holds — an entry an agent cannot audit is an entry it must
+  // take on trust.
+  assert(/^critical pattern \(relevance [0-9.]+, rank \d+ of \d+(, floor)?\)$/.test(reasonOf('docs/knowledge/patterns/critical.md')), `a critical's reason must name its relevance score and rank, got ${JSON.stringify(reasonOf('docs/knowledge/patterns/critical.md'))}`);
   assert(/decision/.test(reasonOf('docs/knowledge/decisions/alpha.md')) && /alpha/.test(reasonOf('docs/knowledge/decisions/alpha.md')), `the area-decision reason must name the area, got ${JSON.stringify(reasonOf('docs/knowledge/decisions/alpha.md'))}`);
 });
 
-await check('knowledge context cuts at --budget: total_est <= budget, the cut entries are NAMED in truncated (D27)', async () => {
+await check('knowledge context cuts at --budget: total_est <= budget, the cut entries are NAMED in truncated, and the floor is the ONE named exception to the prefix (D27 + f3-1/G5)', async () => {
   const root = makeContextFixture();
   const full = JSON.parse((await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '100000', '--json'], root)).stdout);
   assert(full.entries.length === 6, `fixture must yield 6 entries before the cut, got ${full.entries.length}`);
-  const tightBudget = full.entries[0].est_tokens + full.entries[1].est_tokens;
+  assert(JSON.stringify(full.floor) === JSON.stringify(['docs/knowledge/patterns/critical.md']), `the fixture's one critical is the floor, got ${JSON.stringify(full.floor)}`);
+  // Room for rank 1 and the floor, and nothing else.
+  const tightBudget = full.entries[0].est_tokens
+    + full.entries.find((e) => e.path === 'docs/knowledge/patterns/critical.md').est_tokens;
   const result = await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', String(tightBudget), '--json'], root);
   assert(result.status === 0, `a budget cut is not an error, got ${result.status}: ${result.stderr}`);
   const cut = JSON.parse(result.stdout);
-  assert(cut.entries.length === 2, `exactly the two highest-ranked entries must survive, got ${JSON.stringify(cut.entries.map((e) => e.path))}`);
-  assert(cut.total_est <= tightBudget, `total_est ${cut.total_est} must be <= budget ${tightBudget}`);
-  assert(JSON.stringify(cut.entries.map((e) => e.path)) === JSON.stringify(CONTEXT_EXPECTED_ORDER.slice(0, 2)), `the survivors must be the top of the ranking, got ${JSON.stringify(cut.entries.map((e) => e.path))}`);
-  assert(JSON.stringify(cut.truncated) === JSON.stringify(CONTEXT_EXPECTED_ORDER.slice(2)), `truncated must NAME every cut path, got ${JSON.stringify(cut.truncated)}`);
+  assert(cut.total_est <= tightBudget, `the budget is a HARD ceiling even with a floor: total_est ${cut.total_est} must be <= ${tightBudget}`);
+  // The floor is why this is no longer a pure prefix: the plan sibling (rank 2)
+  // is truncated so the floor critical (rank 5) is not evicted. Everything not
+  // included is still NAMED.
+  assert(cut.entries.some((e) => e.path === 'docs/knowledge/patterns/critical.md'), `the floor critical must survive the tight budget, got ${JSON.stringify(cut.entries.map((e) => e.path))}`);
+  assert(cut.entries[0].path === CONTEXT_EXPECTED_ORDER[0], `rank 1 still leads the manifest, got ${JSON.stringify(cut.entries.map((e) => e.path))}`);
+  const named = new Set([...cut.entries.map((e) => e.path), ...cut.truncated, ...cut.excluded.map((e) => e.path)]);
+  for (const p of CONTEXT_EXPECTED_ORDER) assert(named.has(p), `every ranked path must be named somewhere, missing ${p}`);
+  assert(named.size === CONTEXT_EXPECTED_ORDER.length, `nothing may be invented or lost, got ${JSON.stringify([...named])}`);
 
   const zero = JSON.parse((await runBee(['knowledge', 'context', '--work', 'demo-work', '--budget', '0', '--json'], root)).stdout);
-  assert(zero.entries.length === 0 && zero.total_est === 0, `a zero budget includes nothing, got ${JSON.stringify(zero.entries)}`);
+  assert(zero.entries.length === 0 && zero.total_est === 0, `a zero budget includes nothing — the floor reserves from the budget, it never overdraws it, got ${JSON.stringify(zero.entries)}`);
   assert(JSON.stringify(zero.truncated) === JSON.stringify(CONTEXT_EXPECTED_ORDER), `a zero budget truncates everything, got ${JSON.stringify(zero.truncated)}`);
 });
 
@@ -1066,6 +1082,305 @@ await check('CLI: knowledge.promote appears in the bee --help --json manifest wi
   assert(entry.parameters && entry.parameters.properties.work, 'parameters must carry work');
   assert(JSON.stringify(entry.parameters.required) === JSON.stringify(['work']), `--work is the one required flag, got ${JSON.stringify(entry.parameters.required)}`);
   assert(/never writes|proposes/i.test(entry.description), `the description must state that promote proposes and never writes, got ${entry.description}`);
+});
+
+// ═══ f3-1 (G5/G10/G11): critical patterns are RANKED BY RELEVANCE and CUT ═══
+// RED-FIRST (cell f3-1): every check below is written and run red — the
+// relevance ranking, the floor, the `excluded` conservation array and the
+// zero_signal_count guard do not exist yet — BEFORE any implementation.
+//
+// The acceptance is DISCRIMINATION, never survival. The rejected oracle is
+// "the N relevant entries of the live manifest survive": the work item, its
+// plan and its required_context occupy ranks 1-3 and the budget cut is a
+// prefix cut, so that assertion holds even if every critical pattern were
+// dropped. It is deliberately NOT written here.
+//
+// Measured on the live bundle before this design (advisor digest f3, finding
+// 3): the okf-migration-f2 work item carries no bee.areas, only 2 of 50
+// patterns carry any, and tag overlap against its five tags hits 1 of 50 — so
+// 49 of 50 tie at zero. Tag overlap alone is therefore disqualified as the
+// ranking signal, and a ranking where most items tie at zero must FAIL rather
+// than ship as a path sort wearing a relevance label.
+
+/** A work item whose text is the query, and ten criticals hand-labelled
+ *  relevant / irrelevant against it. The relevant four are written in the work
+ *  item's own vocabulary (ledger rows, schema migration, coverage gate, pinned
+ *  snapshot); the irrelevant six are topically disjoint but each shares one
+ *  generic operations word, exactly as a real corpus does — so "irrelevant"
+ *  means LOW, never zero, and the zero-signal guard is not what separates
+ *  them. */
+const DISCRIMINATION_RELEVANT = [
+  'docs/knowledge/patterns/rel-ledger-rows.md',
+  'docs/knowledge/patterns/rel-coverage-gate.md',
+  'docs/knowledge/patterns/rel-schema-rollback.md',
+  'docs/knowledge/patterns/rel-enumerated-rows.md',
+];
+const DISCRIMINATION_IRRELEVANT = [
+  'docs/knowledge/patterns/irr-powershell-bom.md',
+  'docs/knowledge/patterns/irr-scratchpad-polling.md',
+  'docs/knowledge/patterns/irr-viewport-screenshot.md',
+  'docs/knowledge/patterns/irr-spawn-heartbeat.md',
+  'docs/knowledge/patterns/irr-emoji-columns.md',
+  'docs/knowledge/patterns/irr-dns-cache.md',
+];
+
+function makeDiscriminationFixture() {
+  const root = makeRepo();
+  writeBundleFile(root, 'work/billing/work-item.md', conceptText({
+    type: 'bee.work-item',
+    id: 'billing-migration',
+    title: 'Migrate the billing ledger onto the new invoice schema',
+    description: 'Move every ledger row into the new billing schema behind a coverage gate that derives its ground truth from a pinned snapshot of the old ledger.',
+    tags: ['billing', 'ledger', 'migration', 'schema', 'coverage'],
+    extraBee: {
+      areas: ['billing'],
+      required_context: ['areas/billing/ledger-schema.md', 'areas/billing/invoice-rows.md', 'areas/billing/rollback-runbook.md'],
+      decisions: [],
+    },
+    body: [
+      'Every ledger row is migrated into the invoice schema, one migration cell per ledger',
+      'table, and the coverage gate derives its ground truth by parsing a pinned snapshot of',
+      'the old ledger rather than comparing two hand-authored row inventories. A rollback',
+      'restores the pinned snapshot and re-derives the invoice totals. Enumerating rows by',
+      'hand drifts from the ledger the moment a row is added, so the enumeration is derived.',
+      'Each migration cell runs its own check and the worker records the row counts.',
+    ].join('\n'),
+  }));
+  // Three required_context areas, each far larger than a pattern: under a plain
+  // prefix cut these consume the whole budget and every critical is evicted.
+  // They are what the floor has to beat.
+  for (const [name, title] of [['ledger-schema', 'The ledger schema'], ['invoice-rows', 'Invoice rows'], ['rollback-runbook', 'Rollback runbook']]) {
+    writeBundleFile(root, `areas/billing/${name}.md`, conceptText({
+      type: 'bee.area', id: name, title, description: `${title} reference`,
+      tags: ['billing'], extraBee: { areas: ['billing'], authoritative_for: name },
+      body: `${title} reference material. `.repeat(60),
+    }));
+  }
+  const rel = (name, id, title, description, body) => writeBundleFile(root, `patterns/${name}.md`, conceptText({
+    id, title, description, body, tags: ['pattern'], extraBee: { areas: ['billing'], critical: true },
+  }));
+  rel('rel-ledger-rows', 'rel-ledger-rows',
+    'A ledger migration verifies every row against the pinned snapshot',
+    'Row coverage in a ledger migration is measured against the pinned snapshot, never against a hand inventory.',
+    'A ledger migration that counts the rows it wrote proves ownership, not coverage. Derive\nthe row inventory from the pinned snapshot of the old ledger and compare the invoice\nschema totals row by row. A migration cell that cannot parse a ledger row must say so.');
+  rel('rel-coverage-gate', 'rel-coverage-gate',
+    'A coverage gate over a schema migration derives its ground truth',
+    'A gate comparing two hand-authored inventories proves internal consistency, not coverage of the ledger.',
+    'The coverage gate for the invoice schema derives its ground truth by parsing the pinned\nledger snapshot. A gate that compares a hand-authored row list against hand-authored\nschema claims drifts green while ledger rows go missing from the migration.');
+  rel('rel-schema-rollback', 'rel-schema-rollback',
+    'A billing schema rollback re-derives the invoice totals it restores',
+    'Restoring the pinned ledger snapshot is not a rollback until the invoice totals are re-derived.',
+    'A rollback that restores the pinned snapshot of the billing ledger but leaves the derived\ninvoice totals in the new schema leaves every row internally inconsistent. Re-derive the\ntotals from the restored ledger rows as part of the rollback, inside the same migration cell.');
+  rel('rel-enumerated-rows', 'rel-enumerated-rows',
+    'An enumerated row list in a migration cell drifts from the ledger',
+    'A migration cell that hand-enumerates ledger rows rots the moment a row is added.',
+    'Hand-enumerating the ledger rows a migration cell will move turns the cell into a second\ninventory that must be maintained. Derive the row enumeration from the ledger schema at\nrun time so a new invoice row is migrated by the same coverage gate as every other row.');
+  const irr = (name, id, title, description, body) => writeBundleFile(root, `patterns/${name}.md`, conceptText({
+    id, title, description, body, tags: ['pattern'], extraBee: { areas: ['tooling'], critical: true },
+  }));
+  irr('irr-powershell-bom', 'irr-powershell-bom',
+    'Non-ASCII in a .ps1 without a BOM is a parse-time bomb on PowerShell 5.1',
+    'Windows PowerShell 5.1 decodes a BOM-less script as the ANSI codepage and dies at parse time.',
+    'PowerShell 5.1 assumes the ANSI codepage for a BOM-less .ps1, so an em dash becomes a\nsyntax error before the first statement executes. Emit UTF-8 with a BOM, and check the\nencoding in the installer suite.');
+  irr('irr-scratchpad-polling', 'irr-scratchpad-polling',
+    'Never poll scratchpad files while waiting for a background subagent',
+    'Polling a scratchpad burns turns and reads half-written files; wait on the harness instead.',
+    'Sleeping in a loop over a scratchpad path costs turns and can read a half-flushed file.\nThe harness already blocks until the subagent returns, so wait on it and check the\nreturned digest instead of the filesystem.');
+  irr('irr-viewport-screenshot', 'irr-viewport-screenshot',
+    'A screenshot harness must pin the viewport dimensions',
+    'An unpinned viewport makes every visual diff a false positive on a different display.',
+    'Screenshots taken at whatever viewport the display happens to offer diff against each\nother forever. Pin the width, the height and the device pixel ratio in the harness, and\ncheck the pinned numbers into the fixture.');
+  irr('irr-spawn-heartbeat', 'irr-spawn-heartbeat',
+    'A lock held across a synchronous child spawn cannot heartbeat',
+    'The event loop is blocked for the whole spawn, so the lock mtime cannot be renewed.',
+    'A synchronous child spawn blocks the event loop, so nothing renews the lock mtime while\nthe child runs. Stale takeover must probe whether the owning process is alive instead of\ntrusting an mtime, or a long build loses its lock to a peer.');
+  irr('irr-emoji-columns', 'irr-emoji-columns',
+    'Emoji in a terminal renderer break column alignment',
+    'A double-width glyph counts as one code point and two cells, so padding maths drift.',
+    'Padding a table by string length puts a double-width emoji one cell out on every row\nbelow it. Measure display width, not code points, or drop the glyph from the renderer and\ncheck the alignment on a narrow terminal.');
+  irr('irr-dns-cache', 'irr-dns-cache',
+    'A DNS cache warmed at boot hides a resolver outage',
+    'A long TTL keeps a dead resolver invisible until the first cold lookup, hours later.',
+    'A resolver that died after the cache warmed stays invisible while the TTL holds, then\nevery cold lookup fails at once. Probe the resolver directly on an interval and check the\nprobe result, never the cached answer.');
+  return root;
+}
+
+await check('knowledge context DISCRIMINATES: every labelled-relevant critical outranks every labelled-irrelevant one, with NON-TIED scores (G10)', async () => {
+  const root = makeDiscriminationFixture();
+  const result = await runBee(['knowledge', 'context', '--work', 'billing-migration', '--budget', '100000', '--json'], root);
+  assert(result.status === 0, `context must exit 0, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  // Every critical carries a score, wherever it landed: entries name it in the
+  // reason, excluded name it in the record.
+  const scores = new Map();
+  for (const entry of manifest.entries) {
+    const m = /relevance ([0-9.]+)/.exec(entry.reason);
+    if (m) scores.set(entry.path, Number(m[1]));
+  }
+  for (const ex of manifest.excluded) scores.set(ex.path, ex.score);
+  for (const p of [...DISCRIMINATION_RELEVANT, ...DISCRIMINATION_IRRELEVANT]) {
+    assert(scores.has(p), `every critical must carry a relevance score somewhere in the payload; missing ${p} (scored: ${JSON.stringify([...scores.keys()])})`);
+    assert(typeof scores.get(p) === 'number' && Number.isFinite(scores.get(p)), `score must be a finite number, got ${JSON.stringify(scores.get(p))} for ${p}`);
+  }
+  const relScores = DISCRIMINATION_RELEVANT.map((p) => scores.get(p));
+  const irrScores = DISCRIMINATION_IRRELEVANT.map((p) => scores.get(p));
+  const minRel = Math.min(...relScores);
+  const maxIrr = Math.max(...irrScores);
+  assert(minRel > maxIrr, `DISCRIMINATION FAILED: worst relevant ${minRel} must outrank best irrelevant ${maxIrr}.\nrelevant=${JSON.stringify(relScores)}\nirrelevant=${JSON.stringify(irrScores)}`);
+  const all = [...relScores, ...irrScores];
+  assert(new Set(all).size === all.length, `scores must be NON-TIED across the labelled set, got ${JSON.stringify(all)}`);
+  assert(!all.some((s) => s === 0), `no labelled pattern may score zero on a corpus this related, got ${JSON.stringify(all)}`);
+  assert(manifest.zero_signal_count === 0, `zero_signal_count must be 0 on this fixture, got ${JSON.stringify(manifest.zero_signal_count)}`);
+});
+
+await check('knowledge context: the relevance CUT keeps the top-scoring criticals and NAMES every excluded one with score and reason (G11)', async () => {
+  const root = makeDiscriminationFixture();
+  const manifest = JSON.parse((await runBee(['knowledge', 'context', '--work', 'billing-migration', '--budget', '100000', '--json'], root)).stdout);
+  assert(Array.isArray(manifest.excluded), `the payload must carry an excluded array, got ${JSON.stringify(manifest.excluded)}`);
+  for (const ex of manifest.excluded) {
+    assert(JSON.stringify(Object.keys(ex).sort()) === JSON.stringify(['path', 'reason', 'score']), `every exclusion is {path, score, reason}, got ${JSON.stringify(ex)}`);
+    assert(typeof ex.reason === 'string' && ex.reason.trim() && !ex.reason.includes('\n'), `every exclusion needs a one-line reason, got ${JSON.stringify(ex)}`);
+    assert(/rank \d+ of \d+/.test(ex.reason), `an exclusion reason must name the rank it lost at, got ${JSON.stringify(ex.reason)}`);
+  }
+  // 10 criticals, KEEP is larger than 10, so nothing is cut for relevance here;
+  // the cut is exercised by the tightened-keep fixture below.
+  const kept = manifest.entries.filter((e) => /critical pattern/.test(e.reason)).map((e) => e.path);
+  const relRanks = DISCRIMINATION_RELEVANT.map((p) => kept.indexOf(p));
+  assert(relRanks.every((r) => r >= 0 && r < 4), `the four labelled-relevant criticals must occupy the top four ranks of the critical block, got ${JSON.stringify(kept)}`);
+});
+
+await check('knowledge context CONSERVES the critical set: entries + truncated + excluded == every bee.critical concept, no duplicates (G11)', async () => {
+  const root = makeDiscriminationFixture();
+  const all = [...DISCRIMINATION_RELEVANT, ...DISCRIMINATION_IRRELEVANT];
+  for (const budget of [100000, 2500, 900, 0]) {
+    const manifest = JSON.parse((await runBee(['knowledge', 'context', '--work', 'billing-migration', '--budget', String(budget), '--json'], root)).stdout);
+    const accounted = [
+      ...manifest.entries.map((e) => e.path),
+      ...manifest.truncated,
+      ...manifest.excluded.map((e) => e.path),
+    ].filter((p) => all.includes(p));
+    assert(new Set(accounted).size === accounted.length, `budget ${budget}: a critical may be accounted for exactly ONCE, got ${JSON.stringify(accounted)}`);
+    assert(new Set(accounted).size === all.length, `budget ${budget}: CONSERVATION FAILED — ${all.length} criticals exist, ${new Set(accounted).size} accounted for.\nmissing: ${JSON.stringify(all.filter((p) => !accounted.includes(p)))}`);
+    assert(manifest.critical_total === all.length, `budget ${budget}: critical_total must state the full population, got ${JSON.stringify(manifest.critical_total)}`);
+  }
+});
+
+await check('knowledge context FLOOR: the highest-scoring critical survives a budget that the plain prefix cut would have evicted it under', async () => {
+  const root = makeDiscriminationFixture();
+  const full = JSON.parse((await runBee(['knowledge', 'context', '--work', 'billing-migration', '--budget', '100000', '--json'], root)).stdout);
+  const workEntry = full.entries[0];
+  assert(workEntry.path === 'docs/knowledge/work/billing/work-item.md', `rank 1 must be the work item, got ${workEntry.path}`);
+  const floor = full.floor;
+  assert(Array.isArray(floor) && floor.length > 0, `the payload must NAME the floor it guarantees, got ${JSON.stringify(floor)}`);
+  const topCritical = full.entries.find((e) => /critical pattern/.test(e.reason));
+  assert(floor.length === CRITICAL_RELEVANCE.FLOOR, `the floor is the pinned ${CRITICAL_RELEVANCE.FLOOR}, got ${JSON.stringify(floor)}`);
+  assert(floor.includes(topCritical.path), `the highest-scoring critical must be in the floor, got floor=${JSON.stringify(floor)} top=${topCritical.path}`);
+  const floorCost = full.entries.filter((e) => floor.includes(e.path)).reduce((s, e) => s + e.est_tokens, 0);
+  // Exactly the work item plus the floor. Under a plain prefix cut this budget
+  // buys the work item and part of the required_context chain, and every
+  // critical is evicted — which is the failure the floor exists to stop.
+  const tight = workEntry.est_tokens + floorCost;
+  const reqCtxCost = full.entries.filter((e) => /required_context/.test(e.reason)).reduce((s, e) => s + e.est_tokens, 0);
+  assert(reqCtxCost > floorCost, `the fixture must make the required_context chain the thing that would evict the floor (${reqCtxCost} vs ${floorCost})`);
+  const cut = JSON.parse((await runBee(['knowledge', 'context', '--work', 'billing-migration', '--budget', String(tight), '--json'], root)).stdout);
+  assert(cut.total_est <= tight, `the budget stays a hard ceiling even with a floor: total_est ${cut.total_est} <= ${tight}`);
+  for (const p of floor) assert(cut.entries.some((e) => e.path === p), `every floor critical must survive a tight budget, ${p} was evicted from ${JSON.stringify(cut.entries.map((e) => e.path))}`);
+  assert(cut.entries[0].path === workEntry.path, `the work item is never displaced by its own floor, got ${JSON.stringify(cut.entries.map((e) => e.path))}`);
+  assert(cut.entries.length === 1 + floor.length, `under this budget exactly the work item and the floor survive, got ${JSON.stringify(cut.entries.map((e) => e.path))}`);
+  assert(cut.truncated.some((p) => /areas\/billing\//.test(p)), `the floor must beat the higher-ranked required_context chain, got truncated=${JSON.stringify(cut.truncated)}`);
+});
+
+await check('knowledge context: relevance ties break DETERMINISTICALLY by path, and repeat runs are byte-identical', async () => {
+  const root = makeRepo();
+  writeBundleFile(root, 'work/twins/work-item.md', conceptText({
+    type: 'bee.work-item', id: 'twins', title: 'Twin ranking', description: 'Two criticals with identical vocabulary must not flap',
+    tags: ['twin'], extraBee: { areas: ['twin'], required_context: [], decisions: [] },
+    body: 'Identical vocabulary twin ranking flap determinism.',
+  }));
+  const twinBody = 'Identical vocabulary twin ranking flap determinism, word for word.';
+  for (const name of ['zulu-twin', 'alpha-twin']) {
+    writeBundleFile(root, `patterns/${name}.md`, conceptText({
+      id: name, title: 'Twin pattern', description: 'Identical vocabulary twin', body: twinBody,
+      tags: ['twin'], extraBee: { areas: ['twin'], critical: true },
+    }));
+  }
+  const first = (await runBee(['knowledge', 'context', '--work', 'twins', '--budget', '100000', '--json'], root)).stdout;
+  const second = (await runBee(['knowledge', 'context', '--work', 'twins', '--budget', '100000', '--json'], root)).stdout;
+  assert(first === second, 'two runs over the same bundle must be byte-identical');
+  const manifest = JSON.parse(first);
+  const criticals = manifest.entries.filter((e) => /critical pattern/.test(e.reason)).map((e) => e.path);
+  assert(JSON.stringify(criticals) === JSON.stringify(['docs/knowledge/patterns/alpha-twin.md', 'docs/knowledge/patterns/zulu-twin.md']), `tied scores must order by path, got ${JSON.stringify(criticals)}`);
+});
+
+await check('knowledge context FAILS when zero_signal_count exceeds the pinned threshold — a ranking where most items score zero is not a ranking (G11)', async () => {
+  const root = makeRepo();
+  writeBundleFile(root, 'work/lonely/work-item.md', conceptText({
+    type: 'bee.work-item', id: 'signalless', title: 'Reconcile quarterly payroll withholding',
+    description: 'Withholding reconciliation across payroll periods.',
+    tags: ['payroll'], extraBee: { areas: ['payroll'], required_context: [], decisions: [] },
+    body: 'Payroll withholding reconciliation across quarterly periods, employer contributions included.',
+  }));
+  const topics = ['kubernetes ingress', 'sourdough hydration', 'telescope collimation', 'bicycle derailleur',
+    'harpsichord tuning', 'glacier moraine', 'origami tessellation', 'submarine ballast',
+    'volcanic tephra', 'lighthouse fresnel', 'saffron cultivation', 'permafrost drilling'];
+  topics.forEach((topic, i) => {
+    writeBundleFile(root, `patterns/void-${String(i).padStart(2, '0')}.md`, conceptText({
+      id: `void-${i}`, title: `${topic} guidance`, description: `${topic} guidance notes`,
+      body: `${topic} guidance notes, ${topic} technique, ${topic} maintenance.`,
+      tags: ['unrelated'], extraBee: { areas: ['unrelated'], critical: true },
+    }));
+  });
+  const result = await runBee(['knowledge', 'context', '--work', 'signalless', '--budget', '100000', '--json'], root);
+  assert(result.status === 1, `an all-zero ranking must FAIL the run, got status ${result.status}: ${result.stdout}`);
+  const payload = JSON.parse(result.stdout);
+  assert(/zero_signal/.test(payload.error), `the failure must carry the typed zero_signal code, got ${result.stdout}`);
+  assert(/\b12\b/.test(payload.error), `the failure must name the zero count it measured, got ${result.stdout}`);
+  const human = await runBee(['knowledge', 'context', '--work', 'signalless', '--budget', '100000'], root);
+  assert(human.status === 1 && /zero_signal/.test(human.stderr), `the human form must fail on stderr with the typed code, got status=${human.status} stderr=${human.stderr}`);
+});
+
+await check('knowledge context: the zero-signal guard is inert below the pinned population floor — a two-pattern bundle is not a ranking problem', async () => {
+  const root = makeRepo();
+  writeBundleFile(root, 'work/tiny/work-item.md', conceptText({
+    type: 'bee.work-item', id: 'tiny-work', title: 'Reconcile quarterly payroll withholding',
+    description: 'Withholding reconciliation across payroll periods.',
+    tags: ['payroll'], extraBee: { areas: ['payroll'], required_context: [], decisions: [] },
+    body: 'Payroll withholding reconciliation across quarterly periods.',
+  }));
+  writeBundleFile(root, 'patterns/unrelated.md', conceptText({
+    id: 'unrelated-one', title: 'Kubernetes ingress guidance', description: 'Ingress guidance notes',
+    body: 'Kubernetes ingress guidance notes and technique.', tags: ['unrelated'],
+    extraBee: { areas: ['unrelated'], critical: true },
+  }));
+  const result = await runBee(['knowledge', 'context', '--work', 'tiny-work', '--budget', '100000', '--json'], root);
+  assert(result.status === 0, `a one-critical bundle must still resolve, got ${result.status}: ${result.stdout} ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  assert(manifest.zero_signal_count === 1, `the count is still REPORTED below the floor, got ${JSON.stringify(manifest.zero_signal_count)}`);
+});
+
+await check('knowledge context: the relevance cut is a real cut — a bundle above the KEEP ceiling excludes the tail, and the excluded are the lowest-scoring', async () => {
+  const root = makeDiscriminationFixture();
+  // Push the population above CRITICAL_RELEVANCE.KEEP with further disjoint
+  // criticals; the four labelled-relevant ones must still be kept.
+  const filler = ['kubernetes ingress', 'sourdough hydration', 'telescope collimation', 'bicycle derailleur',
+    'harpsichord tuning', 'glacier moraine', 'origami tessellation', 'submarine ballast',
+    'volcanic tephra', 'lighthouse fresnel', 'saffron cultivation', 'permafrost drilling',
+    'kiln firing', 'estuary silt', 'monsoon onset', 'quarry blasting'];
+  filler.forEach((topic, i) => {
+    writeBundleFile(root, `patterns/fill-${String(i).padStart(2, '0')}.md`, conceptText({
+      id: `fill-${i}`, title: `${topic} guidance`, description: `${topic} guidance notes for the check`,
+      body: `${topic} guidance notes, ${topic} technique, and one check the worker runs.`,
+      tags: ['unrelated'], extraBee: { areas: ['unrelated'], critical: true },
+    }));
+  });
+  const manifest = JSON.parse((await runBee(['knowledge', 'context', '--work', 'billing-migration', '--budget', '1000000', '--json'], root)).stdout);
+  assert(manifest.critical_total === 26, `26 criticals exist in this fixture, got ${manifest.critical_total}`);
+  assert(manifest.excluded.length === 26 - CRITICAL_RELEVANCE.KEEP, `the cut must exclude everything past KEEP=${CRITICAL_RELEVANCE.KEEP}, got ${manifest.excluded.length} excluded`);
+  const keptPaths = new Set(manifest.entries.filter((e) => /critical pattern/.test(e.reason)).map((e) => e.path));
+  for (const p of DISCRIMINATION_RELEVANT) assert(keptPaths.has(p), `a labelled-relevant critical must survive the cut, ${p} was excluded`);
+  const excludedScores = manifest.excluded.map((e) => e.score);
+  const keptScores = manifest.entries.filter((e) => /relevance/.test(e.reason)).map((e) => Number(/relevance ([0-9.]+)/.exec(e.reason)[1]));
+  assert(Math.min(...keptScores) >= Math.max(...excludedScores), `every kept critical must score at or above every excluded one, kept min ${Math.min(...keptScores)} vs excluded max ${Math.max(...excludedScores)}`);
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

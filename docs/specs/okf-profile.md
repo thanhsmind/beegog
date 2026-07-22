@@ -205,11 +205,49 @@ overlap the work item's, ranks them, and cuts at the budget. The order is fixed:
 Each entry carries `path`, `bytes`, `est_tokens` and a one-line `reason` naming *why* it was
 selected (and, for a required_context hit, *through which parent*) — and **nothing else**: the
 manifest never contains file bodies, because its whole purpose is to spend a few dozen tokens
-instead of thousands. The budget cut is a **prefix cut**: the first overshooting entry ends the
-manifest, and it plus every lower-ranked entry is named in `truncated`, so the output always means
-"the highest-ranked context that fits". The estimator is `bytes/4` and the output **names itself as
-an estimate** — bee vendors no tokenizer (D12), so the number is never dressed up as a token count.
-An unresolvable id exits 1 with a typed `unknown_work` error.
+instead of thousands. The budget cut is a **prefix cut** with one named exception (B6b): the first
+overshooting entry ends the manifest, and it plus every lower-ranked entry is named in `truncated`,
+so the output always means "the highest-ranked context that fits". The estimator is `bytes/4` and
+the output **names itself as an estimate** — bee vendors no tokenizer (D12), so the number is never
+dressed up as a token count. An unresolvable id exits 1 with a typed `unknown_work` error.
+
+**B6b — critical patterns are ranked by relevance, cut, floored and conserved (G5/G11).** D27's
+original "include every critical pattern" rule was written when three patterns existed. At 49 it
+inverted: on the first real run, 40 of 45 manifest entries were critical patterns consuming 13,000
+of 19,726 tokens, most of them unrelated, with 7 more truncated for lack of room — so an irrelevant
+pattern could evict a relevant one, and the consumer built to stop context waste had become its
+largest source.
+
+The replacement ranks the critical concepts against the work item and cuts them to
+`CRITICAL_RELEVANCE.KEEP`. **The relevance signal was chosen by measurement, not intuition.** Tag
+overlap — the obvious candidate — is disqualified: measured against the live bundle it left 48 of
+49 patterns tied at zero (AUC 0.550 against hand labels; `bee.areas` overlap 0.500, i.e. a coin
+flip). The shipped signal is the **IDF-weighted fraction of a concept's own distinctive vocabulary
+that the work item's text covers**, scored over two fields (title/description/tags, and body), plus
+a small tag and area bonus: AUC 0.805, no ties, no zeros. IDF is computed over the ranked population
+itself, so no word list ships. Widening the query with the `required_context` bodies was measured
+and **rejected** — it dilutes the work item's own vocabulary (AUC 0.751 → 0.615).
+
+Three properties make the cut safe to trust:
+
+- **Floor.** The top `CRITICAL_RELEVANCE.FLOOR` criticals have their cost reserved out of the budget
+  remaining after rank 1, so a genuinely universal lesson is never evicted by a long
+  `required_context` chain — while the work item itself is never displaced by its own floor. The
+  budget stays a hard ceiling: `total_est` never exceeds it, and a zero budget still includes
+  nothing.
+- **Conservation.** Every `bee.critical` concept is accounted for exactly once — in `entries` (whose
+  `reason` names its score and rank), in `truncated`, or in `excluded` as `{path, score, reason}`.
+  `critical_total` states the population and the assembler *throws* rather than lose one. A silent
+  exclusion is worse than the noise it replaces: the failure being fixed was loud, and it must not
+  be traded for a quiet one where a pattern that would have prevented a bug is simply absent.
+- **Zero-signal guard.** `zero_signal_count` is always reported. When the population is at least
+  `ZERO_SIGNAL_MIN_POPULATION` and more than `ZERO_SIGNAL_MAX_RATIO` of it scores zero, the run
+  **fails** with a typed `zero_signal` error. A ranking where most items tie at zero is a path sort
+  wearing a relevance label, and shipping it green is the defect — the guard exists so a future
+  signal cannot rot into one silently. Below that population the count is reported but not enforced:
+  a two-concept bundle is not a ranking problem.
+
+Ties break by path, so the order is total and two runs over the same bundle are byte-identical.
 
 **B7 — The session preamble makes the bundle load-bearing.** A tool nobody calls is a directory
 rename. When `.bee/state.json`'s active feature has a matching `bee.work-item` concept, the session

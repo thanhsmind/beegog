@@ -37,6 +37,13 @@
 //         estimated as bytes/4 — the estimator is NAMED in the output. The
 //         result is an ordered manifest of paths, sizes and one-line reasons:
 //         never file content.
+//   G5  — `context` RANKS the critical concepts by relevance to the work item
+//         and CUTS them (supersedes D27's include-every rule), keeping a small
+//         guaranteed floor of the highest-scoring against the budget.
+//   G11 — the cut is conserving and audited: every critical not in `entries`
+//         is named in `truncated` or in `excluded` with its score and reason,
+//         and a ranking where most of a real population scores zero FAILS the
+//         run rather than shipping as a path sort wearing a relevance label.
 //   D38 — `promote` (cell okf-9, S7) closes the learning loop the only way
 //         D2 allows: it READS the bundle and the CAPPED cell traces in
 //         .bee/cells/*.json (a read of the runtime store — permitted; never a
@@ -905,6 +912,170 @@ function normalizeBundleTarget(dir, target) {
   return rel === '' ? null : rel;
 }
 
+// ─── G5: relevance ranking over the critical concepts ───────────────────────
+//
+// WHY THIS SHAPE, IN NUMBERS. The naive design — rank the criticals by tag
+// (and area) overlap with the work item — was measured against the live bundle
+// before a line of it was written, on the okf-migration-f2 work item and the 49
+// bee.critical concepts that exist:
+//
+//   signal                                     AUC    zero scores   distinct
+//   tag overlap alone                          0.550  48 of 49       2
+//   bee.areas overlap alone                    0.500  49 of 49       1
+//   recency (the pattern's own date)           0.533   0 of 49      12
+//   title+description overlap with the item    0.674  11 of 49      35
+//   IDF-weighted body overlap, work item text  0.751   0 of 49      49
+//   THIS: two-field IDF coverage (below)       0.805   0 of 49      49
+//
+// (AUC = P(a hand-labelled-relevant critical outranks a hand-labelled-
+// irrelevant one); 0.5 is a coin flip. The 10 relevant / 39 irrelevant labels
+// were assigned by reading each concept against the work item's outcome and
+// scope, and are recorded in the f3-1 cell trace.)
+//
+// Tag overlap is therefore DISQUALIFIED as the ranking signal: it leaves 48 of
+// 49 tied at zero, which is a path sort wearing a relevance label. It survives
+// here only as a small additive bonus, for the work items that do carry
+// meaningful tags. Two more measured facts shaped the rest:
+//   * Widening the query with the required_context bodies HURT (0.751 -> 0.615)
+//     — long shared prose dilutes the work item's own distinctive vocabulary.
+//     The query is the work item's frontmatter and body, and nothing else.
+//   * Normalising by the concept's own vocabulary (a COVERAGE fraction) beats
+//     an unnormalised sum, which just rewards long patterns.
+//
+// The signal, stated plainly: what FRACTION of this concept's own distinctive
+// vocabulary does the work item talk about? IDF is computed over the ranked
+// population itself, so the corpus defines "distinctive" and no external word
+// list ships. Meta (title/description/tags) and body are scored as separate
+// fields because a bee pattern's title states its thesis while its body is
+// evidence.
+
+/** Pinned ranking constants (G5/G11). Exported so tests pin the numbers rather
+ *  than re-deriving them, and so a host repo can read what it is getting. */
+export const CRITICAL_RELEVANCE = Object.freeze({
+  /** How many ranked criticals survive the relevance cut. Measured on the live
+   *  bundle: of the 8 labelled-relevant criticals that reach the block, KEEP=20
+   *  retains 6 while dropping 27 of 47 patterns; KEEP=12 would retain only 4
+   *  for a further ~1.7k tokens — ranks 16-20 are the densest relevant band
+   *  after the top 5, so the cut is placed after them. */
+  KEEP: 20,
+  /** The highest-scoring criticals that are never evicted by the budget: their
+   *  cost is RESERVED out of the budget before the prefix walk spends it. Small
+   *  on purpose — a floor is a guarantee against eviction, not a second cut. */
+  FLOOR: 3,
+  META_WEIGHT: 0.25,
+  BODY_WEIGHT: 1,
+  TAG_WEIGHT: 0.05,
+  AREA_WEIGHT: 0.05,
+  /** The zero-signal guard is about a corpus that has outgrown its signal, not
+   *  about a two-concept fixture where there is nothing to rank. Below this
+   *  population the count is still REPORTED, never enforced. */
+  ZERO_SIGNAL_MIN_POPULATION: 10,
+  /** More than half a real population scoring zero is not a ranking. */
+  ZERO_SIGNAL_MAX_RATIO: 0.5,
+});
+
+/** Closed-class English words carry no topic. Kept as a literal so the ranking
+ *  ships no dependency and no downloadable word list (D23). */
+const RELEVANCE_STOPWORDS = new Set(
+  ('a an the and or but if then else for of to in on at by is are was were be been being it its this that these those with without from as not no never always every each any all some one two three you your we our they their he she i me my do does did done can could should would may might must will shall have has had so than which who whom what when where why how more most less least very just only also into out up down over under again further once here there both few other own same too s t don now').split(' '),
+);
+
+/** Topic tokens: lowercase, alphanumeric runs, >2 chars, stopped, and crudely
+ *  singularised so "rows" and "row" are the same term. Deliberately not a
+ *  stemmer — a stemmer is a dependency and a source of surprise. */
+function relevanceTokens(text) {
+  const out = [];
+  for (const raw of String(text || '').toLowerCase().split(/[^a-z0-9]+/)) {
+    if (raw.length <= 2 || RELEVANCE_STOPWORDS.has(raw)) continue;
+    out.push(raw.length > 4 && raw.endsWith('s') && !raw.endsWith('ss') ? raw.slice(0, -1) : raw);
+  }
+  return out;
+}
+
+/** The concept body, read once from the bundle (D23 — never outside it). */
+function conceptBody(dir, rel) {
+  try {
+    const raw = fs.readFileSync(path.join(dir, rel), 'utf8');
+    const parsed = parseFrontmatter(raw);
+    return parsed.ok && parsed.present ? parsed.body || '' : raw;
+  } catch {
+    return '';
+  }
+}
+
+function metaTextOf(concept) {
+  const data = concept.data || {};
+  const tags = Array.isArray(data.tags) ? data.tags.join(' ') : '';
+  return `${data.title || ''} ${data.description || ''} ${tags}`;
+}
+
+/**
+ * scoreCriticalRelevance(dir, criticals, workConcept) -> Map<path, number>.
+ *
+ * Every critical concept is scored — including one already selected higher up
+ * the ranking — so `zero_signal_count` describes the whole population and no
+ * concept can be dropped without a number attached to it (G11).
+ */
+function scoreCriticalRelevance(dir, criticals, workConcept) {
+  const fields = new Map();
+  const documentFrequency = new Map();
+  for (const concept of criticals) {
+    const meta = new Set(relevanceTokens(metaTextOf(concept)));
+    const body = new Set(relevanceTokens(conceptBody(dir, concept.path)));
+    fields.set(concept.path, { meta, body });
+    for (const token of new Set([...meta, ...body])) {
+      documentFrequency.set(token, (documentFrequency.get(token) || 0) + 1);
+    }
+  }
+  const population = criticals.length;
+  const idf = (token) => Math.log((population + 1) / ((documentFrequency.get(token) || 0) + 1)) + 1;
+
+  const query = new Set(
+    relevanceTokens(`${metaTextOf(workConcept)} ${conceptBody(dir, workConcept.path)}`),
+  );
+  const workBee = beeOf(workConcept.data);
+  const workTags = new Set(
+    (Array.isArray(workConcept.data.tags) ? workConcept.data.tags : [])
+      .filter((tag) => typeof tag === 'string')
+      .map((tag) => tag.toLowerCase()),
+  );
+  const workAreas = new Set(
+    (Array.isArray(workBee.areas) ? workBee.areas : []).filter((area) => typeof area === 'string'),
+  );
+
+  /** The IDF-weighted fraction of a field's own vocabulary the query covers. */
+  const coverage = (set) => {
+    let hit = 0;
+    let total = 0;
+    for (const token of set) {
+      const weight = idf(token);
+      total += weight;
+      if (query.has(token)) hit += weight;
+    }
+    return total === 0 ? 0 : hit / total;
+  };
+
+  const scores = new Map();
+  for (const concept of criticals) {
+    const bee = beeOf(concept.data);
+    const tags = (Array.isArray(concept.data.tags) ? concept.data.tags : []).filter(
+      (tag) => typeof tag === 'string' && workTags.has(tag.toLowerCase()),
+    ).length;
+    const areas = (Array.isArray(bee.areas) ? bee.areas : []).filter((area) => workAreas.has(area)).length;
+    const field = fields.get(concept.path);
+    const score =
+      CRITICAL_RELEVANCE.TAG_WEIGHT * tags +
+      CRITICAL_RELEVANCE.AREA_WEIGHT * areas +
+      CRITICAL_RELEVANCE.META_WEIGHT * coverage(field.meta) +
+      CRITICAL_RELEVANCE.BODY_WEIGHT * coverage(field.body);
+    // Rounded at emit precision so the number an agent reads in `excluded` is
+    // the number the ranking used — a displayed score that lost a tie it
+    // appears to have won is its own silent defect.
+    scores.set(concept.path, Number(score.toFixed(6)));
+  }
+  return scores;
+}
+
 /**
  * buildContextManifest(root, {work, budget}) — the D27 consumer.
  *
@@ -916,26 +1087,46 @@ function normalizeBundleTarget(dir, target) {
  *      selected path is skipped SILENTLY, so a cycle (A→B→A) is deduped and
  *      never an error, and a link that dangles or escapes the bundle is
  *      tolerated (OKF §5; `knowledge check` is what grades it, D4)
- *   4. every bee.critical: true concept, path-sorted
+ *   4. the bee.critical: true concepts, RANKED BY RELEVANCE to the work item
+ *      (G5) and cut to CRITICAL_RELEVANCE.KEEP — ties break by path, so the
+ *      order is total and two runs are byte-identical
  *   5. every bee.decision concept whose bee.areas overlaps the work item's,
  *      path-sorted
  * and cuts the ranked list at `budget` estimated tokens.
  *
- * The cut is a PREFIX cut: the first entry that would overshoot ends the
- * manifest, and it plus every lower-ranked entry is named in `truncated`.
- * Skipping an overshooting entry to squeeze in a smaller lower-ranked one
+ * The cut is a PREFIX cut with ONE named exception: the first
+ * CRITICAL_RELEVANCE.FLOOR criticals have their cost RESERVED out of what the
+ * budget has left after rank 1, before the prefix walk spends it — so a
+ * genuinely universal lesson is never evicted by a long required_context chain,
+ * while the work item itself is never displaced by the floor. `budget` stays a
+ * hard ceiling — total_est never exceeds it, and a zero budget still includes
+ * nothing. Apart from the floor, the first entry that would overshoot ends the
+ * manifest and it plus every lower-ranked entry is named in `truncated`:
+ * skipping an overshooting entry to squeeze in a smaller lower-ranked one
  * would make the output stop meaning "the highest-ranked context that fits".
  *
  * The BFS is seeded with the work item AND its plan sibling: the plan is in
  * the manifest, so what the plan itself requires is required context too —
  * every reason still names its parent, so the provenance stays auditable.
  *
- * Returns {work, decisions, budget, estimator, total_est, entries, truncated}
- * where each entry is {path (repo-relative), bytes, est_tokens, reason} —
- * NEVER file content (D27). `decisions` is informational: the work item's own
- * bee.decisions list, read from its frontmatter, never from a .bee/ store
- * (D2/D23). Read-only end to end; throws a typed Error the CLI surfaces as a
- * non-zero exit when `work` resolves to nothing.
+ * CONSERVATION (G11). Every bee.critical concept is accounted for exactly
+ * once: in `entries` (with its score and rank in the reason), in `truncated`
+ * (ranked, but the budget ran out), or in `excluded` as {path, score, reason}
+ * (below the relevance cut). A pattern that would have prevented a bug is
+ * never merely absent — the loud failure G5 replaces was 13k tokens of visible
+ * noise, and the silent one it could have become is exactly what `excluded`
+ * exists to prevent. `zero_signal_count` reports how many criticals scored
+ * zero, and a population at or above ZERO_SIGNAL_MIN_POPULATION with more than
+ * ZERO_SIGNAL_MAX_RATIO of it at zero FAILS the run: that is a path sort
+ * wearing a relevance label, and shipping it green is the defect.
+ *
+ * Returns {work, decisions, budget, estimator, total_est, entries, truncated,
+ * excluded, floor, critical_total, zero_signal_count} where each entry is
+ * {path (repo-relative), bytes, est_tokens, reason} — NEVER file content
+ * (D27). `decisions` is informational: the work item's own bee.decisions list,
+ * read from its frontmatter, never from a .bee/ store (D2/D23). Read-only end
+ * to end; throws a typed Error the CLI surfaces as a non-zero exit when `work`
+ * resolves to nothing or when the zero-signal guard trips.
  */
 export function buildContextManifest(root, { work, budget } = {}) {
   const workId = typeof work === 'string' ? work.trim() : '';
@@ -996,9 +1187,48 @@ export function buildContextManifest(root, { work, budget } = {}) {
     }
   }
 
-  // (4) every critical concept
-  for (const concept of concepts) {
-    if (beeOf(concept.data).critical === true) select(concept.path, 'critical pattern');
+  // (4) the critical concepts, ranked by relevance and cut (G5/G11)
+  const criticals = concepts.filter((concept) => beeOf(concept.data).critical === true);
+  const relevance = scoreCriticalRelevance(dir, criticals, workConcept);
+  const zeroSignalCount = criticals.filter((concept) => relevance.get(concept.path) === 0).length;
+  if (
+    criticals.length >= CRITICAL_RELEVANCE.ZERO_SIGNAL_MIN_POPULATION &&
+    zeroSignalCount > criticals.length * CRITICAL_RELEVANCE.ZERO_SIGNAL_MAX_RATIO
+  ) {
+    throw new Error(
+      `knowledge context: zero_signal — ${zeroSignalCount} of ${criticals.length} bee.critical concepts score 0 against work item "${workId}", ` +
+        `above the pinned ${CRITICAL_RELEVANCE.ZERO_SIGNAL_MAX_RATIO} ratio. A ranking where most items tie at zero is a path sort wearing a ` +
+        'relevance label — widen the work item\'s description/body, or fix the ranking, but do not ship this order (G11).',
+    );
+  }
+  // Total order: score desc, then path asc. Ties never depend on readdir.
+  const rankedCriticals = [...criticals].sort((a, b) => {
+    const delta = relevance.get(b.path) - relevance.get(a.path);
+    if (delta !== 0) return delta;
+    return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+  });
+  const excluded = [];
+  const floorPaths = [];
+  let keptCount = 0;
+  for (const [index, concept] of rankedCriticals.entries()) {
+    const rank = index + 1; // rank in the FULL critical population, not in the survivors
+    const score = relevance.get(concept.path);
+    if (selected.has(concept.path)) continue; // already in via required_context — never re-cut
+    if (keptCount >= CRITICAL_RELEVANCE.KEEP) {
+      excluded.push({
+        path: `docs/knowledge/${concept.path}`,
+        score,
+        reason: `below the relevance cut — rank ${rank} of ${rankedCriticals.length}, keep ${CRITICAL_RELEVANCE.KEEP} (G5)`,
+      });
+      continue;
+    }
+    const isFloor = keptCount < CRITICAL_RELEVANCE.FLOOR;
+    if (isFloor) floorPaths.push(`docs/knowledge/${concept.path}`);
+    select(
+      concept.path,
+      `critical pattern (relevance ${score}, rank ${rank} of ${rankedCriticals.length}${isFloor ? ', floor' : ''})`,
+    );
+    keptCount += 1;
   }
 
   // (5) decisions whose areas overlap the work item's areas
@@ -1013,11 +1243,7 @@ export function buildContextManifest(root, { work, budget } = {}) {
     select(concept.path, `decision for area ${overlap.join(', ')}`);
   }
 
-  const entries = [];
-  const truncated = [];
-  let totalEst = 0;
-  let cutting = false;
-  for (const item of ranked) {
+  const sized = ranked.map((item) => {
     const repoRel = `docs/knowledge/${item.rel}`;
     let bytes = 0;
     try {
@@ -1025,19 +1251,66 @@ export function buildContextManifest(root, { work, budget } = {}) {
     } catch {
       bytes = 0;
     }
-    const est = estimateTokens(bytes);
-    if (cutting || totalEst + est > budgetTokens) {
-      cutting = true;
-      truncated.push(repoRel);
+    return { ...item, repoRel, bytes, est: estimateTokens(bytes), floor: floorPaths.includes(repoRel) };
+  });
+
+  // The floor's cost comes out of the budget FIRST — but only out of what is
+  // left after rank 1. The floor exists so a long required_context chain, or a
+  // pile of area decisions, cannot evict a universal lesson; it was never meant
+  // to displace the work item itself, and a manifest without its work item is
+  // not a manifest. Capping the reservation this way also keeps `budget` a hard
+  // ceiling and keeps a zero budget including nothing.
+  const floorCost = sized.filter((item) => item.floor).reduce((sum, item) => sum + item.est, 0);
+  const rankOneCost = sized.length > 0 ? sized[0].est : 0;
+  let reserve = Math.max(0, Math.min(floorCost, budgetTokens - rankOneCost));
+  let available = budgetTokens - reserve;
+
+  const entries = [];
+  const truncated = [];
+  let totalEst = 0;
+  let cutting = false;
+  for (const item of sized) {
+    if (item.floor) {
+      if (item.est > reserve) {
+        truncated.push(item.repoRel);
+        continue;
+      }
+      reserve -= item.est;
+      totalEst += item.est;
+      entries.push({ path: item.repoRel, bytes: item.bytes, est_tokens: item.est, reason: item.reason });
       continue;
     }
-    totalEst += est;
-    entries.push({ path: repoRel, bytes, est_tokens: est, reason: item.reason });
+    if (cutting || item.est > available) {
+      cutting = true;
+      truncated.push(item.repoRel);
+      continue;
+    }
+    available -= item.est;
+    totalEst += item.est;
+    entries.push({ path: item.repoRel, bytes: item.bytes, est_tokens: item.est, reason: item.reason });
   }
 
   const decisions = Array.isArray(beeOf(workConcept.data).decisions)
     ? beeOf(workConcept.data).decisions.filter((entry) => typeof entry === 'string')
     : [];
+
+  // CONSERVATION (G11), asserted here rather than trusted: a critical that is
+  // neither included, truncated nor excluded has been silently dropped, which
+  // is the one failure this whole design exists to prevent.
+  const accounted = new Set([
+    ...entries.map((entry) => entry.path),
+    ...truncated,
+    ...excluded.map((item) => item.path),
+  ]);
+  const lost = criticals
+    .map((concept) => `docs/knowledge/${concept.path}`)
+    .filter((repoRel) => !accounted.has(repoRel));
+  if (lost.length > 0) {
+    throw new Error(
+      `knowledge context: conservation — ${lost.length} bee.critical concept(s) were neither included, truncated nor excluded: ` +
+        `${lost.join(', ')} (G11). This is a bug in the ranking, not a condition of the bundle.`,
+    );
+  }
 
   return {
     work: workId,
@@ -1047,6 +1320,10 @@ export function buildContextManifest(root, { work, budget } = {}) {
     total_est: totalEst,
     entries,
     truncated,
+    excluded,
+    floor: floorPaths,
+    critical_total: criticals.length,
+    zero_signal_count: zeroSignalCount,
   };
 }
 

@@ -2560,14 +2560,17 @@ function handleKnowledgeList(root, flags) {
   };
 }
 
-// context (okf-7, D27): the budget-aware consumer. Read-only end to end —
-// buildContextManifest resolves the work item by bee.id, walks required_context
-// transitively (cycles deduped silently), adds the critical concepts and the
-// area decisions, ranks, and cuts at --budget using the NAMED bytes/4
-// estimator. The human form is a table of the same rows the --json manifest
-// carries; neither ever carries file content. An unresolvable --work id
-// throws the typed unknown_work error, which the dispatcher's catch turns
-// into exit 1 ({"error":...} on stdout under --json, stderr otherwise).
+// context (okf-7, D27; ranking hardened by G5/G11): the budget-aware consumer.
+// Read-only end to end — buildContextManifest resolves the work item by bee.id,
+// walks required_context transitively (cycles deduped silently), RANKS the
+// critical concepts by relevance to the work item and cuts them, adds the area
+// decisions, and cuts at --budget using the NAMED bytes/4 estimator. The human
+// form is a table of the same rows the --json manifest carries — plus one
+// EXCLUDED line per critical dropped by the relevance cut, because a silent
+// exclusion is worse than the noise it replaces. Neither form ever carries file
+// content. An unresolvable --work id, or a zero-signal ranking over a real
+// population, throws a typed error the dispatcher's catch turns into exit 1
+// ({"error":...} on stdout under --json, stderr otherwise).
 function handleKnowledgeContext(root, flags) {
   const manifest = buildContextManifest(root, { work: flags.work, budget: flags.budget });
   const lines = [
@@ -2579,9 +2582,14 @@ function handleKnowledgeContext(root, flags) {
     lines.push(`${entry.path} · ${entry.bytes} · ${entry.est_tokens} · ${entry.reason}`);
   }
   for (const cut of manifest.truncated) lines.push(`TRUNCATED ${cut}`);
+  for (const dropped of manifest.excluded) {
+    lines.push(`EXCLUDED ${dropped.path} · ${dropped.score} · ${dropped.reason}`);
+  }
   lines.push(
     `knowledge context: ${manifest.entries.length} entry(ies), ${manifest.total_est} est token(s) ` +
-      `of ${manifest.budget} budget (estimator ${manifest.estimator}), ${manifest.truncated.length} truncated.`,
+      `of ${manifest.budget} budget (estimator ${manifest.estimator}), ${manifest.truncated.length} truncated, ` +
+      `${manifest.excluded.length} excluded of ${manifest.critical_total} critical pattern(s); ` +
+      `zero_signal_count ${manifest.zero_signal_count}; floor ${manifest.floor.length}.`,
   );
   return { result: manifest, text: lines.join('\n') };
 }
