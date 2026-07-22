@@ -129,6 +129,18 @@ const EXTRA_SUITES = [
   // matrix) keep the F12 drift telemetry inside its band across the five
   // pinned "area"-shaped sources.
   ["scripts/okf_migrate.mjs", "--check", "performance-log"],
+  // f2-8 (F6/F9): feedback-digest's own D35 coverage gate. 29 anchors (0 B /
+  // 15 R / 6 E / 8 P) derived from blob eeb447e at 3d69a2d with
+  // expected_counts.unparsed_blocks: 26 asserted — the highest unparsed
+  // ratio of the pinned areas so far: the entire "Behaviors & Operations"
+  // section is five markdown subheadings (B1-B5) carrying no id at all, 18
+  // unnumbered bold-lead paragraphs plus 8 un-ided continuation bullets,
+  // none invented into an anchor (D10). Four concepts, split by TOPIC (the
+  // digest's own data model; generating and refreshing a repository's own
+  // digest; cross-repository collection and the trust boundary; ranking and
+  // the self-improvement process) keep the F12 drift telemetry inside its
+  // band across the six pinned "area"-shaped sources.
+  ["scripts/okf_migrate.mjs", "--check", "feedback-digest"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

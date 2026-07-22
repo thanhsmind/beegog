@@ -130,3 +130,37 @@
   `sections-lifecycle-and-measurement.md`'s `bee.sources`, `--check performance-log` failed with
   the real coverage-loss finding (`LOST in concepts: R4`), then was restored to green. Coverage is
   machine-checked by `scripts/okf_migrate.mjs --check performance-log` (D35), now a chain suite.
+
+- Sixth area migrated (cell f2-8, feature `okf-migration-f2`, slice S4d):
+  `docs/specs/feedback-digest.md` re-authored into four `bee.area` concepts, split by TOPIC rather
+  than the old spec's headings — `areas/feedback-digest/data-model.md` (the digest's own shape: the
+  six allowed fields, the closed `kind` vocabulary, how `pain` is computed once, and the `dropped`
+  list), `areas/feedback-digest/generation-and-refresh.md` (how a repository produces its own
+  digest as a side effect of closing a feature, on request, or as a count only, and the closing
+  routine's automatic refresh), `areas/feedback-digest/cross-repo-trust-boundary.md` (how the
+  maintainers' repository reads another repository's already-written digest as hostile input, never
+  trusting a boundary artifact it did not produce), and
+  `areas/feedback-digest/ranking-and-self-improvement.md` (grouping the collected view by what a
+  title means, scoring deterministically, and the gated process that turns a ranking into a
+  shipped, human-approved change to the workflow itself). Ground truth is DERIVED (F8): pin
+  `{3d69a2d, docs/specs/feedback-digest.md, blob eeb447e, ba-nine-section, 29 anchors (0 B / 15 R /
+  6 E / 8 P), unparsed_blocks: 26}`, with the pre-migration source committed verbatim at
+  `docs/history/okf-migration-f2/sources/feedback-digest.md`. The 26 unparsed blocks are the
+  source's entire "Behaviors & Operations" section — five markdown subheadings (B1-B5) carrying no
+  id the classifier recognizes, holding 18 unnumbered bold-lead paragraphs plus 8 un-ided
+  continuation bullets — and none is invented into an anchor (D10); their content still travels
+  into whichever concept's topic it matches. This is the highest unparsed ratio of the six now-pinned
+  "area"-shaped sources: roughly half this area's substance lives in unnumbered prose, so the
+  coverage gate governs less of it than it does elsewhere — worth surfacing, and not a reason to
+  invent structure that was never there. Four concepts over 29 anchors and 356 source lines land
+  anchors_per_concept at 7.25 and concepts_per_100_source_lines at 1.12, both inside the [0.5x, 2x]
+  band across the six pinned sources — a 3-concept shape (folding the data model into whichever
+  behavior concept used its fields) was computed against the same running median before authoring
+  and found to put concepts_per_100_source_lines at 0.84, a 0.47x outlier just outside the band,
+  confirming the 4-way split (matching the source's own Purpose / Data Dictionary /
+  Behaviors&Operations / Business Rules top-level sections) as the honest shape rather than a
+  forced one. Fidelity: min/median/max 1.000 (verbatim re-homing).
+  RED-FIRST: with the R4 claim deliberately removed from `cross-repo-trust-boundary.md`'s
+  `bee.sources`, `--check feedback-digest` failed with the real coverage-loss finding (`LOST in
+  concepts: R4`), then was restored to green. Coverage is machine-checked by
+  `scripts/okf_migrate.mjs --check feedback-digest` (D35), now a chain suite.

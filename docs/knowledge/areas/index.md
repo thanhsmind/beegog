@@ -13,5 +13,6 @@ never a generation timestamp or any other wall-clock value.
 - [advisor-protocol/](advisor-protocol/index.md) — 4 concept(s)
 - [decision-memory/](decision-memory/index.md) — 1 concept(s)
 - [doctrine-layer/](doctrine-layer/index.md) — 7 concept(s)
+- [feedback-digest/](feedback-digest/index.md) — 4 concept(s)
 - [performance-log/](performance-log/index.md) — 3 concept(s)
 - [verify-pipeline/](verify-pipeline/index.md) — 2 concept(s)

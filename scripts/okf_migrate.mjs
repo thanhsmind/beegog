@@ -296,6 +296,46 @@ export const PIN_REGISTRY = {
     note: "the 225-line BA spec as of 46a56a4 (f2-6), immediately before f2-7 turned it into a D37 pointer stub — 11 rules, 5 edge cases, 7 pointers, and 10 unparsed Behaviors & Operations blocks",
   },
 
+  "feedback-digest": {
+    kind: "area",
+    // The pin is HEAD at the moment f2-8 ran, taken BEFORE the stub replaced
+    // the content — same rule as doctrine-layer's, decision-memory's,
+    // verify-pipeline's, and performance-log's pins: pin the parent, copy the
+    // bytes, hash both.
+    commit: "3d69a2d3baf00917e578144f7b8f500baf02a4ca",
+    path: "docs/specs/feedback-digest.md",
+    blob_sha: "eeb447ee3e9a274935a94d8d0633b41e7107730b",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      behaviors: 0,
+      rules: 15,
+      edges: 6,
+      pointers: 8,
+      total: 29,
+      // The source's entire "Behaviors & Operations" section (B1-B5) is five
+      // markdown SUBHEADINGS, not bullets, so none of it is a classified
+      // block start at all — 18 unnumbered bold-lead paragraphs
+      // (Triggers/What is read/What is emitted/What blocks it/What each
+      // actor observes/Reproducibility/How the boundary is
+      // enforced/Why the reader distrusts the writer/What it does) plus 8
+      // un-ided continuation bullets (B2's re-examination list, B4's
+      // grouping/score/floor bullets) — none is invented into an anchor
+      // (D10). Every Business Rules bullet is a `- **Rn** (…) — …` block
+      // start the classifier already sees; Edge Cases and Pointers carry no
+      // explicit id at all in the source (unlike Business Rules) but every
+      // bullet there IS still a top-level `- ` block start, so the
+      // classifier derives E1-E6 and P1-P8 from bullet order. The 26
+      // unparsed blocks are entirely the Behaviors & Operations prose,
+      // confirmed by --inventory before any edit. This is the highest
+      // unparsed ratio of the five pinned areas so far — roughly half this
+      // area's substance lives in unnumbered prose, so the coverage gate
+      // governs less of it than it does elsewhere.
+      unparsed_blocks: 26,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/feedback-digest.md",
+    note: "the 355-line BA spec as of 3d69a2d (f2-7), immediately before f2-8 turned it into a D37 pointer stub — 15 rules, 6 edge cases, 8 pointers, and 26 unparsed Behaviors & Operations blocks",
+  },
+
   // ─── declared, not yet pinned (the migrating cell authors the pin) ────────
   // Listed — rather than merely absent — so the gate refuses them BY NAME with
   // a reason, instead of the generic "unknown area" shrug.

@@ -14,10 +14,6 @@ Where things live. Read the touched area's spec before its code.
   concept, `overview.md`, since the source is one coherent topic at nine rules. The legacy path
   [`decision-memory.md`](./decision-memory.md) remains as a pointer stub carrying the full
   9-anchor map (D37).
-- [`feedback-digest.md`](./feedback-digest.md) — how a repository turns its own workflow records into a
-  safe portable snapshot, how the maintainers' repository reads other repositories' snapshots
-  without trusting them, and how the collected view is ranked and fed to the gated
-  self-improvement process.
 - [`onboarding.md`](./onboarding.md) — what onboarding installs and keeps current in a host
   project, including plugin-first/repo-copy exclusivity, installed-package proof, and
   proof-gated cleanup; unresolved live-install surfaces remain Open Gaps (`coverage: partial`).
@@ -89,7 +85,7 @@ Where things live. Read the touched area's spec before its code.
   `SKILL.md` + `CREATION-LOG.md`; `skills/bee-writing-skills/scripts/render_openai_metadata.mjs`
   projects each canonical frontmatter identity into `agents/openai.yaml` for Codex, and its
   `--check` mode guards drift. The self-improvement *process* behavior is specced in
-  `feedback-digest.md` (B5).
+  `docs/knowledge/areas/feedback-digest/ranking-and-self-improvement.md` (B5).
 - `docs/specs/system-overview.md` does not exist. Offered, not yet written.
 
 ## Elsewhere
@@ -134,6 +130,18 @@ Where things live. Read the touched area's spec before its code.
   `persistent-store-and-sync.md`, and `cross-project-matrix.md`. The legacy path
   [`performance-log.md`](./performance-log.md) remains as a pointer stub carrying the full
   23-anchor map (D37).
+- [`docs/knowledge/areas/feedback-digest/`](../knowledge/areas/feedback-digest/index.md) — how a
+  repository turns its own workflow records into a safe portable snapshot, how the maintainers'
+  repository reads other repositories' snapshots without trusting them, and how the collected view
+  is ranked and fed to the gated self-improvement process, migrated into the knowledge bundle
+  (okf-foundation D20/D29; okf-migration-f2 F9). Split by TOPIC into `data-model.md` (the six
+  allowed fields, the closed `kind` vocabulary, `pain`, and `dropped`), `generation-and-refresh.md`
+  (producing a repository's own digest as a side effect of closing a feature),
+  `cross-repo-trust-boundary.md` (the maintainers' repository reading another repository's digest
+  as hostile input), and `ranking-and-self-improvement.md` (grouping the collected view and the
+  gated self-improvement process). The legacy path
+  [`feedback-digest.md`](./feedback-digest.md) remains as a pointer stub carrying the full
+  29-anchor map (D37).
 - `skills/bee-hive/templates/bee.mjs` + `templates/lib/command-registry.mjs` — the sole shipped CLI (`bee.mjs <group> <verb>` over all 10 command groups, the 10th being `perf`; originated as an additive dispatcher in harness-integration-adopt, decision 30606de4, `docs/decisions/0024`, then made the sole canonical *and* sole shipped surface by shim-retire, D1, decision bbc6bcea — the 9 legacy per-group shims are deleted); `command-registry.mjs` is the single source of truth for the command surface. Contract in `docs/07-contracts.md`; spec-before-code still applies — read the touched area's spec before this code.
 - `skills/bee-hive/templates/lib/schedule.mjs` — the computed work schedule (`computeSchedule`/`detectCycles`: dep layering + declared-path overlap packing into waves; consumed by `bee cells schedule`, cycle refusal in `cells.mjs` add/update, and the swarming/validating prose). Spec: `docs/specs/workflow-state.md` B17/B18, R26/R27.
 - `skills/bee-hive/templates/lib/recovery.mjs` — crash-recovery transcript mining (`detectCrashCandidates`/`readTranscriptTail`/`hasCleanEndTrio`/`lastDurableSettlement`/`computeMiningWindow`/`buildMiningPrompt`: stale-heartbeat + non-clean-transcript-tail + work-in-flight detection; bounded mining window; the down-tier miner prompt). Consumed by `bee recovery scan|window` and the `status` recovery block; imports `perf.mjs` (transcript resolution) + `claims.mjs` (heartbeat/session), never imported by `command-registry.mjs`. Spec: `docs/specs/workflow-state.md` B33, R51.
