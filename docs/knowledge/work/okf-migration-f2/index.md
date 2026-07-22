@@ -6,9 +6,8 @@ Deterministic: byte-identical for the same bundle contents — path-sorted entri
 never a generation timestamp or any other wall-clock value.
 -->
 
-# work/
+# work/okf-migration-f2/
 
-## Sections
+## Concepts
 
-- [okf-foundation/](okf-foundation/index.md) — 3 concept(s)
-- [okf-migration-f2/](okf-migration-f2/index.md) — 1 concept(s)
+- [okf-migration-f2 — migrate every remaining area into the bundle](work-item.md) — Migrate the remaining ten docs/specs areas into docs/knowledge/areas/ under the coverage law, after first making the coverage gate derive its own ground truth from a git-pinned blob.

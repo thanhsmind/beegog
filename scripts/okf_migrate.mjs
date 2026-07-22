@@ -486,6 +486,45 @@ export const PIN_REGISTRY = {
     source_copy: "docs/history/okf-migration-f2/sources/worktree-parallelism.md",
     note: "the 225-line narrative area spec as of 687ac59 (f2-10 close), immediately before f2-11 turned it into a D37 pointer stub — 10 `## ` heading anchors, 0 numbered ids of any kind, 2 unparsed preamble blocks; the only area of the eleven that needed a scheme of its own",
   },
+
+  "workflow-state": {
+    kind: "area",
+    // THE SECOND REPAIRED PIN (f2-12), and the largest source of the eleven.
+    // The pinned BYTES are not HEAD's bytes: this source could not be pinned as
+    // it stood either. Same branch as hook-runtime's — the provenance blob at
+    // commit:path is still asserted exactly, and the committed copy is the
+    // repaired bytes' only content address.
+    commit: "df3072d561107443c4491bba36d7be0fa28adedb",
+    path: "docs/specs/workflow-state.md",
+    blob_sha: "506fef94814b9197706c6dcab9a09e56941609d4",
+    repaired_from: "ed1644c487043b0373b0ceea727143d4ddbfa3e8",
+    repair_reason:
+      "the source carried THREE duplicated rule ids — R19, R20 and R21 each appeared twice inside one `## Business Rules` section, flagged as pre-existing by the f2-4 sweep. The first family (L891-902) is the fresh-session-handoff triple: R19 planned-next preconditions live in the verb, R20 auto-resume authority exists only at the fresh-session boundary, R21 the work puller never widens authority (fresh-session-handoff D1/D2, validation-s4 C10/C11). The second family (L916-930) is the chain-integrity triple: R19 the learning-capture phase is never settable, R20 recording a knowledge sync demands executed work, R21 the terminal state demands learning capture plus zero spec debt (chain-integrity D1-REVISED/D2/D3/D4). Six genuinely distinct rules, three collisions, none a rule stated twice. Anchors are keyed by id, so each first member's text was silently overwritten by its second and unmeasurable by the F11 floor forever, while set-equality could not see any pair's second member — 140 anchors carrying only 137 distinct ids. No rule may be dropped or merged, so the repair is the minimum that makes all six individually measurable: the SECOND occurrence of each id in document order (the chain-integrity family) is renumbered R19a/R20a/R21a — three tokens on three lines, no other byte changed. The chain-integrity family was chosen as the renumbered side because BOTH sides carry ZERO live citations (`grep skills/ scripts/ hooks/ .bee/bin/ AGENTS.md docs/specs/` finds no citation of any workflow-state rule id at all, in either direction — no `workflow-state.md#Rnn` reference exists anywhere yet), so no reference is churned whichever side moves; the tie is broken exactly as hook-runtime's R14 was, by renumbering the second occurrence in document order, and the only surviving external mention — docs/history/fresh-session-handoff/reports/validation-s5.md, which cites `workflow-state.md B15/B16/R19-R21` — means the FIRST family, so it keeps resolving correctly. R19a/R20a/R21a are DISAMBIGUATION suffixes, not refinement suffixes like R8a/R8b; the pointer stub's anchor map will say so, so a reader arriving at either old id finds the rule it meant.",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      behaviors: 37,
+      rules: 58,
+      edges: 25,
+      pointers: 20,
+      // 140 anchors, and — after the repair — 140 DISTINCT ids. Before it, the
+      // same 140 array members carried only 137 distinct ids: three collisions
+      // that array-length counting is blind to by construction.
+      total: 140,
+      // All 7 unparsed blocks sit in "Behaviors & Operations" and none is
+      // invented into an anchor (D10). Two are wrapped continuation lines that
+      // happen to open with a bold run — B9a's `**read-only** with an evidence
+      // bundle …` (L214) and B16's `**actively owned by another live session**
+      // …` (L356). The other five are the un-ided bold-lead paragraphs of the
+      // `### Closing a feature — the tail of the chain` subsection (L547, L553,
+      // L558, L564, L577), which a `###` heading does not close, so they travel
+      // inside B24's block. Every one of them travels with the anchor whose
+      // block it sits in, so the fidelity floor measures them and no content is
+      // homeless.
+      unparsed_blocks: 7,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/workflow-state.md",
+    note: "the 1464-line BA spec as of df3072d (f2-11 close) WITH the duplicate-R19/R20/R21 repair applied by f2-12 before the pin was captured — 37 behaviors, 58 rules (B9a and the disambiguated R19a/R20a/R21a included), 25 edge cases, 20 pointers, 7 unparsed Behaviors & Operations blocks. These bytes are in no commit's tree by construction, so `via` is always committed-copy here. The area is migrated across SEVERAL cells (F10), so its chain gate is wired by the LAST of them, not by f2-12",
+  },
 };
 
 const PATTERNS_SOURCE = "docs/history/learnings/critical-patterns.md";

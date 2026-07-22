@@ -356,3 +356,59 @@
   `SKIP-REFUSED` line at all — the PIN_NO_SCHEME refusal stays asserted against an ad-hoc pin,
   because the property is "an undecided shape is refused BY NAME", not "some area is still
   undecided".
+
+- Eleventh and last area, first group of a SPLIT migration (cell f2-12, feature
+  `okf-migration-f2`): `docs/specs/workflow-state.md` — 1464 lines, 140 anchors, the largest
+  source of the eleven — is migrated across several cells per F10. This cell does the source
+  REPAIR, the pin, and the first cluster group of okf-foundation D30's locked map only; the
+  pointer stub, the anchor map and the chain gate belong to the LAST cell of the group, because
+  a gate wired now would legitimately be red on the 136 anchors still unclaimed.
+- THE HAZARD, and why it came first: this source carried **three** duplicated rule ids. `R19`,
+  `R20` and `R21` each appeared twice inside one `## Business Rules` section — the
+  fresh-session-handoff triple at L891-902 (planned-next preconditions live in the verb /
+  auto-resume authority exists only at the fresh-session boundary / the work puller never widens
+  authority) and the chain-integrity triple at L916-930 (the learning-capture phase is never
+  settable / recording a knowledge sync demands executed work / the terminal state demands
+  learning capture plus zero spec debt). Six genuinely distinct rules, three collisions, none a
+  rule stated twice. Anchors are keyed by id, so each first member's text was silently
+  overwritten by its second — permanently unmeasurable by the F11 floor, invisible to
+  set-equality as the pair's second member — while 140 array members carrying 137 distinct ids
+  added up perfectly every time. The precedent is hook-runtime's `R14` (cell f2-10) and the
+  resolution is the same: no rule may be dropped or merged, so the SECOND occurrence of each id
+  in document order (the chain-integrity family) was renumbered `R19a`/`R20a`/`R21a` — three
+  tokens on three lines, no other byte changed — BEFORE the pin was captured. Which side moved
+  was decided by live citations, and both sides have **zero**: `grep skills/ scripts/ hooks/
+  .bee/bin/ AGENTS.md docs/specs/` finds no citation of any `workflow-state` rule id at all, in
+  either direction, so no reference is churned whichever side moves. The tie broke exactly as
+  f2-10's did, on document order; the one surviving external mention
+  (`docs/history/fresh-session-handoff/reports/validation-s5.md`, citing
+  `workflow-state.md B15/B16/R19-R21`) means the FIRST family, which kept its ids and still
+  resolves. `R19a`/`R20a`/`R21a` are DISAMBIGUATION suffixes, not refinement suffixes the way
+  `R8a`/`R8b` refine `R8`; the pin's `repair_reason` says so and the stub's anchor map will.
+- Pin `{df3072d, docs/specs/workflow-state.md, blob 506fef9, repaired_from ed1644c,
+  ba-nine-section, 140 anchors (37 B / 58 R / 25 E / 20 P), unparsed_blocks: 7}` — 140 anchors
+  with 140 DISTINCT ids where the same file carried 137 before, with the repaired source
+  committed verbatim at `docs/history/okf-migration-f2/sources/workflow-state.md` and
+  hash-verified against `blob_sha`. Second use of f2-10's repaired-pin branch and no change to
+  it: the git leg still addresses the PROVENANCE exactly, the committed copy is still the
+  pinned bytes' only content address, and an undeclared, misdeclared or unexplained repair is
+  still `PIN_SHA_MISMATCH`. `test_okf_pins` section 30 asserts all of that plus both directions
+  of the repair itself — every derived id distinct, all six rules carrying their own separate
+  texts, and the defect measured on the provenance blob rather than described (140 anchors,
+  137 distinct, collisions exactly `R19`/`R20`/`R21`).
+- The 7 unparsed blocks are all in Behaviors & Operations and none is invented into an anchor
+  (D10): B9a's wrapped continuation line that opens with a bold run (`**read-only** with an
+  evidence bundle …`, L214), B16's `**actively owned by another live session**` continuation
+  (L356), and the five un-ided bold-lead paragraphs of the `### Closing a feature — the tail of
+  the chain` subsection (L547/L553/L558/L564/L577). A `###` heading does not close an anchor's
+  block, so those five travel inside **B24**'s text — which the multi-session group must carry
+  to clear the floor, even though D30 homes the Closing-a-feature prose in `gates`.
+- First group authored: `areas/workflow-state/overview.md` (Purpose + Entry Points & Triggers +
+  the full Data Dictionary + Actors & Access — the source's un-numbered frame sections, so it
+  claims no anchor) and `areas/workflow-state/gates.md` (B1 guarded feature start, B2 the closed
+  phase vocabulary, B9a the high-risk execution consult precondition, B19 phase-owned routing
+  mutation, plus the Closing-a-feature tail). Fidelity for the four claimed anchors:
+  min/median/max 1.000 (verbatim re-homing). 136 anchors remain unclaimed for the follow-up
+  cells, and `--check workflow-state` reports them honestly (140 anchors, 4 owned, 0 duplicated,
+  136 lost) — it is deliberately NOT a chain suite yet, which is why the chain stays green at 74
+  suites.

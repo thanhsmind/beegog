@@ -28,6 +28,7 @@ its pinned hash is refused too.
 | `onboarding.md` | `a06f59d` (f2-8 close, the commit before f2-9 stubbed it) | `c78ca9b…` | `ba-nine-section` | 58 (0 B / 28 R — `R20b` included / 15 E / 15 P), 20 unparsed blocks |
 | `hook-runtime.md` | `ab8cf6e` (f2-9, the commit before f2-10 stubbed it) — **REPAIRED**, see below | `a8907ce…` | `ba-nine-section` | 81 (22 B / 24 R — `R8a`, `R8b`, `R14a` included / 17 E / 18 P), 8 unparsed blocks |
 | `worktree-parallelism.md` | `687ac59` (f2-10, the commit before f2-11 stubbed it) | `df2f441…` | `narrative-sections` | 10 (`S-` + slugified `## ` heading), 2 unparsed preamble blocks |
+| `workflow-state.md` | `df3072d` (f2-11 close) — **REPAIRED**, see below | `506fef9…` | `ba-nine-section` | 140 (37 B — `B9a` included / 58 R — `R19a`, `R20a`, `R21a` included / 25 E / 20 P), 7 unparsed blocks |
 
 **One of these sources needed a scheme nobody had written yet.**
 `worktree-parallelism.md` is the only area of the eleven with **no numbered anchors at all**
@@ -44,7 +45,7 @@ outright — the duplicate-id hazard `hook-runtime.md` had to be repaired to esc
 under this scheme. Adding it was a strict no-op: all nine pre-existing pins still derive their
 exact counts, asserted in `scripts/test_okf_pins.mjs` section 28.
 
-**One of these copies is not a byte copy of any commit, and says so.**
+**Two of these copies are not byte copies of any commit, and both say so.**
 `hook-runtime.md` shipped the rule id `R14` **twice** — the gate-bypass
 block-verdict rule and the write-guard command-shape rule, two genuinely
 different rules. Anchors are keyed by id, so the first one's text was silently
@@ -59,6 +60,24 @@ explicitly — `repaired_from` names the provenance blob at
 provenance stays as loud as a drifting pin) and `repair_reason` states why. For
 this one file the copy here is not a shallow-clone fallback but the pin's only
 content address.
+
+`workflow-state.md` is the same defect three times over. It shipped `R19`, `R20`
+**and** `R21` twice each inside one `## Business Rules` section — the
+fresh-session-handoff triple (planned-next preconditions / auto-resume authority
+/ the work puller) and the chain-integrity triple (the unsettable learning-capture
+phase / the sync demanding executed work / the terminal state demanding zero spec
+debt). Six genuinely different rules, three collisions, so 140 anchors carried
+only **137 distinct ids** while every count still added up. Repaired the same
+way and for the same reason: the second occurrence of each id in document order
+(the chain-integrity family) was renumbered `R19a`/`R20a`/`R21a`, three tokens on
+three lines, before the pin was captured. Neither side had a single live citation
+— no `workflow-state` rule id is cited anywhere in `skills/`, `scripts/`,
+`hooks/`, `.bee/bin/`, `AGENTS.md` or `docs/specs/` — so document order broke the
+tie, exactly as it did for `R14`. `repaired_from` names the provenance blob at
+`df3072d:docs/specs/workflow-state.md`, and the copy here is again the pin's only
+content address. Unlike every other area, this one is migrated across SEVERAL
+cells (F10), so its pointer stub, anchor map and chain gate arrive with the last
+of them rather than with the pin.
 
 Re-derive and re-assert every pin at any time:
 

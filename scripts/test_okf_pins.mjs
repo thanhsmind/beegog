@@ -1256,6 +1256,127 @@ console.log(
   );
 }
 
+// ─── 30. workflow-state: THREE duplicate ids repaired before pinning (f2-12) ─
+//
+// The second repaired pin, and the worse case. docs/specs/workflow-state.md
+// shipped R19, R20 AND R21 twice each inside one `## Business Rules` section:
+// the fresh-session-handoff triple (planned-next preconditions / auto-resume
+// authority / the work puller) and the chain-integrity triple (learning
+// capture is never settable / the sync demands executed work / the terminal
+// state demands zero spec debt). Six genuinely distinct rules, three
+// collisions, so 140 anchors carried only 137 distinct ids — and the counts
+// added up perfectly the whole time, which is exactly why a count can never
+// prove this property. The SECOND occurrence of each id in document order was
+// renumbered R19a/R20a/R21a before the pin was captured.
+//
+// Asserted here from BOTH sides, as f2-10's single repair is: the property the
+// repair creates (every derived id distinct, all six rules individually
+// measurable), the property it repaired (the PROVENANCE blob really does carry
+// 140 anchors with 137 distinct ids — measured, never asserted), and the
+// refusals that stop the branch from becoming a way to launder drift.
+
+{
+  const real = M.PIN_REGISTRY["workflow-state"];
+  ok(
+    typeof real.repaired_from === "string" && /^[0-9a-f]{40}$/.test(real.repaired_from),
+    "the workflow-state pin names the provenance blob it was repaired from",
+    real.repaired_from,
+  );
+  ok(
+    typeof real.repair_reason === "string" &&
+      ["R19a", "R20a", "R21a"].every((id) => real.repair_reason.includes(id)),
+    "the workflow-state pin states the repair in prose, naming all three ids it introduced",
+    real.repair_reason?.slice(0, 120),
+  );
+
+  const derived = await M.derivePinForArea("workflow-state");
+  ok(derived.ok, "the repaired workflow-state pin derives green", derived.issues);
+  ok(
+    derived.via === "committed-copy",
+    "a repaired pin resolves via its committed copy — the resolvable blob is the PROVENANCE, never the pinned source",
+    derived.via,
+  );
+
+  const all = derived.anchors?.all || [];
+  ok(all.length === 140, "workflow-state derives 140 anchors from the repaired blob", all.length);
+  ok(
+    new Set(all).size === all.length,
+    "every derived workflow-state anchor id is DISTINCT — the property three collisions denied, and the one a count can never prove",
+    `${all.length} anchors, ${new Set(all).size} distinct`,
+  );
+  for (const id of ["R19", "R20", "R21", "R19a", "R20a", "R21a"]) {
+    ok(all.includes(id), `${id} survives as its own anchor — no rule was dropped or merged to remove a duplicate`, all.filter((a) => a.startsWith(id.slice(0, 3))));
+    const text = derived.anchors?.texts?.get(id);
+    ok(
+      typeof text === "string" && text.length > 0,
+      `${id} has its own extracted text, so the F11 floor can measure it individually`,
+      typeof text,
+    );
+  }
+  const t = (id) => derived.anchors.texts.get(id) || "";
+  ok(
+    /planned-next handoff/.test(t("R19")) && /learning-capture phase/.test(t("R19a")),
+    "the R19 pair is the two DIFFERENT rules (planned-next preconditions vs. the unsettable learning-capture phase), not one rule read twice",
+  );
+  ok(
+    /fresh-session boundary/.test(t("R20")) && /knowledge sync/.test(t("R20a")),
+    "the R20 pair is the two DIFFERENT rules (auto-resume authority vs. recording a knowledge sync)",
+  );
+  ok(
+    /work puller/.test(t("R21")) && /terminal state/.test(t("R21a")),
+    "the R21 pair is the two DIFFERENT rules (the work puller's authority vs. entering the terminal state)",
+  );
+
+  // The defect, measured on the PROVENANCE bytes rather than described. This
+  // is what makes "the repair was necessary" evidence instead of a claim.
+  const prov = spawnSync("git", ["cat-file", "blob", real.repaired_from], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (ok(prov.status === 0, "the provenance blob is readable from git", prov.stderr)) {
+    const before = M.inventorySpec(prov.stdout);
+    ok(
+      before.all.length === 140 && new Set(before.all).size === 137,
+      "the PRE-repair source really did carry 140 anchors with only 137 distinct ids — three ids collapsed, and every count still added up",
+      `${before.all.length} anchors, ${new Set(before.all).size} distinct`,
+    );
+    eq(
+      ["R19", "R20", "R21"],
+      [...new Set(before.all.filter((a, i) => before.all.indexOf(a) !== i))].sort(),
+      "the three collided ids were exactly R19, R20 and R21",
+    );
+  }
+
+  // The launder-proofing, identical in form to section 15's.
+  const undeclared = { ...real };
+  delete undeclared.repaired_from;
+  delete undeclared.repair_reason;
+  const rU = await M.derivePin(undeclared, "workflow-state");
+  ok(rU.ok === false, "the same pin WITHOUT a declared repair is REFUSED — a disagreement is never inferred to be one");
+  ok(codes(rU).includes("PIN_SHA_MISMATCH"), "an undeclared disagreement reports PIN_SHA_MISMATCH", codes(rU));
+
+  const wrongProvenance = { ...real, repaired_from: "0".repeat(40) };
+  const rW = await M.derivePin(wrongProvenance, "workflow-state");
+  ok(rW.ok === false, "a repair naming the WRONG provenance blob is REFUSED — drifting provenance is as loud as a drifting pin");
+  ok(codes(rW).includes("PIN_SHA_MISMATCH"), "a wrong repaired_from reports PIN_SHA_MISMATCH", codes(rW));
+
+  const noReason = { ...real, repair_reason: "   " };
+  const rR = await M.derivePin(noReason, "workflow-state");
+  ok(rR.ok === false, "a repair with no stated reason is REFUSED — the repair must be readable, not merely flagged");
+  ok(codes(rR).includes("PIN_SHA_MISMATCH"), "an unexplained repair reports PIN_SHA_MISMATCH", codes(rR));
+
+  // STRICT NO-OP: adding an eleventh pin moves no pin that existed before it.
+  const pins = runCli(["--verify-pins"]);
+  ok(pins.code === 0, "`--verify-pins` is green across all eleven pins", `exit ${pins.code}: ${pins.err}${pins.out}`);
+  ok(!/SKIP-REFUSED/.test(pins.out), "no pin is skipped — every registered area is still gateable", pins.out);
+  ok(
+    /PASS workflow-state: 140 anchors/.test(pins.out),
+    "`--verify-pins` reports workflow-state's own 140 anchors",
+    pins.out.split("\n").filter((l) => /workflow-state/.test(l)).join(" | "),
+  );
+}
+
 // ─── done ───────────────────────────────────────────────────────────────────
 
 fs.rmSync(TMP, { recursive: true, force: true });
