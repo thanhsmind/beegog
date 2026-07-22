@@ -2405,6 +2405,50 @@ await check('knowledge.context example: --work okf-foundation --budget 20000 ret
   assert(!result.stdout.includes('Fixture prose.'), `the manifest must never carry file content, got ${result.stdout}`);
 });
 
+// ─── knowledge.promote (okf-foundation S7, cell okf-9): the registry example
+// is `bee knowledge promote --work okf-foundation --json`, so it resolves
+// against the SAME isolated fixture work item seeded above. One capped cell
+// trace is seeded into the fixture repo's own .bee/cells/ store — promote
+// READS it (D2 permits reads of the runtime store) and must leave every file
+// it touched byte-identical.
+
+fs.mkdirSync(path.join(rootKnowledge, '.bee', 'cells'), { recursive: true });
+writeJsonAtomic(path.join(rootKnowledge, '.bee', 'cells', 'fixture-1.json'), {
+  id: 'fixture-1',
+  feature: 'okf-foundation',
+  lane: 'small',
+  behavior_change: true,
+  status: 'capped',
+  title: 'Fixture capped cell for the knowledge.promote example',
+  verify: 'node -e "process.exit(0)"',
+  trace: {
+    outcome: 'fixture outcome recorded at cap time',
+    files_changed: ['docs/knowledge/patterns/fixture-critical.md'],
+    deviations: ['fixture deviation recorded at cap time'],
+    behavior_change: true,
+    capped_at: '2026-07-22T08:00:00.000Z',
+    verification_evidence: '{"verify_tail":"PASS fixture"}',
+    verify_passed: true,
+  },
+});
+
+await check('knowledge.promote example: --work okf-foundation proposes a delivery draft, area bullets and pitfall candidates — and writes nothing (D38/D2)', async () => {
+  const bundleBefore = fs.readFileSync(path.join(rootKnowledge, 'docs', 'knowledge', 'work', 'okf-foundation', 'work-item.md'), 'utf8');
+  const cellBefore = fs.readFileSync(path.join(rootKnowledge, '.bee', 'cells', 'fixture-1.json'), 'utf8');
+  const result = await assertExampleOk('knowledge.promote', { cwd: rootKnowledge });
+  const proposal = JSON.parse(result.stdout);
+  assert(proposal.work === 'okf-foundation', `expected the resolved work id, got ${result.stdout}`);
+  assert(JSON.stringify(proposal.writes) === JSON.stringify([]), `promote must declare zero writes, got ${result.stdout}`);
+  assert(proposal.cells.length === 1 && proposal.cells[0].id === 'fixture-1', `the one capped fixture cell must be mined, got ${JSON.stringify(proposal.cells)}`);
+  assert(proposal.delivery.path === 'work/okf-foundation/delivery.md', `the draft must target the work item's delivery sibling, got ${JSON.stringify(proposal.delivery.path)}`);
+  assert(proposal.delivery.content.includes('fixture-1'), 'the draft must name the mined cell');
+  assert(proposal.area_updates.length === 1 && proposal.area_updates[0].area === 'okf', `the work item's one area must get a section, got ${JSON.stringify(proposal.area_updates)}`);
+  assert(proposal.pattern_candidates.length === 1 && proposal.pattern_candidates[0].cell === 'fixture-1', `the deviation must yield one pitfall candidate, got ${JSON.stringify(proposal.pattern_candidates)}`);
+  assert(!fs.existsSync(path.join(rootKnowledge, 'docs', 'knowledge', 'work', 'okf-foundation', 'delivery.md')), 'promote must NOT write the delivery draft it proposes');
+  assert(fs.readFileSync(path.join(rootKnowledge, 'docs', 'knowledge', 'work', 'okf-foundation', 'work-item.md'), 'utf8') === bundleBefore, 'promote must leave the bundle byte-identical');
+  assert(fs.readFileSync(path.join(rootKnowledge, '.bee', 'cells', 'fixture-1.json'), 'utf8') === cellBefore, 'promote must leave the cell trace byte-identical (D2: reads only)');
+});
+
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {
   const allNames = new Set(COMMAND_REGISTRY.map((e) => e.name));
   const missing = [...allNames].filter((name) => !executedNames.has(name));

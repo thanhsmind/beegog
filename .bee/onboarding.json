@@ -5,14 +5,14 @@
     "agents_block": "3c81fe277f07ba032407c8e0144d88e45b30eec5fc8048c17fab6ba8ad2021df",
     "gitignore_block": "3da1a6176ae8b85a98b6779f7f314e7647bdc854969b1c2d0fa5fd7e97d4c69f",
     "helpers": {
-      "bee.mjs": "5e69e35d4d172e26b3e0fddc2c3d3ef75f419fdac92c93b1850ec03cfa02e076"
+      "bee.mjs": "e64a8490fd93d83e1afe47b9d026276f42e309ffa4a20bc8f2b804db279d21dc"
     },
     "lib": {
       "backlog.mjs": "9e5b852c7b72fdb1d5d2f530e32cdc63a8271a83dba09d6407b30900d58990cd",
       "capture.mjs": "3779fd6bd5b28c50b50e4b93cbc368d458123ebab1cbcb3cc34757af0d24f8fa",
       "cells.mjs": "06833803cf64dc0aa9673037fec82e96ba0ef5eec1556a45ad01e20a5e7333b6",
       "claims.mjs": "9fe23011cb917081d7eb5bd9c2f75a417363bfe0b372acb27890d71f0b2e3ea1",
-      "command-registry.mjs": "9f88a243893d555ac98cd8ee0d948d717accde662ff52a3b1c64cf0925fc3bc4",
+      "command-registry.mjs": "d7c997aa0420aaae0266a18a761a20edbf270f102bdb3bbcbd6f7a2456a72cf5",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "60ee53219cb94e05a170e0e6491aa32d5e1573c5b111ff6ba954b5e538fcc369",
       "dispatch-guard.mjs": "cb5502790c01720a3ece0d4870b44670cb3c6f68027d91503c343699965d5e37",
@@ -22,7 +22,7 @@
       "guards.mjs": "ccddada5859386ccd6bbe64f5f9b148e1a9188ece9bf968b7fde2647e22e257e",
       "inject.mjs": "3a3943634cf4f2a8c211a23d7b70a19922e77f15ab7b4f8ba75d6ed775c77fb0",
       "judge.mjs": "5057e17a6bcd3dacff21fe479e13570620cfe1b9c821c0ff5c8254f39e3c6ed1",
-      "knowledge.mjs": "72af0ba23ada0ed6b5963271174f48512ad3e6588aac540d964a936c7445e35a",
+      "knowledge.mjs": "1702af4f2edc5bbc32e07c71e78d366eebc7357d1797acfc0e5f19d48188c435",
       "lock.mjs": "df13959ba646b5ff0ce552e4312026924ed41a3d6df49e55b5557c2c55592f44",
       "perf.mjs": "57dedfbd53cfce7a35ddb1e2cae1cc9c86533bdfa4df45965fcca0fc8497e5fc",
       "recovery.mjs": "2b11660755ccd76e0ee6cb723e1816d2aa5343b6226dca6ce342de3a50d6dae6",
@@ -72,5 +72,5 @@
     }
   },
   "created_at": "2026-07-21T17:36:03.955Z",
-  "updated_at": "2026-07-22T05:33:21.111Z"
+  "updated_at": "2026-07-22T05:51:29.895Z"
 }

@@ -1,8 +1,8 @@
 ---
 area: okf-profile
 updated: 2026-07-22
-sources: [okf-foundation cell okf-1 (knowledge.mjs core — emitter-first frontmatter codec, concept model, two-level check verb; trace in `.bee/cells/`, report `docs/history/okf-foundation/reports/`, 2026-07-22); okf-foundation cell okf-2 (bundle skeleton + this spec, 2026-07-22); okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22); CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`]
-decisions: [D2, D4, D10, D11, D12, D13, D17, D18, D19, D20, D21, D23, D24, D27, D29, D30, D31, D32, D33, D34, D35, D36, D37]
+sources: [okf-foundation cell okf-1 (knowledge.mjs core — emitter-first frontmatter codec, concept model, two-level check verb; trace in `.bee/cells/`, report `docs/history/okf-foundation/reports/`, 2026-07-22); okf-foundation cell okf-2 (bundle skeleton + this spec, 2026-07-22); okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22); okf-foundation cell okf-9 (`bee knowledge promote` — the propose-never-write loop closer, B5; trace in `.bee/cells/`, 2026-07-22); CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`]
+decisions: [D2, D4, D10, D11, D12, D13, D17, D18, D19, D20, D21, D23, D24, D27, D29, D30, D31, D32, D33, D34, D35, D36, D37, D38]
 coverage: partial
 ---
 
@@ -31,6 +31,11 @@ repository; a different OKF consumer is free to define its own profile, or none.
 - `node scripts/run_verify.mjs` — the verify chain `knowledge check` joins (D34); a profile
   violation fails the chain the same way any other suite does. `index --check`'s freshness guard
   (D21) joins the same chain once `bee knowledge index` ships (S3) — not yet built.
+- `bee knowledge promote --work <id> [--json]` — the loop closer (D38): finished work **proposes**
+  the knowledge it earned. It reads the work item's concept and the **capped** cell traces of that
+  feature from `.bee/cells/*.json` (a read of the runtime store — D2 permits reads and forbids
+  writes) and prints three proposals: a delivery draft, candidate area spec-sync bullets, and
+  candidate pitfall patterns. It writes nothing (B5 below).
 - Migration authoring (the D20 loop: read a legacy source, split it into concepts, carry its
   frontmatter across per D33, replace it with a pointer stub per D37) is the human/agent trigger
   that populates the bundle the checker then grades. The checker itself performs no writes (D2).
@@ -159,8 +164,26 @@ than parsing the three incompatible legacy frontmatter schemas across 114 files,
 is authored fresh (D20) — the subset is one bee controls.
 
 **B4 — The bundle is read-only from the checker's side (D2).** `knowledge.mjs` performs no writes
-at all, and never writes into `.bee/*.json(l)` runtime stores. The bundle is the knowledge layer;
-it is never a write path into runtime state, though reads from it are permitted.
+at all, apart from `index`'s generated `index.md` files inside the bundle, and never writes into
+`.bee/*.json(l)` runtime stores. The bundle is the knowledge layer; it is never a write path into
+runtime state, though reads from it are permitted.
+
+**B5 — `promote` proposes; it never writes (D38).** `bee knowledge promote --work <id>` resolves
+the work item by `bee.id` (the same resolution `context` performs — an unresolvable id exits 1 with
+a typed `unknown_work` error), then mines the **capped** cells of that feature from `.bee/cells/`
+and returns exactly three sections:
+
+| Section | What it proposes | Where every line comes from |
+|---|---|---|
+| **(a) Delivery draft** | A complete `bee.delivery` concept **in canonical emitter form**, ready to be saved as the work item's `delivery.md` sibling: what shipped, how it was verified, every recorded deviation. Because it is emitted through `emitFrontmatter`, saving it produces zero `not_canonical` findings. | Each cell's `trace.outcome`, `verify` command and `trace.verification_evidence`; the work item's own title, tags, `bee.decisions`, `bee.areas`, `bee.lane`. |
+| **(b) Area updates** | For each area named in the work item's `bee.areas`, the capped **`behavior_change`** cells whose `files_changed` touch that area's subject — its concepts' own paths and their `bee.sources` — as candidate spec-sync bullets, each citing its cell id. | `trace.files_changed` matched against bundle concept paths and `bee.sources`. |
+| **(c) Pattern candidates** | Every capped cell whose trace carries a **deviation** or a **failure signature**, shaped as a candidate `bee.pattern` concept with `bee.polarity: pitfall` and `bee.lifecycle: draft`, quoting the trace verbatim. A clean cell yields nothing. | `trace.deviations`, `trace.attempts[].failure_signature`, `trace.semantic_judge[].failure_signature`. |
+
+The `--json` payload is `{work, work_item, cells, delivery, area_updates, pattern_candidates,
+writes}`, and **`writes` is always `[]`** — the machine-readable form of the contract. There is no
+`--apply` flag and no write path of any kind: `promote` never touches `docs/knowledge/`, never
+touches `.bee/*.json(l)`, and never touches anything else. Deciding to save a proposal — and
+editing it into curated prose first — is a human or agent decision.
 
 ## Actors & Access
 
@@ -169,6 +192,10 @@ it is never a write path into runtime state, though reads from it are permitted.
   and replaces the legacy source with a pointer stub carrying the anchor map (D37, D20).
 - **`bee knowledge check`** — grades the bundle; never writes; the sole enforcement surface for
   this profile today.
+- **`bee knowledge promote`** — reads the bundle and the capped cell traces; proposes the delivery
+  draft, the area bullets and the pitfall candidates a finished work item earned; writes nothing.
+  The **human or agent who accepts a proposal** is the actor that turns it into a concept — the
+  profile deliberately keeps that step outside the tool (D38).
 - **`node scripts/run_verify.mjs`** — the CI-equivalent chain `check` (and later `index --check`)
   joins; a profile violation fails the same way any other suite failure does.
 - **The human owner** — configures nothing here; the profile has no runtime knobs. Owner-level
@@ -189,6 +216,15 @@ it is never a write path into runtime state, though reads from it are permitted.
 - `title`/`description` (and any profile-required field) are never fabricated; an absence is a
   named warning, not a guess (D10).
 - The checker never leaves `docs/knowledge/` (D23) and never writes anything, anywhere (D2).
+- **`promote` proposes; it never writes (D38).** Finished work is allowed to *suggest* knowledge —
+  a delivery draft, area bullets, pitfall candidates — and is never allowed to *commit* it. No
+  section `promote` emits is written to disk by `promote`; accepting one is a human or agent
+  decision, and `writes: []` in the payload states that in machine-readable form. The reason is the
+  same one behind D10's never-invent rule: a proposal that writes itself into the bundle arrives
+  reading as curated truth and is then trusted, without anyone having judged it.
+- `promote` invents nothing: every proposed line is copied from a capped cell trace or from the
+  work item concept (D10). A cell that was never capped, and a cell belonging to another feature,
+  are never mined.
 
 ## Edge Cases Settled
 
@@ -330,10 +366,16 @@ finding. `areas` names the subsystem(s) the delivered work touched, matching one
 - Only one legacy area (`advisor-protocol.md`, F1's proof, D29) is migrated end-to-end; the
   remaining ten `docs/specs/*.md` areas, and `workflow-state.md`'s locked nine-concept
   decomposition (D30), are deferred to **F2**.
-- `bee knowledge promote`, `bee knowledge stale`, work-item back-migration, pointer-stub deletion,
-  and skill rewiring (scribing writes concepts, compounding promotes them, hive assembles its
-  context packet, grooming hunts stale knowledge) are all deferred (F2/F3 — see CONTEXT.md
-  "Deferred Ideas", filed P66-P69).
+- `bee knowledge stale`, work-item back-migration, pointer-stub deletion, and skill rewiring
+  (scribing writes concepts, compounding promotes them, hive assembles its context packet, grooming
+  hunts stale knowledge) are all deferred (F2/F3 — see CONTEXT.md "Deferred Ideas", filed P66-P69).
+  `bee knowledge promote` shipped in S7 (B5); what stays deferred there is the *accepting* half —
+  no skill yet routes a promote proposal into an authored concept, so today a human or agent reads
+  the proposal and authors the file.
+- A work item that declares no `bee.areas` gets an **empty** area-updates section from `promote` —
+  correct behaviour (the profile never guesses which area a cell touched, D10), but it means the
+  section is only as useful as the work item's own `bee.areas` list. `work/okf-foundation/`'s work
+  item declares none, so this feature's own promote run proposes area bullets for nothing.
 - Host-repo adoption of the migrator stays out of scope by design (D24: the migrator is bee-only,
   never shipped to hosts).
 
@@ -343,6 +385,9 @@ finding. `areas` names the subsystem(s) the delivered work touched, matching one
   `skills/bee-hive/templates/lib/knowledge.mjs` — `scripts/test_lib_mirror.mjs:196` enforces the
   mirror). `checkBundle` is the two-level check; `emitFrontmatter`/`parseFrontmatter` are the D12
   codec; `CONCEPT_TYPES`/`LIFECYCLES`/`PROFILE_REQUIRED` are the D18/D19 tables.
+- Proposal builder (B5): `buildPromotion` in the same module, with `readCappedCellTraces` as its
+  read-only view of `.bee/cells/`. Neither function writes; the CLI handler
+  (`handleKnowledgePromote` in `.bee/bin/bee.mjs`) only prints what they return.
 - CLI wiring: `.bee/bin/lib/command-registry.mjs` (the `knowledge` group) +
   `.bee/bin/bee.mjs` dispatch (`HANDLERS`).
 - The bundle itself: `docs/knowledge/index.md`, `docs/knowledge/log.md`.

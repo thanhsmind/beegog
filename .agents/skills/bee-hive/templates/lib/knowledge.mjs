@@ -13,8 +13,10 @@
 //         (advisor digest s1 items 1-2) — the silent-misparse class (colon in
 //         an unquoted title, '#' mid-value, CRLF line endings) becomes a
 //         detectable finding instead of a wrong-without-erroring parse.
-//   D23 — a concept is any non-reserved .md INSIDE docs/knowledge/; this
-//         module never reads a file outside the bundle directory.
+//   D23 — a concept is any non-reserved .md INSIDE docs/knowledge/; every
+//         concept-facing function here reads only the bundle directory. The
+//         single deliberate exception is `promote` (D38 below), which also
+//         READS .bee/cells/*.json — never writes it.
 //   D2  — the bundle is the knowledge layer, never a write path into
 //         .bee/*.json(l) runtime stores; check and list perform no writes at
 //         all, and index writes ONLY generated index.md files inside
@@ -35,6 +37,14 @@
 //         estimated as bytes/4 — the estimator is NAMED in the output. The
 //         result is an ordered manifest of paths, sizes and one-line reasons:
 //         never file content.
+//   D38 — `promote` (cell okf-9, S7) closes the learning loop the only way
+//         D2 allows: it READS the bundle and the CAPPED cell traces in
+//         .bee/cells/*.json (a read of the runtime store — permitted; never a
+//         write) and returns three PROPOSALS — a delivery draft in canonical
+//         emitter form, candidate area spec-sync bullets, and candidate
+//         pitfall patterns. It is the one function in this module that looks
+//         outside docs/knowledge/, and it still writes NOTHING, anywhere:
+//         applying a proposal is a human or agent decision.
 //   D4  — check reports two levels: OKF errors (the spec's own MUSTs) and
 //         profile warnings (bee's SHOULD layer); --strict promotes warnings.
 //   D13 — the CLI handler (bee.mjs) emits {okf:{errors},profile:{warnings},
@@ -1037,5 +1047,339 @@ export function buildContextManifest(root, { work, budget } = {}) {
     total_est: totalEst,
     entries,
     truncated,
+  };
+}
+
+// ─── promote (D38): finished work PROPOSES knowledge; it never writes it ────
+//
+// The loop-closing verb. Everything below is READ-ONLY: the bundle (D23) plus
+// the capped cell traces in .bee/cells/*.json — a read of the runtime store,
+// which D2 permits explicitly while forbidding any write into it. Nothing in
+// this section calls fs.writeFileSync, fs.mkdirSync, or fs.rmSync, and the
+// returned proposal carries `writes: []` as the machine-readable statement of
+// that contract.
+
+/** The runtime cell store — READ-ONLY input to promote (D2). */
+function cellsStoreDir(root) {
+  return path.join(root, '.bee', 'cells');
+}
+
+/** Natural-order id compare so okf-10 sorts after okf-9, not after okf-1. */
+function compareCellIds(a, b) {
+  const split = (id) => id.split(/(\d+)/).filter((part) => part !== '');
+  const left = split(a);
+  const right = split(b);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const l = left[i];
+    const r = right[i];
+    if (l === undefined) return -1;
+    if (r === undefined) return 1;
+    const bothNumeric = /^\d+$/.test(l) && /^\d+$/.test(r);
+    if (bothNumeric) {
+      if (Number(l) !== Number(r)) return Number(l) - Number(r);
+    } else if (l !== r) {
+      return l < r ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+/** Free text (a deviation, a failure signature, an outcome) flattened to one
+ *  line so it can live in a frontmatter scalar or a bullet without breaking
+ *  the emitted subset. Never rewritten — only whitespace-collapsed. */
+function oneLine(text, limit = 0) {
+  const flat = String(text).replace(/\s+/g, ' ').trim();
+  return limit > 0 && flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
+}
+
+/** A trace deviation is either a plain string or a {type, description} record
+ *  (both shapes exist in the store). Normalize to the recorded text — never
+ *  paraphrased, so the proposal quotes the trace verbatim. */
+function deviationText(entry) {
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry === 'object') {
+    if (typeof entry.description === 'string' && entry.description) {
+      return typeof entry.type === 'string' && entry.type ? `${entry.type}: ${entry.description}` : entry.description;
+    }
+    return JSON.stringify(entry);
+  }
+  return String(entry);
+}
+
+/** The recorded verify evidence, reduced to one quotable line. The store keeps
+ *  it as a JSON string in practice; anything unparseable is used verbatim. */
+function verifySummary(trace) {
+  const raw = trace && typeof trace.verification_evidence === 'string' ? trace.verification_evidence : '';
+  if (!raw.trim()) return '';
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      for (const key of ['verify_tail', 'verify_output', 'evidence', 'summary']) {
+        if (typeof parsed[key] === 'string' && parsed[key].trim()) return oneLine(parsed[key], 200);
+      }
+    }
+  } catch {
+    // not JSON — fall through to the raw text
+  }
+  return oneLine(raw, 200);
+}
+
+/**
+ * Read every CAPPED cell trace belonging to `feature` from .bee/cells/*.json,
+ * natural-id-sorted. Read-only, tolerant: an unreadable or non-JSON file is
+ * skipped rather than thrown on (a proposal is never the place a corrupt
+ * runtime file surfaces), and the archive subdirectory is not descended into.
+ */
+export function readCappedCellTraces(root, feature) {
+  const dir = cellsStoreDir(root);
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const cells = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+    let cell;
+    try {
+      cell = JSON.parse(fs.readFileSync(path.join(dir, entry.name), 'utf8'));
+    } catch {
+      continue;
+    }
+    if (!cell || typeof cell !== 'object') continue;
+    if (cell.feature !== feature || cell.status !== 'capped') continue;
+    const trace = cell.trace && typeof cell.trace === 'object' ? cell.trace : {};
+    const deviations = (Array.isArray(trace.deviations) ? trace.deviations : []).map(deviationText).filter((text) => text.trim());
+    const failureSignatures = [];
+    for (const attempt of Array.isArray(trace.attempts) ? trace.attempts : []) {
+      if (attempt && typeof attempt.failure_signature === 'string' && attempt.failure_signature.trim()) {
+        failureSignatures.push(attempt.failure_signature);
+      }
+    }
+    for (const verdict of Array.isArray(trace.semantic_judge) ? trace.semantic_judge : []) {
+      if (verdict && typeof verdict.failure_signature === 'string' && verdict.failure_signature.trim()) {
+        failureSignatures.push(verdict.failure_signature);
+      }
+    }
+    cells.push({
+      id: typeof cell.id === 'string' ? cell.id : entry.name.replace(/\.json$/, ''),
+      title: typeof cell.title === 'string' ? cell.title : '',
+      lane: typeof cell.lane === 'string' ? cell.lane : null,
+      behavior_change: trace.behavior_change === true || (trace.behavior_change === undefined && cell.behavior_change === true),
+      outcome: typeof trace.outcome === 'string' && trace.outcome.trim() ? trace.outcome : (typeof cell.title === 'string' ? cell.title : ''),
+      files_changed: (Array.isArray(trace.files_changed) ? trace.files_changed : []).filter((file) => typeof file === 'string'),
+      deviations,
+      failure_signatures: failureSignatures,
+      verify: typeof cell.verify === 'string' ? cell.verify : '',
+      verify_summary: verifySummary(trace),
+      capped_at: typeof trace.capped_at === 'string' ? trace.capped_at : null,
+      trace_path: `.bee/cells/${typeof cell.id === 'string' ? cell.id : entry.name.replace(/\.json$/, '')}.json`,
+    });
+  }
+  return cells.sort((a, b) => compareCellIds(a.id, b.id));
+}
+
+/** The date part of an ISO timestamp, or null. */
+function isoDate(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null;
+}
+
+/** Does a changed file touch a subject path? Exact match, or either path
+ *  containing the other as a directory — nothing fuzzier, so every proposed
+ *  bullet is traceable to the two paths that produced it. */
+function touchesSubject(file, subject) {
+  return file === subject || file.startsWith(`${subject}/`) || subject.startsWith(`${file}/`);
+}
+
+/**
+ * buildPromotion(root, {work}) — the D38 proposal builder.
+ *
+ * Resolves `work` to the bee.work-item concept whose bee.id matches (the same
+ * resolution `context` performs), mines the CAPPED cells of that feature from
+ * .bee/cells/ and returns three proposals:
+ *
+ *   (a) delivery — a complete bee.delivery concept in canonical emitter form,
+ *       ready to be saved as the work item's delivery.md sibling: what
+ *       shipped (each cell's recorded outcome), how it was verified (each
+ *       cell's recorded verify command and evidence), and every recorded
+ *       deviation.
+ *   (b) area_updates — for each area named in the work item's bee.areas, the
+ *       capped behavior_change cells whose files_changed touch that area's
+ *       subject (its concepts' own paths and their bee.sources), as candidate
+ *       spec-sync bullets, each citing its cell id.
+ *   (c) pattern_candidates — every capped cell whose trace carries a deviation
+ *       or a failure signature, shaped as a candidate bee.pattern concept with
+ *       bee.polarity pitfall and bee.lifecycle draft, quoting the trace.
+ *
+ * Every proposed line traces to a cell trace or to the work item; nothing is
+ * invented (D10). Nothing is written (D2) — `writes` is always [].
+ * Throws the typed unknown_work error when `work` resolves to nothing.
+ */
+export function buildPromotion(root, { work } = {}) {
+  const workId = typeof work === 'string' ? work.trim() : '';
+  if (!workId) {
+    throw new Error('knowledge promote: missing_work — --work <id> is required (D38).');
+  }
+
+  const concepts = collectConcepts(root);
+  const workConcept = concepts.find(
+    (concept) => concept.data.type === 'bee.work-item' && beeOf(concept.data).id === workId,
+  );
+  if (!workConcept) {
+    throw new Error(
+      `knowledge promote: unknown_work — no bee.work-item concept in docs/knowledge/ carries bee.id "${workId}" (D38).`,
+    );
+  }
+
+  const workBee = beeOf(workConcept.data);
+  const workAreas = (Array.isArray(workBee.areas) ? workBee.areas : []).filter((area) => typeof area === 'string' && area);
+  const workDecisions = (Array.isArray(workBee.decisions) ? workBee.decisions : []).filter((entry) => typeof entry === 'string');
+  const workTags = (Array.isArray(workConcept.data.tags) ? workConcept.data.tags : []).filter((tag) => typeof tag === 'string');
+  const cells = readCappedCellTraces(root, workId);
+
+  // ── (a) the delivery draft ────────────────────────────────────────────────
+  const deliveryPath = `${dirOf(workConcept.path) === '' ? '' : `${dirOf(workConcept.path)}/`}delivery.md`;
+  const cappedDates = cells.map((cell) => isoDate(cell.capped_at)).filter((date) => date);
+  const timestamp = cappedDates.length > 0 ? cappedDates.sort()[cappedDates.length - 1] : isoDate(workConcept.data.timestamp);
+  const deviationCount = cells.reduce((sum, cell) => sum + cell.deviations.length, 0);
+  const workTitle = typeof workConcept.data.title === 'string' && workConcept.data.title ? workConcept.data.title : workId;
+
+  const deliveryData = {
+    type: 'bee.delivery',
+    title: `${workTitle} — delivery`,
+    description: `Delivery record proposed by bee knowledge promote for work item ${workId}: ${cells.length} capped cell(s), ${deviationCount} recorded deviation(s).`,
+    ...(workTags.length > 0 ? { tags: workTags } : {}),
+    ...(timestamp ? { timestamp } : {}),
+    bee: {
+      id: `${workId}-delivery`,
+      lifecycle: 'active',
+      ...(workAreas.length > 0 ? { areas: workAreas } : {}),
+      required_context: [workConcept.path],
+      ...(workDecisions.length > 0 ? { decisions: workDecisions } : {}),
+      sources: [`docs/knowledge/${workConcept.path}`, ...cells.map((cell) => cell.trace_path)],
+      ...(typeof workBee.lane === 'string' && workBee.lane ? { lane: workBee.lane } : {}),
+    },
+  };
+
+  const shipped = cells.length > 0
+    ? cells.map((cell) => `- **${cell.id}** — ${oneLine(cell.outcome)} (${cell.files_changed.length} file(s) changed)`)
+    : [`No capped cell trace for work item ${workId} exists in .bee/cells/ at proposal time.`];
+  const verified = cells.length > 0
+    ? cells.map((cell) => `- **${cell.id}** — \`${cell.verify}\`${cell.verify_summary ? ` — ${cell.verify_summary}` : ''}`)
+    : ['Nothing to verify: no capped cell trace was found.'];
+  const deviationLines = [];
+  for (const cell of cells) {
+    for (const deviation of cell.deviations) deviationLines.push(`- **${cell.id}** — ${oneLine(deviation)}`);
+  }
+  if (deviationLines.length === 0) deviationLines.push('None recorded in the capped cell traces.');
+
+  const deliveryBody = [
+    `# ${workTitle} — Delivery`,
+    '',
+    '## What shipped',
+    '',
+    ...shipped,
+    '',
+    '## Verify',
+    '',
+    'Each cell below was capped only against a recorded passing verify result — bee refuses a cap without one.',
+    '',
+    ...verified,
+    '',
+    '## Deviations',
+    '',
+    ...deviationLines,
+    '',
+    '## Provenance',
+    '',
+    `Proposed by \`bee knowledge promote --work ${workId}\` from ${cells.length} capped cell trace(s) in \`.bee/cells/\` and the work item \`docs/knowledge/${workConcept.path}\`. Every line above is copied from a trace or from the work item; nothing here is curated truth until a human or agent accepts it.`,
+    '',
+  ].join('\n');
+
+  const delivery = {
+    path: deliveryPath,
+    repo_path: `docs/knowledge/${deliveryPath}`,
+    content: `${emitFrontmatter(deliveryData)}\n${deliveryBody}`,
+  };
+
+  // ── (b) area updates ──────────────────────────────────────────────────────
+  const areaUpdates = [];
+  for (const area of workAreas) {
+    const subjects = new Set();
+    for (const concept of concepts) {
+      const bee = beeOf(concept.data);
+      const areas = Array.isArray(bee.areas) ? bee.areas : [];
+      if (!areas.includes(area)) continue;
+      subjects.add(`docs/knowledge/${concept.path}`);
+      for (const source of Array.isArray(bee.sources) ? bee.sources : []) {
+        if (typeof source === 'string' && source) subjects.add(source);
+      }
+    }
+    const bullets = [];
+    for (const cell of cells) {
+      if (!cell.behavior_change) continue;
+      const touched = cell.files_changed.filter((file) => [...subjects].some((subject) => touchesSubject(file, subject)));
+      if (touched.length === 0) continue;
+      bullets.push({ cell: cell.id, text: oneLine(cell.outcome), files: touched, trace: cell.trace_path });
+    }
+    areaUpdates.push({ area, subjects: [...subjects].sort(), bullets });
+  }
+
+  // ── (c) pattern candidates ────────────────────────────────────────────────
+  const patternCandidates = [];
+  for (const cell of cells) {
+    if (cell.deviations.length === 0 && cell.failure_signatures.length === 0) continue;
+    const evidence = [
+      ...cell.deviations.map((text) => ({ kind: 'deviation', text })),
+      ...cell.failure_signatures.map((text) => ({ kind: 'failure_signature', text })),
+    ];
+    const candidateData = {
+      type: 'bee.pattern',
+      title: `${workId} cell ${cell.id} — pitfall candidate`,
+      description: `Pitfall candidate mined from cell ${cell.id}'s capped trace: ${oneLine(evidence[0].text, 160)}`,
+      ...(isoDate(cell.capped_at) ? { timestamp: isoDate(cell.capped_at) } : {}),
+      bee: {
+        id: `${workId}-${cell.id}-pitfall`,
+        lifecycle: 'draft',
+        ...(workAreas.length > 0 ? { areas: workAreas } : {}),
+        sources: [cell.trace_path],
+        polarity: 'pitfall',
+      },
+    };
+    const body = [
+      `# ${workId} cell ${cell.id} — pitfall candidate`,
+      '',
+      '## What the cell did',
+      '',
+      oneLine(cell.outcome),
+      '',
+      `## Recorded evidence (verbatim from ${cell.trace_path})`,
+      '',
+      ...evidence.map((item) => `- **${item.kind}** — ${oneLine(item.text)}`),
+      '',
+      '## Status',
+      '',
+      'Candidate only. `bee knowledge promote` proposes; naming the pattern, generalizing it beyond this cell, and moving `bee.lifecycle` to `active` are a human or agent decision.',
+      '',
+    ].join('\n');
+    patternCandidates.push({
+      cell: cell.id,
+      path: `patterns/${workId}-${cell.id}-pitfall.md`,
+      repo_path: `docs/knowledge/patterns/${workId}-${cell.id}-pitfall.md`,
+      evidence,
+      content: `${emitFrontmatter(candidateData)}\n${body}`,
+    });
+  }
+
+  return {
+    work: workId,
+    work_item: workConcept.path,
+    cells,
+    delivery,
+    area_updates: areaUpdates,
+    pattern_candidates: patternCandidates,
+    // The contract, machine-readable: promote proposes and writes nothing.
+    writes: [],
   };
 }

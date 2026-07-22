@@ -27,6 +27,7 @@ import {
   emitFrontmatter,
   checkBundle,
   bundleDir,
+  buildPromotion,
 } from '../lib/knowledge.mjs';
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -783,6 +784,288 @@ await check('CLI: knowledge.context appears in the bee --help --json manifest wi
   assert(entry.examples.every((e) => !e.includes('--strict')), 'no --strict anywhere in examples');
   assert(entry.parameters && entry.parameters.properties.work && entry.parameters.properties.budget, 'parameters must carry work and budget');
   assert(JSON.stringify([...entry.parameters.required].sort()) === JSON.stringify(['budget', 'work']), `--work and --budget are both required, got ${JSON.stringify(entry.parameters.required)}`);
+});
+
+// ═══ okf-9 (S7): bee knowledge promote --work <id> ═════════════════════════
+// RED-FIRST (cell okf-9): these checks are written and run red (the promote
+// verb does not exist yet) BEFORE any implementation.
+//
+// D38 + D2 are the whole contract: promote READS the bundle and the capped
+// cell traces in .bee/cells/*.json (a read of the runtime store — permitted;
+// never a write) and PROPOSES three sections — a delivery draft in canonical
+// emitter form, candidate area spec-sync bullets, and candidate pitfall
+// patterns. It writes NOTHING, anywhere: applying a proposal is a human or
+// agent decision, never a silent truth-write.
+
+/** Write a cell trace file into the fixture repo's .bee/cells/ store. */
+function writeCellFixture(root, cell) {
+  const dir = path.join(root, '.bee', 'cells');
+  fs.mkdirSync(dir, { recursive: true });
+  writeJsonAtomic(path.join(dir, `${cell.id}.json`), cell);
+}
+
+/** Snapshot EVERY file under a repo root as rel -> exact bytes (hex). The
+ *  zero-write proof compares two of these across a real promote run. */
+function snapshotTree(root) {
+  const out = new Map();
+  const walk = (abs, rel) => {
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(path.join(abs, entry.name), childRel);
+      else if (entry.isFile()) out.set(childRel, fs.readFileSync(path.join(abs, entry.name)).toString('hex'));
+    }
+  };
+  walk(root, '');
+  return out;
+}
+
+/**
+ * Fixture: a work item declaring one area, an area concept whose bee.sources
+ * names the area's subject file, and five cell traces —
+ *   demo-1  capped, behavior_change, touches the area subject, ONE deviation
+ *   demo-2  capped, NOT behavior_change, clean (no deviation, no failure)
+ *   demo-3  OPEN (never capped) — must never be mined
+ *   demo-4  capped, behavior_change, no deviation but a failure_signature
+ *   other-1 capped but belongs to ANOTHER feature — must never be mined
+ */
+function makePromoteFixture() {
+  const root = makeRepo();
+  writeBundleFile(root, 'work/demo/work-item.md', conceptText({
+    type: 'bee.work-item', id: 'demo-work', title: 'Demo work item', description: 'The work item promote mines',
+    extraBee: { areas: ['alpha'], required_context: [], decisions: ['D38'], lane: 'high-risk' },
+  }));
+  writeBundleFile(root, 'areas/alpha/one.md', conceptText({
+    type: 'bee.area', id: 'alpha-one', title: 'Alpha one', description: 'The area whose subject demo-1 touched',
+    extraBee: { areas: ['alpha'], sources: ['docs/specs/alpha.md'], authoritative_for: 'alpha-one' },
+  }));
+  writeCellFixture(root, {
+    id: 'demo-1', feature: 'demo-work', lane: 'high-risk', behavior_change: true, status: 'capped',
+    title: 'Migrate the alpha area', verify: 'node scripts/run_verify.mjs',
+    trace: {
+      outcome: 'alpha migrated into one concept, chain green',
+      files_changed: ['docs/specs/alpha.md', 'lib/alpha.mjs'],
+      deviations: ['Renamed the flag from --a to --alpha because --a already meant --agent'],
+      behavior_change: true,
+      capped_at: '2026-07-22T04:00:00.000Z',
+      verification_evidence: '{"verify_tail":"PASS run_verify: 64 suite(s)"}',
+      verify_passed: true,
+      attempts: [{ n: 1, verdict: 'pass', failure_signature: null }],
+    },
+  });
+  writeCellFixture(root, {
+    id: 'demo-2', feature: 'demo-work', lane: 'tiny', behavior_change: false, status: 'capped',
+    title: 'Docs only', verify: 'node scripts/run_verify.mjs',
+    trace: {
+      outcome: 'README rewritten',
+      files_changed: ['README.md'],
+      deviations: [],
+      behavior_change: false,
+      capped_at: '2026-07-22T05:00:00.000Z',
+      verification_evidence: '{"verify_tail":"PASS run_verify: 64 suite(s)"}',
+      verify_passed: true,
+      attempts: [{ n: 1, verdict: 'pass', failure_signature: null }],
+    },
+  });
+  writeCellFixture(root, {
+    id: 'demo-3', feature: 'demo-work', lane: 'small', behavior_change: true, status: 'open',
+    title: 'Never capped', verify: 'node scripts/run_verify.mjs',
+    trace: { outcome: null, files_changed: [], deviations: ['this deviation must never be mined'], capped_at: null },
+  });
+  writeCellFixture(root, {
+    id: 'demo-4', feature: 'demo-work', lane: 'small', behavior_change: true, status: 'capped',
+    title: 'Recovered from a red run', verify: 'node scripts/run_verify.mjs',
+    trace: {
+      outcome: 'lock contention fixed',
+      files_changed: ['lib/lock.mjs'],
+      deviations: [],
+      behavior_change: true,
+      capped_at: '2026-07-22T06:00:00.000Z',
+      verification_evidence: '{"verify_tail":"PASS run_verify: 64 suite(s)"}',
+      verify_passed: true,
+      attempts: [
+        { n: 1, verdict: 'fail', failure_signature: 'EEXIST: store lock held by a stale pid' },
+        { n: 2, verdict: 'pass', failure_signature: null },
+      ],
+    },
+  });
+  writeCellFixture(root, {
+    id: 'other-1', feature: 'other-feature', lane: 'tiny', behavior_change: true, status: 'capped',
+    title: 'Another feature entirely', verify: 'node scripts/run_verify.mjs',
+    trace: {
+      outcome: 'unrelated outcome',
+      files_changed: ['docs/specs/alpha.md'],
+      deviations: ['unrelated deviation'],
+      behavior_change: true,
+      capped_at: '2026-07-22T07:00:00.000Z',
+    },
+  });
+  return root;
+}
+
+await check('CLI: knowledge promote --json names exactly the CAPPED cells of the work item feature, in id order (D38)', async () => {
+  const root = makePromoteFixture();
+  const result = await runBee(['knowledge', 'promote', '--work', 'demo-work', '--json'], root);
+  assert(result.status === 0, `promote must exit 0, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const proposal = JSON.parse(result.stdout);
+  assert(JSON.stringify(Object.keys(proposal).sort()) === JSON.stringify(['area_updates', 'cells', 'delivery', 'pattern_candidates', 'work', 'work_item', 'writes'].sort()), `proposal keys must be exactly {work,work_item,cells,delivery,area_updates,pattern_candidates,writes}, got ${JSON.stringify(Object.keys(proposal))}`);
+  assert(proposal.work === 'demo-work', `work must echo the resolved id, got ${JSON.stringify(proposal.work)}`);
+  assert(proposal.work_item === 'work/demo/work-item.md', `work_item must name the resolved concept path, got ${JSON.stringify(proposal.work_item)}`);
+  assert(JSON.stringify(proposal.cells.map((c) => c.id)) === JSON.stringify(['demo-1', 'demo-2', 'demo-4']), `only the capped cells of THIS feature, id-sorted, may be mined — got ${JSON.stringify(proposal.cells.map((c) => c.id))}`);
+  assert(JSON.stringify(proposal.writes) === JSON.stringify([]), `promote must declare zero writes, got ${JSON.stringify(proposal.writes)}`);
+  for (const cell of proposal.cells) {
+    assert(typeof cell.outcome === 'string' && cell.outcome, `every mined cell must carry its recorded outcome, got ${JSON.stringify(cell)}`);
+  }
+});
+
+await check('knowledge promote: the DELIVERY DRAFT is a complete canonical bee.delivery concept that round-trips through check (zero not_canonical)', async () => {
+  const root = makePromoteFixture();
+  const proposal = JSON.parse((await runBee(['knowledge', 'promote', '--work', 'demo-work', '--json'], root)).stdout);
+  const draft = proposal.delivery;
+  assert(draft && draft.path === 'work/demo/delivery.md', `the draft must be ready to save as the work item's delivery.md sibling, got ${JSON.stringify(draft && draft.path)}`);
+  const parsed = parseFrontmatter(draft.content);
+  assert(parsed.ok === true && parsed.present === true, `the draft must carry parseable frontmatter, got ${JSON.stringify(parsed)}`);
+  assert(parsed.data.type === 'bee.delivery', `the draft must be typed bee.delivery, got ${JSON.stringify(parsed.data.type)}`);
+  assert(emitFrontmatter(parsed.data) === parsed.block, 'the draft frontmatter must already be canonical emitter form (re-emit byte-identical)');
+  assert(typeof parsed.data.title === 'string' && parsed.data.title, 'the draft must carry a title');
+  assert(typeof parsed.data.description === 'string' && parsed.data.description, 'the draft must carry a description');
+  assert(parsed.data.bee.id === 'demo-work-delivery' && parsed.data.bee.lifecycle === 'active', `draft identity must derive from the work id, got ${JSON.stringify(parsed.data.bee)}`);
+  assert(Array.isArray(parsed.data.bee.sources) && parsed.data.bee.sources.includes('.bee/cells/demo-1.json'), `the draft must cite the cell traces it was mined from, got ${JSON.stringify(parsed.data.bee.sources)}`);
+  for (const id of ['demo-1', 'demo-2', 'demo-4']) {
+    assert(draft.content.includes(id), `the draft body must name capped cell ${id}, got ${draft.content}`);
+  }
+  assert(!draft.content.includes('demo-3') && !draft.content.includes('other-1'), 'the draft must never name an uncapped or foreign cell');
+
+  // Saved into the bundle, the draft must pass `knowledge check` cleanly.
+  const abs = path.join(bundleDir(root), draft.path);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, draft.content, 'utf8');
+  const checked = await runBee(['knowledge', 'check', '--json'], root);
+  assert(checked.status === 0, `the saved draft must pass knowledge check, got ${checked.status}: ${checked.stdout}`);
+  const report = JSON.parse(checked.stdout);
+  assert(report.okf.errors.length === 0, `the saved draft must produce zero OKF errors, got ${JSON.stringify(report.okf.errors)}`);
+  assert(!report.profile.warnings.some((w) => w.file === draft.path), `the saved draft must produce zero profile warnings of its own, got ${JSON.stringify(report.profile.warnings)}`);
+  fs.rmSync(abs);
+});
+
+await check('knowledge promote: a cell with a deviation or a failure signature yields a pitfall candidate; a clean cell yields none (D18 polarity)', async () => {
+  const root = makePromoteFixture();
+  const proposal = JSON.parse((await runBee(['knowledge', 'promote', '--work', 'demo-work', '--json'], root)).stdout);
+  const ids = proposal.pattern_candidates.map((c) => c.cell);
+  assert(JSON.stringify(ids) === JSON.stringify(['demo-1', 'demo-4']), `exactly the deviation-carrying and failure-carrying cells become candidates, got ${JSON.stringify(ids)}`);
+  const first = proposal.pattern_candidates[0];
+  const parsed = parseFrontmatter(first.content);
+  assert(parsed.ok && parsed.data.type === 'bee.pattern', `a candidate must be a bee.pattern concept, got ${JSON.stringify(parsed.data && parsed.data.type)}`);
+  assert(parsed.data.bee.polarity === 'pitfall', `a candidate must carry bee.polarity pitfall (D18), got ${JSON.stringify(parsed.data.bee)}`);
+  assert(parsed.data.bee.lifecycle === 'draft', `a proposal is a draft until a human accepts it, got ${JSON.stringify(parsed.data.bee.lifecycle)}`);
+  assert(emitFrontmatter(parsed.data) === parsed.block, 'a candidate frontmatter must already be canonical emitter form');
+  assert(Array.isArray(parsed.data.bee.sources) && parsed.data.bee.sources.includes('.bee/cells/demo-1.json'), `a candidate must cite the cell trace it came from, got ${JSON.stringify(parsed.data.bee.sources)}`);
+  assert(/Renamed the flag from --a to --alpha/.test(first.content), `the candidate body must quote the recorded deviation verbatim, got ${first.content}`);
+  const fromFailure = proposal.pattern_candidates[1];
+  assert(/EEXIST: store lock held by a stale pid/.test(fromFailure.content), `a failure-signature candidate must quote the signature verbatim, got ${fromFailure.content}`);
+  assert(!JSON.stringify(proposal.pattern_candidates).includes('demo-2'), 'a clean capped cell must never yield a pitfall candidate');
+});
+
+await check('knowledge promote: AREA UPDATES list the behavior_change cells whose files touch that area subject, each citing its cell id', async () => {
+  const root = makePromoteFixture();
+  const proposal = JSON.parse((await runBee(['knowledge', 'promote', '--work', 'demo-work', '--json'], root)).stdout);
+  assert(proposal.area_updates.length === 1 && proposal.area_updates[0].area === 'alpha', `one area update section per work-item area, got ${JSON.stringify(proposal.area_updates)}`);
+  const bullets = proposal.area_updates[0].bullets;
+  assert(bullets.length === 1 && bullets[0].cell === 'demo-1', `only the behavior_change cell that touched the area subject may be proposed, got ${JSON.stringify(bullets)}`);
+  assert(Array.isArray(bullets[0].files) && bullets[0].files.includes('docs/specs/alpha.md'), `the bullet must name the touched subject file, got ${JSON.stringify(bullets[0])}`);
+  assert(/alpha migrated into one concept/.test(bullets[0].text), `the bullet text must come from the cell's recorded outcome, got ${JSON.stringify(bullets[0].text)}`);
+  assert(!JSON.stringify(bullets).includes('demo-2'), 'a non-behavior_change cell is never an area-update candidate');
+  assert(!JSON.stringify(bullets).includes('demo-4'), 'a cell that touched no subject of the area is never an area-update candidate');
+});
+
+await check('knowledge promote WRITES NOTHING: buildPromotion leaves the whole repo tree byte-identical, in-process (D2)', async () => {
+  const root = makePromoteFixture();
+  const before = snapshotTree(root);
+  const proposal = buildPromotion(root, { work: 'demo-work' });
+  assert(proposal.cells.length === 3, `the in-process call must mine the same cells, got ${JSON.stringify(proposal.cells.map((c) => c.id))}`);
+  assert(JSON.stringify(proposal.writes) === JSON.stringify([]), 'buildPromotion must declare zero writes');
+  const after = snapshotTree(root);
+  assert(JSON.stringify([...after.keys()]) === JSON.stringify([...before.keys()]), `buildPromotion must create and delete NO file.\nbefore: ${JSON.stringify([...before.keys()])}\nafter:  ${JSON.stringify([...after.keys()])}`);
+  for (const [rel, bytes] of before) {
+    assert(after.get(rel) === bytes, `buildPromotion must not modify ${rel} — the bundle and the runtime store are read-only inputs (D2)`);
+  }
+});
+
+await check('knowledge promote WRITES NOTHING through the CLI either: bundle and .bee/cells/ byte-identical; the only delta is the dispatcher cache every verb writes', async () => {
+  const root = makePromoteFixture();
+  /** Everything promote could possibly be accused of writing: the bundle and
+   *  the runtime store — but NOT .bee/cache/, which the dispatcher writes on
+   *  every single bee invocation (proven below against `knowledge check`). */
+  const owned = (snapshot) => new Map([...snapshot].filter(([rel]) => !rel.startsWith('.bee/cache/')));
+  const before = snapshotTree(root);
+  const result = await runBee(['knowledge', 'promote', '--work', 'demo-work', '--json'], root);
+  assert(result.status === 0, `promote must exit 0, got ${result.status}: ${result.stderr}`);
+  const human = await runBee(['knowledge', 'promote', '--work', 'demo-work'], root);
+  assert(human.status === 0, `the human form must exit 0 too, got ${human.status}: ${human.stderr}`);
+  const after = snapshotTree(root);
+  const beforeOwned = owned(before);
+  const afterOwned = owned(after);
+  assert(JSON.stringify([...afterOwned.keys()]) === JSON.stringify([...beforeOwned.keys()]), `promote must create and delete NO bundle or runtime-store file.\nbefore: ${JSON.stringify([...beforeOwned.keys()])}\nafter:  ${JSON.stringify([...afterOwned.keys()])}`);
+  for (const [rel, bytes] of beforeOwned) {
+    assert(afterOwned.get(rel) === bytes, `promote must not modify ${rel} (D2)`);
+  }
+  const delta = [...after.keys()].filter((rel) => !before.has(rel));
+  // The delta is the dispatcher's, not promote's: a read-only `knowledge
+  // check` in a virgin repo produces exactly the same file.
+  const virgin = makeRepo();
+  const virginBefore = snapshotTree(virgin);
+  await runBee(['knowledge', 'check', '--json'], virgin);
+  const virginDelta = [...snapshotTree(virgin).keys()].filter((rel) => !virginBefore.has(rel));
+  assert(JSON.stringify(delta) === JSON.stringify(virginDelta), `promote's only file delta must be the dispatcher cache every verb writes.\npromote: ${JSON.stringify(delta)}\ncheck:   ${JSON.stringify(virginDelta)}`);
+});
+
+await check('knowledge promote: the human form carries the three proposal sections and says nothing was written', async () => {
+  const root = makePromoteFixture();
+  const result = await runBee(['knowledge', 'promote', '--work', 'demo-work'], root);
+  assert(result.status === 0, `the human form must exit 0, got ${result.status}: ${result.stderr}`);
+  assert(/\(a\) DELIVERY DRAFT/.test(result.stdout), `expected the delivery-draft section, got ${result.stdout}`);
+  assert(/\(b\) AREA UPDATES/.test(result.stdout), `expected the area-updates section, got ${result.stdout}`);
+  assert(/\(c\) PATTERN CANDIDATES/.test(result.stdout), `expected the pattern-candidates section, got ${result.stdout}`);
+  assert(/nothing was written/i.test(result.stdout), `the output must state that promote proposes and writes nothing, got ${result.stdout}`);
+  assert(/demo-1/.test(result.stdout) && /demo-4/.test(result.stdout), `the human form must name the mined cells, got ${result.stdout}`);
+});
+
+await check('knowledge promote: an unknown --work id exits 1 with a typed error (D38)', async () => {
+  const root = makePromoteFixture();
+  const result = await runBee(['knowledge', 'promote', '--work', 'no-such-work', '--json'], root);
+  assert(result.status === 1, `an unknown work id must exit 1, got ${result.status}: stdout=${result.stdout} stderr=${result.stderr}`);
+  const payload = JSON.parse(result.stdout);
+  assert(typeof payload.error === 'string' && /unknown_work/.test(payload.error), `the failure must carry the typed unknown_work code, got ${result.stdout}`);
+  assert(/no-such-work/.test(payload.error), `the failure must name the id it could not resolve, got ${result.stdout}`);
+  const human = await runBee(['knowledge', 'promote', '--work', 'no-such-work'], root);
+  assert(human.status === 1 && /unknown_work/.test(human.stderr), `the human form must fail on stderr with the typed code, got status=${human.status} stderr=${human.stderr}`);
+});
+
+await check('knowledge promote: a work item with no capped cells still proposes a canonical (empty-evidence) draft, never a throw', async () => {
+  const root = makeRepo();
+  writeBundleFile(root, 'work/lonely/work-item.md', conceptText({
+    type: 'bee.work-item', id: 'lonely', title: 'A lonely work item', description: 'No cells have been capped for it yet',
+    extraBee: { areas: [], required_context: [], decisions: [] },
+  }));
+  const result = await runBee(['knowledge', 'promote', '--work', 'lonely', '--json'], root);
+  assert(result.status === 0, `a work item with no cells must still resolve, got ${result.status}: ${result.stderr}`);
+  const proposal = JSON.parse(result.stdout);
+  assert(proposal.cells.length === 0 && proposal.pattern_candidates.length === 0 && proposal.area_updates.length === 0, `nothing to mine means empty sections, got ${JSON.stringify(proposal)}`);
+  const parsed = parseFrontmatter(proposal.delivery.content);
+  assert(parsed.ok && parsed.data.type === 'bee.delivery' && emitFrontmatter(parsed.data) === parsed.block, `the draft must still be canonical, got ${JSON.stringify(parsed)}`);
+});
+
+await check('CLI: knowledge.promote appears in the bee --help --json manifest with a runnable example (test_bee_cli conformance)', async () => {
+  const result = await runBee(['--help', '--json'], makeRepo());
+  assert(result.status === 0, `--help --json must exit 0, got ${result.status}: ${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  const entry = manifest.commands.find((c) => c.name === 'knowledge.promote');
+  assert(entry, 'manifest must carry knowledge.promote');
+  assert(entry.invoke === 'bee knowledge promote', `invoke must be "bee knowledge promote", got ${entry.invoke}`);
+  assert(Array.isArray(entry.examples) && entry.examples.length > 0, 'entry must carry runnable examples');
+  assert(entry.examples.every((e) => !e.includes('--strict')), 'no --strict anywhere in examples');
+  assert(entry.parameters && entry.parameters.properties.work, 'parameters must carry work');
+  assert(JSON.stringify(entry.parameters.required) === JSON.stringify(['work']), `--work is the one required flag, got ${JSON.stringify(entry.parameters.required)}`);
+  assert(/never writes|proposes/i.test(entry.description), `the description must state that promote proposes and never writes, got ${entry.description}`);
 });
 
 // ─── summary ────────────────────────────────────────────────────────────────

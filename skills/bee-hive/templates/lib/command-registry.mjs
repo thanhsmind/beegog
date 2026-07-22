@@ -1366,6 +1366,22 @@ export const COMMAND_REGISTRY = [
     examples: ['bee knowledge context --work okf-foundation --budget 20000 --json'],
     deprecated: null,
   },
+  {
+    name: 'knowledge.promote',
+    invoke: 'bee knowledge promote',
+    description:
+      'Propose the knowledge a finished work item earned — and never write it (D38/D2). Resolves --work <id> to its bee.work-item concept, then READS the capped cell traces of that feature from .bee/cells/*.json (a read of the runtime store, which the bundle may perform; it is never a write path into one) and returns three PROPOSALS: (a) a DELIVERY DRAFT — a complete bee.delivery concept in canonical emitter form, ready to be saved as the work item\'s delivery.md sibling, carrying what shipped (each cell\'s recorded outcome), how it was verified (each cell\'s recorded verify command and evidence) and every recorded deviation; (b) AREA UPDATES — for each area named in the work item\'s bee.areas, the capped behavior_change cells whose files_changed touch that area\'s subject, as candidate spec-sync bullets each citing its cell id; (c) PATTERN CANDIDATES — every capped cell whose trace carries a deviation or a failure signature, shaped as a candidate bee.pattern concept with bee.polarity pitfall and bee.lifecycle draft, quoting the trace verbatim. Every proposed line traces to a cell trace or to the work item — nothing is invented (D10). promote proposes and never writes — not into docs/knowledge/, not into .bee/*.json(l), not anywhere: `writes` in the --json payload is always []; applying a proposal is a human or agent decision. An unresolvable --work id exits 1 with a typed unknown_work error.',
+    parameters: {
+      type: 'object',
+      properties: {
+        work: { type: 'string', description: 'The work item to propose knowledge for — matched against bee.id on a bee.work-item concept (D32: the id is identity).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON ({work,work_item,cells,delivery,area_updates,pattern_candidates,writes}) instead of the human proposal document.' },
+      },
+      required: ['work'],
+    },
+    examples: ['bee knowledge promote --work okf-foundation --json'],
+    deprecated: null,
+  },
 
   // ─── perf (lib/perf.mjs) — global cross-project performance log ───────────
   // Each section summarizes a piece of work: models used, per-model tokens

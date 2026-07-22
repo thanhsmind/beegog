@@ -152,6 +152,7 @@ import {
   renderKnowledgeIndexes,
   listConcepts,
   buildContextManifest,
+  buildPromotion,
 } from './lib/knowledge.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
 import {
@@ -2585,6 +2586,55 @@ function handleKnowledgeContext(root, flags) {
   return { result: manifest, text: lines.join('\n') };
 }
 
+// promote (okf-9, D38): the loop closer. Reads the bundle and the CAPPED cell
+// traces in .bee/cells/ (a read of the runtime store — D2 permits reads and
+// forbids writes) and PRINTS three proposals. This handler performs no writes
+// of any kind: there is no --apply, and `writes` in the payload is always [].
+// Saving a proposal is a separate, human or agent, decision. An unresolvable
+// --work id throws the typed unknown_work error the dispatcher's catch turns
+// into exit 1 ({"error":...} on stdout under --json, stderr otherwise).
+function handleKnowledgePromote(root, flags) {
+  const proposal = buildPromotion(root, { work: flags.work });
+  const lines = [
+    `promote proposal for work item "${proposal.work}" (${proposal.work_item}) — ${proposal.cells.length} capped cell(s)` +
+      `${proposal.cells.length > 0 ? `: ${proposal.cells.map((cell) => cell.id).join(', ')}` : ''}`,
+    'PROPOSAL ONLY — nothing was written. Applying any section below is a human or agent decision.',
+    '',
+    `(a) DELIVERY DRAFT — save as ${proposal.delivery.repo_path}`,
+    '',
+    proposal.delivery.content.replace(/\n$/, ''),
+    '',
+    '(b) AREA UPDATES — candidate spec-sync bullets, each citing its cell',
+    '',
+  ];
+  if (proposal.area_updates.length === 0) {
+    lines.push(`None: the work item declares no bee.areas, so there is no area to sync (D19).`, '');
+  }
+  for (const update of proposal.area_updates) {
+    lines.push(`area ${update.area}:`);
+    if (update.bullets.length === 0) {
+      lines.push('  (no capped behavior_change cell touched this area\'s subjects)');
+    }
+    for (const bullet of update.bullets) {
+      lines.push(`  - [${bullet.cell}] ${bullet.text} — touched ${bullet.files.join(', ')} (trace ${bullet.trace})`);
+    }
+    lines.push('');
+  }
+  lines.push('(c) PATTERN CANDIDATES — candidate bee.pattern concepts, bee.polarity pitfall', '');
+  if (proposal.pattern_candidates.length === 0) {
+    lines.push('None: no capped cell trace carries a deviation or a failure signature.', '');
+  }
+  for (const candidate of proposal.pattern_candidates) {
+    lines.push(`from cell ${candidate.cell} — save as ${candidate.repo_path}`, '', candidate.content.replace(/\n$/, ''), '');
+  }
+  lines.push(
+    `knowledge promote: ${proposal.cells.length} capped cell(s) mined, 1 delivery draft, ` +
+      `${proposal.area_updates.reduce((sum, update) => sum + update.bullets.length, 0)} area bullet(s), ` +
+      `${proposal.pattern_candidates.length} pattern candidate(s), 0 file(s) written.`,
+  );
+  return { result: proposal, text: lines.join('\n') };
+}
+
 // ─── reviews: full port of bee_reviews.mjs's create/list/show/record/
 // candidate add/candidates/status verbs (dispatcher-unify du-3). Reuses
 // lib/reviews.mjs's exports exactly as bee_reviews.mjs did — no logic change
@@ -4710,7 +4760,7 @@ function tmpUsageFallback(leading) {
 
 function knowledgeUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: check, index, list, context.`;
+  return `Unknown command "${verb || '(missing)'}". Use: check, index, list, context, promote.`;
 }
 
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
@@ -4816,6 +4866,7 @@ const HANDLERS = {
   'knowledge.index': handleKnowledgeIndex,
   'knowledge.list': handleKnowledgeList,
   'knowledge.context': handleKnowledgeContext,
+  'knowledge.promote': handleKnowledgePromote,
   'reviews.create': handleReviewsCreate,
   'reviews.list': handleReviewsList,
   'reviews.show': handleReviewsShow,
