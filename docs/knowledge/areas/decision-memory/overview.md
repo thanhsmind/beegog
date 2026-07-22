@@ -2,13 +2,13 @@
 type: bee.area
 title: Decision Memory — what the system remembers about its own decisions
 description: "How a decision event is classified, reversed and reconciled against its citing artifacts, recalled through a derived index, kept bounded by an explicit archive, and honored by a backlog row's own done-flip rule — all one topic at this source's size."
-timestamp: 2026-07-21
+timestamp: 2026-07-23
 bee:
   id: decision-memory-overview
   lifecycle: active
   areas: [decision-memory]
   decisions: ["decision-propagation GH #32/#33/#34 (2026-07-21)", D1 b9b9fee3 (backlog CoS-gated done-flip), D2 b9b9fee3 (reversal citation sweep), D3 b9b9fee3 (citation discipline), "D4c b9b9fee3 (bounded store, archive verb)", "D5 b9b9fee3 (no stored graph, no daemon)", D6 b9b9fee3 (reversals inherit place), D7 c81c6795 (write-time classification + retro-tag reclassification), D8 1cea7713 (derived index recall surface), bee-scribing D11b, "bee-compounding fallback (identical, never-looser)"]
-  sources: ["docs/specs/decision-memory.md#R1", "docs/specs/decision-memory.md#R2", "docs/specs/decision-memory.md#R3", "docs/specs/decision-memory.md#R4", "docs/specs/decision-memory.md#R5", "docs/specs/decision-memory.md#R6", "docs/specs/decision-memory.md#R7", "docs/specs/decision-memory.md#R8", "docs/specs/decision-memory.md#R9", docs/history/decision-propagation/reports/e2e-supersede.md, test_decisions_propagation.mjs (84 checks incl. worker-thread log-vs-archive race), "backfill: 406/406 legacy events classified via extraction batches; --untagged --all returns zero; 5-event recall spot check green"]
+  sources: ["docs/specs/decision-memory.md#R1", "docs/specs/decision-memory.md#R2", "docs/specs/decision-memory.md#R3", "docs/specs/decision-memory.md#R4", "docs/specs/decision-memory.md#R5", "docs/specs/decision-memory.md#R6", "docs/specs/decision-memory.md#R7", "docs/specs/decision-memory.md#R8", "docs/specs/decision-memory.md#R9", docs/history/decision-propagation/reports/e2e-supersede.md, test_decisions_propagation.mjs (84 checks incl. worker-thread log-vs-archive race), "backfill: 406/406 legacy events classified via extraction batches; --untagged --all returns zero; 5-event recall spot check green", "judge-record-tags cells jrt-1, jrt-2 (five internal callers swept; the census derives its sites by scanning source, and was itself widened by measurement after its first scope hid a live instance; traces in `.bee/cells/`, 2026-07-23)"]
   authoritative_for: "decision-memory: what the system remembers about its own decisions"
 ---
 
@@ -44,6 +44,31 @@ Three field failures (reported against a host repo, fixed generically):
   untagged writes warn and proceed. An unknown tag is never refused — it is
   accepted onto the event and appended to `candidates[]` for later curation.
   `candidates[]` never holds an already-canonical tag.
+- **R1a — The write-time refusal binds the system's OWN callers, and they are
+  swept by a derived census.** R1 governs every writer, not only the ones a human
+  invokes: the system logs decisions to itself when it resets a stale claim,
+  overrides a judge verdict, resets a cell's budget, reopens a cell on a
+  rework verdict, and records the audit line that is the price of the
+  scribing-debt waiver. Each of those was written before R1 existed and carried
+  no tags, so once a taxonomy was present each one hit R1's refusal. The failure
+  modes differed and both are worth knowing: where the call sits inside the
+  operation's own write path, the refusal unwinds the whole operation, so the
+  work fails; where it sits inside a best-effort catch, the operation succeeds
+  and the audit line vanishes **silently** — the more dangerous of the two,
+  because nothing surfaces. A rework verdict was unrecordable for exactly this
+  reason and had to be written by hand.
+
+  The rule this leaves behind is not "remember to tag": a cross-cutting
+  write-time refusal is not finished until the callers already in the tree are
+  swept, and the sweep is held by a check that **derives** its call sites by
+  scanning source rather than listing them. A hand-maintained list is what let
+  the first sweep miss a caller — the census's own scope was set from assumption,
+  passed green, and hid a live instance until it was widened by measurement.
+  Two properties keep it honest: a caller that legitimately forwards
+  a *user's* tags is not an offender and must never be flagged, or an author is
+  pushed to fabricate a value that is not theirs to choose; and the check is
+  proven by injection — a tagless call added on purpose must name its own file
+  and line.
 - **R2 — Reversal is not finished until citing artifacts are reconciled** (D2,
   `b9b9fee3`). A supersede computes a citation sweep over `docs/**` (full id +
   word-boundary short8) BEFORE its single append; the event carries the sweep
