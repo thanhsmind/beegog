@@ -14,7 +14,7 @@ never a generation timestamp or any other wall-clock value.
 ## Sections
 
 - [areas/](areas/index.md) — 71 concept(s)
-- [patterns/](patterns/index.md) — 53 concept(s)
+- [patterns/](patterns/index.md) — 54 concept(s)
 - [work/](work/index.md) — 4 concept(s)
 
 ## Critical patterns
@@ -72,3 +72,4 @@ never a generation timestamp or any other wall-clock value.
 - [A scan scope set from assumption passes green while hiding the very bug it was built to catch](patterns/20260723-a-scan-scope-set-from-assumption-passes-green-while-hiding-the-bug.md) — Three times in one session a hand-chosen scan scope was one directory too narrow and reported clean. The scope is the finding, not the hits — derive it by measurement before you trust a green.
 - [A system contradicting itself hides in the seam, because each half passes inspection alone](patterns/20260723-a-system-contradicting-itself-hides-in-the-seam.md) — One mechanism produces what another must consume, reclaim or check — and the contradiction survives every green run, because no unit test owns a handoff.
 - [Clearing a red by widening the threshold is not the same act as correcting what is measured — prove which one you did](patterns/20260723-clearing-a-red-by-widening-the-threshold-is-not-fixing-the-check.md) — Both clear the red, both read identically in a commit summary, and only one leaves the guard able to detect what it exists to detect. A negative control is what separates them.
+- [Split automation where an action becomes irreversible — automate the recoverable half, keep the irreversible half a human gesture](patterns/20260723-split-automation-where-an-action-becomes-irreversible.md) — When automation both produces work and lands it, the two halves have different blast radii. Autonomy should track blast radius, not convenience.
