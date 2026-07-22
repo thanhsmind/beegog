@@ -33,6 +33,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { emitFrontmatter, bundleMode, scribingTarget } from '../lib/knowledge.mjs';
+import { buildSessionPreamble } from '../lib/inject.mjs';
 
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(TESTS_DIR, '..', '..', '..', '..');
@@ -749,6 +750,304 @@ await check('bee-scribing documents the three-layer gate: normalization, the two
   assert(/duplicate_authority/.test(skill), 'the two-claimant ambiguity is specified');
   assert(/duplicate_authoritative_for/.test(skill), 'the chain backstop is named');
   assert(!NAG_RE.test(skill), 'still no nag anywhere');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cell f4-3 — the SESSION PREAMBLE routes on the same one predicate.
+//
+// The preamble is what every agent reads before doing anything, and two of its
+// sections were still teaching the retired model (both confirmed by direct
+// observation of a live preamble, not inferred):
+//
+//   D1  `### Critical patterns (digest)` printed the POINTER STUB's redirect
+//       boilerplate as if it were the patterns.
+//   D2  `### Project map` printed `Specced areas: N (docs/specs/ — read the
+//       spec before the code)` — counting the compatibility surface and
+//       instructing the reading order G4 replaced.
+//   D3  the scribing-debt nudge hardcoded `docs/specs/` as where settled
+//       behavior belongs.
+//
+// These rows live HERE rather than in test_misc.mjs for the reason stated at
+// the top of this file: bee's own checkout HAS a bundle, so the fallback is
+// structurally untestable against the real repo. The bundle-LESS fixture below
+// pins all three surfaces BYTE-FOR-BYTE as they read before this cell — that
+// is the whole promise to a host repo that never migrated.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** The 10 non-blank lines a legacy critical-patterns.md digest must reproduce. */
+const LEGACY_PATTERN_LINES = [
+  '# Critical Patterns',
+  '## [20260101] A lesson that settled',
+  '- Symptom: the thing broke.',
+  '- Rule: do not do the thing.',
+  '## [20260202] Another lesson',
+  '- Symptom: it broke again.',
+  '- Rule: really do not do the thing.',
+  '## [20260303] A third lesson',
+  '- Symptom: still broken.',
+  '- Rule: stop.',
+];
+
+/**
+ * A repo shaped like a real one at preamble time: both project maps, two area
+ * specs, a backlog, a legacy critical-patterns file, and one capped
+ * behavior_change cell so the scribing-debt nudge fires. `withBundle` adds a
+ * parsing concept plus a generated root index carrying 12 date-ordered
+ * critical-pattern rows.
+ */
+function makePreambleRepo(label, { withBundle }) {
+  const root = makeRepo(`preamble-${label}`);
+  writeFile(root, '.bee/onboarding.json', JSON.stringify({ schema_version: '1.0' }) + '\n');
+  // phase compounding-complete: a closed feature with uncaptured scribing debt.
+  // It also keeps the okf-8 knowledge-context bridge silent, so the sections
+  // under test are the only ones speaking.
+  writeFile(
+    root,
+    '.bee/state.json',
+    JSON.stringify({ phase: 'compounding-complete', feature: 'demo-feature', mode: 'standard' }, null, 2) + '\n',
+  );
+  writeFile(
+    root,
+    '.bee/cells/demo-1.json',
+    JSON.stringify(
+      {
+        id: 'demo-1',
+        feature: 'demo-feature',
+        title: 'Demo',
+        lane: 'small',
+        status: 'capped',
+        deps: [],
+        trace: { behavior_change: true, capped_at: new Date().toISOString() },
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  writeFile(root, 'docs/specs/system-overview.md', '# Overview\n');
+  writeFile(root, 'docs/specs/reading-map.md', '# Reading map\n');
+  writeFile(root, 'docs/specs/billing.md', '# Billing\n');
+  writeFile(root, 'docs/specs/payouts.md', '# Payouts\n');
+  writeFile(
+    root,
+    'docs/backlog.md',
+    '| ID | Story | CoS | Status | Feature |\n| -- | ----- | --- | ------ | ------- |\n| 1 | A | x | done | f |\n| 2 | B | y | proposed | |\n',
+  );
+  writeFile(
+    root,
+    'docs/history/learnings/critical-patterns.md',
+    `<!-- a comment line that the digest drops -->\n\n${LEGACY_PATTERN_LINES.join('\n\n')}\n\n- Rule: a line past the cap.\n`,
+  );
+  if (withBundle) {
+    writeFile(
+      root,
+      'docs/knowledge/areas/billing/overview.md',
+      conceptText({ id: 'billing-overview', title: 'Billing — purpose', areas: ['billing'] }),
+    );
+    writeFile(
+      root,
+      'docs/knowledge/areas/payouts/overview.md',
+      conceptText({ id: 'payouts-overview', title: 'Payouts — purpose', areas: ['payouts'] }),
+    );
+    const rows = [];
+    for (let n = 1; n <= 12; n += 1) {
+      const id = String(n).padStart(2, '0');
+      rows.push(`- [Pattern ${id}](patterns/2026${id}01-pattern-${id}.md) — hook ${id}`);
+    }
+    writeFile(
+      root,
+      'docs/knowledge/index.md',
+      [
+        '---',
+        'okf_version: 0.1',
+        '---',
+        '',
+        '# Knowledge Bundle',
+        '',
+        '## Sections',
+        '',
+        '- [areas/](areas/index.md) — 2 concept(s)',
+        '',
+        '## Critical patterns',
+        '',
+        ...rows,
+        '',
+        '## Not patterns',
+        '',
+        '- [Something else](areas/index.md) — never in the digest',
+        '',
+      ].join('\n'),
+    );
+  }
+  return root;
+}
+
+function section(preamble, heading) {
+  const all = preamble.split('\n');
+  const start = all.findIndex((line) => line === heading || line.startsWith(heading));
+  if (start === -1) return null;
+  const out = [all[start]];
+  for (let i = start + 1; i < all.length; i += 1) {
+    if (all[i] === '' || all[i].startsWith('### ')) break;
+    out.push(all[i]);
+  }
+  return out;
+}
+
+// ─── the bundle-LESS fixture: all three surfaces, byte-for-byte as before ───
+
+await check('preamble fallback: the Project map section is BYTE-IDENTICAL to before f4-3', () => {
+  const root = makePreambleRepo('nobundle-map', { withBundle: false });
+  assert(bundleMode(root) === false, 'the fixture really has no bundle');
+  const map = section(buildSessionPreamble(root), '### Project map');
+  assert(
+    JSON.stringify(map) ===
+      JSON.stringify([
+        '### Project map',
+        '- System overview: docs/specs/system-overview.md',
+        '- Reading map: docs/specs/reading-map.md',
+        '- Specced areas: 2 (docs/specs/ — read the spec before the code)',
+        '- PBI: 1 done / 0 in-flight / 1 proposed',
+      ]),
+    `today's section, line for line, got ${JSON.stringify(map)}`,
+  );
+  assert(map.length <= 5, `the 2-5 line cap holds, got ${map.length}`);
+});
+
+await check('preamble fallback: the missing-map WARNING branch is byte-identical too (and still the only line)', () => {
+  const root = makePreambleRepo('nobundle-warn', { withBundle: false });
+  fs.rmSync(path.join(root, 'docs', 'specs', 'system-overview.md'));
+  fs.rmSync(path.join(root, 'docs', 'specs', 'reading-map.md'));
+  const map = section(buildSessionPreamble(root), '### Project map');
+  assert(
+    JSON.stringify(map) ===
+      JSON.stringify([
+        '### Project map',
+        '- Project map missing (Q1/Q2 unanswerable from repo) — bee-scribing bootstrap available.',
+        '- PBI: 1 done / 0 in-flight / 1 proposed',
+      ]),
+    `the warning branch is untouched by D2, got ${JSON.stringify(map)}`,
+  );
+});
+
+await check('preamble fallback: the critical-patterns digest still reads the legacy file, capped at 10 lines', () => {
+  const root = makePreambleRepo('nobundle-digest', { withBundle: false });
+  const digest = section(buildSessionPreamble(root), '### Critical patterns (digest)');
+  assert(
+    JSON.stringify(digest) === JSON.stringify(['### Critical patterns (digest)', ...LEGACY_PATTERN_LINES]),
+    `the first 10 non-blank, non-comment lines, unchanged, got ${JSON.stringify(digest)}`,
+  );
+  assert(!digest.some((line) => /a line past the cap/.test(line)), 'the 10-line cap still bites');
+});
+
+await check('preamble fallback: the scribing-debt nudge still names docs/specs/, word for word', () => {
+  const root = makePreambleRepo('nobundle-debt', { withBundle: false });
+  const debt = section(buildSessionPreamble(root), '### Scribing debt:');
+  assert(debt !== null, 'the fixture really does carry scribing debt');
+  assert(
+    debt[1] ===
+      '- demo-1 capped since the last scribing run — run bee-scribing capture now; settled behavior belongs in docs/specs/ before it evaporates (decision 0011).',
+    `today's nudge, verbatim, got ${JSON.stringify(debt[1])}`,
+  );
+});
+
+await check('preamble fallback: the WHOLE preamble never mentions the bundle, and never nags', () => {
+  const root = makePreambleRepo('nobundle-whole', { withBundle: false });
+  const preamble = buildSessionPreamble(root);
+  assert(!preamble.includes('docs/knowledge'), 'an un-migrated host is never told this release happened');
+  assert(!/knowledge bundle/i.test(preamble), 'no bundle vocabulary anywhere');
+  assert(!NAG_RE.test(preamble), `the fallback says nothing new: ${preamble}`);
+});
+
+// ─── the bundle-ful fixture: the bundle is what you read before the code ────
+
+await check('preamble bundle mode (D2): the Project map names the BUNDLE and counts what it holds', () => {
+  const root = makePreambleRepo('bundle-map', { withBundle: true });
+  assert(bundleMode(root) === true, 'the fixture really has a bundle');
+  const map = section(buildSessionPreamble(root), '### Project map');
+  assert(map.length >= 2 && map.length <= 5, `the 2-5 line cap holds in the bundle branch too, got ${map.length}`);
+  assert(map.some((line) => line.includes('docs/knowledge/')), 'the bundle is named');
+  assert(
+    map.some((line) => /read the bundle before the code/.test(line)),
+    `the bundle is what you read before the code, got ${JSON.stringify(map)}`,
+  );
+  assert(
+    map.some((line) => /2 area\(s\), 2 concept\(s\)/.test(line)),
+    `counts what the bundle actually holds, got ${JSON.stringify(map)}`,
+  );
+  assert(!map.some((line) => /Specced areas/.test(line)), 'the compatibility surface is not the area count');
+  assert(
+    !map.some((line) => /read the spec before the code/.test(line)),
+    'the reading order G4 replaced is gone in bundle mode',
+  );
+  assert(
+    map.some((line) => /read-only compatibility surface/.test(line)),
+    'docs/specs/ is described as what it now is, if it is named at all',
+  );
+  assert(map.some((line) => /PBI: 1 done \/ 0 in-flight \/ 1 proposed/.test(line)), 'the PBI line rides BOTH branches');
+});
+
+await check('preamble bundle mode (D1): the digest comes from the bundle index — total, newest-first, never the stub', () => {
+  const root = makePreambleRepo('bundle-digest', { withBundle: true });
+  const digest = section(buildSessionPreamble(root), '### Critical patterns (digest)');
+  assert(digest.length <= 11, `heading + the same 10-line cap, got ${digest.length}`);
+  assert(
+    /12 critical pattern\(s\) in the bundle/.test(digest[1]),
+    `the TOTAL is stated, not implied by the cut, got ${JSON.stringify(digest[1])}`,
+  );
+  assert(/docs\/knowledge\/index\.md/.test(digest[1]), 'the full index is named');
+  const rows = digest.slice(2);
+  assert(rows.length === 9, `the count line plus the 9 most recent rows fills the cap, got ${rows.length}`);
+  assert(/Pattern 12/.test(rows[0]), `newest FIRST, got ${JSON.stringify(rows[0])}`);
+  assert(/Pattern 04/.test(rows[rows.length - 1]), `oldest of the recent slice last, got ${JSON.stringify(rows[rows.length - 1])}`);
+  for (const oldest of ['Pattern 01', 'Pattern 02', 'Pattern 03']) {
+    assert(!rows.some((line) => line.includes(oldest)), `${oldest} is the OLDEST — a first-N cut would print it forever`);
+  }
+  assert(
+    !rows.some((line) => /Something else/.test(line)),
+    'the section ends at the next "## " heading — no rows from a later section',
+  );
+  assert(
+    rows.every((line) => line.includes('](docs/knowledge/patterns/')),
+    `bundle-relative links are rewritten to paths a session can open, got ${JSON.stringify(rows[0])}`,
+  );
+  assert(
+    !digest.some((line) => /pointer stub|migrated_to|area: critical-patterns/.test(line)),
+    'the retired stub\'s boilerplate never reaches a session again',
+  );
+});
+
+await check('preamble bundle mode (D1): a bundle with no generated index degrades to SILENCE, never to the stub', () => {
+  const root = makePreambleRepo('bundle-noindex', { withBundle: true });
+  fs.rmSync(path.join(root, 'docs', 'knowledge', 'index.md'));
+  const preamble = buildSessionPreamble(root);
+  assert(section(preamble, '### Critical patterns (digest)') === null, 'no index, no digest section');
+  assert(
+    !preamble.includes(LEGACY_PATTERN_LINES[1]),
+    'bundle mode never falls back to the retired file — that is the bug this cell fixes',
+  );
+});
+
+await check('preamble bundle mode (D3): the scribing-debt nudge names the RESOLVED target', () => {
+  const root = makePreambleRepo('bundle-debt', { withBundle: true });
+  const debt = section(buildSessionPreamble(root), '### Scribing debt:');
+  assert(debt !== null, 'the fixture really does carry scribing debt');
+  assert(
+    debt[1] ===
+      '- demo-1 capped since the last scribing run — run bee-scribing capture now; settled behavior belongs in docs/knowledge/ before it evaporates (decision 0011).',
+    `the bundle repo is told where its knowledge actually goes, got ${JSON.stringify(debt[1])}`,
+  );
+});
+
+await check('preamble (G13): the divorced topology reads the PRODUCT bundle, never a bare-root join', () => {
+  const root = makeDivorcedRepo('preamble', { withBundle: true });
+  assert(!fs.existsSync(path.join(root, 'docs', 'knowledge')), 'the workshop root has no bundle of its own');
+  const map = section(buildSessionPreamble(root), '### Project map');
+  assert(map.some((line) => line.includes('docs/knowledge/')), `the product bundle is named, got ${JSON.stringify(map)}`);
+  assert(
+    map.some((line) => /1 area\(s\), 1 concept\(s\)/.test(line)),
+    `the PRODUCT concepts are counted, not the empty workshop, got ${JSON.stringify(map)}`,
+  );
+  assert(!map.some((line) => /Specced areas/.test(line)), 'a migrated product one directory down is bundle mode');
 });
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'} test_bundle_mode: ${passed} passed, ${failed} failed`);

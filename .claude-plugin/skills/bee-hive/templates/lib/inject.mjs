@@ -24,7 +24,7 @@ import { activeDecisions, datamark } from './decisions.mjs';
 import { readBacklogCounts } from './backlog.mjs';
 import { scribingDebt, ceilingScarcityWarning, CEILING_MAX_SHARE } from './cells.mjs';
 import { captureQueue } from './capture.mjs';
-import { collectConcepts } from './knowledge.mjs';
+import { collectConcepts, bundleMode, bundleDir } from './knowledge.mjs';
 
 const INJECT_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -41,7 +41,27 @@ function stableHash(fields) {
   return crypto.createHash('sha1').update(JSON.stringify(fields)).digest('hex');
 }
 
-function criticalPatternsDigest(root, maxLines = 10) {
+// ─── critical-patterns digest (okf-integration-close-f4, D1) ────────────────
+//
+// The digest routes on the ONE bundle predicate, like every other doc-tree
+// consumer (G12: never an existsSync, never a rule re-derived in prose).
+//
+//   * BUNDLE mode -> the bundle's own generated root index, its "## Critical
+//     patterns" section (the live equivalent D21/D34 established). The retired
+//     file is now a POINTER STUB, so reading it handed every session the
+//     stub's forwarding address where the lessons should be — six lines of
+//     redirect prose and four of YAML, not one pattern.
+//   * NO bundle   -> byte-identical to before this cell: the first `maxLines`
+//     non-blank, non-comment lines of docs/history/learnings/critical-patterns.md.
+//
+// Same line cap in both branches.
+function criticalPatternsDigest(root, maxLines = 10, bundle = bundleMode(root)) {
+  return bundle
+    ? bundleCriticalPatternsDigest(root, maxLines)
+    : legacyCriticalPatternsDigest(root, maxLines);
+}
+
+function legacyCriticalPatternsDigest(root, maxLines) {
   const file = path.join(root, 'docs', 'history', 'learnings', 'critical-patterns.md');
   let text;
   try {
@@ -57,6 +77,43 @@ function criticalPatternsDigest(root, maxLines = 10) {
   return lines.slice(0, maxLines);
 }
 
+const CRITICAL_PATTERNS_HEADING = '## Critical patterns';
+
+// The index rows sit in DATE order (concept filenames are date-prefixed) and
+// there are ~50 of them, so a naive first-N cut would surface the ten OLDEST
+// lessons forever and never a recent one. The bundle digest therefore states
+// the TOTAL, lists the N most recent rows newest-first, and names the full
+// index. It deliberately does NOT rank: relevance ranking is `knowledge
+// context`'s job and needs a work item to rank against, which a session
+// preamble does not have. A bundle with no generated index — or an index with
+// no critical section — degrades to silence; this preamble is orientation,
+// never a place to fail a session.
+function bundleCriticalPatternsDigest(root, maxLines) {
+  let text;
+  try {
+    text = fs.readFileSync(path.join(bundleDir(root), 'index.md'), 'utf8');
+  } catch {
+    return null;
+  }
+  const all = text.split(/\r?\n/).map((line) => line.trim());
+  const start = all.indexOf(CRITICAL_PATTERNS_HEADING);
+  if (start === -1) return null;
+  const rows = [];
+  for (let i = start + 1; i < all.length; i += 1) {
+    if (all[i].startsWith('## ')) break;
+    // Index links are bundle-relative; the preamble is read from the repo
+    // root, so rewrite them to paths a session can open as printed.
+    if (all[i].startsWith('- ')) rows.push(all[i].replace(/\]\((?!https?:|\/)/g, '](docs/knowledge/'));
+  }
+  if (rows.length === 0) return null;
+  // maxLines covers the whole section body: the count line plus the newest rows.
+  const recent = rows.slice(-Math.max(1, maxLines - 1)).reverse();
+  return [
+    `- ${rows.length} critical pattern(s) in the bundle — the ${recent.length} most recent below; full list: docs/knowledge/index.md ("Critical patterns").`,
+    ...recent,
+  ];
+}
+
 const PROJECT_MAP_FILES = [
   ['system-overview.md', 'System overview'],
   ['reading-map.md', 'Reading map'],
@@ -65,35 +122,17 @@ const PROJECT_MAP_FILES = [
 // D5: pointers + specced-area count, never content; 2–4 lines including the heading.
 // D10: one PBI line rides the section (in either branch) when docs/backlog.md
 // exists, so the cap is 2–5 lines including the heading.
-function projectMapLines(root) {
-  // docs/specs/ is a PRODUCT doc tree — resolves against the product root (= bee
-  // root for ordinary repos; the nested product repo under repo-divorce, #14).
-  const specsDir = path.join(resolveProductRoot(root), 'docs', 'specs');
-  const present = PROJECT_MAP_FILES.filter(([file]) =>
-    fs.existsSync(path.join(specsDir, file)),
-  );
+//
+// okf-integration-close-f4 D2: the section branches on the ONE bundle predicate.
+// In bundle mode it names the BUNDLE as the thing to read before the code and
+// counts what the bundle actually holds; docs/specs/ is described as what it now
+// is — the read-only compatibility surface. With no bundle every line below is
+// byte-identical to before this cell, missing-map warning included. The PBI line
+// rides BOTH branches, and the 2–5 line cap holds in both.
+function projectMapLines(root, bundle = bundleMode(root)) {
   const lines = ['### Project map'];
-  if (present.length === 0) {
-    // Area specs alone do not answer Q1/Q2 — the warning fires whenever both maps are missing.
-    lines.push(
-      '- Project map missing (Q1/Q2 unanswerable from repo) — bee-scribing bootstrap available.',
-    );
-  } else {
-    for (const [file, label] of present) lines.push(`- ${label}: docs/specs/${file}`);
-    let areaCount = 0;
-    try {
-      areaCount = fs
-        .readdirSync(specsDir, { withFileTypes: true })
-        .filter(
-          (entry) =>
-            entry.isFile() &&
-            entry.name.endsWith('.md') &&
-            !PROJECT_MAP_FILES.some(([file]) => file === entry.name),
-        ).length;
-    } catch {
-      areaCount = 0;
-    }
-    lines.push(`- Specced areas: ${areaCount} (docs/specs/ — read the spec before the code)`);
+  for (const line of bundle ? bundleProjectMapLines(root) : specProjectMapLines(root)) {
+    lines.push(line);
   }
   // D10: PBI line only when docs/backlog.md exists — appended in BOTH branches.
   const backlog = readBacklogCounts(root);
@@ -102,6 +141,62 @@ function projectMapLines(root) {
       `- PBI: ${backlog.done} done / ${backlog.inFlight} in-flight / ${backlog.proposed} proposed`,
     );
   }
+  return lines;
+}
+
+function specProjectMapLines(root) {
+  // docs/specs/ is a PRODUCT doc tree — resolves against the product root (= bee
+  // root for ordinary repos; the nested product repo under repo-divorce, #14).
+  const specsDir = path.join(resolveProductRoot(root), 'docs', 'specs');
+  const present = PROJECT_MAP_FILES.filter(([file]) =>
+    fs.existsSync(path.join(specsDir, file)),
+  );
+  const lines = [];
+  if (present.length === 0) {
+    // Area specs alone do not answer Q1/Q2 — the warning fires whenever both maps are missing.
+    lines.push(
+      '- Project map missing (Q1/Q2 unanswerable from repo) — bee-scribing bootstrap available.',
+    );
+    return lines;
+  }
+  for (const [file, label] of present) lines.push(`- ${label}: docs/specs/${file}`);
+  let areaCount = 0;
+  try {
+    areaCount = fs
+      .readdirSync(specsDir, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.endsWith('.md') &&
+          !PROJECT_MAP_FILES.some(([file]) => file === entry.name),
+      ).length;
+  } catch {
+    areaCount = 0;
+  }
+  lines.push(`- Specced areas: ${areaCount} (docs/specs/ — read the spec before the code)`);
+  return lines;
+}
+
+// Two lines, never more: the bundle pointer and what it holds. Counts come from
+// the ONE inventory path (D12) rather than a second directory walk, and areas are
+// the distinct `areas/<slug>/` homes those concepts actually occupy — derived,
+// never a hand-maintained list.
+function bundleProjectMapLines(root) {
+  const lines = ['- Knowledge bundle: docs/knowledge/ (index: docs/knowledge/index.md) — read the bundle before the code'];
+  let concepts;
+  try {
+    concepts = collectConcepts(root);
+  } catch {
+    return lines;
+  }
+  const areas = new Set();
+  for (const concept of concepts) {
+    const match = /^areas\/([^/]+)\//.exec(concept.path);
+    if (match) areas.add(match[1]);
+  }
+  lines.push(
+    `- Bundle holds: ${areas.size} area(s), ${concepts.length} concept(s) (docs/specs/ is the read-only compatibility surface)`,
+  );
   return lines;
 }
 
@@ -195,6 +290,15 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
   const handoff = readHandoff(root);
   const pipeline = resolvePipeline(root, { sessionId });
   const pipelineRecord = pipeline.ok ? pipeline.record : state;
+  // okf-integration-close-f4 D1/D2/D3: the ONE predicate, resolved once and
+  // handed to every section that branches on it (G12). Fail-safe direction is
+  // the legacy branch — orientation never fails a session.
+  let bundle = false;
+  try {
+    bundle = bundleMode(root) === true;
+  } catch {
+    bundle = false;
+  }
   const lines = [];
 
   lines.push(`## bee v${BEE_VERSION}`);
@@ -292,15 +396,18 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
   }
 
   lines.push('');
-  for (const line of projectMapLines(root)) lines.push(line);
+  for (const line of projectMapLines(root, bundle)) lines.push(line);
 
-  // D11: capture-mode spine — settled behavior not yet in docs/specs/.
+  // D11: capture-mode spine — settled behavior not yet in the state layer.
+  // okf-integration-close-f4 D3: the nudge names the RESOLVED target rather
+  // than hardcoding docs/specs/ — a bundle repo is told where its knowledge
+  // actually goes, and a repo without one still reads exactly as it did.
   const debt = scribingDebt(root);
   if (debt.count > 0) {
     lines.push('');
     lines.push(`### Scribing debt: ${debt.count} behavior_change cell(s) uncaptured`);
     lines.push(
-      `- ${debt.cells.join(', ')} capped since the last scribing run — run bee-scribing capture now; settled behavior belongs in docs/specs/ before it evaporates (decision 0011).`,
+      `- ${debt.cells.join(', ')} capped since the last scribing run — run bee-scribing capture now; settled behavior belongs in ${bundle ? 'docs/knowledge/' : 'docs/specs/'} before it evaporates (decision 0011).`,
     );
   }
 
@@ -324,7 +431,7 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
     );
   }
 
-  const digest = criticalPatternsDigest(root);
+  const digest = criticalPatternsDigest(root, 10, bundle);
   if (digest) {
     lines.push('');
     lines.push('### Critical patterns (digest)');

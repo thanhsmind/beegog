@@ -244,6 +244,12 @@ await check('buildSessionPreamble shows commands but no baseline gate without ve
 });
 
 // ─── project map preamble section (harness10-5, decision D5) ────────────────
+//
+// okf-integration-close-f4 D2: every row below runs against `root`, a temp repo
+// with NO docs/knowledge/ — so these are the NO-BUNDLE branch, and they pin it
+// unchanged. The bundle branch (and a bundle-LESS fixture proving byte-identity
+// across all three preamble surfaces) lives in test_bundle_mode.mjs, which owns
+// the fixture discipline for the one predicate.
 
 const specsFixtureDir = path.join(root, 'docs', 'specs');
 
@@ -289,6 +295,10 @@ await check('preamble shows single pointer + count when only one map file exists
     assert(!section.some((line) => line.includes('system-overview.md')), 'no pointer for the missing map');
     assert(section.some((line) => /Specced areas: 0/.test(line)), 'count is its own line and excludes map files');
     assert(!section.some((line) => /Project map missing/.test(line)), 'no warning when a map exists');
+    assert(
+      !section.some((line) => line.includes('docs/knowledge')),
+      'a repo with no bundle is never told about one (D2 fallback)',
+    );
   } finally {
     fs.rmSync(specsFixtureDir, { recursive: true, force: true });
   }
@@ -309,6 +319,12 @@ await check('preamble Project map: 4 lines without backlog, 5-line max with the 
     assert(noBacklog.some((line) => line.includes('docs/specs/system-overview.md')), 'system-overview pointer');
     assert(noBacklog.some((line) => line.includes('docs/specs/reading-map.md')), 'reading-map pointer');
     assert(noBacklog.some((line) => /Specced areas: 2/.test(line)), 'count excludes the two map files');
+    assert(
+      noBacklog.some(
+        (line) => line === '- Specced areas: 2 (docs/specs/ — read the spec before the code)',
+      ),
+      'the no-bundle count line is byte-identical to before D2',
+    );
 
     // With backlog.md the PBI line rides the section — 5 lines is the exact max.
     fs.writeFileSync(
