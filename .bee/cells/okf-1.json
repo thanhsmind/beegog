@@ -109,6 +109,69 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "chk-1-d4-two-level-split-d13-exit-codes",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:658 ok=errors0&&(!strict||warnings0); handler exitCode=!report.ok",
+            "item": "D4 two-level split + D13 exit codes"
+          },
+          {
+            "id": "chk-2-d23-confinement-to-docs-knowledge-",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:405,:519,:491-497 resolveInsideBundle null on escape; symlinks skipped :410",
+            "item": "D23 confinement to docs/knowledge/"
+          },
+          {
+            "id": "chk-3-d12-zero-deps-emitter-first-typed-failur",
+            "status": "PASS",
+            "evidence": "imports node:fs/path only (:31-32); typed {code,message,line}",
+            "item": "D12 zero deps + emitter-first typed failures"
+          },
+          {
+            "id": "chk-4-round-trip-guard-with-tests",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:579-592 not_canonical; test_knowledge.mjs:326-360 trio",
+            "item": "round-trip guard with tests"
+          },
+          {
+            "id": "chk-5-nine-d18-types-polarity-unknown-warning",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:38-48,:65,:556-562",
+            "item": "nine D18 types + polarity, unknown=warning"
+          },
+          {
+            "id": "chk-6-d19-d32-field-model-duplicate-id-authori",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:58-73,:611-628",
+            "item": "D19/D32 field model + duplicate id/authority detection"
+          },
+          {
+            "id": "chk-7-red-first-genuine",
+            "status": "PASS",
+            "evidence": "static top import edge matches recorded ERR_MODULE_NOT_FOUND EXIT=1",
+            "item": "RED-first genuine"
+          },
+          {
+            "id": "chk-8-no-weakened-assertions-test-bee-cli-addi",
+            "status": "PASS",
+            "evidence": "3 allowlist appends + 1 new check; nothing removed",
+            "item": "no weakened assertions (test_bee_cli additive only)"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T03:43:29.545Z"
+      }
     ]
   }
 }
