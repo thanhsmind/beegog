@@ -10,8 +10,8 @@
     "lib": {
       "backlog.mjs": "9e5b852c7b72fdb1d5d2f530e32cdc63a8271a83dba09d6407b30900d58990cd",
       "capture.mjs": "3779fd6bd5b28c50b50e4b93cbc368d458123ebab1cbcb3cc34757af0d24f8fa",
-      "cells.mjs": "06833803cf64dc0aa9673037fec82e96ba0ef5eec1556a45ad01e20a5e7333b6",
-      "claims.mjs": "9fe23011cb917081d7eb5bd9c2f75a417363bfe0b372acb27890d71f0b2e3ea1",
+      "cells.mjs": "de131b386a5447f7083aca4b6e31f7a07ad5068279edfd6fdef25e2df2f7c6c7",
+      "claims.mjs": "81257c8797343c0698cda1597774fe32dc59238e031bc2d27de3567e0adbfcc9",
       "command-registry.mjs": "2110cf496db93ac99ff7d79e3a8ad20455aec85e80fdfaa548677349ba257e41",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "decisions.mjs": "60ee53219cb94e05a170e0e6491aa32d5e1573c5b111ff6ba954b5e538fcc369",
@@ -72,5 +72,5 @@
     }
   },
   "created_at": "2026-07-21T17:36:03.955Z",
-  "updated_at": "2026-07-22T17:20:31.443Z"
+  "updated_at": "2026-07-22T18:08:57.846Z"
 }

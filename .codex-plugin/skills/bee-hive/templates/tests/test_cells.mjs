@@ -80,6 +80,43 @@ function makeStateRepo(prefix) {
   return dir;
 }
 
+// jrt-1: a throwaway repo that HAS docs/decisions/taxonomy.json — the
+// bootstrap/enforced boundary decisions.mjs's classifyDecisionTags checks
+// (decision-propagation D7b). Every internal logDecision( call in
+// cells.mjs/claims.mjs must survive being exercised against a repo shaped
+// like this one; only two tag names are seeded (cells, judge) — enough for
+// every cells.mjs call site this cell fixes, and deliberately NOT copied
+// verbatim from the real docs/decisions/taxonomy.json so this fixture can
+// never silently drift out of sync with it.
+function makeTaxonomyRepo(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  fs.mkdirSync(path.join(dir, 'docs', 'decisions'), { recursive: true });
+  writeJsonAtomic(path.join(dir, 'docs', 'decisions', 'taxonomy.json'), {
+    schema_version: 1,
+    tags: [
+      { name: 'cells', description: 'Work cells: authoring, claims, caps' },
+      { name: 'judge', description: 'Semantic goal-check judging' },
+    ],
+    candidates: [],
+  });
+  // Gate 3 pre-approved — claimCellCrossSession refuses on an unapproved
+  // execution gate, which is orthogonal to what this fixture exercises.
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), {
+    schema_version: '1.0',
+    phase: 'swarming',
+    feature: 'demo-feat',
+    mode: 'standard',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+    workers: [],
+  });
+  return dir;
+}
+
 // Self-containment fix (cs-2a split): makeCellFile is defined in test_lib.mjs's
 // "bee.mjs state start-feature" section (also staying behind for cs-2b) and,
 // like makeStateRepo above, was only reachable here via hoisting. It fabricates
@@ -2026,5 +2063,254 @@ await check(
     );
   },
 );
+
+// ─── jrt-1: internal logDecision( callers must survive a taxonomy-enforced
+// repo, tagged for what the event actually is ──────────────────────────────
+// Census: `docs/decisions/taxonomy.json` (dp-6, D7b) makes classifyDecisionTags
+// refuse (typed DecisionsUntaggedRefusedError) any decision event with zero
+// tags. A census of internal logDecision( callers found four sites passing no
+// tags at all — three live in cells.mjs (capCell's --override-judge audit,
+// resetCellBudget, and recordJudgeVerdict's NEEDS_REVISION reopen) and one in
+// claims.mjs (sweepExpiredClaims' stale-claim reset). This repo (beegog) HAS a
+// taxonomy, so all four were live failures here — an earlier feature's
+// NEEDS_REVISION verdict had to be hand-written into decisions.jsonl because
+// recordJudgeVerdict's own audit call threw and unwound the whole write.
+// Each row below reproduces ONE call site inside a dedicated taxonomy-enforced
+// fixture and proves the operation now both succeeds AND lands a tagged
+// event — never a generic catch-all, always the tag(s) describing what the
+// event IS, drawn only from names already in the real taxonomy.
+
+await check('capCell --override-judge logs a tagged decision under a taxonomy, instead of the whole cap throwing (jrt-1)', async () => {
+  const dir = makeTaxonomyRepo('bee-cells-taxonomy-ovr-');
+  try {
+    addCell(
+      dir,
+      makeCell('ovr-1', {
+        lane: 'tiny',
+        trace: {
+          semantic_judge: [
+            {
+              schema: JUDGE_VERDICT_SCHEMA,
+              verdict: 'NEEDS_REVISION',
+              checks: [{ id: 'c1', status: 'FAIL', evidence: 'not yet' }],
+              fixability: 'manual',
+              confidence: 'low',
+              recorded_at: new Date().toISOString(),
+            },
+          ],
+        },
+      }),
+    );
+    await recordVerify(dir, 'ovr-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+    await assertRejects(
+      () => capCell(dir, 'ovr-1', { outcome: 'done' }),
+      'NEEDS_REVISION',
+      'precondition: cap without --override-judge still refuses on a NEEDS_REVISION verdict',
+    );
+    const capped = await capCell(dir, 'ovr-1', {
+      outcome: 'shipping with a known, tracked gap',
+      overrideJudge: 'accepted risk, tracked in backlog',
+    });
+    assert(capped.status === 'capped', 'override-judge cap succeeds even under a taxonomy');
+    const decisions = activeDecisions(dir, { recent: 5 });
+    const logged = decisions.find((d) => d.decision.includes('ovr-1'));
+    assert(
+      logged,
+      `capCell's override-judge audit must log a decision even under a taxonomy — before the fix this threw DECISIONS_UNTAGGED_REFUSED and the whole cap write never happened; decisions seen: ${JSON.stringify(decisions)}`,
+    );
+    assert(
+      Array.isArray(logged.tags) && logged.tags.includes('cells') && logged.tags.includes('judge'),
+      `override-judge decision should be tagged cells+judge (what the event IS), got ${JSON.stringify(logged.tags)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('resetCellBudget logs a tagged decision under a taxonomy, instead of the whole reset throwing (jrt-1)', async () => {
+  const dir = makeTaxonomyRepo('bee-cells-taxonomy-budget-');
+  try {
+    addCell(dir, makeCell('bud-1', { lane: 'tiny' }));
+    for (let i = 0; i < 3; i += 1) {
+      await claimCellCrossSession(dir, { sessionId: `sess-tax-bud-${i}`, worker: 'w', cellId: 'bud-1' });
+      await recordVerify(dir, 'bud-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true, sessionId: `sess-tax-bud-${i}` });
+      await unclaimCell(dir, 'bud-1', { sessionId: `sess-tax-bud-${i}` });
+    }
+    const blocked = await claimCellCrossSession(dir, { sessionId: 'sess-tax-bud-3', worker: 'w', cellId: 'bud-1' });
+    assert(blocked.ok === false && blocked.code === 'CELL_BUDGET_EXHAUSTED', `precondition: the claim door should be exhausted, got ${JSON.stringify(blocked)}`);
+
+    const reset = await resetCellBudget(dir, 'bud-1', 'manager approved a genuine retry under a taxonomy', { operator: 'manager-tax' });
+    assert(Array.isArray(reset.trace.budget_resets) && reset.trace.budget_resets.length === 1, `reset must still append exactly one budget_resets entry, got ${JSON.stringify(reset.trace.budget_resets)}`);
+
+    const decisions = activeDecisions(dir, { recent: 5 });
+    const logged = decisions.find((d) => d.decision.includes('bud-1'));
+    assert(
+      logged,
+      `resetCellBudget must log a decision even under a taxonomy — before the fix this threw DECISIONS_UNTAGGED_REFUSED and the whole reset write never happened; decisions seen: ${JSON.stringify(decisions)}`,
+    );
+    assert(
+      Array.isArray(logged.tags) && logged.tags.includes('cells'),
+      `reset-budget decision should be tagged cells, got ${JSON.stringify(logged.tags)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('recordJudgeVerdict reopening a capped cell on NEEDS_REVISION logs a tagged decision under a taxonomy (jrt-1)', async () => {
+  const dir = makeTaxonomyRepo('bee-cells-taxonomy-judge-');
+  try {
+    addCell(dir, makeCell('jr-1', { lane: 'tiny' }));
+    await recordVerify(dir, 'jr-1', { command: 'node -e "process.exit(0)"', output: 'ok', passed: true });
+    await capCell(dir, 'jr-1', { outcome: 'first pass' });
+    assert(readCell(dir, 'jr-1').status === 'capped', 'precondition: jr-1 is capped');
+
+    const reverdicted = await recordJudgeVerdict(dir, 'jr-1', {
+      schema: JUDGE_VERDICT_SCHEMA,
+      verdict: 'NEEDS_REVISION',
+      checks: [{ id: 'c1', status: 'FAIL', evidence: 'goal check found a gap' }],
+      failure_signature: 'goal-check-gap',
+      fixability: 'automatic',
+      confidence: 'high',
+    });
+    assert(reverdicted.status === 'open', `a NEEDS_REVISION verdict must reopen the capped cell to open even under a taxonomy, got status ${reverdicted.status}`);
+
+    const decisions = activeDecisions(dir, { recent: 5 });
+    const logged = decisions.find((d) => d.decision.includes('jr-1'));
+    assert(
+      logged,
+      `recordJudgeVerdict's reopen audit must log a decision even under a taxonomy — before the fix this threw DECISIONS_UNTAGGED_REFUSED and the whole verdict write never happened (not even the semantic_judge entry); decisions seen: ${JSON.stringify(decisions)}`,
+    );
+    assert(
+      Array.isArray(logged.tags) && logged.tags.includes('cells') && logged.tags.includes('judge'),
+      `judge-record reopen decision should be tagged cells+judge, got ${JSON.stringify(logged.tags)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── jrt-1: census — no future internal logDecision( call may ship untagged ─
+// This is the actual regression coverage the defect class calls for: "a
+// cross-cutting write-time rule shipped without sweeping its existing
+// internal callers". Derived by SCANNING the source (never a hand-maintained
+// list of line numbers) — any new logDecision( call added anywhere under
+// .bee/bin/lib/** or skills/bee-hive/templates/lib/** that omits a `tags:`
+// key fails this check, before it ever reaches a taxonomy-enforced repo.
+
+// Skips string/template literals (including the «...» decision text this
+// codebase writes, which can itself contain parens via ${...} interpolation)
+// so paren-counting is never confused by call-site prose.
+function skipStringLiteral(text, i, quote) {
+  let j = i + 1;
+  while (j < text.length) {
+    if (text[j] === '\\') {
+      j += 2;
+      continue;
+    }
+    if (text[j] === quote) return j;
+    j += 1;
+  }
+  return j;
+}
+
+// Returns the raw argument-list text between a call's `(` and its balanced
+// `)`, given the index of the opening paren itself.
+function extractBalancedArgs(text, openParenIndex) {
+  let depth = 0;
+  const start = openParenIndex + 1;
+  for (let i = openParenIndex; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i);
+    } else if (ch === '"' || ch === "'" || ch === '`') {
+      i = skipStringLiteral(text, i, ch);
+    } else if (ch === '/' && text[i + 1] === '/') {
+      const nl = text.indexOf('\n', i);
+      i = nl === -1 ? text.length : nl;
+    } else if (ch === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      i = end === -1 ? text.length : end + 1;
+    }
+  }
+  throw new Error('extractBalancedArgs: unbalanced parens scanning a logDecision( call — fixture or scanner bug.');
+}
+
+// Finds every logDecision( CALL site in `text` (never its `function
+// logDecision(` declaration in decisions.mjs itself), returning
+// {index, args} for each — `args` is the raw call-argument text, scanned for
+// a top-level `tags:` key by the caller.
+function findLogDecisionCalls(text) {
+  const calls = [];
+  const re = /logDecision\s*\(/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const before = text.slice(Math.max(0, m.index - 20), m.index);
+    if (/\bfunction\s+$/.test(before)) continue; // the declaration itself, not a call
+    const openParenIndex = m.index + m[0].length - 1;
+    calls.push({ index: m.index, args: extractBalancedArgs(text, openParenIndex) });
+  }
+  return calls;
+}
+
+function lineOf(text, index) {
+  return text.slice(0, index).split('\n').length;
+}
+
+function collectMjsFiles(dir) {
+  let out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out = out.concat(collectMjsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith('.mjs')) out.push(full);
+  }
+  return out;
+}
+
+await check('census scanner: findLogDecisionCalls flags a tagless call, passes a tagged call, and ignores the declaration itself (jrt-1 — proves the census assertion below actually bites)', () => {
+  const injectedTagless = `
+    function reopen(root, id) {
+      logDecision(root, {
+        decision: \`«reopen: cell "\${id}" reopened — a paren \${(1 + 2)} inside the template»\`,
+        rationale: 'no tags passed here',
+        scope: 'repo',
+        source: 'user',
+      });
+    }
+  `;
+  const taglessCalls = findLogDecisionCalls(injectedTagless);
+  assert(taglessCalls.length === 1, `scanner must find exactly one call site in the injected snippet, got ${taglessCalls.length}`);
+  assert(!/\btags\s*:/.test(taglessCalls[0].args), 'sanity: the injected call genuinely carries no tags: key');
+
+  const taggedCall = `logDecision(root, { decision: 'x', rationale: 'y', tags: ['cells'] });`;
+  const taggedCalls = findLogDecisionCalls(taggedCall);
+  assert(taggedCalls.length === 1 && /\btags\s*:/.test(taggedCalls[0].args), 'a call that DOES pass tags must be recognized as tagged');
+
+  const declarationOnly = `export function logDecision(\n  root,\n  { decision, rationale, tags = undefined },\n) {\n  return null;\n}\n`;
+  assert(findLogDecisionCalls(declarationOnly).length === 0, 'the function logDecision( declaration itself must never be counted as a call site');
+});
+
+await check('census: every logDecision( call inside .bee/bin/lib/** and skills/bee-hive/templates/lib/** carries at least one tag (jrt-1 — the sweep this cell exists to add)', () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+  const dirs = [path.join(repoRoot, '.bee', 'bin', 'lib'), path.join(repoRoot, 'skills', 'bee-hive', 'templates', 'lib')];
+  const offenders = [];
+  for (const dir of dirs) {
+    for (const file of collectMjsFiles(dir)) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const call of findLogDecisionCalls(text)) {
+        if (!/\btags\s*:/.test(call.args)) {
+          offenders.push(`${path.relative(repoRoot, file)}:${lineOf(text, call.index)}`);
+        }
+      }
+    }
+  }
+  assert(
+    offenders.length === 0,
+    `every internal logDecision( call must carry a tags: array (docs/decisions/taxonomy.json makes an untagged event a hard refusal) — offenders: ${offenders.join(', ') || '(none)'}`,
+  );
+});
 
 printSummaryAndExit();

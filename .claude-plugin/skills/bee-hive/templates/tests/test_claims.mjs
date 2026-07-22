@@ -32,6 +32,7 @@ import {
   DEFAULT_HEARTBEAT_STALE_SECONDS,
 } from '../lib/claims.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
+import { activeDecisions } from '../lib/decisions.mjs';
 
 // Hermeticity (hardening-1-7-10 D1, defense in depth): this suite must never
 // inherit the harness's own session identity. run_verify.mjs already scrubs
@@ -467,6 +468,69 @@ await check('race: sweep-vs-renewal (rel180-2, forced interleaving) — a renewa
     failures.length === 0,
     `sweep-vs-renewal forced interleaving: ${failures.length}/${ROUNDS} rounds bad | ${failures.join(' | ')}`,
   );
+});
+
+// jrt-1: hardening-4b's sweep-reset (claims.mjs:851) calls logDecision with no
+// tags at all. docs/decisions/taxonomy.json makes an untagged event a typed
+// refusal (DecisionsUntaggedRefusedError) — swallowed here by the surrounding
+// try/catch ("a decision-log failure must never be treated as the reset
+// itself having failed"), so the cell reset still lands, but the audit line
+// itself was silently dropped in any repo with a taxonomy (this one has one).
+// Proves both: the reset still succeeds, AND (post-fix) the audit decision now
+// actually lands, tagged for what it is.
+await check('sweep-reset logs a tagged audit decision even under a taxonomy, instead of the decision silently vanishing (jrt-1)', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-claims-taxonomy-sweep-'));
+  try {
+    fs.mkdirSync(path.join(root, '.bee', 'cells'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'docs', 'decisions'), { recursive: true });
+    writeJsonAtomic(path.join(root, 'docs', 'decisions', 'taxonomy.json'), {
+      schema_version: 1,
+      tags: [
+        { name: 'claims', description: 'Cross-session claim store' },
+        { name: 'sweep', description: 'Propagation sweeps' },
+      ],
+      candidates: [],
+    });
+
+    const ownerSession = 'owner-tax-sweep';
+    createSession(root, { id: ownerSession });
+    const cellId = 'tax-sweep-1';
+    const claimed = claimCellFile(root, ownerSession, cellId, 60);
+    assert(claimed.ok === true, 'setup: claim must succeed');
+    writeJsonAtomic(path.join(root, '.bee', 'cells', `${cellId}.json`), {
+      id: cellId,
+      status: 'claimed',
+      trace: { claim_session: ownerSession },
+    });
+    writeJsonAtomic(claimPath(root, cellId), {
+      ...readClaim(root, cellId),
+      claimed_at: new Date(Date.now() - 7200 * 1000).toISOString(),
+      ttl_seconds: 60,
+    });
+    writeJsonAtomic(sessionPath(root, ownerSession), {
+      ...readSession(root, ownerSession),
+      last_heartbeat: new Date(Date.now() - (DEFAULT_HEARTBEAT_STALE_SECONDS + 3600) * 1000).toISOString(),
+    });
+
+    const result = await sweepExpiredClaims(root);
+    assert(result.swept.includes(cellId), `precondition: the stale claim must be swept, got ${JSON.stringify(result)}`);
+    assert(result.reset.includes(cellId), `precondition: the cell must be reset claimed->open, got ${JSON.stringify(result)}`);
+    const resetCell = JSON.parse(fs.readFileSync(path.join(root, '.bee', 'cells', `${cellId}.json`), 'utf8'));
+    assert(resetCell.status === 'open', 'the cell reset itself must still succeed even under a taxonomy');
+
+    const decisions = activeDecisions(root, { recent: 5 });
+    const logged = decisions.find((d) => d.decision.includes(cellId));
+    assert(
+      logged,
+      `sweep-reset must log its audit decision even under a taxonomy — before the fix DECISIONS_UNTAGGED_REFUSED was thrown and silently swallowed by the try/catch, so no decision ever landed; decisions seen: ${JSON.stringify(decisions)}`,
+    );
+    assert(
+      Array.isArray(logged.tags) && logged.tags.includes('claims') && logged.tags.includes('sweep'),
+      `sweep-reset decision should be tagged claims+sweep (what the event IS), got ${JSON.stringify(logged.tags)}`,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 printSummaryAndExit();

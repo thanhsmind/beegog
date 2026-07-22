@@ -1426,6 +1426,7 @@ export async function capCell(
           'Audited cap over a NEEDS_REVISION (or absent) semantic-judge verdict (D-GHF-C, GH #27.5) — the verdict itself is never rewritten, only a judge_overrides marker appended.',
         scope: 'repo',
         source: 'user',
+        tags: ['cells', 'judge'], // jrt-1: an internal caller with no tags throws typed DECISIONS_UNTAGGED_REFUSED once docs/decisions/taxonomy.json exists — census swept, see test_cells.mjs
       });
       trace = { ...trace, judge_overrides: [...overrides, overrideEntry] };
     }
@@ -2022,6 +2023,7 @@ export async function resetCellBudget(root, id, reason, { sessionId, operator } 
         'Audited reopening of a D2 loop-safety door (self-correcting-loop); the attempt ledger itself is never rewritten, only a budget_resets marker appended.',
       scope: 'repo',
       source: 'user',
+      tags: ['cells'], // jrt-1: an internal caller with no tags throws typed DECISIONS_UNTAGGED_REFUSED once docs/decisions/taxonomy.json exists — census swept, see test_cells.mjs
     });
     cell.trace = { ...trace, budget_resets: [...resets, resetEntry] };
     return writeCell(root, cell);
@@ -2132,6 +2134,7 @@ export async function recordJudgeVerdict(
           'A NEEDS_REVISION verdict recorded after cap must have teeth: the cell is reopened to open (clean slate) for rework, with claim + verify evidence cleared, instead of being silently logged into an inert trace entry (hardening-3) or left falsely "claimed" with stale verify_passed that a later PASS verdict could re-cap on with zero fresh verify (hardening-1-7-10 D7).',
         scope: 'repo',
         source: 'user',
+        tags: ['cells', 'judge'], // jrt-1: an internal caller with no tags throws typed DECISIONS_UNTAGGED_REFUSED once docs/decisions/taxonomy.json exists — census swept, see test_cells.mjs
       });
     }
     cell.trace = trace;

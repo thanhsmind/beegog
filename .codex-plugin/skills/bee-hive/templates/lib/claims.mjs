@@ -854,6 +854,7 @@ export async function sweepExpiredClaims(
             'sweepExpiredClaims (hardening-4b) removed the abandoned claim file; the cell was still "claimed" by that exact session (trace.claim_session matched), so it is returned to open rather than left claimed-but-unclaimable forever.',
           scope: 'repo',
           source: 'user',
+          tags: ['claims', 'sweep'], // jrt-1: an internal caller with no tags throws typed DECISIONS_UNTAGGED_REFUSED once docs/decisions/taxonomy.json exists — census swept, see test_claims.mjs
         });
       } catch {
         // best-effort — the cell reset above already committed; a decision-log
