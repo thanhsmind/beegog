@@ -88,6 +88,61 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "pointer-not-payload",
+            "status": "PASS",
+            "evidence": "live preamble 3 lines, zero manifest entries, whole preamble 4044B (inject.mjs:129-155)"
+          },
+          {
+            "id": "silence-when-absent",
+            "status": "PASS",
+            "evidence": "inject.mjs:131 guard + catch{return []}; silence test PASS"
+          },
+          {
+            "id": "one-offer-line",
+            "status": "PASS",
+            "evidence": "inject.mjs:145-149 single-element array; test asserts offers.length===1"
+          },
+          {
+            "id": "closed-feature-branch",
+            "status": "PASS",
+            "evidence": "verified against real history 51c97f9: compounding-complete WITH feature still set; dropping the guard re-emits the offer"
+          },
+          {
+            "id": "agents-md-parity",
+            "status": "PASS",
+            "evidence": "test_agents_budget 4/0; AGENTS.md 17939B, block 17821B, both <20480"
+          },
+          {
+            "id": "no-second-parser",
+            "status": "PASS",
+            "evidence": "inject.mjs:27 imports collectConcepts from knowledge.mjs; no local frontmatter parsing"
+          },
+          {
+            "id": "red-first-genuine",
+            "status": "PASS",
+            "evidence": "parent inject.mjs has zero knowledge matches; 97+2 silence rows = 99/3 as recorded; pass-red-first pair disclosed"
+          },
+          {
+            "id": "no-weakened-assertions",
+            "status": "PASS",
+            "evidence": "numstat 116/0 additive; suite 102/0"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T05:58:43.781Z"
+      }
     ]
   }
 }

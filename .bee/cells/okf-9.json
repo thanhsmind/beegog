@@ -97,6 +97,71 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "zero-write-structural",
+            "status": "PASS",
+            "evidence": "static call-graph closure of buildPromotion (24 fns) has ZERO write calls; only readdirSync/readFileSync/existsSync; renderKnowledgeIndexes not reachable; no --apply anywhere"
+          },
+          {
+            "id": "no-invention",
+            "status": "PASS",
+            "evidence": "traced 3 live lines to work-item.md:5 tags, okf-5 trace.outcome verbatim, cell.verify + trace.verification_evidence; only non-sourced text is fixed scaffolding"
+          },
+          {
+            "id": "delivery-draft-canonical",
+            "status": "PASS",
+            "evidence": "sandbox copy + draft + 2 pattern candidates: 56 concepts, 0 errors, 0 warnings, not_canonical []"
+          },
+          {
+            "id": "capped-only",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:1151 status===capped && feature match; fixture excludes open and foreign cells"
+          },
+          {
+            "id": "pattern-candidate-rule",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:1332 skips cells with no deviations/failure_signatures; live: only okf-1 and okf-9 yield candidates"
+          },
+          {
+            "id": "runtime-store-read-only",
+            "status": "PASS",
+            "evidence": "readCappedCellTraces read-only; 337-file sha256 before/after: sole delta is dispatcher-owned .bee/cache/manifest-hash.json (knowledge check mutates it too)"
+          },
+          {
+            "id": "typed-unknown-work",
+            "status": "PASS",
+            "evidence": "unknown id => typed unknown_work JSON error, exit 1"
+          },
+          {
+            "id": "area-updates-empty-honest",
+            "status": "PASS",
+            "evidence": "work item declares no bee.areas => empty + honest line; populated path covered by makePromoteFixture asserting one bullet, excluding non-behavior_change and untouched-subject cells"
+          },
+          {
+            "id": "docs-updated",
+            "status": "PASS",
+            "evidence": "okf-profile.md gained B5 + business rules promote-proposes-never-writes and promote-invents-nothing, D38 in decisions"
+          },
+          {
+            "id": "no-weakened-assertions",
+            "status": "PASS",
+            "evidence": "numstat 283/0 and 44/0, zero deletions"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T06:00:18.273Z"
+      }
     ]
   }
 }

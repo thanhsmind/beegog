@@ -28,9 +28,20 @@ repository; a different OKF consumer is free to define its own profile, or none.
 - `bee knowledge check [--strict] [--json]` — the profile validator; every `knowledge` verb
   supports `--json` (D13). Walks **only** `docs/knowledge/` and never touches a file outside it
   (D23); a missing or empty bundle passes.
-- `node scripts/run_verify.mjs` — the verify chain `knowledge check` joins (D34); a profile
-  violation fails the chain the same way any other suite does. `index --check`'s freshness guard
-  (D21) joins the same chain once `bee knowledge index` ships (S3) — not yet built.
+- `bee knowledge index [--check] [--json]` — regenerates every `index.md` inside the bundle from
+  concept frontmatter (D21); `--check` re-renders in memory and fails naming any stale file.
+- `bee knowledge list [--type T] [--lifecycle L] [--area A] [--json]` — one row per concept (path,
+  id, type, lifecycle, title), never file content (D15).
+- `bee knowledge context --work <id> --budget <tokens> [--json]` — the budget-aware consumer (D27):
+  the curated context for a work item, as an ordered **manifest**, never content (B6 below).
+- **The session preamble** (`inject.mjs`) — when the active feature has a matching `bee.work-item`
+  concept, the preamble names the `context` command and instructs the session to load its manifest
+  before touching code (B7 below). This is the trigger that makes the bundle load-bearing rather
+  than optional.
+- `node scripts/run_verify.mjs` — the verify chain `knowledge check` and `knowledge index --check`
+  both join (D34); a profile violation fails the chain the same way any other suite does. The
+  per-migration coverage gates (`scripts/okf_migrate.mjs --check <area>` and `--check-patterns`,
+  D35) join the same chain, one entry per migrated source.
 - `bee knowledge promote --work <id> [--json]` — the loop closer (D38): finished work **proposes**
   the knowledge it earned. It reads the work item's concept and the **capped** cell traces of that
   feature from `.bee/cells/*.json` (a read of the runtime store — D2 permits reads and forbids
@@ -184,6 +195,39 @@ writes}`, and **`writes` is always `[]`** — the machine-readable form of the c
 `--apply` flag and no write path of any kind: `promote` never touches `docs/knowledge/`, never
 touches `.bee/*.json(l)`, and never touches anything else. Deciding to save a proposal — and
 editing it into curated prose first — is a human or agent decision.
+
+**B6 — `context` returns a manifest, never content (D27).** `bee knowledge context --work <id>
+--budget <tokens>` resolves the work item by `bee.id`, walks its `bee.required_context`
+**transitively** with a cycle guard that dedupes silently (a cycle is never an error), adds every
+concept with `bee.critical: true` and the bundle's `bee.decision` concepts whose `bee.areas`
+overlap the work item's, ranks them, and cuts at the budget. The order is fixed: the work item, its
+`bee.plan` sibling, `required_context` in BFS depth order, critical patterns, then area decisions.
+Each entry carries `path`, `bytes`, `est_tokens` and a one-line `reason` naming *why* it was
+selected (and, for a required_context hit, *through which parent*) — and **nothing else**: the
+manifest never contains file bodies, because its whole purpose is to spend a few dozen tokens
+instead of thousands. The budget cut is a **prefix cut**: the first overshooting entry ends the
+manifest, and it plus every lower-ranked entry is named in `truncated`, so the output always means
+"the highest-ranked context that fits". The estimator is `bytes/4` and the output **names itself as
+an estimate** — bee vendors no tokenizer (D12), so the number is never dressed up as a token count.
+An unresolvable id exits 1 with a typed `unknown_work` error.
+
+**B7 — The session preamble makes the bundle load-bearing.** A tool nobody calls is a directory
+rename. When `.bee/state.json`'s active feature has a matching `bee.work-item` concept, the session
+preamble emits a three-line block naming the exact runnable `context` command and instructing the
+session to read the manifest's files before touching code. Three rules keep it honest: the preamble
+carries the **pointer, never the manifest** (embedding it would defeat the purpose); a feature with
+no matching work item produces **silence, not a nag**; and a terminal phase (`idle`,
+`compounding-complete`) produces nothing even when a stale `feature` string outlives the closed
+feature — the phase, not the feature name, decides.
+
+**B8 — Migration is gated by anchor coverage (D35).** Every migration of a legacy source into the
+bundle is guarded by a chain suite that asserts set-equality: every numbered anchor in the frozen
+source inventory (`B*`/`R*`/`E*`/`P*` for a nine-section BA spec, `PAT*` for the flat pattern list)
+is claimed by **exactly one** concept's `bee.sources`, and the pointer stub's anchor map agrees.
+No loss, no duplication. Shipped coverage: `advisor-protocol` 26/26, `critical-patterns` 47/47.
+*Known limit:* the frozen inventory is a hand-editable constant with no cryptographic tie to git
+history — an editor who shrinks the inventory and the concepts together keeps the gate green.
+Binding it to the pre-migration blob is open work.
 
 ## Actors & Access
 

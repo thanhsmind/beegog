@@ -10,4 +10,4 @@ never a generation timestamp or any other wall-clock value.
 
 ## Sections
 
-- [okf-foundation/](okf-foundation/index.md) — 2 concept(s)
+- [okf-foundation/](okf-foundation/index.md) — 3 concept(s)

@@ -91,6 +91,76 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "transitive-walk-and-cycle",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:996-1009 BFS skips selected.has(rel) silently; two-cycle fixture PASS (43/0)"
+          },
+          {
+            "id": "ranking-law",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:983-1003 order work->plan->BFS->critical->decisions; live head matches; fixture asserts decisions last"
+          },
+          {
+            "id": "budget-prefix-cut",
+            "status": "PASS",
+            "evidence": "budget 3000 => 2 entries/48 truncated; 2+48==49+1 at 20000; cutting latch :1018-1023"
+          },
+          {
+            "id": "no-content-leak",
+            "status": "PASS",
+            "evidence": "entry key union over 49 live entries = path,bytes,est_tokens,reason; test asserts no body text"
+          },
+          {
+            "id": "estimator-honesty",
+            "status": "PASS",
+            "evidence": "ceil(bytes/4), CONTEXT_ESTIMATOR emitted; 0 mismatches vs statSync across 49 entries"
+          },
+          {
+            "id": "bundle-only-reads",
+            "status": "PASS",
+            "evidence": "no .bee path construction in knowledge.mjs; reads only docs/knowledge; decisions from work item frontmatter"
+          },
+          {
+            "id": "typed-unknown-work",
+            "status": "PASS",
+            "evidence": "unknown id => exit 1 with typed unknown_work JSON error"
+          },
+          {
+            "id": "deviation-1-plan-seeding",
+            "status": "PASS",
+            "evidence": "faithful to D27: plan is already ranked in, its required_context is same-work context; reasons name parents; selects nothing extra live"
+          },
+          {
+            "id": "deviation-3-registry-isolation",
+            "status": "PASS",
+            "evidence": "test_bee_cli spawns the real dispatcher with the verbatim example string; fixture cwd matches pre-existing convention; example also green on real checkout"
+          },
+          {
+            "id": "red-first-genuine",
+            "status": "PASS",
+            "evidence": "36 checks pre-commit -> 43 post (+7); fallback string proves context verb absent before"
+          },
+          {
+            "id": "no-weakened-assertions",
+            "status": "PASS",
+            "evidence": "numstat 34/0 and 170/0; zero removed lines in test diffs"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T05:29:46.105Z"
+      }
     ]
   }
 }
