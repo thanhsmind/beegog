@@ -121,13 +121,18 @@ Where things live. Read the touched area's spec before its code.
   frontmatter field rules with the id-derives-path direction, authority uniqueness (`bee.id`,
   `bee.authoritative_for`), the legacy-frontmatter carry-over map, the declared (not yet executed)
   retirement of `implement-plan.md`, the standing exemption for `docs/decisions/index.md`, and the
-  four canonical worked examples with the body contract and the rebuild bar
-  (`concept-model-and-authoring.md`); the exact OKF-error/profile-error/profile-warning finding
+  four canonical worked examples with the body contract and the rebuild bar, plus the authoring
+  gate that resolves where a settled truth is written — the one bundle-mode predicate, the
+  seven-field scribing-target answer, its three fail-closed refusals, and the three-layer anti-fork
+  gate (`concept-model-and-authoring.md`); the exact OKF-error/profile-error/profile-warning finding
   codes `bee knowledge check` emits (`conformance-check.md`); the budget-aware `context` manifest,
   its measured relevance ranking, `promote`'s propose-never-write contract and the session preamble
   (`context-and-promote.md`); the per-migration coverage report, the content-addressed pin, the
   fidelity floor, the drift telemetry and pointer-stub anchor maps
-  (`migration-and-coverage-gates.md`). Bee's own contract, not a ratified OKF standard. The legacy
+  (`migration-and-coverage-gates.md`); and the read-only fence over this very tree — structural
+  stub recognition, the closed named-exception set, pinned unwritten placeholders, and inertness in
+  a host with no bundle (`specs-read-only-fence.md`). Bee's own contract, not a ratified OKF
+  standard. The legacy
   path [`okf-profile.md`](./okf-profile.md) remains as a pointer stub carrying the full 24-anchor
   map (D37).
 

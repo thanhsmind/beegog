@@ -1,15 +1,15 @@
 ---
 type: bee.area
 title: "Bee OKF Profile — the concept model, its frontmatter, and how a concept is authored"
-description: "The closed nine-type vocabulary, the frontmatter field rules and their identity/path direction, the per-subject authority rules, the legacy carry-over map, and the four canonical worked examples with the body contract and the rebuild bar."
+description: "The closed nine-type vocabulary, the frontmatter field rules and their identity/path direction, the per-subject authority rules, the authoring gate that resolves where a settled truth is written and refuses a fork in three layers, the legacy carry-over map, and the four canonical worked examples with the body contract and the rebuild bar."
 timestamp: 2026-07-22
 bee:
   id: okf-profile-concept-model-and-authoring
   lifecycle: active
   areas: [okf-profile]
   required_context: [areas/okf-profile/overview.md]
-  decisions: [D4, D10, D11, D12, D17, D18, D19, D23, D31, D32, D33, D36]
-  sources: ["okf-foundation cell okf-2 (bundle skeleton + this spec, 2026-07-22)", "okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22)", CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`, "docs/specs/okf-profile.md#E1"]
+  decisions: [D4, D10, D11, D12, D17, D18, D19, D23, D31, D32, D33, D36, G12, G13, G14]
+  sources: ["okf-foundation cell okf-2 (bundle skeleton + this spec, 2026-07-22)", "okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22)", CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`, "docs/specs/okf-profile.md#E1", "okf-switchover-f3 cells f3-2, f3-3 (bundle-first scribing target, the three-layer anti-fork gate, and both doc trees resolved off the product root; capped with verify evidence, trace in `.bee/cells/`, 2026-07-22)", CONTEXT.md `docs/history/okf-switchover-f3/CONTEXT.md`]
   authoritative_for: "okf-profile: the concept model, its frontmatter, and concept authoring"
 ---
 
@@ -91,6 +91,63 @@ The exemption exists because it already sits outside the bundle (`docs/decisions
 tree, D17), so no conformance rule reaches it in the first place — one generated path keeps one
 generator.
 
+## Behaviors & Operations
+
+**Resolving where a settled truth is written — the authoring gate.** The scribe never decides by
+eye whether this repo keeps its state layer as concepts or as area spec files, and never restates
+the rule in its own words. It asks one **bundle-mode predicate**, and that predicate answers true
+only when the knowledge tree exists **and at least one concept inside it actually parses**. A
+directory alone is not a bundle: a knowledge tree holding nothing but a placeholder file answers
+false, and the scribe writes the legacy area spec instead. Both doc trees — the bundle and the
+compatibility surface — are **product** documentation, so both are resolved off the repo's
+declared product root. A repo that separates its workshop from the product it documents is
+therefore graded on its real product docs, never on an empty workshop tree; every consumer that
+touches either tree resolves it the same way, so no two of them can disagree about where the
+product's docs live.
+
+**The scribing-target answer is a fixed shape, not a path.** Asked for an area and a subject, the
+gate returns the same seven fields on **every** answer in **every** mode: whether the repo is in
+bundle mode, the `action` to perform, the area, the subject, the `path` to write, the `owner` when
+one exists, and whether the index must be regenerated afterwards. The scribe writes to `path`,
+performs exactly `action`, and regenerates the index when told to. Declaring the intent matters:
+an author who believes the subject is new says so, and if the subject is in fact already owned the
+answer names the owner instead of handing back a path.
+
+**A `path` of nothing is a refusal, and a refusal is never a licence to choose a path.** Three
+answers refuse, each naming what is wrong rather than degrading to a default:
+
+| Refusal | Means | The scribe must |
+|---|---|---|
+| `fork_denied` | the subject is already owned by the named concept | update that owner in place, or declare the split inside it |
+| `subject_required` | a new-concept intent arrived with no usable subject — empty, blank, absent, or punctuation only | name the subject and ask again |
+| `duplicate_authority` | two or more concepts already claim this subject; every claimant is listed | collapse the rival claims to one authority first, then re-ask |
+
+`subject_required` exists because the alternative is worse than a refusal: routing a nameless
+new-concept request to the area's `overview` concept silently appends unrelated truth to the one
+document readers treat as the area's front door. A request with no subject is not a request for
+the default subject. Separately, the gate **throws** — naming the file — when any concept in the
+bundle carries a malformed authority claim (a list, a boolean, an empty or blank string). A claim
+the bundle cannot read is an owner the anti-fork gate cannot see, so it is a hard stop, never a
+silent skip.
+
+**The anti-fork gate has three layers, because exact matching on free text can never be
+sufficient.** An independent judge defeated a single-layer version four ways in one sitting — a
+trailing period, a cross-script look-alike character, a non-string claim, and an empty subject
+that skipped the gate entirely — so the gate is built in depth:
+
+1. **The match is a skeleton, not a string.** Subjects are compared after normalization,
+   lowercasing, accent stripping, a cross-script confusable fold, and punctuation/whitespace
+   collapse. Neither a trailing period nor a look-alike character buys a rival concept.
+2. **Malformed input fails closed** — the three refusals and the throw above. A silently skipped
+   claim is a fork with extra steps.
+3. **The bundle-wide backstop bites.** Duplicate and malformed authority claims are chain-*failing*
+   findings of the conformance check, grouped by the same skeleton (`conformance-check.md`). Layer
+   1 can never catch a genuine word-order paraphrase — nothing that compares strings can — so a
+   whole-bundle check is what refuses to let two authorities coexist.
+
+No layer is softened to get a write through: a refused write means the bundle is wrong, not the
+gate.
+
 ## Business Rules
 
 - The vocabulary is closed at **nine** types (D18); a tenth type is never introduced to encode a
@@ -103,6 +160,14 @@ generator.
   it already sits outside the bundle (D11, D17).
 - `title`/`description` (and any profile-required field) are never fabricated; an absence is a
   named warning, not a guess (D10).
+- Bundle mode is decided by the predicate, never by looking at the tree: existence alone is not a
+  bundle, and at least one concept must actually parse (G12).
+- Both doc trees are product documentation and both resolve off the declared product root — no
+  consumer joins either path itself (G13).
+- A refusal from the authoring gate is never worked around by choosing a path; the three refusals
+  and the malformed-claim throw are each fixed at the source (G14).
+- No subject is ever defaulted. A new-concept request without a usable subject is refused, never
+  routed to the area's `overview` concept (G14).
 
 ## Edge Cases Settled
 
@@ -224,6 +289,18 @@ Acceptance, Decisions, Chosen Approach — each condensed FROM the feature's `CO
 never invented (D10). `bee.decisions` entries mix bare D-ids (`D30`) and quoted parenthetical
 citations (`"D29 (F1 proof area: ...)"`) — the emitter quotes only the entries containing a colon,
 comma, or other reserved character; both forms round-trip.
+
+## Pointers (implementation)
+
+- The bundle-mode predicate, the scribing-target resolver and the frontmatter emitter:
+  `bundleMode`, `scribingTarget`, `emitFrontmatter` in `.bee/bin/lib/knowledge.mjs` (mirrored at
+  `skills/bee-hive/templates/lib/knowledge.mjs`).
+- The product-root resolution both doc trees share: `resolveProductRoot` in
+  `.bee/bin/lib/state.mjs` — the same resolver the session preamble (`inject.mjs`), the backlog
+  and the session-close hook already use.
+- The scribe's own routing prose: `skills/bee-scribing/SKILL.md` §2 and §2a.
+- Coverage for the gate, its three refusals and the repo-divorce topology:
+  `skills/bee-hive/templates/tests/test_bundle_mode.mjs`.
 
 ### `bee.plan` — `docs/knowledge/work/okf-foundation/plan.md` (live)
 

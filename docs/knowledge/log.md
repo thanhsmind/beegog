@@ -514,3 +514,20 @@
   assertion all resolve into `areas/okf-profile/concept-model-and-authoring.md`;
   `reading-map.md`'s entry points at the bundle. `docs/history/**` is archive and stays
   untouched. Chain: 79 suites, `SUITE_FLOOR_COUNT` 60 → 62.
+- **Scribing sync for `okf-switchover-f3`** — the feature's own settled behaviour written into the
+  bundle it built. Two gaps closed against an audit of what the four `behavior_change` cells had
+  actually left captured: the **authoring gate** (the one bundle-mode predicate and its
+  "a directory alone is not a bundle" rule, the seven-field scribing-target answer, its three
+  fail-closed refusals `fork_denied`/`subject_required`/`duplicate_authority` plus the throw on a
+  malformed authority claim, the three-layer anti-fork gate, and both doc trees resolving off the
+  declared product root) merged **in place** into the existing owner
+  `areas/okf-profile/concept-model-and-authoring.md` — a new `## Behaviors & Operations` section,
+  four new business rules and a `## Pointers (implementation)` section, with the frontmatter
+  re-emitted rather than hand-edited; and the **read-only fence** authored as a new concept,
+  `areas/okf-profile/specs-read-only-fence.md`, claiming the previously unowned subject
+  "okf-profile: the docs/specs read-only fence" — structural stub recognition (never by filename,
+  because a rotted allowlist stops fencing silently), the closed and reasoned named-exception set,
+  placeholders pinned to their emptiness, inertness in a host with no bundle, and the rule that a
+  named exception whose interval ends is REMOVED rather than relabelled. f3-1's relevance ranking
+  was already fully stated in `context-and-promote.md` (B6b) and needed nothing. The bundle is 122
+  concepts across 140 files, 0 errors and 0 warnings; chain 79 suites green.
