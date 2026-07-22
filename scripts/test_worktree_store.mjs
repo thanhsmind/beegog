@@ -450,6 +450,63 @@ function tmpDir(prefix) {
 }
 
 // ---------------------------------------------------------------------------
+// bootstrapWorktreeStore — the IMMUTABLE creation slug (issues-46-53 D4, #46)
+// ---------------------------------------------------------------------------
+
+{
+  const tmpRoot = tmpDir("worktree-store-identity-");
+  try {
+    const worktreeRoot = path.join(tmpRoot, "wt");
+    const mainStoreRoot = path.join(tmpRoot, "main", ".bee");
+    fs.mkdirSync(worktreeRoot, { recursive: true });
+    fs.mkdirSync(mainStoreRoot, { recursive: true });
+
+    const first = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, "created-as-this");
+    const identityFile = path.join(worktreeRoot, ".bee", "runtime", "worktree-identity.json");
+    const identity = JSON.parse(fs.readFileSync(identityFile, "utf8"));
+    record(
+      "bootstrapWorktreeStore: records the creation slug in .bee/runtime/worktree-identity.json (gitignored everywhere, so it never makes a worktree read dirty)",
+      first.identity.written === true && identity.feature === "created-as-this" && typeof identity.created_at === "string",
+      JSON.stringify({ identity: first.identity, onDisk: identity }),
+    );
+
+    // "Immutable" is the whole point: a re-bootstrap under a DIFFERENT name —
+    // the exact shape of the drift #46 is about — must never restate it.
+    fs.rmSync(path.join(worktreeRoot, ".bee", "state.json"));
+    const second = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, "renamed-later");
+    const afterIdentity = JSON.parse(fs.readFileSync(identityFile, "utf8"));
+    const afterState = JSON.parse(fs.readFileSync(path.join(worktreeRoot, ".bee", "state.json"), "utf8"));
+    record(
+      "bootstrapWorktreeStore: the creation slug is write-if-absent — re-bootstrapping under a new name rewrites state.feature but NEVER the immutable record",
+      second.identity.written === false && afterIdentity.feature === "created-as-this" && afterState.feature === "renamed-later",
+      JSON.stringify({ second: second.identity, afterIdentity, stateFeature: afterState.feature }),
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+{
+  const tmpRoot = tmpDir("worktree-store-identity-null-");
+  try {
+    const worktreeRoot = path.join(tmpRoot, "wt");
+    const mainStoreRoot = path.join(tmpRoot, "main", ".bee");
+    fs.mkdirSync(worktreeRoot, { recursive: true });
+    fs.mkdirSync(mainStoreRoot, { recursive: true });
+
+    const result = bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, null);
+    const identityFile = path.join(worktreeRoot, ".bee", "runtime", "worktree-identity.json");
+    record(
+      "bootstrapWorktreeStore: a null feature records no creation slug and never throws — the reader falls back to state.feature exactly as before",
+      result.created === true && result.identity.written === false && !fs.existsSync(identityFile),
+      JSON.stringify(result.identity),
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // summary
 // ---------------------------------------------------------------------------
 

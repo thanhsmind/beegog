@@ -88,13 +88,15 @@ export function readBacklogCounts(root) {
 const RANK_WEIGHT = { 'in-flight': 0, proposed: 1, done: 3 };
 const RANK_UNKNOWN_WEIGHT = 2;
 
-/**
- * Compute (and with `write: true` apply) the rank pass.
- * @returns {{changed:boolean, order:string[]}|null} null when the file is
- *   absent or has no parseable table; `order` lists the first cell (ID) of each
- *   data row in ranked order.
- */
-export function rankBacklog(root, { write = false } = {}) {
+// Shared row walk (i-1, docs/history/issues-46-53/CONTEXT.md D1): the one
+// parse of docs/backlog.md's data rows that carries each row's ID cell, its
+// exact line number, and its rank weight. rankBacklog below and
+// findDuplicateBacklogIds further down both read from THIS walk — neither
+// re-parses the file. Returns null when the file is absent or has no
+// parseable table (no Status column found, no separator row, or zero data
+// rows) — the same "nothing to check" cases the two callers already treat
+// as null/empty.
+function walkBacklogIdRows(root) {
   const file = backlogPath(root);
   let text;
   try {
@@ -128,13 +130,27 @@ export function rankBacklog(root, { write = false } = {}) {
     const token = cells.length > statusIndex ? normalizeStatus(cells[statusIndex]) : '';
     rows.push({
       line: lines[i],
-      lineIndex: i,
+      lineIndex: i, // 0-based index into `lines`; +1 for a human-facing line number
       id: cells[0] ? cells[0].replace(/[*`_]/g, '').trim() : '',
       weight: RANK_WEIGHT[token] !== undefined ? RANK_WEIGHT[token] : RANK_UNKNOWN_WEIGHT,
       position: rows.length,
     });
   }
   if (statusIndex === -1 || separatorLine === -1 || rows.length === 0) return null;
+
+  return { file, lines, rows };
+}
+
+/**
+ * Compute (and with `write: true` apply) the rank pass.
+ * @returns {{changed:boolean, order:string[]}|null} null when the file is
+ *   absent or has no parseable table; `order` lists the first cell (ID) of each
+ *   data row in ranked order.
+ */
+export function rankBacklog(root, { write = false } = {}) {
+  const walked = walkBacklogIdRows(root);
+  if (!walked) return null;
+  const { file, lines, rows } = walked;
 
   const ranked = [...rows].sort(
     (a, b) => a.weight - b.weight || a.position - b.position,
@@ -152,6 +168,41 @@ export function rankBacklog(root, { write = false } = {}) {
     fs.writeFileSync(file, lines.join('\n'), 'utf8');
   }
   return { changed, order };
+}
+
+// ─── uniqueness check (i-1, docs/history/issues-46-53/CONTEXT.md D1) ───────
+// #49 reported "ids allocated max+1, concurrent readers collide" — there is
+// no allocator anywhere in this repo; the id rule lives in prose
+// (skills/bee-scribing references, "next free integer, never reused") and is
+// executed by an agent hand-editing this table. The committed duplicate (two
+// `P50` rows, authored a day apart on different branches) proves it was
+// never a race: each author computed "next free" from a snapshot that
+// predated the other's commit. A lock prevents nothing here; what was
+// missing is a CHECK. This is that check, over the SAME row walk rankBacklog
+// already does — no second parser.
+/**
+ * Find IDs that appear on more than one data row of docs/backlog.md.
+ * @returns {{id:string, lines:number[]}[]} one entry per duplicated,
+ *   non-empty id, each carrying the 1-based line numbers (in file order) of
+ *   every row that carries it. Empty when the file is absent, has no
+ *   parseable table, or every id is unique.
+ */
+export function findDuplicateBacklogIds(root) {
+  const walked = walkBacklogIdRows(root);
+  if (!walked) return [];
+
+  const byId = new Map();
+  for (const row of walked.rows) {
+    if (!row.id) continue; // a blank ID cell never collides with anything
+    if (!byId.has(row.id)) byId.set(row.id, []);
+    byId.get(row.id).push(row.lineIndex + 1); // 1-based, human-facing
+  }
+
+  const duplicates = [];
+  for (const [id, lineNumbers] of byId) {
+    if (lineNumbers.length > 1) duplicates.push({ id, lines: lineNumbers });
+  }
+  return duplicates;
 }
 
 // ─── featureBacklogRank: Feature-column rank (fresh-session-handoff fsh-11,

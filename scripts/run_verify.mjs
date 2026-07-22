@@ -62,6 +62,14 @@ const EXTRA_SUITES = [
   // false-lead shipped in 1.9.0, hand-fixed in 6412017). Same idiom as
   // release_manifest.mjs --check just above.
   ["scripts/ledger_parity.mjs", "--check"],
+  // i-1 (issues-46-53 D1/D2): docs/backlog.md's PBI ids have no allocator —
+  // the id rule lives in prose and is executed by an agent hand-editing the
+  // table. #49's live duplicate (two `P50` rows, authored a day apart on
+  // different branches) proves a lock would prevent nothing; the missing
+  // piece is this uniqueness check. Doesn't match the test_*.mjs discovery
+  // glob, so EXTRA_SUITES membership is its only way into the chain — same
+  // idiom as ledger_parity.mjs --check just above.
+  ["scripts/backlog_uniqueness.mjs", "--check"],
   ["scripts/census_stale_spawn_syntax.mjs"],
   ["scripts/test_installers_e2e.mjs", "--installer", "bash"],
   // okf-3: joins the chain as a chain-failing suite per D22/D34. Plain check

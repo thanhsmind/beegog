@@ -3402,11 +3402,19 @@ async function handleWorktreeMerge(_root, flags) {
   const mergeResultValue = await mergeFeatureWorktree(mainRoot, { id, cleanup, verifyCommand, companionEndCommand });
 
   const lines = [];
-  if (mergeResultValue.ok && mergeResultValue.code === 'ALREADY_UP_TO_DATE') {
-    lines.push(`Worktree ${id} (branch ${mergeResultValue.branch}) is already up to date with ${mainRoot} — nothing to merge; no commit was made.`);
-  } else if (mergeResultValue.ok) {
-    lines.push(`Merged worktree ${id} (branch ${mergeResultValue.branch}) into ${mainRoot}.`);
-    lines.push(`  verify: ${mergeResultValue.verify}`);
+  if (mergeResultValue.ok) {
+    // issues-46-53 D3 (#47): the no-op branch used to end here, printing one
+    // headline and nothing else — so a `--cleanup` that had just been silently
+    // dropped by the library was invisible in the text output too. The
+    // companion/warning/cleanup reporting below is now SHARED by both ok
+    // outcomes, so whatever cleanup actually did (or was suggested) is always
+    // said out loud.
+    if (mergeResultValue.code === 'ALREADY_UP_TO_DATE') {
+      lines.push(`Worktree ${id} (branch ${mergeResultValue.branch}) is already up to date with ${mainRoot} — nothing to merge; no commit was made.`);
+    } else {
+      lines.push(`Merged worktree ${id} (branch ${mergeResultValue.branch}) into ${mainRoot}.`);
+      lines.push(`  verify: ${mergeResultValue.verify}`);
+    }
     if (mergeResultValue.companion) {
       lines.push(
         mergeResultValue.companion.warning

@@ -28,6 +28,7 @@ import {
   BADGE_MARKER_START,
   BADGE_MARKER_END,
   featureBacklogRank,
+  findDuplicateBacklogIds,
 } from '../lib/backlog.mjs';
 import { addCell, readCell, claimCell, recordVerify, capCell, scribingDebt } from '../lib/cells.mjs';
 import { buildSessionPreamble } from '../lib/inject.mjs';
@@ -132,6 +133,14 @@ await check('readBacklogCounts skips malformed and unknown-status rows without t
   );
 });
 
+// i-1 (issues-46-53 D1): this assertion is about COUNTING, which is still
+// true and stays unchanged — readBacklogCounts has no id-uniqueness opinion
+// at all, it only tallies Status cells. What changed is that duplicate ids
+// are no longer *tolerated silently* in the chain: findDuplicateBacklogIds
+// below is the check that refuses them. Counting every row honestly (this
+// test) and refusing a duplicate id in the verify chain (the next block) are
+// not in conflict — one is a tally, the other is a uniqueness gate over a
+// DIFFERENT column (ID, not Status), and both can be true at once.
 await check('readBacklogCounts counts duplicate IDs honestly (row-by-row, dedup is grooming prose)', async () => {
   withBacklog(
     '| ID | Status |\n' +
@@ -145,6 +154,48 @@ await check('readBacklogCounts counts duplicate IDs honestly (row-by-row, dedup 
       assert(counts.total === 3, `total=3, got ${counts.total}`);
     },
   );
+});
+
+// ─── findDuplicateBacklogIds: the uniqueness gate (i-1, issues-46-53 D1) ────
+// #49's reported cause (an allocator racing under concurrency) is wrong —
+// there is no allocator; the id rule lives in prose and is executed by hand.
+// The real gap is that nothing ever refused a duplicate id once written. This
+// reuses the SAME row walk rankBacklog uses (walkBacklogIdRows) — no second
+// parser of docs/backlog.md exists.
+
+await check('findDuplicateBacklogIds reports each duplicated id with every 1-based line number, in file order', async () => {
+  withBacklog(
+    '| ID | Status |\n' +
+      '|----|--------|\n' +
+      '| P1 | proposed |\n' +
+      '| P2 | proposed |\n' +
+      '| P1 | done |\n',
+    async () => {
+      const dups = findDuplicateBacklogIds(root);
+      assert(dups.length === 1, `exactly one duplicated id, got ${JSON.stringify(dups)}`);
+      assert(dups[0].id === 'P1', `duplicate is P1, got ${dups[0].id}`);
+      // header=1, separator=2, P1 row=3, P2 row=4, second P1 row=5
+      assert(dups[0].lines.join(',') === '3,5', `1-based line numbers in file order, got ${dups[0].lines.join(',')}`);
+    },
+  );
+});
+
+await check('findDuplicateBacklogIds returns empty for unique ids, a blank ID cell, an absent file, and a tableless file', async () => {
+  withBacklog(
+    '| ID | Status |\n' +
+      '|----|--------|\n' +
+      '| P1 | proposed |\n' +
+      '|  | proposed |\n' + // blank ID cell never collides with anything, including itself
+      '|  | done |\n',
+    async () => {
+      assert(findDuplicateBacklogIds(root).length === 0, 'unique ids + blank ID cells report no duplicates');
+    },
+  );
+  fs.rmSync(backlogFile, { force: true });
+  assert(findDuplicateBacklogIds(root).length === 0, 'an absent docs/backlog.md reports no duplicates, never throws');
+  withBacklog('# Backlog\n\nNo table here at all.\n', async () => {
+    assert(findDuplicateBacklogIds(root).length === 0, 'a tableless file reports no duplicates, never throws');
+  });
 });
 
 await check('BACKLOG_STATUSES is the locked D6 enum and matches its source literal (drift guard)', async () => {

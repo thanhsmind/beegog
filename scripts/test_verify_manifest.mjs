@@ -108,6 +108,13 @@ const MANDATORY_SUITES = [
   // failure mode which can itself silently stop running would be the same
   // failure mode wearing a script.
   "scripts/okf_instructions_fence.mjs",
+  // i-1 (issues-46-53 D1/D2): the docs/backlog.md PBI-id uniqueness gate.
+  // Pinned exact-path for the same reason as the fence scripts above — its
+  // filename doesn't match the `test_*.mjs` discovery glob, so EXTRA_SUITES
+  // membership is its only route into the chain, and a duplicate-id gate
+  // that can silently stop running protects nothing (exactly the failure
+  // mode #49 itself was).
+  "scripts/backlog_uniqueness.mjs",
 ];
 
 // f2-3 (F6): a migration cell's coverage gate must be in the chain, and the
@@ -173,6 +180,11 @@ export const MANDATORY_SUITE_ARGS = [
   // exemption classes still hold. The path pin above protects the script; this
   // pins the argument variant riding it.
   ["scripts/okf_instructions_fence.mjs", "--selftest"],
+  // i-1 (issues-46-53 D1/D2): the exact-PATH pin above protects the backlog
+  // uniqueness gate script itself, but not the `--check` variant riding it —
+  // and a bare run with no args does not exercise the gate at all. Both must
+  // be in the chain; the argument variant is pinned here.
+  ["scripts/backlog_uniqueness.mjs", "--check"],
 ];
 
 // Floor count: total discovered suites must never silently drop below this
@@ -202,7 +214,9 @@ export const MANDATORY_SUITE_ARGS = [
 // (the fixtures that prove it bites, that it stays inert with no bundle, and
 // that all four exemption classes hold) and the bare live run against this
 // repo's own skills/, hooks/ and AGENTS.md = 64.
-const SUITE_FLOOR_COUNT = 64;
+// i-1 (issues-46-53 D1/D2): +1 for the docs/backlog.md PBI-id uniqueness
+// gate (`backlog_uniqueness --check`) = 65.
+const SUITE_FLOOR_COUNT = 65;
 
 /**
  * Checks a discovered suite list against a mandatory list and a floor count.

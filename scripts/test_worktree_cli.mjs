@@ -1132,8 +1132,22 @@ try {
     record('MERGE_VERIFY_RED + --cleanup: the abort still reverted flag.txt to "off" on main (cleanup skip did not skip the abort)', flagContent === 'off', flagContent);
   }
   // ── ALREADY_UP_TO_DATE: a worktree with no new commits vs main is a typed
-  // no-op — never a commit attempt, and --cleanup is never attempted either
-  // (strictly post-commit). ───────────────────────────────────────────────
+  // no-op — a commit is never attempted. --cleanup, however, DOES run here.
+  //
+  // issues-46-53 D3 + D8 (#47) — WHY THE OLD ASSERTION HERE WAS WRONG. This
+  // block used to assert `!('cleanup' in parsed)` and "already-up-to-date
+  // merge left the worktree in place (--cleanup never runs on a no-op)",
+  // pinning the blanket rule "cleanup is strictly post-commit". That
+  // expectation encoded the defect: it treated the COMMIT as the safety
+  // property, when the real property is "the worktree holds nothing that would
+  // be lost". ALREADY_UP_TO_DATE means the branch holds nothing main lacks,
+  // and the WORKTREE_MERGE_WORKTREE_DIRTY pre-check upstream has already
+  // proved the worktree carries no uncommitted work — so the flag was merely
+  // being accepted and then silently dropped (exit 0, nothing removed, not one
+  // word about it). The rule stays exactly right for MERGE_CONFLICT and
+  // MERGE_VERIFY_RED, both asserted directly above and deliberately left
+  // untouched: work is NOT integrated on either of those paths, so removing
+  // the worktree would destroy the only copy of it. ────────────────────────
   {
     const noopCreated = mergeNewWorktree(mainB, 'wsr-merge-noop');
     const before = git(mainB, ['log', '-1', '--pretty=%H']).trim();
@@ -1149,13 +1163,54 @@ try {
       /* checked below */
     }
     {
-      const ok = parsed && parsed.ok === true && parsed.merged === false && parsed.code === 'ALREADY_UP_TO_DATE' && parsed.verify === 'skipped' && !('cleanup' in parsed);
-      record('worktree merge --json reports ok:true, merged:false, code:"ALREADY_UP_TO_DATE", verify:"skipped", and --cleanup was never attempted (no .cleanup field)', ok, r.stdout);
+      const ok = parsed && parsed.ok === true && parsed.merged === false && parsed.code === 'ALREADY_UP_TO_DATE' && parsed.verify === 'skipped';
+      record('worktree merge --json reports ok:true, merged:false, code:"ALREADY_UP_TO_DATE", verify:"skipped"', ok, r.stdout);
+    }
+    {
+      const ok = parsed && parsed.cleanup && parsed.cleanup.ok === true && parsed.cleanup.removed === true && parsed.cleanup.branch_deleted === true;
+      record('(#47) ALREADY_UP_TO_DATE + --cleanup RUNS cleanup — the flag is no longer silently dropped', ok, r.stdout);
+    }
+    {
+      // The "cleaned up unchecked" warning means "no commands.verify was
+      // recorded, so this ran with no semantic gate" — a lie on this path,
+      // where verify was skipped only because nothing was merged for it to
+      // check. code:"ALREADY_UP_TO_DATE" + merged:false already say that.
+      const ok = parsed && parsed.cleanup && !('warning' in parsed.cleanup);
+      record('(#47) the no-op cleanup carries no "cleaned up unchecked" warning — nothing was merged, so no verify gate was owed', ok, JSON.stringify(parsed && parsed.cleanup));
     }
     const after = git(mainB, ['log', '-1', '--pretty=%H']).trim();
     record('already-up-to-date merge never committed anything (main HEAD unchanged)', before === after, `${before} vs ${after}`);
-    const stillThere = fs.existsSync(noopCreated.worktreeRoot);
-    record('already-up-to-date merge left the worktree in place (--cleanup never runs on a no-op)', stillThere, noopCreated.worktreeRoot);
+    {
+      const ok = !fs.existsSync(noopCreated.worktreeRoot);
+      record('(#47) ALREADY_UP_TO_DATE + --cleanup actually removed the worktree directory', ok, noopCreated.worktreeRoot);
+    }
+    {
+      const branchList = git(mainB, ['branch', '--list', 'wt/wsr-merge-noop']).trim();
+      record('(#47) ALREADY_UP_TO_DATE + --cleanup deleted the branch (git branch -d, not -D)', branchList.length === 0, `git branch --list -> "${branchList}"`);
+    }
+    {
+      const grants = JSON.parse(fs.readFileSync(grantsFileB, 'utf8'));
+      record("(#47) ALREADY_UP_TO_DATE + --cleanup dropped the id from the MAIN store's grant registry", !(noopCreated.id in grants), JSON.stringify(grants));
+    }
+  }
+  {
+    // The FLAG is what removes the worktree, not the no-op path itself:
+    // without --cleanup the same no-op still leaves everything in place and
+    // only suggests the command.
+    const noopKeepCreated = mergeNewWorktree(mainB, 'wsr-merge-noop-keep');
+    const r = bee(mainB, ['worktree', 'merge', '--id', noopKeepCreated.id, '--json']);
+    const parsed = JSON.parse(r.stdout);
+    const ok = parsed.code === 'ALREADY_UP_TO_DATE' && !('cleanup' in parsed) && typeof parsed.cleanup_suggested_command === 'string';
+    record('(#47) an already-up-to-date merge WITHOUT --cleanup removes nothing and only suggests the cleanup command', ok, r.stdout);
+    record('(#47) without --cleanup, the already-up-to-date worktree is left in place', fs.existsSync(noopKeepCreated.worktreeRoot), noopKeepCreated.worktreeRoot);
+  }
+  {
+    // The CLI's TEXT output half of #47: the no-op branch used to print one
+    // headline and stop, so a dropped --cleanup was invisible there too.
+    const noopTextCreated = mergeNewWorktree(mainB, 'wsr-merge-noop-text');
+    const r = bee(mainB, ['worktree', 'merge', '--id', noopTextCreated.id, '--cleanup']);
+    const ok = r.status === 0 && /nothing to merge; no commit was made\./.test(r.stdout) && /cleanup: worktree removed, branch deleted\./.test(r.stdout);
+    record('(#47) the no-op TEXT output says out loud what --cleanup did, instead of staying silent about the flag', ok, `status=${r.status} stdout=${JSON.stringify(r.stdout)}`);
   }
 
   // ── without --cleanup, a green/skipped result only SUGGESTS the cleanup
@@ -1171,6 +1226,103 @@ try {
     record('worktree merge without --cleanup only suggests the cleanup command (no .cleanup field, cleanup_suggested_command present)', ok, r.stdout);
     const stillThere = fs.existsSync(suggestCreated.worktreeRoot);
     record('without --cleanup, the worktree was left in place', stillThere, suggestCreated.worktreeRoot);
+  }
+
+  // ── #46 (issues-46-53 D4): the worktree's identity is fixed at creation and
+  // is no longer read from the MUTABLE state.feature. The paved road creates
+  // the worktree at session-scout time, BEFORE exploring settles the feature's
+  // real name — so the rename below is the designed-in case, not user error.
+  // The directory, the branch and the feature all came from ONE slug; only
+  // state.feature drifts, and merge used to derive its expected branch from
+  // that drifted field and then blame the BRANCH — the one thing the user must
+  // not change. `identityRel` is the immutable record; it lives under
+  // .bee/runtime/ (gitignored everywhere) so it can never make the worktree
+  // read dirty to merge's own `git status --porcelain` pre-check. ───────────
+  const identityRel = path.join('.bee', 'runtime', 'worktree-identity.json');
+  /** The real drift path: `bee state set --feature <new>` inside the worktree
+   * (--owner is required by state set; a freshly bootstrapped worktree is on
+   * phase "idle"). */
+  function renameWorktreeFeature(worktreeRoot, newFeature) {
+    const r = bee(worktreeRoot, ['state', 'set', '--feature', newFeature, '--owner', 'idle']);
+    if (r.status !== 0) throw new Error(`state set --feature ${newFeature} failed: ${r.stdout} ${r.stderr}`);
+  }
+  {
+    const renamed = mergeNewWorktree(mainB, 'wsr-scout-guess');
+    {
+      const identityFile = path.join(renamed.worktreeRoot, identityRel);
+      const parsed = fs.existsSync(identityFile) ? JSON.parse(fs.readFileSync(identityFile, 'utf8')) : null;
+      record('(#46) worktree new records the creation slug immutably in .bee/runtime/worktree-identity.json', parsed && parsed.feature === 'wsr-scout-guess', JSON.stringify(parsed));
+    }
+    fs.writeFileSync(path.join(renamed.worktreeRoot, 'renamed-work.txt'), 'work done under the real name\n');
+    git(renamed.worktreeRoot, ['add', 'renamed-work.txt']);
+    git(renamed.worktreeRoot, ['commit', '-q', '-m', 'work under the settled name']);
+    renameWorktreeFeature(renamed.worktreeRoot, 'wsr-settled-name');
+    {
+      const state = JSON.parse(fs.readFileSync(path.join(renamed.worktreeRoot, '.bee', 'state.json'), 'utf8'));
+      const identity = JSON.parse(fs.readFileSync(path.join(renamed.worktreeRoot, identityRel), 'utf8'));
+      const ok = state.feature === 'wsr-settled-name' && identity.feature === 'wsr-scout-guess';
+      record('(#46) a later rename moves state.feature and leaves the immutable creation slug alone', ok, JSON.stringify({ state: state.feature, identity: identity.feature }));
+    }
+    {
+      const dirty = git(renamed.worktreeRoot, ['status', '--porcelain']).trim();
+      record('(#46) the immutable record is gitignored — it never makes the worktree read dirty to merge\'s pre-check', dirty === '', JSON.stringify(dirty));
+    }
+    const r = bee(mainB, ['worktree', 'merge', '--id', renamed.id, '--json']);
+    {
+      const ok = r.status === 0 && JSON.parse(r.stdout).ok === true && JSON.parse(r.stdout).merged === true;
+      record('(#46) a worktree whose feature was renamed after creation now MERGES — the expected branch comes from the immutable slug, not the drifted field', ok, `status=${r.status} stdout=${r.stdout} stderr=${r.stderr}`);
+    }
+    record('(#46) the renamed worktree\'s committed work actually landed on main', fs.existsSync(path.join(mainB, 'renamed-work.txt')), mainB);
+  }
+  {
+    // Drift AND a genuinely different checked-out branch: merge still refuses
+    // (it cannot guess), but the message now names the field that drifted and
+    // says outright not to rename the branch to match.
+    const driftCreated = mergeNewWorktree(mainB, 'wsr-drift-blame');
+    renameWorktreeFeature(driftCreated.worktreeRoot, 'wsr-drift-renamed');
+    git(driftCreated.worktreeRoot, ['checkout', '-q', '-b', 'something-else-entirely']);
+    const r = bee(mainB, ['worktree', 'merge', '--id', driftCreated.id, '--json']);
+    const out = r.stdout + r.stderr;
+    const ok =
+      r.status !== 0 &&
+      /WORKTREE_MERGE_BRANCH_MISMATCH/.test(out) &&
+      /FEATURE FIELD drifted after creation/.test(out) &&
+      /wsr-drift-blame/.test(out) &&
+      /wsr-drift-renamed/.test(out) &&
+      /Do NOT rename the branch to match/.test(out);
+    record('(#46) when the two disagree, the refusal names the DRIFTED FIELD (quoting both values) instead of blaming the unchangeable branch', ok, out);
+  }
+  {
+    // A pre-existing worktree — one created before the immutable record
+    // shipped — must degrade to EXACTLY today's behavior: same accept, same
+    // refuse, never a crash and never a new refusal. Simulated by deleting the
+    // record, which is what such a worktree genuinely looks like on disk.
+    const legacyOk = mergeNewWorktree(mainB, 'wsr-legacy-ok');
+    fs.rmSync(path.join(legacyOk.worktreeRoot, identityRel), { force: true });
+    fs.writeFileSync(path.join(legacyOk.worktreeRoot, 'legacy-work.txt'), 'x\n');
+    git(legacyOk.worktreeRoot, ['add', 'legacy-work.txt']);
+    git(legacyOk.worktreeRoot, ['commit', '-q', '-m', 'legacy work']);
+    const r = bee(mainB, ['worktree', 'merge', '--id', legacyOk.id, '--json']);
+    const ok = r.status === 0 && JSON.parse(r.stdout).merged === true;
+    record('(#46) a worktree with NO immutable record and no rename merges exactly as before (degrades, never crashes)', ok, `status=${r.status} stdout=${r.stdout} stderr=${r.stderr}`);
+
+    const legacyDrift = mergeNewWorktree(mainB, 'wsr-legacy-drift');
+    fs.rmSync(path.join(legacyDrift.worktreeRoot, identityRel), { force: true });
+    renameWorktreeFeature(legacyDrift.worktreeRoot, 'wsr-legacy-renamed');
+    fs.rmSync(path.join(legacyDrift.worktreeRoot, identityRel), { force: true });
+    const r2 = bee(mainB, ['worktree', 'merge', '--id', legacyDrift.id, '--json']);
+    // Read the message out of the JSON envelope rather than the raw stdout —
+    // the quoted branch names are backslash-escaped in the raw bytes.
+    let out2 = r2.stdout + r2.stderr;
+    try {
+      out2 = JSON.parse(r2.stdout).error;
+    } catch {
+      /* fall back to the raw text; the assertions below fail loudly either way */
+    }
+    const sameAsBefore = r2.status !== 0 && /WORKTREE_MERGE_BRANCH_MISMATCH/.test(out2) && /not its expected "wt\/wsr-legacy-renamed" branch/.test(out2);
+    record('(#46) a worktree with NO immutable record that WAS renamed still refuses exactly as it did before — no new refusal, no crash', sameAsBefore, out2);
+    const namesTheField = /MUTABLE \.bee\/state\.json "feature" field/.test(out2) && /The branch name is fixed at creation; do not rename it to match/.test(out2);
+    record('(#46) even in that degraded case the message points at the mutable field rather than at the branch', namesTheField, out2);
   }
 
   // ── D2 regression (hardening-1-7-10, cell 1710-2): mergeFeatureWorktree

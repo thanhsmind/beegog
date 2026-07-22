@@ -259,6 +259,56 @@ export function listGrants(mainStoreRoot) {
 // import the other way would be a cycle. Kept as a literal here on purpose.
 const FRESH_STATE_SCHEMA_VERSION = '1.0';
 
+// issues-46-53 D4 (#46): the worktree's IMMUTABLE creation identity.
+//
+// A worktree's directory name, its branch and its `state.feature` all derive
+// from ONE slug at creation (createFeatureWorktreeLocked) — the "three
+// independent names" the issue reported do not exist. What DOES drift is
+// `state.feature`, which `bee state set` / `startFeature` rewrite freely with
+// no worktree awareness at all, and the paved road makes that drift
+// near-inevitable: the agent is told to create the worktree at session-scout
+// time, BEFORE exploring settles the feature's real name. Merge then derived
+// its expected branch from that mutated field and refused, blaming the branch
+// — the one thing the user must NOT change. So the branch merge expects can
+// never be read from a mutable field; it is recorded here once, at bootstrap,
+// and preferred forever after (see resolveWorktreeFeature below).
+//
+// The path is under `.bee/runtime/` deliberately: that prefix is gitignored
+// both in this repo and in every host repo onboarding sets up, so this record
+// can never make a worktree read "dirty" to the `git status --porcelain`
+// pre-check mergeFeatureWorktree runs — the same constraint that forces
+// `.bee/companion-session.json` to be torn down before that check.
+const WORKTREE_IDENTITY_REL = path.join('runtime', 'worktree-identity.json');
+
+/**
+ * Records `feature` as this worktree's creation slug — WRITE-IF-ABSENT, never
+ * overwritten: "immutable" is the entire point, so a re-bootstrap (or any
+ * later rename) must not be able to restate it.
+ *
+ * Never throws. This record is an ACCURACY improvement over `state.feature`,
+ * not a prerequisite: a worktree without it degrades to exactly the pre-fix
+ * behavior (resolveWorktreeFeature falls back to `state.feature`), so a
+ * failure here must never take down an otherwise-successful bootstrap.
+ */
+function writeCreationIdentity(worktreeStoreRoot, feature) {
+  if (typeof feature !== 'string' || !feature) {
+    return { written: false, reason: 'no feature slug given' };
+  }
+  const file = path.join(worktreeStoreRoot, WORKTREE_IDENTITY_REL);
+  if (fs.existsSync(file)) {
+    return { written: false, reason: 'creation identity already recorded — never overwritten' };
+  }
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify({ feature, created_at: new Date().toISOString() }, null, 2)}\n`, 'utf8');
+    fs.renameSync(tmp, file);
+    return { written: true, feature, file };
+  } catch (error) {
+    return { written: false, reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 /**
  * Creates <worktreeRoot>/.bee/ if missing, copies onboarding.json and
  * config.json from the MAIN store when present (copy-if-absent, never
@@ -272,6 +322,12 @@ const FRESH_STATE_SCHEMA_VERSION = '1.0';
  * does NOT overwrite it — re-running bootstrap must never clobber real
  * in-progress worktree state. onboarding.json/config.json follow the same
  * copy-if-absent rule independently of state.json's presence.
+ *
+ * issues-46-53 D4 (#46): ALSO records `feature` as the worktree's IMMUTABLE
+ * creation slug (`.bee/runtime/worktree-identity.json`, write-if-absent) —
+ * deliberately BEFORE the state.json-already-exists early return, so an
+ * adopted worktree (`bee worktree register --feature <slug>`) gets one too.
+ * Reported as `.identity` on every return shape; never fatal.
  */
 export function bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature) {
   const worktreeStoreRoot = path.join(worktreeRoot, '.bee');
@@ -288,10 +344,11 @@ export function bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature) {
 
   const onboarding = copyIfAbsent('onboarding.json');
   const config = copyIfAbsent('config.json');
+  const identity = writeCreationIdentity(worktreeStoreRoot, feature);
 
   const stateFile = path.join(worktreeStoreRoot, 'state.json');
   if (fs.existsSync(stateFile)) {
-    return { created: false, reason: 'state.json already exists', worktreeStoreRoot, onboarding, config };
+    return { created: false, reason: 'state.json already exists', worktreeStoreRoot, onboarding, config, identity };
   }
 
   const freshState = {
@@ -308,7 +365,7 @@ export function bootstrapWorktreeStore(worktreeRoot, mainStoreRoot, feature) {
   fs.writeFileSync(tmp, `${JSON.stringify(freshState, null, 2)}\n`, 'utf8');
   fs.renameSync(tmp, stateFile);
 
-  return { created: true, worktreeStoreRoot, onboarding, config, state: freshState };
+  return { created: true, worktreeStoreRoot, onboarding, config, identity, state: freshState };
 }
 
 // ---------------------------------------------------------------------------
@@ -918,11 +975,11 @@ function currentBranch(cwd) {
 }
 
 /** Best-effort read of the worktree's OWN bootstrapped `.bee/state.json`
- * `feature` field — used to derive the branch merge expects to consume
- * (`wt/<feature>`, the convention `createFeatureWorktree` always uses).
- * Never throws: a missing/corrupt/foreign state.json just means "unknown",
- * handled by the caller via the pattern-only fallback below. */
-function readWorktreeFeature(worktreeRoot) {
+ * `feature` field. MUTABLE: `bee state set --feature` / `startFeature` rewrite
+ * it freely and neither knows worktrees exist — which is exactly why it is the
+ * FALLBACK source below and no longer the primary one (issues-46-53 D4).
+ * Never throws: a missing/corrupt/foreign state.json just means "unknown". */
+function readWorktreeStateFeature(worktreeRoot) {
   try {
     const raw = fs.readFileSync(path.join(worktreeRoot, '.bee', 'state.json'), 'utf8');
     const parsed = JSON.parse(raw);
@@ -930,6 +987,39 @@ function readWorktreeFeature(worktreeRoot) {
   } catch {
     return null;
   }
+}
+
+/** Best-effort read of the worktree's IMMUTABLE creation slug, recorded once
+ * by `bootstrapWorktreeStore` (see WORKTREE_IDENTITY_REL above). Never throws:
+ * a worktree created before this record existed simply returns null. */
+function readWorktreeCreationFeature(worktreeRoot) {
+  try {
+    const raw = fs.readFileSync(path.join(worktreeRoot, '.bee', WORKTREE_IDENTITY_REL), 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed.feature === 'string' && parsed.feature ? parsed.feature : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * issues-46-53 D4 (#46): resolves the feature merge derives its expected
+ * `wt/<feature>` branch from, PREFERRING the immutable creation slug over the
+ * mutable `state.feature`. A worktree renamed after creation now merges
+ * correctly, because the branch is checked against the value it was actually
+ * created from.
+ *
+ * DEGRADES EXACTLY TO THE PRE-FIX BEHAVIOR when no creation record exists (a
+ * worktree created before this record shipped, or one whose `.bee/runtime/`
+ * was wiped): `created` is null, the resolved feature IS `state.feature`, and
+ * every downstream decision is byte-for-byte what it was — never a crash,
+ * never a new refusal. The extra fields are returned so the refusal message
+ * can name WHICH field drifted instead of blaming the branch.
+ */
+function resolveWorktreeFeature(worktreeRoot) {
+  const created = readWorktreeCreationFeature(worktreeRoot);
+  const stateFeature = readWorktreeStateFeature(worktreeRoot);
+  return { feature: created ?? stateFeature, created, stateFeature };
 }
 
 // Pattern-only fallback when the worktree's own state.json has no readable
@@ -1080,18 +1170,32 @@ async function performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkippe
   return outcome;
 }
 
-/** With `--cleanup`, runs cleanup unconditionally on any positive merge
- * outcome (`verify: 'green'` OR `'skipped'` — the only outcomes that ever
- * reach this function; `MERGE_CONFLICT`/`MERGE_VERIFY_RED` both return
- * earlier in `mergeFeatureWorktree` and never call this). Without the flag,
- * attaches the suggested command instead of running anything (decision D8b:
- * "never prompt" — the suggestion is informational, not a question). */
-async function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify }) {
+/** With `--cleanup`, runs cleanup on every outcome where the branch's work is
+ * settled: a committed merge (`verify: 'green'` or `'skipped'`) AND the
+ * `ALREADY_UP_TO_DATE` no-op. `MERGE_CONFLICT`/`MERGE_VERIFY_RED` both return
+ * earlier in `mergeFeatureWorktree` and never reach this function — and must
+ * not: work is NOT integrated on either path, so removing the worktree there
+ * would destroy the only copy of it.
+ *
+ * issues-46-53 D3 (#47): the no-op path used to return BEFORE this function
+ * ran, so an accepted `--cleanup` evaporated silently — exit 0, nothing
+ * removed, and not one word about the flag. The old blanket rule "cleanup is
+ * strictly post-commit" reads as if the COMMIT were the safety property. It
+ * is not: the property is "the worktree holds nothing that would be lost".
+ * `ALREADY_UP_TO_DATE` means the branch holds nothing main lacks, and the
+ * WORKTREE_MERGE_WORKTREE_DIRTY pre-check upstream has already proved the
+ * worktree carries no uncommitted work — so cleanup is exactly as safe there
+ * as after a green merge, and dropping the flag was the defect.
+ *
+ * Without the flag, attaches the suggested command instead of running
+ * anything (decision D8b: "never prompt" — the suggestion is informational,
+ * not a question). */
+async function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verifySkipped = false }) {
   if (!cleanup) {
     result.cleanup_suggested_command = `bee worktree merge --id ${id} --cleanup --json`;
     return;
   }
-  result.cleanup = await performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped: verify === 'skipped' });
+  result.cleanup = await performCleanup(mainRoot, { worktreeRoot, branch, id, verifySkipped });
 }
 
 /**
@@ -1110,7 +1214,10 @@ async function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id
  *      - Zero exit but no `.git/MERGE_HEAD` created: "Already up to date"
  *        — branch has nothing new for main. Returns a typed no-op result;
  *        `git commit` is NEVER attempted here (there is nothing staged —
- *        committing would either error or produce an empty commit).
+ *        committing would either error or produce an empty commit). A
+ *        `--cleanup` flag DOES still run on this path (issues-46-53 D3 /
+ *        #47): the branch holds nothing main lacks and the worktree was
+ *        already proven clean, so there is nothing to lose.
  *   3. A merge is now staged (MERGE_HEAD live, changes staged, nothing
  *      committed). If `verifyCommand` was given, it runs NOW, against this
  *      merged-but-UNCOMMITTED tree (MERGE_HEAD is live, changes are staged
@@ -1150,8 +1257,9 @@ async function attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id
  *   - `id` (required): the worktree's git-verified id (as granted via
  *     `worktree new`/`worktree register`).
  *   - `cleanup` (optional, default false): see `attachCleanupOutcome` above.
- *     Strictly post-commit — never attempted on conflict, red verify, or
- *     the already-up-to-date no-op.
+ *     Runs on a committed merge AND on the already-up-to-date no-op
+ *     (issues-46-53 D3); NEVER on a textual conflict or a red verify, where
+ *     the work is not integrated and removing the worktree would destroy it.
  *   - `verifyCommand` (optional): a shell command string, run via
  *     `spawnSync(verifyCommand, { cwd: mainRoot, shell: true })`. Omit (or
  *     pass a falsy value) when the host project has no `commands.verify`
@@ -1314,13 +1422,29 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
     refuseMerge('WORKTREE_MERGE_DETACHED_HEAD', `the worktree at ${worktreeRoot} is on a detached HEAD — check out its branch before merging.`);
   }
 
-  const feature = readWorktreeFeature(worktreeRoot);
+  const { feature, created: createdFeature, stateFeature } = resolveWorktreeFeature(worktreeRoot);
   const expectedBranch = feature ? `wt/${feature}` : null;
   const branchOk = expectedBranch ? branch === expectedBranch : WT_BRANCH_RE.test(branch);
   if (!branchOk) {
+    // issues-46-53 D4 (#46): the branch name is FIXED at creation and is
+    // never the thing to change — but the old message stopped at "not its
+    // expected ... branch", which reads as an accusation against the branch
+    // and pointed the user straight at the one field they must not touch.
+    // Name the field that actually drifted instead, whenever we can tell.
+    let drift = '';
+    if (createdFeature && stateFeature && createdFeature !== stateFeature) {
+      drift =
+        ` This worktree was CREATED as feature ${JSON.stringify(createdFeature)} (its immutable creation slug, which "${expectedBranch}" comes from), while its .bee/state.json now records feature ${JSON.stringify(stateFeature)}` +
+        ' — the FEATURE FIELD drifted after creation (a rename, "bee state set --feature", or a new feature started in this worktree); the branch did not. Do NOT rename the branch to match: check "' +
+        `${expectedBranch}" back out in the worktree, or merge the branch you actually want by hand.`;
+    } else if (!createdFeature && stateFeature) {
+      drift =
+        ` "${expectedBranch}" is derived from this worktree's MUTABLE .bee/state.json "feature" field (${JSON.stringify(stateFeature)}) because the worktree predates bee's immutable creation-slug record` +
+        ' — if the feature was renamed after the worktree was created, that FIELD is what drifted, not the branch. The branch name is fixed at creation; do not rename it to match.';
+    }
     refuseMerge(
       'WORKTREE_MERGE_BRANCH_MISMATCH',
-      `the worktree at ${worktreeRoot} is checked out to "${branch}", not its expected ${expectedBranch ? `"${expectedBranch}"` : '"wt/<slug>"-style'} branch — merge refuses to guess which branch to consume.`,
+      `the worktree at ${worktreeRoot} is checked out to "${branch}", not its expected ${expectedBranch ? `"${expectedBranch}"` : '"wt/<slug>"-style'} branch — merge refuses to guess which branch to consume.${drift}`,
     );
   }
 
@@ -1363,7 +1487,7 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
     // Zero exit but nothing staged: "Already up to date" — branch has
     // nothing new for main. Never attempt a commit here; there is nothing
     // staged, so "git commit" would either error or produce an empty commit.
-    return {
+    const noopResult = {
       ok: true,
       merged: false,
       id,
@@ -1374,6 +1498,19 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
       message: `"${branch}" is already up to date with ${mainRoot} — nothing to merge.`,
       ...(companion ? { companion } : {}),
     };
+    // issues-46-53 D3 (#47): this early return used to skip attachCleanupOutcome
+    // entirely, silently dropping an accepted --cleanup. See that function's
+    // own comment for why the no-op is a SAFE cleanup target while
+    // MERGE_CONFLICT/MERGE_VERIFY_RED are not.
+    //
+    // verifySkipped is deliberately FALSE here even though `verify` reads
+    // 'skipped': that warning means "no commands.verify was recorded, so this
+    // cleanup ran with no semantic gate" — which would be a lie on this path,
+    // where a verify may well be configured and was skipped only because
+    // nothing was merged for it to check. `code: 'ALREADY_UP_TO_DATE'` plus
+    // `merged: false` already say exactly that, without inventing a risk.
+    await attachCleanupOutcome(noopResult, { mainRoot, worktreeRoot, branch, id, cleanup, verifySkipped: false });
+    return noopResult;
   }
 
   // A merge is now staged (MERGE_HEAD live, changes staged, nothing yet
@@ -1450,7 +1587,7 @@ async function mergeFeatureWorktreeLocked(mainRoot, options = {}) {
       };
     }
 
-    await attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verify: result.verify });
+    await attachCleanupOutcome(result, { mainRoot, worktreeRoot, branch, id, cleanup, verifySkipped: result.verify === 'skipped' });
     return result;
   } finally {
     if (!committed && fs.existsSync(mergeHeadFile)) {
