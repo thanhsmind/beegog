@@ -2,14 +2,14 @@
 type: bee.area
 title: Doctrine Layer — lane classification and working discipline
 description: "The standing rules that size a piece of work and govern its by-products: work-packet-first tiny/small shapes, product-file-only caps, test-anchored risk flags, classification before context loading, the one canonical scratch home, and the verify ladder."
-timestamp: 2026-07-21
+timestamp: 2026-07-23
 bee:
   id: doctrine-layer-lane-and-working-discipline
   lifecycle: active
   areas: [doctrine-layer]
   required_context: [areas/doctrine-layer/overview.md]
-  decisions: ["lane-ceremony-v3 D1-D10 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19)", "f21efe6e (tree-hygiene D1/D4 — one canonical scratch home, the write-guard that enforces it)"]
-  sources: ["lane-ceremony-v3 cells lcv3-1..lcv3-4 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan freeze, lane work-packet shapes, product-file caps, test-anchored flags, intake-first classification; each RED-first against the doctrine assertion suite)", "tree-hygiene (cell th-6, 2026-07-21 — write-guard scratch-shape denial + the three competing prose homes collapsed into one doctrine rule)", "docs/specs/doctrine-layer.md#R13", "docs/specs/doctrine-layer.md#R14", "docs/specs/doctrine-layer.md#R15", "docs/specs/doctrine-layer.md#R16", "docs/specs/doctrine-layer.md#R17"]
+  decisions: ["lane-ceremony-v3 D1-D10 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19)", "f21efe6e (tree-hygiene D1/D4 — one canonical scratch home, the write-guard that enforces it)", I51 (issues-46-53 — claim-triggered baseline), I53a (issues-46-53 — sweeper reaches what the guard produces)]
+  sources: ["lane-ceremony-v3 cells lcv3-1..lcv3-4 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan freeze, lane work-packet shapes, product-file caps, test-anchored flags, intake-first classification; each RED-first against the doctrine assertion suite)", "tree-hygiene (cell th-6, 2026-07-21 — write-guard scratch-shape denial + the three competing prose homes collapsed into one doctrine rule)", "docs/specs/doctrine-layer.md#R13", "docs/specs/doctrine-layer.md#R14", "docs/specs/doctrine-layer.md#R15", "docs/specs/doctrine-layer.md#R16", "docs/specs/doctrine-layer.md#R17", "issues-46-53 cells i-3 (GH #51 — the baseline gate is claim-triggered and lives in the execution discipline; GH #53-adjacent — a guard that directs writes obliges the sweeper to reach there; traces in `.bee/cells/`, 2026-07-23)"]
   authoritative_for: "doctrine-layer: lane classification and working discipline"
 ---
 
@@ -68,11 +68,46 @@ govern the working residue of a cell rather than its content.
   procedure references used to each state a partial, competing version of
   this home — they now cite this rule instead.
 
+- **R17a — A guard that directs writes somewhere obliges the sweeper to reach
+  there.** The write-guard's refusal names the scratch **root** and tells the
+  author to write there; the sweeper's own inventory saw only directories, so
+  every plain file written exactly where the guard sent it was unreachable by
+  every flag — including the one documented as clearing the lot. Bee was
+  contradicting itself: one half of the rule directed the write, the other half
+  could not see it, and the gap was invisible because both halves independently
+  looked correct. The sweeper's inventory therefore covers what the guard
+  actually produces, and the per-feature sweep reaches a feature's artifacts
+  whether they sit in that feature's own directory or loose in the root under
+  bee's own `<feature>-<n>` cell-id naming.
+
+  Two safeguards ride the widened reach, because a sweeper that deletes more is
+  a sweeper that can delete wrongly. Containment is unchanged — every candidate
+  is proved inside the scratch home when the removal is planned and proved again
+  immediately before it happens. And a name-prefix match is an **inference**,
+  not the exact-name override: it requires a separator boundary so a short
+  feature name can never swallow a longer unrelated one, and it refuses to
+  remove a sibling that is itself live, reporting that refusal rather than
+  swallowing it. The general rule: when one mechanism decides where by-products
+  go, the mechanism that reclaims them is specified against that same shape, not
+  against the shape someone assumed.
+
 - **The verify ladder (cli-performance D4, `e54878b1`):** a cell's verify is its
   TARGETED suite (seconds), run red-first and green by the worker; the full
-  configured chain (~minute) runs at exactly four milestones — session
-  baseline, wave close (once, by the orchestrator, the independent full proof
-  for the whole wave), session finish, and worktree-merge/release gates.
+  configured chain (~minute) runs at exactly four milestones — the **baseline
+  before a session's first cell claim**, wave close (once, by the orchestrator,
+  the independent full proof for the whole wave), session finish, and
+  worktree-merge/release gates.
+
+  **The baseline's trigger is the claim, not arrival.** It is stated
+  claim-first, in the execution discipline rather than in any startup
+  checklist, because a conditional rule rendered inside an unconditional list
+  reads as unconditional: an agent working a numbered "every session" list
+  top-to-bottom ran a minute-long chain to answer a question that touched no
+  cell. A session that answers, reads or explores without ever claiming owes no
+  baseline run. Nothing about the gate's strength changed — a red baseline is
+  still surfaced and still becomes its own fix-first cell, and building on red
+  is still forbidden. What changed is when it fires, and where the rule lives so
+  that its structure and its meaning agree.
   Judges and reviewers never run the full chain as part of a verdict. Proven
   the day it landed: the wave-close run caught a real escape (raw NUL bytes in
   a lib file) that every targeted suite had missed. Companion performance

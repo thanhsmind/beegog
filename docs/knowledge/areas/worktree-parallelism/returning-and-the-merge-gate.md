@@ -2,14 +2,14 @@
 type: bee.area
 title: "Worktree Parallelism — returning: the staged merge and its verify gate"
 description: "Why a feature worktree returns through a merge that is staged but never committed until the configured verify passes, how a textual conflict and a red verify both abort while proving main untouched, and when post-commit cleanup runs and when it refuses."
-timestamp: 2026-07-22
+timestamp: 2026-07-23
 bee:
   id: worktree-parallelism-returning-and-the-merge-gate
   lifecycle: active
   areas: [worktree-parallelism]
   required_context: [areas/worktree-parallelism/entering-creating-and-registering.md]
-  decisions: [worktree-session-routing D8 (worktree merge --id <id> is the return path), D2-REVISED (the merge is a staged transaction — user review P1-2), D8a (dirty is git status --porcelain without --ignored), D8b/D8c (--cleanup is strictly post-commit)]
-  sources: [docs/history/worktree-session-routing/, "docs/specs/worktree-parallelism.md#S-returning-worktree-merge-id-id-d8"]
+  decisions: [worktree-session-routing D8 (worktree merge --id <id> is the return path), D2-REVISED (the merge is a staged transaction — user review P1-2), D8a (dirty is git status --porcelain without --ignored), D8b/D8c (--cleanup is strictly post-commit), I47 (issues-46-53 — cleanup on ALREADY_UP_TO_DATE)]
+  sources: [docs/history/worktree-session-routing/, "docs/specs/worktree-parallelism.md#S-returning-worktree-merge-id-id-d8", "issues-46-53 cell i-2 (GH #47 — the safety property is \"nothing would be lost\", not \"a commit happened\"; --cleanup runs on the no-op and still refuses on conflict and red verify; trace in `.bee/cells/`, 2026-07-23)"]
   authoritative_for: "worktree-parallelism: the return path, the merge verify gate, and cleanup"
 ---
 
@@ -47,9 +47,19 @@ Run from the ordinary MAIN checkout (never from inside a worktree — that inclu
   'verify_mutated_tracked_files'` instead of silently treating the tree as equivalent to the
   commit. Recovery for a merge commit that only fails a LATER independent verify: `git revert
   -m 1 <merge-commit>` (documented, not automated).
-- `--cleanup` (D8b/D8c): strictly post-commit — on green (or skipped) verify it runs
-  unconditionally — worktree remove, then `git branch -d` (never `-D`), then grant removal, in
-  that order. It refuses (typed; the merge result stays ok) when the worktree still holds
-  tracked-modified or untracked files. Skipped-verify cleanup always carries a warning that
-  nothing was checked. Cleanup never runs after `MERGE_CONFLICT`, `MERGE_VERIFY_RED`, or the
-  already-up-to-date no-op.
+- `--cleanup` (D8b/D8c): on green (or skipped) verify it runs unconditionally — worktree remove,
+  then `git branch -d` (never `-D`), then grant removal, in that order. It refuses (typed; the
+  merge result stays ok) when the worktree still holds tracked-modified or untracked files.
+  Skipped-verify cleanup always carries a warning that nothing was checked.
+- **The safety property is "nothing would be lost", not "a commit happened."** Cleanup never runs
+  after a textual conflict or a red verify: on those paths the branch's work is **not integrated**,
+  so removing the worktree would destroy the only copy of it. It **does** run on the
+  already-up-to-date no-op, where no commit is made either — because that outcome means the target
+  already holds everything the branch has, and the dirty-tree refusal above has already proved the
+  worktree carries nothing uncommitted. Reading the rule as "strictly post-commit" conflates the two
+  and made the flag evaporate silently on the no-op: accepted, never acted on, exit zero, no
+  message. A flag the caller passed is either honoured or explained; it is never dropped.
+- The no-op path therefore reports what cleanup did, and a no-op **without** the flag removes
+  nothing and only suggests the command — the flag, not the path, is what removes. The no-op
+  carries no "cleaned up unchecked" warning: that warning means *no verify command is recorded*,
+  which would be a lie where verify was skipped only because nothing was merged.
