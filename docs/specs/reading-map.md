@@ -115,13 +115,21 @@ Where things live. Read the touched area's spec before its code.
   [`workflow-state.md`](./workflow-state.md) remains as a pointer stub carrying the full
   140-anchor map (D37), including the disambiguation rows for the duplicate
   `R19`/`R20`/`R21` the source shipped.
-- [`okf-profile.md`](./okf-profile.md) — the Bee OKF Profile: the nine closed concept types plus
-  the practice/pitfall polarity bit, frontmatter field rules with the id-derives-path direction,
-  authority uniqueness (`bee.id`, `bee.authoritative_for`), the legacy-frontmatter carry-over map,
-  the per-migration coverage report, pointer-stub anchor maps, the declared (not yet executed)
+- [`docs/knowledge/areas/okf-profile/`](../knowledge/areas/okf-profile/index.md) — the Bee OKF
+  Profile, migrated into the bundle it describes (G6). Purpose, the entry-point verbs, actors and
+  open gaps (`overview.md`); the nine closed concept types plus the practice/pitfall polarity bit,
+  frontmatter field rules with the id-derives-path direction, authority uniqueness (`bee.id`,
+  `bee.authoritative_for`), the legacy-frontmatter carry-over map, the declared (not yet executed)
   retirement of `implement-plan.md`, the standing exemption for `docs/decisions/index.md`, and the
-  exact OKF-error/profile-warning finding codes `bee knowledge check` emits — bee's own contract,
-  not a ratified OKF standard (`coverage: partial`).
+  four canonical worked examples with the body contract and the rebuild bar
+  (`concept-model-and-authoring.md`); the exact OKF-error/profile-error/profile-warning finding
+  codes `bee knowledge check` emits (`conformance-check.md`); the budget-aware `context` manifest,
+  its measured relevance ranking, `promote`'s propose-never-write contract and the session preamble
+  (`context-and-promote.md`); the per-migration coverage report, the content-addressed pin, the
+  fidelity floor, the drift telemetry and pointer-stub anchor maps
+  (`migration-and-coverage-gates.md`). Bee's own contract, not a ratified OKF standard. The legacy
+  path [`okf-profile.md`](./okf-profile.md) remains as a pointer stub carrying the full 24-anchor
+  map (D37).
 
 ## Not yet specced
 

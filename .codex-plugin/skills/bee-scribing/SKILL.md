@@ -101,7 +101,7 @@ Do not soften any layer to get a write through. A refused write means the bundle
 node -e "import('./.bee/bin/lib/knowledge.mjs').then(m=>process.stdout.write(m.emitFrontmatter({type:'bee.area',title:'...',description:'...',tags:['...'],timestamp:'YYYY-MM-DD',bee:{id:'...',lifecycle:'active',areas:['<area>'],required_context:[],decisions:[],sources:[],authoritative_for:'<area>: <subject>'}})))"
 ```
 
-Body sections, the rebuild bar, and the `bee.areas` vs `bee.authoritative_for` distinction: the `bee.area` template in `docs/specs/okf-profile.md` §Templates. After any new concept or new area, regenerate the indexes — `node .bee/bin/bee.mjs knowledge index` — and confirm the bundle still grades clean: `node .bee/bin/bee.mjs knowledge check`.
+Body sections, the rebuild bar, and the `bee.areas` vs `bee.authoritative_for` distinction: the `bee.area` template in `docs/knowledge/areas/okf-profile/concept-model-and-authoring.md` §Templates. After any new concept or new area, regenerate the indexes — `node .bee/bin/bee.mjs knowledge index` — and confirm the bundle still grades clean: `node .bee/bin/bee.mjs knowledge check`.
 
 ### 2b. No bundle — the area's spec file
 

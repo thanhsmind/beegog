@@ -312,3 +312,7 @@
 {"ts":"2026-07-22T07:51:24.440Z","type":"friction","title":"parseStubAnchorMap still restates the anchor regex despite the shared-constant claim","detail":"","severity":"P3","layer":"tests","feature":""}
 {"ts":"2026-07-22T09:58:44.168Z","type":"friction","title":"implement-plan retirement would lose Technical Design and Rollback Plan","detail":"","severity":"P2","layer":"docs","feature":""}
 {"ts":"2026-07-22T10:12:25.150Z","type":"friction","title":"context dumps all 47 critical patterns regardless of relevance — 65% of the budget is noise","detail":"","severity":"P1","layer":"cli","feature":""}
+{"ts":"2026-07-22T12:53:06.777Z","type":"friction","title":"one unreproducible verify red at session resume, evidence not captured","detail":"","severity":"P2","layer":"tests","feature":""}
+{"ts":"2026-07-22T13:02:33.446Z","type":"friction","title":"worker trace prose restated live numbers staler AND more flattering than the payload","detail":"","severity":"P3","layer":"cells","feature":""}
+{"ts":"2026-07-22T13:16:33.888Z","type":"friction","title":"nothing enforces that a cell's context came from the knowledge manifest","detail":"","severity":"P1","layer":"cells","feature":""}
+{"ts":"2026-07-22T13:40:13.495Z","type":"friction","title":"cells judge-record cannot record a NEEDS_REVISION verdict in a repo with a decision taxonomy","detail":"","severity":"P1","layer":"cli","feature":""}

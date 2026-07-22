@@ -1,0 +1,17 @@
+<!--
+GENERATED FILE — do not hand-edit.
+Rendered by `bee knowledge index` from concept frontmatter inside docs/knowledge/ (okf-foundation D21).
+Regenerate: `bee knowledge index`. Check freshness: `bee knowledge index --check`.
+Deterministic: byte-identical for the same bundle contents — path-sorted entries, LF endings,
+never a generation timestamp or any other wall-clock value.
+-->
+
+# areas/okf-profile/
+
+## Concepts
+
+- [Bee OKF Profile — the concept model, its frontmatter, and how a concept is authored](concept-model-and-authoring.md) — The closed nine-type vocabulary, the frontmatter field rules and their identity/path direction, the per-subject authority rules, the legacy carry-over map, and the four canonical worked examples with the body contract and the rebuild bar.
+- [Bee OKF Profile — the two-level conformance check and its finding codes](conformance-check.md) — How a bundle is graded: OKF errors versus the profile's own errors and warnings, the exact code each finding carries, the emitter-first codec behind them, and the checker's never-writes boundary.
+- [Bee OKF Profile — the context consumer, the promote proposer, and the session preamble](context-and-promote.md) — The budget-aware manifest a work item's curated context is returned as, the measured relevance ranking that cuts critical patterns without losing one, the propose-never-write loop closer, and the preamble that makes the bundle load-bearing.
+- [Bee OKF Profile — the migration loop and the gates that grade it](migration-and-coverage-gates.md) — What a legacy source must satisfy to become bundle truth: the coverage report, the content-addressed pin, the unparsed report, the fidelity floor, the drift telemetry, and the pointer stub that keeps every citation resolving.
+- [Bee OKF Profile — purpose, entry points, and actors](overview.md) — Why bee closes OKF v0.1's deliberate permissiveness with a profile of its own, which verbs enter it, who is bound by it, and what it does not yet answer.

@@ -235,6 +235,25 @@ const EXTRA_SUITES = [
   // keeping D30's map as the spine, and the F12 drift telemetry lands inside
   // its band across the nine pinned "ba-nine-section"-shaped sources.
   ["scripts/okf_migrate.mjs", "--check", "workflow-state"],
+  // f3-5 (G6): okf-profile's own D35 coverage gate — the TWELFTH and last area
+  // migration, and the only one whose source DEFINES the bundle it moved into,
+  // graded by the profile's own loop and the profile's own gate. 24 anchors
+  // (13 B — the REFINEMENT-suffixed B6b included / 0 R / 4 E / 7 P) derived
+  // from blob 9267d3e at 53d8111, with expected_counts.unparsed_blocks: 17
+  // asserted. `rules: 0` is MEASURED, not a gap: this source's nine `## Business
+  // Rules` bullets carry no `R<n>` id at all, so D10 forbids inventing them and
+  // they are counted unparsed instead — re-homed verbatim into the concept whose
+  // subject each states, but never anchor-gated. Three of those 17 unparsed
+  // blocks are the one hazard this source carries: the extractor does not track
+  // markdown CODE FENCES, so the `bee.area` template's fenced `## Pointers
+  // (implementation)` line opens a spurious accounting section over the
+  // Templates prose. It moves no anchor — that stretch holds no top-level `- `
+  // bullet, so P1-P7 are still the real Pointers section's seven — and pinning
+  // 17 makes a future fence-aware extractor a loud failure rather than a silent
+  // reshaping. Five concepts, split by TOPIC (purpose/entry points/actors; the
+  // concept model and authoring; the conformance check; context and promote;
+  // the migration loop and its gates).
+  ["scripts/okf_migrate.mjs", "--check", "okf-profile"],
   // f3-4 (G2): `docs/specs/` is READ-ONLY for NEW content once a repo has a
   // knowledge bundle. Two entries, both required:
   //   --selftest  proves the fence actually BITES — the bundle-ful fixture

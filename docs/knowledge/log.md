@@ -468,3 +468,49 @@
   (`schedule.mjs` → `cells-scheduling.md`, `recovery.mjs` → `recovery.md`) resolve into the
   bundle instead of the retired spec. `docs/history/**` is archive and stays untouched.
   Chain: 75 suites (74 + this area's gate), `SUITE_FLOOR_COUNT` 59 → 60.
+- **The profile moved into the bundle it defines** (cell `f3-5`, slice S4, G6) — the twelfth and
+  last area migration, and the only one whose source is the spec the bundle is validated
+  against. `docs/specs/okf-profile.md` re-authored into five `bee.area` concepts under
+  `areas/okf-profile/`, split by TOPIC: `overview.md` (purpose, entry points, actors, open
+  gaps), `concept-model-and-authoring.md` (the nine closed types, the frontmatter field rules
+  and their id/path direction, per-subject authority, the legacy carry-over map, and the four
+  worked templates with the body contract and the rebuild bar), `conformance-check.md` (the
+  two-level check and its exact OKF-error / profile-error / profile-warning codes, the
+  emitter-first codec, the never-writes boundary), `context-and-promote.md` (the budget-aware
+  manifest, the measured relevance ranking, the propose-never-write `promote` loop closer, the
+  session preamble), and `migration-and-coverage-gates.md` (the coverage report, the
+  content-addressed pin, the unparsed report, the fidelity floor, the drift telemetry, the
+  pointer-stub anchor map). The legacy path is now a D37 pointer stub carrying the full 24-row
+  anchor map. Coverage is machine-checked by `scripts/okf_migrate.mjs --check okf-profile`,
+  pinned to blob `9267d3e` at `53d8111`: **24 anchors, 24 owned, 0 duplicated, 0 lost**;
+  fidelity min/median/max all 1.000 against the 0.60 floor (F11), with no concept edited and no
+  threshold touched. The gate was proven RED first — one anchor unclaimed reports
+  `FAIL … 23 owned, 0 duplicated, 1 lost / LOST in concepts: P7 is claimed by no concept's
+  bee.sources` — then restored.
+- **`rules: 0` is MEASURED, not a gap.** This source's `## Business Rules` section carries nine
+  top-level bullets and not one opens with an `R<n> —` id; they were written as plain prose.
+  D10 forbids inventing the nine ids they never had, so `rules` is 0 and those nine blocks are
+  counted in `unparsed_blocks` instead. They are still migrated verbatim into the concept whose
+  subject each states — what they are not is anchor-gated, exactly as `feedback-digest`'s
+  unnumbered behavior prose is not. F9's "report rather than force" was honored: nothing was
+  reshaped to make the scheme fit.
+- **The code-fence hazard this source carries, pinned rather than papered over.** The anchor
+  extractor does not track markdown code fences, so the `bee.area` template's own fenced
+  `## Pointers (implementation)` line opens a spurious accounting section over the Templates
+  prose, and three bold-lead paragraphs in that stretch land in `unparsed_blocks`. It moves no
+  anchor — that stretch holds no top-level `- ` bullet, so `P1`-`P7` remain the real Pointers
+  section's seven, verified by dumping each derived anchor's text before the pin was written.
+  `expected_counts.unparsed_blocks: 17` is asserted precisely so a future fence-aware extractor
+  becomes a loud failure instead of a silent reshaping.
+- **The fence's named exception SHRANK by one.** `okf-profile.md` was a named exception in
+  `scripts/okf_specs_fence.mjs` protecting the interval between f3-4 and this migration. That
+  interval is over, and the exception was REMOVED rather than relabelled: leaving it would have
+  been a name-based pass that keeps saying yes if the stub's `migrated_to` is ever dropped —
+  precisely the silent-rot the structural stub branch exists to prevent. The file now passes as
+  an ordinary structural stub, asserted both ways in `--selftest` (the real stub passes as
+  `stub`; an `okf-profile.md` without `migrated_to` fails as new content).
+- Citations rewired in the same cell (D37): `bee-scribing`'s template pointer, `bee-hive`'s
+  work-item offer, `inject.mjs`'s session-preamble line and `test_bundle_mode.mjs`'s template
+  assertion all resolve into `areas/okf-profile/concept-model-and-authoring.md`;
+  `reading-map.md`'s entry points at the bundle. `docs/history/**` is archive and stays
+  untouched. Chain: 79 suites, `SUITE_FLOOR_COUNT` 60 → 62.

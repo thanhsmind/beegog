@@ -75,7 +75,7 @@
     },
     {
       "path": ".bee/bin/lib/inject.mjs",
-      "sha256": "3a3943634cf4f2a8c211a23d7b70a19922e77f15ab7b4f8ba75d6ed775c77fb0",
+      "sha256": "5a1df63ab3cf88c9952225b0ade74da02bc77cff9be3470a3a1797da82d93a31",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -179,7 +179,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "2f029673ffe672590c9cebb628bde6567a5b19ab9a2eef03e8702fdf591c8cb0",
+      "sha256": "778ecb5f730fa9efef17ee5a076ab41e18450c30bca28bbf3055135b689379ec",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -452,7 +452,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/SKILL.md",
-      "sha256": "c0aa4a3ff9866677ec53c25be001c5259511082547a5ba6fa5d2d163cf0cfb2f",
+      "sha256": "f0258ddafec5357f04303238cde92d29345c2df7fe9748fa2cf32335775ef9bf",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/SKILL.md"
@@ -578,7 +578,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/lib/inject.mjs",
-      "sha256": "3a3943634cf4f2a8c211a23d7b70a19922e77f15ab7b4f8ba75d6ed775c77fb0",
+      "sha256": "5a1df63ab3cf88c9952225b0ade74da02bc77cff9be3470a3a1797da82d93a31",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/lib/inject.mjs"
@@ -732,7 +732,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "sha256": "c9705fb7dea4715ac52f9ee2dd9b03f0dd1ee62baef641d3e3663cd0072d69bc",
+      "sha256": "c12076767a49d651f1d65a22e1a543f8d4d073a56f5c5e1a7084b568f98e3d98",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/tests/test_bundle_mode.mjs"
@@ -935,7 +935,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-scribing/SKILL.md",
-      "sha256": "fc6d6eec340158e5b630d7c20ec575936b7070cb3469777d8e4358e722d9c7e6",
+      "sha256": "de477472db3172da8304be6bc9f45c3b00e6e6109b1341d1ac69e00eb689b041",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-scribing/SKILL.md"
@@ -1089,7 +1089,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "1f085724262fee11b8bca9e385863cdfa3fab14ec2b42e6c8298663fe5de0db5",
+      "sha256": "651349f2635a988db48b43b91f90f0748addf0fbdde297c46e2123b6c3a5bcce",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1362,7 +1362,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/SKILL.md",
-      "sha256": "c0aa4a3ff9866677ec53c25be001c5259511082547a5ba6fa5d2d163cf0cfb2f",
+      "sha256": "f0258ddafec5357f04303238cde92d29345c2df7fe9748fa2cf32335775ef9bf",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/SKILL.md"
@@ -1488,7 +1488,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/lib/inject.mjs",
-      "sha256": "3a3943634cf4f2a8c211a23d7b70a19922e77f15ab7b4f8ba75d6ed775c77fb0",
+      "sha256": "5a1df63ab3cf88c9952225b0ade74da02bc77cff9be3470a3a1797da82d93a31",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/lib/inject.mjs"
@@ -1642,7 +1642,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "sha256": "c9705fb7dea4715ac52f9ee2dd9b03f0dd1ee62baef641d3e3663cd0072d69bc",
+      "sha256": "c12076767a49d651f1d65a22e1a543f8d4d073a56f5c5e1a7084b568f98e3d98",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/tests/test_bundle_mode.mjs"
@@ -1845,7 +1845,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-scribing/SKILL.md",
-      "sha256": "fc6d6eec340158e5b630d7c20ec575936b7070cb3469777d8e4358e722d9c7e6",
+      "sha256": "de477472db3172da8304be6bc9f45c3b00e6e6109b1341d1ac69e00eb689b041",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-scribing/SKILL.md"
@@ -2129,7 +2129,7 @@
     },
     {
       "path": "scripts/test_verify_manifest.mjs",
-      "sha256": "264a89dda936a7e3b3b7cd25f99fb8afc3ffe5e62148048f5462d75e1ca36d29",
+      "sha256": "9fd58d89e40ba13da68c5f3a6e54bffbe9557129fc1ab771d21fe7783bf40d74",
       "mode": "644",
       "role": "distribution_test"
     },
@@ -2401,7 +2401,7 @@
     },
     {
       "path": "skills/bee-hive/SKILL.md",
-      "sha256": "c0aa4a3ff9866677ec53c25be001c5259511082547a5ba6fa5d2d163cf0cfb2f",
+      "sha256": "f0258ddafec5357f04303238cde92d29345c2df7fe9748fa2cf32335775ef9bf",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/SKILL.md"
@@ -2527,7 +2527,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/inject.mjs",
-      "sha256": "3a3943634cf4f2a8c211a23d7b70a19922e77f15ab7b4f8ba75d6ed775c77fb0",
+      "sha256": "5a1df63ab3cf88c9952225b0ade74da02bc77cff9be3470a3a1797da82d93a31",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/inject.mjs"
@@ -2681,7 +2681,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "sha256": "c9705fb7dea4715ac52f9ee2dd9b03f0dd1ee62baef641d3e3663cd0072d69bc",
+      "sha256": "c12076767a49d651f1d65a22e1a543f8d4d073a56f5c5e1a7084b568f98e3d98",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_bundle_mode.mjs"
@@ -2884,7 +2884,7 @@
     },
     {
       "path": "skills/bee-scribing/SKILL.md",
-      "sha256": "fc6d6eec340158e5b630d7c20ec575936b7070cb3469777d8e4358e722d9c7e6",
+      "sha256": "de477472db3172da8304be6bc9f45c3b00e6e6109b1341d1ac69e00eb689b041",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-scribing/SKILL.md"

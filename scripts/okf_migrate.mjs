@@ -525,6 +525,66 @@ export const PIN_REGISTRY = {
     source_copy: "docs/history/okf-migration-f2/sources/workflow-state.md",
     note: "the 1464-line BA spec as of df3072d (f2-11 close) WITH the duplicate-R19/R20/R21 repair applied by f2-12 before the pin was captured — 37 behaviors, 58 rules (B9a and the disambiguated R19a/R20a/R21a included), 25 edge cases, 20 pointers, 7 unparsed Behaviors & Operations blocks. These bytes are in no commit's tree by construction, so `via` is always committed-copy here. The area is migrated across SEVERAL cells (F10), so its chain gate is wired by the LAST of them, not by f2-12",
   },
+
+  "okf-profile": {
+    kind: "area",
+    // THE TWELFTH AND LAST AREA (f3-5, G6) — and the only one whose source
+    // DEFINES the bundle it is moving into. The pin is HEAD at the moment f3-5
+    // ran, taken BEFORE the stub replaced the content: pin the parent, copy the
+    // bytes, hash both, exactly as every unrepaired pin before it. No repair was
+    // needed — the source carries 24 DISTINCT ids and no collision.
+    commit: "53d8111769c5c2fa9a479dd82a0ce5a9278b1448",
+    path: "docs/specs/okf-profile.md",
+    blob_sha: "9267d3eaef2cc016d32a96bca1e6d99822bca3c3",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      // 13, B6b included: this source uses the LETTER SUFFIX as a REFINEMENT
+      // (B6b refines B6's budget cut with the relevance ranking), the same form
+      // f2-4's widening was written for and f2-3 taught the stub-row parser and
+      // the claim matcher to read.
+      behaviors: 13,
+      // ZERO, and measured rather than assumed. This source's `## Business
+      // Rules` section carries NINE top-level bullets and not one of them
+      // opens with an `R<n> —` id — they are written as plain prose bullets.
+      // D10 forbids inventing the nine R-ids they never had, so `rules` is 0
+      // and those nine blocks are counted in unparsed_blocks below. They are
+      // still MIGRATED (verbatim, into the concept whose topic each states);
+      // what they are not is anchor-gated, exactly as feedback-digest's
+      // unnumbered behavior prose is not.
+      rules: 0,
+      edges: 4,
+      pointers: 7,
+      total: 24,
+      // 17, and every one of them identified before any edit:
+      //   • 5 in "Behaviors & Operations" — B6's wrapped continuation line that
+      //     happens to open with a bold run (`**transitively** with a cycle
+      //     guard …`, L217), B6b's three un-ided property bullets (`- **Floor.**`
+      //     L249, `- **Conservation.**` L254, `- **Zero-signal guard.**` L259),
+      //     and B10's wrapped `**86 anchors across five areas** …` (L302). Each
+      //     travels with the anchor whose block it sits in — B6, B6b, B10 — so
+      //     the fidelity floor measures them and no content is homeless.
+      //   • 9 in "Business Rules" — the nine un-ided rule bullets described
+      //     above (L351, L354, L356, L357, L359, L361, L363, L364, L370).
+      //   • 3 accounted to "Pointers" that are really TEMPLATES prose, and this
+      //     is the one hazard this source carries: the extractor does not track
+      //     markdown CODE FENCES, and the `bee.area` template at L406-438
+      //     contains a fenced nine-section skeleton whose `## Pointers
+      //     (implementation)` line (L437) opens a spurious pointers accounting
+      //     section that runs to the real `## Open Gaps` at L574. Three
+      //     bold-lead paragraphs in that stretch (L440 the anti-fork field,
+      //     L449 the body contract, L456 the rebuild bar) are counted there.
+      //     It changes NO anchor: that stretch contains no top-level `- `
+      //     bullet, so P1-P7 are still exactly the seven bullets of the real
+      //     `## Pointers (implementation)` section at L594-611, verified by
+      //     dumping each derived anchor's text before the pin was written.
+      //     Asserting 17 is what makes a future fence-aware extractor — which
+      //     would move these 3 out of the count — a loud failure instead of a
+      //     silent reshaping.
+      unparsed_blocks: 17,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/okf-profile.md",
+    note: "the 611-line BA spec as of 53d8111 (f3-1..f3-4 close), immediately before f3-5 turned it into a D37 pointer stub — 13 behaviors (B6b included), 0 rules (the nine Business Rules bullets carry no R-id and none was invented), 4 edge cases, 7 pointers, 17 unparsed blocks. The spec that defines the profile, migrated by the profile's own loop and graded by the profile's own gate",
+  },
 };
 
 const PATTERNS_SOURCE = "docs/history/learnings/critical-patterns.md";

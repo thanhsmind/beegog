@@ -11,11 +11,18 @@
 //         the exact failure class this whole programme exists to prevent.
 //   (ii)  `reading-map.md` — the hand-written navigation surface (G4 keeps it,
 //         pointing at the bundle).
-//   (iii) `okf-profile.md` — the OKF profile the bundle itself is validated
-//         against. G6 migrates it in its own cell, at which point it grows a
-//         `migrated_to` and passes through branch (i) instead; this branch
-//         then costs nothing and protects the interval.
-//   (iv)  a NAMED, REASONED, PINNED placeholder — see PLACEHOLDERS below.
+//   (iii) a NAMED, REASONED, PINNED placeholder — see PLACEHOLDERS below.
+//
+// `okf-profile.md` used to be a third named exception here, protecting the
+// interval between this fence (f3-4) and G6's migration of the profile into the
+// bundle it describes (f3-5). That interval is over: the profile is migrated and
+// the file is now an ordinary structural stub, classified `stub` through branch
+// (i) like every other migrated area. The exception was REMOVED rather than
+// relabelled, because leaving it would have been a hole — a name-based pass that
+// keeps saying yes if the stub's `migrated_to` is ever dropped or its
+// frontmatter breaks, exactly the silent-rot failure branch (i) exists to
+// prevent. Asserted both ways in `--selftest`: the real stub passes as `stub`,
+// and an `okf-profile.md` WITHOUT `migrated_to` fails as new content.
 // Anything else is NEW CONTENT landing in a read-only compatibility surface,
 // and the chain fails naming the file.
 //
@@ -59,19 +66,20 @@ export function specsDir(root) {
 
 // ─── the named, reasoned exceptions (NOT the stub rule) ────────────────────
 //
-// These three names ARE hardcoded, deliberately and narrowly: G2 names them.
-// The prohibition is on recognising STUBS by filename — that set grows and
-// renames with every area, so it must be structural. This set is closed by
-// decision and each member carries its reason in the code, printed by --json.
+// This name IS hardcoded, deliberately and narrowly: G2 names it. The
+// prohibition is on recognising STUBS by filename — that set grows and renames
+// with every area, so it must be structural. This set is closed by decision and
+// each member carries its reason in the code, printed by --json.
+//
+// It SHRANK by one in f3-5: `okf-profile.md` left it the moment G6 migrated the
+// profile and gave the file a `migrated_to` of its own. A named exception that
+// outlives its interval is a standing permission for that filename to hold
+// anything at all.
 
 const NAMED_EXCEPTIONS = new Map([
   [
     'reading-map.md',
     ['navigation', 'the hand-written navigation surface — "where does X live" (G2/G4); it points AT the bundle, it is not area truth'],
-  ],
-  [
-    'okf-profile.md',
-    ['profile', 'the OKF profile the bundle itself is validated against (G2); G6 migrates it in its own cell, after which it passes as an ordinary structural stub'],
   ],
 ]);
 
@@ -328,14 +336,36 @@ function runSelftest() {
     assert(verdictOf(result, 'docs/specs/ghost.md') === 'dangling-stub', 'reported as its own class, not as new content');
   });
 
-  // (D) the named exceptions G2 states, each with its reason in the code.
-  check('reading-map.md and okf-profile.md are the named exceptions, and they pass', () => {
+  // (D) the named exception G2 states, with its reason in the code.
+  check('reading-map.md is the named exception, and it passes', () => {
     const root = makeBundlefulRepo('exceptions');
-    writeFile(root, 'docs/specs/okf-profile.md', '---\narea: okf-profile\n---\n\n# OKF profile\n');
     const result = fenceFindings(root);
     assert(findingPaths(result).length === 0, `got ${JSON.stringify(findingPaths(result))}`);
     assert(verdictOf(result, 'docs/specs/reading-map.md') === 'navigation', 'reading-map is the navigation surface');
-    assert(verdictOf(result, 'docs/specs/okf-profile.md') === 'profile', 'okf-profile is the profile the bundle is validated against');
+  });
+
+  // (D2) f3-5/G6 — the profile moved INTO the bundle it describes, so its
+  // filename bought it a pass that must now be gone. Both directions are
+  // asserted, because relabelling the exception instead of removing it would
+  // have left exactly the hole branch (i) exists to close.
+  check('okf-profile.md passes as an ordinary STRUCTURAL stub once it carries migrated_to (G6)', () => {
+    const root = makeBundlefulRepo('profile-stub');
+    writeFile(root, 'docs/knowledge/areas/okf-profile/index.md', '# okf-profile\n');
+    writeFile(root, 'docs/specs/okf-profile.md', stubText('okf-profile'));
+    const result = fenceFindings(root);
+    assert(findingPaths(result).length === 0, `got ${JSON.stringify(findingPaths(result))}`);
+    assert(verdictOf(result, 'docs/specs/okf-profile.md') === 'stub', 'classified by structure, not by name');
+  });
+
+  check('okf-profile.md WITHOUT migrated_to FAILS — its named exception is gone, not renamed', () => {
+    const root = makeBundlefulRepo('profile-nostub');
+    writeFile(root, 'docs/specs/okf-profile.md', '---\narea: okf-profile\n---\n\n# OKF profile\n\n## Purpose\n\nBrand new prose.\n');
+    const result = fenceFindings(root);
+    assert(
+      findingPaths(result).join(',') === 'docs/specs/okf-profile.md',
+      `a stub without migrated_to must never pass on its filename, got ${JSON.stringify(findingPaths(result))}`,
+    );
+    assert(verdictOf(result, 'docs/specs/okf-profile.md') === 'new-content', 'reported as new content, not as a profile');
   });
 
   // (E) system-overview.md — allowlisted as a KNOWN UNWRITTEN PLACEHOLDER, and

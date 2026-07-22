@@ -144,7 +144,7 @@ function knowledgeContextLines(root, record) {
 
   if (!hasWorkItem) {
     return [
-      `- No knowledge work item for "${feature}" — offer to author docs/knowledge/work/${feature}/work-item.md (template: docs/specs/okf-profile.md, Templates) so the next session starts from curated context.`,
+      `- No knowledge work item for "${feature}" — offer to author docs/knowledge/work/${feature}/work-item.md (template: docs/knowledge/areas/okf-profile/concept-model-and-authoring.md, Templates) so the next session starts from curated context.`,
     ];
   }
   return [

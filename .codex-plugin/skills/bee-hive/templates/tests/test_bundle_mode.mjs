@@ -363,7 +363,13 @@ await check('bee-scribing carries NO deprecation notice and no nag anywhere', as
 });
 
 await check('the okf-profile area-concept template carries the nine-section skeleton and the rebuild bar', async () => {
-  const profile = fs.readFileSync(path.join(REPO_ROOT, 'docs', 'specs', 'okf-profile.md'), 'utf8');
+  // f3-5/G6: the profile moved INTO the bundle it describes, so the template
+  // it ships lives in the concept that owns concept authoring; docs/specs/
+  // okf-profile.md is now a pointer stub and carries no template at all.
+  const profile = fs.readFileSync(
+    path.join(REPO_ROOT, 'docs', 'knowledge', 'areas', 'okf-profile', 'concept-model-and-authoring.md'),
+    'utf8',
+  );
   const marker = '### `bee.area`';
   const start = profile.indexOf(marker);
   assert(start !== -1, 'the Templates section carries a bee.area template');

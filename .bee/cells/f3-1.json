@@ -101,6 +101,66 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "discrimination-is-real",
+            "status": "PASS",
+            "evidence": "judge re-scored the fixture itself: min(rel) 0.715 > max(irr) 0.163, 10/10 distinct, zero zeros; live AUC independently recomputed 0.7564/0.8051 matching the trace; rejected baselines reproduced to 3 decimals"
+          },
+          {
+            "id": "rejected-oracle-absent",
+            "status": "PASS",
+            "evidence": "mutation test: dropping EVERY critical from entries kills CUT/FLOOR/determinism/real-cut; replacing the signal with a literal path sort kills DISCRIMINATES and zero-signal — no value-claiming test survives a gutted ranking"
+          },
+          {
+            "id": "conservation-cannot-lose",
+            "status": "PASS",
+            "evidence": "knowledge.mjs:1301-1315 THROWS a typed conservation error; judge sabotaged a copy and got the throw live; 20+2+27=49=critical_total, no duplicates"
+          },
+          {
+            "id": "zero-signal-guard",
+            "status": "PASS",
+            "evidence": "judge built its own disjoint fixture: exit 1 naming 14 of 14 above the pinned ratio; at population 9 exit 0 with the count still reported; at 0 the field is still emitted"
+          },
+          {
+            "id": "floor-does-not-displace-rank-1",
+            "status": "PASS",
+            "evidence": "budget sweep 0/1/274/275/276/813/814: rank1 always first, total_est<=budget at every budget; reserve = max(0, min(floorCost, budget - rankOneCost))"
+          },
+          {
+            "id": "named-exclusions-honest",
+            "status": "PASS",
+            "evidence": "0 of 27 exclusions malformed, every one {path,score,reason} with rank N of M; both under-cut labelled-relevant patterns named"
+          },
+          {
+            "id": "three-updated-assertions",
+            "status": "PASS",
+            "evidence": "each moved with a real behaviour change; the dropped tight-budget composition is re-pinned exactly by the FLOOR test; both retained invariants verified empirically by the sweep"
+          },
+          {
+            "id": "no-weakened-assertions-elsewhere",
+            "status": "PASS",
+            "evidence": "removed-line grep yields only the three assertions, a fixture helper signature, and one message string; no other test file touched"
+          },
+          {
+            "id": "bundle-only-and-no-deps",
+            "status": "PASS",
+            "evidence": "no package.json in the commit; imports only node:fs and node:path; IDF built from the criticals population alone; the single added read is under bundleDir"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": null,
+        "judge_model": null,
+        "model_independence": "unverified",
+        "recorded_at": "2026-07-22T13:02:33.357Z"
+      }
     ]
   }
 }

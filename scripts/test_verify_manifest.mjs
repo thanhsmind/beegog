@@ -143,6 +143,14 @@ export const MANDATORY_SUITE_ARGS = [
   // edge cases and pointer bullets were distributed split by topic inside
   // themselves rather than left as dumping grounds.
   ["scripts/okf_migrate.mjs", "--check", "workflow-state"],
+  // f3-5 (G6): okf-profile's own D35 coverage gate — the TWELFTH and last area
+  // migration, and the only one whose source DEFINES the bundle it moved into.
+  // 24 anchors (13 B including the refinement-suffixed B6b / 0 R / 4 E / 7 P)
+  // from blob 9267d3e at 53d8111, unparsed_blocks: 17. `rules: 0` is measured,
+  // not missing: the nine `## Business Rules` bullets carry no `R` id, so none
+  // was invented (D10) and they are counted unparsed while still being re-homed
+  // verbatim. Five concepts, split by topic.
+  ["scripts/okf_migrate.mjs", "--check", "okf-profile"],
   // f3-4 (G2): the exact-PATH pin above protects the fence script itself, but
   // not the `--selftest` variant riding it — and the selftest is the only
   // thing that proves the fence BITES (a bare live run passes trivially the
