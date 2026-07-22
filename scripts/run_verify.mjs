@@ -381,18 +381,28 @@ export function skipNote(stdout) {
   return m ? m[1].trim() : null;
 }
 
-// Hermeticity (hardening-1-7-10 D1): a suite must never inherit the calling
-// harness's own session identity. When run_verify.mjs is invoked from inside
-// a live Claude Code or bee session, CLAUDE_CODE_SESSION_ID / BEE_SESSION_ID
-// are set in THIS process's env and would otherwise leak into every spawned
-// child — silently changing sessionless-path behavior (resolveSessionId's
-// env fallback) between "run locally from a live session" and "run in CI
-// with no such env at all". Every child suite gets a scrubbed copy so local
-// runs match CI byte-for-byte, regardless of the parent's own session state.
+// Hermeticity (hardening-1-7-10 D1; BEE_AGENT_NAME closed in okf-integration-
+// close-f4 f4-4): a suite must never inherit the calling harness's own
+// identity — THREE variables, not two. CLAUDE_CODE_SESSION_ID and
+// BEE_SESSION_ID are set in THIS process's env whenever run_verify.mjs runs
+// from inside a live Claude Code or bee session, and would otherwise leak
+// into every spawned child, silently changing sessionless-path behavior
+// (resolveSessionId's env fallback) between "run locally from a live
+// session" and "run in CI with no such env at all". BEE_AGENT_NAME is the
+// third: AGENTS.md critical rule 5 mandates prefixing write-heavy shell
+// commands with `BEE_AGENT_NAME=<name>` during swarms, so a worker that
+// obeys that rule and then runs the configured verify command inherits its
+// own agent name into every child suite — inside checkWrite's cross-session
+// hold branch that leaked name becomes the acting agent identity, and "the
+// acting session's own hold must never block its own write" flips to a
+// false red purely because the harness, not the guard, leaked. Every child
+// suite gets a scrubbed copy so local runs match CI byte-for-byte and
+// survive rule 5's own prefix, regardless of the parent's own identity.
 function childEnv() {
   const env = { ...process.env };
   delete env.CLAUDE_CODE_SESSION_ID;
   delete env.BEE_SESSION_ID;
+  delete env.BEE_AGENT_NAME;
   return env;
 }
 

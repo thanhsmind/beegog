@@ -179,7 +179,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "3a332c49a2424ef26c57cafa69644817ed6840d6a61402fb2faffe3fc66639f5",
+      "sha256": "95d9458754a0cb4e13f6b13e2de2835892cdfaf57678d4b912c6e51545aa825a",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -788,7 +788,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/tests/test_guards.mjs",
-      "sha256": "a33c18702769208796f10ff7095fcfe85cd646dd61a62240580d457d5b6b8de5",
+      "sha256": "682f39fcfd59fdae8142ef3be60368f6e53cbe5e8d736921cdd269caf3a9b614",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/tests/test_guards.mjs"
@@ -1089,7 +1089,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "53aee020b41570de2d572baa504a0e0cd43bd2a259c258b192b644ed13bcf372",
+      "sha256": "373086fb4fad9c042b98efc7f596509ef1c2687d284e7d31e01d2d8de778aa3c",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1698,7 +1698,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/tests/test_guards.mjs",
-      "sha256": "a33c18702769208796f10ff7095fcfe85cd646dd61a62240580d457d5b6b8de5",
+      "sha256": "682f39fcfd59fdae8142ef3be60368f6e53cbe5e8d736921cdd269caf3a9b614",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/tests/test_guards.mjs"
@@ -2737,7 +2737,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_guards.mjs",
-      "sha256": "a33c18702769208796f10ff7095fcfe85cd646dd61a62240580d457d5b6b8de5",
+      "sha256": "682f39fcfd59fdae8142ef3be60368f6e53cbe5e8d736921cdd269caf3a9b614",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_guards.mjs"
