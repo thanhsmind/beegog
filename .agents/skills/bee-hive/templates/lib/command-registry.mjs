@@ -1294,6 +1294,27 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
 
+  // ─── knowledge (okf-foundation S1, lib/knowledge.mjs) — OKF v0.1 bundle
+  // verbs over docs/knowledge/ (D17/D23). check is the two-level D4 validator;
+  // index/list/context arrive in later slices. Read-only: knowledge never
+  // writes .bee/*.json(l) stores (D2). ──────────────────────────────────────
+  {
+    name: 'knowledge.check',
+    invoke: 'bee knowledge check',
+    description:
+      'Validate the docs/knowledge/ OKF v0.1 bundle. The walk never leaves docs/knowledge/ (D23); a missing or empty bundle is OK. Two levels (D4) — OKF errors: missing/unparseable frontmatter on a non-reserved .md, empty/absent type, frontmatter in a non-root index.md, a root index.md carrying any key but okf_version, a log.md date heading that is not ISO 8601. Profile warnings: type outside the nine D18 types, missing profile-required field, dangling required_context/supersedes target, duplicate bee.id, duplicate bee.authoritative_for, and a parse→re-emit byte mismatch (not_canonical — the round-trip guard against silent misparse). Exits non-zero only on OKF errors, or on any finding under --strict (D13).',
+    parameters: {
+      type: 'object',
+      properties: {
+        strict: { type: 'boolean', description: 'Promote profile warnings to errors: any finding at all exits non-zero (D4).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON ({okf:{errors},profile:{warnings},counts}) instead of one line per finding (D13).' },
+      },
+      required: [],
+    },
+    examples: ['bee knowledge check --json', 'bee knowledge check --strict --json'],
+    deprecated: null,
+  },
+
   // ─── perf (lib/perf.mjs) — global cross-project performance log ───────────
   // Each section summarizes a piece of work: models used, per-model tokens
   // (new/cached/total), whether parallel, and running time (active, not idle).

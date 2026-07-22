@@ -199,7 +199,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -230,7 +230,7 @@ await check('registry covers every subcommand of the 4 existing helpers', async 
 // prepended, exactly what each shim used to do internally, so the observed
 // "Unknown command" contract line is unchanged.
 
-const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch', 'recovery', 'tmp'];
+const GROUP_NAMES = ['cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'dispatch', 'recovery', 'tmp', 'knowledge'];
 
 // Parse ONLY the stderr line that starts with "Unknown command" (trap t2:
 // bee.mjs's own `cells update` verb separately emits an unrelated
@@ -302,7 +302,7 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
 });
 
 await check('DA5 bijection: the only dot-free registry entries are "status" and "doctor", and every entry\'s group is one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
-  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp']);
+  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge']);
   const allowedDotFree = new Set(['status', 'doctor']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
@@ -2322,6 +2322,19 @@ await check('status --json recovery block never breaks status even with an unrea
   const status = JSON.parse(result.stdout);
   assert(status.recovery && Array.isArray(status.recovery.candidates), `recovery block must still be well-shaped, got ${JSON.stringify(status.recovery)}`);
   assert(status.recovery.candidates.length === 0, `a corrupt-only session record must never surface as a candidate, got ${JSON.stringify(status.recovery)}`);
+});
+
+// ─── knowledge.check (okf-foundation S1): the OKF bundle checker's registry
+// example runs against the first fixture repo, which has no docs/knowledge/ —
+// an empty bundle is OK by contract (D23), so the example must exit 0 with
+// the D13 {okf,profile,counts} shape and zeroed findings.
+
+await check('knowledge.check example: an empty bundle (no docs/knowledge/) exits 0 with the D13 shape', async () => {
+  const result = await assertExampleOk('knowledge.check', { cwd: root });
+  const report = JSON.parse(result.stdout);
+  assert(report.okf && Array.isArray(report.okf.errors) && report.okf.errors.length === 0, `expected okf.errors [], got ${result.stdout}`);
+  assert(report.profile && Array.isArray(report.profile.warnings) && report.profile.warnings.length === 0, `expected profile.warnings [], got ${result.stdout}`);
+  assert(report.counts && report.counts.concepts === 0 && report.counts.files === 0, `expected zeroed counts, got ${result.stdout}`);
 });
 
 await check('every registry entry had its example executed at least once (nothing silently skipped)', async () => {

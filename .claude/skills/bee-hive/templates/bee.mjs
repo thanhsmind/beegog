@@ -22,6 +22,7 @@
 //   bee capture <add|list|flush|count> ... [--json]
 //   bee reviews <create|list|show|record|candidate add|candidates|status> ... [--json]
 //   bee feedback <digest|count|collect|rank> ... [--json]
+//   bee knowledge <check> ... [--json]
 //   bee tmp <sweep> ... [--json]
 //   bee --help [--json]
 //
@@ -145,6 +146,7 @@ import {
   decisionIndexDrift,
 } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
+import { checkBundle } from './lib/knowledge.mjs';
 import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
 import {
   createReview,
@@ -2477,6 +2479,35 @@ function handleCaptureCount(root) {
   return { result: { count: queue.count }, text: `${queue.count} pending capture stub(s).` };
 }
 
+// ─── knowledge: OKF v0.1 bundle verbs (okf-foundation S1, lib/knowledge.mjs).
+// check is the two-level D4 validator over docs/knowledge/ ONLY (D23); the
+// stdout JSON is exactly the D13 shape {okf:{errors},profile:{warnings},
+// counts}, and the exit code is non-zero only on OKF errors, or on any
+// finding at all under --strict. Read-only end to end (D2).
+
+function handleKnowledgeCheck(root, flags) {
+  const strict = flags.strict === true;
+  const report = checkBundle(root, { strict });
+  const failing = !report.ok;
+  const lines = [];
+  for (const finding of report.okf.errors) {
+    lines.push(`ERROR [${finding.code}] ${finding.file}: ${finding.message}`);
+  }
+  for (const finding of report.profile.warnings) {
+    lines.push(`${strict ? 'ERROR(strict)' : 'WARN'} [${finding.code}] ${finding.file}: ${finding.message}`);
+  }
+  lines.push(
+    `knowledge check: ${report.counts.concepts} concept(s) in ${report.counts.files} file(s), ` +
+      `${report.okf.errors.length} OKF error(s), ${report.profile.warnings.length} profile warning(s)` +
+      `${strict ? ' [--strict]' : ''} — ${failing ? 'FAIL' : 'OK'}`,
+  );
+  return {
+    result: { okf: report.okf, profile: report.profile, counts: report.counts },
+    text: lines.join('\n'),
+    exitCode: failing ? 1 : 0,
+  };
+}
+
 // ─── reviews: full port of bee_reviews.mjs's create/list/show/record/
 // candidate add/candidates/status verbs (dispatcher-unify du-3). Reuses
 // lib/reviews.mjs's exports exactly as bee_reviews.mjs did — no logic change
@@ -4600,6 +4631,11 @@ function tmpUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: sweep.`;
 }
 
+function knowledgeUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: check.`;
+}
+
 // Legacy-4 group fallbacks (dispatcher-unify du-4): bee_cells.mjs/
 // bee_reservations.mjs/bee_decisions.mjs are now shims, so their own
 // default-case "Unknown command ... Use: ..." messages (previously emitted
@@ -4636,6 +4672,7 @@ const GROUP_USAGE_FALLBACKS = {
   dispatch: dispatchUsageFallback,
   recovery: recoveryUsageFallback,
   tmp: tmpUsageFallback,
+  knowledge: knowledgeUsageFallback,
 };
 
 const HANDLERS = {
@@ -4698,6 +4735,7 @@ const HANDLERS = {
   'capture.list': handleCaptureList,
   'capture.flush': handleCaptureFlush,
   'capture.count': handleCaptureCount,
+  'knowledge.check': handleKnowledgeCheck,
   'reviews.create': handleReviewsCreate,
   'reviews.list': handleReviewsList,
   'reviews.show': handleReviewsShow,
@@ -4751,7 +4789,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict']);
 
 export function splitCommandTokens(argv) {
   const leading = [];
