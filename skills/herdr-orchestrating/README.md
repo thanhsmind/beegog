@@ -54,6 +54,8 @@ bash .claude/skills/herdr-orchestrating/scripts/bootstrap-cockpit.sh \
 
 Useful first: `--dry-run` prints the herdr commands and executes nothing. `--no-start` builds the layout without launching the loops.
 
+**Or invoke the skill directly.** Instead of running the script yourself, you can just invoke `herdr-orchestrating` with no `--role` given — the agent resolves `<main-root>` and the workspace id itself, runs the same two pre-flight checks above (main clean, `gate_bypass_level` full/total), checks for an already-running cockpit, and then runs `bootstrap-cockpit.sh` for you, passing through `--dry-run`/`--no-start` if you ask for either. The manual invocation above is still there and still useful for scripting or testing — this is just an alternative path for the common case.
+
 ## Is it working?
 
 Watch your chat pane. Working looks like:

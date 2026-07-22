@@ -1,7 +1,7 @@
 ---
 name: herdr-orchestrating
 description: >-
-  Drives the unattended control panes of the agent-pane-orchestration loop: dispatch picks the highest-impact ready backlog item, refuses unsafe or unclassifiable work, and starts a working agent in a fresh worktree via the herdr CLI; merge finds worktrees finished by bee's own state, merges and cleans them up, closes their runtime pane, and stops cold — never retries — on a red verify. Use for exactly one control iteration at a time, in the role named by `--role dispatch|merge` — the control-loop runner invokes this skill fresh, every 60 seconds, with no memory of any earlier iteration.
+  Drives the agent-pane-orchestration loop's three roles: bootstrap is a one-shot setup a human invokes directly (no `--role` given) to pre-flight and turn the cockpit on; dispatch picks the highest-impact ready backlog item, refuses unsafe or unclassifiable work, and starts a working agent in a fresh worktree via the herdr CLI; merge finds worktrees finished by bee's own state, merges and cleans them up, closes their runtime pane, and stops cold — never retries — on a red verify. Use bootstrap for that one direct human invocation; use dispatch/merge for exactly one control iteration at a time, in the role named by `--role dispatch|merge` — the control-loop runner invokes this skill fresh, every 60 seconds, with no memory of any earlier iteration.
 metadata:
   version: '0.1'
   ecosystem: bee
@@ -22,9 +22,74 @@ metadata:
 
 This skill lives at `.claude/skills/herdr-orchestrating/` and `.agents/skills/herdr-orchestrating/` — named `herdr-orchestrating`, deliberately not `bee-*` (D21), because the repo's `.gitignore` untracks `bee-*` skill directories in both roots and this skill must stay ordinary tracked content. All decisions cited below are from `docs/history/agent-pane-orchestration/CONTEXT.md`.
 
-It drives two separate control panes of the same cockpit tab (D13): **dispatch** starts new work, **merge** retires finished work. `control-loop.sh` picks which role's section below to follow via `--role dispatch|merge`, invoking you as a brand-new, cold `claude -p` process every 60 seconds (D4) — nothing carries over between iterations except what is durably recorded in bee state, git, and the herdr workspace itself. Read the whole section for your role before doing anything: **you have no memory of any earlier iteration.** Every fact either role needs is either written in this file or read live, right now, from bee/herdr/git. Never assume "I already checked that" — you didn't; a different process did, or nobody did.
+It drives three roles. A human invokes **bootstrap** directly — no `--role` given — to run the pre-flight checks and turn the cockpit on; this is a one-shot setup action, run once to completion, not a repeating iteration. Once the cockpit is up, `control-loop.sh` drives two separate control panes of the same cockpit tab (D13): **dispatch** starts new work, **merge** retires finished work. `control-loop.sh` picks which of those two role's section below to follow via `--role dispatch|merge`, invoking you as a brand-new, cold `claude -p` process every 60 seconds (D4) — nothing carries over between iterations except what is durably recorded in bee state, git, and the herdr workspace itself. Read the whole section for your role before doing anything: **you have no memory of any earlier iteration** (bootstrap is the exception — it runs once, start to finish, in a single invocation, so this concern does not apply to it). Every fact any role needs is either written in this file or read live, right now, from bee/herdr/git. Never assume "I already checked that" — you didn't; a different process did, or nobody did.
 
-**Role boundary.** Dispatch only starts work: it never merges a branch back into main, deletes a worktree, or closes a pane. Merge only retires finished work: it never picks a PBI, creates a worktree, or starts a working agent. If you find yourself about to take the other role's action, stop — you are following the wrong section.
+**Role boundary.** Bootstrap only builds the cockpit/runtime layout and starts the dispatch and merge loops: it never picks a PBI, creates a worktree beyond what the layout needs, or merges one — those are the dispatch and merge loops' own job, running afterward as their own cold iterations. Dispatch only starts work: it never merges a branch back into main, deletes a worktree, or closes a pane. Merge only retires finished work: it never picks a PBI, creates a worktree, or starts a working agent. If you find yourself about to take another role's action, stop — you are following the wrong section.
+
+## Bootstrap role
+
+You are the **bootstrap** role of the agent-pane-orchestration loop. Recognize this role when you are invoked directly by a human with no `--role dispatch|merge` given — this is a **one-shot setup action**: run every step below once, in order, to completion, then stop. There is no cold re-invocation every 60 seconds here, and no cross-iteration memory concern the way dispatch and merge have it — this whole role happens inside a single turn.
+
+### 1. Resolve the main checkout root
+
+Never assume your own cwd is main — resolve it explicitly, the same underlying constraint the dispatch and merge roles' own §0 rely on (D14 creates worktrees from main; none of this system's control panes run inside one):
+
+```
+git rev-parse --path-format=absolute --git-common-dir
+```
+
+This returns the absolute path to the shared `.git` directory — correct whether you were invoked from main or from inside a linked worktree. Strip the trailing `/.git` to get `<main-root>`. Every command in the rest of this role runs against that path, never against whatever directory you happened to start in.
+
+### 2. Pre-flight — main must be clean
+
+```
+git -C <main-root> status --porcelain
+```
+
+Three outcomes:
+
+- **Empty.** Continue to §3.
+- **Only `.bee/logs/*.jsonl` entries.** These are meant to be gitignored; report this to the human and suggest — never run yourself — the untrack-and-commit fix already documented in README.md:
+  ```
+  git -C <main-root> rm --cached .bee/logs/*.jsonl
+  git -C <main-root> commit -m "chore: untrack bee session logs"
+  ```
+  Then stop this role without bootstrapping anything — the human runs those commands and re-invokes you.
+- **Anything else dirty.** List the dirty files, stop, and ask the human to clean main first. `bee worktree merge` refuses on a dirty main and the merge role runs inside main, so an unclean checkout would make every later merge fail once the loop starts.
+
+### 3. Pre-flight — `gate_bypass_level` must be `full` or `total` (D6)
+
+```
+node <main-root>/.bee/bin/bee.mjs status --json
+```
+
+Read `gate_bypass_level`. If it is not exactly `full` or `total`, stop here and tell the human to raise it (`bee-bypass-gate full`) — never change it yourself; this is a user-owned safety posture bootstrap does not get to decide on the human's behalf (D6). Below `full`, the dispatch loop would refuse to operate on every cycle once started (Dispatch role §2), so there is nothing to gain by bootstrapping anyway.
+
+### 4. Resolve the workspace id
+
+- If the human gave an explicit workspace id or label, use it — verify it actually exists: `herdr workspace list`.
+- Otherwise, run `herdr workspace list` and match a workspace's `label` to the basename of `<main-root>`.
+- Zero matches, or more than one — list the candidates you found and ask the human which to use. Never guess.
+
+### 5. Check for an existing cockpit before bootstrapping again
+
+```
+herdr pane list --workspace <id>
+```
+
+If any pane in that workspace already carries the label `dispatch` or `merge`, a cockpit already exists for it — report that instead of re-bootstrapping, and point at the same fix README.md's troubleshooting section documents for a stale label: `herdr pane close <pane_id>` or `herdr pane rename <pane_id> --clear`. (`bootstrap-cockpit.sh` itself also refuses when a `dispatch`-labelled pane already exists — this check exists so you can explain why before spending a run on it.)
+
+### 6. Run the bootstrap script
+
+Only once every pre-flight check has passed and no existing cockpit was found:
+
+```
+bash <main-root>/.claude/skills/herdr-orchestrating/scripts/bootstrap-cockpit.sh --workspace <id> --main-root <main-root>
+```
+
+(use the copy under whichever skill root your runtime reads — `.agents/` for Codex, `.claude/` for Claude Code; both are byte-identical.) Pass through `--dry-run` or `--no-start` if the human asked for either — see the script's own usage for what each does.
+
+Report the script's own output back to the human verbatim — it already states which panes it created and whether the loops started — then remind them: watch the chat pane for `dispatch:`/`merge:` lines (silence is normal — either nothing is ready, or all four runtime slots are busy), and stop both loops with `touch <main-root>/.bee/tmp/herdr-orchestrating.stop` when done.
 
 ## Dispatch role
 
