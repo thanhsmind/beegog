@@ -529,6 +529,9 @@ for (const name of [
   "telemetryIssues",
   "bundleInvariantIssues",
   "runBundleInvariants",
+  // f4-7: the coverage walk and the honest denominator it feeds.
+  "collectClaims",
+  "anchorOwningConcepts",
 ]) {
   ok(typeof M[name] !== "undefined", `scripts/okf_migrate.mjs must export ${name} (f2-2)`);
 }
@@ -707,17 +710,50 @@ console.log(
 // ─── 20. drift telemetry (F12) reports always, fails only with a median ─────
 
 {
-  const tel = M.collectTelemetry();
+  const tel = await M.collectTelemetry();
   ok(Array.isArray(tel) && tel.length >= 2, "collectTelemetry returns one row per gateable pinned area", tel.length);
   for (const row of tel) {
     ok(typeof row.anchors_per_concept === "number", `${row.area}: anchors_per_concept is reported`, row);
     ok(typeof row.concepts_per_100_source_lines === "number", `${row.area}: concepts_per_100_source_lines is reported`, row);
     ok(row.source_lines > 0, `${row.area}: source line count comes from the pinned blob`, row);
+    // f4-7: the measured denominator is anchor-OWNING concepts; the directory
+    // file count is reported beside it and can only ever be >= it.
+    ok(
+      Number.isInteger(row.concepts) && row.concepts > 0 && Number.isInteger(row.concept_files) && row.concept_files >= row.concepts,
+      `${row.area}: the denominator is anchor-owning concepts, reported beside the area's file count`,
+      row,
+    );
+    ok(
+      row.anchors_per_concept === row.anchors / row.concepts &&
+        row.concepts_per_100_source_lines === (row.concepts * 100) / row.source_lines,
+      `${row.area}: BOTH ratios use the anchor-owning denominator, not the file count`,
+      row,
+    );
   }
   console.log(
     `      telemetry (F12): ` +
-      tel.map((r) => `${r.area} anchors/concept=${r.anchors_per_concept.toFixed(2)} concepts/100L=${r.concepts_per_100_source_lines.toFixed(2)}`).join(" | "),
+      tel.map((r) => `${r.area} anchors/concept=${r.anchors_per_concept.toFixed(2)} concepts/100L=${r.concepts_per_100_source_lines.toFixed(2)} (${r.concepts} owning of ${r.concept_files} files)`).join(" | "),
   );
+
+  // f4-7: the band and the sample floor are the two knobs a "fix" could turn to
+  // make a red vanish. Pinned here as literals so turning either one is a test
+  // failure, not a quiet edit.
+  ok(M.TELEMETRY_MIN_SAMPLES === 3, "TELEMETRY_MIN_SAMPLES is 3 — unmoved", M.TELEMETRY_MIN_SAMPLES);
+  {
+    // The band itself, probed from outside: 2.01x fails, 2.00x passes, 0.49x
+    // fails, 0.50x passes. Reading the constants would prove nothing; these
+    // probe the behaviour.
+    const base = [
+      { area: "a", anchors_per_concept: 10, concepts_per_100_source_lines: 2 },
+      { area: "b", anchors_per_concept: 10, concepts_per_100_source_lines: 2 },
+      { area: "c", anchors_per_concept: 10, concepts_per_100_source_lines: 2 },
+    ];
+    const at = (v) => M.telemetryIssues({ current: { area: "probe", anchors_per_concept: v, concepts_per_100_source_lines: 2 }, samples: base });
+    ok(at(20).length === 0, "the band's upper edge is exactly 2x — 2.00x passes", at(20));
+    ok(at(20.1).length > 0, "2.01x fails — the band was not widened upward", at(20.1));
+    ok(at(5).length === 0, "the band's lower edge is exactly 0.5x — 0.50x passes", at(5));
+    ok(at(4.9).length > 0, "0.49x fails — the band was not widened downward", at(4.9));
+  }
 
   // Fewer than three pinned areas: no median exists, so telemetry REPORTS and
   // never fails — even for a wild outlier. This is the state the repo is in
@@ -764,6 +800,132 @@ console.log(
     }).length > 0,
     "the <0.5x side of the band fails too, not only >2x",
   );
+}
+
+// ─── 20b. the corrected denominator still BITES, both directions (f4-7) ─────
+//
+// f4-7 changed what F12's denominator measures: anchor-OWNING concepts, not
+// every .md in the area directory. A "fix" that merely made a red go away would
+// look identical from the green side, so the guard is asserted from the side
+// that matters — a deliberately BADLY DECOMPOSED migration must still be caught,
+// in both directions, against the repo's own real running median.
+//
+// The fixtures are real files walked by the real `collectClaims`, not a
+// hand-built claims Map: if the walk and the denominator ever disagree the
+// fixture stops reproducing the shape it is named for. They live under .bee/tmp/
+// rather than docs/knowledge/ on purpose — a fixture area dropped into the
+// bundle would be seen by the whole-bundle invariants of every concurrently
+// running suite.
+//
+// The dumping-ground fixture is also the proof that the OLD denominator was
+// blind: 24 anchors in ONE concept, in a directory of 6 files. Counting files
+// scores it 4.00 anchors/concept — comfortably in band, the fault invisible.
+// Counting anchor-owning concepts scores it 24.00 and fires.
+
+{
+  const source = "docs/specs/okf-profile.md";
+  const anchorPattern = M.AREA_ANCHOR_PATTERN;
+  const anchors = Array.from({ length: 24 }, (_, i) => `B${i + 1}`);
+  const SOURCE_LINES = 612; // okf-profile's pinned source length
+  const fixtureRoot = path.join(REPO_ROOT, ".bee", "tmp", "f4-7-decomposition-fixtures");
+
+  const write = (dirRel, name, owned) => {
+    const abs = path.join(REPO_ROOT, ...dirRel.split("/"), name);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    const sources = owned.map((a) => `"${source}#${a}"`).join(", ");
+    fs.writeFileSync(
+      abs,
+      `---\nbee:\n  id: ${name.replace(/\.md$/, "")}\n  sources: [${sources}]\n---\n\nfixture body\n`,
+    );
+  };
+
+  // The real comparison population, computed by the real collector.
+  const nine = (await M.collectTelemetry()).filter((r) => r.scheme === "ba-nine-section");
+  const rowFor = async (dirRel) => {
+    const { claims } = await M.collectClaims({ dir: dirRel, source, anchorPattern });
+    const concepts = M.anchorOwningConcepts(claims, anchors).size;
+    const files = fs.readdirSync(path.join(REPO_ROOT, ...dirRel.split("/"))).filter((n) => n.endsWith(".md")).length;
+    return {
+      area: dirRel.split("/").pop(),
+      concepts,
+      files,
+      anchors_per_concept: anchors.length / concepts,
+      concepts_per_100_source_lines: (concepts * 100) / SOURCE_LINES,
+      // What the pre-f4-7 denominator would have scored the same directory.
+      old_anchors_per_concept: anchors.length / files,
+      old_concepts_per_100_source_lines: (files * 100) / SOURCE_LINES,
+    };
+  };
+
+  try {
+    // (a) DUMPING GROUND: all 24 anchors swallowed by one concept, beside five
+    //     concepts of new truth that own nothing from the pinned source.
+    const dumpDir = ".bee/tmp/f4-7-decomposition-fixtures/dumping-ground";
+    write(dumpDir, "everything.md", anchors);
+    for (let i = 0; i < 5; i += 1) write(dumpDir, `new-truth-${i}.md`, []);
+
+    // (b) SHREDDED: the opposite fault — one anchor per concept.
+    const shredDir = ".bee/tmp/f4-7-decomposition-fixtures/shredded";
+    anchors.forEach((a, i) => write(shredDir, `piece-${i}.md`, [a]));
+
+    // (c) HEALTHY: okf-profile's real shape (5 owning concepts) plus the two
+    //     new-truth concepts it really grew. The control on the control — if
+    //     this failed, the fixtures would prove nothing about decomposition.
+    const healthyDir = ".bee/tmp/f4-7-decomposition-fixtures/healthy";
+    [[0, 5], [5, 10], [10, 15], [15, 20], [20, 24]].forEach(([a, b], i) =>
+      write(healthyDir, `part-${i}.md`, anchors.slice(a, b)),
+    );
+    write(healthyDir, "new-truth-a.md", []);
+    write(healthyDir, "new-truth-b.md", []);
+
+    const dump = await rowFor(dumpDir);
+    const shred = await rowFor(shredDir);
+    const healthy = await rowFor(healthyDir);
+
+    ok(dump.concepts === 1 && dump.files === 6, "the dumping-ground fixture has ONE anchor-owning concept among six files", dump);
+    ok(shred.concepts === 24 && shred.files === 24, "the shredded fixture has one anchor-owning concept per anchor", shred);
+    ok(healthy.concepts === 5 && healthy.files === 7, "the healthy fixture reproduces okf-profile's real shape", healthy);
+
+    const dumpIssues = M.telemetryIssues({ current: dump, samples: [...nine, dump] });
+    ok(dumpIssues.length > 0, "NEGATIVE CONTROL: a dumping-ground concept is STILL an outlier under the corrected denominator", dumpIssues);
+    ok(
+      /anchors_per_concept/.test(dumpIssues.join(" ")),
+      "the dumping-ground fixture fires on anchors_per_concept — the metric whose stated purpose is exactly this fault",
+      dumpIssues,
+    );
+
+    const shredIssues = M.telemetryIssues({ current: shred, samples: [...nine, shred] });
+    ok(shredIssues.length > 0, "NEGATIVE CONTROL: concepts shredded one-anchor-each are STILL an outlier", shredIssues);
+
+    ok(
+      M.telemetryIssues({ current: healthy, samples: [...nine, healthy] }).length === 0,
+      "a well-decomposed fixture of the same directory size passes — the fixtures discriminate rather than always firing",
+      M.telemetryIssues({ current: healthy, samples: [...nine, healthy] }),
+    );
+
+    // The blindness the correction removed, stated as an assertion rather than
+    // as prose: scored by DIRECTORY FILE COUNT, the dumping ground passes.
+    ok(
+      M.telemetryIssues({
+        current: {
+          area: "dumping-ground-scored-the-old-way",
+          anchors_per_concept: dump.old_anchors_per_concept,
+          concepts_per_100_source_lines: dump.old_concepts_per_100_source_lines,
+        },
+        samples: nine,
+      }).length === 0,
+      `the OLD denominator was blind to it: file-count scores the same dumping ground ${dump.old_anchors_per_concept.toFixed(2)} anchors/concept — in band, fault invisible`,
+      dump,
+    );
+
+    console.log(
+      `      f4-7 negative control: dumping-ground ${dump.anchors_per_concept.toFixed(2)} anchors/concept (file-count would say ${dump.old_anchors_per_concept.toFixed(2)}) | shredded ${shred.anchors_per_concept.toFixed(2)} | healthy ${healthy.anchors_per_concept.toFixed(2)}`,
+    );
+    console.log(`      f4-7 dumping-ground failure: ${dumpIssues[0]}`);
+    console.log(`      f4-7 shredded failure: ${shredIssues[0]}`);
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
 }
 
 // ─── 21. whole-bundle invariants run on EVERY check ─────────────────────────
@@ -1238,7 +1400,7 @@ console.log(
 // did.
 
 {
-  const rows = M.collectTelemetry();
+  const rows = await M.collectTelemetry();
   ok(rows.every((r) => typeof r.scheme === "string"), "every telemetry row carries its pin's scheme", rows.map((r) => r.scheme));
   const byScheme = (s) => rows.filter((r) => r.scheme === s).map((r) => r.area).sort();
   const byKind = (k) => rows.filter((r) => (r.kind || "area") === k).map((r) => r.area).sort();

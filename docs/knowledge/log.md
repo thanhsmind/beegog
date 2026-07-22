@@ -569,3 +569,29 @@
   counts only what the bundle already proves mechanically — the conformance check's own findings and
   areas with code but no concept — never a hand-maintained list, and without inventing the
   `knowledge stale` verb that remains backlog P68.
+- **The instruction layer got a gate, and the sequence that forced it is the point** (`f4-5`,
+  `f4-6`). Three successive hand audits of one question each found gaps the previous audit had
+  missed — seven, then two, then six — with the chain green before, during and after all three. The
+  third audit's own conclusion was that a fourth would find an eleventh.
+  `areas/okf-profile/the-instruction-layer-fence.md` now owns the rule that ends the sequence: in
+  bundle mode, a line on a governed instruction surface that names the retired state layer must
+  carry its branch **on that line**. Line-local is not a stylistic choice — the document-level rule
+  was built first, measured, and discarded because it passed **four of six** misroutes humans had
+  already found by hand: one skill named the bundle four times and still called the retired pattern
+  file mandatory pre-work reading, and one hook was bundle-aware in its logic while still printing
+  the wrong destination. An agent reads a bullet or an injected message in isolation, and a branch
+  three paragraphs above does not travel with it.
+- **A guard that routed an agent into another guard.** Run red against pristine HEAD, the new fence
+  named 24 misroutes across 10 files, nine of which no audit had found. The sharpest was the
+  session-close capture nudge: its logic had already been migrated — it measures staleness across
+  both trees — so in a migrated repo it fires precisely **because the bundle is stale**, and then
+  told the agent to write into the compatibility surface, which the read-only fence fails the chain
+  for accepting. The logic was migrated, the message was not, and nothing connected the two.
+  Recorded as R5 there: a guard's message is part of that guard.
+- **What that fence deliberately does not do.** It proves a branch is *present* on a line, never
+  that it is *correct* — a line naming both trees but describing them backwards passes, and grading
+  meaning stays the rebuild bar's job. A cross-reference naming no path ("startup step 5 is
+  unchanged", pointing at a step that had since moved and changed) is structurally invisible to it;
+  that limit is stated rather than papered over. And UI visual snapshots still have no home in the
+  bundle — recorded as an Open Gap in `concept-model-and-authoring.md`, not a home invented to close
+  a red.

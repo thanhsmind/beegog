@@ -1576,12 +1576,54 @@ export async function areaFidelity(area) {
 // future migration did. Rows are still reported for every pinned source; only
 // the comparison population is restricted, to pins of the same `kind`.
 
+// f4-7: THE DENOMINATOR IS THE CONCEPTS THAT OWN ANCHORS, NEVER THE FILES IN
+// THE DIRECTORY. Both ratios measure ONE thing: how the PINNED SOURCE was
+// decomposed. The numerators say so — `anchors` is the pinned source's anchor
+// count and `source_lines` is the pinned source's length; neither can be moved
+// by anything written after the migration. The denominator
+// `conceptFilesIn(dir).length` could: it counted every .md in the area
+// directory, migrated or not. So the moment a migrated area grew a concept of
+// genuinely NEW truth — which is the healthy thing for a live area to do, and
+// the whole point of migrating into a live bundle — the denominator grew while
+// the numerator structurally could not, and the area drifted out of band
+// permanently, reporting a "decomposition fault" in a decomposition nobody had
+// touched. That is not the fault F12 exists to catch; it is the metric
+// mistaking growth for drift, and it is unfixable by the area (the only way
+// back into band would be to delete true concepts).
+//
+// The honest denominator is the number of concepts the COVERAGE WALK actually
+// attributes at least one pinned anchor to — the same claims map --check reads,
+// so telemetry and coverage can never disagree about what "a concept of this
+// migration" means. It leaves the metric exactly as sharp as it was: a
+// dumping-ground concept still swallows many anchors into one owner (ratio
+// spikes), shredded concepts still spread one anchor per owner (ratio
+// collapses). Only concepts that own nothing from the pinned source — which
+// carry no information about how that source was decomposed — stop being
+// counted as if they did.
+//
+// This is a correction of WHAT IS MEASURED, not a loosened threshold: the band
+// stays [0.5x, 2x] and TELEMETRY_MIN_SAMPLES stays 3. It is also why the defect
+// hid so long: at migration time an area's concepts all owned anchors, so the
+// two counts coincided and every calibration was taken on that coincidence.
+
 export const TELEMETRY_MIN_SAMPLES = 3;
 export const TELEMETRY_METRICS = ["anchors_per_concept", "concepts_per_100_source_lines"];
 
+/** Pure: the distinct concepts the coverage walk attributes at least one of
+ *  `expected` (the pinned source's derived anchors) to. Claims for anchors the
+ *  registry does not expect are ignored here — `coverageIssues` reports those
+ *  as EXTRA, and a stray claim must never enlarge or shrink the denominator. */
+export function anchorOwningConcepts(claims, expected) {
+  const owners = new Set();
+  for (const anchor of expected) {
+    for (const owner of claims.get(anchor) || []) owners.add(owner);
+  }
+  return owners;
+}
+
 /** One telemetry row per gateable pinned area (an unscheme'd pin has no
  *  derived anchors, so it contributes no shape). */
-export function collectTelemetry() {
+export async function collectTelemetry() {
   const rows = [];
   for (const [area, pin] of Object.entries(PIN_REGISTRY)) {
     if (!pin.scheme) continue;
@@ -1589,7 +1631,11 @@ export function collectTelemetry() {
     if (!derived.ok) continue;
     const resolved = resolvePinnedSource(pin);
     const sourceLines = resolved.ok ? resolved.text.split("\n").length : 0;
-    const concepts = conceptFilesIn(wiringFor(area).dir).length;
+    const wiring = wiringFor(area);
+    const { claims } = await collectClaims(wiring);
+    // The denominator of BOTH ratios — see the note above.
+    const concepts = anchorOwningConcepts(claims, derived.anchors.all).size;
+    const conceptFiles = conceptFilesIn(wiring.dir).length;
     if (!concepts || !sourceLines) continue;
     rows.push({
       area,
@@ -1612,7 +1658,12 @@ export function collectTelemetry() {
       // (asserted in scripts/test_okf_pins.mjs section 29).
       scheme: pin.scheme,
       anchors: derived.counts.total,
+      // The measured denominator: concepts owning >= 1 pinned anchor (f4-7).
       concepts,
+      // Reported, never measured: every .md in the area directory. The gap
+      // between the two is the area's post-migration growth — visible on
+      // purpose, so nobody has to re-derive why the two numbers differ.
+      concept_files: conceptFiles,
       source_lines: sourceLines,
       anchors_per_concept: derived.counts.total / concepts,
       concepts_per_100_source_lines: (concepts * 100) / sourceLines,
@@ -1756,7 +1807,7 @@ export function parseStubAnchorMap(text, anchorPattern = NUMBERED_STUB_ANCHOR_PA
 
 /** bee.sources claims of the form <source>#<ANCHOR> from every concept in a
  *  directory (index.md/log.md excluded). Shared by both check modes. */
-async function collectClaims({ dir, source, anchorPattern }) {
+export async function collectClaims({ dir, source, anchorPattern }) {
   const knowledge = await import(
     pathToFileURL(path.join(REPO_ROOT, ".bee", "bin", "lib", "knowledge.mjs")).href
   );
@@ -1852,7 +1903,7 @@ async function runGuards(area, claims, bodies, derived) {
   });
   issues.push(...fidelity.issues);
 
-  const telemetry = collectTelemetry();
+  const telemetry = await collectTelemetry();
   const current = telemetry.find((r) => r.area === area) || null;
   // Same-SHAPE comparison only (f2-3, keyed on the scheme since f2-11) — see
   // the F12 header note and collectTelemetry's `scheme` field.
@@ -1877,7 +1928,7 @@ function printGuards(guards) {
   }
   if (guards.current) {
     console.log(
-      `     telemetry (F12): anchors_per_concept ${guards.current.anchors_per_concept.toFixed(2)}, concepts_per_100_source_lines ${guards.current.concepts_per_100_source_lines.toFixed(2)} (${guards.current.anchors} anchors, ${guards.current.concepts} concepts, ${guards.current.source_lines} source lines) — ${guards.telemetryNote}`,
+      `     telemetry (F12): anchors_per_concept ${guards.current.anchors_per_concept.toFixed(2)}, concepts_per_100_source_lines ${guards.current.concepts_per_100_source_lines.toFixed(2)} (${guards.current.anchors} anchors, ${guards.current.concepts} anchor-owning concepts of ${guards.current.concept_files} files in the area, ${guards.current.source_lines} source lines) — ${guards.telemetryNote}`,
     );
   }
   console.log(
@@ -2144,7 +2195,7 @@ async function main() {
   }
 
   if (args[0] === "--telemetry") {
-    const rows = collectTelemetry();
+    const rows = await collectTelemetry();
     const bundle = runBundleInvariants();
     console.log(
       JSON.stringify(
