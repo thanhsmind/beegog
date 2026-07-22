@@ -2,14 +2,14 @@
 type: bee.area
 title: Bee OKF Profile — the migration loop and the gates that grade it
 description: "What a legacy source must satisfy to become bundle truth: the coverage report, the content-addressed pin, the unparsed report, the fidelity floor, the drift telemetry, and the pointer stub that keeps every citation resolving."
-timestamp: 2026-07-22
+timestamp: 2026-07-23
 bee:
   id: okf-profile-migration-and-coverage-gates
   lifecycle: active
   areas: [okf-profile]
   required_context: [areas/okf-profile/overview.md]
-  decisions: [D10, D20, D29, D30, D35, D37, "F8/F11/F12 (okf-migration-f2 — the derived pin, the fidelity floor, the scheme-keyed drift band)"]
-  sources: ["okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22)", CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`, "okf-switchover-f3 cell f3-5 (G6 — this spec migrated into the bundle it describes; trace in `.bee/cells/`, 2026-07-22)", "docs/specs/okf-profile.md#B8", "docs/specs/okf-profile.md#B9", "docs/specs/okf-profile.md#B10", "docs/specs/okf-profile.md#B11", "docs/specs/okf-profile.md#B12", "docs/specs/okf-profile.md#E3", "docs/specs/okf-profile.md#E4", "docs/specs/okf-profile.md#P5"]
+  decisions: [D10, D20, D29, D30, D35, D37, "F8/F11/F12 (okf-migration-f2 — the derived pin, the fidelity floor, the scheme-keyed drift band)", F4-D10]
+  sources: ["okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22)", CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`, "okf-switchover-f3 cell f3-5 (G6 — this spec migrated into the bundle it describes; trace in `.bee/cells/`, 2026-07-22)", "docs/specs/okf-profile.md#B8", "docs/specs/okf-profile.md#B9", "docs/specs/okf-profile.md#B10", "docs/specs/okf-profile.md#B11", "docs/specs/okf-profile.md#B12", "docs/specs/okf-profile.md#E3", "docs/specs/okf-profile.md#E4", "docs/specs/okf-profile.md#P5", "okf-integration-close-f4 cell f4-7 (the shape ratios count anchor-owning concepts, so a migrated area is not punished for growing; denominator corrected, band untouched; trace in `.bee/cells/`, 2026-07-23)"]
   authoritative_for: "okf-profile: the migration loop, its coverage gate and its fidelity floor"
 ---
 
@@ -91,6 +91,27 @@ sit in a band drawn around nine-section areas — pooling them turned an already
 work it never touched. The gate additionally runs the whole-bundle invariants every check
 (authority uniqueness, zero `not_canonical`, index freshness) and treats those three as hard
 failures **for itself**, leaving `knowledge check`'s own non-strict exit contract (D13) untouched.
+
+**B12a — The shape ratios count anchor-OWNING concepts, because a migrated area is allowed to
+grow.** Both ratios measure how a *pinned source* was decomposed, so their denominator is the
+number of concepts the coverage walk actually attributes an anchor to — never every file sitting in
+the area's directory. Counting files conflates two different things: concepts that carry migrated
+truth, and concepts of genuinely NEW truth authored later. Only the first kind can ever raise the
+numerator, so a file-counting denominator drifts a healthy area out of band permanently the moment
+it gains new truth — punishing exactly the behaviour a live area is supposed to show. It stayed
+invisible while every area's two counts happened to coincide, and surfaced the first time a
+migrated area grew.
+
+The correction is to the denominator, never to the band: the outlier band and the
+minimum-sample count are unchanged, no pin is altered, and no area is excluded from its population.
+That distinction is the whole point — widening a band to clear a red removes the signal, while
+correcting what is counted restores it. The evidence that it restores rather than removes: the
+file-counting denominator scored an area with **every** anchor dumped into a single concept as
+comfortably in-band, because the empty sibling files diluted it. Both failure directions —
+one dumping-ground concept, and anchors shredded one per concept — are held by a negative control,
+alongside a healthy fixture that must pass, so the control discriminates instead of always firing.
+Each row also reports its directory file count beside its owning-concept count, leaving the growth
+gap visible rather than silent.
 
 ## Business Rules
 
