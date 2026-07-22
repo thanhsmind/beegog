@@ -1,15 +1,15 @@
 ---
 type: bee.area
 title: "Bee OKF Profile — the context consumer, the promote proposer, and the session preamble"
-description: "The budget-aware manifest a work item's curated context is returned as, the measured relevance ranking that cuts critical patterns without losing one, the propose-never-write loop closer, and the preamble that makes the bundle load-bearing."
+description: "The budget-aware manifest a work item's curated context is returned as, the measured relevance ranking that cuts critical patterns without losing one, the propose-never-write loop closer, and the preamble that makes the bundle load-bearing — every section of which resolves through the one bundle predicate."
 timestamp: 2026-07-22
 bee:
   id: okf-profile-context-and-promote
   lifecycle: active
   areas: [okf-profile]
   required_context: [areas/okf-profile/overview.md]
-  decisions: [D2, D10, D12, D13, D27, D38, "G5/G11 (okf-switchover-f3 — critical patterns ranked, cut, floored and conserved)"]
-  sources: ["okf-foundation cell okf-9 (`bee knowledge promote` — the propose-never-write loop closer, B5; trace in `.bee/cells/`, 2026-07-22)", "okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22)", CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`, "docs/specs/okf-profile.md#B5", "docs/specs/okf-profile.md#B6", "docs/specs/okf-profile.md#B6b", "docs/specs/okf-profile.md#B7", "docs/specs/okf-profile.md#P2", "docs/specs/okf-profile.md#P3"]
+  decisions: [D2, D10, D12, D13, D27, D38, "G5/G11 (okf-switchover-f3 — critical patterns ranked, cut, floored and conserved)", F4-D1, F4-D2, F4-D3]
+  sources: ["okf-foundation cell okf-9 (`bee knowledge promote` — the propose-never-write loop closer, B5; trace in `.bee/cells/`, 2026-07-22)", "okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22)", CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`, "docs/specs/okf-profile.md#B5", "docs/specs/okf-profile.md#B6", "docs/specs/okf-profile.md#B6b", "docs/specs/okf-profile.md#B7", "docs/specs/okf-profile.md#P2", "docs/specs/okf-profile.md#P3", "okf-integration-close-f4 cell f4-3 (the preamble stops printing the retired model — bundle-routed digest and project map, both no-bundle branches proven byte-identical; trace in `.bee/cells/`, 2026-07-22)", CONTEXT.md `docs/history/okf-integration-close-f4/CONTEXT.md`, red evidence `docs/history/okf-integration-close-f4/reports/red-preamble-before.md`]
   authoritative_for: "okf-profile: the context consumer, the promote proposer, and the session preamble"
 ---
 
@@ -100,6 +100,33 @@ carries the **pointer, never the manifest** (embedding it would defeat the purpo
 no matching work item produces **silence, not a nag**; and a terminal phase (`idle`,
 `compounding-complete`) produces nothing even when a stale `feature` string outlives the closed
 feature — the phase, not the feature name, decides.
+
+**B8 — Every section of the preamble that describes the state layer resolves through the same
+bundle predicate.** The preamble is what every agent reads before doing anything, so a section of it
+that names the retired model teaches that model to every session, silently and forever, with no
+check ever going red. Three sections therefore branch on the one predicate, resolved once per build
+and handed to each:
+
+- **The project map** names the bundle as the thing to read before the code and states what the
+  bundle holds — the number of areas and concepts, derived from the single inventory walk, never a
+  second directory scan and never a hand-maintained list. The compatibility surface is named for
+  what it is, never as "specced areas" to read before the code.
+- **The critical-patterns digest** is built from the bundle's own generated index. It states the
+  **total** number of critical patterns, lists the **most recent** ones, and names the full index.
+  Most-recent is load-bearing: the index rows sit in date order, so taking the first N would surface
+  the oldest lessons forever and never a recent one. The digest deliberately does **not** rank —
+  ranking needs a work item to rank against (B1-B6), and a preamble has none.
+- **The scribing-debt nudge** names the resolved target, bundle or compatibility surface, rather
+  than hardcoding one.
+
+Two rules keep this honest. **The no-bundle branch of all three is byte-identical** to the behavior
+of a repo that never migrated — proven both by a permanent bundle-less fixture pinning each line as
+an exact literal and by a whole-preamble byte comparison, because a host that never migrated must
+not be able to tell the migration happened. And **degradation is silence, never a fallback**: in
+bundle mode with no generated index, or an index carrying no critical section, the digest emits
+nothing. Falling back to the retired file would re-print a forwarding address as if it were
+lessons — which is the exact defect this behavior exists to remove. Orientation never fails a
+session either: an unreadable predicate resolves to the legacy branch rather than throwing.
 
 ## Business Rules
 

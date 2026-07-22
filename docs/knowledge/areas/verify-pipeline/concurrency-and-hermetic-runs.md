@@ -8,8 +8,8 @@ bee:
   lifecycle: active
   areas: [verify-pipeline]
   required_context: [areas/verify-pipeline/suite-topology-and-discovery.md]
-  decisions: [verify-parallel-runner]
-  sources: ["contention-split cells cs-1/cs-2a/cs-2b/cs-3/cs-4 (locked tmp-swap render; traces in .bee/cells/, 2026-07-20)", "verify-parallel-runner (parallel pool, 2026-07-20, commit 6caceb4)", "hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — session-id env scrubbing at both runner and bootstrap for hermetic local/CI parity; deterministic fs-barrier claim-race negative control, 10/10 both env modes; chmod-based write-failure simulations skip loudly under root; nested-clone isolation regression pins root resolution off the parent repo's git config)", "docs/specs/verify-pipeline.md#R4", "docs/specs/verify-pipeline.md#R5", "docs/specs/verify-pipeline.md#E2", "docs/specs/verify-pipeline.md#E3", "docs/specs/verify-pipeline.md#E4", "docs/specs/verify-pipeline.md#P5"]
+  decisions: [verify-parallel-runner, F4-D9]
+  sources: ["contention-split cells cs-1/cs-2a/cs-2b/cs-3/cs-4 (locked tmp-swap render; traces in .bee/cells/, 2026-07-20)", "verify-parallel-runner (parallel pool, 2026-07-20, commit 6caceb4)", "hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — session-id env scrubbing at both runner and bootstrap for hermetic local/CI parity; deterministic fs-barrier claim-race negative control, 10/10 both env modes; chmod-based write-failure simulations skip loudly under root; nested-clone isolation regression pins root resolution off the parent repo's git config)", "docs/specs/verify-pipeline.md#R4", "docs/specs/verify-pipeline.md#R5", "docs/specs/verify-pipeline.md#E2", "docs/specs/verify-pipeline.md#E3", "docs/specs/verify-pipeline.md#E4", "docs/specs/verify-pipeline.md#P5", "okf-integration-close-f4 cell f4-4 (the third identity variable — the agent-name prefix bee's own swarm rule mandates was manufacturing a false red in the coordination guards; trace in `.bee/cells/`, 2026-07-22)"]
   authoritative_for: "verify-pipeline: concurrency safety and hermetic runs"
 ---
 
@@ -41,6 +41,21 @@ place is `suite-topology-and-discovery.md`.
   is only green because it inherited that ambient identity: a local run and a
   CI run now see the identical (absent) session identity, so a local green
   cannot silently diverge from what CI would report.
+
+- **The scrubbed identity is THREE variables, not two — and the third one bee
+  itself mandates.** Alongside the two session variables, the agent-name
+  variable is scrubbed by the runner and at the bootstrap of the write-guard
+  suite. It is the sharpest of the three because two of bee's own rules collide
+  on it: the swarm discipline requires prefixing write-heavy shell commands with
+  the acting agent's name, and the session discipline requires running the
+  configured verify command. A worker that obeys both leaks its own agent name
+  into every spawned suite, where it becomes the *acting agent identity* inside
+  the write guard's cross-session hold check — and the assertion "the acting
+  session's own hold must never block its own write" inverts. The result is a
+  **false red in the coordination guards**, which is the worst possible place
+  for one: it reads exactly like a real cross-session defect. The acceptance
+  test is therefore stated as a property, not a run: **the chain passes with the
+  agent-name prefix set and without it**, identically.
 
 ## Business Rules
 

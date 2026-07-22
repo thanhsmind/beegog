@@ -531,3 +531,41 @@
   named exception whose interval ends is REMOVED rather than relabelled. f3-1's relevance ranking
   was already fully stated in `context-and-promote.md` (B6b) and needed nothing. The bundle is 122
   concepts across 140 files, 0 errors and 0 warnings; chain 79 suites green.
+- **The edges caught up with the core** (`okf-integration-close-f4`). A mechanical audit after the
+  switchover found the core correct and guarded, and the *edges* still teaching the retired model —
+  the silent-rot class the programme exists to prevent, with no suite red anywhere. Four cells
+  closed it. Two of the findings were confirmed by direct observation of a live session preamble
+  rather than inferred, and the before-state is preserved at
+  `docs/history/okf-integration-close-f4/reports/red-preamble-before.md`: the `Critical patterns`
+  digest was printing four lines of YAML delimiters and six of the pointer stub's forwarding
+  address — not one lesson — and the `Project map` was counting the read-only compatibility surface
+  as "Specced areas: 11" while instructing every session to "read the spec before the code".
+  Sharpest documentation gap: the two `bee-hive` reference files the skill explicitly defers to for
+  "the full routing table" and "the full pipeline" contained `docs/knowledge` **zero** times
+  (measured, against 4 and 1 for `docs/specs`), so an agent following the *full* instructions was
+  taught the order G4 replaced. Both preamble sections and all three reference passages now resolve
+  through the one bundle predicate, captured in `areas/okf-profile/context-and-promote.md` as **B8**;
+  the no-bundle branch is proven byte-identical two independent ways (a permanent bundle-less
+  fixture pinning each line as an exact literal, and a whole-preamble byte comparison), so a host
+  that never migrated cannot tell the migration happened.
+- **The digest lists the NEWEST criticals, and that is load-bearing.** The bundle index's critical
+  rows sit in date order, so a first-N cut would have surfaced the ten oldest lessons forever —
+  swapping the stub's arbitrary cut for another one. The digest therefore states the total, lists
+  the most recent, and names the full index; it deliberately does not rank, because ranking needs a
+  work item to rank against and a preamble has none. Degradation is silence, never a fallback: with
+  no generated index the digest emits nothing rather than re-printing the retired file.
+- **A false red the harness itself was manufacturing** (`f4-4`, captured in
+  `areas/verify-pipeline/concurrency-and-hermetic-runs.md`). The verify runner scrubbed two identity
+  variables for hermeticity and missed a third — the agent-name prefix bee's *own* swarm rule
+  mandates on write-heavy commands. Obeying that rule and then running the configured verify leaked
+  the name into every spawned suite, where it became the acting agent identity inside the write
+  guard and inverted "the acting session's own hold must never block its own write". Reproduced
+  deterministically: 31 passed / 0 failed without the variable, 28 passed / 3 failed with it. It
+  fooled two execution workers and the orchestrator in one sitting before the third worker found
+  it. The acceptance test is now stated as a property — the chain passes with the prefix set and
+  without it, identically.
+- **Grooming can finally see this bundle.** Its debt hunt carried no notion of the layer that now
+  holds the truth, so bundle rot was invisible to the one skill whose job is finding rot. It now
+  counts only what the bundle already proves mechanically — the conformance check's own findings and
+  areas with code but no concept — never a hand-maintained list, and without inventing the
+  `knowledge stale` verb that remains backlog P68.
