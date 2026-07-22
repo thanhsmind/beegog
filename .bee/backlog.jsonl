@@ -308,3 +308,5 @@
 {"ts":"2026-07-22T06:44:03.067Z","type":"friction","title":"derivePin does not require expected_counts.unparsed_blocks — the regression-catch rests on authoring convention","detail":"","severity":"P2","layer":"tests","feature":""}
 {"ts":"2026-07-22T07:03:58.453Z","type":"friction","title":"fidelity metric is lexical — a faithful rewrite that renames terminology scores near zero","detail":"","severity":"P3","layer":"docs","feature":""}
 {"ts":"2026-07-22T07:22:02.186Z","type":"friction","title":"duplicate rule ids in source: hook-runtime R14, workflow-state R19-R21","detail":"","severity":"P2","layer":"docs","feature":""}
+{"ts":"2026-07-22T07:51:24.378Z","type":"friction","title":"7 doctrine-layer R17 citations resolve only through the stub — they break when F3 deletes stubs","detail":"","severity":"P2","layer":"docs","feature":""}
+{"ts":"2026-07-22T07:51:24.440Z","type":"friction","title":"parseStubAnchorMap still restates the anchor regex despite the shared-constant claim","detail":"","severity":"P3","layer":"tests","feature":""}

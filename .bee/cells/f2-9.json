@@ -1,0 +1,66 @@
+{
+  "id": "f2-9",
+  "feature": "okf-migration-f2",
+  "lane": "high-risk",
+  "behavior_change": true,
+  "tier": "ceiling",
+  "title": "S4e: migrate onboarding (58 anchors, 20 unparsed) — the largest area so far",
+  "action": "Standard area migration — identical contract to cell f2-5 (read it, plus commit 3d69a2d). TARGET docs/specs/onboarding.md, expect 58 anchors {B10, R28, ...} / 20 unparsed blocks (the 20 are unnumbered behaviour paragraphs — declare honestly, never invent ids, D10). At 689 source lines and 58 anchors this needs a genuine multi-concept topic split; derive it after reading the whole source. Note its rule set includes R20b (letter-suffixed) — the widened classifier reads it, and the stub anchor map must carry it. Same STEP 0-4, prohibitions, RED-FIRST. Chain grows to 72 suites.",
+  "must_haves": {
+    "truths": [
+      "node scripts/run_verify.mjs exits 0 (72 suites)",
+      "red evidence quoted",
+      "coverage: 58 anchors, 58 owned, 0 duplicated, 0 lost — including R20b",
+      "fidelity min/median quoted above the floor with no concept edited",
+      "knowledge check 0/0; index --check 0 stale",
+      "pin declares unparsed_blocks 20; blob_sha verified",
+      "telemetry row inside band, or an honest finding if the correct shape falls outside it"
+    ],
+    "prohibitions": [
+      "never invent ids for the 20 unnumbered blocks (D10)",
+      "never delete the source path",
+      "never edit a concept or lower a threshold",
+      "docs/history/** and docs/decisions/index.md untouched"
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/okf-migration-f2/CONTEXT.md",
+    "docs/specs/onboarding.md",
+    "docs/knowledge/areas/doctrine-layer/",
+    "scripts/okf_migrate.mjs"
+  ],
+  "files": [
+    "docs/knowledge/areas/onboarding/",
+    "docs/knowledge/index.md",
+    "docs/knowledge/areas/index.md",
+    "docs/knowledge/log.md",
+    "docs/specs/onboarding.md",
+    "docs/specs/reading-map.md",
+    "docs/history/okf-migration-f2/sources/onboarding.md",
+    "docs/history/okf-migration-f2/sources/README.md",
+    "scripts/okf_migrate.mjs",
+    "scripts/run_verify.mjs",
+    "scripts/test_verify_manifest.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "deps": [
+    "f2-8"
+  ],
+  "status": "claimed",
+  "decisions": [],
+  "trace": {
+    "worker": "worker-f2-9",
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": "bbed69a9-bb81-4fe7-9894-160429484b5a",
+    "claimed_at": "2026-07-22T08:54:38.707Z"
+  }
+}
