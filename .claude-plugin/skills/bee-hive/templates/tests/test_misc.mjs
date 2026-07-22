@@ -93,6 +93,7 @@ import {
   writeTextAtomic,
 } from '../lib/decisions.mjs';
 import { detectCycles, computeSchedule } from '../lib/schedule.mjs';
+import { emitFrontmatter } from '../lib/knowledge.mjs';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.mjs';
 
 const root = makeTempRepo();
@@ -324,6 +325,121 @@ await check('preamble Project map: 4 lines without backlog, 5-line max with the 
     fs.rmSync(specsFixtureDir, { recursive: true, force: true });
     fs.rmSync(backlogFixture, { force: true });
   }
+});
+
+// ─── knowledge-context startup bridge (okf-foundation okf-8, D38) ───────────
+//
+// The preamble is a POINTER, never the manifest: when the active feature has a
+// bee.work-item concept in docs/knowledge/, the session is TOLD to run
+// `knowledge context` and read the manifest. No work item + no active feature
+// is silence, not a nag; an active feature without a work item gets exactly one
+// offer line.
+
+const bridgeRoot = makeTempRepo();
+
+function writeBridgeConcept(rel, data, title) {
+  const abs = path.join(bridgeRoot, 'docs', 'knowledge', rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, `${emitFrontmatter(data)}\n# ${title}\n\nBody.\n`, 'utf8');
+}
+
+function knowledgeSection(preamble) {
+  const all = preamble.split('\n');
+  const start = all.findIndex((line) => line.startsWith('### Knowledge context'));
+  if (start === -1) return null;
+  const section = [all[start]];
+  for (let i = start + 1; i < all.length; i += 1) {
+    if (all[i] === '' || all[i].startsWith('### ')) break;
+    section.push(all[i]);
+  }
+  return section;
+}
+
+function offerLines(preamble) {
+  return preamble.split('\n').filter((line) => /No knowledge work item/.test(line));
+}
+
+function setBridgeState(patch) {
+  const current = readState(bridgeRoot);
+  writeState(bridgeRoot, { ...current, ...patch });
+}
+
+writeBridgeConcept(
+  'areas/fixture/overview.md',
+  {
+    type: 'bee.area',
+    title: 'Fixture area',
+    description: 'A required-context target that must never reach the preamble',
+    tags: ['fixture'],
+    timestamp: '2026-07-22',
+    bee: { id: 'fixture-area', lifecycle: 'active' },
+  },
+  'Fixture area',
+);
+writeBridgeConcept(
+  'work/fx-feature/work-item.md',
+  {
+    type: 'bee.work-item',
+    title: 'Fixture work item',
+    description: 'The startup bridge resolves this by bee.id',
+    tags: ['fixture'],
+    timestamp: '2026-07-22',
+    bee: {
+      id: 'fx-feature',
+      lifecycle: 'active',
+      required_context: ['areas/fixture/overview.md'],
+    },
+  },
+  'Fixture work item',
+);
+
+await check('preamble TELLS an active feature with a work item to run knowledge context', async () => {
+  setBridgeState({ phase: 'swarming', mode: 'small', feature: 'fx-feature' });
+  const preamble = buildSessionPreamble(bridgeRoot);
+  const section = knowledgeSection(preamble);
+  assert(section !== null, 'knowledge-context block present when the work item matches');
+  assert(section.length <= 4, `block is a pointer, at most 4 lines, got ${section.length}`);
+  assert(
+    preamble.includes('node .bee/bin/bee.mjs knowledge context --work fx-feature --budget 20000'),
+    'block names the exact runnable command with the feature and a budget',
+  );
+  assert(
+    section.some((line) => /before/i.test(line) && /manifest/i.test(line)),
+    'block carries the imperative: read the manifest before touching code',
+  );
+  assert(offerLines(preamble).length === 0, 'no author-one offer when the work item exists');
+});
+
+await check('preamble never embeds manifest entries — only the command', async () => {
+  setBridgeState({ phase: 'swarming', mode: 'small', feature: 'fx-feature' });
+  const section = knowledgeSection(buildSessionPreamble(bridgeRoot)).join('\n');
+  assert(!section.includes('work-item.md'), 'the work item entry path is never inlined');
+  assert(!section.includes('areas/fixture/overview.md'), 'required_context entries are never inlined');
+  assert(!/est_tokens|bytes/.test(section), 'manifest sizing fields never reach the preamble');
+});
+
+await check('preamble stays silent when no work item matches and no feature is active', async () => {
+  setBridgeState({ phase: 'idle', mode: null, feature: null });
+  const preamble = buildSessionPreamble(bridgeRoot);
+  assert(knowledgeSection(preamble) === null, 'no knowledge-context block without an active feature');
+  assert(offerLines(preamble).length === 0, 'silence, not a nag');
+});
+
+await check('a closed feature (compounding-complete) gets neither block nor offer', async () => {
+  setBridgeState({ phase: 'compounding-complete', mode: 'small', feature: 'ghost-feature' });
+  const preamble = buildSessionPreamble(bridgeRoot);
+  assert(knowledgeSection(preamble) === null, 'no block for a closed feature');
+  assert(offerLines(preamble).length === 0, 'no offer once the door is shut');
+});
+
+await check('an active feature with no work item gets exactly ONE offer line', async () => {
+  setBridgeState({ phase: 'planning', mode: 'small', feature: 'ghost-feature' });
+  const preamble = buildSessionPreamble(bridgeRoot);
+  assert(knowledgeSection(preamble) === null, 'no pointer block without a work item');
+  const offers = offerLines(preamble);
+  assert(offers.length === 1, `exactly one offer line, got ${offers.length}`);
+  assert(offers[0].includes('ghost-feature'), 'the offer names the feature');
+  assert(/okf-profile/.test(offers[0]), 'the offer names the template reference');
 });
 
 // ─── command detection (harness10-1, decision D3: propose-only) ─────────────

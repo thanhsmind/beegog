@@ -24,6 +24,7 @@ import { activeDecisions, datamark } from './decisions.mjs';
 import { readBacklogCounts } from './backlog.mjs';
 import { scribingDebt, ceilingScarcityWarning, CEILING_MAX_SHARE } from './cells.mjs';
 import { captureQueue } from './capture.mjs';
+import { collectConcepts } from './knowledge.mjs';
 
 const INJECT_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -102,6 +103,55 @@ function projectMapLines(root) {
     );
   }
   return lines;
+}
+
+// ─── knowledge-context startup bridge (okf-foundation okf-8, D38) ───────────
+//
+// `bee knowledge context` only pays off if a session is TOLD to run it, so the
+// preamble carries the instruction. Two disciplines hold it in shape:
+//
+//   * It is a POINTER, never the manifest — a heading plus two lines. The whole
+//     bargain is spending a few tokens here to save thousands of scanned ones;
+//     inlining entries would spend the savings at the door.
+//   * Silence beats a nag. No active feature means nothing is emitted at all;
+//     an active feature with no work item gets exactly ONE offer line, because
+//     "author a work item" is a real next action, not noise.
+//
+// Resolution reuses knowledge.mjs's single inventory path (D12: no second
+// frontmatter parser anywhere in bee), and a broken bundle degrades to silence —
+// this preamble is orientation, never a place to fail a session.
+const KNOWLEDGE_CONTEXT_BUDGET = 20000;
+
+// The two phases where no work is open: nothing started, and the last feature
+// closed. Same pair the intake gate uses — a stale `feature` string outlives
+// both, which is why the phase, not the feature, decides.
+const NO_WORK_PHASES = new Set(['idle', 'compounding-complete']);
+
+function knowledgeContextLines(root, record) {
+  const feature = typeof record.feature === 'string' ? record.feature.trim() : '';
+  if (!feature || NO_WORK_PHASES.has(record.phase)) return [];
+
+  let hasWorkItem = false;
+  try {
+    hasWorkItem = collectConcepts(root).some((concept) => {
+      if (concept.data.type !== 'bee.work-item') return false;
+      const bee = concept.data.bee && typeof concept.data.bee === 'object' ? concept.data.bee : {};
+      return bee.id === feature;
+    });
+  } catch {
+    return [];
+  }
+
+  if (!hasWorkItem) {
+    return [
+      `- No knowledge work item for "${feature}" — offer to author docs/knowledge/work/${feature}/work-item.md (template: docs/specs/okf-profile.md, Templates) so the next session starts from curated context.`,
+    ];
+  }
+  return [
+    '### Knowledge context — load it before code',
+    `- \`node .bee/bin/bee.mjs knowledge context --work ${feature} --budget ${KNOWLEDGE_CONTEXT_BUDGET}\``,
+    "- Run it and read the manifest's files before touching code — that manifest is this feature's curated context, and it replaces scanning docs/history.",
+  ];
 }
 
 function gatesLine(state) {
@@ -230,6 +280,15 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
         '- Baseline gate: run the verify command once per session before claiming any cell; a red baseline is surfaced and becomes its own fix-first tiny cell — never build on red.',
       );
     }
+  }
+
+  // okf-8 (D38): the startup bridge sits ahead of the project map — the
+  // curated manifest is what a session should reach for first, and the map is
+  // the fallback for everything the manifest does not cover.
+  const knowledge = knowledgeContextLines(root, pipelineRecord);
+  if (knowledge.length > 0) {
+    lines.push('');
+    for (const line of knowledge) lines.push(line);
   }
 
   lines.push('');
