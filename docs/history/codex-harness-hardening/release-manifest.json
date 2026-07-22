@@ -2115,7 +2115,7 @@
     },
     {
       "path": "scripts/test_verify_manifest.mjs",
-      "sha256": "b7041eac3ce3b5d1ebe66c360b7bc78d50c22f6e8027708b3bbb527dd6d460a6",
+      "sha256": "3c42b3736f36d92ccf0e00cc98d52f2d05cd5bc95642a0cfe65566c3ecb77f46",
       "mode": "644",
       "role": "distribution_test"
     },

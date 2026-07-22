@@ -214,3 +214,69 @@
   requiring a NON-ZERO unparsed-block count from this very spec — now reads those same bytes from
   the committed, hash-verified source copy rather than the path this cell turned into a stub: the
   assertion follows the bytes, never the convenience.
+
+- Eighth area migrated, and the first whose SOURCE had to be repaired before it could be pinned
+  at all (cell f2-10, feature `okf-migration-f2`, slice S4f): `docs/specs/hook-runtime.md`
+  re-authored into twelve `bee.area` concepts, split by TOPIC rather than the old spec's
+  headings — `areas/hook-runtime/overview.md` (the frame every checkpoint sits inside: purpose,
+  actors, hostile-input immunity, and "the guard's silence is never permission"),
+  `catalog-projections-and-activation.md` (one catalog of record rendered into two projections
+  with every difference named, and whether a project's checkpoints are enabled, rooted and
+  trusted enough to fire), `write-guard-request-shapes.md` (the request shapes the guard can
+  read: batch envelopes, workflow-command shape checks, and both recognised command forms),
+  `governed-paths-and-the-intake-gate.md` (which targets are governed, the only-ever-shrinking
+  always-writable set, and the gate that reads the phase rather than a closed feature's leftover
+  approvals), `advisories-and-turn-control.md` (the advisory contract, session-stop output, and
+  the one deliberate turn-control exception), `delivery-targets-and-the-fallback-command.md`
+  (the two rendering targets and the full launch contract a rendered fallback command owes,
+  Windows form included), `hook-source-exclusivity.md` (proof-gated arbitration in both
+  directions), `dispatch-guard.md` (pre-spawn judgement of tier, model and helper type),
+  `native-spawn-and-transport-classification.md` (the deliberate override pass-through and the
+  capability probe's scoped, invalidatable verdict), `child-agent-attribution-and-audit.md` (the
+  three checkpoints that observe without authorising), `coordination-refresh-and-session-init.md`
+  (the durable state a checkpoint maintains as a side job), and
+  `health-checks-and-proof-surfaces.md` (how the guardrails are inspected by a human and proven
+  by the chain).
+- **The duplicate `R14`, and why the repair happened before the pin.** The source shipped the
+  rule id `R14` TWICE — the gate-bypass block-verdict rule (added for GitHub #18) and the
+  write-guard dual command-shape rule (added by shim-retire D3). They are two genuinely
+  different rules, not one rule stated twice, and the f2-4 sweep had already flagged the
+  collision as pre-existing. Because anchors are keyed by id in a Map, the FIRST `R14`'s text
+  was silently overwritten by the second's: unmeasurable by the F11 fidelity floor permanently,
+  while set-equality could not see the pair's second member at all — and array-length counts
+  never noticed, because 81 members with 80 distinct ids still add up. Neither rule may be
+  dropped or merged to remove a duplicate, so the SOURCE was repaired first: the second
+  occurrence in document order — the write-guard rule — was renumbered **`R14a`**, one token on
+  one line, nothing else changed. The gate-bypass rule KEPT `R14` because every live citation of
+  `hook-runtime R14` means it (this spec's own `R4` and `R10`, its gate-bypass pointer,
+  `skills/bee-hive/references/routing-and-contracts.md`, and decision `4c1c5921`), so no
+  external reference had to be churned and none silently changed meaning. `R14a` is a
+  DISAMBIGUATION suffix, not a refinement suffix the way `R8a`/`R8b` refine `R8`; the pointer
+  stub says so in prose and carries both rows.
+- Ground truth is DERIVED (F8) from pin `{ab8cf6e, docs/specs/hook-runtime.md, blob a8907ce,
+  ba-nine-section, 81 anchors (22 B / 24 R / 17 E / 18 P), unparsed_blocks: 8}` — 81 anchors with
+  **81 distinct ids**, where the same file carried only 80 distinct ids before. Because the
+  repaired bytes exist in no commit's tree, `okf_migrate` gained one branch and one branch only:
+  a pin may declare `repaired_from` (the provenance blob at `commit:path`) plus `repair_reason`,
+  and then the git leg addresses the PROVENANCE — still asserted exactly, so drifting provenance
+  is as loud as a drifting pin — while the committed copy at
+  `docs/history/okf-migration-f2/sources/hook-runtime.md` is the pinned bytes' only content
+  address. An undeclared disagreement, a `repaired_from` that does not match, or a repair with no
+  stated reason are all still `PIN_SHA_MISMATCH`; `scripts/test_okf_pins.mjs` section 15 asserts
+  every one of those from both sides, asserts the branch is inert on an unrepaired pin, and
+  asserts the property the repair exists to create — every derived id distinct, with `R14` and
+  `R14a` carrying their own separate texts so the floor measures each individually.
+- The 8 unparsed blocks are all in "Behaviors & Operations" and none is invented into an anchor
+  (D10): `B2`'s wrapped continuation line that happens to open with a bold run, `B3`'s three
+  un-ided outcome bullets, and `B16`'s four un-ided case bullets. Each travels verbatim with the
+  anchor whose block it sits in. Twelve concepts over 81 anchors and 762 source lines land
+  anchors_per_concept at 6.75 and concepts_per_100_source_lines at 1.57, both inside the
+  [0.5x, 2x] band across the eight pinned "area"-shaped sources and closer to the running median
+  than any shape before them; alternatives were computed against that same median before
+  authoring (6 concepts → 13.50 / 0.79, 15 → 5.40 / 1.97, both still in band), so the metric
+  confirmed the 12-way split rather than driving it — the split follows the twelve genuinely
+  different checkpoints this area describes. Fidelity: min/median/max 1.000 (verbatim re-homing).
+  RED-FIRST: with the `R14a` claim deliberately removed from `write-guard-request-shapes.md`'s
+  `bee.sources`, `--check hook-runtime` failed with the real coverage-loss finding (`LOST in
+  concepts: R14a`), then was restored to green. Coverage is machine-checked by
+  `scripts/okf_migrate.mjs --check hook-runtime` (D35), now a chain suite (73 suites).

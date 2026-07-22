@@ -1,0 +1,762 @@
+---
+area: hook-runtime
+updated: 2026-07-21
+sources: [codex-hook-state-parity cells 2, 3, 5 (paired Codex subagent audit, package authority, exclusive hook-source arbitration, and fresh-host handler delivery; capped traces and reports, 2026-07-16); codex-sandbox-baseline cells codex-sandbox-baseline-2/codex-sandbox-baseline-4 (nested test entrypoints use the shared isolated runner; external integration keeps real status/output grading, 2026-07-16); codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/; codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b; bee-footprint D2 (cell footprint-2, 2026-07-12); dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b); shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14); advisor-and-orchestration Slice 2A-iii cell ao-2aiii-1 (declared-tier-first dispatch guard, 12 verification rows, 2026-07-17); advisor-and-orchestration Slice 3A cells ao-3a-1/ao-3a-2 (passive tools logger + onboarding-layer inventory sync, fails-when-broken pair, 2026-07-17); advisor-and-orchestration Slice 3B cells ao-3b-1/ao-3b-2 (config-rendered pinned helper types + flat agents sync + generic-type dispatch refusal + drift advisory, 2026-07-17); post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18); codex-native-transport cells cnt-2/cnt-3 (capability classification + probe record + doctor unlock naming; dispatch-guard marker extension; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/, 2026-07-19); codex-native-transport cells cnt-4/cnt-5 (override-field route-check rescoped to a documented pass-through-open gap pending observed evidence; capability probe's live leg with isolation independently verified and a cross-build regression observed; traces in .bee/cells/, reports docs/history/codex-native-transport/reports/cnt-4.md and reports/probe-evidence.md, 2026-07-19); codex-native-transport cell cnt-7 (Claude model-param guard allowlist folds a configured model-shaped adviser's own model, closing a live adviser-dispatch refusal, allow-only-widening; trace in .bee/cells/, report docs/history/codex-native-transport/reports/cnt-7.md, 2026-07-19); multi-session-hardening cell msh-5 (throttled heartbeat-and-lease renewal wired into the per-prompt and post-task-update checkpoints, try-once/skip-on-busy against the coordination lock; trace in .bee/cells/, report docs/history/multi-session-hardening/reports/msh-5.md, 2026-07-19); codex-command-windows cells 1/2 (shell-agnostic Windows command on every codex source-repository fallback entry + both transport forms unified on the committed onboarded handler path; traces in .bee/cells/, 2026-07-20; flushed capture stub a681f64a); hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — the Windows hook command becomes a shell-agnostic node -e bootstrap that resolves the git root first, exits 0 silently outside a git repo, forwards stdin, and propagates the real handler's exit status, proven by a contract test run from a nested cwd; session-init persists the runtime-provided transcript path into the session record so crash recovery prefers it over layout math)]
+decisions: [f1ca79b9 (AO15 — orchestrator/subagent attribution fields in tool payloads); codex-hook-state-parity D1-D3, D8-D13; a83a3613 (shared isolated runner for nested Node entrypoints; real Git/Bash/Codex integration remains external); codex-runtime-parity D1, D2; 0023; 72f3d6dd (AO5 config is the authority — tier/model agreement and membership at dispatch); d91a8398-2d63-426b-a133-341568453200; 5e6582af-57b7-442f-9ded-b3eda61f5543; 8ed35504 (write-guard always-writable set shrinks); bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional); cf511ff3 (installed plugin package is authoritative; source arbitration and cleanup are proof-gated); codex-native-transport D3-D5 (3ceba8f5, D3a c0cba64e, Δ2-amended 760e9b05); 350f1e82 (codex-native-transport cnt-4 rescope — override-field route-check deferred to a documented pass-through-open gap, pending observed evidence); multi-session-hardening D2/D5 with Δ3-amendment (docs/history/multi-session-hardening/CONTEXT.md; audit 12f54e88, locked 17a624dc)]
+coverage: partial
+---
+
+# Hook Runtime (lifecycle guardrails)
+
+## Purpose
+
+While an AI assistant works inside a bee-managed project, a set of lifecycle
+checkpoints runs around it: session start context, per-prompt reminders, write
+protection, dispatch auditing, state refresh, worker nudges, and close-time
+hygiene. This area describes what those checkpoints guarantee, on which
+assistant runtime, and what happens when input is hostile or a path is
+unsupported. The guardrails are a safety net, not a security boundary — the
+durable project instructions and the shared helper checks remain the final
+belt for anything a checkpoint cannot see.
+
+## Entry Points & Triggers
+
+- A supported assistant runtime (two are supported today) fires a checkpoint at
+  each lifecycle event: session start, user prompt submitted, before a tool
+  runs, after tracked task updates, before context compaction, when a child
+  agent starts, when a child agent stops, and when the session stops.
+- Which checkpoints are active comes from one **catalog of record** rendered
+  into projections. Each supported runtime consumes only its own projection;
+  the projections differ only by an explicitly named allowed list. The
+  directional differences: both runtimes carry a pre-spawn dispatch guard —
+  Claude on its dispatch tools, Codex on its native spawn call, judging only
+  the envelope shape actually observed on the probed runtime version and
+  passing every unobserved shape through open — while Codex alone has
+  child-start and child-stop lifecycle audits (codex-native-runtime-v2,
+  cnr2-8).
+- One runtime loads its checkpoints from two possible delivery locations: a
+  packaged location, and its own project's source-repository fallback
+  location. Both are rendered from the same catalog of record, at an explicit
+  rendering target, using the same per-checkpoint handler wiring — the
+  fallback is never a hand-authored or forked copy of the packaged rendering.
+
+## Data Dictionary
+
+| Element | Meaning |
+|---|---|
+| catalog of record | The single logical definition of every checkpoint: event, matcher, handler. Both runtime projections are rendered from it deterministically — rendering again must reproduce both byte-for-byte. |
+| projection | The runtime-specific checkpoint list a given assistant actually loads. One per runtime, checked in, never hand-divergent. |
+| allowed difference | A named, exported exception explaining why one projection carries a checkpoint the other lacks. Any un-named difference between projections is a defect. |
+| native-subagent audit | A silent, bounded lifecycle record written after a Codex child starts or stops. It is evidence only: never authorization, never a block, and never a replacement for pre-spawn control. |
+| fail-open | On unreadable/hostile input or an internal crash, the checkpoint permits the action and logs the gap visibly. It never silently swallows the event. |
+| fail-closed (deny) | The checkpoint blocks the action with a corrective message telling the actor how to proceed correctly. |
+| advisory | A checkpoint message that informs the assistant without blocking or continuing any turn — delivered as a parseable structured message, never as a turn-control verdict. |
+| coverage gap | A named event/path the runtime cannot intercept, logged visibly at runtime and listed here — never claimed as protected. |
+| reviewed definition | The exact command definition the owner has inspected and trusted. A new or changed non-managed definition does not run until it is reviewed again. |
+| rendering target | Which delivery location a projection is being produced for: the packaged location, or the project's own source-repository fallback location. Same catalog, same handlers; only the concrete checkpoint command differs by target. |
+| source identity | An explicit marker a rendered checkpoint command passes to its shared handler, stating which rendering target launched it, so the handler can log or branch on provenance instead of guessing from environment. |
+| always-writable location | A small named set of locations a write may target without the active feature's gate routing, because the content is machine-local and disposable — today: the workflow's own state/log directory and, inside it, a dedicated subfolder for disposable experiment work. Removing a location from this set only tightens governance; adding one is a deliberate, reviewed decision. |
+| native-transport classification | The three-way verdict a capability probe assigns a second-runtime client from observed evidence: `native_model_override` (a native per-agent model override is confirmed accepted), `native_budget_only` (today's default — no override proven), or `external_cli_only` (the base spawn transport itself is confirmed off). Unknown or absent evidence always reads `native_budget_only` — the native-override transport stays inert until proven (codex-native-transport D3). |
+| native-transport probe record | A separate, gitignored, version- and configuration-scoped record — distinct from doctor-attest, whose legs cannot see a feature-flag change — holding the classification and the evidence it was derived from. Independent validity legs invalidate a stale verdict back to `native_budget_only` and name the reason: no record on disk, a repository-identity mismatch, a version mismatch, a corrupted configuration-scope hash, or a live re-check that disagrees with the recorded configuration scope (codex-native-transport D3, Δ2-amended). |
+
+## Behaviors & Operations
+
+**B1 — Hostile-input immunity (every checkpoint).** Whatever arrives on a
+checkpoint's input — empty, garbage bytes, null, a list where an object was
+expected, a wrong-typed working directory, or a multi-megabyte payload — the
+checkpoint normalizes it before touching any field. It never crashes the
+assistant's turn. The decision it would have made is never *flipped* by an
+internal failure: a crash in logging or loading support code ends in fail-open
+with a visible log entry, not in a new allow or a new deny. Every actor
+observes either the normal outcome or a logged fail-open — never a stack trace
+ending the turn.
+
+**B2 — Advisories never steer the conversation.** Close-time, compaction, and
+child-stop checkpoints only inform: their output is a structured message the
+runtime displays/parses. They never emit a turn-control verdict, because on
+those events a verdict would resume a stopped child or loop the main turn. The
+**one** deliberate exception is the gate-bypass net (B15), which is turn-control
+by design on the close-time checkpoint only — there, looping the main turn is
+exactly the intended continuation.
+
+**B3 — Batch file-change requests are guarded per target.** When the runtime
+announces a batch file-change request (the patch-style tool), the write guard
+parses every add/update/delete/move target and runs each one through the same
+gate, direct-edit, and reservation decisions that govern single writes.
+- All targets provable → each target decided on its own; one denied target
+  denies the request with a corrective message.
+- Request intercepted but targets NOT provable (no parsable change lines, a
+  blank path, a target resolving outside the project) → **deny** with a
+  corrective message. An intercepted-but-unreadable batch is never waved
+  through.
+- The outer event itself malformed (no batch envelope present at all) →
+  fail-open, logged: the guard cannot know a write was intended.
+
+**B3a — Workflow-command requests are shape-checked against the published
+catalog.** When a shell request invokes a workflow verb, the guard resolves the
+command against the catalog of record — including verbs whose full name is
+three words deep (group, sub-group, action) — and validates the required
+parameters and value shapes before the command runs. A malformed invocation is
+denied with the command, the missing or wrong field, and the corrective shape;
+a well-formed one proceeds untouched. Deep verbs previously escaped this check
+unvalidated (a silent fail-open); they no longer do.
+
+**B4 — Worker nudges reach the right worker.** The child-stop nudge matches a
+returning worker by its registered identity (the same identity workers use to
+reserve files); an unregistered child still gets the generic nudge.
+
+**B5 — Two projections, one truth.** Changing the catalog of record and
+re-rendering updates both projections in the same change; the parity check in
+the installation suite compares the assistant-facing settings against the
+correct projection for that runtime and fails on any un-allowed drift. Each
+difference is declared by runtime, event, and handler, and each projection is
+proved independently.
+
+**B6 — Project checkpoints are active, rooted, and reviewed.** Project
+checkpoints are enabled unless an active configuration explicitly disables
+them. A checkpoint command starts with the session's working directory, which
+may be below the project root, so a project-local command first resolves the
+project root and then launches its handler. A new or changed non-managed
+definition is listed for review and skipped until the human owner trusts that
+exact definition. Afterwards, a fresh lifecycle event uses the reviewed
+definition; until then the assistant continues without that checkpoint and the
+owner sees the pending-review warning.
+
+**B7 — The source-repository fallback is derived, not authored.** The
+fallback delivery location's checkpoint file is produced by rendering the
+catalog of record at the source-repository target. Release proof renders fresh
+root and nested-directory fixtures; a checked-in project snapshot is tested
+separately as a development/fallback artifact and never substitutes for package
+proof (codex-runtime-parity cell 6a; codex-hook-state-parity cells 2-3).
+Fresh-host proof also requires every handler filename referenced by the rendered
+projection to exist in the copied handler payload; structural parity without
+artifact delivery is not a working fallback (codex-hook-state-parity cell 5).
+
+**B8 — Fallback checkpoint commands are environment-independent.** A
+checkpoint command rendered for the source-repository target does not depend
+on any environment variable that only the packaged delivery location
+provides. Instead, at launch it resolves the project root itself from the
+current working directory and only then hands off to the shared checkpoint
+handler, passing an explicit source identity so the handler knows it was
+launched from the fallback rather than the packaged location. This
+resolve-then-handoff step succeeds from the project root and from any working
+directory nested below it, including paths containing spaces or non-ASCII
+characters (codex-runtime-parity cells 6a, 6b).
+
+**B9 — Launch-setup failure and a computed decision are different things.**
+Before a fallback checkpoint command reaches its shared handler, it must
+complete its own root-resolution/launch setup. If that pre-handoff step
+cannot complete, the checkpoint today fails open **visibly**: it writes
+exactly one diagnostic to the error stream, writes nothing to the output
+stream, and exits success — never the silent crash this replaced. Once the
+shared handler is reached, its own outcome — ordinary success or a deliberate
+denial — passes through the launch step unchanged (codex-runtime-parity cell
+6a; see Open Gaps — this default is under active revision for checkpoints
+capable of denial).
+
+**B10 — Session-stop handlers speak JSON or say nothing.** Both handlers
+wired to the session-stop checkpoint exit success. Whichever of them produces
+output at all produces a single non-empty payload that parses as JSON
+carrying a human-readable summary field, and never a turn-control block
+verdict — consistent with B2 (advisories never steer the conversation). A
+handler with nothing to report stays completely silent rather than emit a
+placeholder (codex-runtime-parity cell 6b).
+
+**B11 — A repo-root disposable-experiment location is no longer
+always-writable.** Trigger: a write targeting the former repo-root
+disposable-experiment location. What blocks it: the same gate routing that
+governs any other source path — the active feature's phase and gate state —
+exactly as for a path outside the always-writable set; nothing exempts this
+location anymore. What changes: this location moves from always-writable to
+governed, strictly shrinking the always-writable set by one entry; disposable
+experiment work itself continues unblocked, but now inside the workflow's own
+always-writable directory, under a dedicated subfolder that location's
+existing allowance already covers. Side effects: the close-time nudge's own
+always-writable set shrinks identically, so a write left in the old location
+is flagged there too, not only by the write guard. What actors observe: the
+assistant sees the same corrective deny/allow outcome it would see writing to
+any other governed source path; the human owner sees no new prompt — the
+location simply stopped being an exception (bee-footprint D2).
+
+**B12 — No active work means no source writes — a finished feature is not an
+open door.** Trigger: any write to a governed path while the workflow sits in a
+terminal state — either *nothing has started yet* or *the last feature has
+closed* (workflow-state: the two terminal states, and the only two from which a
+new feature may start). What blocks it: the intake gate, which denies the write
+and names the terminal state it fired on, telling the assistant to route the
+request through the workflow first. What is still allowed: the always-writable
+set plus the knowledge locations (docs, plans, the workflow's own directory) —
+the closing steps of a feature, spec sync and learning capture, must keep
+writing after that feature closes. Why the state and not the gates decide this:
+a closed feature leaves its approvals **behind it**, still recorded as
+approved. Reading approvals alone, a finished feature is indistinguishable from
+an approved one, so the guard reads the state — the phase — and the moment work
+is no longer active the door is shut regardless of what the last feature was
+allowed to do. Escape hatch: unchanged — a repository may disable the intake
+gate entirely in its configuration, and doing so disables it for both terminal
+states alike, never one but not the other (decision c2c46488).
+
+**B13 — Codex records paired native-subagent lifecycle evidence.** The same
+bounded audit handler receives child-start and child-stop events. It records
+only bounded lifecycle identifiers and never prompt, transcript, environment,
+credentials, or secrets. Malformed input and write failures stay silent and
+fail open; the handler has no deny or block path.
+
+**B14 — Exactly one bee hook source is active.** An installation selects the
+package projection or the project fallback. Package activation is proved before
+recognized fallback entries are removed; fallback activation is proved only
+after the package is known inactive. User and foreign hook entries survive.
+
+**B15 — The gate-bypass net mechanizes "zero stops" at the close-time
+checkpoint (GitHub #18).** Honoring the gate-bypass autopilot was previously
+prose-only: the level-aware auto-approval rule lived in the planning/validating
+skills (and is machine-checked green there), but nothing caught the assistant
+when it skipped that rule and stopped at an approval gate anyway — the close-time
+checkpoint only warned. This is the "an invariant left in prose WILL be bypassed;
+mechanize it" pattern. The close-time checkpoint now emits a **turn-control block
+verdict** (the deliberate exception to B2) — forcing the turn to continue — when
+ALL hold: the event is the session-stop event itself (never compaction, never a
+child-stop, never a missing/ambiguous event); the active phase is one whose
+stop is an *approval* gate (plan-shaping → Gate 2, feasibility → Gate 3) with
+that gate still pending; and the active bypass level covers that gate for the
+lane (`full`/`total` cover every lane; `normal` covers only the non-hard-gate
+lanes — a `normal`-lane high-risk change still stops; `off` never fires). The
+exploring/Gate-1 phase is **excluded on purpose**: under the highest level a
+genuine *information* question still stops for the human — only rubber-stamp
+approval gates are mechanized. The block carries an instruction to record the
+approval, log the audit decision, and proceed — and when the pending gate is
+execution approval on high-risk work, the instruction additionally names the
+adviser-consult prerequisite first (run the configured adviser read-only,
+record the consult, then approve), so the mechanized instruction can no longer
+steer the assistant into the consult-precondition refusal uninformed; every
+other gate's instruction is unchanged (cell pah-3, 2026-07-18). **Loop-guard:** it blocks at most
+once per (session, phase, gate, level); an immediate re-stop at the same gate is
+deduped and degrades to the ordinary advisory, so a turn that genuinely cannot
+proceed is never trapped in a loop. Fail-open is unchanged: any internal failure
+falls through to the advisory path with a visible log, never a crash.
+
+**B16 — The pre-spawn dispatch guard reads the declared tier before judging the
+explicit model choice.** A helper dispatch may carry a declared tier, an
+explicit model choice, both, or neither; the guard judges them together, in
+this order, and configuration is the sole authority throughout — there is no
+built-in list of acceptable models.
+- *Both present:* they must agree. A tier configured to a model requires the
+  explicit choice to equal exactly that model; disagreement is refused with the
+  configured model named in the corrective message. A tier that names no model
+  (the session-inherit tier, a budget tier, an external-command tier) must not
+  carry an explicit model choice at all — the label would enter the audit
+  record while the dispatch actually ran on the choice.
+- *Choice only:* the model must be one of the models configured across the
+  runtime's tier slots. On Claude, that configured set also includes a
+  configured model-shaped adviser's own model — an adviser-kind dispatch is
+  judged against the same resolved name the adviser protocol already offers,
+  not left out of the allowlist just because the adviser slot is not itself a
+  tier slot; a cli-shaped, native, or unconfigured adviser contributes nothing
+  to the set. This can only turn a refusal into an allowance, never the
+  reverse, and it closed a live gap where a correctly-shaped adviser dispatch
+  was still refused as unconfigured (codex-native-transport cnt-7). An
+  unconfigured name is refused, and the corrective message teaches every
+  legitimate route: the configured models, the session-model marker for a
+  dispatch meant to run at the session's own model, and adding the model to a
+  configured tier slot. A workspace with no configured tiers is not checked
+  (fail-open, unchanged behavior).
+- *Tier only:* tiers resolving to a model, a budget, or session-inherit are
+  permitted as before. A tier backed by an external command is refused — an
+  in-family helper cannot *be* the external command — and the corrective
+  message routes to the external-executor gather path without ever naming a
+  model that does not exist.
+- *Neither:* refused, as always; the corrective message now checks how the
+  default tier is configured first, so it never instructs the actor to pass a
+  nonexistent model.
+What each actor observes: the assistant receives the corrective message and can
+self-correct on the next attempt; the audit log gains one line per evaluated
+dispatch whose transport label states *why* a refusal happened (tier/choice
+disagreement, unconfigured choice, external-command tier, bare) — a refused or
+misdeclared dispatch can no longer appear in the audit trail as a legitimate
+one. Every internal failure of the guard itself fails open.
+
+**B18 — Work-tier dispatches ride pinned helper types, not the catch-all.**
+Three pinned helper definitions — a gather worker, an extraction worker, and a
+review worker — are rendered into the project at onboarding **from the
+configured tier models** (never hand-pinned: configuration stays the sole
+authority, so re-rendering follows a config change). They are delivered by a
+flat managed-file step with its own version marker, deliberately outside the
+skill-root sync (a skills-root entry would break onboarding's version preflight
+permanently). A tier slot backed by an external command or left empty renders
+no file (a helper type must name a real model), and the second runtime gets
+none at all — it has no per-helper model selection, a documented asymmetry.
+The dispatch guard enforces the pairing: a dispatch declaring a work tier
+(gather/extraction/review) while naming the **catch-all generic helper type**
+is refused, and the corrective message names that tier's pinned type (or the
+runtime's read-only explorer type for read-only gathers). The session-model
+tier is exempt — it has no pinned type by definition. Drift between a rendered
+helper file's model and the configured slot is surfaced as an **advisory** by
+the status snapshot and the configuration check (never a refusal — the
+dispatch-time agreement rules already protect the dispatch itself). No claim
+is made that any of this reduces cost; it makes the tier decision auditable.
+
+**B19 — The Codex native spawn checkpoint deliberately does not judge an
+override an anchored spawn carries.** When a marker-anchored native spawn
+also names a per-agent model, effort level, or fork-turn count, the
+checkpoint's decision is unchanged from a spawn without those fields: a valid
+marker still allows, an unmarked message still denies, and the named fields
+themselves are never read or compared against anything. This is a
+deliberate defense-in-depth allow-hole, not an oversight — validating those
+fields against the configured route was locked as a future rule, but no
+observed client input has ever carried them into the checkpoint yet on any
+version checked, so implementing the check now would mean denying against
+assumed rather than observed shape. It stays this way until the capability
+probe (native-transport probe record, above) observes that envelope on a
+client version — only then does the route-check activate. Proven by an
+allow/deny row pair: a marker-anchored spawn with override fields that
+mismatch any plausible configured route is still allowed, unaffected; the
+identical override fields on an unmarked message are still denied,
+unaffected (codex-native-transport D6; decision 350f1e82).
+
+**B20 — The per-prompt and post-task-update checkpoints opportunistically
+refresh coordination state, never blocking on it.** Trigger: the per-prompt
+checkpoint and the post-task-update checkpoint fire, as they already do for
+their own primary job (context injection, state/cell-count refresh). What
+happens: each also attempts the acting session's own heartbeat-and-lease
+refresh (workflow-state B24) — its own automatic, throttled renewal of the
+session's heartbeat plus every claim and hold it owns. That attempt is wrapped
+in its own failure boundary, separate from the checkpoint's primary job: a
+failure inside the refresh is logged as a visible gap and never blocks,
+delays, or changes the checkpoint's own outcome (B1 unchanged). The refresh's
+own writes never wait on a busy shared coordination store: they try once and
+skip silently on contention, the same discipline every lifecycle checkpoint
+uses against the coordination lock (workflow-state B21) — a checkpoint never
+waits on that lock, only a command-line verb does. What each actor observes: a
+session that stays genuinely active keeps its claims and holds fresh without
+any extra step; a checkpoint that loses the lock race simply skips one
+opportunistic refresh, and the primary reminder or state-refresh work it
+exists for still runs and is still reported exactly as before
+(multi-session-hardening D5).
+
+**B21 — Session-init persists its own runtime-provided transcript path,
+instead of leaving every later reader to recompute it.** Trigger: the
+session-init checkpoint runs at session start. What happens: whenever the
+active runtime hands the checkpoint a transcript path as part of its own
+session-start payload, that path is written into the session's own durable
+record at the same moment, rather than only being used transiently for the
+checkpoint's own purposes. What each actor observes: any later consumer that
+needs to find this session's transcript — most notably crash recovery
+(workflow-state B33) — can read the stored path directly instead of deriving
+it from the runtime's usual on-disk layout convention. This makes a
+non-Claude, Codex-shaped transcript layout first-class rather than a
+best-effort guess: recovery no longer has to already know, or successfully
+infer, where a second runtime's transcripts live in order to find one that
+was actually reported at session start. A runtime that hands no transcript
+path leaves the field absent, and lookup falls back to layout math exactly as
+it did before this behavior existed (hardening-1-7-10).
+
+**B17 — A passive usage log records every tool call, and enforces nothing.**
+After every tool the assistant runs — any tool, both runtimes — a checkpoint
+appends one line to a machine-local usage log: timestamp, the tool's name, and
+who ran it (the orchestrating assistant, recorded as no-attribution, or a child
+helper, recorded with its identity and helper type — the two are mechanically
+distinguishable because a child's calls carry identity fields the
+orchestrator's never do). The line **never** contains the tool's input or
+output content: names and attribution only, so the log can answer "what ran,
+how often, by whom" without ever holding secrets, personal data, or work
+content. The checkpoint is pure observation: it cannot block a tool, emits no
+messages, and every internal failure fails open with a visible crash line in
+the gap log — a broken logger goes loud, never silently green (its own
+verification fails when lines stop appearing). It can be switched off per
+workspace by its toggle. The log grows without rotation, like every other
+machine-local audit log here. This log exists to measure; no claim is made
+that it reduces anything.
+
+## Actors & Access
+
+- **The assistant** (either runtime) — subject of every checkpoint; observes
+  context injections, denials with corrective messages, and advisories.
+- **The human owner** — sees deny messages surfaced by the assistant and the
+  visible gap log; approves anything the guardrails escalate (privacy reads,
+  gates).
+- **Workers (child agents)** — same write rules as the main assistant;
+  additionally matched by registered identity for nudges.
+
+## Business Rules
+
+- R1 — One catalog of record; projections are rendered, never hand-edited;
+  all three directional differences must be exported by name
+  (codex-runtime-parity D1; codex-hook-state-parity D1-D3).
+- R2 — A checkpoint failure never flips an allow/deny decision; fail-open is
+  visible, never silent (codex-runtime-parity D2).
+- R3 — An intercepted batch change with unprovable targets is denied, not
+  fail-opened (codex-runtime-parity D2, strengthening).
+- R4 — Advisory events never emit turn-control verdicts (codex-runtime-parity D2),
+  with the single scoped exception of the gate-bypass net on the session-stop
+  event (B15, R14) — turn-control there is the intended, loop-guarded behavior.
+- R5 — Every dispatch of a subagent carries an explicit model-tier transport
+  that **agrees with configuration**, and every evaluated dispatch — allowed or
+  refused — is audit-logged with an honest transport label (decision 0023;
+  strengthened per 72f3d6dd/AO5 "config is the authority": a declared tier is
+  read before the explicit model choice is judged, per B16; the audit
+  checkpoint is an allowed difference — it exists only where the runtime
+  exposes dispatch).
+- R6 — Project checkpoints are enabled by default, resolve project-local
+  handlers from the project root even when a session starts below it, and any
+  changed non-managed definition requires fresh human review before execution
+  (decision d91a8398-2d63-426b-a133-341568453200).
+- R7 — The source-repository fallback checkpoint file is generated from the
+  catalog of record at an explicit rendering target and is never
+  hand-authored; the installation suite reproduces the rendering and fails on
+  any byte drift (codex-runtime-parity cell 6a).
+- R8 — A source-repository fallback checkpoint command must not depend on
+  environment that only the packaged delivery location provides; it resolves
+  the project root itself at launch and must succeed from the project root
+  and from nested working directories, including paths with spaces and
+  non-ASCII characters (codex-runtime-parity cells 6a, 6b).
+- R8a — Every second-runtime source-repository fallback entry carries two
+  transport forms: the POSIX command (login-shell transport, unchanged) and a
+  Windows-specific command that is shell-agnostic — with no shell
+  substitution, test, or exec constructs, and no dollar sign, percent sign, or
+  backtick anywhere in the command string, so cmd.exe and PowerShell parse it
+  identically instead of one native shell interpreting a construct the other
+  does not — so it runs identically under both native Windows shells. The
+  command is a small interpreter-language bootstrap, not a raw file
+  invocation: it resolves the git repository root itself before doing
+  anything else, so it works correctly from any nested working directory
+  rather than only from the session's own working directory; outside a git
+  repository it exits zero silently, the same fail-open parity the POSIX form
+  already has; once resolved, it forwards its own stdin through to the real
+  checkpoint handler unchanged and propagates that handler's exit status back
+  as its own, rather than always reporting success (hardening-1-7-10,
+  refining codex-command-windows cell 1's original shape). The contract test
+  for this command executes the real, rendered command string from a nested
+  working directory rather than only asserting on its literal text, so a
+  regression in the git-root resolution itself would fail the suite, not just
+  a text-shape check. The Windows form exists only
+  on the second runtime's source-repository target: packaged (plugin)
+  projections and all first-runtime projections are byte-unchanged by its
+  rendering (codex-command-windows cell 1).
+- R8b — Both transport forms reference one checkpoint path: the committed,
+  onboarded handler location inside the workflow's own tool directory, which
+  is tracked in version control so a fresh clone resolves it without an
+  onboarding pass. The top-level handler source directory is plugin source
+  only and never appears in a rendered fallback command (codex-command-windows
+  cell 2, author decision).
+- R9 — A fallback checkpoint's pre-handoff launch-setup failure fails open
+  visibly today — one diagnostic on the error stream, nothing on the output
+  stream, success exit — while the shared handler's own decision (ordinary
+  success or deliberate denial) passes through that launch step unchanged
+  (codex-runtime-parity cell 6a; under revision for deny-capable checkpoints,
+  see Open Gaps).
+- R10 — Every session-stop handler exits success; any non-empty output from
+  it parses as a single JSON object carrying a summary field and — except for
+  the gate-bypass net (R14) — never a block verdict (codex-runtime-parity cell 6b).
+- R14 — The session-stop handler emits a block verdict ONLY for the gate-bypass
+  net (B15): only on the session-stop event, only in an approval-gate phase whose
+  gate the active bypass level covers and is still pending, and at most once per
+  (session, phase, gate, level) — an immediate same-key re-stop degrades to the
+  ordinary advisory. It never fires on compaction, child-stop, a missing event,
+  the exploring/Gate-1 phase, or a `normal`-lane hard-gate change (GitHub #18).
+- R11 — The write guard's always-writable set no longer includes the
+  repo-root disposable-experiment location; that work now lives inside the
+  workflow's own already-writable directory, under a dedicated subfolder. The
+  set of ungoverned writable locations only shrinks from this change, never
+  grows; the session-close nudge's allowed-path set shrinks identically
+  (bee-footprint D2).
+
+- R12 — The intake gate fires in **every** terminal state, not merely the
+  never-started one: a source write is governed whenever no feature is active,
+  including immediately after a feature closes with its approvals still on
+  record. Approvals belong to the feature that earned them and never outlive
+  it; the active state, not the recorded approvals, decides whether the door is
+  open (decision c2c46488).
+- R13 — The guardrails are a safety net, not the authority. The workflow's
+  written law is what governs the assistant; a checkpoint exists to catch what
+  the assistant forgets, and its silence is never permission. An assistant must
+  never treat "the guard did not stop me" as approval, because that promotes
+  the guard's coverage into the protocol and turns every gap in the guard into
+  a gap in the workflow — which is exactly how R12's gap was found in real use
+  (decision c2c46488).
+
+- R14a — The write guard's command-shape recognition accepts both the unified
+  dispatcher form (group + verb) and the retired per-command helper form. The
+  retired form is a transition affordance for hosts whose vendored tools predate
+  the unified surface — it is slated for removal once hosts have upgraded (a
+  debt item tracks it), and its recognition never revives the deleted scripts
+  themselves (decision bbc6bcea, D3).
+- R15 — Codex plugin delivery loads
+  the catalog-derived hook projection from the installed package. The checked-in
+  project checkpoint file is a development and repo-fallback projection only;
+  release/reinstall proof exercises the installed package, and project fallback
+  success never substitutes for that package proof (codex-hook-state-parity
+  D9/D13; decision cf511ff3).
+- R16 — Plugin and project hooks are
+  mutually exclusive bee sources. Migration to plugin delivery removes only
+  catalog-recognized bee entries after installed-package integrity is proven;
+  migration to project fallback first proves the plugin inactive. User hook entries
+  survive both transitions unchanged (codex-hook-state-parity D10–D13; decision
+  cf511ff3).
+- R17 — Codex native-subagent audit is bounded, audit-only, and post-start. It
+  never claims pre-spawn authority and never records arbitrary event content.
+- R18 — The Codex native spawn checkpoint never judges a per-agent model,
+  effort, or fork-turn override by name until the capability probe has
+  observed that field arrive on some client version; until then, a
+  marker-anchored spawn carrying such fields decides exactly as it would
+  without them (B19; codex-native-transport D6, decision 350f1e82).
+- R19 — A lifecycle checkpoint's own opportunistic coordination-state refresh
+  never waits on the coordination lock and never lets a failure inside it
+  change the checkpoint's primary outcome; only a command-line verb's
+  read-modify-write waits for the lock (B20; multi-session-hardening D2/D5,
+  Δ3-amended).
+- R20 — A Windows fallback checkpoint command resolves the git repository
+  root itself before anything else, so it behaves identically whether the
+  session's cwd is the project root or a nested directory; it contains no
+  dollar sign, percent sign, or backtick, so cmd.exe and PowerShell parse it
+  identically; and its own contract test runs the real rendered command from
+  a nested cwd rather than only checking its literal text (R8a;
+  hardening-1-7-10).
+- R21 — Session-init persists a runtime-provided transcript path into the
+  session record the moment it is available; any later reader (crash
+  recovery above all) prefers that stored path over recomputing a layout,
+  making a second runtime's transcript layout first-class rather than a
+  best-effort guess (B21; hardening-1-7-10).
+
+## Edge Cases Settled
+
+- A change line with a whitespace-only path counts as unprovable → deny (found
+  and pinned during matrix construction).
+- Regenerating the RED-baseline evidence report is timestamp-stable in content;
+  only noise fields differ.
+- Simultaneously requesting the evidence-baseline and catalog-only test modes
+  is rejected as contradictory.
+- Explicitly disabling checkpoints produces no project lifecycle execution;
+  the absence of an opt-in flag does not disable them.
+- Editing a reviewed command definition makes only the changed definition
+  pending review; automation never rewrites or bypasses the owner's trust
+  record.
+- A fallback checkpoint's project-root resolution succeeds identically from a
+  working directory whose path contains spaces and non-ASCII characters as it
+  does from a plain path (proven against an isolated fixture, codex-runtime-parity
+  cell 6b).
+- The state-sync trigger matches the plan/task tools of BOTH runtimes as a
+  superset — Codex's native plan tool (`update_plan`) alongside the legacy
+  Claude names — extended at the generator sources (catalog + both host
+  renderers), never by hand-editing a rendered manifest; behavior proven by a
+  contract row driving a real `update_plan` payload (codex-native-runtime-v2,
+  cnr2-2).
+- Concurrent hook invocations can no longer corrupt a state write through
+  temp-file collision: atomic writes use a unique per-invocation temp name
+  (write-then-rename contract unchanged), proven by a parallel regression test
+  (18 concurrent OS processes, zero corrupt reads). Logical last-writer-wins
+  between full read-modify-write cycles is now CLOSED for every
+  read-modify-write verb that runs its body under the coordination store lock
+  (workflow-state B21/B23) — a command-line verb's read-check-write serializes
+  through the lock and waits for it; only a lifecycle checkpoint's own
+  opportunistic refresh still uses the try-once, skip-on-busy discipline
+  (B20), which was always allowed to skip a cycle rather than corrupt one. A
+  future full revision/compare-and-swap layer remains a deferred concern for
+  if cross-process contention ever outgrows the lock, not a currently open
+  gap (codex-native-runtime-v2, cnr2-5, superseded by
+  multi-session-hardening D2/D6).
+- A read-only, fail-closed doctor command reports per-runtime health: every row
+  carries value + evidence + ok/warn/unknown/unsupported; capability verdicts
+  are version-scoped; the command performs zero writes, including the
+  dispatcher's manifest-hash cache (codex-native-runtime-v2, cnr2-13).
+- Doctor's overall verdict is THREE-STATE (gh22-completion g22-3, supersedes
+  the binary ready/not_ready): `blocked` = a mechanical blocking row is
+  not-ok (hooks file missing, baseline drift, handlers unresolvable, skills
+  missing/drifted); `degraded` = mechanical green but trust surfaces the
+  runtime cannot expose are structurally unknown (the user is pointed at
+  /hooks); `ready` = mechanical green plus, on the second runtime, a VALID
+  static attestation. `bee doctor attest --runtime codex` records
+  {hooks-file sha256, CLI version, repo identity} into gitignored runtime
+  state; validity = all three match live state (no liveness leg — the runtime
+  exposes no hook-fire event surface, and the reason text says so honestly);
+  any drift names its reason (hash_changed/version_changed/identity_changed/
+  no_attestation) and the verdict falls back to degraded. Trust wording is
+  probe-version-scoped: a CLI version other than the probed one reads
+  `unprobed_version` (re-probe suggested), never a blanket "unsupported".
+- Doctor resolves hook handlers at HOST topology: each handler filename is
+  checked at both `.bee/bin/hooks/` and `hooks/` (dual-location, evidence
+  names which resolved) — a normal host repo without the dev repo's root
+  hooks/ dir is judged correctly (pre-162-fixes p162-1).
+- Skill install checks are a DEEP INVENTORY audit (gh22-completion g22-4):
+  the render sidecar is `bee-render/2` `{schema, target_runtime,
+  skills:[{name, sha256}]}` with per-skill digests over the rendered
+  per-runtime bytes, single-sourced beside the renderer; doctor recomputes
+  and names missing/stray/drifted skills (blocking); a legacy `bee-render/1`
+  sidecar degrades to a non-blocking "inventory unavailable" warn.
+- A scripted canary drives the REAL second-runtime CLI against a throwaway
+  fixture (isolated CODEX_HOME so trust writes never touch the user's real
+  config; per-hook trust bypass does NOT bypass per-project trust — both must
+  be seeded in the fixture): session-init fires end-to-end, and the installed
+  guard chain is proven via synthetic envelopes through the installed hook
+  files (spawn deny/allow, state-sync, intake deny). Skip-guarded; nightly /
+  manual only, never a push gate (gh22-completion g22-6).
+- A scripted conformance suite drives the guard and CLI binaries as
+  subprocesses against isolated fixtures with negative-state assertions
+  (denied action changed nothing); agent-behavior scenarios live in a manual
+  checklist with named metrics and are never auto-asserted
+  (codex-native-runtime-v2, cnr2-14).
+- A native-transport capability probe is version- and configuration-scoped and
+  lives in its own gitignored record, separate from doctor-attest. Doctor
+  gains one purely informational row that only NAMES the unlock — the
+  feature flag plus the metadata-visibility flag — when the client is not yet
+  confirmed and the installed binary ships the flag; the row is never
+  blocking and never degrading, and bee never flips the flag in the user's
+  real configuration itself (a canary probe may only do so inside its own
+  isolated per-run home) (codex-native-transport D3/D4). The probe's live
+  check leg runs entirely inside that isolated per-run home — never the
+  user's real configuration — and the isolation is independently verified
+  byte-identical before and after each run, not merely asserted; it records
+  whatever it observes, including a refused or absent outcome, into both the
+  scoped machine record and a human-readable evidence report, and a separate
+  offline self-check exercises the same isolation invariant without needing
+  the client installed at all, so automated verification stays green when the
+  client binary is absent (codex-native-transport D3/D4).
+- A capability probe's live check observed a real cross-build regression, not
+  a hypothetical one: an override surface confirmed accepted on one client
+  version was refused outright on the very next patch version, with no
+  advance signal available to the workflow. This is exactly the scenario the
+  classification's version-validity leg exists to catch, and the disagreement
+  between the two live runs proves that leg load-bearing rather than
+  defensive programming (codex-native-transport D3).
+- The second-runtime branch of the anchored tier-marker check alone
+  recognizes an advisor role token in addition to the existing tier names
+  (the first runtime's branch is byte-unchanged); before this, a confirmed
+  native-override advisor payload would have been wrongly denied by the guard
+  as unmarked (codex-native-transport D5).
+
+## Open Gaps
+
+- Native (non-shell) file reads and the incomplete unified-shell path on the
+  second runtime cannot be intercepted — governed by the durable instructions
+  and helper checks; logged as coverage gaps at runtime.
+- Fixture and installed-package proofs are green. Live proof that Codex loads
+  the package-delivered projection in a real trusted session remains
+  outstanding because this environment cannot write the user Codex home.
+- Child-agent event payloads on the second runtime may not carry a correlatable
+  identity for reservation ownership; until proven, those paths rely on the
+  helper checks (named fallback, codex-runtime-parity validation).
+- The source-repository (dogfood) deny-capable checkpoint is a **guardrail
+  against honest mistakes, not a security boundary against a hostile in-project
+  actor** — per D2, hooks provide enforcement "without pretending hooks are a
+  complete security boundary." A proposed hardening (cell 6c) to make the
+  repo-fallback deny checkpoint spoof-proof was **scoped out and stopped**
+  (decision f398aa60): three validation rounds each proved a new bypass in
+  resolving the checkpoint's own root/handler from an untrusted working
+  directory — nearest-ancestor marker resolution is exploitable downward,
+  outermost-ancestor upward, both defeatable by a directory symlink under a
+  write-allowlisted prefix (lexical vs realpath), and marker files can be
+  planted through Bash primitives the write-target extractor does not model
+  (`dd`, `install`, `python -c open`, `rsync`) — the same ungoverned-write
+  class named in the first gap above. These are **recorded known limits of the
+  guardrail, not defects to be closed by ever-more root-resolution hardening.**
+  Two accidental (non-adversarial) failure modes remain open and would be the
+  only justification for a future *minimal* fix: on a bare repository the
+  pre-handoff resolution fails open (ALLOW) rather than closed, and a foreign
+  nested working directory can make the deny checkpoint's launch crash rather
+  than emit a visible diagnostic. A minimal fix (resolve the checkpoint root the
+  same way the handler does, and fail the deny checkpoint closed on launch-setup
+  failure) is available as a small fresh cell if ever wanted; it is not planned.
+- Native-Windows sessions are now covered by the separate shell-agnostic
+  Windows command on every fallback entry (R8a), but a non-POSIX Unix login
+  shell (e.g., fish, nu) still receives the POSIX command through the
+  login-shell transport and has no declared equivalent; that narrower gap
+  remains open (codex-command-windows closed only the Windows half).
+- The Codex native spawn checkpoint's override-field route-check (validating
+  a spawn's requested model/effort/fork-count against the configured route,
+  per B19) is written as a design intent only. No client version checked so
+  far has ever carried those fields into the checkpoint's real input, so
+  there is nothing observed to validate against yet; implementing the check
+  before that evidence exists would deny based on assumed rather than
+  observed shape. It activates once the capability probe observes that
+  envelope on some client version (codex-native-transport D6; decision
+  350f1e82).
+- Recorded tradeoff (bee-footprint P3): the workflow's disposable-experiment
+  subfolder is both always-writable and excluded from version control, so its
+  contents never appear in a change listing. This is deliberate, not a defect
+  — but a reviewer must not read a clean change listing as proof that nothing
+  was staged in that location; confirming its contents requires looking at
+  the location itself.
+
+## Pointers (implementation)
+
+- `scripts/lib/run-module-worker.mjs` — shared isolated runner for nested test
+  entrypoints used by the hook, command, onboarding, and metadata suites.
+- `scripts/test_portable_paths.mjs` and `hooks/test_hook_contracts.mjs` — real
+  external integration remains external; assertions grade concrete exit status,
+  stdout, and stderr even when the execution environment adds a launch warning.
+- Catalog + renderer: `hooks/catalog.mjs` (exports `ALLOWED_DIFFERENCES`,
+  `TARGETS`, `REPO_TRANSPORT_UNAVAILABLE_DIAGNOSTIC`); `renderProjection`/
+  `renderProjectionText` take an explicit `target` (`plugin` default, `repo`)
+  so both rendering targets share one function, never forked logic.
+  Projections: `hooks/hooks.json` (Codex, plugin target), `hooks/claude-hooks.json`
+  (Claude, plugin target; `.claude-plugin/plugin.json` points here).
+- Shared adapter: `hooks/adapter.mjs` (`encodeAdvisory`; `encodeBlock` — the
+  deliberate turn-control inverse used ONLY by the gate-bypass net); the eight
+  handlers `hooks/bee-*.mjs`, including the paired Codex native-subagent audit
+  handler and its vendored mirror.
+- Gate-bypass net (B15, R14): `maybeBypassBlock` in `hooks/bee-session-close.mjs`
+  (fire matrix `PHASE_GATE` + `levelCoversGate`; loop-guard via
+  `shouldInject`/`markInjected` in `skills/bee-hive/templates/lib/inject.mjs`
+  keyed `sessionId:phase:gate:level`; level via `bypassLevel` in
+  `.../lib/state.mjs`). Suite: `hooks/test_bypass_stop_net.mjs`.
+- Batch guard: `hooks/bee-write-guard.mjs` (`extractApplyPatchTargets`).
+- CLI-shape guard incl. 3-token verb resolution: `hooks/bee-write-guard.mjs`
+  against the `command-registry.mjs` catalog. Evidence: `.bee/cells/du-2.json`,
+  `docs/history/dispatcher-unify/`.
+- Always-writable set: `GATE_ALLOWED_PREFIXES` in
+  `skills/bee-hive/templates/lib/guards.mjs` (`.bee/`, `docs/`, `plans/`,
+  `AGENTS.md`; repo-root `.spikes/` removed per bee-footprint D2 — the
+  workflow's own `.bee/spikes/` subfolder is already covered by `.bee/`);
+  session-close nudge mirrors it as `NUDGE_ALLOWED` in
+  `hooks/bee-session-close.mjs`.
+- Suites: `hooks/test_hook_contracts.mjs` (modes: default, `--baseline`,
+  `--catalog-only`, `--repo-route-only`), `hooks/test_write_guard.mjs`,
+  `hooks/test_model_guard.mjs`; parity check in
+  `skills/bee-hive/scripts/test_onboard_bee.mjs`.
+- Package/fallback distribution proof: `skills/bee-hive/scripts/plugin_distribution.mjs`
+  and `skills/bee-hive/scripts/test_plugin_distribution.mjs`. The checked-in
+  `.codex/hooks.json` is a development/fallback snapshot, not package proof.
+- Parity evidence: `.bee/cells/codex-hook-state-parity-{2,3}.json` and
+  `docs/history/codex-hook-state-parity/reports/`.
+- Evidence: `docs/history/codex-runtime-parity/` (red-baseline.md, cell reports);
+  commits `d1777ed`, `5458b34`, `cf1ce51`, `a30fb0c`, `f0860ac`, `7499a71`.
+- Codex source-repository fallback: `.codex/hooks.json`, generated only by
+  `renderProjectionText("codex", { target: "repo" })` — never hand-authored;
+  current runtime contract: `https://learn.chatgpt.com/docs/hooks`.
+- Native-transport classification: `classifyNativeTransport(evidence)` (pure,
+  `skills/bee-hive/templates/lib/dispatch-guard.mjs`). Probe record reader/
+  writer and the D4 doctor row: `readNativeTransportClassification`,
+  `writeNativeTransportProbe`, `doctorNativeTransportUnlock`
+  (`skills/bee-hive/templates/bee.mjs`, mirroring the doctor-attest pattern).
+  Suite: `scripts/test_native_probe.mjs`. Advisor-marker acceptance on the
+  codex branch: `ANCHORED_CODEX_TIER_MARKER_RE` in `dispatch-guard.mjs`.
+  Evidence: `.bee/cells/cnt-2.json`, `.bee/cells/cnt-3.json`,
+  `docs/history/codex-native-transport/`.
+- Override-field pass-through gap (B19): documented inline above
+  `evaluateCodexSpawn` in `skills/bee-hive/templates/lib/dispatch-guard.mjs`
+  (mirrored in `.bee/bin/lib/dispatch-guard.mjs`); canary rows
+  `hooks/test_model_guard.mjs` rows 56-57. Evidence: `.bee/cells/cnt-4.json`,
+  `docs/history/codex-native-transport/reports/cnt-4.md`.
+- Capability probe live leg + offline self-check: `scripts/canary_codex.mjs`
+  `--probe` / `--probe-selftest`; probe leg protocol recorded in
+  `docs/decisions/ab-tiny-protocol.md`. Evidence: `.bee/cells/cnt-5.json`,
+  `docs/history/codex-native-transport/reports/probe-evidence.md`.
+- Opportunistic coordination refresh (B20, R19): `heartbeatTouch` (session
+  heartbeat + `renewClaimTTL`) in `skills/bee-hive/templates/lib/claims.mjs`,
+  `renewHoldsBySession` in `skills/bee-hive/templates/lib/reservations.mjs`,
+  composed at the checkpoint call site (not imported by `claims.mjs` itself)
+  in `hooks/bee-prompt-context.mjs` (UserPromptSubmit) and
+  `hooks/bee-state-sync.mjs` (PostToolUse/Stop), each inside its own
+  try/catch separate from the checkpoint's primary job; both hook copies
+  mirrored under `.bee/bin/hooks/`. Coordination lock primitive:
+  `withStoreLock` (`options.maxAttempts`/`retryDelayMs` power the checkpoint's
+  try-once mode) in `skills/bee-hive/templates/lib/lock.mjs`. Suite:
+  `scripts/test_heartbeat_touch.mjs` (throttle no-op, real-hook-driven
+  refresh, touch-throw fail-open, `LOCK_BUSY` silent skip, renewal-vs-adopt
+  gate skip). Evidence: `.bee/cells/msh-5.json`,
+  `docs/history/multi-session-hardening/reports/msh-5.md`.
+- Claude model-param allowlist advisor fold (B16, "Choice only"):
+  `configuredModelSet` in `skills/bee-hive/templates/lib/dispatch-guard.mjs`
+  (mirrored in `.bee/bin/lib/dispatch-guard.mjs`), folding
+  `resolveAdvisor(root, 'claude')` into the union. Canary rows:
+  `hooks/test_model_guard.mjs` rows 21-22. Evidence: `.bee/cells/cnt-7.json`,
+  `docs/history/codex-native-transport/reports/cnt-7.md`.

@@ -383,6 +383,106 @@ const ONBOARDING_SOURCE = "docs/history/okf-migration-f2/sources/onboarding.md";
   ok(/advisor-protocol/.test(cli.out) && /critical-patterns/.test(cli.out), "`--verify-pins` reports each pinned area", cli.out);
 }
 
+// ─── 15. the REPAIRED-pin branch is asserted, never a hole (f2-10) ──────────
+//
+// hook-runtime shipped the rule id `R14` TWICE — two genuinely different
+// rules — so it could not be pinned as it stood: anchors are keyed by id, so
+// the first R14's text was silently overwritten by the second's and became
+// unmeasurable by the F11 floor forever, while set-equality could not see the
+// pair's second member at all. Neither rule may be dropped or merged, so the
+// SOURCE was repaired (second occurrence renumbered `R14a`) before the pin was
+// captured. Those bytes then exist in no commit's tree, which is the one
+// legitimate reason a pin's blob_sha may differ from what commit:path
+// resolves to.
+//
+// The whole risk of that branch is that it becomes a way to launder drift.
+// So it is asserted from both sides here: the declared repair must name the
+// EXACT provenance blob and carry a reason, and an undeclared or misdeclared
+// disagreement is still PIN_SHA_MISMATCH exactly as it was before this
+// existed. The property the repair exists to create — every derived id
+// distinct — is asserted directly rather than inferred from the counts, since
+// counts are precisely what a duplicate id slips past.
+
+{
+  const real = M.PIN_REGISTRY["hook-runtime"];
+  ok(
+    typeof real.repaired_from === "string" && /^[0-9a-f]{40}$/.test(real.repaired_from),
+    "the hook-runtime pin names the provenance blob it was repaired from",
+    real.repaired_from,
+  );
+  ok(
+    typeof real.repair_reason === "string" && real.repair_reason.includes("R14a"),
+    "the hook-runtime pin states the repair in prose, naming the id it introduced",
+    real.repair_reason?.slice(0, 80),
+  );
+
+  const derived = await M.derivePinForArea("hook-runtime");
+  ok(derived.ok, "the repaired hook-runtime pin derives green", derived.issues);
+  ok(
+    derived.via === "committed-copy",
+    "a repaired pin resolves via its committed copy — the resolvable blob is the PROVENANCE, never the pinned source",
+    derived.via,
+  );
+
+  const all = derived.anchors?.all || [];
+  ok(all.length === 81, "hook-runtime derives 81 anchors from the repaired blob", all.length);
+  ok(
+    new Set(all).size === all.length,
+    "every derived hook-runtime anchor id is DISTINCT — the property the repair exists to create, and the one a count can never prove",
+    `${all.length} anchors, ${new Set(all).size} distinct`,
+  );
+  ok(
+    all.includes("R14") && all.includes("R14a"),
+    "both former-R14 rules survive as separate anchors — neither was dropped nor merged to remove the duplicate",
+    all.filter((a) => a.startsWith("R14")),
+  );
+  for (const id of ["R14", "R14a"]) {
+    const text = derived.anchors?.texts?.get(id);
+    ok(
+      typeof text === "string" && text.length > 0,
+      `${id} has its own extracted text, so the F11 floor can measure it individually`,
+      typeof text,
+    );
+  }
+  ok(
+    derived.anchors.texts.get("R14").includes("gate-bypass") &&
+      derived.anchors.texts.get("R14a").includes("command-shape"),
+    "the two texts are the two DIFFERENT rules, not one rule read twice",
+  );
+
+  // An undeclared disagreement is still refused — the pre-f2-10 behaviour,
+  // unchanged. (Section 5 asserts this for an unrepaired pin; here it is
+  // asserted for the very pin that DOES carry a repair, with the declaration
+  // removed, so the branch cannot be reached by accident.)
+  const undeclared = { ...real };
+  delete undeclared.repaired_from;
+  delete undeclared.repair_reason;
+  const rU = await M.derivePin(undeclared, "hook-runtime");
+  ok(rU.ok === false, "the same pin WITHOUT a declared repair is REFUSED — a disagreement is never inferred to be one");
+  ok(codes(rU).includes("PIN_SHA_MISMATCH"), "an undeclared disagreement reports PIN_SHA_MISMATCH", codes(rU));
+
+  const wrongProvenance = { ...real, repaired_from: "0".repeat(40) };
+  const rW = await M.derivePin(wrongProvenance, "hook-runtime");
+  ok(rW.ok === false, "a repair naming the WRONG provenance blob is REFUSED — drifting provenance is as loud as a drifting pin");
+  ok(codes(rW).includes("PIN_SHA_MISMATCH"), "a wrong repaired_from reports PIN_SHA_MISMATCH", codes(rW));
+
+  const noReason = { ...real, repair_reason: "   " };
+  const rR = await M.derivePin(noReason, "hook-runtime");
+  ok(rR.ok === false, "a repair with no stated reason is REFUSED — the repair must be readable, not merely flagged");
+  ok(codes(rR).includes("PIN_SHA_MISMATCH"), "an unexplained repair reports PIN_SHA_MISMATCH", codes(rR));
+
+  // And the no-op: declaring a repair on a pin whose blob_sha already agrees
+  // with history changes nothing at all.
+  const advisorWithRepair = {
+    ...M.PIN_REGISTRY["advisor-protocol"],
+    repaired_from: "0".repeat(40),
+    repair_reason: "not a real repair",
+  };
+  const rN = await M.derivePin(advisorWithRepair, "advisor-protocol");
+  ok(rN.ok, "a repair declaration on an UNREPAIRED pin is inert — the branch is only reachable on a real disagreement", rN.issues);
+  ok(rN.via === "git", "the unrepaired pin still resolves via git", rN.via);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // f2-2 (F11/F12 + the f2-1b judge's residual gap)
 //

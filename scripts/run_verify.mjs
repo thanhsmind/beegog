@@ -156,6 +156,29 @@ const EXTRA_SUITES = [
   // artifacts a host project keeps) keep the F12 drift telemetry inside its
   // band across the seven pinned "area"-shaped sources.
   ["scripts/okf_migrate.mjs", "--check", "onboarding"],
+  // f2-10 (F6/F9): hook-runtime's own D35 coverage gate, and the first pin
+  // whose source had to be REPAIRED before it could be pinned at all. The
+  // spec shipped the rule id `R14` TWICE — the gate-bypass block-verdict rule
+  // and the write-guard command-shape rule, two genuinely different rules —
+  // and because anchors are keyed by id, the first one's text was silently
+  // overwritten by the second's: unmeasurable by the fidelity floor forever,
+  // and invisible to a set-equality check as the pair's second member.
+  // Neither rule was dropped or merged; the second occurrence in document
+  // order was renumbered `R14a` in the source BEFORE the pin was captured, so
+  // the pinned blob carries 81 anchors with 81 DISTINCT ids (22 B / 24 R /
+  // 17 E / 18 P), unparsed_blocks: 8. Those repaired bytes are in no commit's
+  // tree, so the pin declares repaired_from + repair_reason and is
+  // content-addressed by its committed copy; the provenance blob at
+  // ab8cf6ec:docs/specs/hook-runtime.md is still asserted exactly. Twelve
+  // concepts, split by TOPIC (the cross-cutting frame; catalog, projections
+  // and activation; write-guard request shapes; governed paths and the intake
+  // gate; advisories and the one turn-control exception; delivery targets and
+  // the fallback command; hook-source exclusivity; the dispatch guard; native
+  // spawn and transport classification; child attribution and audit;
+  // coordination refresh and session-init; health checks and proof surfaces)
+  // keep the F12 drift telemetry inside its band across the eight pinned
+  // "area"-shaped sources.
+  ["scripts/okf_migrate.mjs", "--check", "hook-runtime"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches
@@ -211,6 +234,42 @@ const SERIAL_SENSITIVE = new Set(
 function suiteLabel(entry) {
   return [entry[0], ...entry.slice(1)].join(" ");
 }
+
+// ─── the live-bundle group (f2-10) ──────────────────────────────────────────
+//
+// SERIAL_SENSITIVE above is about CPU contention: those suites must not
+// overlap EACH OTHER, but overlapping the rest of the pool is harmless. This
+// group is about shared mutable STATE, which needs the opposite property —
+// its members must not overlap each other because one of them deliberately
+// mutates a file the others read.
+//
+// `scripts/test_okf_pins.mjs` section 22 proves the coverage gate's bundle
+// invariants are actually WIRED, end to end, by writing one deliberately
+// non-canonical concept into the REAL docs/knowledge/ bundle, asserting the
+// real CLI turns red, and removing it again. That is the right test — an
+// isolated copy would prove the invariants are computed, not that they gate —
+// but for the length of that window every other suite that reads the live
+// bundle sees an unhealthy, unindexed bundle and fails for a reason that has
+// nothing to do with what it is testing. Observed exactly that way: two
+// `okf_migrate --check <area>` suites went red naming
+// `zz-f2-2-unhealthy-fixture.md` and three stale indexes, then the identical
+// tree passed on the next run. A ~50/50 chain is worse than a red one — it
+// teaches everyone to re-run instead of to read.
+//
+// So the mutator and every live-bundle reader run as ONE sequential unit.
+// They still run concurrently with the ~60 suites that touch no bundle at
+// all, so the wall clock is unchanged in practice. Membership is derived
+// from what a suite actually runs, never hand-listed: the coverage gate, the
+// pin suite, and the bundle's own check/index verbs.
+function touchesLiveBundle(entry) {
+  const [cmd, ...args] = entry;
+  if (cmd === "scripts/okf_migrate.mjs") return true; // every --check <area>
+  if (cmd === "scripts/test_okf_pins.mjs") return true; // the deliberate mutator
+  if (cmd === ".bee/bin/bee.mjs" && args[0] === "knowledge") return true; // check / index --check
+  return false;
+}
+
+const LIVE_BUNDLE_GROUP = new Set(SUITES.filter(touchesLiveBundle).map(suiteLabel));
 
 // Skip-marker convention (hardening-8, loud canary skip): a suite that
 // self-skips its real work (e.g. scripts/canary_codex.mjs's no-codex-binary
@@ -379,11 +438,16 @@ async function main() {
   }
 
   const serialEntries = activeSuites.filter((entry) => SERIAL_SENSITIVE.has(entry[0]));
-  const parallelEntries = activeSuites.filter((entry) => !SERIAL_SENSITIVE.has(entry[0]));
+  const rest = activeSuites.filter((entry) => !SERIAL_SENSITIVE.has(entry[0]));
+  const bundleEntries = rest.filter((entry) => LIVE_BUNDLE_GROUP.has(suiteLabel(entry)));
+  const parallelEntries = rest.filter((entry) => !LIVE_BUNDLE_GROUP.has(suiteLabel(entry)));
 
   const units = [];
   if (serialEntries.length > 0) {
     units.push(() => runSerialGroup(serialEntries));
+  }
+  if (bundleEntries.length > 0) {
+    units.push(() => runSerialGroup(bundleEntries));
   }
   for (const entry of parallelEntries) {
     units.push(() => runOne(entry).then((r) => [r]));

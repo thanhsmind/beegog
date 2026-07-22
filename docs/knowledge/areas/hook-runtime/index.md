@@ -1,0 +1,24 @@
+<!--
+GENERATED FILE — do not hand-edit.
+Rendered by `bee knowledge index` from concept frontmatter inside docs/knowledge/ (okf-foundation D21).
+Regenerate: `bee knowledge index`. Check freshness: `bee knowledge index --check`.
+Deterministic: byte-identical for the same bundle contents — path-sorted entries, LF endings,
+never a generation timestamp or any other wall-clock value.
+-->
+
+# areas/hook-runtime/
+
+## Concepts
+
+- [Hook Runtime — advisories, session-stop output, and the one deliberate turn-control exception](advisories-and-turn-control.md) — Why close-time, compaction and child-stop checkpoints only ever inform, what a session-stop handler is allowed to emit, and the single scoped exception — the gate-bypass net — that turns the close-time checkpoint into a loop-guarded block verdict on purpose.
+- [Hook Runtime — the catalog of record, its two projections, and checkpoint activation](catalog-projections-and-activation.md) — One logical definition of every checkpoint, rendered deterministically into one projection per assistant runtime with every difference named, and the separate question of whether a project's checkpoints are enabled, rooted, and trusted enough to run at all.
+- [Hook Runtime — child-agent attribution, lifecycle audit, and the passive usage log](child-agent-attribution-and-audit.md) — The three checkpoints that observe without authorising: the nudge that finds a returning worker by its registered identity, the bounded paired record of a native child starting and stopping, and the content-free usage log that distinguishes an orchestrator's tool calls from a child's.
+- [Hook Runtime — durable state a checkpoint maintains as a side job](coordination-refresh-and-session-init.md) — The opportunistic heartbeat-and-lease refresh two checkpoints attempt without ever blocking on it, the try-once/skip-on-busy discipline every checkpoint uses against the coordination lock, and the transcript path session-init stores so later readers stop recomputing it.
+- [Hook Runtime — the two delivery targets and what a fallback checkpoint command must do](delivery-targets-and-the-fallback-command.md) — The packaged and source-repository rendering targets, why the fallback projection is derived rather than authored, and the launch contract every rendered fallback command owes: resolve the project root itself, work from any nested or non-ASCII path, run identically under both native Windows shells, and never turn a launch failure into a changed decision.
+- [Hook Runtime — the pre-spawn dispatch guard](dispatch-guard.md) — How a helper dispatch's declared tier and explicit model choice are judged together against configuration alone, which pinned helper type each work tier must ride, and why every evaluated dispatch — allowed or refused — leaves an honest audit line.
+- [Hook Runtime — governed paths, the always-writable set, and the intake gate](governed-paths-and-the-intake-gate.md) — Which write targets escape the active feature's gate routing and which never do, why the always-writable set only ever shrinks, and why a finished feature's leftover approvals are not what decides whether the next source write is allowed.
+- [Hook Runtime — how the guardrails are inspected and proven](health-checks-and-proof-surfaces.md) — The read-only doctor command's evidence-carrying rows and three-state verdict, the host-topology and deep-inventory checks behind them, and the suites, isolated runners and real-CLI canary that prove the guard chain rather than assert it.
+- [Hook Runtime — exactly one active hook source per installation](hook-source-exclusivity.md) — Why an installation runs the package projection or the project fallback but never both, how each transition proves the other source inactive before removing anything, and what survives every transition untouched.
+- [Hook Runtime — the native spawn checkpoint and transport classification](native-spawn-and-transport-classification.md) — Why the second runtime's spawn checkpoint deliberately passes an override field through unjudged until a capability probe has observed it, how that probe's version- and configuration-scoped verdict is recorded and invalidated, and the cross-build regression that proved the version leg load-bearing.
+- [Hook Runtime — purpose, lifecycle checkpoints, and the fail-open frame](overview.md) — What the lifecycle checkpoints around an assistant guarantee, who observes them, and the two properties that hold for every checkpoint without exception: hostile input never ends a turn, and the guardrails are a safety net rather than the authority.
+- [Hook Runtime — the request shapes the write guard can read](write-guard-request-shapes.md) — How the write guard decides a batch file-change request target by target, how it shape-checks a workflow command against the published catalog, which command forms it still recognises, and why an intercepted-but-unreadable request is denied rather than waved through.

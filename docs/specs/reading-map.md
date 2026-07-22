@@ -33,10 +33,30 @@ Where things live. Read the touched area's spec before its code.
   config sample (`host-project-artifacts.md`). Unresolved live-install surfaces remain Open
   Gaps. The legacy path [`onboarding.md`](./onboarding.md) remains as a pointer stub carrying
   the full 58-anchor map (D37, `R20b` included).
-- [`hook-runtime.md`](./hook-runtime.md) — the lifecycle guardrails around the assistant: one
-  catalog of record rendered into per-runtime projections, hostile-input immunity, advisory
-  encoding, per-target batch-write guarding, three declared runtime differences, paired Codex
-  child lifecycle audit, exclusive source ownership, and named coverage gaps (`coverage: partial`).
+- [`docs/knowledge/areas/hook-runtime/`](../knowledge/areas/hook-runtime/index.md) — the
+  lifecycle guardrails around the assistant, migrated into the knowledge bundle
+  (okf-foundation D20/D29; okf-migration-f2 F9): the frame every checkpoint sits inside —
+  purpose, actors, hostile-input immunity, and "the guard's silence is never permission"
+  (`overview.md`); one catalog of record rendered into per-runtime projections with every
+  difference named, plus whether a project's checkpoints are enabled, rooted and trusted enough
+  to run (`catalog-projections-and-activation.md`); the request shapes the write guard can read
+  — batch envelopes, workflow-command shape checks, both recognised command forms
+  (`write-guard-request-shapes.md`); which write targets are governed, the only-ever-shrinking
+  always-writable set, and the intake gate that reads the phase rather than a closed feature's
+  leftover approvals (`governed-paths-and-the-intake-gate.md`); the advisory contract,
+  session-stop output, and the one deliberate turn-control exception
+  (`advisories-and-turn-control.md`); the two rendering targets and the launch contract a
+  fallback command owes, Windows form included (`delivery-targets-and-the-fallback-command.md`);
+  proof-gated arbitration keeping exactly one hook source active (`hook-source-exclusivity.md`);
+  pre-spawn judgement of tier, model and helper type (`dispatch-guard.md`); the deliberate
+  override pass-through and the capability probe's scoped verdict
+  (`native-spawn-and-transport-classification.md`); the three checkpoints that observe without
+  authorising (`child-agent-attribution-and-audit.md`); the durable state a checkpoint maintains
+  as a side job (`coordination-refresh-and-session-init.md`); and how the guardrails are
+  inspected by a human and proven by the chain (`health-checks-and-proof-surfaces.md`). Named
+  coverage gaps remain Open Gaps. The legacy path [`hook-runtime.md`](./hook-runtime.md) remains
+  as a pointer stub carrying the full 81-anchor map (D37) and the record of the duplicate `R14`
+  that was disambiguated to `R14` + `R14a` before the migration pin was captured.
 - [`docs/knowledge/areas/doctrine-layer/`](../knowledge/areas/doctrine-layer/index.md) — the
   standing instructions an assistant always carries, migrated into the knowledge bundle
   (okf-foundation D20/D29): purpose, vocabulary, actors and open gaps (`overview.md`); what

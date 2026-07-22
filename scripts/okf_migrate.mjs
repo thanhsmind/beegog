@@ -145,6 +145,21 @@ const REPO_ROOT = path.join(__dirname, "..");
 //   source_copy     the verbatim committed copy used when git cannot resolve
 //                   the blob (a --depth 1 clone); missing it while git works
 //                   is PIN_COPY_MISSING, missing BOTH is PIN_UNRESOLVED
+//   repaired_from   (f2-10, optional — mandatory TOGETHER with repair_reason)
+//   repair_reason   the provenance blob at commit:path, plus why the pinned
+//                   bytes differ from it. Only for a source that could not be
+//                   pinned as it stood: hook-runtime carried the rule id `R14`
+//                   twice, and a duplicate id is unmigratable by construction
+//                   (anchors are keyed by id, so the first R14's text was
+//                   overwritten by the second and unmeasurable by the fidelity
+//                   floor, and set-equality cannot see a pair's second member).
+//                   The repair is minimal and made BEFORE the pin is captured,
+//                   so the pinned blob already carries distinct ids. commit:path
+//                   then addresses the PROVENANCE — asserted exactly, so
+//                   drifting provenance stays as loud as a drifting pin — and
+//                   the committed copy is the pinned bytes' only content
+//                   address. An undeclared disagreement is never read as a
+//                   repair; it is PIN_SHA_MISMATCH exactly as before.
 //
 // How the two shipped pins were chosen: each area's source became a pointer
 // stub in the commit that migrated it, so the pin is the commit BEFORE that
@@ -379,6 +394,52 @@ export const PIN_REGISTRY = {
     note: "the 689-line BA spec as of a06f59d (f2-8 close), immediately before f2-9 turned it into a D37 pointer stub — 28 rules (R20b included), 15 edge cases, 15 pointers, and 20 unparsed Behaviors & Operations blocks",
   },
 
+  "hook-runtime": {
+    kind: "area",
+    // The pin is HEAD at the moment f2-10 ran — but, uniquely so far, the
+    // pinned BYTES are not HEAD's bytes: this source could not be pinned as it
+    // stood. See repaired_from/repair_reason below and the resolvePinnedSource
+    // note. The provenance blob is still asserted exactly; the repaired bytes
+    // are content-addressed by the committed copy.
+    commit: "ab8cf6ec864b121fb16d33ddfd2250093a4f3eef",
+    path: "docs/specs/hook-runtime.md",
+    blob_sha: "a8907ce092fe0cc6a8a07d28b8796e36adc83ded",
+    repaired_from: "83001d724c95e80b072e589c6b94936b43db919d",
+    repair_reason:
+      "the source carried the rule id R14 TWICE — the gate-bypass block-verdict rule (L450, added by 1f3d25c for GitHub #18) and the write-guard dual command-shape rule (L477, added by 1ef6fb6 for shim-retire D3/bbc6bcea). They are two genuinely distinct rules, not one rule stated twice, and the f2-4 sweep flagged the collision as pre-existing. Anchors are keyed by id in a Map, so the FIRST R14's text was silently overwritten by the second and was unmeasurable by the fidelity floor forever, while set-equality could not see the pair's second member at all. Neither rule may be dropped or merged to remove the duplicate, so the repair is the minimum that makes both individually measurable: the SECOND occurrence in document order (the write-guard rule) is renumbered R14a, one token on one line, no other byte changed. The gate-bypass rule KEEPS R14 because every live citation of `hook-runtime R14` means it — this spec's own R4, R10 and gate-bypass pointer, skills/bee-hive/references/routing-and-contracts.md, and decision 4c1c5921 — so the repair leaves every existing reference resolving correctly and re-homes only the id that had no external reader. R14a is a DISAMBIGUATION suffix, not a refinement suffix like R8a/R8b; the pointer stub's anchor map says so, so a reader arriving at either old id finds the rule it meant.",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      behaviors: 22,
+      rules: 24,
+      edges: 17,
+      pointers: 18,
+      // 81 anchors, and — after the repair — 81 DISTINCT ids. Before it, the
+      // same 81 array members carried only 80 distinct ids, which is exactly
+      // why counts alone never caught this: array length is blind to a
+      // collision the Map silently collapses.
+      total: 81,
+      // The largest area pinned so far and the LOWEST unparsed ratio of the
+      // eight: this spec numbers nearly everything. All 8 unparsed blocks sit
+      // in "Behaviors & Operations" and none is invented into an anchor (D10):
+      // B2's wrapped continuation line that happens to open with a bold run
+      // (`**one** deliberate exception is the gate-bypass net (B15)…`, L78),
+      // B3's three un-ided outcome bullets (all targets provable / intercepted
+      // but not provable / outer event malformed, L86-L92), and B16's four
+      // un-ided case bullets (Both present / Choice only / Tier only /
+      // Neither, L243-L268). Every one of them travels with the anchor whose
+      // block it sits in — B2, B3 and B16 — so the fidelity floor measures
+      // them and no content is homeless. Every Business Rules bullet is a
+      // `- Rn — …` block start the classifier sees (R8a, R8b and the repaired
+      // R14a included); Edge Cases and Pointers carry no explicit id in the
+      // source but every bullet there IS a top-level `- ` block start, so
+      // E1-E17 and P1-P18 are derived from bullet order. Confirmed by
+      // --inventory before and after the repair: 81/8 both times.
+      unparsed_blocks: 8,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/hook-runtime.md",
+    note: "the 762-line BA spec as of ab8cf6e (f2-9 close) WITH the duplicate-R14 repair applied by f2-10 before the pin was captured — 22 behaviors, 24 rules (R8a, R8b and the disambiguated R14a included), 17 edge cases, 18 pointers, 8 unparsed Behaviors & Operations blocks. These bytes are in no commit's tree by construction, so `via` is always committed-copy here",
+  },
+
   // ─── declared, not yet pinned (the migrating cell authors the pin) ────────
   // Listed — rather than merely absent — so the gate refuses them BY NAME with
   // a reason, instead of the generic "unknown area" shrug.
@@ -453,16 +514,61 @@ export function resolvePinnedSource(pin) {
     const resolved = rev.ok ? rev.stdout.trim() : null;
     if (resolved && /^[0-9a-f]{40}$/.test(resolved)) {
       if (resolved !== pin.blob_sha) {
-        issues.push(
-          issue(
-            "PIN_SHA_MISMATCH",
-            `${pin.commit.slice(0, 8)}:${pin.path} resolves to blob ${resolved}, but the pin declares ${pin.blob_sha} — the pin and the history disagree about what the pinned source IS`,
-          ),
-        );
-        return { ok: false, text: null, via: null, issues };
+        // ─── the ONE legitimate disagreement: a REPAIRED pin (f2-10) ───────
+        // A source can carry a defect that makes it UNPINNABLE as it stands —
+        // hook-runtime shipped the same rule id `R14` twice, and because
+        // anchors are keyed by id, the first one's text was silently
+        // overwritten by the second and became unmeasurable by the fidelity
+        // floor forever, while set-equality could not see the pair's second
+        // member at all. Migrating that is prohibited, and so is deleting or
+        // merging a rule to make the collision go away; the only honest move
+        // is a minimal repair of the SOURCE before the pin is captured.
+        //
+        // Those repaired bytes exist in no commit's tree, so the git leg can
+        // no longer be the content address. It becomes the PROVENANCE
+        // address instead — and it is still asserted EXACTLY: `repaired_from`
+        // must equal what commit:path really resolves to, so a provenance
+        // that drifts is exactly as loud as a pin that drifts. The pinned
+        // bytes themselves are then addressed by the committed copy alone,
+        // hash-verified against blob_sha below like every other pin.
+        //
+        // Both fields are mandatory together and neither is inferable: a
+        // repaired_from that does not match, a missing repair_reason, or a
+        // pin that simply drifted and never declared a repair at all, are all
+        // still PIN_SHA_MISMATCH. This branch is dead code for every pin that
+        // has not declared a repair — the no-op is the safety property here
+        // exactly as it is for the classifier widening.
+        const repairDeclared =
+          typeof pin.repaired_from === "string" &&
+          typeof pin.repair_reason === "string" &&
+          pin.repair_reason.trim().length > 0;
+        if (!repairDeclared || pin.repaired_from !== resolved) {
+          issues.push(
+            issue(
+              "PIN_SHA_MISMATCH",
+              `${pin.commit.slice(0, 8)}:${pin.path} resolves to blob ${resolved}, but the pin declares ${pin.blob_sha} — the pin and the history disagree about what the pinned source IS` +
+                (repairDeclared
+                  ? `. The pin declares a repair of blob ${pin.repaired_from}, which is NOT what ${pin.commit.slice(0, 8)}:${pin.path} resolves to — a repaired pin must name the exact provenance blob it was repaired from`
+                  : `. If these bytes were deliberately repaired before pinning, the pin must SAY so: declare repaired_from (the provenance blob at commit:path) and repair_reason. An undeclared disagreement is never read as a repair`),
+            ),
+          );
+          return { ok: false, text: null, via: null, issues };
+        }
+        if (!pin.source_copy) {
+          issues.push(
+            issue(
+              "PIN_COPY_MISSING",
+              `the pin declares a repair of ${pin.commit.slice(0, 8)}:${pin.path} (blob ${resolved} -> ${pin.blob_sha}) but no committed source copy. The repaired bytes are in no commit's tree, so the copy is the pin's ONLY content address — commit it (F8)`,
+            ),
+          );
+          return { ok: false, text: null, via: null, issues };
+        }
+        // gitText stays null on purpose: the resolvable blob is the
+        // PROVENANCE, never the pinned source. The committed copy below is.
+      } else {
+        const cat = git(["cat-file", "blob", resolved]);
+        if (cat.ok) gitText = cat.stdout;
       }
-      const cat = git(["cat-file", "blob", resolved]);
-      if (cat.ok) gitText = cat.stdout;
     }
   }
 
@@ -1462,12 +1568,20 @@ export async function runCheck(area) {
   const { claims, issues: claimIssues } = await collectClaims(wiringFor(area));
   issues.push(...claimIssues);
 
+  // A repaired pin (f2-10) says so wherever it names its own address: the
+  // pinned bytes are commit:path PLUS a declared repair, so a reader who runs
+  // `git show <commit>:<path>` and gets different bytes is told why here
+  // rather than left to discover a disagreement the gate already asserted.
+  const repairNote = PIN_REGISTRY[area]?.repaired_from
+    ? `, REPAIRED from provenance blob ${PIN_REGISTRY[area].repaired_from.slice(0, 12)} before pinning — the pinned bytes live only in ${PIN_REGISTRY[area].source_copy}`
+    : "";
+
   const cov = coverageIssues({
     expected,
     stubMap,
     claims,
     stubLabel: stubRel,
-    registryLabel: `the anchors derived from ${area}'s pinned source (${derived.commit.slice(0, 8)}:${PIN_REGISTRY[area].path}, blob ${derived.blob_sha.slice(0, 12)}, via ${derived.via})`,
+    registryLabel: `the anchors derived from ${area}'s pinned source (${derived.commit.slice(0, 8)}:${PIN_REGISTRY[area].path}, blob ${derived.blob_sha.slice(0, 12)}, via ${derived.via}${repairNote})`,
   });
   issues.push(...cov.issues);
 
@@ -1481,7 +1595,7 @@ export async function runCheck(area) {
     return 1;
   }
   console.log(`PASS okf_migrate --check ${area}: ${expected.length} anchors, ${cov.owned} owned, 0 duplicated, 0 lost — every source anchor lands in exactly one concept and the stub map agrees (D35/D37)`);
-  console.log(`     ground truth DERIVED from pinned blob ${derived.blob_sha} (${derived.commit.slice(0, 8)}:${PIN_REGISTRY[area].path}, via ${derived.via}, scheme ${PIN_REGISTRY[area].scheme}) — counts asserted ${JSON.stringify(derived.counts)}`);
+  console.log(`     ground truth DERIVED from pinned blob ${derived.blob_sha} (${derived.commit.slice(0, 8)}:${PIN_REGISTRY[area].path}, via ${derived.via}, scheme ${PIN_REGISTRY[area].scheme}${repairNote}) — counts asserted ${JSON.stringify(derived.counts)}`);
   printGuards(guards);
   return 0;
 }
