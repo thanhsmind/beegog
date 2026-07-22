@@ -9,7 +9,7 @@ bee:
   areas: [workflow-state]
   required_context: [areas/workflow-state/overview.md]
   decisions: ["chain-integrity D1-REVISED/D2/D3/D4 (the tail of the chain: learning capture is produced not asserted, the sync demands executed work, the close demands zero spec debt, the waiver is audited)", "AO3/AO13 (Gate 3 adviser precondition, event-based staleness, never a TTL — cells ao-4-1/ao-4-2 2026-07-17)", codex-hook-state-parity D4-D6 (pre-phase routing ownership and review isolation)]
-  sources: ["chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)", "advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17)", "codex-hook-state-parity cell codex-hook-state-parity-1 (pre-phase routing ownership and review isolation; report and capped trace, 2026-07-16)", "docs/specs/workflow-state.md#B1", "docs/specs/workflow-state.md#B2", "docs/specs/workflow-state.md#B9a", "docs/specs/workflow-state.md#B19"]
+  sources: ["chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)", "advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17)", "codex-hook-state-parity cell codex-hook-state-parity-1 (pre-phase routing ownership and review isolation; report and capped trace, 2026-07-16)", "docs/specs/workflow-state.md#B1", "docs/specs/workflow-state.md#B2", "docs/specs/workflow-state.md#B9a", "docs/specs/workflow-state.md#B19", "docs/specs/workflow-state.md#R1", "docs/specs/workflow-state.md#R2", "docs/specs/workflow-state.md#R3", "docs/specs/workflow-state.md#R19a", "docs/specs/workflow-state.md#R20a", "docs/specs/workflow-state.md#R21a", "docs/specs/workflow-state.md#R22", "docs/specs/workflow-state.md#R23", "docs/specs/workflow-state.md#R25", "docs/specs/workflow-state.md#R29", "docs/specs/workflow-state.md#R30", "docs/specs/workflow-state.md#R31", "docs/specs/workflow-state.md#E1", "docs/specs/workflow-state.md#E2", "docs/specs/workflow-state.md#P2", "docs/specs/workflow-state.md#P3", "docs/specs/workflow-state.md#P4", "docs/specs/workflow-state.md#P5"]
   authoritative_for: "workflow-state: feature start, the phase vocabulary, phase-owned routing mutation, and the closing tail"
 ---
 
@@ -116,3 +116,92 @@ refusal that says which step was skipped and how to perform it, and the record i
 untouched. The human sees a feature that cannot be reported as finished until
 its knowledge actually landed — the state and the specs can no longer disagree.
 
+## Business Rules
+
+- R1 — A new feature can never inherit gate approvals: all four gates reset in
+  the same atomic write that sets the feature (codex-runtime-parity D2;
+  plan-review P1 repair).
+- R2 — Feature start never destroys evidence of unfinished work; abandonment
+  is a separate, recorded act (drop verb) (codex-runtime-parity D2).
+- R3 — Phase values outside the closed vocabulary are rejected at the record
+  layer, whatever a skill's prose says.
+- R19a — The learning-capture phase is never settable. It is produced only by
+  recording a knowledge sync, which is its sole door; any attempt to set it
+  directly is refused and names the recording step as the way. Consequently the
+  phase is reachable if and only if a knowledge sync was truly stamped
+  (chain-integrity D1-REVISED).
+- R20a — Recording a knowledge sync is refused unless the feature stands in a
+  phase where execution has happened (execution, independent review, or the sync
+  itself). Knowledge of work that was never done cannot be synced
+  (chain-integrity D3).
+- R21a — The terminal state may be entered only from learning capture, and only
+  while spec debt is zero. The refusal names every completed behavior-changing
+  unit still missing from the specs, by identity, and leaves the phase untouched.
+  A close whose debt is genuinely spec-irrelevant proceeds only through an
+  explicit waiver, which records a durable decision naming every waived unit —
+  never silently, never by default (chain-integrity D2/D4).
+- R22 — Spec debt is advisory everywhere it is displayed and binding only at the
+  close. Debt is a signal throughout the work and a wall at the door: blocking on
+  it mid-work would fire while the sync is not yet due, and never blocking on it
+  at all is precisely what allowed a feature to be closed with its settled
+  behavior absent from every spec (chain-integrity D2).
+- R23 — No instruction anywhere in the workflow may name a phase outside the
+  closed vocabulary. A documented command that names a non-existent phase fails
+  every time it is followed, and an agent whose documented command fails begins
+  improvising the state machine — which is how the tail came to be bypassed in
+  the first place. This rule is machine-checked, not remembered
+  (chain-integrity D6).
+- R25 — The gate bypass level is a strict ladder of floors, each honored
+  literally: `off` stops for every gate; `normal` lifts only the
+  tiny/small/standard gates 1-3; `full` additionally lifts high-risk and
+  hard-gate gates 1-3; `total` lifts everything, including secret-file reads and
+  a review's P1 findings, leaving no human checkpoint. A human who set `full` or
+  `total` deliberately removed the high-risk floor — the workflow never
+  re-erects a stop the human lifted at their chosen level. When bypass is active
+  the agent does not pause: it records the recommended choice, logs a one-line
+  audit decision, and continues. Whenever any level other than `off` is in
+  force, the status surface and the session preamble print a loud level-specific
+  banner (`NORMAL` / `FULL AUTOPILOT` / `TOTAL AUTOPILOT — ZERO STOPS`) so the
+  lifted floor is never silent (decision 0010; user authorization dcf01d7b).
+  This ladder is applied at **every** gate step, not just some: each
+  gate-presenting step reads the active level and self-approves before it would
+  present, so a runtime that follows a step literally (rather than inferring the
+  rule from doctrine elsewhere) still honors the level. A machine-check asserts
+  every gate surface carries the level-aware rule and none carries a stale
+  floor-is-absolute phrasing, so the per-gate application cannot silently
+  regress (decision 5aedc024; cell codex-bypass-per-skill-1). Bypass suppresses
+  **approvals**, never genuine **information-gathering**: under `full`/`total`
+  the agent never asks merely to be approved (it takes its own confident best
+  answer and proceeds), but a question whose answer only the human holds — a
+  preference or knowledge the agent cannot settle from evidence — is still asked,
+  including during exploring. The litmus is "do I already have a confident best
+  answer?": yes proceeds, no-and-only-the-human-knows still asks (decision
+  a93994d3; cell bypass-info-vs-approval-1).
+- R29 — Every generic routing mutation is authorized by the selected record's
+  valid pre-change phase. Default and lane records follow the same rule.
+- R30 — Routing ownership is derived, never persisted. A successful phase
+  change transfers authority to the new phase for the next mutation.
+- R31 — Gate mutation is a dedicated operation; review owns no active pipeline
+  state, and validation alone decides execution readiness.
+
+## Edge Cases Settled
+
+- A capped prior-feature cell never blocks a new start; an expired-by-TTL
+  reservation never blocks a new start (only active ones do).
+- Refused starts are proven side-effect-free: the record is byte-identical
+  after a refusal.
+
+## Pointers (implementation)
+
+- Record: `.bee/state.json` (CLI-owned). Verbs: `bee.mjs state`
+  (`start-feature` — new; set/gate/worker/scribing-run — existing);
+  `startFeature()` + `isKnownPhase` in `skills/bee-hive/templates/lib/state.mjs`
+  (byte-mirrored to `.bee/bin/lib/state.mjs`).
+- Phase-owned routing: generic `state set --owner <pre-phase>` in
+  `skills/bee-hive/templates/bee.mjs` and `.bee/bin/bee.mjs`; required-owner
+  metadata in both command registries; phase-aware callers in exploring,
+  planning, validating, and compounding. Review stays local to its review
+  record. Proof: state/CLI suites, `.bee/cells/codex-hook-state-parity-1.json`,
+  and `docs/history/codex-hook-state-parity/reports/codex-hook-state-parity-1.md`.
+- Tests: 15 start-feature rows in `skills/bee-hive/templates/tests/test_lib.mjs`.
+- Evidence: commit `928abf1`; trace `.bee/cells/codex-parity-5.json`.

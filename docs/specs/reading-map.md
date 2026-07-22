@@ -83,29 +83,38 @@ Where things live. Read the touched area's spec before its code.
   transports, and event-based staleness (`slots-and-tiers.md`). The legacy path
   [`advisor-protocol.md`](./advisor-protocol.md) remains as a pointer stub carrying the
   full anchor map (D37).
-- [`workflow-state.md`](./workflow-state.md) — the durable workflow record: closed phase
-  vocabulary, four gates, the guarded feature-start that can never inherit approvals or
-  bury unfinished work, and the review records — user-invoked review sessions with frozen
-  scope (`.bee/reviews/`), the append-only candidates ledger, and derived review statuses
-  (verified/unreviewed/in review/reviewed/review stale); also the unified nine-group
-  command entry point and the worker adviser consult (a stuck worker asks a configured
-  stronger model, on failure only, budgeted); plus the session-coordination
-  primitives — atomic single-winner claims with TTL + heartbeat on every claim path,
-  a self-derived session identity, ownership-checked claimed-unit mutation with an
-  audited force door, a serialized coordination-store lock behind concurrent
-  reservation/state writes, throttled self-renewing heartbeats and leases, typed
-  refusal codes, gate-protected adoption/reclaim, plus pre-phase ownership for
-  generic routing changes and review isolation from active execution state; plus
-  opt-in isolated
-  worktree dispatch with one validated main coordination store, canonical contained
-  reservation checks, and transactional merge/revert/preservation rules; plus a
-  self-correcting loop over each unit of work — an append-only attempt history,
-  lifetime claim/failure budgets enforced at the claim door with an audited reset
-  door, authoring-time change classification with a behavior-class completion
-  floor on proof-of-red evidence, an append-only structured judge verdict with an
-  honest model-independence stamp, and a goal-check judge that scales with lane
-  risk without touching the user-invoked review gate
-  (`coverage: partial`).
+- [`docs/knowledge/areas/workflow-state/`](../knowledge/areas/workflow-state/index.md) —
+  the durable workflow record, migrated into the knowledge bundle (okf-foundation
+  D20/D29/D30): purpose, entry points, the full Data Dictionary and actor access
+  (`overview.md`); the guarded feature-start that can never inherit approvals or bury
+  unfinished work, the closed phase vocabulary, the high-risk execution consult
+  precondition, phase-owned routing mutation, the gate-bypass ladder, and the closing tail
+  (`gates.md`); user-invoked review sessions with frozen scope (`.bee/reviews/`), the
+  append-only candidates ledger, and derived review statuses (verified/unreviewed/in
+  review/reviewed/review stale) (`review-sessions.md`); the unified nine-group command
+  entry point and its catalog (`dispatch.md`); the worker adviser consult — a stuck worker
+  asks a configured stronger model, on failure only, budgeted (`advisor-consult.md`); how
+  a unit of work is authored and its plan revised, with the plan document frozen at its
+  gate (`cells-authoring-and-revision.md`); the computed dispatch schedule and the
+  dependency cycle refused at the write (`cells-scheduling.md`); the append-only attempt
+  history, lifetime claim/failure budgets enforced at the claim door, and the audited reset
+  door (`cells-attempt-budgets.md`); the behavior-class completion floor on proof-of-red
+  evidence, the append-only structured judge verdict with its honest model-independence
+  stamp and the reopen it forces on a capped unit, and the journaled archive transaction
+  (`cells-completion-judge-and-archive.md`); the two-kind handoff and the cross-lane work
+  puller (`handoff.md`); crash-candidate detection and transcript mining (`recovery.md`);
+  atomic single-winner claims with TTL + heartbeat on every claim path, typed refusal
+  codes, gate-protected adoption/reclaim, and ownership-checked claimed-unit mutation with
+  an audited force door (`claims-and-ownership.md`); the self-derived session identity,
+  per-feature lanes every reader resolves through, and throttled self-renewing heartbeats
+  and leases (`sessions-lanes-and-identity.md`); cross-session file holds and the
+  serialized coordination-store lock behind concurrent reservation/state writes
+  (`holds-and-the-coordination-lock.md`); and opt-in isolated worktree dispatch with one
+  validated main coordination store, canonical contained reservation checks, and
+  transactional merge/revert/preservation rules (`worktree-isolation.md`). The legacy path
+  [`workflow-state.md`](./workflow-state.md) remains as a pointer stub carrying the full
+  140-anchor map (D37), including the disambiguation rows for the duplicate
+  `R19`/`R20`/`R21` the source shipped.
 - [`okf-profile.md`](./okf-profile.md) — the Bee OKF Profile: the nine closed concept types plus
   the practice/pitfall polarity bit, frontmatter field rules with the id-derives-path direction,
   authority uniqueness (`bee.id`, `bee.authoritative_for`), the legacy-frontmatter carry-over map,
@@ -201,5 +210,5 @@ Where things live. Read the touched area's spec before its code.
   [`worktree-parallelism.md`](./worktree-parallelism.md) remains as a pointer stub carrying the
   full 10-anchor map (D37).
 - `skills/bee-hive/templates/bee.mjs` + `templates/lib/command-registry.mjs` — the sole shipped CLI (`bee.mjs <group> <verb>` over all 10 command groups, the 10th being `perf`; originated as an additive dispatcher in harness-integration-adopt, decision 30606de4, `docs/decisions/0024`, then made the sole canonical *and* sole shipped surface by shim-retire, D1, decision bbc6bcea — the 9 legacy per-group shims are deleted); `command-registry.mjs` is the single source of truth for the command surface. Contract in `docs/07-contracts.md`; spec-before-code still applies — read the touched area's spec before this code.
-- `skills/bee-hive/templates/lib/schedule.mjs` — the computed work schedule (`computeSchedule`/`detectCycles`: dep layering + declared-path overlap packing into waves; consumed by `bee cells schedule`, cycle refusal in `cells.mjs` add/update, and the swarming/validating prose). Spec: `docs/specs/workflow-state.md` B17/B18, R26/R27.
-- `skills/bee-hive/templates/lib/recovery.mjs` — crash-recovery transcript mining (`detectCrashCandidates`/`readTranscriptTail`/`hasCleanEndTrio`/`lastDurableSettlement`/`computeMiningWindow`/`buildMiningPrompt`: stale-heartbeat + non-clean-transcript-tail + work-in-flight detection; bounded mining window; the down-tier miner prompt). Consumed by `bee recovery scan|window` and the `status` recovery block; imports `perf.mjs` (transcript resolution) + `claims.mjs` (heartbeat/session), never imported by `command-registry.mjs`. Spec: `docs/specs/workflow-state.md` B33, R51.
+- `skills/bee-hive/templates/lib/schedule.mjs` — the computed work schedule (`computeSchedule`/`detectCycles`: dep layering + declared-path overlap packing into waves; consumed by `bee cells schedule`, cycle refusal in `cells.mjs` add/update, and the swarming/validating prose). Spec: `docs/knowledge/areas/workflow-state/cells-scheduling.md` (B17/B18, R26/R27).
+- `skills/bee-hive/templates/lib/recovery.mjs` — crash-recovery transcript mining (`detectCrashCandidates`/`readTranscriptTail`/`hasCleanEndTrio`/`lastDurableSettlement`/`computeMiningWindow`/`buildMiningPrompt`: stale-heartbeat + non-clean-transcript-tail + work-in-flight detection; bounded mining window; the down-tier miner prompt). Consumed by `bee recovery scan|window` and the `status` recovery block; imports `perf.mjs` (transcript resolution) + `claims.mjs` (heartbeat/session), never imported by `command-registry.mjs`. Spec: `docs/knowledge/areas/workflow-state/recovery.md` (B33, R51).

@@ -202,6 +202,39 @@ const EXTRA_SUITES = [
   // telemetry reports and never fails, exactly as flat-pattern-list's did
   // before it.
   ["scripts/okf_migrate.mjs", "--check", "worktree-parallelism"],
+  // f2-13 (F6/F9/F10): workflow-state's own D35 coverage gate — the LAST area
+  // of the migration, the largest by a wide margin (1464 lines, 140 anchors:
+  // 37 B / 58 R / 25 E / 20 P, unparsed_blocks: 7), and the only one migrated
+  // across SEVERAL cells rather than one commit (F10: f2-12 repaired and
+  // pinned the source and authored the first cluster group; f2-13 authored the
+  // remaining 136 anchors, wrote the stub, and wired this entry). Like
+  // hook-runtime it is a REPAIRED pin, and worse: the source shipped `R19`,
+  // `R20` AND `R21` twice each — the fresh-session-handoff triple and the
+  // chain-integrity triple, six genuinely distinct rules — so 140 anchors
+  // carried only 137 distinct ids while every declared count still added up.
+  // The second occurrence of each id in document order was renumbered
+  // `R19a`/`R20a`/`R21a` BEFORE the pin was captured; the pin declares
+  // repaired_from + repair_reason and is content-addressed by its committed
+  // copy (blob 506fef9), with the provenance blob ed1644c at
+  // df3072d:docs/specs/workflow-state.md still asserted exactly.
+  // Fifteen concepts, split by TOPIC (the cross-cutting frame; the gates of a
+  // feature's life and the closing tail; review sessions and derived review
+  // status; the unified command entry point; the worker adviser consult; unit
+  // authoring and plan revision; the computed schedule and cycle refusal;
+  // attempt history and lifetime budgets; completion teeth, judge verdicts and
+  // the archive transaction; the two-kind handoff and the work puller; crash
+  // detection and transcript recovery; atomic claims and claimed-unit
+  // ownership; sessions, lanes and identity; cross-session holds and the
+  // coordination lock; isolated worktrees and merge-back). D30 locked NINE
+  // behavior clusters as F2's input, and nine is what the behaviors alone
+  // want; once the 58 rules, 25 edge cases and 20 pointer bullets were
+  // distributed to the concept each governs (D30's own "never a dumping
+  // ground"), two of those clusters would have swallowed 35+ anchors apiece —
+  // which is exactly the shape F12's anchors_per_concept ratio exists to
+  // catch. Those two clusters are therefore split by topic INSIDE themselves,
+  // keeping D30's map as the spine, and the F12 drift telemetry lands inside
+  // its band across the nine pinned "ba-nine-section"-shaped sources.
+  ["scripts/okf_migrate.mjs", "--check", "workflow-state"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

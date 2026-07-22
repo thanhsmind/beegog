@@ -119,6 +119,16 @@ export const MANDATORY_SUITE_ARGS = [
   // returning and the merge gate; routing and visibility; the cross-worktree
   // holds ledger; store tiers and the implementation map).
   ["scripts/okf_migrate.mjs", "--check", "worktree-parallelism"],
+  // f2-13 (F6/F9/F10): workflow-state's own D35 coverage gate — the last area
+  // of the migration and the largest (140 anchors from a 1464-line source),
+  // migrated across several cells (F10) and riding a REPAIRED pin: the source
+  // shipped `R19`/`R20`/`R21` twice each, so the second occurrence of each id
+  // in document order was renumbered `R19a`/`R20a`/`R21a` before the pin was
+  // captured. Fifteen concepts — D30's nine behavior clusters as the spine,
+  // with the two that would have swallowed 35+ anchors apiece once the rules,
+  // edge cases and pointer bullets were distributed split by topic inside
+  // themselves rather than left as dumping grounds.
+  ["scripts/okf_migrate.mjs", "--check", "workflow-state"],
 ];
 
 // Floor count: total discovered suites must never silently drop below this
@@ -139,7 +149,9 @@ export const MANDATORY_SUITE_ARGS = [
 // f2-9: +1 for the `okf_migrate --check onboarding` coverage gate = 57.
 // f2-10: +1 for the `okf_migrate --check hook-runtime` coverage gate = 58.
 // f2-11: +1 for the `okf_migrate --check worktree-parallelism` coverage gate = 59.
-const SUITE_FLOOR_COUNT = 59;
+// f2-13: +1 for the `okf_migrate --check workflow-state` coverage gate = 60 —
+// the last area of the migration, so this is the last of these bumps.
+const SUITE_FLOOR_COUNT = 60;
 
 /**
  * Checks a discovered suite list against a mandatory list and a floor count.

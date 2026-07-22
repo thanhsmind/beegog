@@ -412,3 +412,59 @@
   cells, and `--check workflow-state` reports them honestly (140 anchors, 4 owned, 0 duplicated,
   136 lost) — it is deliberately NOT a chain suite yet, which is why the chain stays green at 74
   suites.
+
+- **The migration is complete** — last group of the split area (cell f2-13, feature
+  `okf-migration-f2`): the remaining **136** anchors of `docs/specs/workflow-state.md` are
+  authored, the pointer stub carries the full 140-anchor map, and
+  `scripts/okf_migrate.mjs --check workflow-state` is wired into the verify chain green at
+  **140 anchors, 140 owned, 0 duplicated, 0 lost**, fidelity min/median/max **1.000**. Every
+  area that lived in `docs/specs/` is now a knowledge bundle concept set; `docs/specs/` holds
+  only pointer stubs plus `reading-map.md` and `okf-profile.md`.
+- **The decomposition, and where it departs from D30 — reported, not quietly taken.** D30 locked
+  NINE clusters as F2's input (`overview`, `gates`, `cells`, `handoff`, `recovery`,
+  `multi-session`, `review-sessions`, `dispatch`, `advisor-consult`) and derived them from the
+  BEHAVIOR line anchors. Those nine hold for the 37 behaviors. They do not survive the other
+  half of D30's own instruction — that the 58 rules, 25 edge cases and 20 pointer bullets are
+  "distributed to the concept each governs, not collected into a dumping-ground concept":
+  distributed honestly, `cells` lands 37 anchors and `multi-session` 35, against a per-concept
+  norm of 6-9 across the eight areas already migrated. That shape is precisely what F12's
+  `anchors_per_concept` ratio exists to detect, and it detected it — at nine concepts the
+  telemetry reads 15.56 (2.15x the running median 7.25) and 0.61 concepts/100 source lines
+  (0.41x the median 1.50), outside the [0.5x, 2x] band on **both** metrics. So the two oversized
+  clusters are split by topic INSIDE themselves, keeping D30's map as the spine:
+  `cells` → `cells-authoring-and-revision` / `cells-scheduling` / `cells-attempt-budgets` /
+  `cells-completion-judge-and-archive`; `multi-session` → `claims-and-ownership` /
+  `sessions-lanes-and-identity` / `holds-and-the-coordination-lock` / `worktree-isolation`.
+  Fifteen concepts; telemetry 9.33 anchors/concept (1.29x) and 1.02 concepts/100L (0.68x), both
+  inside the band, and no other pinned area is knocked out of its band by the median shift. The
+  split is a decomposition change, never a fidelity dodge: no concept was edited and no
+  threshold was touched to clear the F11 floor, which every one of the 140 anchors clears at
+  1.000.
+- **`B23`, the one anchor D30 homes twice.** D30's `cells` list names `B23` explicitly and its
+  `multi-session` line names the contiguous range `B20-B24`, which contains it; only one concept
+  may claim it. It is homed with the claims cluster (`claims-and-ownership.md`) on the source's
+  own evidence: pointer `P18` reads "Multi-session hardening (B11/B21-B24, R36-R40)", so the
+  implementation map itself groups `B23` with `B21`-`B24` and the rules that travel with it
+  (`R39` in particular). `B7`, `B10`, `B17`, `B18`, `B25`-`B32`, `B34`-`B36` — the rest of D30's
+  `cells` list — are unaffected.
+- **The `B24` hazard f2-12 measured, carried rather than "fixed".** Because a `###` heading does
+  not close an anchor's block, the whole `### Closing a feature — the tail of the chain`
+  subsection (L534-581) sits inside **`B24`**'s extracted text. `B24`'s owning concept,
+  `sessions-lanes-and-identity.md`, therefore carries that prose verbatim — and `gates.md`
+  carries the same prose, because the closing tail is topically its and f2-12 authored it there.
+  The prose is deliberately in BOTH concepts; only the anchor CLAIM is unique, so coverage still
+  reports 0 duplicated. Nothing was moved out of `gates.md` and nothing was trimmed out of
+  `B24`: `B24` measures 281 anchor tokens with 0 missing, ratio 1.000.
+- **The stub resolves an old `R19`/`R20`/`R21` citation in both directions** (f2-12's repair):
+  the fresh-session-handoff family KEPT those ids and its rows point at `handoff.md`; the
+  chain-integrity family now reads `R19a`/`R20a`/`R21a` and its rows point at `gates.md`. Both
+  triples carry an explicit "kept this id" / "shipped as a second `R19`" note in the map's `Was`
+  column, and a prose section above the map spells out which meaning resolves where — the same
+  treatment `hook-runtime`'s `R14`/`R14a` received. All 140 rows are in one table; the
+  resolution guidance is prose beside it, never a second row for an id (a duplicated row is a
+  gate failure by design).
+- Citations rewired in the same cell as the stub (D37): `docs/specs/reading-map.md`'s area entry
+  now points at the bundle and names all fifteen concepts, and its two code-line citations
+  (`schedule.mjs` → `cells-scheduling.md`, `recovery.mjs` → `recovery.md`) resolve into the
+  bundle instead of the retired spec. `docs/history/**` is archive and stays untouched.
+  Chain: 75 suites (74 + this area's gate), `SUITE_FLOOR_COUNT` 59 → 60.
