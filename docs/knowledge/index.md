@@ -14,7 +14,7 @@ never a generation timestamp or any other wall-clock value.
 ## Sections
 
 - [areas/](areas/index.md) — 69 concept(s)
-- [patterns/](patterns/index.md) — 49 concept(s)
+- [patterns/](patterns/index.md) — 50 concept(s)
 - [work/](work/index.md) — 4 concept(s)
 
 ## Critical patterns
@@ -67,4 +67,5 @@ never a generation timestamp or any other wall-clock value.
 - [Race tests assert structure, never scheduler luck — and a race harness that hides the child's stderr is itself a bug](patterns/20260721-race-tests-assert-structure-never-scheduler-luck.md) — And a race harness that hides the child's stderr is itself a bug
 - [Shared-file axes must be sequenced at dispatch time; a worker's "watcher" dies with its turn](patterns/20260721-shared-file-axes-must-be-sequenced-at-dispatch.md) — Shared-file axes must be sequenced at dispatch time; a worker's "watcher" dies with its turn
 - [A coverage gate derives its ground truth; it never compares two hand-authored lists](patterns/20260722-a-coverage-gate-derives-ground-truth-it-never-compares-two-hand-lists.md) — A gate that checks a hand-maintained inventory against hand-authored claims proves internal consistency, not coverage — and it drifts green.
+- [A migration is not done until its instruction layer and its generated orientation are migrated too](patterns/20260722-a-migration-is-not-done-until-its-instructions-are.md) — Guards protect content; nothing tests prose. The surfaces that TEACH the model — deferred-to reference docs and injected session orientation — rot silently after a migration and keep teaching the retired one.
 - [A plan shaped by a document's literal structure gets fresh-eyed before scope locks](patterns/20260722-surface-structure-planning-is-reviewed-before-scope-locks.md) — When a plan's shape comes from file counts or heading lists rather than a content model, review that assumption at design time — not at validation, not at execution.
