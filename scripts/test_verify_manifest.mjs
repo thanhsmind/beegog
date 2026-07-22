@@ -94,6 +94,12 @@ const MANDATORY_SUITES = [
   // prose again, which is exactly how it would rot in one release with no
   // error (advisor-digest-f3 finding 1).
   "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+  // f3-4 (G2): the fence that makes `docs/specs/` read-only for NEW content.
+  // Pinned exact-path because it does not match the `test_*.mjs` discovery
+  // glob — EXTRA_SUITES membership is its only way into the chain, and a
+  // guard that silently stops running is worse than no guard: new prose would
+  // land in the compatibility surface again with nothing to say so.
+  "scripts/okf_specs_fence.mjs",
 ];
 
 // f2-3 (F6): a migration cell's coverage gate must be in the chain, and the
@@ -137,6 +143,13 @@ export const MANDATORY_SUITE_ARGS = [
   // edge cases and pointer bullets were distributed split by topic inside
   // themselves rather than left as dumping grounds.
   ["scripts/okf_migrate.mjs", "--check", "workflow-state"],
+  // f3-4 (G2): the exact-PATH pin above protects the fence script itself, but
+  // not the `--selftest` variant riding it — and the selftest is the only
+  // thing that proves the fence BITES (a bare live run passes trivially the
+  // moment docs/specs/ happens to be clean, which is the normal state). Both
+  // must be in the chain, so both are pinned: the argument variant here, the
+  // bare live run by the path pin.
+  ["scripts/okf_specs_fence.mjs", "--selftest"],
 ];
 
 // Floor count: total discovered suites must never silently drop below this
@@ -159,7 +172,10 @@ export const MANDATORY_SUITE_ARGS = [
 // f2-11: +1 for the `okf_migrate --check worktree-parallelism` coverage gate = 59.
 // f2-13: +1 for the `okf_migrate --check workflow-state` coverage gate = 60 —
 // the last area of the migration, so this is the last of these bumps.
-const SUITE_FLOOR_COUNT = 60;
+// f3-4: +2 for the docs/specs read-only fence — `okf_specs_fence --selftest`
+// (the fixtures that prove it bites, and that it stays inert with no bundle)
+// and the bare live run against this repo's own docs/specs/ = 62.
+const SUITE_FLOOR_COUNT = 62;
 
 /**
  * Checks a discovered suite list against a mandatory list and a floor count.

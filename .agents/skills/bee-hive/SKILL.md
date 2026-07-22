@@ -66,7 +66,10 @@ Orient on: onboarding health, phase, mode, feature, gate states, cell counts, ac
 
 Then read `docs/history/learnings/critical-patterns.md` and surface recent active decisions (`node .bee/bin/bee.mjs decisions active --recent 3`).
 
-**State layer:** when `docs/specs/` exists, note it in the orientation summary. Before working in any area, the reading order is **spec → decisions → history**: read `docs/specs/<area>.md` (what the area does now) before its code, decisions for the why, `docs/history/` only for archaeology. `docs/specs/reading-map.md` answers "where does X live" before any broad grep. When `docs/specs/` lacks `system-overview.md` or `reading-map.md`, offer a `bee-scribing` bootstrap pass to skeleton the missing file(s) — user-approved, never silent, never auto-run (D2 of harness10).
+**State layer (reading order, G4):** note the state layer in the orientation summary. Which layer that is depends on one predicate — `bundleMode` (`docs/knowledge/` holding at least one concept that actually parses; a directory alone is not a bundle). Both branches below are live guidance, not a migration path:
+
+- **With a bundle — the reading order is `bundle → decisions → history`.** Read `docs/knowledge/areas/<area>/` FIRST: its `index.md` names the area's concepts, and each concept states the subject it is authoritative for. Then decisions for the why; `docs/history/` only for archaeology. `docs/specs/` is named for exactly one job — the **read-only compatibility surface**: a legacy citation like `docs/specs/<area>.md#R7` resolves through that file's pointer stub (its anchor map) to the concept that owns the anchor now. Never send an agent there for current truth, and never write new content there — `scripts/okf_specs_fence.mjs` fails the chain when new prose lands under `docs/specs/` (G2). `docs/specs/reading-map.md` stays the hand-written "where does X live" map and points at the bundle. When an area has no overview concept, offer a `bee-scribing` bootstrap pass to author one **in the bundle** — user-approved, never silent, never auto-run.
+- **With no bundle — today's guidance stands, unchanged.** When `docs/specs/` exists, note it in the orientation summary. Before working in any area, the reading order is **spec → decisions → history**: read `docs/specs/<area>.md` (what the area does now) before its code, decisions for the why, `docs/history/` only for archaeology. `docs/specs/reading-map.md` answers "where does X live" before any broad grep. When `docs/specs/` lacks `system-overview.md` or `reading-map.md`, offer a `bee-scribing` bootstrap pass to skeleton the missing file(s) — user-approved, never silent, never auto-run (D2 of harness10). The fence never fires here and nothing in this branch mentions a bundle: a repo that never migrated keeps working exactly as before (G1).
 
 **Delegation:** onboarding/version scans and any multi-file skill-inventory diff dispatch down-tier as I/O workers per the Delegation contract (`references/routing-and-contracts.md`) when the D2 rubric fires; routing, mode gate, and gate decisions always stay on the session model.
 
@@ -182,7 +185,8 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 - `.bee/bin/` — vendored helpers (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, `bee_capture`) + `lib/`
 - `docs/history/<feature>/CONTEXT.md` — locked decisions, source of truth
 - `docs/history/learnings/critical-patterns.md` — mandatory pre-work reading
-- `docs/specs/<area>.md` + `docs/specs/reading-map.md` — state layer, owned by `bee-scribing`: BA-grade tech-agnostic spec per area, and what lives where (read spec before code)
+- `docs/knowledge/areas/<area>/` — the state layer when the repo has a bundle, owned by `bee-scribing`: one concept per subject, `index.md` per area (read the bundle before code)
+- `docs/specs/<area>.md` + `docs/specs/reading-map.md` — with a bundle: the read-only compatibility surface (pointer stubs resolving legacy anchor citations) plus the hand-written reading map; with no bundle: the state layer itself, BA-grade tech-agnostic spec per area (read spec before code)
 
 ## Hook Response Protocol
 

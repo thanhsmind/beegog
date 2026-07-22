@@ -235,6 +235,24 @@ const EXTRA_SUITES = [
   // keeping D30's map as the spine, and the F12 drift telemetry lands inside
   // its band across the nine pinned "ba-nine-section"-shaped sources.
   ["scripts/okf_migrate.mjs", "--check", "workflow-state"],
+  // f3-4 (G2): `docs/specs/` is READ-ONLY for NEW content once a repo has a
+  // knowledge bundle. Two entries, both required:
+  //   --selftest  proves the fence actually BITES — the bundle-ful fixture
+  //               with a new prose file fails, the bundle-LESS fixture with
+  //               the SAME file stays silent (G1: a host repo that never
+  //               migrated keeps writing docs/specs/ freely and must not be
+  //               able to tell this release happened), stub recognition is
+  //               structural (`migrated_to` frontmatter, never a filename
+  //               list that rots the first time an area is added), and the
+  //               `system-overview.md` placeholder allowlist stops applying
+  //               the moment the file is actually written.
+  //   (bare)      runs the fence against THIS repo's live docs/specs/.
+  // Deliberately NOT in the LIVE_BUNDLE_GROUP below: test_okf_pins' mutator
+  // writes an unhealthy concept under docs/knowledge/, which the fence never
+  // reads — it only asks `bundleMode` (still true) and lists docs/specs/,
+  // which no suite in the chain mutates.
+  ["scripts/okf_specs_fence.mjs", "--selftest"],
+  ["scripts/okf_specs_fence.mjs"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

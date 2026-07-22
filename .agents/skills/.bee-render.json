@@ -32,11 +32,11 @@
     },
     {
       "name": "bee-hive",
-      "sha256": "a95427323179934c78fb9fb420ae07adf81c1c25797bbcf346b63767215fa949"
+      "sha256": "09d543d8451a551d4932e50166d78084e889eb076eb9f62392d8ff228774f294"
     },
     {
       "name": "bee-planning",
-      "sha256": "832c93f8f6e4ff83abe76fb7449f2297c4f63f09779059daacd04f373b16466f"
+      "sha256": "6c344327235ed4572bc947eb738f34eccdd9b8b0f3426b2a0b7dde1b0c5e4a63"
     },
     {
       "name": "bee-reviewing",
