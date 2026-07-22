@@ -229,6 +229,53 @@ No loss, no duplication. Shipped coverage: `advisor-protocol` 26/26, `critical-p
 history — an editor who shrinks the inventory and the concepts together keeps the gate green.
 Binding it to the pre-migration blob is open work.
 
+**B9 — A pin is content-addressed, and no unverified extraction may read as a pass (F8).** Every
+migrated source is pinned as `{commit, path, blob_sha, scheme, expected_counts}` and **all five are
+asserted at check time**. The pinned bytes are also committed verbatim under
+`docs/history/okf-migration-f2/sources/<area>.md` and verified with `git hash-object`, so a
+`--depth 1` clone — where `git show <sha>:<path>` fails outright — still verifies. Every failure
+mode is a typed refusal with exit 1, never a silent skip: `PIN_NO_SCHEME`, `PIN_UNKNOWN_SCHEME`,
+`PIN_INCOMPLETE` (including a missing `unparsed_blocks`), `PIN_SHA_MISMATCH`, `PIN_COPY_MISSING`,
+`PIN_UNRESOLVED`, `PIN_DUPLICATE_ANCHOR`, and `PIN_EMPTY_EXTRACTION` — which is raised **before**
+the count comparison, so a pin declaring `total: 0` cannot launder itself green. Where a source had
+to be repaired before pinning (duplicate ids), the pin declares `repaired_from` + `repair_reason`
+and the git leg asserts the **provenance** blob; an undeclared or unexplained disagreement stays a
+`PIN_SHA_MISMATCH`.
+
+**B10 — The extractor reports what it could not read (F8).** Every inventory returns unparsed block
+and line counts per section, and `unparsed_blocks` is a **mandatory** pin field. This exists because
+the original classifier required bare anchor ids and was blind to the `- **R1** — …` form, hiding
+**86 anchors across five areas** and making two areas look "shapeless" when they were merely
+unreadable — a blindness that converts *lost content* into *content that never existed*. Three
+schemes ship: `ba-nine-section` (numbered `B*/R*/E*/P*`, letter suffixes and bold wrapping
+accepted), `flat-pattern-list` (`## [YYYYMMDD] title` headings), and `narrative-sections` (the
+source's own `## ` headings ARE the anchors, for a source with no numbering at all — a `###`
+subheading is not an anchor, and a source with zero `## ` headings is refused, never passed 0/0).
+Anchor ids are **read, never invented**: an unnumbered block stays unparsed and is counted.
+
+**B11 — The fidelity floor measures whether content was migrated or summarised away (F11).** For
+each anchor, the owning concept's **body** (never its frontmatter) must retain **≥ 0.60** normalized
+token overlap with that anchor's text in the pinned blob; below the floor fails the gate naming the
+anchor, its owner, and the ratio. Normalization lowercases, collapses non-alphanumerics, and drops
+only articles, prepositions, pronouns and auxiliaries — **modal and negation words (`never`,
+`always`, `must`, `only`, `refuses`) are content here and are never stopwords**. The metric
+discriminates rather than merely detecting absence: a faithful re-wording scores 0.815, a markdown
+re-format 0.963, a plausible paraphrase 0.296, a gutted concept 0.000. *Known limit:* the metric is
+lexical, so a faithful rewrite that **renames terminology** scores near zero — the resolution is to
+keep the source's terms (migration re-homes content, it does not improve its wording), never to
+lower the floor. A suite assertion requires each area's **median ≥ 0.75**, so a future
+over-strict normalization that hugs the floor goes red instead of passing quietly.
+
+**B12 — Drift telemetry compares only comparable shapes (F12).** Each pinned source reports
+`anchors_per_concept` and `concepts_per_100_source_lines`, failing when it is an outlier against
+the running median of already-pinned sources **of the same scheme**; with fewer than three
+comparable samples there is no median and it reports only. Comparability is keyed by scheme
+because a `flat-pattern-list` migration is one anchor per concept *by construction* and can never
+sit in a band drawn around nine-section areas — pooling them turned an already-shipped area red on
+work it never touched. The gate additionally runs the whole-bundle invariants every check
+(authority uniqueness, zero `not_canonical`, index freshness) and treats those three as hard
+failures **for itself**, leaving `knowledge check`'s own non-strict exit contract (D13) untouched.
+
 ## Actors & Access
 
 - **The migrator** (a scripted, non-shipped tool in `scripts/`, D24) — authors new concepts under
