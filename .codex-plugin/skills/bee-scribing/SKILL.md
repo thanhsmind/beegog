@@ -61,7 +61,19 @@ Map each delta to an area by the files/screens it touched. Area names are kebab-
 node -e "import('./.bee/bin/lib/knowledge.mjs').then(m=>console.log(JSON.stringify(m.scribingTarget(process.cwd(),{area:'<area>',subject:'<area>: <subject>'}),null,1)))"
 ```
 
-It returns `{bundle_mode, action, area, subject, path, owner, regenerate_index}`. Write to `path`, do exactly `action`, and regenerate the index when `regenerate_index` is true. Pass `intent:'new-concept'` when you believe the subject is new — if it is in fact already owned, the answer is `fork_denied` naming the owner, and there is nothing to write.
+It returns `{bundle_mode, action, area, subject, path, owner, regenerate_index}` — the same seven keys in every mode and on every answer. Write to `path`, do exactly `action`, and regenerate the index when `regenerate_index` is true. Pass `intent:'new-concept'` when you believe the subject is new — if it is in fact already owned, the answer is `fork_denied` naming the owner, and there is nothing to write.
+
+**A `path: null` answer is a refusal, and a refusal is never a licence to pick your own path.** Three answers refuse:
+
+| `action` | Means | Do |
+|---|---|---|
+| `fork_denied` | the subject is already owned by the concept in `owner` | update the owner in place, or declare the split inside it |
+| `subject_required` | `intent:'new-concept'` was passed with no subject (empty, blank, `null`, punctuation-only) | name the subject and ask again — "no subject" is not a new subject, and it is **never** routed to `overview.md` |
+| `duplicate_authority` | two or more concepts already claim this subject; every claimant is listed on `owner.conflicts` | fix the bundle first — collapse the rival claims to one authority, then re-ask |
+
+And the call itself **throws** when any concept in the bundle carries a malformed `bee.authoritative_for` (a list, a boolean, an empty or blank string), naming the file. That is not noise to route around: a claim bee cannot read is an owner the anti-fork gate cannot see. Fix the concept.
+
+`docs/knowledge/` and `docs/specs/` are both **product** doc trees — the module resolves them through `resolveProductRoot`, so a repo whose `.bee/config.json` sets `product_root` (the repo-divorce topology) is graded on its real product docs, not the workshop root. Never join these paths yourself.
 
 ### 2a. Bundle mode — one subject, one concept, forever
 
@@ -74,6 +86,14 @@ Three paths, and the choice between the first two is gated on `bee.authoritative
 | a brand-new area | create `docs/knowledge/areas/<area>/` with an `overview` concept, then regenerate the index | `docs/knowledge/areas/<area>/overview.md` |
 
 **A new concept may NOT claim a subject an existing concept already owns.** This is the anti-fork gate, and it carries the weight the one-file-per-area rule used to carry alone: two concepts claiming one subject both parse, both list in the index, and no reader can tell which is true — the `-v2` failure in a new costume. Ownership is checked bundle-wide, not per area: a subject owned by a concept in another area still routes there. When a subject genuinely splits, the owning concept is rewritten and the split is declared in it (see `docs/knowledge/areas/doctrine-layer/overview.md` §"How this area is split") — never by quietly authoring a rival.
+
+**The gate has three layers, because exact string matching on free text can never be sufficient.** An independent judge broke the single-layer version four ways in one sitting:
+
+1. **The match is a skeleton, not a string.** Subjects are compared after NFKC, lowercasing, accent stripping, a cross-script confusable fold, and punctuation/whitespace collapse. A trailing period and a Cyrillic `е` each bought a rival concept before this existed; neither can now.
+2. **Malformed input fails closed** — the three refusals and the throw in §2 above. A silently skipped claim is a fork with extra steps.
+3. **The bundle-wide backstop bites.** `duplicate_authoritative_for` is a chain-**failing** finding in `bee knowledge check` (no `--strict` needed), grouped by the same skeleton. Layer 1 cannot catch a genuine word-order paraphrase (`refunds and reversals` vs `reversals and refunds`) — nothing that compares strings can — so the bundle-wide check is what refuses to let two authorities coexist. `malformed_authoritative_for` fails the chain the same way.
+
+Do not soften any layer to get a write through. A refused write means the bundle is wrong, not the gate.
 
 **Frontmatter is ALWAYS produced by `emitFrontmatter`, never typed by hand** — hand-written blocks are caught `not_canonical` by the round-trip guard, repeatedly and including by orchestrators who knew the rule. Build the data object, emit, then write body under it:
 

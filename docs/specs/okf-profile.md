@@ -135,12 +135,19 @@ generator.
 
 ## Behaviors & Operations
 
-**B1 — Two-level check, OKF errors vs. profile warnings (D4).** `bee knowledge check` grades every
-`.md` inside `docs/knowledge/` (D23) into two buckets. **OKF errors** are the spec's own MUSTs;
-**profile warnings** are bee's SHOULD layer. `--strict` promotes every warning to an error. The
-`--json` shape is fixed (D13): `{okf:{errors:[...]}, profile:{warnings:[...]}, counts}`, and the
-command exits non-zero only when an OKF error exists, or (under `--strict`) when any finding at
-all exists.
+**B1 — Two-level check, OKF errors vs. profile findings (D4).** `bee knowledge check` grades every
+`.md` inside `docs/knowledge/` (D23). **OKF errors** are the spec's own MUSTs; the **profile** layer
+is bee's own, and it has two severities: **profile errors**, which fail on their own, and **profile
+warnings**, bee's SHOULD layer, which fail only under `--strict` (`--strict` promotes every warning
+to an error). The `--json` shape is
+`{okf:{errors:[...]}, profile:{errors:[...], warnings:[...]}, counts}`, and the command exits
+non-zero when an OKF error exists, when a profile error exists, or (under `--strict`) when any
+finding at all exists. `counts` carries `files`, `concepts`, `errors` (OKF), `profile_errors`, and
+`warnings`.
+
+The profile-error severity exists because the chain runs this verb **without** `--strict` (D13), so
+an invariant parked in `warnings` is decorative. Exactly the findings that guard *one subject, one
+readable authority* live there — see the profile-error table in B2.
 
 **B2 — Exact finding codes emitted by `.bee/bin/lib/knowledge.mjs`.**
 
@@ -156,7 +163,17 @@ OKF-error codes (each finding also carries `file` and a human `message`):
 | `root_index_extra_keys` | The **root** `index.md` carries any key besides `okf_version` (OKF §9). |
 | `log_heading_not_iso` | A `## `-level heading inside `log.md` is not an ISO 8601 date (OKF §7 MUST). |
 
-Profile-warning codes:
+Profile-**error** codes — reported in `profile.errors` and **chain-failing on their own**, with no
+`--strict` (G14 layer 3). The chain runs `knowledge check` non-strict by design, so a finding that
+guards the anti-fork invariant cannot live in `warnings`: a backstop that never blocks is not a
+backstop. Both codes guard one invariant — *one subject, exactly one readable authority*:
+
+| Code | Fires when |
+|---|---|
+| `duplicate_authoritative_for` | Two or more concepts claim the same `bee.authoritative_for` subject (D31). Grouped by the **hardened subject skeleton** (NFKC + lowercase + accent strip + confusable fold + punctuation/whitespace collapse), not the raw string — so claims differing only by a trailing period, case, or a Cyrillic homoglyph are one subject with two authorities, not two subjects. |
+| `malformed_authoritative_for` | A concept's `bee.authoritative_for` is present but is not one non-empty string (a list, a boolean, an empty or blank string). A claim bee cannot read is an owner the anti-fork gate cannot see, so it is never silently skipped. |
+
+Profile-warning codes — reported always, failing only under `--strict`:
 
 | Code | Fires when |
 |---|---|
@@ -164,7 +181,6 @@ Profile-warning codes:
 | `missing_profile_field` | One of `title`, `description`, `bee.id`, `bee.lifecycle` is missing or blank (D10: never invented — must be authored). |
 | `not_canonical` | Parsing the file's frontmatter and re-emitting it (`emitFrontmatter`) does not byte-match the file — a hand-edited colon/`#`/CRLF/key-order outside the canonical emitted form (the advisor round-trip guard). |
 | `duplicate_id` | Two or more concepts share one `bee.id` (D31). |
-| `duplicate_authoritative_for` | Two or more concepts claim the same `bee.authoritative_for` subject (D31). |
 | `dangling_required_context` | A `bee.required_context` entry does not resolve to a real file inside the bundle. |
 | `dangling_supersedes` | A `bee.supersedes` id matches no concept's `bee.id` in the bundle. |
 

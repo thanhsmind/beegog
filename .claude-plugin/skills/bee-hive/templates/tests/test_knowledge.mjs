@@ -34,6 +34,7 @@ import {
 const TESTS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.dirname(TESTS_DIR);
 const BEE_MJS = path.join(TEMPLATES_DIR, 'bee.mjs');
+const REPO_ROOT = path.join(TESTS_DIR, '..', '..', '..', '..');
 
 let passed = 0;
 let failed = 0;
@@ -316,13 +317,98 @@ await check('profile warning: duplicate bee.id (D31: id is globally unique)', as
   assert(/patterns\/a\.md/.test(dup.message) || dup.file === 'patterns/a.md', 'both claimants must be traceable from the warning');
 });
 
-await check('profile warning: duplicate bee.authoritative_for (D31: one subject, one authority)', async () => {
+// ─── G14 LAYER 3 (cell f3-3): the backstop BITES ───────────────────────────
+//
+// f3-2 shipped `duplicate_authoritative_for` as a profile WARNING, and the
+// chain runs `knowledge check` WITHOUT --strict — so the cited backstop never
+// blocked anything. Layer 1's normalization can never catch a genuine
+// word-order paraphrase, so the backstop is the only thing standing between a
+// forked subject and a bundle where no reader can tell which file is true.
+// It is therefore promoted to a chain-FAILING profile error.
+//
+// ORDERING PROOF (cell f3-3, before the promotion was written): the live
+// bundle was verified duplicate-free first —
+//   $ node .bee/bin/bee.mjs knowledge check --json
+//   counts: {"files":133,"concepts":116,"errors":0,"warnings":0}
+//   116 concepts, 63 string authority claims, 0 malformed, 0 duplicates
+//   (exact AND under the hardened normalization)
+// so promoting cannot red existing content. The pin below keeps that true.
+
+await check('profile ERROR: duplicate bee.authoritative_for FAILS the chain (D31: one subject, one authority)', async () => {
   const root = makeRepo();
   writeBundleFile(root, 'areas/x/one.md', conceptText({ type: 'bee.area', id: 'x-one', extraBee: { authoritative_for: 'gates' } }));
   writeBundleFile(root, 'areas/x/two.md', conceptText({ type: 'bee.area', id: 'x-two', extraBee: { authoritative_for: 'gates' } }));
   const report = checkBundle(root);
-  const dup = report.profile.warnings.find((w) => w.code === 'duplicate_authoritative_for');
-  assert(dup && /gates/.test(dup.message), `expected duplicate_authoritative_for naming the subject, got ${JSON.stringify(report.profile.warnings)}`);
+  const dup = report.profile.errors.find((w) => w.code === 'duplicate_authoritative_for');
+  assert(dup && /gates/.test(dup.message), `expected duplicate_authoritative_for naming the subject, got ${JSON.stringify(report.profile)}`);
+  assert(/areas\/x\/one\.md/.test(dup.message) && /areas\/x\/two\.md/.test(dup.message), `both claimants must be named, got ${dup.message}`);
+  assert(report.ok === false, 'a duplicated authority is chain-failing WITHOUT --strict — a warning that never blocks is not a backstop');
+  assert(
+    !report.profile.warnings.some((w) => w.code === 'duplicate_authoritative_for'),
+    'promoted, not duplicated across buckets',
+  );
+});
+
+await check('profile ERROR: duplicate authority is grouped by the HARDENED subject — punctuation and homoglyphs do not launder a fork', async () => {
+  for (const [label, second] of [
+    ['trailing period', 'gates.'],
+    ['case + whitespace', '  GATES  '],
+    ['Cyrillic-a homoglyph', 'gаtes'], // U+0430
+    ['fullwidth', 'ｇａｔｅｓ'],
+  ]) {
+    const root = makeRepo();
+    writeBundleFile(root, 'areas/x/one.md', conceptText({ type: 'bee.area', id: 'x-one', extraBee: { authoritative_for: 'gates' } }));
+    writeBundleFile(root, 'areas/x/two.md', conceptText({ type: 'bee.area', id: 'x-two', extraBee: { authoritative_for: second } }));
+    const report = checkBundle(root);
+    const dup = report.profile.errors.find((w) => w.code === 'duplicate_authoritative_for');
+    assert(dup, `${label}: exact-string grouping misses this; the hardened grouping must not. got ${JSON.stringify(report.profile)}`);
+    assert(report.ok === false, `${label}: must fail the chain`);
+  }
+});
+
+await check('profile ERROR: a MALFORMED bee.authoritative_for is a chain-failing error naming the file, never a silent skip', async () => {
+  // The reachable set, measured against the D12 parser: `42`/`null` parse as
+  // STRINGS, and a mapping is already an `unparseable_frontmatter` OKF error.
+  for (const [label, literal] of [
+    ['array', '[gates, locks]'],
+    ['boolean', 'true'],
+    ['empty string', '""'],
+    ['blank string', '"   "'],
+  ]) {
+    const root = makeRepo();
+    const bent = conceptText({ type: 'bee.area', id: 'x-bad' }).replace(
+      'lifecycle: active',
+      `lifecycle: active\n  authoritative_for: ${literal}`,
+    );
+    writeBundleFile(root, 'areas/x/bad.md', bent);
+    const report = checkBundle(root);
+    assert(
+      report.okf.errors.length === 0,
+      `${label}: the frontmatter itself parses — this is a profile fault, not an OKF one: ${JSON.stringify(report.okf.errors)}`,
+    );
+    const bad = report.profile.errors.find((e) => e.code === 'malformed_authoritative_for');
+    assert(bad && bad.file === 'areas/x/bad.md', `${label}: expected malformed_authoritative_for naming the file, got ${JSON.stringify(report.profile)}`);
+    assert(report.ok === false, `${label}: must fail the chain`);
+  }
+});
+
+await check('a clean bundle still reports profile.errors as an empty array and stays green (no new noise)', async () => {
+  const root = makeRepo();
+  writeBundleFile(root, 'areas/x/one.md', conceptText({ type: 'bee.area', id: 'x-one', extraBee: { authoritative_for: 'gates' } }));
+  writeBundleFile(root, 'areas/x/two.md', conceptText({ type: 'bee.area', id: 'x-two', extraBee: { authoritative_for: 'locks' } }));
+  const report = checkBundle(root);
+  assert(Array.isArray(report.profile.errors) && report.profile.errors.length === 0, `expected [], got ${JSON.stringify(report.profile.errors)}`);
+  assert(report.ok === true, `a clean bundle stays green, got ${JSON.stringify(report)}`);
+});
+
+await check("LIVE BUNDLE PIN (f3-3): bee's own bundle carries zero duplicate and zero malformed authority claims", async () => {
+  const report = checkBundle(REPO_ROOT);
+  assert(
+    report.profile.errors.length === 0,
+    `the promotion must never red existing content — live bundle profile errors: ${JSON.stringify(report.profile.errors)}`,
+  );
+  assert(report.okf.errors.length === 0, `live bundle OKF errors: ${JSON.stringify(report.okf.errors)}`);
+  assert(report.ok === true, 'the live bundle passes the promoted check');
 });
 
 // ─── advisor round-trip guard: misparse candidates warn, never silently ────
@@ -420,6 +506,22 @@ await check('CLI: an OKF error exits non-zero; warnings-only exits 0; --strict f
   assert(JSON.parse(loose.stdout).profile.warnings.length > 0, `the warning must still be reported, got ${loose.stdout}`);
   const strict = await runBee(['knowledge', 'check', '--strict', '--json'], warnRoot);
   assert(strict.status !== 0, `--strict must exit non-zero on warnings, got ${strict.status}: ${strict.stdout}`);
+});
+
+await check('CLI (f3-3): a duplicated authority exits NON-ZERO with no --strict, and prints as an ERROR', async () => {
+  const root = makeRepo();
+  writeBundleFile(root, 'areas/x/one.md', conceptText({ type: 'bee.area', id: 'x-one', extraBee: { authoritative_for: 'gates' } }));
+  writeBundleFile(root, 'areas/x/two.md', conceptText({ type: 'bee.area', id: 'x-two', extraBee: { authoritative_for: 'gates' } }));
+  const human = await runBee(['knowledge', 'check'], root);
+  assert(human.status !== 0, `the chain runs check WITHOUT --strict; a fork must still fail it, got ${human.status}: ${human.stdout}`);
+  assert(/ERROR \[duplicate_authoritative_for\]/.test(human.stdout), `it must print as an ERROR, not a WARN: ${human.stdout}`);
+  const json = await runBee(['knowledge', 'check', '--json'], root);
+  assert(json.status !== 0, `--json must agree, got ${json.status}`);
+  const report = JSON.parse(json.stdout);
+  assert(
+    Array.isArray(report.profile.errors) && report.profile.errors.some((e) => e.code === 'duplicate_authoritative_for'),
+    `the D13 payload carries profile.errors, got ${json.stdout}`,
+  );
 });
 
 await check('CLI: human (no --json) output names each finding and ends with a summary line', async () => {

@@ -2488,16 +2488,22 @@ function handleCaptureCount(root) {
 
 // ─── knowledge: OKF v0.1 bundle verbs (okf-foundation S1, lib/knowledge.mjs).
 // check is the two-level D4 validator over docs/knowledge/ ONLY (D23); the
-// stdout JSON is exactly the D13 shape {okf:{errors},profile:{warnings},
-// counts}, and the exit code is non-zero only on OKF errors, or on any
-// finding at all under --strict. Read-only end to end (D2).
+// stdout JSON is exactly the D13 shape {okf:{errors},profile:{errors,warnings},
+// counts}, and the exit code is non-zero on OKF errors, on any chain-failing
+// PROFILE error (G14 layer 3, cell f3-3 — the chain runs this verb without
+// --strict, so a backstop that only lived in `warnings` never blocked
+// anything), or on any finding at all under --strict. Read-only end to end (D2).
 
 function handleKnowledgeCheck(root, flags) {
   const strict = flags.strict === true;
   const report = checkBundle(root, { strict });
   const failing = !report.ok;
+  const profileErrors = report.profile.errors || [];
   const lines = [];
   for (const finding of report.okf.errors) {
+    lines.push(`ERROR [${finding.code}] ${finding.file}: ${finding.message}`);
+  }
+  for (const finding of profileErrors) {
     lines.push(`ERROR [${finding.code}] ${finding.file}: ${finding.message}`);
   }
   for (const finding of report.profile.warnings) {
@@ -2505,7 +2511,8 @@ function handleKnowledgeCheck(root, flags) {
   }
   lines.push(
     `knowledge check: ${report.counts.concepts} concept(s) in ${report.counts.files} file(s), ` +
-      `${report.okf.errors.length} OKF error(s), ${report.profile.warnings.length} profile warning(s)` +
+      `${report.okf.errors.length} OKF error(s), ${profileErrors.length} profile error(s), ` +
+      `${report.profile.warnings.length} profile warning(s)` +
       `${strict ? ' [--strict]' : ''} — ${failing ? 'FAIL' : 'OK'}`,
   );
   return {

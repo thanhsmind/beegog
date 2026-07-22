@@ -65,6 +65,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { resolveProductRoot } from './state.mjs';
+
 export const OKF_VERSION = '0.1';
 
 // D18: the closed nine-type vocabulary. "Pitfall" is bee.pattern with
@@ -122,9 +124,25 @@ const KEY_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 // OKF §3.1 reserved names — not concepts, no frontmatter obligation (D23).
 const RESERVED_BASENAMES = new Set(['index.md', 'log.md']);
 
-/** The single directory this module is allowed to read (D17/D23). */
+/**
+ * The single directory this module is allowed to read (D17/D23).
+ *
+ * G13 (cell f3-3): `docs/knowledge/` is a PRODUCT doc tree, exactly like
+ * `docs/specs/`, `docs/backlog.md` and the product README — so it resolves
+ * against `resolveProductRoot(root)`, the same path inject.mjs:71,
+ * backlog.mjs:19/266 and hooks/bee-session-close.mjs:110-118 already take.
+ * For every ordinary single-root repo `resolveProductRoot` returns `root`
+ * unchanged, so this is a zero-behaviour-change no-op there. It matters in
+ * exactly one supported topology: the repo divorce (`.bee/config.json`
+ * `product_root`, GitHub #14), where `.bee/` sits in a workshop root and the
+ * product is an independent repo one directory down. Resolving off the
+ * workshop root there graded a fully migrated host as bundle-LESS and pointed
+ * its fallback at an empty workshop `docs/specs/` — new knowledge written
+ * where nobody reads it, no error: the silent-rot class this work exists to
+ * prevent.
+ */
 export function bundleDir(root) {
-  return path.join(root, 'docs', 'knowledge');
+  return path.join(resolveProductRoot(root), 'docs', 'knowledge');
 }
 
 // ─── emitter (the subset's source of truth, D12) ────────────────────────────
@@ -542,6 +560,10 @@ export function checkBundle(root, { strict = false } = {}) {
   const dir = bundleDir(root);
   const errors = [];
   const warnings = [];
+  // G14 LAYER 3 (cell f3-3): profile findings that FAIL the chain on their
+  // own, with no --strict. The chain runs `knowledge check` non-strict by
+  // design (D13), so a "backstop" living in `warnings` never blocked anything.
+  const profileErrors = [];
   const files = listBundleMarkdown(dir);
   const parsedConcepts = [];
   let conceptCount = 0;
@@ -637,9 +659,28 @@ export function checkBundle(root, { strict = false } = {}) {
       if (!byId.has(bee.id)) byId.set(bee.id, []);
       byId.get(bee.id).push(concept.file);
     }
-    if (typeof bee.authoritative_for === 'string' && bee.authoritative_for) {
-      if (!byAuthority.has(bee.authoritative_for)) byAuthority.set(bee.authoritative_for, []);
-      byAuthority.get(bee.authoritative_for).push(concept.file);
+    if ('authoritative_for' in bee) {
+      const claim = bee.authoritative_for;
+      if (typeof claim !== 'string' || claim.trim() === '') {
+        // A claim bee cannot read is an owner the anti-fork gate cannot see —
+        // f3-2 skipped it silently and an ARRAY-valued claim let a judge
+        // author a second concept for an already-owned subject.
+        profileErrors.push({
+          file: concept.file,
+          code: 'malformed_authoritative_for',
+          message:
+            `bee.authoritative_for must be one non-empty string (got ${claim === null ? 'null' : Array.isArray(claim) ? 'array' : typeof claim}) ` +
+            '— a claim bee cannot read is an owner the anti-fork gate cannot see (D31)',
+        });
+      } else {
+        // Grouped by the HARDENED subject skeleton, not the raw string: two
+        // concepts whose claims differ only by punctuation, case or encoding
+        // are one subject with two authorities, and exact-string grouping
+        // would have called that bundle clean.
+        const key = normalizeSubject(claim);
+        if (!byAuthority.has(key)) byAuthority.set(key, []);
+        byAuthority.get(key).push({ file: concept.file, claim });
+      }
     }
   }
   for (const [id, holders] of byId) {
@@ -651,12 +692,16 @@ export function checkBundle(root, { strict = false } = {}) {
       });
     }
   }
-  for (const [subject, holders] of byAuthority) {
+  for (const [, holders] of byAuthority) {
     if (holders.length > 1) {
-      warnings.push({
-        file: holders[0],
+      const subjects = [...new Set(holders.map((h) => h.claim))].map((s) => `"${s}"`);
+      profileErrors.push({
+        file: holders[0].file,
         code: 'duplicate_authoritative_for',
-        message: `bee.authoritative_for "${subject}" is claimed by ${holders.length} concepts (${holders.join(', ')}) — one subject, one authority (D31)`,
+        message:
+          `bee.authoritative_for ${subjects.join(' / ')} ${subjects.length > 1 ? 'name one subject and are' : 'is'} ` +
+          `claimed by ${holders.length} concepts (${holders.map((h) => h.file).join(', ')}) — one subject, one authority (D31). ` +
+          'Two authorities on one subject both parse and both index, and no reader can tell which is true.',
       });
     }
   }
@@ -687,10 +732,14 @@ export function checkBundle(root, { strict = false } = {}) {
     files: files.length,
     concepts: conceptCount,
     errors: errors.length,
+    profile_errors: profileErrors.length,
     warnings: warnings.length,
   };
-  const ok = errors.length === 0 && (!strict || warnings.length === 0);
-  return { okf: { errors }, profile: { warnings }, counts, ok, strict };
+  // A profile ERROR fails the chain on its own — that is what "promoted from a
+  // warning" means (G14 layer 3). Warnings keep their D13 semantics exactly:
+  // reported always, failing only under --strict.
+  const ok = errors.length === 0 && profileErrors.length === 0 && (!strict || warnings.length === 0);
+  return { okf: { errors }, profile: { errors: profileErrors, warnings }, counts, ok, strict };
 }
 
 // ─── concept inventory (shared by list and index; read-only, D23) ───────────
@@ -768,18 +817,67 @@ export function bundleMode(root) {
 
 // ─── scribing target (G3/G9): where a settled truth is written ──────────────
 
-/** Subject identity for ownership: case- and whitespace-insensitive. */
+// ─── G14 LAYER 1: harden the match (cell f3-3) ─────────────────────────────
+//
+// f3-2 compared subjects with trim + whitespace-collapse + lowercase, and an
+// independent judge walked past the gate twice on encoding alone: a trailing
+// period ('billing: refunds and reversals.') and a Cyrillic-e homoglyph both
+// bought a NEW concept sitting beside the owner. Encoding must never be able
+// to buy a fork, so subject identity is a SKELETON, not a string:
+//
+//   NFKC  -> folds fullwidth, ligature, and math-alphanumeric forms
+//   lowercase + combining-mark strip -> case and diacritics are not identity
+//   confusable fold -> cross-script look-alikes (NFKC does NOT do this: a
+//                      Cyrillic 'е' U+0435 and a Latin 'e' stay distinct
+//                      codepoints forever, which is exactly the defeat)
+//   punctuation -> separator, whitespace collapsed, ends trimmed
+//
+// What this can NEVER catch is a genuine word-order paraphrase ('refunds and
+// reversals' vs 'reversals and refunds') — a different subject, not a
+// different encoding of one. That residual gap is layer 3's job, not a
+// pretence made here.
+
+/** UTS #39 skeleton fold, bounded to the look-alikes that collide with ASCII. */
+const CONFUSABLE_FOLD = new Map(
+  Object.entries({
+    // Cyrillic -> Latin
+    а: 'a', в: 'b', е: 'e', ё: 'e', з: '3', к: 'k', м: 'm', н: 'h', о: 'o',
+    р: 'p', с: 'c', т: 't', у: 'y', х: 'x', ѕ: 's', і: 'i', ї: 'i', ј: 'j',
+    ԁ: 'd', ԛ: 'q', ԝ: 'w', ѵ: 'v', ӏ: 'l', ѡ: 'w', ғ: 'f',
+    // Greek -> Latin
+    α: 'a', β: 'b', γ: 'y', ε: 'e', ζ: 'z', η: 'n', ι: 'i', κ: 'k', ν: 'v',
+    ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', ϲ: 'c', ϳ: 'j', ϱ: 'p',
+  }),
+);
+
+/** Encoding-only fold: NFKC + lowercase + de-accent + confusables. Keeps punctuation. */
+function foldEncoding(text) {
+  const bare = String(text ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '');
+  let folded = '';
+  for (const ch of bare) folded += CONFUSABLE_FOLD.get(ch) ?? ch;
+  return folded;
+}
+
+/**
+ * Subject identity for ownership. Two subjects that a human reads as the same
+ * thing must normalize to the same key — case, surrounding and internal
+ * whitespace, leading/trailing punctuation, and encoding are all NOT identity.
+ * Returns '' for a subject that carries no letters or digits at all (null,
+ * undefined, '', '   ', '...'), which is the signal LAYER 2 refuses on.
+ */
 function normalizeSubject(subject) {
-  return String(subject ?? '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
+  return foldEncoding(subject)
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
 }
 
 /** Concept filename slug derived from a subject (kebab, bounded). */
 function subjectSlug(subject) {
-  const slug = String(subject ?? '')
-    .toLowerCase()
+  const slug = foldEncoding(subject)
     .replace(/^[a-z0-9-]+\s*:\s*/, '') // drop the "<area>: " prefix — the area is the directory
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -819,6 +917,22 @@ function subjectSlug(subject) {
  * `intent: 'new-concept'` is the caller asserting "this is a new subject". If
  * the subject is in fact owned, the answer is `fork_denied` with `path: null`
  * and the owner named — a refusal, never a second file.
+ *
+ * THE ANTI-FORK GATE HAS THREE LAYERS (G14, cell f3-3), because exact string
+ * matching on free text can never be sufficient on its own:
+ *   1. the match is a SKELETON, not a string (see normalizeSubject) — encoding
+ *      alone can never buy a fork;
+ *   2. malformed input fails CLOSED here — a non-string/blank
+ *      `bee.authoritative_for` anywhere in the bundle THROWS naming the file
+ *      (never a silent skip); a blank subject with `intent: 'new-concept'` is
+ *      `subject_required` with `path: null` (never routed to overview.md); two
+ *      concepts claiming one subject is `duplicate_authority` with `path: null`
+ *      and every claimant listed on `owner.conflicts` (never first-wins);
+ *   3. `duplicate_authoritative_for` is a chain-FAILING finding in
+ *      `checkBundle` — the backstop for the word-order paraphrase layer 1
+ *      structurally cannot catch.
+ * All three are BUNDLE-MODE ONLY. The fallback is byte-identical to f3-2 (G1):
+ * an un-migrated host repo must not be able to tell this release happened.
  */
 export function scribingTarget(root, { area, subject = null, intent = 'auto' } = {}) {
   const areaSlug = String(area ?? '').trim();
@@ -834,32 +948,80 @@ export function scribingTarget(root, { area, subject = null, intent = 'auto' } =
   };
 
   if (!bundleMode(root)) {
+    // G13: docs/specs/ is a PRODUCT doc tree — the existence probe resolves
+    // against the product root (= the bee root for every ordinary repo; the
+    // nested product repo under the divorce topology, #14). The returned path
+    // stays product-root-relative, exactly as before.
     const rel = `docs/specs/${areaSlug}.md`;
     return {
       ...base,
-      action: fs.existsSync(path.join(root, 'docs', 'specs', `${areaSlug}.md`)) ? 'update-spec' : 'create-spec',
+      action: fs.existsSync(path.join(resolveProductRoot(root), 'docs', 'specs', `${areaSlug}.md`))
+        ? 'update-spec'
+        : 'create-spec',
       path: rel,
     };
   }
 
   const concepts = collectConcepts(root);
   const wanted = normalizeSubject(subject);
-  let owner = null;
-  if (wanted) {
-    for (const concept of concepts) {
-      const bee = concept.data?.bee;
-      const claim = bee && typeof bee === 'object' ? bee.authoritative_for : null;
-      if (typeof claim !== 'string') continue;
-      if (normalizeSubject(claim) === wanted) {
-        owner = {
-          id: typeof bee.id === 'string' ? bee.id : null,
-          path: `docs/knowledge/${concept.path}`,
-          authoritative_for: claim,
-        };
-        break;
-      }
+
+  // ─── G14 LAYER 2a: a malformed authority claim is an ERROR, never a skip ──
+  // f3-2 did `typeof claim !== 'string' -> continue`, so an ARRAY-valued
+  // `authoritative_for` made a real owner INVISIBLE to the gate and the judge
+  // authored a second concept for an already-owned subject. Every claim in the
+  // bundle is validated on every call — including when the requested subject
+  // is empty — because an unreadable claim is an owner nobody can see, and
+  // failing closed is the only safe direction.
+  const owners = [];
+  for (const concept of concepts) {
+    const bee = concept.data?.bee;
+    if (!bee || typeof bee !== 'object' || !('authoritative_for' in bee)) continue;
+    const claim = bee.authoritative_for;
+    if (typeof claim !== 'string' || claim.trim() === '') {
+      throw new Error(
+        `scribingTarget: docs/knowledge/${concept.path} has a malformed bee.authoritative_for ` +
+          `(${claim === null ? 'null' : Array.isArray(claim) ? 'array' : typeof claim}) — an authority claim ` +
+          'must be one non-empty string. Fix the concept: a claim bee cannot read is an owner the anti-fork ' +
+          'gate cannot see (D31).',
+      );
+    }
+    if (wanted && normalizeSubject(claim) === wanted) {
+      owners.push({
+        id: typeof bee.id === 'string' ? bee.id : null,
+        path: `docs/knowledge/${concept.path}`,
+        authoritative_for: claim,
+      });
     }
   }
+
+  // ─── G14 LAYER 2b: "author a new concept" with NO subject is REFUSED ──────
+  // f3-2 gated the ownership walk behind `if (wanted)`, so an empty, blank,
+  // null or undefined subject skipped the gate ENTIRELY and the request was
+  // routed to areas/<area>/overview.md — with intent 'new-concept' the caller
+  // is asserting a new subject exists, and no subject is not a new subject.
+  // The documented intents keep failing SAFE (an empty subject on 'auto'
+  // still resolves to today's in-place overview update).
+  if (!wanted && intent === 'new-concept') {
+    return { ...base, bundle_mode: true, action: 'subject_required', path: null };
+  }
+
+  // ─── G14 LAYER 2c: two claimants is an AMBIGUITY, never first-wins ────────
+  // f3-2 `break`-ed on the first match, so with two pre-existing owners the
+  // answer depended on walk order and said nothing. If no reader can tell
+  // which file is true, neither can scribing: refuse, naming every claimant.
+  // (The chain-failing `duplicate_authoritative_for` finding — layer 3 — is
+  // what stops the bundle reaching this state in the first place.)
+  if (owners.length > 1) {
+    return {
+      ...base,
+      bundle_mode: true,
+      action: 'duplicate_authority',
+      path: null,
+      owner: { ...owners[0], conflicts: owners.map((o) => o.path).sort() },
+    };
+  }
+
+  const owner = owners[0] ?? null;
 
   if (owner) {
     if (intent === 'new-concept') {

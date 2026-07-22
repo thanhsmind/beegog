@@ -387,5 +387,363 @@ await check('the okf-profile area-concept template carries the nine-section skel
   assert(/authoritative_for/.test(section), 'the template shows the subject-ownership field');
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// cell f3-3 — the independent judge's reproductions, verbatim.
+//
+// f3-2 shipped the gate above and an independent judge broke it four ways and
+// found a fifth class it never considered, plus a sixth that all three
+// fixtures above are structurally blind to. These are ACCEPTANCE tests, not
+// paraphrases: each one is the judge's exact defeat.
+//
+//   R1  a trailing period          -> a new concept beside the owner
+//   R2  a Cyrillic-e homoglyph     -> a new concept beside the owner
+//   R3  authoritative_for as ARRAY -> invisible (typeof !== 'string' -> continue)
+//   R4  empty/whitespace/null subj -> the gate is skipped entirely and the
+//                                      request routes to overview.md EVEN WITH
+//                                      intent 'new-concept'
+//   R5  two pre-existing owners    -> the FIRST wins by walk order, undetected
+//   R6  the divorced topology      -> product_root is ignored, so a migrated
+//                                      host is graded bundle-less and its
+//                                      fallback points at the empty workshop
+//
+// RED-FIRST (cell f3-3): every one of the six was written and run RED against
+// the f3-2 implementation before a single line of the fix was written.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── G14 LAYER 1: the match is hardened (normalization, not exact strings) ──
+
+await check('R1 judge defeat: a TRAILING PERIOD must not buy a second concept beside the owner', () => {
+  const root = makeBundlefulRepo();
+  const target = scribingTarget(root, {
+    area: 'billing',
+    subject: 'billing: refunds and reversals.',
+    intent: 'new-concept',
+  });
+  assert(
+    target.action === 'fork_denied',
+    `"billing: refunds and reversals." is the owned subject with a period; got ${target.action} -> ${target.path}`,
+  );
+  assert(target.path === null, 'a refusal hands back NO path to write to');
+  assert(target.owner && target.owner.path === 'docs/knowledge/areas/billing/refunds.md', 'the refusal names the owner');
+});
+
+await check('R1b: leading/trailing punctuation and internal whitespace runs all normalize to the same subject', () => {
+  const root = makeBundlefulRepo();
+  for (const subject of [
+    '  "billing: refunds and reversals"  ',
+    'billing:   refunds\tand   reversals!!!',
+    '…billing: refunds and reversals…',
+    'Billing — Refunds and Reversals',
+  ]) {
+    const target = scribingTarget(root, { area: 'billing', subject, intent: 'new-concept' });
+    assert(target.action === 'fork_denied', `subject ${JSON.stringify(subject)} must resolve to the owner, got ${target.action}`);
+  }
+});
+
+await check('R2 judge defeat: a CYRILLIC-e HOMOGLYPH must not buy a second concept beside the owner', () => {
+  const root = makeBundlefulRepo();
+  // U+0435 CYRILLIC SMALL LETTER IE in place of the Latin "e" of "refunds"
+  const homoglyph = 'billing: rеfunds and reversals';
+  assert(homoglyph !== 'billing: refunds and reversals', 'the fixture really is a different byte string');
+  const target = scribingTarget(root, { area: 'billing', subject: homoglyph, intent: 'new-concept' });
+  assert(
+    target.action === 'fork_denied',
+    `a homoglyph is the same subject to every human reader; got ${target.action} -> ${target.path}`,
+  );
+  assert(target.owner && target.owner.path === 'docs/knowledge/areas/billing/refunds.md', 'the refusal names the owner');
+});
+
+await check('R2b: NFKC + confusable folding also catches fullwidth, ligature and Greek look-alikes', () => {
+  const root = makeBundlefulRepo();
+  for (const subject of [
+    'ｂｉｌｌｉｎｇ: refunds and reversals', // fullwidth (NFKC)
+    'billing: refunds and reνersals', // Greek nu for v
+    'billing: rеfunds and rеversals', // two Cyrillic e's
+  ]) {
+    const target = scribingTarget(root, { area: 'billing', subject, intent: 'new-concept' });
+    assert(target.action === 'fork_denied', `subject ${JSON.stringify(subject)} must resolve to the owner, got ${target.action}`);
+  }
+});
+
+// ─── G14 LAYER 2: malformed input fails CLOSED, never silently ─────────────
+
+await check('R3 judge defeat: an ARRAY-valued authoritative_for is a VALIDATION ERROR naming the file, never a silent skip', () => {
+  const root = makeBundlefulRepo();
+  // The judge's exact shape: the claim is a list, so `typeof claim !== 'string'`
+  // skipped it and the owner became invisible.
+  writeFile(
+    root,
+    'docs/knowledge/areas/billing/disputes.md',
+    conceptText({ id: 'billing-disputes', title: 'Billing — disputes', areas: ['billing'] }).replace(
+      'lifecycle: active',
+      'lifecycle: active\n  authoritative_for: [billing: disputes, billing: chargebacks]',
+    ),
+  );
+  let thrown = null;
+  try {
+    scribingTarget(root, { area: 'billing', subject: 'billing: disputes', intent: 'new-concept' });
+  } catch (error) {
+    thrown = error;
+  }
+  assert(thrown instanceof Error, 'a malformed authority claim must be an ERROR, not a silently skipped concept');
+  assert(
+    /disputes\.md/.test(thrown.message),
+    `the validation error must NAME the offending file, got ${JSON.stringify(thrown.message)}`,
+  );
+  assert(
+    /authoritative_for/.test(thrown.message),
+    `the validation error must name the field, got ${JSON.stringify(thrown.message)}`,
+  );
+});
+
+await check('R3b: every malformed authority shape a real file can produce fails closed — list, boolean, empty, blank', () => {
+  // The reachable set, measured against the D12 parser rather than assumed:
+  // `42` and `null` parse as the STRINGS "42"/"null" (odd subjects, but
+  // strings — the gate reads them fine), and a mapping is already an OKF
+  // `unparseable_frontmatter` error before this code is reached. What is left
+  // is exactly this list, and every one of it must fail closed.
+  for (const [label, literal] of [
+    ['list', '[gates, locks]'],
+    ['boolean', 'true'],
+    ['empty', '""'],
+    ['blank', '"   "'],
+  ]) {
+    const root = makeBundlefulRepo();
+    writeFile(
+      root,
+      'docs/knowledge/areas/billing/bad.md',
+      conceptText({ id: `billing-bad-${label}`, title: 'Billing — bad', areas: ['billing'] }).replace(
+        'lifecycle: active',
+        `lifecycle: active\n  authoritative_for: ${literal}`,
+      ),
+    );
+    let thrown = null;
+    try {
+      scribingTarget(root, { area: 'billing', subject: 'billing: anything', intent: 'auto' });
+    } catch (error) {
+      thrown = error;
+    }
+    assert(thrown instanceof Error && /bad\.md/.test(thrown.message), `a ${label} authority claim must fail closed naming the file, got ${thrown && thrown.message}`);
+  }
+});
+
+await check('R4 judge defeat: an EMPTY / whitespace / null / undefined subject with intent new-concept is REFUSED, never routed to overview.md', () => {
+  const root = makeBundlefulRepo();
+  for (const subject of ['', '   ', '\t\n ', null, undefined, '...', '  --  ']) {
+    const target = scribingTarget(root, { area: 'billing', subject, intent: 'new-concept' });
+    assert(
+      target.action === 'subject_required',
+      `subject ${JSON.stringify(subject)} with intent new-concept must be refused, got ${target.action} -> ${target.path}`,
+    );
+    assert(target.path === null, `a refusal hands back NO path, got ${target.path}`);
+    assert(
+      !/overview\.md/.test(JSON.stringify(target)),
+      `an empty-subject new-concept must never mention overview.md: ${JSON.stringify(target)}`,
+    );
+  }
+});
+
+await check('R4b: the documented intents still fail SAFE — an empty subject on auto keeps today\'s update-concept routing', () => {
+  const root = makeBundlefulRepo();
+  writeFile(
+    root,
+    'docs/knowledge/areas/billing/overview.md',
+    conceptText({ id: 'billing-overview-2', title: 'Billing — overview', areas: ['billing'] }),
+  );
+  const target = scribingTarget(root, { area: 'billing', subject: '', intent: 'auto' });
+  assert(target.action === 'update-concept', `auto must fail safe to update-concept, got ${target.action}`);
+  assert(target.path === 'docs/knowledge/areas/billing/overview.md', `got ${target.path}`);
+});
+
+await check('R5 judge defeat: TWO pre-existing owners of one subject are DETECTED, never resolved first-wins by walk order', () => {
+  const root = makeBundlefulRepo();
+  // A second concept claiming the subject already owned by refunds.md. Walk
+  // order puts "a-fork.md" FIRST, so a first-wins gate answers with the WRONG
+  // owner and never says a word.
+  writeFile(
+    root,
+    'docs/knowledge/areas/billing/a-fork.md',
+    conceptText({
+      id: 'billing-refunds-fork',
+      title: 'Billing — refunds (fork)',
+      areas: ['billing'],
+      authoritativeFor: 'billing: refunds and reversals',
+    }),
+  );
+  const target = scribingTarget(root, { area: 'billing', subject: 'billing: refunds and reversals' });
+  assert(
+    target.action === 'duplicate_authority',
+    `two claimants is an ambiguity, not a silent first-wins; got ${target.action} -> ${target.path}`,
+  );
+  assert(target.path === null, 'no reader can tell which file is true, so nothing may be written');
+  const conflicts = (target.owner && target.owner.conflicts) || [];
+  assert(
+    conflicts.includes('docs/knowledge/areas/billing/a-fork.md') &&
+      conflicts.includes('docs/knowledge/areas/billing/refunds.md'),
+    `BOTH claimants must be named, got ${JSON.stringify(target.owner)}`,
+  );
+});
+
+await check('R5b: a WORD-ORDER PARAPHRASE is the residual gap layer 1 structurally cannot close — named, not pretended away', () => {
+  const root = makeBundlefulRepo();
+  writeFile(
+    root,
+    'docs/knowledge/areas/billing/reversals.md',
+    conceptText({
+      id: 'billing-reversals',
+      title: 'Billing — reversals',
+      areas: ['billing'],
+      authoritativeFor: 'billing: reversals and refunds', // word-order paraphrase
+    }),
+  );
+  // Layer 1 legitimately does NOT catch this: it is a genuinely DIFFERENT
+  // subject string, not a different encoding of the same one. No amount of
+  // normalization closes that, which is exactly why layer 3 exists — the
+  // moment either concept adopts the other's subject (in any encoding), the
+  // chain-failing `duplicate_authoritative_for` finding bites. Proven in
+  // test_knowledge.mjs.
+  const target = scribingTarget(root, { area: 'billing', subject: 'billing: reversals and refunds' });
+  assert(target.action === 'update-concept', `the paraphrase resolves to its own concept, got ${target.action}`);
+  assert(target.path === 'docs/knowledge/areas/billing/reversals.md', `got ${target.path}`);
+});
+
+// ─── G13: the DIVORCED topology (config product_root, GitHub #14) ──────────
+//
+// All three fixtures above are single-root and structurally cannot see this
+// class: a workshop root holding `.bee/` with the product an independent repo
+// one directory down. Every other product-doc consumer (inject.mjs:71,
+// backlog.mjs:19/266, hooks/bee-session-close.mjs:110-118) already routes
+// through resolveProductRoot. docs/knowledge/ and docs/specs/ are product doc
+// trees exactly like those, so they must too (G13).
+
+/** Workshop root with `.bee/config.json` product_root -> a nested product repo. */
+function makeDivorcedRepo(label, { withBundle }) {
+  const root = makeRepo(`divorced-${label}`);
+  writeFile(root, '.bee/config.json', JSON.stringify({ product_root: 'product' }, null, 2) + '\n');
+  // The workshop's OWN docs/specs/ is empty — this is the trap: a fallback
+  // resolved against the workshop root points here, at nothing.
+  fs.mkdirSync(path.join(root, 'docs', 'specs'), { recursive: true });
+  // The product repo one directory down carries the real product docs.
+  writeFile(root, 'product/docs/specs/reading-map.md', '# Reading map\n');
+  writeFile(root, 'product/docs/specs/billing.md', '# Billing\n\n## Purpose\n\nCharges customers.\n');
+  if (withBundle) {
+    writeFile(
+      root,
+      'product/docs/knowledge/areas/billing/refunds.md',
+      conceptText({
+        id: 'billing-refunds',
+        title: 'Billing — refunds',
+        areas: ['billing'],
+        authoritativeFor: 'billing: refunds and reversals',
+      }),
+    );
+  }
+  return root;
+}
+
+await check('R6 judge defeat (divorced topology): a migrated host with product_root is in BUNDLE MODE, not graded bundle-less', () => {
+  const root = makeDivorcedRepo('bundle', { withBundle: true });
+  assert(!fs.existsSync(path.join(root, 'docs', 'knowledge')), 'the workshop root has no bundle of its own — that is the point');
+  assert(
+    bundleMode(root) === true,
+    'a migrated product one directory down IS a bundle; grading it bundle-less is the silent-rot class',
+  );
+});
+
+await check('R6b (divorced topology): scribing routes to the PRODUCT bundle concept, not a workshop-side fork', () => {
+  const root = makeDivorcedRepo('route', { withBundle: true });
+  const target = scribingTarget(root, { area: 'billing', subject: 'billing: refunds and reversals' });
+  assert(target.bundle_mode === true, `bundle mode, got ${target.bundle_mode}`);
+  assert(target.action === 'update-concept', `the product owner wins, got ${target.action}`);
+  assert(target.path === 'docs/knowledge/areas/billing/refunds.md', `product-root-relative path, got ${target.path}`);
+  assert(target.owner && target.owner.id === 'billing-refunds', 'the product concept is named as the owner');
+  assert(!fs.existsSync(path.join(root, 'docs', 'knowledge')), 'resolving a target creates nothing on the workshop side');
+});
+
+await check('R6c (divorced topology): the anti-fork gate BITES across the divorce — a new concept for the product-owned subject is refused', () => {
+  const root = makeDivorcedRepo('fork', { withBundle: true });
+  const target = scribingTarget(root, {
+    area: 'billing',
+    subject: 'billing: refunds and reversals.',
+    intent: 'new-concept',
+  });
+  assert(target.action === 'fork_denied', `the product owner must be visible to the gate, got ${target.action}`);
+});
+
+await check('R6d (divorced topology): the bundle-LESS fallback resolves the PRODUCT docs/specs/, not the empty workshop one', () => {
+  const root = makeDivorcedRepo('fallback', { withBundle: false });
+  assert(bundleMode(root) === false, 'no bundle anywhere in this fixture');
+  const target = scribingTarget(root, { area: 'billing', subject: 'billing: refunds and reversals' });
+  assert(
+    target.action === 'update-spec',
+    `product/docs/specs/billing.md exists, so this is an in-place UPDATE — grading it create-spec is the outage (#14); got ${target.action}`,
+  );
+  assert(target.path === 'docs/specs/billing.md', `product-root-relative path, got ${target.path}`);
+  // And a genuinely new area is still a create, off the product root.
+  const fresh = scribingTarget(root, { area: 'payouts', subject: 'payouts: schedule' });
+  assert(fresh.action === 'create-spec', `an absent product spec is still a create, got ${fresh.action}`);
+});
+
+// ─── f3-2's proven guarantee, EXTENDED (never weakened) ────────────────────
+
+await check('f3-2 guarantee held: the fallback still emits EXACTLY its key set, with no bundle mention, across every f3-3 path', () => {
+  const cases = [
+    { root: makeBundlelessRepo(), args: { area: 'billing', subject: 'billing: refunds and reversals' } },
+    { root: makeBundlelessRepo(), args: { area: 'payouts', subject: 'payouts: schedule' } },
+    { root: makeBundlelessRepo(), args: { area: 'billing', subject: 'billing: refunds.', intent: 'new-concept' } },
+    { root: makeBundlelessRepo(), args: { area: 'billing', subject: '', intent: 'new-concept' } },
+    { root: makeBundlelessRepo(), args: { area: 'billing', subject: null, intent: 'new-concept' } },
+    { root: makeGitkeepRepo(), args: { area: 'billing', subject: '   ', intent: 'new-concept' } },
+    { root: makeDivorcedRepo('keys', { withBundle: false }), args: { area: 'billing', subject: 'billing: refunds' } },
+  ];
+  for (const { root, args } of cases) {
+    const target = scribingTarget(root, args);
+    assert(target.bundle_mode === false, `fallback mode for ${JSON.stringify(args)}, got ${target.bundle_mode}`);
+    const keys = Object.keys(target).sort();
+    assert(
+      JSON.stringify(keys) === JSON.stringify([...TARGET_KEYS].sort()),
+      `the fallback result carries exactly the pinned keys for ${JSON.stringify(args)}, got ${JSON.stringify(keys)}`,
+    );
+    const serialized = JSON.stringify(target);
+    assert(!serialized.includes('docs/knowledge'), `no bundle path in the fallback result: ${serialized}`);
+    assert(!serialized.includes('areas/'), `no bundle-relative path in the fallback result: ${serialized}`);
+    assert(!NAG_RE.test(serialized), `the fallback must say nothing new: ${serialized}`);
+    assert(
+      ['update-spec', 'create-spec'].includes(target.action),
+      `G14's new refusals are BUNDLE-ONLY — an un-migrated host must not be able to tell this release happened; got ${target.action}`,
+    );
+  }
+});
+
+await check('f3-3: every bundle-mode result also carries exactly the pinned key set (the shape is one shape)', () => {
+  const root = makeBundlefulRepo();
+  writeFile(
+    root,
+    'docs/knowledge/areas/billing/a-fork.md',
+    conceptText({ id: 'billing-fork', title: 'Fork', areas: ['billing'], authoritativeFor: 'billing: refunds and reversals' }),
+  );
+  for (const args of [
+    { area: 'billing', subject: 'billing: refunds and reversals' }, // duplicate_authority
+    { area: 'billing', subject: '', intent: 'new-concept' }, // subject_required
+    { area: 'billing', subject: 'billing: dunning' }, // new-concept
+    { area: 'shipping', subject: 'shipping: carriers' }, // new-area
+  ]) {
+    const target = scribingTarget(root, args);
+    const keys = Object.keys(target).sort();
+    assert(
+      JSON.stringify(keys) === JSON.stringify([...TARGET_KEYS].sort()),
+      `pinned keys for ${JSON.stringify(args)}, got ${JSON.stringify(keys)}`,
+    );
+  }
+});
+
+await check('bee-scribing documents the three-layer gate: normalization, the two refusals, and the chain backstop', () => {
+  const skill = fs.readFileSync(path.join(REPO_ROOT, 'skills', 'bee-scribing', 'SKILL.md'), 'utf8');
+  assert(/subject_required/.test(skill), 'the empty-subject refusal is specified');
+  assert(/duplicate_authority/.test(skill), 'the two-claimant ambiguity is specified');
+  assert(/duplicate_authoritative_for/.test(skill), 'the chain backstop is named');
+  assert(!NAG_RE.test(skill), 'still no nag anywhere');
+});
+
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'} test_bundle_mode: ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

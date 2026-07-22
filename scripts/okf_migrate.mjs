@@ -1605,6 +1605,15 @@ export function bundleInvariantIssues({ check, index }) {
     for (const error of check.okf?.errors || []) {
       issues.push(`BUNDLE UNHEALTHY: OKF error ${error.code} in ${error.file} — ${error.message}`);
     }
+    // f3-3 (G14 layer 3): `duplicate_authoritative_for` was PROMOTED out of
+    // `profile.warnings` into chain-failing `profile.errors`, and
+    // `malformed_authoritative_for` joined it there. This gate must keep
+    // seeing them — a code that moves bucket must never fall out of coverage.
+    for (const error of check.profile?.errors || []) {
+      issues.push(
+        `BUNDLE UNHEALTHY: profile error ${error.code} in ${error.file} — ${error.message}. A chain-failing profile finding is a hard failure to the coverage gate too (F12)`,
+      );
+    }
     for (const warning of check.profile?.warnings || []) {
       if (!BUNDLE_FATAL_WARNINGS.has(warning.code)) continue;
       issues.push(
