@@ -64,6 +64,11 @@ const EXTRA_SUITES = [
   ["scripts/ledger_parity.mjs", "--check"],
   ["scripts/census_stale_spawn_syntax.mjs"],
   ["scripts/test_installers_e2e.mjs", "--installer", "bash"],
+  // okf-3: joins the chain as a chain-failing suite per D22/D34. Plain check
+  // (NEVER --strict here — D8-graduation keeps profile warnings as warnings
+  // until F2): docs/knowledge/ OKF errors fail the chain (exit 1), profile
+  // warnings do not (exit 0, D13).
+  [".bee/bin/bee.mjs", "knowledge", "check"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

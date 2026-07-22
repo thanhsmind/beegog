@@ -68,6 +68,9 @@ const MANDATORY_SUITES = [
   "scripts/test_conformance.mjs",
   "scripts/test_agents_budget.mjs",
   "skills/bee-hive/templates/tests/test_recovery.mjs",
+  // okf-3: knowledge check joins the chain as a chain-failing suite (D22/D34)
+  // — pinned here so it can never silently drop out of commands.verify again.
+  ".bee/bin/bee.mjs",
 ];
 
 // Floor count: total discovered suites must never silently drop below this
