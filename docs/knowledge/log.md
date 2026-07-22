@@ -280,3 +280,79 @@
   `bee.sources`, `--check hook-runtime` failed with the real coverage-loss finding (`LOST in
   concepts: R14a`), then was restored to green. Coverage is machine-checked by
   `scripts/okf_migrate.mjs --check hook-runtime` (D35), now a chain suite (73 suites).
+
+- Ninth area migrated, and the only one of the eleven that genuinely needed a THIRD anchor
+  scheme (cell f2-11, feature `okf-migration-f2`, slice S5): `docs/specs/worktree-parallelism.md`
+  re-authored into seven `bee.area` concepts, split by TOPIC —
+  `areas/worktree-parallelism/overview.md` (the two different kinds of parallelism, and what
+  stays out of scope), `the-trust-model.md` (a worktree gets its own store only when GRANTED
+  from the main store's registry, keyed by the git-verified id, and why a self-claiming marker
+  inside the worktree changes nothing), `entering-creating-and-registering.md` (`worktree new`
+  as the paved road, `worktree register` for adoption, the bootstrap contract, and every typed
+  zero-mutation refusal), `returning-and-the-merge-gate.md` (the staged `--no-commit` merge, the
+  verify gate that raises the semantic-conflict alarm before anything is committed, and
+  `--cleanup`), `routing-and-visibility.md` (the D9 prose routing rule, the lane-first
+  refinement that defers the grant to Gate 3, and the notices an ungranted worktree prints),
+  `cross-worktree-holds.md` (the shared path-keyed ledger, its single-lock atomic acquisition,
+  heartbeat renewal, three read taps and cell-scoped release), and
+  `store-tiers-and-where-it-lives.md` (the log/cache/runtime tiers that decide what a merge may
+  carry back, plus the implementation map).
+- **The headings ARE the anchors, and that is why a third scheme exists.** Every previous
+  "shapeless" verdict in this migration turned out to be a blind READER: `decision-memory` was
+  filed as needing a bespoke scheme and its nine rules were sitting there all along, written
+  `- **R1 — …**`, which f2-4's widening then read without ceremony. This source is the real
+  thing. It carries no `B*`/`R*`/`E*`/`P*` id anywhere in its 225 lines and none of the four
+  anchor-bearing nine-section headings, so `ba-nine-section` derives 0 anchors AND 0 unparsed
+  blocks from it — genuine shapelessness, which looks nothing like decision-memory's hidden
+  nine. F9 forbids forcing it into the nine-section shape and D10 forbids inventing numbered
+  ids a source never had, so both easy answers were closed. What the source DOES have is its
+  own narrative structure, ten `## ` headings written by its author, each opening a
+  self-contained subject — so `okf_migrate` gained `narrative-sections`, where the anchor id is
+  `S-` plus the heading text slugified (lowercased, every non-alphanumeric run collapsed to one
+  hyphen). Nothing is invented: the structure the author actually wrote IS the ground truth,
+  exactly as `flat-pattern-list` already treats a `## [YYYYMMDD] …` heading as an anchor.
+- Three boundaries hold the scheme in place, each a test before it was a line of code
+  (`scripts/test_okf_pins.mjs` section 27). A `## ` heading becomes an anchor; a `###`
+  SUBHEADING does not — its prose travels with the section containing it, so the fidelity floor
+  measures it there, and the subheading itself is still REPORTED as an unparsed block so a
+  subheading-heavy shape this scheme cannot see stays visible. A source with ZERO `## ` headings
+  is REFUSED, typed `PIN_EMPTY_EXTRACTION` at the scheme itself, never passed 0/0 — that hole is
+  the whole reason the gate exists, since an empty set from a reader that cannot see turns lost
+  content into content that never existed. And two headings that slugify to the SAME id are
+  refused outright, typed `PIN_DUPLICATE_ANCHOR`: that is the duplicate-`R14` hazard f2-10 had
+  to repair a source to escape, closed here by construction so no narrative source can ever
+  enter that state.
+- Ground truth is DERIVED (F8) from pin `{687ac59, docs/specs/worktree-parallelism.md, blob
+  df2f441, narrative-sections, 10 anchors, unparsed_blocks: 2}`. The 2 unparsed blocks are the
+  `**Area:**` and `**Status:**` lines of the document preamble, which sit before the first `## `
+  heading and therefore belong to no section; neither is invented into an anchor (D10) and both
+  travel verbatim into `overview.md`. THE STRICT NO-OP IS THE SAFETY PROPERTY, as it was for
+  f2-4's classifier widening and f2-10's repaired-pin branch: all nine pre-existing pins still
+  derive their exact expected_counts after the scheme was added, proven against a FROZEN table
+  in section 28 rather than against `PIN_REGISTRY`'s own numbers — which is how a relaxed pin
+  would otherwise launder itself into a green.
+- **F12's comparability key moved from the pin's `kind` to its SCHEME, and that too is a strict
+  no-op.** f2-3 had already restricted the drift median to same-shape pins after
+  `flat-pattern-list` (one anchor IS one concept by construction) reported permanent "drift"
+  against nine-section areas that no cell had touched. `narrative-sections` has the opposite
+  skew — whole SECTIONS are the anchors, so 225 lines yield 10 of them where a nine-section
+  source of the same length yields 23 — and pooling it would have repeated exactly that defect,
+  reporting an outlier for a shape the band was never drawn around. The scheme is what "same
+  shape" has always meant; `kind` only ever approximated it, because until now every
+  `kind: "area"` pin happened to be ba-nine-section. Section 29 asserts the regrouping: the
+  eight ba-nine-section areas group exactly as the eight `kind: "area"` pins did, and
+  critical-patterns stays alone exactly as `kind: "patterns"` did. With one narrative-sections
+  pin there is no median yet, so this area's telemetry (anchors_per_concept 1.43,
+  concepts_per_100_source_lines 3.10) REPORTS and never fails — never a gate weakened to fit,
+  just a band not drawn on a single sample.
+- Fidelity: min/median/max 1.000 (verbatim re-homing). RED-FIRST, both kinds: the scheme's own
+  tests were captured failing before a line of it existed (`M.inventoryNarrativeSections is not
+  a function`, plus the three boundary assertions and the missing `SCHEMES` entry), and then,
+  with the `S-boundary-out-of-scope` claim deliberately removed from `overview.md`'s
+  `bee.sources`, `--check worktree-parallelism` failed with the real coverage-loss finding
+  (`LOST in concepts: S-boundary-out-of-scope`), then was restored to green. Coverage is
+  machine-checked by `scripts/okf_migrate.mjs --check worktree-parallelism` (D35), now a chain
+  suite (74 suites). Every registered area now declares a scheme, so `--verify-pins` reports no
+  `SKIP-REFUSED` line at all — the PIN_NO_SCHEME refusal stays asserted against an ad-hoc pin,
+  because the property is "an undecided shape is refused BY NAME", not "some area is still
+  undecided".

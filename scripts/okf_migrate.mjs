@@ -49,12 +49,14 @@
 //      unnumbered bold-lead behaviour paragraphs carry no id and are reported,
 //      never invented. A clean parse there would mean the extractor had
 //      started fabricating structure.
-//   4. SCHEME AWARENESS. Two schemes exist today — `ba-nine-section`
-//      (B*/R*/E*/P*) and `flat-pattern-list` (PAT*). The shape is declared
-//      per area in the pin and the extractor dispatches on it. Areas whose
-//      shape has not been decided yet (decision-memory, worktree-parallelism)
-//      carry `scheme: null` and a refusal reason: choosing their scheme is
-//      F9/S5 work, and until then the gate refuses them by name.
+//   4. SCHEME AWARENESS. Three schemes exist today — `ba-nine-section`
+//      (B*/R*/E*/P*), `flat-pattern-list` (PAT*), and `narrative-sections`
+//      (S-<slugified heading>, f2-11). The shape is declared per area in the
+//      pin and the extractor dispatches on it. An area whose shape has not
+//      been decided carries `scheme: null` and a refusal reason, and the gate
+//      refuses it BY NAME rather than passing it 0/0. Every registered area
+//      declares a scheme today; the refusal path stays asserted for the next
+//      area that arrives without one.
 //
 // Subcommands:
 //   --inventory <path>       Parse a file with the nine-section BA scheme and
@@ -440,14 +442,49 @@ export const PIN_REGISTRY = {
     note: "the 762-line BA spec as of ab8cf6e (f2-9 close) WITH the duplicate-R14 repair applied by f2-10 before the pin was captured — 22 behaviors, 24 rules (R8a, R8b and the disambiguated R14a included), 17 edge cases, 18 pointers, 8 unparsed Behaviors & Operations blocks. These bytes are in no commit's tree by construction, so `via` is always committed-copy here",
   },
 
-  // ─── declared, not yet pinned (the migrating cell authors the pin) ────────
-  // Listed — rather than merely absent — so the gate refuses them BY NAME with
-  // a reason, instead of the generic "unknown area" shrug.
   "worktree-parallelism": {
     kind: "area",
-    scheme: null,
-    refusal:
-      "worktree-parallelism is GENUINELY shapeless, re-confirmed by f2-4's post-widening sweep: it has no `## Behaviors`, `## Business Rules`, `## Edge Cases Settled` or `## Pointers` sections at all, so there is nothing for any anchor scheme to read — 0 anchors AND 0 unparsed blocks, which is what real shapelessness looks like next to decision-memory's hidden nine. Choosing its per-area scheme is F9/S5 work (okf-migration-f2).",
+    // The pin is HEAD at the moment f2-11 ran, taken BEFORE the stub replaced
+    // the content — same rule as every unrepaired pin before it: pin the
+    // parent, copy the bytes, hash both.
+    commit: "687ac5909add9f3fdfa575deeddbed1d4b5f8398",
+    path: "docs/specs/worktree-parallelism.md",
+    blob_sha: "df2f441bb88e9632a1f95d288331a3e356c68e19",
+    // THE ONE AREA OF THE ELEVEN THAT NEEDED A THIRD SCHEME. Every previous
+    // "shapeless" verdict turned out to be a blind reader: decision-memory's
+    // nine rules were written `- **R1 — …**` and f2-4's widening found them.
+    // This file is the real thing. It carries no `## Behaviors`, `## Business
+    // Rules`, `## Edge Cases Settled` or `## Pointers` section, and not one
+    // `B*`/`R*`/`E*`/`P*` id anywhere in its 225 lines — so `ba-nine-section`
+    // derives 0 anchors AND 0 unparsed blocks, which is what genuine
+    // shapelessness looks like. F9 forbids forcing it into the nine-section
+    // shape and D10 forbids inventing numbered ids the source never had, so
+    // the anchors are the source's OWN `## ` headings, slugified: the
+    // structure the author actually wrote IS the ground truth. This mirrors
+    // `flat-pattern-list`, which already treats a `## [YYYYMMDD] …` heading as
+    // an anchor.
+    scheme: "narrative-sections",
+    expected_counts: {
+      // Ten narrative sections, in document order: What problem this solves /
+      // The trust model / Registering a worktree / Entering / Returning /
+      // Routing rule / Cross-worktree holds / The three tiers / Boundary /
+      // Where it lives.
+      sections: 10,
+      total: 10,
+      // NOT zero, and pinned at what it really is. The source's first ten
+      // lines sit BEFORE the first `## ` heading — the document title and the
+      // `**Area:**` / `**Status:**` metadata block — so they belong to no
+      // section and no anchor can own them. Two of those lines are block
+      // starts, and neither is invented into an anchor (D10): they are
+      // reported, exactly as the BA scheme reports its unnumbered bold-lead
+      // paragraphs. This file carries no `###` subheading at all, so all 2
+      // unparsed blocks are preamble. Asserting 2 here is what makes a future
+      // change that swallows the preamble — or that starts promoting
+      // subheadings to anchors — a loud failure instead of a silent reshaping.
+      unparsed_blocks: 2,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/worktree-parallelism.md",
+    note: "the 225-line narrative area spec as of 687ac59 (f2-10 close), immediately before f2-11 turned it into a D37 pointer stub — 10 `## ` heading anchors, 0 numbered ids of any kind, 2 unparsed preamble blocks; the only area of the eleven that needed a scheme of its own",
   },
 };
 
@@ -850,6 +887,134 @@ export function inventoryPatterns(text) {
   };
 }
 
+// ─── the third scheme: `narrative-sections` (f2-11, F9/S5) ──────────────────
+//
+// One area of the eleven genuinely has no numbered anchors. Every earlier
+// "shapeless" verdict was a blind reader — decision-memory's nine rules were
+// written `- **R1 — …**` and f2-4's widening found them — but
+// docs/specs/worktree-parallelism.md really does carry no `B*`/`R*`/`E*`/`P*`
+// id and none of the four anchor-bearing section headings, so
+// `ba-nine-section` derives 0 anchors AND 0 unparsed blocks from it.
+//
+// F9 forbids forcing it into the nine-section shape; D10 forbids inventing
+// numbered ids the source never had. Both would be the same lie in opposite
+// directions. What the source DOES have is its own narrative structure: ten
+// `## ` headings, written by the author, each opening a self-contained
+// subject. So THE HEADINGS ARE THE ANCHORS — derived mechanically from the
+// heading text, exactly as `flat-pattern-list` already derives one anchor per
+// `## [YYYYMMDD] …` heading in critical-patterns.md. Nothing is invented; the
+// ground truth is read off the source's own structure.
+//
+// Three boundaries hold this in place, all asserted in
+// scripts/test_okf_pins.mjs section 27:
+//
+//   1. A `## ` HEADING IS AN ANCHOR; A `###` SUBHEADING IS NOT. Deeper
+//      headings are structure WITHIN a section, so their prose travels with
+//      the section that contains it and the fidelity floor measures it there.
+//      They are still REPORTED as unparsed blocks, so a source that grows a
+//      subheading-heavy shape this scheme cannot see stays visible.
+//   2. ZERO `## ` HEADINGS IS A REFUSAL, NEVER 0/0. A scheme that returns an
+//      empty set for a file it cannot read converts lost content into content
+//      that never existed — the exact defect this whole file exists to
+//      prevent. It is typed PIN_EMPTY_EXTRACTION at the scheme level, before
+//      derivePin's own empty check can even be reached.
+//   3. TWO HEADINGS THAT SLUGIFY THE SAME ARE A REFUSAL. Anchors are keyed by
+//      id, so a collision silently overwrites the first section's text and is
+//      unmeasurable by the fidelity floor forever. That is the duplicate-`R14`
+//      hazard f2-10 had to repair a source to escape; here it is closed at the
+//      scheme level, so no narrative source can ever enter that state.
+export const NARRATIVE_ANCHOR_PREFIX = "S-";
+/** The claim/stub-row form a narrative anchor takes, kept in ONE place so the
+ *  extractor, the stub-row parser and the bee.sources claim matcher can never
+ *  drift apart (the f2-3 lesson, applied before it can bite). */
+export const NARRATIVE_ANCHOR_PATTERN = "S-[a-z0-9]+(?:-[a-z0-9]+)*";
+
+/** Heading text → the slug half of its anchor id. Lowercase, every
+ *  non-alphanumeric run collapsed to a single hyphen, ends trimmed. Purely
+ *  mechanical: the id is a function of the bytes the author wrote, so no
+ *  reader has to trust that someone numbered the sections honestly. */
+export function slugifyHeading(heading) {
+  return String(heading || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Parse a narrative spec's own `## ` headings as its anchors. Returns
+ *  { sections, all, texts, unparsed } — `texts` maps each anchor to its
+ *  heading line plus the body up to the NEXT `## ` heading, subheadings
+ *  included. Mirrors inventorySpec's and inventoryPatterns' role for the
+ *  narrative shape.
+ *
+ *  Its unparsed report has two members, both real and both visible: block
+ *  starts sitting BEFORE the first `## ` heading (a document title and its
+ *  metadata block belong to no section, and none of it is invented into an
+ *  anchor — D10), and `###`+ subheadings, which are block starts this scheme
+ *  deliberately does not promote. */
+export function inventoryNarrativeSections(text) {
+  const sectionHeadingRe = /^##(?!#)\s+(.+?)\s*$/;
+  const deeperHeadingRe = /^#{3,}\s+/;
+  const sections = [];
+  const texts = new Map();
+  const unparsed = {
+    blocks: { preamble: 0, subheadings: 0, total: 0 },
+    lines: { preamble: 0, total: 0 },
+    samples: [],
+  };
+  let current = null;
+  let lineNo = 0;
+
+  for (const line of String(text || "").split("\n")) {
+    lineNo += 1;
+    const heading = sectionHeadingRe.exec(line);
+    if (heading) {
+      const slug = slugifyHeading(heading[1]);
+      const id = `${NARRATIVE_ANCHOR_PREFIX}${slug}`;
+      if (texts.has(id)) {
+        const err = new Error(
+          `narrative-sections: two "## " headings slugify to the same anchor id "${id}" (second at L${lineNo}: ${line.trim()}). Anchors are keyed by id, so the first section's text would be silently overwritten and unmeasurable by the fidelity floor forever — the duplicate-id hazard f2-10 had to repair a source to escape. Disambiguate the headings in the source before pinning it`,
+        );
+        err.code = "PIN_DUPLICATE_ANCHOR";
+        throw err;
+      }
+      sections.push(id);
+      current = [line];
+      texts.set(id, current);
+      continue;
+    }
+    if (current) {
+      current.push(line);
+      if (deeperHeadingRe.test(line)) {
+        unparsed.blocks.subheadings += 1;
+        unparsed.blocks.total += 1;
+        if (unparsed.samples.length < 12) {
+          unparsed.samples.push(`subheading L${lineNo}: ${line.trim().slice(0, 100)}`);
+        }
+      }
+      continue;
+    }
+    // Before the first `## ` heading: real content that belongs to no anchor.
+    if (/^#/.test(line)) continue; // the document title, not content
+    if (!line.trim()) continue;
+    unparsed.lines.preamble += 1;
+    unparsed.lines.total += 1;
+    if (BLOCK_START_RE.test(line)) {
+      unparsed.blocks.preamble += 1;
+      unparsed.blocks.total += 1;
+      if (unparsed.samples.length < 12) {
+        unparsed.samples.push(`preamble L${lineNo}: ${line.trim().slice(0, 100)}`);
+      }
+    }
+  }
+
+  return {
+    sections,
+    all: [...sections],
+    texts: new Map([...texts].map(([id, buf]) => [id, buf.join("\n").trim()])),
+    unparsed,
+  };
+}
+
 export const SCHEMES = {
   "ba-nine-section": (text) => {
     const inv = inventorySpec(text);
@@ -872,6 +1037,31 @@ export const SCHEMES = {
       anchors: inv,
       counts: {
         patterns: inv.all.length,
+        total: inv.all.length,
+        unparsed_blocks: inv.unparsed.blocks.total,
+      },
+      unparsed: inv.unparsed,
+    };
+  },
+  "narrative-sections": (text) => {
+    const inv = inventoryNarrativeSections(text);
+    // Boundary 2: a source with no `## ` heading is REFUSED here, at the
+    // scheme, rather than handed onward as an empty set. derivePin refuses an
+    // empty extraction too, but a scheme that can name WHY it saw nothing —
+    // "this file has no `## ` headings, so narrative-sections is the wrong
+    // scheme for it" — is the difference between a reader who fixes the pin
+    // and a reader who reads 0/0 as an area with nothing in it.
+    if (inv.all.length === 0) {
+      const err = new Error(
+        `narrative-sections: the source carries no "## " heading at all, so this scheme can derive no anchors from it. That is a REFUSAL, never a 0/0 pass — either the pin names the wrong blob or this file's shape needs a scheme of its own (F9/D10: a "nothing here" verdict that is really "this reader cannot see it" is the defect the whole gate exists to prevent)`,
+      );
+      err.code = "PIN_EMPTY_EXTRACTION";
+      throw err;
+    }
+    return {
+      anchors: inv,
+      counts: {
+        sections: inv.all.length,
         total: inv.all.length,
         unparsed_blocks: inv.unparsed.blocks.total,
       },
@@ -1181,12 +1371,35 @@ export function fidelityReport({ expected, texts, claims, bodies, floor = FIDELI
  *  drift apart again (f2-3). `[a-z]?` is f2-4's letter suffix: B3a, B7a, R8a. */
 export const AREA_ANCHOR_PATTERN = "[A-Z]\\d+[a-z]?";
 
+/** The anchor form parseStubAnchorMap reads when nobody says otherwise: the
+ *  numbered ids every ba-nine-section area and critical-patterns use. Kept as
+ *  the DEFAULT rather than folded into a union with the narrative form, so
+ *  adding the narrative form cannot change what any shipped stub parses to
+ *  (the strict no-op, f2-11). */
+export const NUMBERED_STUB_ANCHOR_PATTERN = "[A-Z]+\\d+[a-z]?";
+
 export function wiringFor(area) {
   const pin = PIN_REGISTRY[area];
   if (pin?.kind === "patterns") {
-    return { dir: PATTERNS_CONCEPT_DIR, source: PATTERNS_SOURCE, anchorPattern: "[A-Z]+\\d+" };
+    return {
+      dir: PATTERNS_CONCEPT_DIR,
+      source: PATTERNS_SOURCE,
+      anchorPattern: "[A-Z]+\\d+",
+      stubAnchorPattern: NUMBERED_STUB_ANCHOR_PATTERN,
+    };
   }
-  return { dir: `docs/knowledge/areas/${area}`, source: `docs/specs/${area}.md`, anchorPattern: AREA_ANCHOR_PATTERN };
+  // f2-11: an area's anchor FORM follows its declared scheme, never its
+  // directory. narrative-sections ids are slugs (`S-the-trust-model`), so a
+  // claim matcher or stub-row parser left on the numbered pattern would match
+  // none of them and report every anchor LOST however faithfully it had been
+  // migrated — the unsatisfiable red f2-3 already had to fix once.
+  const narrative = pin?.scheme === "narrative-sections";
+  return {
+    dir: `docs/knowledge/areas/${area}`,
+    source: `docs/specs/${area}.md`,
+    anchorPattern: narrative ? NARRATIVE_ANCHOR_PATTERN : AREA_ANCHOR_PATTERN,
+    stubAnchorPattern: narrative ? NARRATIVE_ANCHOR_PATTERN : NUMBERED_STUB_ANCHOR_PATTERN,
+  };
 }
 
 function conceptFilesIn(dir) {
@@ -1281,9 +1494,24 @@ export function collectTelemetry() {
     if (!concepts || !sourceLines) continue;
     rows.push({
       area,
-      // "area" | "patterns" — the comparability key (f2-3). Shape ratios are
-      // only meaningful against migrations of the same shape.
+      // "area" | "patterns" — the bundle wiring this pin uses. Reported, but
+      // no longer the comparability key: see `scheme` below.
       kind: pin.kind || "area",
+      // THE COMPARABILITY KEY (f2-3's rule, f2-11's correction). Shape ratios
+      // are only meaningful against migrations of the same shape, and the
+      // thing that says what shape a source is, is its SCHEME — `kind` only
+      // ever approximated it, because until f2-11 every "area"-kinded pin
+      // happened to be ba-nine-section. narrative-sections breaks that
+      // coincidence: its anchors are whole SECTIONS, so a 225-line source
+      // yields 10 of them where a nine-section source of the same length
+      // yields 23, and pooling the two would report permanent "drift" in
+      // already-shipped work that no cell had touched — the exact defect f2-3
+      // fixed for flat-pattern-list. Keying on the scheme is a strict no-op
+      // for every pin that existed before: the eight ba-nine-section areas
+      // group exactly as the eight `kind: "area"` pins did, and
+      // critical-patterns stays alone exactly as `kind: "patterns"` did
+      // (asserted in scripts/test_okf_pins.mjs section 29).
+      scheme: pin.scheme,
       anchors: derived.counts.total,
       concepts,
       source_lines: sourceLines,
@@ -1383,9 +1611,17 @@ export function runBundleInvariants() {
  *  matches multi-letter anchor prefixes such as critical-patterns.md's
  *  `PAT1`..`PATn`, okf-6 — the BA-spec single-letter anchors B1/R2/E3/P4
  *  are the special case of one-or-more-letters, so this is additive.) */
-export function parseStubAnchorMap(text) {
+export function parseStubAnchorMap(text, anchorPattern = NUMBERED_STUB_ANCHOR_PATTERN) {
   const map = new Map();
   const issues = [];
+  // f2-11: the row form is parameterized by the area's SCHEME rather than
+  // widened to a union. A union would have to accept both `B1` and
+  // `S-the-trust-model` in every stub, so a typo'd row in a numbered area
+  // could start matching as a narrative anchor. Passing the pattern in keeps
+  // each stub read by exactly the form its own scheme derives — and leaves
+  // every shipped stub parsing byte-identically, since the default is the
+  // pattern this function has always used.
+  const rowRe = new RegExp(`^\\|\\s*\`?(${anchorPattern})\`?\\s*\\|\\s*(.+?)\\s*\\|\\s*$`);
   for (const line of text.split("\n")) {
     // `[a-z]?` (f2-3): f2-4 widened the EXTRACTOR to the letter-suffixed id
     // form (B3a, B7a, R8a) but not the two readers that have to agree with it
@@ -1395,7 +1631,7 @@ export function parseStubAnchorMap(text) {
     // been migrated: an unsatisfiable red, which is just the format-blindness
     // defect wearing the opposite sign. Strict no-op on both shipped pins
     // (advisor-protocol carries no suffixed id; `PAT1`..`PAT47` are unchanged).
-    const row = /^\|\s*`?([A-Z]+\d+[a-z]?)`?\s*\|\s*(.+?)\s*\|\s*$/.exec(line);
+    const row = rowRe.exec(line);
     if (!row) continue;
     const anchor = row[1];
     const cell = row[2];
@@ -1510,12 +1746,13 @@ async function runGuards(area, claims, bodies, derived) {
 
   const telemetry = collectTelemetry();
   const current = telemetry.find((r) => r.area === area) || null;
-  // Same-shape comparison only (f2-3) — see the F12 header note.
-  const comparable = current ? telemetry.filter((r) => r.kind === current.kind) : [];
+  // Same-SHAPE comparison only (f2-3, keyed on the scheme since f2-11) — see
+  // the F12 header note and collectTelemetry's `scheme` field.
+  const comparable = current ? telemetry.filter((r) => r.scheme === current.scheme) : [];
   const telemetryNote =
     comparable.length < TELEMETRY_MIN_SAMPLES
-      ? `${comparable.length} pinned "${current ? current.kind : "?"}"-shaped source(s) of ${telemetry.length} pinned in total — fewer than ${TELEMETRY_MIN_SAMPLES} comparable samples, so there is no running median yet and telemetry REPORTS ONLY (never fails)`
-      : `running median across ${comparable.length} pinned "${current.kind}"-shaped sources; outlier band [0.5x, 2x]`;
+      ? `${comparable.length} pinned "${current ? current.scheme : "?"}"-shaped source(s) of ${telemetry.length} pinned in total — fewer than ${TELEMETRY_MIN_SAMPLES} comparable samples, so there is no running median yet and telemetry REPORTS ONLY (never fails)`
+      : `running median across ${comparable.length} pinned "${current.scheme}"-shaped sources; outlier band [0.5x, 2x]`;
   issues.push(...telemetryIssues({ current, samples: comparable }));
 
   issues.push(...runBundleInvariants().issues);
@@ -1551,6 +1788,10 @@ export async function runCheck(area) {
   }
   const expected = derived.anchors.all;
 
+  // wiringFor is the single source of the dir/source/anchor-pattern quadruple
+  // — re-stating any of it here is exactly how the claim matcher fell a
+  // widening behind the extractor (f2-3).
+  const wiring = wiringFor(area);
   const issues = [];
   const stubRel = `docs/specs/${area}.md`;
   const stubPath = path.join(REPO_ROOT, "docs", "specs", `${area}.md`);
@@ -1558,14 +1799,11 @@ export async function runCheck(area) {
   if (!fs.existsSync(stubPath)) {
     issues.push(`pointer stub missing: ${stubRel} (the path is never deleted — D20)`);
   } else {
-    const parsedStub = parseStubAnchorMap(fs.readFileSync(stubPath, "utf8"));
+    const parsedStub = parseStubAnchorMap(fs.readFileSync(stubPath, "utf8"), wiring.stubAnchorPattern);
     stubMap = parsedStub.map;
     issues.push(...parsedStub.issues);
   }
-  // wiringFor is the single source of the dir/source/anchor-pattern triple —
-  // re-stating it here is exactly how the claim matcher fell a widening behind
-  // the extractor (f2-3).
-  const { claims, issues: claimIssues } = await collectClaims(wiringFor(area));
+  const { claims, issues: claimIssues } = await collectClaims(wiring);
   issues.push(...claimIssues);
 
   // A repaired pin (f2-10) says so wherever it names its own address: the
@@ -1805,13 +2043,14 @@ async function main() {
         {
           pinned_areas: rows.length,
           min_samples_for_a_median: TELEMETRY_MIN_SAMPLES,
-          // Per shape, not overall (f2-3): a median is only drawn across pins
-          // of the same `kind`, so this reports which shapes have enough
-          // comparable samples to gate on rather than one global boolean.
-          median_available_by_kind: Object.fromEntries(
-            [...new Set(rows.map((r) => r.kind))].map((kind) => [
-              kind,
-              rows.filter((r) => r.kind === kind).length >= TELEMETRY_MIN_SAMPLES,
+          // Per shape, not overall (f2-3; keyed on the scheme since f2-11): a
+          // median is only drawn across pins of the same shape, so this
+          // reports which shapes have enough comparable samples to gate on
+          // rather than one global boolean.
+          median_available_by_scheme: Object.fromEntries(
+            [...new Set(rows.map((r) => r.scheme))].map((scheme) => [
+              scheme,
+              rows.filter((r) => r.scheme === scheme).length >= TELEMETRY_MIN_SAMPLES,
             ]),
           ),
           rows,

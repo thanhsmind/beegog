@@ -105,6 +105,20 @@ export const MANDATORY_SUITE_ARGS = [
   ["scripts/okf_migrate.mjs", "--check", "feedback-digest"],
   ["scripts/okf_migrate.mjs", "--check", "onboarding"],
   ["scripts/okf_migrate.mjs", "--check", "hook-runtime"],
+  // f2-11 (F6/F9): worktree-parallelism's own D35 coverage gate, and the first
+  // user of a THIRD anchor scheme. This is the one area of the eleven that
+  // genuinely has no numbered anchors — no `B*`/`R*`/`E*`/`P*` id anywhere in
+  // its 225 lines and none of the four anchor-bearing nine-section headings —
+  // so `ba-nine-section` derives 0 anchors AND 0 unparsed blocks from it. F9
+  // forbids forcing it into that shape and D10 forbids inventing ids the
+  // source never had, so `narrative-sections` derives the anchors from the
+  // source's OWN `## ` headings, slugified: 10 anchors, unparsed_blocks: 2
+  // (the `**Area:**` / `**Status:**` preamble lines, which belong to no
+  // section and are reported rather than invented into anchors). Seven
+  // concepts, split by TOPIC (purpose and boundary; the trust model; entering;
+  // returning and the merge gate; routing and visibility; the cross-worktree
+  // holds ledger; store tiers and the implementation map).
+  ["scripts/okf_migrate.mjs", "--check", "worktree-parallelism"],
 ];
 
 // Floor count: total discovered suites must never silently drop below this
@@ -124,7 +138,8 @@ export const MANDATORY_SUITE_ARGS = [
 // f2-8: +1 for the `okf_migrate --check feedback-digest` coverage gate = 56.
 // f2-9: +1 for the `okf_migrate --check onboarding` coverage gate = 57.
 // f2-10: +1 for the `okf_migrate --check hook-runtime` coverage gate = 58.
-const SUITE_FLOOR_COUNT = 58;
+// f2-11: +1 for the `okf_migrate --check worktree-parallelism` coverage gate = 59.
+const SUITE_FLOOR_COUNT = 59;
 
 /**
  * Checks a discovered suite list against a mandatory list and a floor count.

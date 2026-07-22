@@ -179,6 +179,29 @@ const EXTRA_SUITES = [
   // keep the F12 drift telemetry inside its band across the eight pinned
   // "area"-shaped sources.
   ["scripts/okf_migrate.mjs", "--check", "hook-runtime"],
+  // f2-11 (F6/F9): worktree-parallelism's own D35 coverage gate — the one area
+  // of the eleven that genuinely needed a THIRD anchor scheme. Every earlier
+  // "shapeless" verdict was a blind reader (decision-memory's nine rules were
+  // written `- **R1 — …**` and f2-4's widening found them), but this source
+  // really does carry no `B*`/`R*`/`E*`/`P*` id and none of the four
+  // anchor-bearing nine-section headings, so `ba-nine-section` derives 0
+  // anchors AND 0 unparsed blocks from it. F9 forbids forcing it into the
+  // nine-section shape and D10 forbids inventing numbered ids, so the anchors
+  // are the source's OWN `## ` headings, slugified: `narrative-sections`, 10
+  // anchors, unparsed_blocks: 2 (the `**Area:**` / `**Status:**` preamble
+  // lines, which sit before the first heading and belong to no section —
+  // reported, never invented into anchors). A `###` subheading is NOT an
+  // anchor, a source with zero `## ` headings is REFUSED rather than passed
+  // 0/0, and two headings that slugify alike are refused outright, so the
+  // duplicate-id hazard f2-10 had to repair a source to escape cannot arise.
+  // Seven concepts, split by TOPIC (purpose and boundary; the trust model;
+  // entering — create and register; returning — the staged merge and its
+  // verify gate; routing and visibility; the cross-worktree holds ledger;
+  // store tiers and the implementation map). Its shape ratios are compared
+  // only against other `narrative-sections` pins — there is one, so its F12
+  // telemetry reports and never fails, exactly as flat-pattern-list's did
+  // before it.
+  ["scripts/okf_migrate.mjs", "--check", "worktree-parallelism"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

@@ -27,6 +27,22 @@ its pinned hash is refused too.
 | `feedback-digest.md` | `3d69a2d` (f2-7, the commit before f2-8 stubbed it) | `eeb447e…` | `ba-nine-section` | 29 (0 B / 15 R / 6 E / 8 P), 26 unparsed blocks |
 | `onboarding.md` | `a06f59d` (f2-8 close, the commit before f2-9 stubbed it) | `c78ca9b…` | `ba-nine-section` | 58 (0 B / 28 R — `R20b` included / 15 E / 15 P), 20 unparsed blocks |
 | `hook-runtime.md` | `ab8cf6e` (f2-9, the commit before f2-10 stubbed it) — **REPAIRED**, see below | `a8907ce…` | `ba-nine-section` | 81 (22 B / 24 R — `R8a`, `R8b`, `R14a` included / 17 E / 18 P), 8 unparsed blocks |
+| `worktree-parallelism.md` | `687ac59` (f2-10, the commit before f2-11 stubbed it) | `df2f441…` | `narrative-sections` | 10 (`S-` + slugified `## ` heading), 2 unparsed preamble blocks |
+
+**One of these sources needed a scheme nobody had written yet.**
+`worktree-parallelism.md` is the only area of the eleven with **no numbered anchors at all**
+— no `B*`/`R*`/`E*`/`P*` id anywhere in its 225 lines, and none of the four anchor-bearing
+nine-section headings. Every earlier "shapeless" verdict in this migration turned out to be a
+blind reader (`decision-memory`'s nine rules were written `- **R1 — …**` and the f2-4 widening
+found them); this one is the real thing, and `ba-nine-section` derives 0 anchors AND 0 unparsed
+blocks from it. F9 forbids forcing it into that shape and D10 forbids inventing ids the source
+never had, so a **third scheme** was added: `narrative-sections`, where the source's own `## `
+headings ARE the anchors, slugified mechanically from the heading text. A `###` subheading is
+not an anchor (its prose travels with the section containing it), a source with zero `## `
+headings is REFUSED rather than passed 0/0, and two headings that slugify alike are refused
+outright — the duplicate-id hazard `hook-runtime.md` had to be repaired to escape cannot arise
+under this scheme. Adding it was a strict no-op: all nine pre-existing pins still derive their
+exact counts, asserted in `scripts/test_okf_pins.mjs` section 28.
 
 **One of these copies is not a byte copy of any commit, and says so.**
 `hook-runtime.md` shipped the rule id `R14` **twice** — the gate-bypass

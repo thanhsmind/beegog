@@ -268,13 +268,32 @@ for (const [area, pin] of Object.entries(M.PIN_REGISTRY)) {
 // ─── 11. an area with NO declared scheme is refused, never passed 0/0 ───────
 //
 // f2-5: decision-memory is no longer in this set — its migration cell
-// authored its pin (9 rules, 0 unparsed) — so only worktree-parallelism (still
-// genuinely undecided) is asserted refused here now.
+// authored its pin (9 rules, 0 unparsed).
+// f2-11: neither is worktree-parallelism — the LAST unscheme'd area, now
+// pinned under the `narrative-sections` scheme (section 27 below). Every
+// registered area therefore declares a scheme today, so the PIN_NO_SCHEME
+// refusal is asserted against an ad-hoc pin instead of a registry entry: the
+// property under test is "an undecided shape is refused BY NAME rather than
+// passed 0/0", and it must keep holding for the next area that arrives without
+// one — not only while some area happened to still be undecided.
 
 {
-  const r2 = await M.derivePinForArea("worktree-parallelism");
-  ok(r2.ok === false, "worktree-parallelism (no declared anchor scheme) is REFUSED");
-  ok(codes(r2).includes("PIN_NO_SCHEME"), "worktree-parallelism reports PIN_NO_SCHEME", codes(r2));
+  const r2 = await M.derivePin(
+    { ...M.PIN_REGISTRY["advisor-protocol"], scheme: null, refusal: "shape not decided yet" },
+    "some-unscheme'd-area",
+  );
+  ok(r2.ok === false, "an area with no declared anchor scheme is REFUSED");
+  ok(codes(r2).includes("PIN_NO_SCHEME"), "an unscheme'd area reports PIN_NO_SCHEME", codes(r2));
+  ok(
+    /shape not decided yet/.test((r2.issues || []).map((i) => i.message).join(" ")),
+    "the PIN_NO_SCHEME refusal carries the pin's own reason, so the refusal names WHY",
+    r2.issues,
+  );
+  ok(
+    Object.values(M.PIN_REGISTRY).every((p) => typeof p.scheme === "string" && p.scheme.length > 0),
+    "every REGISTERED area now declares a scheme (f2-11 closed the last unscheme'd one)",
+    Object.entries(M.PIN_REGISTRY).filter(([, p]) => !p.scheme).map(([a]) => a),
+  );
 
   const r3 = await M.derivePinForArea("no-such-area-at-all");
   ok(r3.ok === false, "an area with no pin at all is REFUSED");
@@ -976,6 +995,267 @@ console.log(
   ok(inv.unparsed.blocks.rules === 3, "all three refused bullets are REPORTED as unparsed blocks", inv.unparsed.blocks);
 }
 
+// ─── 27. the THIRD scheme: `narrative-sections` (f2-11, F9/S5) ──────────────
+//
+// worktree-parallelism is the one area of the eleven that genuinely has no
+// numbered anchors — not because the extractor is blind (f2-4 fixed that and
+// re-confirmed this file afterwards), but because the source truly carries no
+// `B*`/`R*`/`E*`/`P*` ids and no nine-section headings to derive them from.
+// F9 forbids forcing it into `ba-nine-section`, and D10 forbids inventing
+// numbered ids the source never had. So the anchors are the source's OWN `## `
+// headings, slugified — derived mechanically from the heading text, exactly as
+// `flat-pattern-list` already derives one anchor per `## [YYYYMMDD] …`
+// heading. The headings ARE the ground truth; nothing here is invented.
+//
+// The three properties this scheme must hold, all asserted below:
+//   a `## ` heading becomes an anchor · a `###` subheading does NOT · a source
+//   with zero `## ` headings is REFUSED rather than passed 0/0.
+
+{
+  for (const name of ["inventoryNarrativeSections", "slugifyHeading", "NARRATIVE_ANCHOR_PATTERN"]) {
+    ok(typeof M[name] !== "undefined", `scripts/okf_migrate.mjs must export ${name} (f2-11)`);
+  }
+  ok(
+    typeof M.SCHEMES === "object" && typeof M.SCHEMES["narrative-sections"] === "function",
+    "the `narrative-sections` scheme is registered in SCHEMES",
+    Object.keys(M.SCHEMES || {}),
+  );
+
+  // (a) a `## ` heading becomes an anchor, id derived from the heading TEXT.
+  const SRC = [
+    "# Spec — Something",
+    "",
+    "**Area:** a preamble block that belongs to no section.",
+    "**Status:** shipped.",
+    "",
+    "## The trust model (the load-bearing rule)",
+    "",
+    "A worktree gets its own store ONLY when it is granted.",
+    "",
+    "### A subheading, which is NOT an anchor",
+    "",
+    "Nested prose that must travel with the section above it.",
+    "",
+    "## Boundary (out of scope)",
+    "",
+    "- Rollout to onboarded host repos — deferred.",
+    "",
+  ].join("\n");
+
+  const inv = M.inventoryNarrativeSections(SRC);
+  eq(
+    inv.sections,
+    ["S-the-trust-model-the-load-bearing-rule", "S-boundary-out-of-scope"],
+    "each `## ` heading becomes ONE anchor, id slugified from the heading's own text (never a numbered id — D10)",
+  );
+  eq(inv.all, inv.sections, "the narrative inventory's `all` is its section list, in document order");
+  ok(
+    M.slugifyHeading("Entering: `worktree new --feature <slug>` (D7, GH #21)") ===
+      "entering-worktree-new-feature-slug-d7-gh-21",
+    "slugifyHeading collapses backticks, punctuation and angle brackets into a single-hyphen slug",
+    M.slugifyHeading("Entering: `worktree new --feature <slug>` (D7, GH #21)"),
+  );
+
+  // (b) a `###` subheading is NOT an anchor — and it is REPORTED, never silently
+  //     dropped, exactly as the BA scheme reports its unnumbered bold-leads.
+  ok(
+    !inv.all.some((a) => /subheading/.test(a)),
+    "a `###` subheading is NOT an anchor under narrative-sections",
+    inv.all,
+  );
+  ok(
+    inv.unparsed.blocks.subheadings === 1,
+    "the `###` subheading is REPORTED as an unparsed block (visible, never invented into an anchor)",
+    inv.unparsed.blocks,
+  );
+  ok(
+    inv.unparsed.blocks.preamble === 2,
+    "block starts before the first `## ` heading are reported as unparsed preamble blocks",
+    inv.unparsed.blocks,
+  );
+  ok(
+    inv.unparsed.blocks.total === 3 && inv.unparsed.lines.total > 0,
+    "the unparsed report totals both kinds and counts unclassified body lines",
+    inv.unparsed,
+  );
+
+  // (c) the anchor's TEXT is its section body up to the NEXT `## ` heading —
+  //     so a `###` subheading's prose travels with the section it sits in and
+  //     the fidelity floor can measure it.
+  const trust = inv.texts.get("S-the-trust-model-the-load-bearing-rule");
+  ok(
+    /A worktree gets its own store/.test(trust) &&
+      /### A subheading/.test(trust) &&
+      /Nested prose that must travel/.test(trust) &&
+      !/Boundary \(out of scope\)/.test(trust),
+    "an anchor's text is the heading plus its body up to the next `## ` heading, subheading content included",
+    trust,
+  );
+
+  // (d) ZERO `## ` headings is a REFUSAL, never a 0/0 pass. This is the hole
+  //     the whole gate exists to close: a scheme that returns an empty set for
+  //     a file it cannot read converts lost content into content that never
+  //     existed.
+  let threw = null;
+  try {
+    M.extractByScheme("narrative-sections", "# Title only\n\nSome prose and no `## ` heading at all.\n");
+  } catch (error) {
+    threw = error;
+  }
+  ok(threw !== null, "a source with ZERO `## ` headings is REFUSED by the scheme, never passed 0/0");
+  ok(threw?.code === "PIN_EMPTY_EXTRACTION", "the zero-heading refusal is typed PIN_EMPTY_EXTRACTION", threw?.code);
+  ok(
+    /## /.test(String(threw?.message || "")),
+    "the refusal names what it could not find, so the reader knows the scheme did not fit",
+    threw?.message,
+  );
+
+  // …and the same refusal reaches derivePin as an exit-1 typed failure rather
+  // than a green pin, even when the pin obligingly declares `total: 0`.
+  const emptyPath = path.join(TMP, "no-headings.md");
+  const emptyText = "# Title only\n\nProse, and not one `## ` heading.\n";
+  fs.writeFileSync(emptyPath, emptyText);
+  const emptyPin = {
+    kind: "area",
+    path: "docs/specs/nothing.md",
+    blob_sha: blobSha(emptyText),
+    scheme: "narrative-sections",
+    expected_counts: { sections: 0, total: 0, unparsed_blocks: 0 },
+    source_copy: path.relative(REPO_ROOT, emptyPath).split(path.sep).join("/"),
+  };
+  const emptyResult = await M.derivePin(emptyPin, "no-headings");
+  ok(emptyResult.ok === false, "a narrative pin over a heading-less source is exit-1, never a 0/0 green");
+  ok(
+    codes(emptyResult).includes("PIN_EMPTY_EXTRACTION"),
+    "the heading-less narrative pin reports PIN_EMPTY_EXTRACTION",
+    codes(emptyResult),
+  );
+
+  // (e) two headings that slugify to the SAME id are refused — the f2-10
+  //     duplicate-`R14` hazard, closed at the scheme level this time rather
+  //     than discovered in a source. Anchors are keyed by id, so a collision
+  //     would silently overwrite the first section's text and be unmeasurable
+  //     by the fidelity floor forever.
+  let dupThrew = null;
+  try {
+    M.extractByScheme(
+      "narrative-sections",
+      "## The trust model!\n\nfirst\n\n## The trust model?\n\nsecond\n",
+    );
+  } catch (error) {
+    dupThrew = error;
+  }
+  ok(dupThrew !== null, "two headings slugifying to the same anchor id are REFUSED, never silently collapsed");
+  ok(
+    dupThrew?.code === "PIN_DUPLICATE_ANCHOR",
+    "the collision refusal is typed PIN_DUPLICATE_ANCHOR and names the id",
+    `${dupThrew?.code}: ${dupThrew?.message}`,
+  );
+
+  // (f) the scheme reads HEADINGS, and only headings — a numbered id sitting in
+  //     the body never becomes an anchor of its own.
+  const numbered = M.inventoryNarrativeSections(
+    "## A section\n\n- **R1** — a numbered rule in the body is NOT a narrative anchor.\n",
+  );
+  eq(numbered.all, ["S-a-section"], "a `B*`/`R*` id in the body is never promoted to an anchor by this scheme");
+}
+
+// ─── 28. worktree-parallelism's own gate, and the STRICT NO-OP (f2-11) ──────
+//
+// The safety property, identical in form to f2-4's classifier widening and
+// f2-10's repaired-pin branch: adding a scheme may not move ANY existing pin.
+// All nine pre-existing pins must still derive their exact expected_counts,
+// and the proof is run against a FROZEN table here — never against
+// PIN_REGISTRY's own numbers, which is how a relaxed pin would launder itself
+// into a green.
+
+{
+  const FROZEN = {
+    "advisor-protocol": { behaviors: 4, rules: 9, edges: 6, pointers: 7, total: 26, unparsed_blocks: 0 },
+    "doctrine-layer": { behaviors: 10, rules: 17, edges: 5, pointers: 7, total: 39, unparsed_blocks: 2 },
+    "critical-patterns": { patterns: 47, total: 47, unparsed_blocks: 0 },
+    "decision-memory": { behaviors: 0, rules: 9, edges: 0, pointers: 0, total: 9, unparsed_blocks: 0 },
+    "verify-pipeline": { behaviors: 0, rules: 5, edges: 4, pointers: 5, total: 14, unparsed_blocks: 7 },
+    "performance-log": { behaviors: 0, rules: 11, edges: 5, pointers: 7, total: 23, unparsed_blocks: 10 },
+    "feedback-digest": { behaviors: 0, rules: 15, edges: 6, pointers: 8, total: 29, unparsed_blocks: 26 },
+    onboarding: { behaviors: 0, rules: 28, edges: 15, pointers: 15, total: 58, unparsed_blocks: 20 },
+    "hook-runtime": { behaviors: 22, rules: 24, edges: 17, pointers: 18, total: 81, unparsed_blocks: 8 },
+  };
+  for (const [area, want] of Object.entries(FROZEN)) {
+    const derived = await M.derivePinForArea(area);
+    ok(derived.ok, `STRICT NO-OP: ${area}'s pin is still green after the narrative-sections scheme was added`, derived.issues);
+    const got = Object.fromEntries(Object.keys(want).map((k) => [k, derived.counts?.[k]]));
+    eq(got, want, `STRICT NO-OP: ${area} still derives exactly ${JSON.stringify(want)} from its pinned blob`);
+    const declared = M.PIN_REGISTRY[area].expected_counts;
+    const declaredSubset = Object.fromEntries(Object.keys(want).map((k) => [k, declared[k]]));
+    eq(declaredSubset, want, `the no-op was proven against UNCHANGED expected_counts for ${area} — never by relaxing the pin`);
+  }
+
+  // The new area's own pin, and its own chain gate.
+  const wt = await M.derivePinForArea("worktree-parallelism");
+  ok(wt.ok, "worktree-parallelism's narrative-sections pin resolves, hashes, extracts and matches its counts", wt.issues);
+  ok(
+    M.PIN_REGISTRY["worktree-parallelism"].scheme === "narrative-sections",
+    "worktree-parallelism declares the narrative-sections scheme",
+    M.PIN_REGISTRY["worktree-parallelism"].scheme,
+  );
+  ok(
+    (wt.anchors?.all || []).every((a) => new RegExp(`^${M.NARRATIVE_ANCHOR_PATTERN}$`).test(a)),
+    "every derived narrative anchor matches the pattern the stub map and the claim matcher read",
+    wt.anchors?.all,
+  );
+  ok(
+    (wt.anchors?.all || []).length === new Set(wt.anchors?.all || []).size,
+    "every derived narrative anchor id is DISTINCT (the f2-10 collision hazard, closed by construction)",
+    wt.anchors?.all,
+  );
+
+  const cli = runCli(["--check", "worktree-parallelism"]);
+  ok(cli.code === 0, "`--check worktree-parallelism` exits 0 under the narrative-sections scheme", `exit ${cli.code}: ${cli.err}${cli.out}`);
+  ok(/^PASS okf_migrate --check worktree-parallelism: /m.test(cli.out), "the chain PASS wording names worktree-parallelism", cli.out);
+
+  const pins = runCli(["--verify-pins"]);
+  ok(pins.code === 0, "`--verify-pins` is green across all ten pins", `exit ${pins.code}: ${pins.err}${pins.out}`);
+  ok(
+    !/SKIP-REFUSED/.test(pins.out),
+    "no pin is skipped any more — every registered area is gateable (f2-11 closed the last refusal)",
+    pins.out,
+  );
+}
+
+// ─── 29. telemetry comparability is keyed on SHAPE, and that is a no-op ─────
+//
+// f2-3 restricted the F12 median to pins of the same shape after the
+// flat-pattern-list migration (one anchor IS one concept by construction)
+// reported permanent "drift" against nine-section areas that no cell had
+// touched. `narrative-sections` is a third shape with the opposite skew —
+// whole SECTIONS are the anchors, so a 225-line source yields 10 of them where
+// a nine-section area of the same length yields 23 — and pooling it would
+// repeat exactly that defect. The comparability key is therefore the pin's
+// SCHEME, which is what "same shape" has always meant. Proven a strict no-op:
+// the eight ba-nine-section areas group exactly as the eight `kind: "area"`
+// pins did, and critical-patterns stays alone exactly as `kind: "patterns"`
+// did.
+
+{
+  const rows = M.collectTelemetry();
+  ok(rows.every((r) => typeof r.scheme === "string"), "every telemetry row carries its pin's scheme", rows.map((r) => r.scheme));
+  const byScheme = (s) => rows.filter((r) => r.scheme === s).map((r) => r.area).sort();
+  const byKind = (k) => rows.filter((r) => (r.kind || "area") === k).map((r) => r.area).sort();
+  eq(
+    byScheme("ba-nine-section"),
+    byKind("area").filter((a) => a !== "worktree-parallelism"),
+    "STRICT NO-OP: grouping by scheme reproduces the previous `kind: area` grouping for every pre-existing pin",
+  );
+  eq(byScheme("flat-pattern-list"), byKind("patterns"), "STRICT NO-OP: critical-patterns is alone under either key");
+  eq(byScheme("narrative-sections"), ["worktree-parallelism"], "the third shape is its own comparison population");
+  ok(
+    byScheme("narrative-sections").length < 3,
+    "with one narrative-sections pin there is no median yet, so its telemetry REPORTS ONLY — never fails on a coin flip",
+    byScheme("narrative-sections").length,
+  );
+}
+
 // ─── done ───────────────────────────────────────────────────────────────────
 
 fs.rmSync(TMP, { recursive: true, force: true });
@@ -984,4 +1264,4 @@ if (failures > 0) {
   console.error(`\nFAIL test_okf_pins: ${failures} of ${checks} assertions failed`);
   process.exit(1);
 }
-console.log(`PASS test_okf_pins: ${checks} assertions — pins are content-addressed and fully asserted (sha, scheme, counts), empty/mismatched/unresolvable/unscheme'd extractions all exit 1, the committed-source fallback verifies via blob hash, and onboarding.md's unparsed-block count is non-zero (format-blindness is visible)`);
+console.log(`PASS test_okf_pins: ${checks} assertions — pins are content-addressed and fully asserted (sha, scheme, counts), empty/mismatched/unresolvable/unscheme'd extractions all exit 1, the committed-source fallback verifies via blob hash, onboarding.md's unparsed-block count is non-zero (format-blindness is visible), and the three schemes stay strict no-ops on each other's pins (narrative-sections derives a source's own "## " headings, refuses a heading-less source and a slug collision, and never touches the nine numbered pins)`);

@@ -178,6 +178,28 @@ Where things live. Read the touched area's spec before its code.
   gated self-improvement process). The legacy path
   [`feedback-digest.md`](./feedback-digest.md) remains as a pointer stub carrying the full
   29-anchor map (D37).
+- [`docs/knowledge/areas/worktree-parallelism/`](../knowledge/areas/worktree-parallelism/index.md)
+  — how one session fans independent work into git worktrees, each running its own bee
+  lifecycle and reconciled to the main checkout on `git merge`, migrated into the knowledge
+  bundle (okf-foundation D20/D29; okf-migration-f2 F9). Split by TOPIC into `overview.md` (the
+  two different kinds of parallelism — P40's swarm-worker worktrees that only remove git-index
+  contention, versus this area's independent-feature worktrees — and what stays out of scope);
+  `the-trust-model.md` (a worktree gets its own store only when GRANTED from the main store's
+  registry, keyed by the git-verified id, and why a self-claiming marker inside the worktree
+  changes nothing); `entering-creating-and-registering.md` (`worktree new` as the paved road,
+  `worktree register` for adoption, the bootstrap contract, and every typed zero-mutation
+  refusal); `returning-and-the-merge-gate.md` (the staged `--no-commit` merge, the verify gate
+  that catches a semantic conflict before anything is committed, and `--cleanup`);
+  `routing-and-visibility.md` (D9's prose routing rule, the lane-first refinement that defers
+  the grant to Gate 3, and the notices an ungranted worktree prints); `cross-worktree-holds.md`
+  (the shared path-keyed ledger in the main store, its single-lock atomic acquisition,
+  heartbeat renewal, three read taps and cell-scoped release); and
+  `store-tiers-and-where-it-lives.md` (the log/cache/runtime tiers that decide what a merge may
+  carry back, plus the module/resolver/CLI/test map). This is the ONE area whose source carried
+  no numbered anchors at all, so its anchors are the source's own `## ` headings, slugified —
+  the `narrative-sections` scheme, added for it (F9/D10). The legacy path
+  [`worktree-parallelism.md`](./worktree-parallelism.md) remains as a pointer stub carrying the
+  full 10-anchor map (D37).
 - `skills/bee-hive/templates/bee.mjs` + `templates/lib/command-registry.mjs` — the sole shipped CLI (`bee.mjs <group> <verb>` over all 10 command groups, the 10th being `perf`; originated as an additive dispatcher in harness-integration-adopt, decision 30606de4, `docs/decisions/0024`, then made the sole canonical *and* sole shipped surface by shim-retire, D1, decision bbc6bcea — the 9 legacy per-group shims are deleted); `command-registry.mjs` is the single source of truth for the command surface. Contract in `docs/07-contracts.md`; spec-before-code still applies — read the touched area's spec before this code.
 - `skills/bee-hive/templates/lib/schedule.mjs` — the computed work schedule (`computeSchedule`/`detectCycles`: dep layering + declared-path overlap packing into waves; consumed by `bee cells schedule`, cycle refusal in `cells.mjs` add/update, and the swarming/validating prose). Spec: `docs/specs/workflow-state.md` B17/B18, R26/R27.
 - `skills/bee-hive/templates/lib/recovery.mjs` — crash-recovery transcript mining (`detectCrashCandidates`/`readTranscriptTail`/`hasCleanEndTrio`/`lastDurableSettlement`/`computeMiningWindow`/`buildMiningPrompt`: stale-heartbeat + non-clean-transcript-tail + work-in-flight detection; bounded mining window; the down-tier miner prompt). Consumed by `bee recovery scan|window` and the `status` recovery block; imports `perf.mjs` (transcript resolution) + `claims.mjs` (heartbeat/session), never imported by `command-registry.mjs`. Spec: `docs/specs/workflow-state.md` B33, R51.

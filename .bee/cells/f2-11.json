@@ -1,0 +1,85 @@
+{
+  "id": "f2-11",
+  "feature": "okf-migration-f2",
+  "lane": "high-risk",
+  "behavior_change": true,
+  "tier": "ceiling",
+  "title": "S5: migrate worktree-parallelism — the one genuinely shapeless area, via a new narrative-sections scheme",
+  "action": "This is the ONLY area of the eleven with no anchor-bearing sections: docs/specs/worktree-parallelism.md (225 lines) has 10 narrative '## ' headings (What problem this solves / The trust model / Registering a worktree / Entering / Returning / Routing rule / Cross-worktree holds / The three tiers / Boundary / Where it lives) and zero numbered B*/R*/E*/P* anchors. F9 forbids forcing it into ba-nine-section. INSTEAD, add a THIRD scheme to okf_migrate.mjs: `narrative-sections` — the anchors ARE the source's own '## ' headings, derived mechanically from the heading text (slugified, e.g. S-the-trust-model), never invented. This mirrors the existing flat-pattern-list precedent, which already treats '## [YYYYMMDD] title' headings as anchors. The anchor's TEXT for fidelity purposes is that section's body up to the next heading. Then run the normal loop: STEP 0 capture the pin (scheme narrative-sections, expected_counts with the heading count and unparsed_blocks) with the verbatim source copy hash-verified; STEP 1 author concepts under docs/knowledge/areas/worktree-parallelism/ splitting by topic, every heading-anchor owned by exactly one concept, terminology verbatim, canonical frontmatter; STEP 2 pointer stub with the full anchor map (D37) mapping each heading to its concept, reading-map row rewired; STEP 3 add --check worktree-parallelism to EXTRA_SUITES + MANDATORY_SUITE_ARGS; STEP 4 index regen, log.md entry, full chain (74 suites). RED-FIRST: add the scheme's tests (a heading becomes an anchor; a '###' subheading does NOT; a source with zero '## ' headings is refused rather than passed 0/0) and capture them red before implementing; then the usual one-anchor-unassigned gate red. IMPORTANT: the three shipped schemes must stay strict no-ops — re-verify all 9 existing pins after adding the scheme.",
+  "must_haves": {
+    "truths": [
+      "node scripts/run_verify.mjs exits 0 (74 suites)",
+      "red evidence: the narrative-sections scheme tests failed before implementation (verbatim), plus the one-anchor-unassigned gate red",
+      "STRICT NO-OP: all 9 pre-existing pins still derive their exact expected_counts after the scheme is added — --verify-pins output quoted",
+      "coverage: every '## ' heading of the pinned blob owned by exactly one concept, 0 duplicated, 0 lost",
+      "fidelity min/median quoted above the 0.60 floor with no concept edited",
+      "a source with zero '## ' headings is REFUSED under this scheme, never passed 0/0",
+      "knowledge check 0/0; index --check 0 stale; blob_sha verified"
+    ],
+    "prohibitions": [
+      "never invent numbered ids for a source that has none (D10) — the headings are the anchors",
+      "never force this area into ba-nine-section (F9)",
+      "never let the new scheme change any existing pin's derived counts",
+      "never delete the source path (D20)",
+      "never edit a concept or lower a threshold to clear the floor",
+      "docs/history/** and docs/decisions/index.md untouched"
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "read_first": [
+    "docs/history/okf-migration-f2/CONTEXT.md",
+    "docs/specs/worktree-parallelism.md",
+    "scripts/okf_migrate.mjs",
+    "scripts/test_okf_pins.mjs",
+    "docs/knowledge/areas/hook-runtime/"
+  ],
+  "files": [
+    "docs/knowledge/areas/worktree-parallelism/",
+    "docs/knowledge/index.md",
+    "docs/knowledge/areas/index.md",
+    "docs/knowledge/log.md",
+    "docs/specs/worktree-parallelism.md",
+    "docs/specs/reading-map.md",
+    "docs/history/okf-migration-f2/sources/worktree-parallelism.md",
+    "docs/history/okf-migration-f2/sources/README.md",
+    "scripts/okf_migrate.mjs",
+    "scripts/test_okf_pins.mjs",
+    "scripts/run_verify.mjs",
+    "scripts/test_verify_manifest.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "deps": [
+    "f2-10"
+  ],
+  "status": "claimed",
+  "decisions": [],
+  "trace": {
+    "worker": "worker-f2-11",
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": "PASS      96ms  .bee/bin/bee.mjs knowledge check\nPASS     139ms  .bee/bin/bee.mjs knowledge index --check\nPASS     981ms  hooks/test_bypass_stop_net.mjs\nPASS   10489ms  hooks/test_hook_contracts.mjs\nPASS    3496ms  hooks/test_model_guard.mjs\nPASS    6365ms  hooks/test_write_guard.mjs\nPASS      47ms  scripts/census_stale_spawn_syntax.mjs\nPASS      51ms  scripts/ledger_parity.mjs --check\nPASS     726ms  scripts/okf_migrate.mjs --check advisor-protocol\nPASS     505ms  scripts/okf_migrate.mjs --check decision-memory\nPASS     519ms  scripts/okf_migrate.mjs --check doctrine-layer\nPASS     469ms  scripts/okf_migrate.mjs --check feedback-digest\nPASS     483ms  scripts/okf_migrate.mjs --check hook-runtime\nPASS     492ms  scripts/okf_migrate.mjs --check onboarding\nPASS     508ms  scripts/okf_migrate.mjs --check performance-log\nPASS     537ms  scripts/okf_migrate.mjs --check verify-pipeline\nPASS     487ms  scripts/okf_migrate.mjs --check worktree-parallelism\nPASS     590ms  scripts/okf_migrate.mjs --check-patterns\nPASS      93ms  scripts/release_manifest.mjs --check\nPASS      92ms  scripts/release_manifest.mjs --selftest\nPASS      37ms  scripts/test_agents_budget.mjs\nPASS     183ms  scripts/test_bump_version.mjs\nPASS     839ms  scripts/test_claim_race.mjs\nPASS      55ms  scripts/test_config_samples_safe.mjs\nPASS      59ms  scripts/test_config_validate.mjs\nPASS    2242ms  scripts/test_conformance.mjs\nPASS    1701ms  scripts/test_dispatch_prepare.mjs\nPASS      38ms  scripts/test_gate_bypass_doctrine.mjs\nPASS     332ms  scripts/test_heartbeat_touch.mjs\nPASS     165ms  scripts/test_install_ps1_flow.mjs\nPASS   21347ms  scripts/test_installers_e2e.mjs --installer bash\nPASS      62ms  scripts/test_ledger_parity.mjs\nPASS      69ms  scripts/test_lib_mirror.mjs\nPASS    1008ms  scripts/test_native_probe.mjs\nPASS     499ms  scripts/test_nested_clone_isolation.mjs\nPASS    7673ms  scripts/test_okf_pins.mjs\nPASS      72ms  scripts/test_portable_paths.mjs\nPASS      81ms  scripts/test_release_tuple.mjs\nPASS     855ms  scripts/test_render_race.mjs\nPASS     411ms  scripts/test_reservation_race.mjs\nPASS     170ms  scripts/test_resolveroots_p40.mjs\nPASS     226ms  scripts/test_run_verify_skip_marker.mjs\nPASS     383ms  scripts/test_skill_render.mjs\nPASS     414ms  scripts/test_state_write_concurrency.mjs\nPASS   12795ms  scripts/test_store_lock.mjs\nPASS      54ms  scripts/test_verify_manifest.mjs\nPASS   52048ms  scripts/test_worktree_cli.mjs\nPASS    1041ms  scripts/test_worktree_companion.mjs\nPASS     131ms  scripts/test_worktree_grant_resolve.mjs\nPASS     717ms  scripts/test_worktree_holds_race.mjs\nPASS    1703ms  scripts/test_worktree_holds.mjs\nPASS      86ms  scripts/test_worktree_store.mjs\nPASS   35052ms  skills/bee-hive/scripts/test_onboard_bee.mjs\nPASS     458ms  skills/bee-hive/scripts/test_plugin_distribution.mjs\nPASS     327ms  skills/bee-hive/scripts/test_split_brain_regression.mjs\nPASS     105ms  skills/bee-hive/templates/tests/test_backlog_capture.mjs\nPASS   22311ms  skills/bee-hive/templates/tests/test_bee_cli.mjs\nPASS    1716ms  skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs\nPASS     848ms  skills/bee-hive/templates/tests/test_cells.mjs\nPASS    8896ms  skills/bee-hive/templates/tests/test_claims.mjs\nPASS    1365ms  skills/bee-hive/templates/tests/test_cli_cells.mjs\nPASS    4221ms  skills/bee-hive/templates/tests/test_cli_state.mjs\nPASS     640ms  skills/bee-hive/templates/tests/test_config_validate.mjs\nPASS    5870ms  skills/bee-hive/templates/tests/test_decisions_propagation.mjs\nPASS     252ms  skills/bee-hive/templates/tests/test_feedback.mjs\nPASS     173ms  skills/bee-hive/templates/tests/test_guards.mjs\nPASS    3635ms  skills/bee-hive/templates/tests/test_knowledge.mjs\nPASS    3496ms  skills/bee-hive/templates/tests/test_misc.mjs\nPASS      63ms  skills/bee-hive/templates/tests/test_perf.mjs\nPASS     160ms  skills/bee-hive/templates/tests/test_recovery.mjs\nPASS      57ms  skills/bee-hive/templates/tests/test_reservations.mjs\nPASS    2698ms  skills/bee-hive/templates/tests/test_reviews.mjs\nPASS     425ms  skills/bee-hive/templates/tests/test_scratch.mjs\nPASS     169ms  skills/bee-hive/templates/tests/test_state.mjs\n\nPASS run_verify: 74 suite(s), concurrency=5, wall=60931ms\n",
+    "verify_passed": true,
+    "claim_session": "bbed69a9-bb81-4fe7-9894-160429484b5a",
+    "claimed_at": "2026-07-22T09:52:36.088Z",
+    "verify_command": "node scripts/run_verify.mjs",
+    "verified_at": "2026-07-22T10:08:32.431Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-22T10:08:32.431Z",
+        "claim_session": "bbed69a9-bb81-4fe7-9894-160429484b5a",
+        "claimed_at": "2026-07-22T10:04:42.446Z",
+        "acquired_at": "2026-07-22T09:52:36.087Z",
+        "worker": "worker-f2-11",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
+  }
+}
