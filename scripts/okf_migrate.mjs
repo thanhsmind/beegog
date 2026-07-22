@@ -40,9 +40,15 @@
 //   3. UNPARSED-LINE REPORTING. Every inventory reports how many
 //      block-starting lines it did not classify, per section, plus the raw
 //      unclassified-line count. This is the visibility that makes
-//      format-blindness detectable at all: `--inventory docs/specs/
-//      onboarding.md` MUST report a large unparsed count. A clean parse there
-//      would mean the extractor is still blind.
+//      format-blindness detectable at all — and it is what f2-3 used to
+//      MEASURE the blindness instead of forcing a scheme around it: it found
+//      doctrine-layer reporting more unparsed blocks (21) than derived anchors
+//      (20). f2-4 then widened the classifier to the id forms the other areas
+//      actually use (see "the id forms" below). `--inventory docs/specs/
+//      onboarding.md` MUST still report a non-zero unparsed count — its 20
+//      unnumbered bold-lead behaviour paragraphs carry no id and are reported,
+//      never invented. A clean parse there would mean the extractor had
+//      started fabricating structure.
 //   4. SCHEME AWARENESS. Two schemes exist today — `ba-nine-section`
 //      (B*/R*/E*/P*) and `flat-pattern-list` (PAT*). The shape is declared
 //      per area in the pin and the extractor dispatches on it. Areas whose
@@ -177,24 +183,29 @@ export const PIN_REGISTRY = {
     note: "the 703-line flat dated pattern list as of okf-5, immediately before okf-6 (b0d495d) migrated it into docs/knowledge/patterns/",
   },
 
-  // ─── declared, deliberately UNSCHEME'D (F9/S5 owns choosing their shape) ──
-  // These two areas are free-form prose: the advisor's measured run produced
-  // ZERO anchors for both, and worktree-parallelism has no `## Business
-  // Rules` / `## Edge Cases` sections at all. Inventing a B*/R* scheme for
-  // them here would fabricate structure the source never had (D10). They are
-  // listed — rather than merely absent — so the gate refuses them BY NAME
-  // with the reason, instead of the generic "unknown area" shrug.
+  // ─── declared, not yet pinned (the migrating cell authors the pin) ────────
+  // Listed — rather than merely absent — so the gate refuses them BY NAME with
+  // a reason, instead of the generic "unknown area" shrug.
+  //
+  // f2-4 CORRECTED WHAT THIS LIST MEANS. It used to say both areas were
+  // "free-form prose" that "produced ZERO anchors". For worktree-parallelism
+  // that is still true and measured. For decision-memory it was never true:
+  // its nine rules are written `- **R1 — …**` and the narrow classifier simply
+  // could not see them. "Shapeless" was a verdict about the reader, not the
+  // file — the same lie the derived gate exists to prevent, one level up. It
+  // now derives 9 rules with ZERO unparsed blocks under `ba-nine-section`; all
+  // that is missing is its pin, which its own migration cell authors.
   "decision-memory": {
     kind: "area",
     scheme: null,
     refusal:
-      "no anchor scheme has been decided for decision-memory yet — its rules are written `- **R1 — …**`, which neither shipped scheme classifies. Choosing one is F9/S5 work (okf-migration-f2). Refusing is correct: passing it 0/0 would be the exact lie this gate exists to prevent.",
+      "decision-memory has no pin yet. It is NOT shapeless: since f2-4 widened the id forms it derives 9 `ba-nine-section` rules (R1-R9) with zero unparsed blocks — the earlier '0 anchors, needs a bespoke scheme' verdict was an artifact of a classifier that could not read `- **R1 — …**`. Authoring its {commit, path, blob_sha, expected_counts} pin belongs to its migration cell; until then, refusing is correct, because passing it 0/0 would be the exact lie this gate exists to prevent.",
   },
   "worktree-parallelism": {
     kind: "area",
     scheme: null,
     refusal:
-      "no anchor scheme has been decided for worktree-parallelism yet — it is free-form prose with no `## Business Rules` or `## Edge Cases Settled` sections at all, so every shipped scheme yields an empty set. Choosing one is F9/S5 work (okf-migration-f2).",
+      "worktree-parallelism is GENUINELY shapeless, re-confirmed by f2-4's post-widening sweep: it has no `## Behaviors`, `## Business Rules`, `## Edge Cases Settled` or `## Pointers` sections at all, so there is nothing for any anchor scheme to read — 0 anchors AND 0 unparsed blocks, which is what real shapelessness looks like next to decision-memory's hidden nine. Choosing its per-area scheme is F9/S5 work (okf-migration-f2).",
   },
 };
 
@@ -350,6 +361,49 @@ function baSectionOf(heading) {
 // silently not existing.
 const BLOCK_START_RE = /^(-\s+|\*\*)/;
 
+// ─── the id forms (f2-4) ────────────────────────────────────────────────────
+// The classifier shipped by okf-5 required a BARE id at the head of the block:
+// /^\*\*(B\d+)\s+—/ and /^-\s+(R\d+)\s+—/. Those were written against
+// advisor-protocol, and five of the nine remaining areas simply write the same
+// anchors in a different hand — the id bold-wrapped, or carrying a citation
+// before the em dash, or letter-suffixed:
+//
+//   - **R1** — …                     doctrine-layer L213, onboarding L337
+//   - **R1 — …**                     decision-memory L16, performance-log L140
+//   - **R1** (D1) — …                feedback-digest L259
+//   - **R7 (not yet implemented — P24)** — …   onboarding L365
+//   - R8a — …                        hook-runtime L412
+//   **B3a — …**                      doctrine-layer L89, workflow-state L207
+//
+// Read by the narrow patterns, doctrine-layer derived R0 while carrying R1–R17,
+// and decision-memory derived 0 anchors and was filed by the planning sweep as
+// "shapeless — needs a bespoke scheme". It is not shapeless: its nine rules were
+// invisible. A "no structure here" verdict that is really "this reader cannot
+// see the structure" is the same lie the derived gate exists to prevent, one
+// level up — so the classifier is widened to the id FORMS, and the sweep
+// re-classified (docs/history/okf-migration-f2/reports/inventory-sweep.md).
+//
+// Two boundaries hold this in place:
+//
+//   1. IT READS IDS, IT NEVER INVENTS THEM. An unnumbered bold-lead paragraph
+//      (`**Detect (every run).**`, onboarding L96) stays UNPARSED and keeps
+//      showing in the unparsed report. Assigning it a positional B-id would
+//      fabricate structure the source never had (D10) and would collide with
+//      the source's own B-ids in the areas that use both.
+//   2. THE NO-OP IS THE SAFETY PROPERTY. advisor-protocol must still derive
+//      exactly 26 {4,9,6,7} with unparsed_blocks 0, and critical-patterns 47,
+//      from their pinned blobs with expected_counts untouched. A widening that
+//      moves either is too broad and gets narrowed — never the pin relaxed.
+//      Asserted in scripts/test_okf_pins.mjs (sections 24-26).
+const BOLD_MARKER_RE = /\*\*/g;
+/** Bold markers dropped, for ID MATCHING ONLY — never for anchor text. */
+const unbold = (line) => line.replace(BOLD_MARKER_RE, "");
+// `(?:\([^)]*\))?` is the optional citation between the id and its em dash;
+// `[a-z]?` is the letter suffix (B3a, R8a, R20b). The em dash itself is still
+// required, so an ASCII-hyphen bullet is prose, exactly as before.
+const BEHAVIOR_ID_RE = /^(B\d+[a-z]?)\s*(?:\([^)]*\))?\s+—/;
+const RULE_ID_RE = /^-\s+(R\d+[a-z]?)\s*(?:\([^)]*\))?\s+—/;
+
 function emptyUnparsed() {
   return {
     blocks: { behaviors: 0, rules: 0, edges: 0, pointers: 0, total: 0 },
@@ -402,13 +456,13 @@ export function inventorySpec(text) {
     }
 
     let classified = false;
-    const bold = /^\*\*(B\d+)\s+—/.exec(line);
+    const bold = line.startsWith("**") ? BEHAVIOR_ID_RE.exec(unbold(line)) : null;
     if (bold) {
       behaviors.push(bold[1]);
       openAnchor(bold[1]);
       classified = true;
     } else {
-      const rule = /^-\s+(R\d+)\s+—/.exec(line);
+      const rule = /^-\s+/.test(line) ? RULE_ID_RE.exec(unbold(line)) : null;
       if (rule) {
         rules.push(rule[1]);
         openAnchor(rule[1]);

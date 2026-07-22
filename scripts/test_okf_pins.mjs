@@ -306,9 +306,19 @@ for (const [area, pin] of Object.entries(M.PIN_REGISTRY)) {
     "docs/specs/onboarding.md reports a NON-ZERO unparsed-block count — a clean parse here would prove the extractor is still blind",
     inv.unparsed?.blocks,
   );
+  // f2-4 moved which part of onboarding is invisible, and the assertion moves
+  // with the truth — never the other way round. Its 28 `- **R1** —` rules are
+  // now SEEN (that is the widening), while its 20 unnumbered bold-lead
+  // behaviour paragraphs (`**Detect (every run).**`) still carry no id and so
+  // remain unparsed BY DESIGN: the classifier reads ids, it never invents them.
   ok(
-    inv.unparsed.blocks.rules > 0 && inv.unparsed.blocks.behaviors > 0,
-    "onboarding's unparsed blocks are attributed per section (its `- **R1** —` rules and unnumbered behaviors)",
+    inv.rules.length >= 27 && inv.rules.includes("R20b"),
+    "onboarding's bold-wrapped rule ids are now classified, letter suffix included (f2-4) — this is what the narrow classifier could not see",
+    inv.rules?.length,
+  );
+  ok(
+    inv.unparsed.blocks.behaviors > 0,
+    "onboarding's unnumbered bold-lead behaviors are STILL reported as unparsed — the widening never fabricated ids for them",
     inv.unparsed?.blocks,
   );
   ok(
@@ -708,6 +718,142 @@ console.log(
   } catch { /* reported below */ }
   ok(parsedFid?.rows?.length === 26, "`--fidelity` emits one row per anchor", parsedFid?.rows?.length);
   ok(typeof parsedFid?.stats?.median === "number", "`--fidelity` emits the median", parsedFid?.stats);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// f2-4 — THE ID-FORM WIDENING, AND THE NO-OP THAT BOUNDS IT
+//
+// f2-3 returned [BLOCKED] rather than force a scheme, and its evidence exposed
+// a systemic defect: the shipped classifier required a BARE id at the head of
+// a block (`**B1 — …`, `- R1 — …`), so five of the nine remaining areas —
+// which write the same anchors with the id bold-wrapped — derived R0 while
+// carrying real, numbered rules. doctrine-layer inventoried 20 anchors with 21
+// UNPARSED blocks. decision-memory was filed by the planning sweep as
+// "shapeless, 0 anchors" and slated for a bespoke scheme; it is not shapeless
+// at all — its 9 rules were invisible. A verdict of "no structure here" that is
+// really "this reader cannot see the structure" is the same lie the derived
+// gate exists to prevent, one level up.
+//
+// The widening recognises ID FORMS ONLY, and the property that bounds it is a
+// STRICT NO-OP on both shipped pins. If a widening moves 26 or 47, it is too
+// broad and must be narrowed — never the other way around, and never by
+// touching expected_counts.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── 24. every id form observed across the nine remaining areas is classified ─
+
+{
+  // Every line below is a form MEASURED in docs/specs/, with its source cited.
+  const FIXTURE = [
+    "# Fixture",
+    "",
+    "## Behaviors & Operations",
+    "",
+    "**B1 — Bare bold id.** The shipped form; advisor-protocol writes all four this way.",
+    "",
+    "**B3a — Letter-suffixed id.** doctrine-layer L89, hook-runtime L95, workflow-state L207.",
+    "",
+    "**B7** — Id closed before the dash.",
+    "",
+    "**Detect (every run).** An unnumbered bold-lead paragraph — onboarding L96. It carries",
+    "no id, so it MUST stay unparsed: inventing a positional id would fabricate structure",
+    "the source never had (D10) and would collide with the source's own B-ids.",
+    "",
+    "## Business Rules",
+    "",
+    "- R1 — Bare bullet id, the shipped form.",
+    "- R8a — Bare and letter-suffixed; hook-runtime L412.",
+    "- **R2** — Bold-wrapped id; doctrine-layer L213, onboarding L337.",
+    "- **R20b** — Bold-wrapped and letter-suffixed; onboarding L478.",
+    "- **R3** (D1) — Bold-wrapped with a citation before the dash; feedback-digest L259.",
+    "- **R7 (not yet implemented — P24)** — A citation carrying its own em dash; onboarding L365.",
+    "- **R4 — The whole rule bolded through the dash** (D7). decision-memory L16.",
+    "- **Something unnumbered** — a bolded bullet with no id; verify-pipeline L19. Stays unparsed.",
+    "",
+  ].join("\n");
+
+  const inv = M.inventorySpec(FIXTURE);
+  eq(
+    inv.behaviors,
+    ["B1", "B3a", "B7"],
+    "inventorySpec classifies bare, letter-suffixed, and bold-closed behavior ids",
+  );
+  eq(
+    inv.rules,
+    ["R1", "R8a", "R2", "R20b", "R3", "R7", "R4"],
+    "inventorySpec classifies bare, bold-wrapped, letter-suffixed, citation-carrying, and dash-inside-bold rule ids",
+  );
+  ok(
+    inv.unparsed.blocks.behaviors === 1,
+    "an unnumbered bold-lead behavior paragraph stays UNPARSED — the widening reads ids, it never invents them",
+    inv.unparsed.blocks,
+  );
+  ok(
+    inv.unparsed.blocks.rules === 1,
+    "an unnumbered bolded rule bullet stays UNPARSED",
+    inv.unparsed.blocks,
+  );
+  // The anchor TEXT must still travel with the widened ids (F11 depends on it).
+  ok(
+    /Bold-wrapped id/.test(inv.texts.get("R2") || ""),
+    "a widened rule id still carries its anchor text, so the fidelity floor can measure it",
+    inv.texts.get("R2"),
+  );
+  ok(
+    /Letter-suffixed id/.test(inv.texts.get("B3a") || ""),
+    "a letter-suffixed behavior id still carries its anchor text",
+    inv.texts.get("B3a"),
+  );
+}
+
+// ─── 25. THE SAFETY PROPERTY: the widening is a strict no-op on both pins ────
+
+{
+  const a = await M.derivePinForArea("advisor-protocol");
+  ok(a.ok, "STRICT NO-OP: advisor-protocol's pin is still green after the widening", a.issues);
+  eq(
+    {
+      behaviors: a.counts?.behaviors,
+      rules: a.counts?.rules,
+      edges: a.counts?.edges,
+      pointers: a.counts?.pointers,
+      total: a.counts?.total,
+      unparsed_blocks: a.counts?.unparsed_blocks,
+    },
+    { behaviors: 4, rules: 9, edges: 6, pointers: 7, total: 26, unparsed_blocks: 0 },
+    "STRICT NO-OP: the widened classifier still derives exactly 26 {4,9,6,7} with 0 unparsed blocks from advisor-protocol's PINNED blob",
+  );
+  const p = await M.derivePinForArea("critical-patterns");
+  ok(p.ok, "STRICT NO-OP: critical-patterns' pin is still green after the widening", p.issues);
+  eq(
+    { patterns: p.counts?.patterns, total: p.counts?.total, unparsed_blocks: p.counts?.unparsed_blocks },
+    { patterns: 47, total: 47, unparsed_blocks: 0 },
+    "STRICT NO-OP: critical-patterns still derives exactly 47 with 0 unparsed blocks",
+  );
+  // ... and the pins themselves were not "adjusted" to make that true.
+  ok(
+    M.PIN_REGISTRY["advisor-protocol"].expected_counts.total === 26 &&
+      M.PIN_REGISTRY["advisor-protocol"].expected_counts.unparsed_blocks === 0 &&
+      M.PIN_REGISTRY["critical-patterns"].expected_counts.total === 47,
+    "the no-op was proven against UNCHANGED expected_counts — never by relaxing the pins",
+    { advisor: M.PIN_REGISTRY["advisor-protocol"].expected_counts, patterns: M.PIN_REGISTRY["critical-patterns"].expected_counts },
+  );
+}
+
+// ─── 26. the widening is bounded: it may not classify a bare prose block ────
+
+{
+  const NOT_ANCHORS = [
+    "## Business Rules",
+    "",
+    "- **Reserve** — this bullet names no numbered id, so it is prose to the classifier.",
+    "- R1 - an ASCII hyphen is not the em dash the scheme uses.",
+    "- **RULES** — an all-caps word starting with R is not an id.",
+    "",
+  ].join("\n");
+  const inv = M.inventorySpec(NOT_ANCHORS);
+  eq(inv.rules, [], "the widened rule pattern still refuses unnumbered, hyphenated, and word-shaped bullets");
+  ok(inv.unparsed.blocks.rules === 3, "all three refused bullets are REPORTED as unparsed blocks", inv.unparsed.blocks);
 }
 
 // ─── done ───────────────────────────────────────────────────────────────────
