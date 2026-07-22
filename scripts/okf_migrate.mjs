@@ -30,6 +30,14 @@
 //                        path must be the claiming concept's own path, and
 //                        that file must exist. Exit 0 with counts on green,
 //                        exit 1 naming every violation on red.
+//   --check-patterns     Coverage check (D35) for critical-patterns.md's
+//                        migration into docs/knowledge/patterns/ (okf-6).
+//                        critical-patterns.md is a flat dated pattern list,
+//                        not a nine-section BA spec, so it does not fit
+//                        --check's ANCHOR_REGISTRY/area shape: this is the
+//                        additive extension the okf-6 cell action calls
+//                        for, same coverage law, PATn anchors instead of
+//                        B*/R*/E*/P*.
 //
 // No --strict flag exists here on purpose: the check is already binary.
 
@@ -60,6 +68,132 @@ const ANCHOR_REGISTRY = {
     "P1", "P2", "P3", "P4", "P5", "P6", "P7",
   ],
 };
+
+// ─── critical-patterns coverage (D35, okf-6) ────────────────────────────────
+// critical-patterns.md does NOT fit the nine-section BA-spec shape the
+// ANCHOR_REGISTRY/runCheck pair above assumes (no B*/R*/E*/P* headings — it
+// is a flat, dated list of pattern entries). This is the additive extension
+// the okf-6 cell action calls for: same "no loss, no duplication" coverage
+// law (D35), a frozen anchor registry, a stub anchor map, and a concept
+// claims scan — just against critical-patterns.md's own shape instead of
+// the BA-spec one. `--check-patterns` never touches ANCHOR_REGISTRY/runCheck.
+//
+// Frozen registry (D35's "no loss" baseline): one PATn per `## [YYYYMMDD]`
+// heading in critical-patterns.md's pre-migration document order, captured
+// at okf-6 (2026-07-22; recoverable via git history — same idiom as
+// ANCHOR_REGISTRY above).
+const PATTERNS_SOURCE = "docs/history/learnings/critical-patterns.md";
+const PATTERNS_CONCEPT_DIR = "docs/knowledge/patterns";
+const PATTERNS_ANCHOR_REGISTRY = Array.from({ length: 47 }, (_, i) => `PAT${i + 1}`);
+
+/** Parse critical-patterns.md's own shape: one anchor per `## [YYYYMMDD] ...`
+ *  heading, document order. Mirrors inventorySpec's role for the BA shape. */
+export function inventoryPatterns(text) {
+  const headingRe = /^## \[(\d{8})\] .+$/;
+  let n = 0;
+  for (const line of text.split("\n")) {
+    if (headingRe.test(line)) n += 1;
+  }
+  return Array.from({ length: n }, (_, i) => `PAT${i + 1}`);
+}
+
+/** bee.sources claims of the form critical-patterns.md#PATn from every
+ *  concept under docs/knowledge/patterns/ (index.md/log.md excluded). */
+async function collectPatternClaims() {
+  const knowledge = await import(
+    pathToFileURL(path.join(REPO_ROOT, ".bee", "bin", "lib", "knowledge.mjs")).href
+  );
+  const dir = path.join(REPO_ROOT, ...PATTERNS_CONCEPT_DIR.split("/"));
+  const claims = new Map(); // anchor -> [concept repo-relative path, ...]
+  const issues = [];
+  if (!fs.existsSync(dir)) {
+    issues.push(`concept directory missing: ${PATTERNS_CONCEPT_DIR}/`);
+    return { claims, issues };
+  }
+  const claimRe = new RegExp(`^${PATTERNS_SOURCE.replace(/\./g, "\\.")}#([A-Z]+\\d+)$`);
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (!name.endsWith(".md") || name === "index.md" || name === "log.md") continue;
+    const rel = `${PATTERNS_CONCEPT_DIR}/${name}`;
+    const parsed = knowledge.parseFrontmatter(fs.readFileSync(path.join(dir, name), "utf8"));
+    if (!parsed.ok || !parsed.present) {
+      issues.push(`${rel}: frontmatter missing or unparseable — cannot read bee.sources claims`);
+      continue;
+    }
+    const bee = parsed.data.bee && typeof parsed.data.bee === "object" ? parsed.data.bee : {};
+    const sources = Array.isArray(bee.sources) ? bee.sources : [];
+    for (const entry of sources) {
+      const m = typeof entry === "string" ? claimRe.exec(entry) : null;
+      if (!m) continue;
+      if (!claims.has(m[1])) claims.set(m[1], []);
+      claims.get(m[1]).push(rel);
+    }
+  }
+  return { claims, issues };
+}
+
+export async function runCheckPatterns() {
+  const expected = PATTERNS_ANCHOR_REGISTRY;
+  const issues = [];
+  const stubPath = path.join(REPO_ROOT, ...PATTERNS_SOURCE.split("/"));
+  let stubMap = new Map();
+  if (!fs.existsSync(stubPath)) {
+    issues.push(`pointer stub missing: ${PATTERNS_SOURCE} (the path is never deleted — D20)`);
+  } else {
+    const parsedStub = parseStubAnchorMap(fs.readFileSync(stubPath, "utf8"));
+    stubMap = parsedStub.map;
+    issues.push(...parsedStub.issues);
+  }
+  const { claims, issues: claimIssues } = await collectPatternClaims();
+  issues.push(...claimIssues);
+
+  const expectedSet = new Set(expected);
+  let duplicated = 0;
+  let lost = 0;
+
+  for (const anchor of expected) {
+    const owners = claims.get(anchor) || [];
+    const mapped = stubMap.get(anchor);
+    if (!mapped) {
+      issues.push(`LOST in stub map: ${anchor} has no row in ${PATTERNS_SOURCE}'s anchor map (D37)`);
+    }
+    if (owners.length === 0) {
+      lost += 1;
+      issues.push(`LOST in concepts: ${anchor} is claimed by no concept's bee.sources (expected one owner)`);
+      continue;
+    }
+    if (owners.length > 1) {
+      duplicated += 1;
+      issues.push(`DUPLICATED: ${anchor} is claimed by ${owners.length} concepts: ${owners.join(", ")}`);
+      continue;
+    }
+    const owner = owners[0];
+    if (mapped && mapped !== owner) {
+      issues.push(`MAP MISMATCH: stub map sends ${anchor} to "${mapped}" but the claiming concept is "${owner}"`);
+    }
+    if (!fs.existsSync(path.join(REPO_ROOT, owner))) {
+      issues.push(`MISSING FILE: ${anchor}'s owner "${owner}" does not exist on disk`);
+    }
+  }
+  for (const anchor of stubMap.keys()) {
+    if (!expectedSet.has(anchor)) {
+      issues.push(`EXTRA in stub map: ${anchor} is not in the frozen pattern registry`);
+    }
+  }
+  for (const anchor of claims.keys()) {
+    if (!expectedSet.has(anchor)) {
+      issues.push(`EXTRA claim: ${anchor} (claimed by ${claims.get(anchor).join(", ")}) is not in the frozen pattern registry`);
+    }
+  }
+
+  const owned = expected.filter((a) => (claims.get(a) || []).length === 1).length;
+  if (issues.length > 0) {
+    console.error(`FAIL okf_migrate --check-patterns: ${expected.length} anchors, ${owned} owned, ${duplicated} duplicated, ${lost} lost`);
+    for (const issue of issues) console.error(`  - ${issue}`);
+    return 1;
+  }
+  console.log(`PASS okf_migrate --check-patterns: ${expected.length} anchors, ${owned} owned, 0 duplicated, 0 lost — every critical-patterns.md heading lands in exactly one bee.pattern concept and the stub map agrees (D35/D37)`);
+  return 0;
+}
 
 // ─── inventory mode ─────────────────────────────────────────────────────────
 
@@ -112,12 +246,15 @@ export function inventorySpec(text) {
 // ─── check mode helpers ─────────────────────────────────────────────────────
 
 /** Anchor → target concept path rows from a D37 pointer-stub anchor map.
- *  Rows look like: | B1 | [docs/knowledge/areas/<area>/x.md](../…) | */
+ *  Rows look like: | B1 | [docs/knowledge/areas/<area>/x.md](../…) | (also
+ *  matches multi-letter anchor prefixes such as critical-patterns.md's
+ *  `PAT1`..`PATn`, okf-6 — the BA-spec single-letter anchors B1/R2/E3/P4
+ *  are the special case of one-or-more-letters, so this is additive.) */
 export function parseStubAnchorMap(text) {
   const map = new Map();
   const issues = [];
   for (const line of text.split("\n")) {
-    const row = /^\|\s*`?([A-Z]\d+)`?\s*\|\s*(.+?)\s*\|\s*$/.exec(line);
+    const row = /^\|\s*`?([A-Z]+\d+)`?\s*\|\s*(.+?)\s*\|\s*$/.exec(line);
     if (!row) continue;
     const anchor = row[1];
     const cell = row[2];
@@ -257,7 +394,10 @@ async function main() {
   if (args[0] === "--check" && args[1]) {
     return runCheck(args[1]);
   }
-  console.error("usage: okf_migrate.mjs (--inventory <spec-path> | --check <area>)");
+  if (args[0] === "--check-patterns") {
+    return runCheckPatterns();
+  }
+  console.error("usage: okf_migrate.mjs (--inventory <spec-path> | --check <area> | --check-patterns)");
   return 1;
 }
 

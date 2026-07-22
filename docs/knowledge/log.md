@@ -19,3 +19,18 @@
   `scripts/okf_migrate.mjs --check advisor-protocol` (D35), now a chain suite in
   `scripts/run_verify.mjs`; the session-close capture nudge scans `docs/knowledge/**/*.md`
   mtimes alongside `docs/specs/` (D34).
+- Critical patterns migrated, work item + plan authored, templates published (cell okf-6, slice
+  S4b): `docs/history/learnings/critical-patterns.md`'s 47 dated pattern entries re-authored into
+  47 `bee.pattern` concepts under `patterns/` (`bee.critical: true` throughout, `bee.polarity`
+  judged per entry — 42 pitfall, 5 practice), each canonical by construction (generated via
+  `emitFrontmatter`, zero `not_canonical` findings). The legacy path is now a pointer stub
+  carrying the full 47-anchor map (D37: `PAT1`-`PAT47`). Coverage is machine-checked by the new
+  `scripts/okf_migrate.mjs --check-patterns` (D35, additive — critical-patterns.md is a flat
+  dated list, not a nine-section BA spec, so it does not fit `--check`'s `ANCHOR_REGISTRY`/area
+  shape), now a chain suite in `scripts/run_verify.mjs`. This feature's own work item and plan
+  now live as concepts too: `work/okf-foundation/work-item.md` (`bee.work-item`, D26, condensed
+  from `CONTEXT.md`) and `work/okf-foundation/plan.md` (`bee.plan`, condensed from the frozen
+  `plan.md`, carrying `bee.review_status: Approved`, D36). `docs/specs/okf-profile.md` gained a
+  "## Templates" section with three canonical worked examples (`bee.work-item`, `bee.plan`,
+  `bee.delivery`) — round-trip proven by pasting the `bee.delivery` example into a temp bundle
+  file and confirming `bee knowledge check` reported zero `not_canonical` before removing it.

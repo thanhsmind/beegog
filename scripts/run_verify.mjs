@@ -80,6 +80,11 @@ const EXTRA_SUITES = [
   // claims must stay in exact set-equality: every anchor owned by exactly one
   // concept, no loss, no duplication. Binary check; no --strict exists.
   ["scripts/okf_migrate.mjs", "--check", "advisor-protocol"],
+  // okf-6: the D35 coverage gate for critical-patterns.md's migration into
+  // docs/knowledge/patterns/ — same coverage law, PATn anchors instead of
+  // the BA-spec B*/R*/E*/P* shape (critical-patterns.md is a flat dated
+  // pattern list, not a nine-section BA spec). Binary check; no --strict.
+  ["scripts/okf_migrate.mjs", "--check-patterns"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

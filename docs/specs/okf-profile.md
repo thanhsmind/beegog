@@ -1,7 +1,7 @@
 ---
 area: okf-profile
 updated: 2026-07-22
-sources: [okf-foundation cell okf-1 (knowledge.mjs core — emitter-first frontmatter codec, concept model, two-level check verb; trace in `.bee/cells/`, report `docs/history/okf-foundation/reports/`, 2026-07-22); okf-foundation cell okf-2 (bundle skeleton + this spec, 2026-07-22); CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`]
+sources: [okf-foundation cell okf-1 (knowledge.mjs core — emitter-first frontmatter codec, concept model, two-level check verb; trace in `.bee/cells/`, report `docs/history/okf-foundation/reports/`, 2026-07-22); okf-foundation cell okf-2 (bundle skeleton + this spec, 2026-07-22); okf-foundation cell okf-6 (critical-patterns.md -> patterns/ migration, work/okf-foundation/ work item + plan concepts, Templates section; trace in `.bee/cells/`, 2026-07-22); CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`]
 decisions: [D2, D4, D10, D11, D12, D13, D17, D18, D19, D20, D21, D23, D24, D27, D29, D30, D31, D32, D33, D34, D35, D36, D37]
 coverage: partial
 ---
@@ -206,6 +206,122 @@ it is never a write path into runtime state, though reads from it are permitted.
 - Migrated legacy files are **not deleted** in this feature (D20) — stubs keep existing consumers
   (`.bee/bin/lib/inject.mjs:70-95`'s filename-only spec count; `hooks/bee-session-close.mjs:100-140`'s
   mtime-based staleness nudge) working through the migration without a flag day.
+
+## Templates
+
+Three canonical worked examples — one per type most authors reach for first. Each frontmatter
+block below is the **exact emitter-canonical form** (byte-identical to what `emitFrontmatter`
+produces and `parseFrontmatter` accepts back, D12): copy it, edit the values, and the round-trip
+guard (`not_canonical`) stays silent. Round-trip proof (okf-6): the `bee.delivery` example below
+was pasted into a temp file inside `docs/knowledge/patterns/`, `bee knowledge check --json` ran
+zero errors and zero warnings (no `not_canonical` finding) with it present, and the temp file was
+then removed — the other two examples are live bundle concepts (`bee knowledge check` already
+grades them on every run).
+
+### `bee.work-item` — `docs/knowledge/work/okf-foundation/work-item.md` (live)
+
+```yaml
+---
+type: bee.work-item
+title: okf-foundation — Bee OKF Profile foundation
+description: "Replace bee's document model with an OKF v0.1 bundle: docs/knowledge/, a validator, an index generator, a budget-aware context consumer, and the full migration loop proven end-to-end on one area."
+tags: [okf, knowledge-bundle, migration, high-risk]
+timestamp: 2026-07-22
+bee:
+  id: okf-foundation
+  lifecycle: active
+  required_context: [areas/advisor-protocol/overview.md, patterns/20260715-shipping-a-lib-file-means-shipping-the-manifest.md, patterns/20260716-a-tolerant-regression-net-frozen-green-before-the.md, patterns/20260712-cross-cell-contracts-and-census-carriers-are-plan.md]
+  decisions: [D17-D38 active set (docs/history/okf-foundation/CONTEXT.md), "D29 (F1 proof area: docs/specs/advisor-protocol.md)", D30 (workflow-state.md decomposition locked as F2 input), D34 (ships list + guard propagation — ledger/manifest/plugin trees/session-close hook), "D35 (coverage report law: every numbered source anchor lands in exactly one concept)", D37 (pointer-stub anchor map — citations rewired in the same cell as the stub)]
+  sources: [docs/history/okf-foundation/CONTEXT.md, docs/history/okf-foundation/plan.md]
+  lane: high-risk
+---
+
+# okf-foundation — Bee OKF Profile Foundation
+
+## Outcome
+
+Replace bee's document model with an OKF v0.1 bundle governed by a **Bee OKF Profile** [...]
+
+## Scope
+## Acceptance
+## Decisions
+## Chosen Approach
+```
+
+A work item's body sections (agent's discretion, not profile-enforced) are: Outcome, Scope,
+Acceptance, Decisions, Chosen Approach — each condensed FROM the feature's `CONTEXT.md`/`plan.md`,
+never invented (D10). `bee.decisions` entries mix bare D-ids (`D30`) and quoted parenthetical
+citations (`"D29 (F1 proof area: ...)"`) — the emitter quotes only the entries containing a colon,
+comma, or other reserved character; both forms round-trip.
+
+### `bee.plan` — `docs/knowledge/work/okf-foundation/plan.md` (live)
+
+```yaml
+---
+type: bee.plan
+title: okf-foundation — Plan
+description: "The seven-slice plan for the Bee OKF Profile foundation: format core, chain wiring, generators, data, consumer, startup bridge, promote v1."
+tags: [okf, plan, high-risk]
+timestamp: 2026-07-22
+bee:
+  id: okf-foundation-plan
+  lifecycle: active
+  required_context: [work/okf-foundation/work-item.md]
+  decisions: [D2 (chain never red between cells), D22 (consumer in scope), D29, D30, D34, D35, D38 (loop closure over coverage)]
+  sources: [docs/history/okf-foundation/plan.md, docs/history/okf-foundation/CONTEXT.md]
+  lane: high-risk
+  review_status: Approved
+---
+
+# okf-foundation — Plan
+
+## Mode gate
+## Approach
+## Slices
+## Risk map
+## Rejected Alternatives
+```
+
+`bee.review_status` carries the `Draft → Ready for Review → Approved → Needs Revision → Shipped`
+ladder (D36) — the field `implement-plan.md`'s review state moves into once `bee-briefing` is
+rewired (declared here, executed in F2). A `bee.plan`'s `required_context` typically points back
+at its own work item, since the plan only makes sense alongside the outcome/scope it implements.
+
+### `bee.delivery` — worked example (illustrative; not a committed concept — okf-foundation is not
+closed yet), grounded in cell okf-5's real cap trace (`.bee/cells/okf-5.json`)
+
+```yaml
+---
+type: bee.delivery
+title: okf-foundation cell okf-5 — advisor-protocol migrated end-to-end
+description: "Delivery record for cell okf-5: docs/specs/advisor-protocol.md re-authored into four bee.area concepts, coverage-gated (D35), full chain green."
+tags: [okf, delivery, migration]
+timestamp: 2026-07-22
+bee:
+  id: okf-foundation-okf-5-delivery
+  lifecycle: active
+  areas: [advisor-protocol]
+  required_context: [work/okf-foundation/work-item.md]
+  decisions: [D29, D35, D37]
+  sources: [.bee/cells/okf-5.json, docs/specs/advisor-protocol.md]
+  lane: high-risk
+---
+
+# okf-foundation cell okf-5 — Delivery
+
+## Outcome
+
+`docs/specs/advisor-protocol.md` migrated end-to-end into 4 `bee.area` concepts [...]
+
+## Evidence
+## Verify
+```
+
+A `bee.delivery`'s `sources` may cite a cell trace file directly (`.bee/cells/<id>.json`) — a
+`.bee/*.json` path is outside the bundle and is never itself a concept (D2/D23), but `sources` is
+free-text provenance, not a `required_context` link target, so citing it is not a dangling-target
+finding. `areas` names the subsystem(s) the delivered work touched, matching one or more
+`bee.area` concepts' `bee.areas` membership.
 
 ## Open Gaps
 
