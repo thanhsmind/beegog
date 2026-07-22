@@ -97,16 +97,26 @@ async function maybeDecisionNudge(root) {
 
 // Decision 0003 capture nudge: a settled outcome must reach the state layer in
 // the same session it settled. When the newest active decision is more recent
-// than every docs/specs/*.md update, warn (deduped) that something settled was
-// never captured — invoke bee-scribing capture before closing. Never blocks.
+// than every docs/specs/*.md update AND every docs/knowledge/**/*.md concept
+// (okf-foundation D34 — the bundle is the state layer's new home as areas
+// migrate), warn (deduped) that something settled was never captured — invoke
+// bee-scribing capture before closing. Never blocks.
 async function maybeCaptureNudge(root) {
   try {
     // docs/specs/ is a PRODUCT doc tree — resolve against the product root so the
     // nudge reads the real specs under the repo-divorce topology, not the empty
     // workshop-side docs/specs/ (GitHub #14).
     const stateLib = await import(libModuleUrl(root, "state.mjs"));
-    const specsDir = path.join(stateLib.resolveProductRoot(root), "docs", "specs");
-    if (!fs.existsSync(specsDir)) {
+    const productRoot = stateLib.resolveProductRoot(root);
+    const specsDir = path.join(productRoot, "docs", "specs");
+    // okf-foundation D34: knowledge migrates out of docs/specs/ area by area
+    // (legacy specs become pointer stubs whose mtime never moves again). A
+    // capture that lands as a bundle concept under docs/knowledge/ must count
+    // as "captured", or this nudge fires forever once knowledge moves. The
+    // bundle nests (areas/<slug>/, work/<id>/), so it is walked recursively;
+    // docs/specs/ keeps its historical flat scan.
+    const knowledgeDir = path.join(productRoot, "docs", "knowledge");
+    if (!fs.existsSync(specsDir) && !fs.existsSync(knowledgeDir)) {
       return null;
     }
     const decisionsLib = await import(libModuleUrl(root, "decisions.mjs"));
@@ -117,16 +127,34 @@ async function maybeCaptureNudge(root) {
     if (!decisionTs) {
       return null;
     }
-    let newestSpec = 0;
-    for (const name of fs.readdirSync(specsDir)) {
-      if (!name.endsWith(".md")) {
-        continue;
+    const newestMd = (dir, recursive) => {
+      let newest = 0;
+      if (!fs.existsSync(dir)) {
+        return newest;
       }
-      const mtime = fs.statSync(path.join(specsDir, name)).mtimeMs;
-      if (mtime > newestSpec) {
-        newestSpec = mtime;
+      const stack = [dir];
+      while (stack.length > 0) {
+        const current = stack.pop();
+        for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+          const abs = path.join(current, entry.name);
+          if (entry.isDirectory()) {
+            if (recursive) {
+              stack.push(abs);
+            }
+            continue;
+          }
+          if (!entry.isFile() || !entry.name.endsWith(".md")) {
+            continue;
+          }
+          const mtime = fs.statSync(abs).mtimeMs;
+          if (mtime > newest) {
+            newest = mtime;
+          }
+        }
       }
-    }
+      return newest;
+    };
+    const newestSpec = Math.max(newestMd(specsDir, false), newestMd(knowledgeDir, true));
     if (decisionTs <= newestSpec) {
       return null;
     }

@@ -74,6 +74,11 @@ const MANDATORY_SUITES = [
   // (D21 stale-generated-index freshness) — one dispatcher, two chain
   // entries, both protected by this exact-path pin.
   ".bee/bin/bee.mjs",
+  // okf-5: the advisor-protocol migration coverage gate (D35) — pinned so the
+  // `okf_migrate --check advisor-protocol` chain entry can never silently
+  // drop out of commands.verify (it does not match the test_*.mjs discovery
+  // glob, so EXTRA_SUITES membership is its only way into the chain).
+  "scripts/okf_migrate.mjs",
 ];
 
 // Floor count: total discovered suites must never silently drop below this

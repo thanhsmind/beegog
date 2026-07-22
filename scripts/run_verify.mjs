@@ -74,6 +74,12 @@ const EXTRA_SUITES = [
   // `bee decisions render --check`; a stale or missing generated index under
   // docs/knowledge/ fails the chain naming the file. No --strict here either.
   [".bee/bin/bee.mjs", "knowledge", "index", "--check"],
+  // okf-5: the D35 coverage gate for the advisor-protocol migration — the
+  // frozen source anchor inventory, the pointer stub's anchor map
+  // (docs/specs/advisor-protocol.md, D37), and the concepts' bee.sources
+  // claims must stay in exact set-equality: every anchor owned by exactly one
+  // concept, no loss, no duplication. Binary check; no --strict exists.
+  ["scripts/okf_migrate.mjs", "--check", "advisor-protocol"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

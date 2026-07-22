@@ -2013,7 +2013,7 @@
     },
     {
       "path": "hooks/bee-session-close.mjs",
-      "sha256": "201073ddce795525ee6ec7bab0297f4adef01830bac8935b528b694e03dea2e6",
+      "sha256": "283475e6f14d457718209c22aaed4818731ef539cab778a3501a6796a11b4051",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/bee-session-close.mjs"
@@ -2115,7 +2115,7 @@
     },
     {
       "path": "scripts/test_verify_manifest.mjs",
-      "sha256": "018c9ca38f509f72de7754a9f29744b586ed48b6fdb6c3607b816e2bbc75b505",
+      "sha256": "70d91cd0d0cbc10559df5fd6d621149fb7c9c9bb9a4d8e368c122f4c16bab418",
       "mode": "644",
       "role": "distribution_test"
     },

@@ -1,6 +1,3 @@
----
-okf_version: 0.1
----
 <!--
 GENERATED FILE — do not hand-edit.
 Rendered by `bee knowledge index` from concept frontmatter inside docs/knowledge/ (okf-foundation D21).
@@ -9,12 +6,8 @@ Deterministic: byte-identical for the same bundle contents — path-sorted entri
 never a generation timestamp or any other wall-clock value.
 -->
 
-# Knowledge Bundle
+# areas/
 
 ## Sections
 
-- [areas/](areas/index.md) — 4 concept(s)
-
-## Critical patterns
-
-None.
+- [advisor-protocol/](advisor-protocol/index.md) — 4 concept(s)

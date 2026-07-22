@@ -29,10 +29,15 @@ Where things live. Read the touched area's spec before its code.
   tiny/small shapes, product-file-only caps, test-anchored risk flags, intake-first
   classification), and the anchor tests that keep a rule from drifting back out of the
   layer (`coverage: partial`).
-- [`advisor-protocol.md`](./advisor-protocol.md) — second opinions for workers and the
-  orchestrator: who may consult the configured adviser, the mandatory pre-approval consult
-  for high-risk work with event-based staleness, the read-only rule, and what advice may
-  never do (approve, override, write).
+- [`docs/knowledge/areas/advisor-protocol/`](../knowledge/areas/advisor-protocol/index.md) —
+  second opinions for workers and the orchestrator, migrated into the knowledge bundle
+  (okf-foundation D20/D29): purpose, vocabulary, and actors (`overview.md`); who may consult
+  the configured adviser and the mandatory pre-approval consult for high-risk work
+  (`triggers.md`); the stuck-worker consult loop, the read-only rule, and what advice may
+  never do — approve, override, write (`consult-loop.md`); configuration authority,
+  transports, and event-based staleness (`slots-and-tiers.md`). The legacy path
+  [`advisor-protocol.md`](./advisor-protocol.md) remains as a pointer stub carrying the
+  full anchor map (D37).
 - [`workflow-state.md`](./workflow-state.md) — the durable workflow record: closed phase
   vocabulary, four gates, the guarded feature-start that can never inherit approvals or
   bury unfinished work, and the review records — user-invoked review sessions with frozen
