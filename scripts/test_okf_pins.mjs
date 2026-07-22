@@ -304,8 +304,17 @@ for (const [area, pin] of Object.entries(M.PIN_REGISTRY)) {
 
 // ─── 12. unparsed-block reporting makes format-blindness VISIBLE ────────────
 
+// f2-9 moved WHICH FILE holds those bytes, and nothing else: `docs/specs/
+// onboarding.md` is now a D37 pointer stub, so the pre-migration source — the
+// exact bytes this section has always measured, hash-verified against the pin's
+// blob_sha — is read from the committed copy instead. The property under test
+// (a real spec MUST report a non-zero unparsed-block count, or the extractor is
+// still blind) is unchanged; weakening it to fit a stub would be the assertion
+// following the convenience instead of the truth.
+const ONBOARDING_SOURCE = "docs/history/okf-migration-f2/sources/onboarding.md";
+
 {
-  const onboarding = fs.readFileSync(path.join(REPO_ROOT, "docs", "specs", "onboarding.md"), "utf8");
+  const onboarding = fs.readFileSync(path.join(REPO_ROOT, ...ONBOARDING_SOURCE.split("/")), "utf8");
   const inv = M.inventorySpec(onboarding);
   ok(
     typeof inv.unparsed?.blocks?.total === "number",
@@ -314,7 +323,7 @@ for (const [area, pin] of Object.entries(M.PIN_REGISTRY)) {
   );
   ok(
     inv.unparsed.blocks.total > 0,
-    "docs/specs/onboarding.md reports a NON-ZERO unparsed-block count — a clean parse here would prove the extractor is still blind",
+    `${ONBOARDING_SOURCE} (the pinned pre-migration onboarding spec) reports a NON-ZERO unparsed-block count — a clean parse here would prove the extractor is still blind`,
     inv.unparsed?.blocks,
   );
   // f2-4 moved which part of onboarding is invisible, and the assertion moves
@@ -338,8 +347,8 @@ for (const [area, pin] of Object.entries(M.PIN_REGISTRY)) {
     inv.unparsed?.lines,
   );
 
-  const cli = runCli(["--inventory", "docs/specs/onboarding.md"]);
-  ok(cli.code === 0, "`--inventory docs/specs/onboarding.md` runs", cli.err);
+  const cli = runCli(["--inventory", ONBOARDING_SOURCE]);
+  ok(cli.code === 0, `\`--inventory ${ONBOARDING_SOURCE}\` runs`, cli.err);
   let parsed = null;
   try {
     parsed = JSON.parse(cli.out);

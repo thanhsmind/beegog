@@ -14,9 +14,25 @@ Where things live. Read the touched area's spec before its code.
   concept, `overview.md`, since the source is one coherent topic at nine rules. The legacy path
   [`decision-memory.md`](./decision-memory.md) remains as a pointer stub carrying the full
   9-anchor map (D37).
-- [`onboarding.md`](./onboarding.md) — what onboarding installs and keeps current in a host
-  project, including plugin-first/repo-copy exclusivity, installed-package proof, and
-  proof-gated cleanup; unresolved live-install surfaces remain Open Gaps (`coverage: partial`).
+- [`docs/knowledge/areas/onboarding/`](../knowledge/areas/onboarding/index.md) — what onboarding
+  installs and keeps current in a host project, migrated into the knowledge bundle
+  (okf-foundation D20/D29; okf-migration-f2 F9): purpose, the check/apply run modes and the
+  actors (`overview.md`); the opt-in status-display pair — detection, vendoring, drift healing,
+  staying out of non-opted projects, what the line renders, and the second runtime's
+  machine-level status block (`status-display-vendoring.md`); the delimited ignore-list block
+  onboarding owns, what it silences and what always stays version-tracked
+  (`managed-ignore-section.md`); plugin-first/repo-copy exclusivity, the Codex hybrid carve-out,
+  proof-gated cleanup in both directions and the whole-run snapshot
+  (`distribution-source-exclusivity.md`); the installer entry points — sparse source staging,
+  the complete release identity, and a present-but-broken runtime tool
+  (`installer-entrypoints-and-source-staging.md`); one release version across every projection,
+  the downgrade refusal, honest drift reporting, source-origin classification and the force
+  blast radius (`release-identity-and-version-parity.md`); the remembered guardrail opt-in and
+  the second runtime's lifecycle hook wiring (`repo-local-guardrails.md`); and the artifacts a
+  host keeps — instructions import, unified dispatcher, state-layer landing pages, annotated
+  config sample (`host-project-artifacts.md`). Unresolved live-install surfaces remain Open
+  Gaps. The legacy path [`onboarding.md`](./onboarding.md) remains as a pointer stub carrying
+  the full 58-anchor map (D37, `R20b` included).
 - [`hook-runtime.md`](./hook-runtime.md) — the lifecycle guardrails around the assistant: one
   catalog of record rendered into per-runtime projections, hostile-input immunity, advisory
   encoding, per-target batch-write guarding, three declared runtime differences, paired Codex

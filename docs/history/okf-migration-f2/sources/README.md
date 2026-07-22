@@ -25,6 +25,7 @@ its pinned hash is refused too.
 | `verify-pipeline.md` | `72fd828` (f2-5, the commit before f2-6 stubbed it) | `eab70d7…` | `ba-nine-section` | 14 (0 B / 5 R / 4 E / 5 P), 7 unparsed blocks |
 | `performance-log.md` | `46a56a4` (f2-6, the commit before f2-7 stubbed it) | `efdc9f2…` | `ba-nine-section` | 23 (0 B / 11 R / 5 E / 7 P), 10 unparsed blocks |
 | `feedback-digest.md` | `3d69a2d` (f2-7, the commit before f2-8 stubbed it) | `eeb447e…` | `ba-nine-section` | 29 (0 B / 15 R / 6 E / 8 P), 26 unparsed blocks |
+| `onboarding.md` | `a06f59d` (f2-8 close, the commit before f2-9 stubbed it) | `c78ca9b…` | `ba-nine-section` | 58 (0 B / 28 R — `R20b` included / 15 E / 15 P), 20 unparsed blocks |
 
 Re-derive and re-assert every pin at any time:
 

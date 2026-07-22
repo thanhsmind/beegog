@@ -336,6 +336,49 @@ export const PIN_REGISTRY = {
     note: "the 355-line BA spec as of 3d69a2d (f2-7), immediately before f2-8 turned it into a D37 pointer stub — 15 rules, 6 edge cases, 8 pointers, and 26 unparsed Behaviors & Operations blocks",
   },
 
+  onboarding: {
+    kind: "area",
+    // The pin is HEAD at the moment f2-9 ran, taken BEFORE the stub replaced
+    // the content — same rule as every pin before it: pin the parent, copy the
+    // bytes, hash both.
+    commit: "a06f59d9ce4cd2884ce2072e126166945461731e",
+    path: "docs/specs/onboarding.md",
+    blob_sha: "c78ca9b40a5c24715b99870df17fe08800522a91",
+    scheme: "ba-nine-section",
+    expected_counts: {
+      behaviors: 0,
+      // 28, not 27: R20b is LETTER-SUFFIXED. It is the id f2-4's widening was
+      // written for, and the reason the stub-row parser and the bee.sources
+      // claim matcher were widened alongside it in f2-3 — a derived `R20b`
+      // that no stub row and no concept claim can match would read as LOST
+      // however faithfully it was migrated.
+      rules: 28,
+      edges: 15,
+      pointers: 15,
+      total: 58,
+      // The largest area pinned so far, and its whole "Behaviors &
+      // Operations" section carries no ids at all: 17 unnumbered bold-lead
+      // paragraphs (Detect / Vendor / Heal drift / Stay out / Context colour /
+      // Manage the ignore section / Warn on already-tracked silenced paths /
+      // Select and prove exactly one distribution source / An opt-in is
+      // remembered / Install skills into the project itself / Provide the
+      // assistant-instructions import / Retire superseded helper scripts /
+      // Fetch the workflow source without a full working tree / Wire the
+      // second-runtime guards / Guarantee the second runtime's status display
+      // / Guarantee the state-layer landing pages), the "What the status
+      // display renders" lead paragraph, and 3 un-ided continuation bullets
+      // (the ignore section's three exhaustive cases) — 20 blocks, none of
+      // them invented into an anchor (D10). Every Business Rules bullet is a
+      // `- **Rn** — …` block start the classifier sees; Edge Cases and
+      // Pointers carry no explicit id in the source but every bullet there IS
+      // a top-level `- ` block start, so E1-E15 and P1-P15 are derived from
+      // bullet order. Confirmed by --inventory before any edit.
+      unparsed_blocks: 20,
+    },
+    source_copy: "docs/history/okf-migration-f2/sources/onboarding.md",
+    note: "the 689-line BA spec as of a06f59d (f2-8 close), immediately before f2-9 turned it into a D37 pointer stub — 28 rules (R20b included), 15 edge cases, 15 pointers, and 20 unparsed Behaviors & Operations blocks",
+  },
+
   // ─── declared, not yet pinned (the migrating cell authors the pin) ────────
   // Listed — rather than merely absent — so the gate refuses them BY NAME with
   // a reason, instead of the generic "unknown area" shrug.

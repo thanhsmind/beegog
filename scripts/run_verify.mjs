@@ -141,6 +141,21 @@ const EXTRA_SUITES = [
   // the self-improvement process) keep the F12 drift telemetry inside its
   // band across the six pinned "area"-shaped sources.
   ["scripts/okf_migrate.mjs", "--check", "feedback-digest"],
+  // f2-9 (F6/F9): onboarding's own D35 coverage gate. 58 anchors (0 B / 28 R /
+  // 15 E / 15 P) derived from blob c78ca9b at a06f59d with
+  // expected_counts.unparsed_blocks: 20 asserted — the largest area migrated so
+  // far, and the one carrying the LETTER-SUFFIXED `R20b` that f2-4's widened
+  // classifier reads and f2-3's widened stub-row parser and claim matcher can
+  // match. The 20 unparsed blocks are the whole "Behaviors & Operations"
+  // section: 16 unnumbered bold-lead paragraphs, the status-display lead
+  // paragraph, and the ignore section's three un-ided continuation bullets,
+  // none invented into an anchor (D10). Eight concepts, split by TOPIC (run
+  // modes and actors; the opt-in status display; the managed ignore section;
+  // distribution-source exclusivity; installer entry points and source
+  // staging; release identity and version parity; repo-local guardrails; the
+  // artifacts a host project keeps) keep the F12 drift telemetry inside its
+  // band across the seven pinned "area"-shaped sources.
+  ["scripts/okf_migrate.mjs", "--check", "onboarding"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

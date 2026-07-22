@@ -164,3 +164,53 @@
   `bee.sources`, `--check feedback-digest` failed with the real coverage-loss finding (`LOST in
   concepts: R4`), then was restored to green. Coverage is machine-checked by
   `scripts/okf_migrate.mjs --check feedback-digest` (D35), now a chain suite.
+
+- Seventh area migrated, and the largest so far (cell f2-9, feature `okf-migration-f2`, slice
+  S4e): `docs/specs/onboarding.md` re-authored into eight `bee.area` concepts, split by TOPIC
+  rather than the old spec's headings — `areas/onboarding/overview.md` (what onboarding is, its
+  check/apply run modes, its two actors, and the unspecced remainder),
+  `areas/onboarding/status-display-vendoring.md` (the opt-in status-display pair: detecting the
+  opt-in, vendoring it, healing drift, staying entirely out of non-opted projects, what the line
+  renders and why its context colour tracks the handoff mark, and the second runtime's
+  machine-level status block), `areas/onboarding/managed-ignore-section.md` (the delimited block
+  onboarding owns inside the project's ignore list: what it silences, what always stays
+  version-tracked, the three exhaustive create/append/rewrite cases, and the already-tracked-path
+  warning onboarding never acts on itself), `areas/onboarding/distribution-source-exclusivity.md`
+  (selecting and proving exactly one distribution source, the Codex hybrid carve-out, the fenced
+  cleanup in both directions, and the whole-run snapshot revalidated before the first mutation),
+  `areas/onboarding/installer-entrypoints-and-source-staging.md` (the outer ring: fetching the
+  source without materialising a full working tree, staging the COMPLETE release identity, the
+  parity the two platform entry points owe each other, and a runtime whose tool is present but
+  broken), `areas/onboarding/release-identity-and-version-parity.md` (one release version across
+  every projection, the downgrade refusal, drift recomputed from real file content, the five
+  source origins named rather than guessed, and the blast radius a forceable refusal must
+  enumerate), `areas/onboarding/repo-local-guardrails.md` (the remembered opt-in that keeps a
+  project's local guardrails current forever, and the second runtime's lifecycle hook merge
+  discipline), and `areas/onboarding/host-project-artifacts.md` (the instructions import, the
+  single unified dispatcher that retires nine helper scripts, the create-only state-layer landing
+  pages, and the annotated configuration sample). Ground truth is DERIVED (F8): pin
+  `{a06f59d, docs/specs/onboarding.md, blob c78ca9b, ba-nine-section, 58 anchors (0 B / 28 R /
+  15 E / 15 P), unparsed_blocks: 20}`, with the pre-migration source committed verbatim at
+  `docs/history/okf-migration-f2/sources/onboarding.md`. **`R20b` is the letter-suffixed id** the
+  f2-4 widening was written for and the f2-3 stub-row/claim-matcher widening made claimable — it
+  is owned like any other rule, and the RED-FIRST proof below deliberately targeted it. The 20
+  unparsed blocks are the whole "Behaviors & Operations" section — 16 unnumbered bold-lead
+  paragraphs, the "What the status display renders" lead paragraph, and the ignore section's three
+  un-ided continuation bullets — none invented into an anchor (D10); their content still travels,
+  verbatim, into the concept whose topic it matches. Eight concepts over 58 anchors and 690 source
+  lines land anchors_per_concept at 7.25 and concepts_per_100_source_lines at 1.16, both inside the
+  [0.5x, 2x] band across the seven pinned "area"-shaped sources; the alternative shapes were
+  computed against the same running median before authoring — a 7-concept split (folding the
+  overview's cross-cutting run modes and actors into a topic concept) lands 8.29 / 1.01, also in
+  band, while every shape at 5 concepts or fewer puts concepts_per_100_source_lines at 0.48x or
+  lower, outside it. The 8-way split was chosen on content, not on the metric: this is the first
+  migrated area whose Purpose, run modes and actors genuinely govern all seven topics rather than
+  belonging to any one of them. Fidelity: min/median/max 1.000 (verbatim re-homing).
+  RED-FIRST: with the `R20b` claim deliberately removed from
+  `installer-entrypoints-and-source-staging.md`'s `bee.sources`, `--check onboarding` failed with
+  the real coverage-loss finding (`LOST in concepts: R20b`), then was restored to green. Coverage
+  is machine-checked by `scripts/okf_migrate.mjs --check onboarding` (D35), now a chain suite.
+  `scripts/test_okf_pins.mjs`' section 12 — the guard that proves the extractor is not blind by
+  requiring a NON-ZERO unparsed-block count from this very spec — now reads those same bytes from
+  the committed, hash-verified source copy rather than the path this cell turned into a stub: the
+  assertion follows the bytes, never the convenience.
