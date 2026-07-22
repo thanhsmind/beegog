@@ -56,6 +56,13 @@ Where things live. Read the touched area's spec before its code.
   honest model-independence stamp, and a goal-check judge that scales with lane
   risk without touching the user-invoked review gate
   (`coverage: partial`).
+- [`okf-profile.md`](./okf-profile.md) — the Bee OKF Profile: the nine closed concept types plus
+  the practice/pitfall polarity bit, frontmatter field rules with the id-derives-path direction,
+  authority uniqueness (`bee.id`, `bee.authoritative_for`), the legacy-frontmatter carry-over map,
+  the per-migration coverage report, pointer-stub anchor maps, the declared (not yet executed)
+  retirement of `implement-plan.md`, the standing exemption for `docs/decisions/index.md`, and the
+  exact OKF-error/profile-warning finding codes `bee knowledge check` emits — bee's own contract,
+  not a ratified OKF standard (`coverage: partial`).
 
 ## Not yet specced
 

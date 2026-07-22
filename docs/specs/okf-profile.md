@@ -1,0 +1,238 @@
+---
+area: okf-profile
+updated: 2026-07-22
+sources: [okf-foundation cell okf-1 (knowledge.mjs core — emitter-first frontmatter codec, concept model, two-level check verb; trace in `.bee/cells/`, report `docs/history/okf-foundation/reports/`, 2026-07-22); okf-foundation cell okf-2 (bundle skeleton + this spec, 2026-07-22); CONTEXT.md `docs/history/okf-foundation/CONTEXT.md`]
+decisions: [D2, D4, D10, D11, D12, D13, D17, D18, D19, D20, D21, D23, D24, D27, D29, D30, D31, D32, D33, D34, D35, D36, D37]
+coverage: partial
+---
+
+# Bee OKF Profile
+
+## Purpose
+
+The Open Knowledge Format (OKF) v0.1 is deliberately permissive: `type` is its only required
+field, consumers MUST tolerate unknown types, MUST NOT reject unknown fields, and MUST tolerate
+broken links (OKF §5, §8). That permissiveness is right for a spec meant to fit many organizations,
+but it gives an agent nothing to check. The **Bee OKF Profile** is the closed layer bee adds on top:
+a nine-type vocabulary, a fixed field set with an identity/path direction, authority-uniqueness
+rules, and a two-level validator (`bee knowledge check`) that turns "is this bundle in good shape"
+into a machine-checkable question instead of a matter of taste.
+
+**The profile is bee's own contract, not a standard.** OKF profiles are an open, unratified
+proposal — `https://github.com/GoogleCloudPlatform/knowledge-catalog/issues/212` — not yet
+standardized by the spec's maintainers. Nothing in this document binds any bundle outside this
+repository; a different OKF consumer is free to define its own profile, or none.
+
+## Entry Points & Triggers
+
+- `bee knowledge check [--strict] [--json]` — the profile validator; every `knowledge` verb
+  supports `--json` (D13). Walks **only** `docs/knowledge/` and never touches a file outside it
+  (D23); a missing or empty bundle passes.
+- `node scripts/run_verify.mjs` — the verify chain `knowledge check` joins (D34); a profile
+  violation fails the chain the same way any other suite does. `index --check`'s freshness guard
+  (D21) joins the same chain once `bee knowledge index` ships (S3) — not yet built.
+- Migration authoring (the D20 loop: read a legacy source, split it into concepts, carry its
+  frontmatter across per D33, replace it with a pointer stub per D37) is the human/agent trigger
+  that populates the bundle the checker then grades. The checker itself performs no writes (D2).
+
+## Data Dictionary
+
+**The nine concept types (D18, closed, slug-cased):**
+
+| Type | What it holds |
+|---|---|
+| `bee.area` | Current truth about a subsystem. Several may share one `areas/<slug>/` directory — authority is per-subject, not per-directory (D31). |
+| `bee.feature` | A feature's current-truth summary. |
+| `bee.work-item` | One unit of work, at `work/<id>/`. |
+| `bee.plan` | A work item's plan (absorbs `implement-plan.md`'s review-state role — D36). |
+| `bee.delivery` | A work item's delivery record. |
+| `bee.decision` | A locked decision, migrated form. |
+| `bee.pattern` | A durable pattern **or pitfall** — `bee.polarity: practice \| pitfall` distinguishes them; there is no separate tenth "pitfall" type, because pattern and pitfall carry identical metadata and identical consumption (D18). |
+| `bee.runbook` | An operational procedure. |
+| `bee.evidence` | A proof artifact (e.g. a coverage report, D35). |
+
+**Frontmatter field rules (D19, corrected by D32):**
+
+- Root level: `type` (OKF-required) + `title`, `description`, `tags`, `timestamp` (+ `resource`
+  only for a genuinely external asset).
+- A nested `bee:` object carries `id`, `lifecycle` (`draft`\|`active`\|`superseded`\|`archived`),
+  `areas`, `required_context` (bundle-relative **paths**), `decisions`, `sources`, and — per type —
+  `lane`, `polarity`, `critical`, `authoritative_for`, `review_status`, `supersedes`/`superseded_by`.
+- **Id/path direction (D32 — corrects D19's original wording, which had it backwards):** an id is
+  **never** computed from a file's path. Instead the path segments `areas/<slug>/` and `work/<id>/`
+  are **derived from the id**. `bee.id` is identity; the file **path is the link target** an OKF
+  consumer follows (§5) — both exist because links are paths but ids must survive the splits and
+  moves migration performs.
+- Field supply at migration time: `timestamp` is set from the source file's last git commit;
+  `tags` carries across from existing frontmatter where present, absent otherwise; `resource` is
+  set only for a genuinely external asset (D32).
+- `title`/`description` are profile-required and the migrator **never invents** a value where it
+  cannot derive one — the key is left absent and `check` warns, naming the file (D10). A fabricated
+  summary reads as curated and gets trusted; the never-invent rule that governs prose (D10 in
+  CONTEXT.md's wider sense) governs metadata too.
+
+**Authority rules (D31 — supersedes an unimplementable "one `bee.area` per directory" rule, D28):**
+
+- `bee.id` is **globally unique** across the bundle.
+- `bee.authoritative_for` is unique **per subject** — no two concepts claim the same subject.
+- Neither rule is "one directory, one concept": several `bee.area` concepts legitimately share one
+  `areas/<slug>/` directory, because authority belongs to a *subject*, not a directory. A generated
+  `index.md` carries no frontmatter at all (D4), so it can never be — and never was eligible to be
+  — the area concept.
+
+**Legacy frontmatter carry-over map (D33 — corrects an undercount: `workflow-state.md:1-10` carries
+seven keys, not five):**
+
+| Legacy key | Bundle target |
+|---|---|
+| `area` | `bee.areas` |
+| `decisions` | `bee.decisions` |
+| `sources` + `parity_sources` + `parity_decisions` | `bee.sources` |
+| `updated` | `timestamp` |
+| `coverage` | **dropped** — grep confirms no code reads it |
+
+**Coverage report (D35):** every migration emits a report proving each numbered behavior, rule,
+edge case, and pointer bullet in the source (e.g. `B1`…`B36`, `R1`…`R55`) lands in **exactly one**
+concept — no loss, no duplication. The verify chain asserts the report. This is what lets a
+1464-line re-authoring (`workflow-state.md`, F2 — D30) proceed on evidence instead of care.
+
+**Pointer-stub anchor map (D37):** a migrated legacy file is never deleted in this feature (D20);
+it becomes a pointer stub carrying an anchor map — every numbered anchor the source exposed
+(e.g. `B17`, `R26`) mapped to the concept path that now owns it. Any citation into the migrated
+file (e.g. `docs/specs/reading-map.md`'s citations of `workflow-state.md` `B17`/`B18`, `R26`/`R27`,
+`B33`, `R51`) is rewired in the **same cell** as the stub — a path-only stub would preserve the
+path and silently destroy the anchors, which is the exact failure D37 exists to eliminate.
+
+**`implement-plan.md` retirement (D36 — declared here, executed in F2):** the committed
+`implement-plan.md` artifact is retired once `bee-briefing` is rewired. Its review-state ladder
+(`Draft → Ready for Review → Approved → Needs Revision → Shipped`) moves into `bee.plan`'s
+`bee.review_status` field; the brief renders from that field instead of from a committed file. The
+brief was already a self-declared projection, but it was also the carrier of real gate-mirroring
+state and the surface approval happens on — so the retirement is declared now, with a named home
+for that state, and executed only when the rewiring itself lands.
+
+**Standing exemption — `docs/decisions/index.md` (D11):** this file keeps its existing path, owner,
+and shape permanently. `bee knowledge index` never writes it, and no future generator claims it.
+The exemption exists because it already sits outside the bundle (`docs/decisions/` is a legacy
+tree, D17), so no conformance rule reaches it in the first place — one generated path keeps one
+generator.
+
+## Behaviors & Operations
+
+**B1 — Two-level check, OKF errors vs. profile warnings (D4).** `bee knowledge check` grades every
+`.md` inside `docs/knowledge/` (D23) into two buckets. **OKF errors** are the spec's own MUSTs;
+**profile warnings** are bee's SHOULD layer. `--strict` promotes every warning to an error. The
+`--json` shape is fixed (D13): `{okf:{errors:[...]}, profile:{warnings:[...]}, counts}`, and the
+command exits non-zero only when an OKF error exists, or (under `--strict`) when any finding at
+all exists.
+
+**B2 — Exact finding codes emitted by `.bee/bin/lib/knowledge.mjs`.**
+
+OKF-error codes (each finding also carries `file` and a human `message`):
+
+| Code | Fires when |
+|---|---|
+| `unreadable` | The file could not be read at all (a filesystem failure, not itself an OKF clause — but an unreadable file cannot be graded conformant, so it is surfaced as an error). |
+| `missing_frontmatter` | A non-reserved `.md` inside the bundle (a concept, D23) has no leading `---` block. |
+| `unparseable_frontmatter` | A concept's or the root `index.md`'s frontmatter starts but fails to parse under the emitted subset (D12) — the underlying parser error code and line are folded into the message. |
+| `empty_type` | `type` is absent, not a string, or blank (OKF §4.1 MUST). |
+| `index_frontmatter` | A **non-root** `index.md` carries any frontmatter at all (OKF §6: index files carry none). |
+| `root_index_extra_keys` | The **root** `index.md` carries any key besides `okf_version` (OKF §9). |
+| `log_heading_not_iso` | A `## `-level heading inside `log.md` is not an ISO 8601 date (OKF §7 MUST). |
+
+Profile-warning codes:
+
+| Code | Fires when |
+|---|---|
+| `unknown_type` | `type` parses but is outside the nine D18 types — an OKF consumer must tolerate it; bee flags it. |
+| `missing_profile_field` | One of `title`, `description`, `bee.id`, `bee.lifecycle` is missing or blank (D10: never invented — must be authored). |
+| `not_canonical` | Parsing the file's frontmatter and re-emitting it (`emitFrontmatter`) does not byte-match the file — a hand-edited colon/`#`/CRLF/key-order outside the canonical emitted form (the advisor round-trip guard). |
+| `duplicate_id` | Two or more concepts share one `bee.id` (D31). |
+| `duplicate_authoritative_for` | Two or more concepts claim the same `bee.authoritative_for` subject (D31). |
+| `dangling_required_context` | A `bee.required_context` entry does not resolve to a real file inside the bundle. |
+| `dangling_supersedes` | A `bee.supersedes` id matches no concept's `bee.id` in the bundle. |
+
+**B3 — Emitter-first parsing, zero dependencies (D12).** `knowledge.mjs` ships its own frontmatter
+codec covering exactly the YAML subset its own emitter can produce; anything outside that subset
+fails loudly with a typed `{code, message, line}`, never a silent misparse. This is strictly easier
+than parsing the three incompatible legacy frontmatter schemas across 114 files, because the bundle
+is authored fresh (D20) — the subset is one bee controls.
+
+**B4 — The bundle is read-only from the checker's side (D2).** `knowledge.mjs` performs no writes
+at all, and never writes into `.bee/*.json(l)` runtime stores. The bundle is the knowledge layer;
+it is never a write path into runtime state, though reads from it are permitted.
+
+## Actors & Access
+
+- **The migrator** (a scripted, non-shipped tool in `scripts/`, D24) — authors new concepts under
+  `areas/<area>/`, carries frontmatter values across per D33, writes the coverage report (D35),
+  and replaces the legacy source with a pointer stub carrying the anchor map (D37, D20).
+- **`bee knowledge check`** — grades the bundle; never writes; the sole enforcement surface for
+  this profile today.
+- **`node scripts/run_verify.mjs`** — the CI-equivalent chain `check` (and later `index --check`)
+  joins; a profile violation fails the same way any other suite failure does.
+- **The human owner** — configures nothing here; the profile has no runtime knobs. Owner-level
+  input landed once, at exploring, as the locked decisions this document cites.
+
+## Business Rules
+
+- The vocabulary is closed at **nine** types (D18); a tenth type is never introduced to encode a
+  distinction that fits inside an existing type's fields (pitfall inside pattern's `bee.polarity`
+  is the standing example).
+- Identity is `bee.id`, globally unique; authority is `bee.authoritative_for`, unique per subject —
+  never "one concept per directory" (D31).
+- An id is never derived from a path; a path is derived from an id (D32).
+- `docs/decisions/index.md` is permanently exempt from generation and from this profile's reach —
+  it already sits outside the bundle (D11, D17).
+- A migration is not "done" until its coverage report accounts for every numbered source anchor
+  exactly once (D35) and its pointer stub carries the anchor map those citations depend on (D37).
+- `title`/`description` (and any profile-required field) are never fabricated; an absence is a
+  named warning, not a guess (D10).
+- The checker never leaves `docs/knowledge/` (D23) and never writes anything, anywhere (D2).
+
+## Edge Cases Settled
+
+- A concept is any non-reserved `.md` **inside** `docs/knowledge/` — nothing outside the bundle is
+  a concept, is checked, or carries a frontmatter obligation (D23). This removed a 593-file
+  retrofit obligation, 14 prose-header legacy files, a filename-with-spaces hazard, and a
+  `timestamp` double-source conflict in one decision.
+- A hand-edited frontmatter block that still parses but does not re-emit byte-identically is a
+  `not_canonical` warning naming the file, not a silent pass — the class of error a colon in an
+  unquoted title, a `#` mid-value, or CRLF line endings would otherwise cause.
+- A pointer stub is authored in the **same cell** as the citations that point into the file it
+  replaces, closing the gap where a path survives migration but a numbered anchor a citation
+  depends on does not (D37; the verified gap was `docs/specs/reading-map.md:101-102` citing
+  `workflow-state.md` `B17`/`B18`/`R26`/`R27` and `B33`/`R51`).
+- Migrated legacy files are **not deleted** in this feature (D20) — stubs keep existing consumers
+  (`.bee/bin/lib/inject.mjs:70-95`'s filename-only spec count; `hooks/bee-session-close.mjs:100-140`'s
+  mtime-based staleness nudge) working through the migration without a flag day.
+
+## Open Gaps
+
+- `bee knowledge index` (the generator that replaces this hand-seeded `index.md`, D21) and
+  `index --check`'s freshness guard are not built — targeted at **S3**.
+- Only one legacy area (`advisor-protocol.md`, F1's proof, D29) is migrated end-to-end; the
+  remaining ten `docs/specs/*.md` areas, and `workflow-state.md`'s locked nine-concept
+  decomposition (D30), are deferred to **F2**.
+- `bee knowledge promote`, `bee knowledge stale`, work-item back-migration, pointer-stub deletion,
+  and skill rewiring (scribing writes concepts, compounding promotes them, hive assembles its
+  context packet, grooming hunts stale knowledge) are all deferred (F2/F3 — see CONTEXT.md
+  "Deferred Ideas", filed P66-P69).
+- Host-repo adoption of the migrator stays out of scope by design (D24: the migrator is bee-only,
+  never shipped to hosts).
+
+## Pointers (implementation)
+
+- Checker + emitter-first codec + concept model: `.bee/bin/lib/knowledge.mjs` (mirrored from
+  `skills/bee-hive/templates/lib/knowledge.mjs` — `scripts/test_lib_mirror.mjs:196` enforces the
+  mirror). `checkBundle` is the two-level check; `emitFrontmatter`/`parseFrontmatter` are the D12
+  codec; `CONCEPT_TYPES`/`LIFECYCLES`/`PROFILE_REQUIRED` are the D18/D19 tables.
+- CLI wiring: `.bee/bin/lib/command-registry.mjs` (the `knowledge` group) +
+  `.bee/bin/bee.mjs` dispatch (`HANDLERS`).
+- The bundle itself: `docs/knowledge/index.md`, `docs/knowledge/log.md`.
+- F1's proof area (D29), still living in its legacy location pending its own migration cell:
+  `docs/specs/advisor-protocol.md`.
+- Locked decisions this profile implements exactly, cited never reinterpreted:
+  `docs/history/okf-foundation/CONTEXT.md`.
+- Normative OKF v0.1 spec: `https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md`.
+  Profile-as-open-proposal: `https://github.com/GoogleCloudPlatform/knowledge-catalog/issues/212`.
