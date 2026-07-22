@@ -374,14 +374,81 @@ failures **for itself**, leaving `knowledge check`'s own non-strict exit contrac
 
 ## Templates
 
-Three canonical worked examples — one per type most authors reach for first. Each frontmatter
+Four canonical worked examples — one per type most authors reach for first. Each frontmatter
 block below is the **exact emitter-canonical form** (byte-identical to what `emitFrontmatter`
 produces and `parseFrontmatter` accepts back, D12): copy it, edit the values, and the round-trip
 guard (`not_canonical`) stays silent. Round-trip proof (okf-6): the `bee.delivery` example below
 was pasted into a temp file inside `docs/knowledge/patterns/`, `bee knowledge check --json` ran
 zero errors and zero warnings (no `not_canonical` finding) with it present, and the temp file was
-then removed — the other two examples are live bundle concepts (`bee knowledge check` already
+then removed — the other three examples are live bundle concepts (`bee knowledge check` already
 grades them on every run).
+
+Frontmatter is **always** produced by `emitFrontmatter` and never typed by hand — hand-written
+blocks have been caught `not_canonical` repeatedly, including twice by the orchestrator that wrote
+this profile.
+
+### `bee.area` — `docs/knowledge/areas/performance-log/cross-project-matrix.md` (live)
+
+The type `bee-scribing` writes on every sync, capture, flush and harvest run when the repo is in
+bundle mode. It is listed first because it is the one most authors reach for.
+
+```yaml
+---
+type: bee.area
+title: Performance Log — Cross-Project Matrix
+description: "The read-only, per-project rollup view built from the shared persistent log, needing no prior tracking and grouped so different checkouts of the same project collapse into one row."
+timestamp: 2026-07-22
+bee:
+  id: performance-log-cross-project-matrix
+  lifecycle: active
+  areas: [performance-log]
+  required_context: [areas/performance-log/persistent-store-and-sync.md]
+  decisions: [D 62a7c7fd]
+  sources: [docs/history/perf-log/CONTEXT.md, docs/history/perf-log/plan.md, "cells perf-log-1, perf-log-2, perf-log-3 (capped, verified)", "docs/specs/performance-log.md#R11", "docs/specs/performance-log.md#P7"]
+  authoritative_for: "performance-log: cross-project matrix"
+---
+
+# Performance Log — Cross-Project Matrix
+
+## Purpose
+## Entry Points & Triggers
+## Data Dictionary
+## Behaviors & Operations
+## Actors & Access
+## Business Rules
+## Edge Cases Settled
+## Open Gaps
+## Pointers (implementation)
+```
+
+**`bee.authoritative_for` is the anti-fork field, and it is what makes this type different from
+the other three.** It names, in one line, the SUBJECT this concept is the single truth for
+(`"<area>: <subject>"`). Before authoring any new `bee.area` concept, the subject is looked up
+across the whole bundle: if a concept already claims it, that concept is UPDATED IN PLACE and no
+second file is created. Two concepts claiming one subject both parse, both list in the index, and
+no reader can tell which is true — the `-v2` failure the one-file-per-area rule used to make
+structurally impossible. `bee knowledge check` warns on a duplicate `authoritative_for` (D31); the
+authoring gate is what stops the duplicate being written in the first place.
+
+**The nine-section skeleton above is the body contract, not a suggestion** — the same nine
+sections, in that order, that a BA-grade area document has always carried, so that splitting an
+area into concepts does not silently downgrade body quality to "whatever the author felt like".
+A concept may legitimately carry only the sections its subject has content for (the live example
+above answers four of the nine, and says nothing where it has nothing) — what it may never do is
+invent a different set of headings, or leave a section it does have content for unwritten.
+
+**The rebuild bar is the acceptance test for the body** (not the frontmatter, which is the only
+part a machine can grade): a competent agent given ONLY this concept and the concepts it names in
+`required_context` — with the `Pointers (implementation)` section deleted — rebuilds the same
+observable behaviour on a different technology, and a human reads it and understands every field,
+behaviour, rule and role without opening the code. Outside `Pointers (implementation)` a concept
+names NO language, framework, library, class, table, component or file: fields, screens, roles,
+actions, jobs and messages are named in business vocabulary. Format-green is not quality-green —
+`knowledge check` grades canonicality, and only the rebuild bar grades meaning.
+
+`bee.areas` (plural) is area MEMBERSHIP — which subsystem(s) the concept belongs to, matched by
+`knowledge list --area` and by the index generator. `bee.authoritative_for` (singular) is subject
+OWNERSHIP. A concept normally carries both.
 
 ### `bee.work-item` — `docs/knowledge/work/okf-foundation/work-item.md` (live)
 

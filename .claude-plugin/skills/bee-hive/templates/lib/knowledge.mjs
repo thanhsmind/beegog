@@ -720,6 +720,183 @@ export function collectConcepts(root) {
   return concepts;
 }
 
+// ─── bundle mode (G8): the ONE "does this repo have a bundle?" predicate ────
+
+/**
+ * bundleMode(root) — TRUE only when `docs/knowledge/` exists AND at least one
+ * concept in it actually parses. This is the single predicate every
+ * bundle-first path routes on (G8); no caller may re-invent it with a bare
+ * `path.join` / `existsSync`, and no skill may re-state it in prose.
+ *
+ * WHY "at least one concept parses" and not "the directory exists": a host
+ * repo where a stray `.gitkeep` creates `docs/knowledge/` would otherwise flip
+ * into bundle mode with an EMPTY bundle — new knowledge written as concepts
+ * nobody reads while `docs/specs/` quietly stops updating. It ships working
+ * and rots in one release with no error (advisor-digest-f3 finding 1). A
+ * directory is not a bundle.
+ *
+ * "Parses" means the strict OKF sense: frontmatter present, accepted by the
+ * D12 parser, and carrying the required `type` (OKF §4.1). Reserved basenames
+ * (`index.md`, `log.md`) are never concepts and never count. Never throws —
+ * a missing root, an unreadable tree, or a FILE sitting where the bundle
+ * directory should be all read as `false`, which is the compatibility-safe
+ * direction.
+ */
+export function bundleMode(root) {
+  const dir = bundleDir(root);
+  let stat;
+  try {
+    stat = fs.statSync(dir);
+  } catch {
+    return false;
+  }
+  if (!stat.isDirectory()) return false;
+  for (const rel of listBundleMarkdown(dir)) {
+    const base = rel.includes('/') ? rel.slice(rel.lastIndexOf('/') + 1) : rel;
+    if (RESERVED_BASENAMES.has(base)) continue;
+    try {
+      const parsed = parseFrontmatter(fs.readFileSync(path.join(dir, rel), 'utf8'));
+      if (parsed.ok && parsed.present && typeof parsed.data?.type === 'string' && parsed.data.type) {
+        return true;
+      }
+    } catch {
+      // unreadable/unparseable: not a concept, keep looking
+    }
+  }
+  return false;
+}
+
+// ─── scribing target (G3/G9): where a settled truth is written ──────────────
+
+/** Subject identity for ownership: case- and whitespace-insensitive. */
+function normalizeSubject(subject) {
+  return String(subject ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+/** Concept filename slug derived from a subject (kebab, bounded). */
+function subjectSlug(subject) {
+  const slug = String(subject ?? '')
+    .toLowerCase()
+    .replace(/^[a-z0-9-]+\s*:\s*/, '') // drop the "<area>: " prefix — the area is the directory
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/g, '');
+  return slug || 'overview';
+}
+
+/**
+ * scribingTarget(root, {area, subject, intent}) — the scribing decision tree,
+ * executable instead of merely written down. It derives its mode from
+ * `bundleMode` and NOTHING else (G8).
+ *
+ * Returns exactly these seven keys, in both modes:
+ *   { bundle_mode, action, area, subject, path, owner, regenerate_index }
+ *
+ * FALLBACK (`bundle_mode: false`) — an un-migrated host repo. `action` is
+ * `update-spec` when `docs/specs/<area>.md` already exists and `create-spec`
+ * when it does not; `path` is always that one file. This is today's "one area
+ * = one file, forever" rule unchanged, and the result says NOTHING else: no
+ * deprecation notice, no nag, no extra field (G1). An old project must not be
+ * able to tell this release happened.
+ *
+ * BUNDLE MODE (`bundle_mode: true`) — three paths, gated on
+ * `bee.authoritative_for` so the anti-fork mechanism "one area = one file"
+ * used to provide survives the split into concepts (G9):
+ *   (a) the subject is already owned  -> `update-concept` at the OWNING file,
+ *       bundle-wide (an owner in another area still wins over the requested
+ *       area — two concepts claiming one subject both parse, both index, and
+ *       no reader can tell which is true);
+ *   (b) a new subject in an existing area -> `new-concept` at
+ *       `areas/<area>/<subject-slug>.md`, index regenerated. If that filename
+ *       already exists it is an `update-concept` on it — a "new" path is never
+ *       handed back for a file that is already there, so no `-v2` can appear;
+ *   (c) a brand-new area -> `new-area` at `areas/<area>/overview.md`.
+ *
+ * `intent: 'new-concept'` is the caller asserting "this is a new subject". If
+ * the subject is in fact owned, the answer is `fork_denied` with `path: null`
+ * and the owner named — a refusal, never a second file.
+ */
+export function scribingTarget(root, { area, subject = null, intent = 'auto' } = {}) {
+  const areaSlug = String(area ?? '').trim();
+  if (!areaSlug) throw new Error('scribingTarget: "area" is required.');
+  const base = {
+    bundle_mode: false,
+    action: 'update-spec',
+    area: areaSlug,
+    subject: subject === null || subject === undefined ? null : String(subject),
+    path: null,
+    owner: null,
+    regenerate_index: false,
+  };
+
+  if (!bundleMode(root)) {
+    const rel = `docs/specs/${areaSlug}.md`;
+    return {
+      ...base,
+      action: fs.existsSync(path.join(root, 'docs', 'specs', `${areaSlug}.md`)) ? 'update-spec' : 'create-spec',
+      path: rel,
+    };
+  }
+
+  const concepts = collectConcepts(root);
+  const wanted = normalizeSubject(subject);
+  let owner = null;
+  if (wanted) {
+    for (const concept of concepts) {
+      const bee = concept.data?.bee;
+      const claim = bee && typeof bee === 'object' ? bee.authoritative_for : null;
+      if (typeof claim !== 'string') continue;
+      if (normalizeSubject(claim) === wanted) {
+        owner = {
+          id: typeof bee.id === 'string' ? bee.id : null,
+          path: `docs/knowledge/${concept.path}`,
+          authoritative_for: claim,
+        };
+        break;
+      }
+    }
+  }
+
+  if (owner) {
+    if (intent === 'new-concept') {
+      return { ...base, bundle_mode: true, action: 'fork_denied', path: null, owner };
+    }
+    return { ...base, bundle_mode: true, action: 'update-concept', path: owner.path, owner };
+  }
+
+  const areaDir = path.join(bundleDir(root), 'areas', areaSlug);
+  const areaKnown =
+    fs.existsSync(areaDir) ||
+    concepts.some((concept) => {
+      const areas = concept.data?.bee?.areas;
+      return Array.isArray(areas) && areas.includes(areaSlug);
+    });
+
+  if (!areaKnown) {
+    return {
+      ...base,
+      bundle_mode: true,
+      action: 'new-area',
+      path: `docs/knowledge/areas/${areaSlug}/overview.md`,
+      regenerate_index: true,
+    };
+  }
+
+  const rel = `areas/${areaSlug}/${subjectSlug(subject)}.md`;
+  const exists = fs.existsSync(path.join(bundleDir(root), rel));
+  return {
+    ...base,
+    bundle_mode: true,
+    action: exists ? 'update-concept' : 'new-concept',
+    path: `docs/knowledge/${rel}`,
+    regenerate_index: !exists,
+  };
+}
+
 // ─── list (D15): one row per concept, filters, never content ────────────────
 
 /**

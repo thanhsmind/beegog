@@ -86,6 +86,14 @@ const MANDATORY_SUITES = [
   // longer format-blind. The gate above can pass while lying; this is the
   // suite that catches that, so it must never drop out of the chain either.
   "scripts/test_okf_pins.mjs",
+  // f3-2 (G1/G8): the compatibility fallback's ONLY end-to-end proof. bee's
+  // own checkout HAS a bundle and G2 forbids new prose under docs/specs/ here,
+  // so this repo structurally cannot exercise "a host repo that never
+  // migrated keeps working" — only the bundle-LESS fixture inside this suite
+  // can. Dropping it out of the chain would leave the guarantee as unasserted
+  // prose again, which is exactly how it would rot in one release with no
+  // error (advisor-digest-f3 finding 1).
+  "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
 ];
 
 // f2-3 (F6): a migration cell's coverage gate must be in the chain, and the

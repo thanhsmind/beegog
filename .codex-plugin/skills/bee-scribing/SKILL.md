@@ -15,7 +15,9 @@ metadata:
 
 # Scribing (scribe bees)
 
-Scribing is bee's BA. It owns the state layer: `docs/specs/<area>.md` (one BA-grade functional spec per long-lived area), `docs/specs/system-overview.md` (the cross-area glue — area map, shared entities, global roles, cross-area flows; decision 0003), `docs/specs/visuals/<area>/` (settled screen snapshots for UI areas), and `docs/specs/reading-map.md`. An **area is domain-general**: a screen or form, an API, a background job, an integration, a data pipeline, a CLI command, a business process — any unit with observable behavior that outlives features. Code is the implementation; the spec is the *meaning* — it must survive a full rewrite on a different stack (decision 0002).
+Scribing is bee's BA. It owns the state layer. An **area is domain-general**: a screen or form, an API, a background job, an integration, a data pipeline, a CLI command, a business process — any unit with observable behavior that outlives features. Code is the implementation; the spec is the *meaning* — it must survive a full rewrite on a different stack (decision 0002).
+
+**Where that meaning is written depends on one thing only: whether this repo has a knowledge bundle** (§2). In a repo that has one, the state layer is `docs/knowledge/areas/<area>/*.md` — one `bee.area` concept per subject. In a repo that has none, the state layer is exactly what it has always been: `docs/specs/<area>.md` (one BA-grade functional spec per long-lived area), `docs/specs/system-overview.md` (the cross-area glue — area map, shared entities, global roles, cross-area flows; decision 0003), `docs/specs/visuals/<area>/` (settled screen snapshots for UI areas), and `docs/specs/reading-map.md`. Everything else in this skill — the rebuild bar, the tech-agnostic rule, the nine sections, the modes, the triggers, the never-invent rule — is identical in both.
 
 §1 gather sources, §2 map deltas, §3 render sections, harvest inventory, and §7 reading-map refresh delegate as extraction/generation-tier I/O workers per the Delegation contract (D2/D3, `bee-hive/references/routing-and-contracts.md`); any other ad-hoc subagent dispatch scribing makes (for example, a harvest research pass) defaults to the generation slot model, and ceiling requires the [bee-tier: ceiling] marker plus a one-line justification.
 
@@ -53,11 +55,41 @@ Bootstrap is inventory, harvest is meaning: bootstrap writes only what code, tre
 
 Map each delta to an area by the files/screens it touched. Area names are kebab-case, chosen at first write, stable forever.
 
+**Never decide by eye where the area's truth lives, and never re-state the rule in your own words.** One predicate answers it: `bundleMode(root)` in `.bee/bin/lib/knowledge.mjs` — true only when `docs/knowledge/` exists **and at least one concept in it actually parses**. A directory alone is not a bundle: a repo whose `docs/knowledge/` holds nothing but a `.gitkeep` is **not** in bundle mode. Ask the module for the exact target rather than reasoning about paths:
+
+```
+node -e "import('./.bee/bin/lib/knowledge.mjs').then(m=>console.log(JSON.stringify(m.scribingTarget(process.cwd(),{area:'<area>',subject:'<area>: <subject>'}),null,1)))"
+```
+
+It returns `{bundle_mode, action, area, subject, path, owner, regenerate_index}`. Write to `path`, do exactly `action`, and regenerate the index when `regenerate_index` is true. Pass `intent:'new-concept'` when you believe the subject is new — if it is in fact already owned, the answer is `fork_denied` naming the owner, and there is nothing to write.
+
+### 2a. Bundle mode — one subject, one concept, forever
+
+Three paths, and the choice between the first two is gated on `bee.authoritative_for` — the field that names, in one line, the subject a concept is the single truth for:
+
+| Situation | Action | Where |
+|---|---|---|
+| the subject is already owned by a concept (`bee.authoritative_for` matches, anywhere in the bundle) | update THAT concept in place | the owner's own file — never a second one |
+| a new subject in an area that already exists | author a new concept in that area, then regenerate the index | `docs/knowledge/areas/<area>/<subject-slug>.md` |
+| a brand-new area | create `docs/knowledge/areas/<area>/` with an `overview` concept, then regenerate the index | `docs/knowledge/areas/<area>/overview.md` |
+
+**A new concept may NOT claim a subject an existing concept already owns.** This is the anti-fork gate, and it carries the weight the one-file-per-area rule used to carry alone: two concepts claiming one subject both parse, both list in the index, and no reader can tell which is true — the `-v2` failure in a new costume. Ownership is checked bundle-wide, not per area: a subject owned by a concept in another area still routes there. When a subject genuinely splits, the owning concept is rewritten and the split is declared in it (see `docs/knowledge/areas/doctrine-layer/overview.md` §"How this area is split") — never by quietly authoring a rival.
+
+**Frontmatter is ALWAYS produced by `emitFrontmatter`, never typed by hand** — hand-written blocks are caught `not_canonical` by the round-trip guard, repeatedly and including by orchestrators who knew the rule. Build the data object, emit, then write body under it:
+
+```
+node -e "import('./.bee/bin/lib/knowledge.mjs').then(m=>process.stdout.write(m.emitFrontmatter({type:'bee.area',title:'...',description:'...',tags:['...'],timestamp:'YYYY-MM-DD',bee:{id:'...',lifecycle:'active',areas:['<area>'],required_context:[],decisions:[],sources:[],authoritative_for:'<area>: <subject>'}})))"
+```
+
+Body sections, the rebuild bar, and the `bee.areas` vs `bee.authoritative_for` distinction: the `bee.area` template in `docs/specs/okf-profile.md` §Templates. After any new concept or new area, regenerate the indexes — `node .bee/bin/bee.mjs knowledge index` — and confirm the bundle still grades clean: `node .bee/bin/bee.mjs knowledge check`.
+
+### 2b. No bundle — the area's spec file
+
 **One area = one file, forever.** A modified area is ALWAYS an in-place update to its existing spec — that is what keeps the doc permanently current. Before creating any spec, check `docs/specs/reading-map.md` and the existing `docs/specs/*.md` for an area that already covers this surface (it may be named differently than you'd name it today — search by what it describes, not by the name you expect). Only when no existing spec covers the surface, create one from the template in `references/scribing-reference.md`. Never create `-v2`, `-new`, `-updated`, or date-suffixed spec files: two documents describing one area is worse than a stale one — readers cannot tell which is true.
 
 ## 3. Merge — BA-Grade Sections
 
-Spec sections (full template + per-section rules in the reference): **Purpose → Entry Points & Triggers → Data Dictionary → Behaviors & Operations → Actors & Access → Business Rules → Edge Cases Settled → Open Gaps → Pointers (implementation)**. The same sections fit every area shape — for a UI area the triggers are links and clicks and the data is form fields; for a backend area the triggers are schedules, events, and calls, and the data is inputs, outputs, and stored elements.
+Sections (full template + per-section rules in the reference): **Purpose → Entry Points & Triggers → Data Dictionary → Behaviors & Operations → Actors & Access → Business Rules → Edge Cases Settled → Open Gaps → Pointers (implementation)**. The same sections fit every area shape — for a UI area the triggers are links and clicks and the data is form fields; for a backend area the triggers are schedules, events, and calls, and the data is inputs, outputs, and stored elements. **The same nine, in the same order, are the body contract for a `bee.area` concept** (§2a): a concept covers the sections its subject has content for and says nothing where it has nothing, but it never invents a different set of headings. Splitting an area into concepts must not quietly downgrade body quality to whatever the author felt like — format-green is not quality-green.
 
 Merge rules:
 
@@ -67,8 +99,8 @@ Merge rules:
 - Every Behavior block answers: what triggers it, what blocks it, what changes, what side effects fire, and **what each actor or consuming system observes afterwards**.
 - Business Rules are numbered (R1, R2…) and cite the active D-ID that decided them.
 - UI areas: refresh the settled snapshot under `docs/specs/visuals/<area>/` when the screen visibly changed (ask the user for one if you cannot produce it); a UI area with no current snapshot records that as an Open Gap, never silently (decision 0003).
-- If the feature added or removed an area, or changed shared entities, the role model, or a cross-area flow: sync `docs/specs/system-overview.md` in the same pass (template in the reference).
-- Update frontmatter: `updated`, append to `sources`, reconcile `decisions`, set `coverage: full | partial` honestly.
+- If the feature added or removed an area, or changed shared entities, the role model, or a cross-area flow: sync `docs/specs/system-overview.md` in the same pass (template in the reference). In bundle mode the same duty falls on the area's `overview` concept and the area index.
+- Update frontmatter: `updated`, append to `sources`, reconcile `decisions`, set `coverage: full | partial` honestly. In bundle mode this means re-emitting the whole block through `emitFrontmatter` with `timestamp` refreshed and `bee.sources`/`bee.decisions` extended — never hand-editing a line of it.
 
 ## 4. Capture Mode — Settled Outcomes from the Vibe Loop
 
@@ -76,7 +108,7 @@ The trigger is **settlement**, not subject matter: whenever a discuss → build 
 
 **The debt signal backs this up (decision 0011).** Every `behavior_change` cell capped since the last scribing run is counted as *scribing debt* and surfaced mechanically — in the session preamble, in `bee_status`, and in the chain-nudge fired when a worker returns during swarming. Debt > 0 means a settlement already landed in a capped cell and belongs in a spec **now**, not at feature close. Self-detection is still the first duty; the debt count is the backstop for the settlements the agent's own watching missed. Running capture (or sync) and recording the run in state clears it.
 
-**Detection is the scribe's duty, unprompted (decision 0007).** The explicit signal is the *loud* case; most settlements are silent — the user confirms a behavior works, accepts an explanation, picks an option, moves on. The agent watches for these itself, every turn, and captures without being asked. Do not ask "should I document this?" — announce in one line what settled and where it goes ("chốt: X — ghi vào `docs/specs/<area>.md` + decision log"), then do it in the same turn. Capture writes only `docs/` and `.bee/` — allowed in every phase, no gate. A user having to say "ghi lại" means detection already failed once:
+**Detection is the scribe's duty, unprompted (decision 0007).** The explicit signal is the *loud* case; most settlements are silent — the user confirms a behavior works, accepts an explanation, picks an option, moves on. The agent watches for these itself, every turn, and captures without being asked. Do not ask "should I document this?" — announce in one line what settled and where it goes ("chốt: X — ghi vào <the area's file, resolved per §2> + decision log"), then do it in the same turn. Capture writes only `docs/` and `.bee/` — allowed in every phase, no gate. A user having to say "ghi lại" means detection already failed once:
 
 1. Log it first: `node .bee/bin/bee.mjs decisions log --decision "..." --rationale "..."` — the decision log is the durable anchor; the rationale records *why* this outcome won over what was tried. This is always same-turn, every lane.
 2. **High-risk lane:** merge the settled truth into the area's spec now (Business Rules for policy; Behaviors & Operations for confirmed behavior; Data Dictionary for a value's meaning) citing the new D-ID, same message. A spec lagging high-risk behavior even briefly is dangerous — never queue it.
@@ -109,6 +141,8 @@ Before finishing, re-read the spec with the Pointers section covered and ask: co
 
 `docs/specs/reading-map.md`: add lines for locations created or repurposed, fix lines made wrong, delete lines for removed locations. One line each; a map, not documentation.
 
+In bundle mode, the generated indexes carry the per-area map instead — run `node .bee/bin/bee.mjs knowledge index` after any new concept or new area (the run is a pure function of the bundle, so re-running it is always safe), and keep the hand-written reading map pointing at the areas that exist.
+
 ## 8. Update State
 
 Record the scribing run: `node .bee/bin/bee.mjs state scribing-run --feature <feature> --areas "<a,b>" --next-action "<next action>"`. This stamps `last_scribing_run` (`feature`, `date`, an **ISO-precise `at` timestamp**, `areas_synced`, `next_action`) and mirrors `next_action` plus advances `phase` to `compounding` at the top level. The `at` stamp is what clears **scribing debt** (decision 0011): the harness counts `behavior_change` cells capped *after* it, so a missing or day-only stamp leaves just-synced cells still showing as debt. No `behavior_change` cells and nothing to capture → still run it (`--areas "none"`, `--next-action` reflecting "scribing: no sync needed") so the debt signal resets.
@@ -119,6 +153,9 @@ Record the scribing run: `node .bee/bin/bee.mjs state scribing-run --feature <fe
 - Do NOT name technology outside Pointers. The rebuild bar is the acceptance test, not a slogan.
 - Do NOT state unverified claims as behavior. Evidence → behavior; approved decision → rule; neither → Open Gap.
 - Do NOT create a second spec for an existing area. Modification = in-place update of the one true file; check the reading map before every create.
+- Do NOT create a second concept for a subject an existing concept already claims via `bee.authoritative_for`. Ownership is checked bundle-wide, before authoring, every time (§2a).
+- Do NOT decide bundle mode by looking at the tree, by `existsSync`, or by restating the rule in prose. `bundleMode` is the only answer; a `docs/knowledge/` holding only a `.gitkeep` is not a bundle.
+- Do NOT hand-write concept frontmatter. `emitFrontmatter` produces every block, always.
 - Do NOT let a settled outcome die in the chat log — capture mode exists precisely for it, whatever the domain (UI, backend, integration, process).
 - Secrets and PII never appear in specs.
 
@@ -133,6 +170,10 @@ Record the scribing run: `node .bee/bin/bee.mjs state scribing-run --feature <fe
 - a Behavior block that never says what each actor or consumer observes
 - spec content copied from plan.md or written from memory
 - a `-v2`/`-new`/date-suffixed spec file, or a fresh spec created without checking the reading map for the existing one
+- a new concept authored for a subject another concept already claims, or an `authoritative_for` line copied from a sibling concept
+- bundle mode decided by eye or by an `existsSync` on `docs/knowledge/` instead of by `bundleMode`
+- a concept whose frontmatter was typed by hand rather than emitted
+- a new concept or new area left without regenerating the indexes
 - harvest answers invented from field or symbol names instead of asked
 - "I'll write the spec after compounding" — scribing runs first, while evidence is fresh
 - a settled outcome (rule, confirmed behavior, chosen value) that exists nowhere but the chat
