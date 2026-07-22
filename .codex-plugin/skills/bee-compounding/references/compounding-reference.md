@@ -74,7 +74,7 @@ Multiple findings from one feature go in one dated file as repeated Learning sec
 
 ## Critical Promotion Format
 
-Only lessons passing all three criteria (multi-feature relevance, meaningful waste prevented, generalizable) get a summary block appended to `docs/history/learnings/critical-patterns.md`:
+Only lessons passing all three criteria (multi-feature relevance, meaningful waste prevented, generalizable) get promoted. **With a bundle**, a promoted lesson is authored as a `bee.pattern` concept under `docs/knowledge/patterns/` and picked up by the generated root index's `## Critical patterns` section on the next `bee.mjs knowledge index` — never appended to the retired file, which is a pointer stub carrying no lessons once the patterns have migrated. **With no bundle**, today's guidance stands, unchanged: append the summary block below to `docs/history/learnings/critical-patterns.md`:
 
 ```markdown
 ## [YYYYMMDD] <Learning Title>

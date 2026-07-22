@@ -21,9 +21,9 @@ A section with genuinely no content for the area's shape gets one line — "Not 
 
 **With a bundle**, this template's nine sections are the body contract for a `bee.area` concept — write `docs/knowledge/areas/<area>/<subject-slug>.md` (or `overview.md` for a new area) per SKILL.md §2a instead of the file below, and skip straight to Per-Section Rules for the section-by-section content rules, which are unchanged. **With no bundle**, today's guidance stands, unchanged:
 
-Path: `docs/specs/<area>.md`. Area name: kebab-case, chosen at first write, stable thereafter. Overwrite/merge freely — this file always describes *now*; history lives in git and `docs/history/`.
+Path (no bundle): `docs/specs/<area>.md`. Area name: kebab-case, chosen at first write, stable thereafter. Overwrite/merge freely — this file always describes *now*; history lives in git and `docs/history/`.
 
-`docs/specs/` holds ONLY this layer's content: area specs, `system-overview.md`, `reading-map.md`, `visuals/`. Never write other artifacts (scripts, exports, survey notes) here; when found, flag them for grooming to relocate — they pollute coverage counting and spec scans.
+In a no-bundle repo, `docs/specs/` holds ONLY this layer's content: area specs, `system-overview.md`, `reading-map.md`, `visuals/`. Never write other artifacts (scripts, exports, survey notes) here; when found, flag them for grooming to relocate — they pollute coverage counting and spec scans.
 
 ```markdown
 ---
@@ -152,7 +152,7 @@ Deleting this section must not remove any business meaning.>
 
 **With a bundle, "locate before create" resolves through `scribingTarget()`, never a spec scan** (SKILL.md §2): ask it for the area/subject, write exactly the `path`/`action` it returns, and regenerate the index when it says to. Everything else below — deltas never from plan.md, present tense only, a contradicting delta replaces rather than doubles, frontmatter reconciled (via `emitFrontmatter`, not by hand) — is the same discipline in both modes. **With no bundle**, today's guidance stands, unchanged:
 
-- **Locate before create:** resolve every delta to an existing spec via `docs/specs/reading-map.md` (and a scan of `docs/specs/*.md` frontmatter/Pointers) before considering a new file. A renamed screen, moved route, or refactored module is still the SAME area — update its spec and its reading-map line; do not fork a new one. Creating is the exception, reserved for genuinely new surfaces.
+- **Locate before create (no bundle):** resolve every delta to an existing spec via `docs/specs/reading-map.md` (and a scan of `docs/specs/*.md` frontmatter/Pointers) before considering a new file. A renamed screen, moved route, or refactored module is still the SAME area — update its spec and its reading-map line; do not fork a new one. Creating is the exception, reserved for genuinely new surfaces.
 - Deltas come from `behavior_change` cells + `verification_evidence`, UAT records, and worker reports — never from plan.md, never from memory.
 - A delta that contradicts an existing line **replaces** it; do not keep both.
 - Update `updated`, append the feature to `sources`, reconcile `decisions` against the active set (`node .bee/bin/bee.mjs decisions active`) — cited by short8 id (see Citation Discipline below), so this reconcile step is itself sweepable.
@@ -229,7 +229,7 @@ Any failure: fix it now, or file it as an Open Gap with `coverage: partial` — 
 
 **With a bundle**, there is no separate system-overview file to author: the cross-area glue is the area's own `overview` concept plus the generated `docs/knowledge/areas/index.md`, kept current by regenerating the index (`bee.mjs knowledge index`) after any area or concept change — never hand-edited. Fresh sessions read the bundle's root index FIRST (`docs/knowledge/index.md`), before any area concept. **With no bundle**, today's guidance stands, unchanged:
 
-Path: `docs/specs/system-overview.md`. One file, singular — the cross-area glue no per-area spec owns. Same write discipline as any spec (present tense, overwrite to match reality, tech-agnostic above Pointers, never fork). Fresh sessions read it FIRST, before any area spec.
+Path (no bundle): `docs/specs/system-overview.md`. One file, singular — the cross-area glue no per-area spec owns. Same write discipline as any spec (present tense, overwrite to match reality, tech-agnostic above Pointers, never fork). Fresh sessions read it FIRST, before any area spec.
 
 ```markdown
 ---
@@ -281,7 +281,7 @@ Sync triggers: a feature adds or removes an area; a shared entity's meaning chan
 
 **With a bundle**, the generated indexes carry the per-area map instead (SKILL.md §7) — run `node .bee/bin/bee.mjs knowledge index` after any new concept or new area (the run is a pure function of the bundle, so re-running it is always safe), and keep the hand-written reading map below pointing only at the areas that exist. **With no bundle**, today's guidance stands, unchanged:
 
-Path: `docs/specs/reading-map.md`. One line per location, grep-friendly:
+Path (no bundle): `docs/specs/reading-map.md`. One line per location, grep-friendly:
 
 ```markdown
 # Reading Map

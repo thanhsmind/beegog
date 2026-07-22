@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "bee_version": "1.10.0",
   "managed": {
-    "agents_block": "c3c6c6a07dd644b2f87e812ab6079c08d676eed0744012950a513f836b820a09",
+    "agents_block": "8c29d637227c21720be9ac9a0cdab28daff76d05fa99f24f5e007ca1d53f7742",
     "gitignore_block": "3da1a6176ae8b85a98b6779f7f314e7647bdc854969b1c2d0fa5fd7e97d4c69f",
     "helpers": {
       "bee.mjs": "986909f409bec60f149b0f08c717d8dd4d3f8fc15d11bddf325dc66cc195ddea"
@@ -44,7 +44,7 @@
       "bee-write-guard.mjs": "1f61ddf4504ba53ee89dc963e4732df47568f4b37dd87a84c9de4a07c4ca167b",
       "bee-state-sync.mjs": "9f996676e532233f68c08fe56a2a533cd6d2e3b54d2e34f3c5216389aeaa6357",
       "bee-chain-nudge.mjs": "0520c71fad2513d93666ad4c3353b7196faeeac382430b1e1395fabd0febd9cb",
-      "bee-session-close.mjs": "283475e6f14d457718209c22aaed4818731ef539cab778a3501a6796a11b4051",
+      "bee-session-close.mjs": "de5184b1423515f96fd437c69469c55e074d3e91e9de83a6c16b600df3b59ea6",
       "bee-model-guard.mjs": "07c22de49b17c6d349bc2ae94ad35721471fd1437a49cdc0feaad3b2d061e829",
       "bee-tools-logger.mjs": "668634222153c37d858bd5cb8ac5183507bc0da643ef78929219dcf810a39224",
       ".codex/hooks.json": "882cb31457271a7e30de8a257de824e4da2eaa726d9f8af6b3e683969c3763ae"
@@ -72,5 +72,5 @@
     }
   },
   "created_at": "2026-07-21T17:36:03.955Z",
-  "updated_at": "2026-07-22T16:04:41.072Z"
+  "updated_at": "2026-07-22T17:20:31.443Z"
 }

@@ -29,6 +29,21 @@ import { checkWrite, checkRead, extractBashTargets, checkAskUserQuestion } from 
 import { buildPromptReminder, buildSessionPreamble } from '../lib/inject.mjs';
 import { readJson, writeJsonAtomic } from '../lib/fsutil.mjs';
 
+// Hermeticity (hardening-1-7-10 D1 + okf-integration-close-f4 f4-4, defense
+// in depth): this suite must never inherit the harness's own identity.
+// run_verify.mjs already scrubs all three vars for every child suite it
+// spawns; deleting BEE_AGENT_NAME here at BOOTSTRAP means a bare
+// `node skills/.../test_guards.mjs`, run directly under the very
+// `BEE_AGENT_NAME=<name>` prefix AGENTS.md critical rule 5 mandates for
+// write-heavy commands, is equally hermetic instead of leaking that name
+// into checkWrite's cross-session hold checks and turning "the acting
+// session's own hold must never block its own write" red. The later
+// save/delete/restore pairs in individual cases below are a DIFFERENT
+// mechanism — each sets the var deliberately to exercise the swarming
+// branch and puts it back — and this bootstrap delete is what gives them a
+// clean starting value to restore to.
+delete process.env.BEE_AGENT_NAME;
+
 const root = makeTempRepo();
 
 // Self-containment fix (cs-2b split): makeStateRepo/makeCellFile are defined

@@ -272,6 +272,28 @@ const EXTRA_SUITES = [
   // which no suite in the chain mutates.
   ["scripts/okf_specs_fence.mjs", "--selftest"],
   ["scripts/okf_specs_fence.mjs"],
+  // f4-6: the fence over the INSTRUCTION layer — the sibling of the one above,
+  // and the one nothing in this chain had. `okf_specs_fence` stops new prose
+  // landing in the retired TREE; this one stops the skills, hooks and AGENTS.md
+  // from TEACHING the retired tree with no bundle branch. Three hand audits
+  // each found instruction-layer misroutes the previous audit missed (7, then
+  // 1+1, then 6) and the chain stayed green through all three, because nothing
+  // in it read prose. Two entries, both required:
+  //   --selftest  proves it BITES — an unbranched line in a bundle-ful fixture
+  //               fails while the SAME line in a bundle-LESS fixture stays
+  //               silent (a never-migrated host cannot tell this shipped), the
+  //               rule is LINE-local rather than file-local (a file-level rule
+  //               was written first and scored GREEN on four of the six known
+  //               misroutes), and all four exemption classes are exercised:
+  //               branched line, legacy anchor citation, historical record,
+  //               fenced example.
+  //   (bare)      runs the fence against THIS repo's live instruction surfaces.
+  // Deliberately NOT in the LIVE_BUNDLE_GROUP below, for the same reason as the
+  // specs fence: it only asks `bundleMode` (still true under test_okf_pins'
+  // unhealthy-concept mutator) and then reads skills/, hooks/ and AGENTS.md,
+  // which no suite in the chain mutates.
+  ["scripts/okf_instructions_fence.mjs", "--selftest"],
+  ["scripts/okf_instructions_fence.mjs"],
 ];
 
 // scripts/test_installers_e2e.mjs is discovered by the glob too (it matches

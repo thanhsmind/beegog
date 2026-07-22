@@ -176,6 +176,19 @@ gate.
   retrofit obligation, 14 prose-header legacy files, a filename-with-spaces hazard, and a
   `timestamp` double-source conflict in one decision.
 
+## Open Gaps
+
+- **The bundle has no home for UI visual snapshots.** The no-bundle state layer keeps settled
+  screen snapshots under `docs/specs/visuals/<area>/`, and `bee-scribing` still requires one for
+  every UI area whose screen visibly changed. The bundle profile defines no equivalent location,
+  and `docs/specs/` is read-only for new content once a repo has migrated (G2 —
+  `scripts/okf_specs_fence.mjs` fails the chain), so in bundle mode there is nowhere legitimate to
+  put the image. Recorded rather than filled: inventing a path here would decide a profile
+  question — is a binary asset a concept, a sibling of one, or out of the bundle entirely? — that
+  no decision has settled. **Until it is settled, a bundle-mode UI area with a changed screen
+  records the missing snapshot as an Open Gap in its own concept, naming the screen**; it never
+  writes the image into the retired tree and never invents a bundle path (f4-6).
+
 ## Templates
 
 Four canonical worked examples — one per type most authors reach for first. Each frontmatter

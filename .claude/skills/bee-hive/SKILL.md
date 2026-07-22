@@ -64,7 +64,7 @@ Orient on: onboarding health, phase, mode, feature, gate states, cell counts, ac
 
 **Review candidates (decision 565e68d0):** `bee_status --json` carries a `review` block — candidate counts by derived status (`unreviewed`/`in_review`/`reviewed`/`stale`) and any open review sessions. Independent review is user-invoked only (SPEC R1/R7): never self-dispatch a reviewer wave because candidates exist. When `high_risk_unreviewed > 0`, surface it plainly — a hard-gate change (auth, data loss, security, external provider) is sitting unreviewed — state the merge/release consequence and offer to start a review; do not label anything reviewed or approved until the user calls it.
 
-Then read `docs/history/learnings/critical-patterns.md` and surface recent active decisions (`node .bee/bin/bee.mjs decisions active --recent 3`).
+Then read the critical patterns — with a bundle, `docs/knowledge/index.md`'s `## Critical patterns` section (the live equivalent, generated from the bundle); with no bundle, `docs/history/learnings/critical-patterns.md` — and surface recent active decisions (`node .bee/bin/bee.mjs decisions active --recent 3`).
 
 **State layer (reading order, G4):** note the state layer in the orientation summary. Which layer that is depends on one predicate — `bundleMode` (`docs/knowledge/` holding at least one concept that actually parses; a directory alone is not a bundle). Both branches below are live guidance, not a migration path:
 
@@ -164,7 +164,7 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 4. Gate 3 is the critical execution approval; no source-editing execution before it.
 5. A failed reality gate or a NO spike halts the pipeline and returns to planning.
 6. Never skip validating — in tiny mode it collapses to a 2-minute reality check, it does not disappear.
-7. `docs/history/learnings/critical-patterns.md` and recent active decisions are mandatory context before planning or executing.
+7. The critical patterns (with a bundle: `docs/knowledge/index.md`'s `## Critical patterns` section; with no bundle: `docs/history/learnings/critical-patterns.md`) and recent active decisions are mandatory context before planning or executing.
 8. Evidence before claims: any "done/passing/fixed" statement requires fresh command output in the same message.
 9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` sync in every lane — tiny included — and a settled discussion outcome (rule, behavior, tuned value; backend or frontend alike) is captured the moment it settles. **Settlement detection is the agent's duty, unprompted:** the routing row "user asks to document" is the fallback, not the norm — the norm is the agent noticing "this just settled", announcing it in one line, and capturing in the same turn without being asked. What same-turn capture costs is lane-scaled (decision 0017): high-risk = full spec sync inline; every other lane = decision log + a one-line capture stub (`bee.mjs capture add`), with the full merge at a flush point (wrap-up, PreCompact warning, or next session's offer). Capture writes only `docs/` + `.bee/` — no gate applies.
 10. **The agent runs the machinery, not the user.** Every bee command (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, onboarding, cell verify commands) is run by the agent itself the moment the workflow calls for it — never printed for the user to execute, never "run this and tell me the output". The only human actions in bee are gate approvals, decision answers, and privacy approvals.
@@ -184,7 +184,7 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 - `.bee/cells/<id>.json` — one cell per file
 - `.bee/bin/` — vendored helpers (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, `bee_capture`) + `lib/`
 - `docs/history/<feature>/CONTEXT.md` — locked decisions, source of truth
-- `docs/history/learnings/critical-patterns.md` — mandatory pre-work reading
+- `docs/history/learnings/critical-patterns.md` — mandatory pre-work reading when there is no bundle; with a bundle the live equivalent is `docs/knowledge/index.md`'s `## Critical patterns` section
 - `docs/knowledge/areas/<area>/` — the state layer when the repo has a bundle, owned by `bee-scribing`: one concept per subject, `index.md` per area (read the bundle before code)
 - `docs/specs/<area>.md` + `docs/specs/reading-map.md` — with a bundle: the read-only compatibility surface (pointer stubs resolving legacy anchor citations) plus the hand-written reading map; with no bundle: the state layer itself, BA-grade tech-agnostic spec per area (read spec before code)
 

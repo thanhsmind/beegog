@@ -17,7 +17,7 @@ Counting rules per term (all from `.bee/` records — never guess):
 | orphaned cells | open/claimed cells whose feature is no longer the active feature and has no HANDOFF pointing at them | `node .bee/bin/bee.mjs cells list` vs `.bee/state.json` + `.bee/HANDOFF.json` |
 | unverified cells | claimed cells with no recorded verify result (`trace.verify_passed` absent) | cell files |
 | stale decisions | active decisions citing files/paths that no longer exist, or contradicted by current code | `node .bee/bin/bee.mjs decisions active` + spot-check citations |
-| stale specs | areas with a `behavior_change: true` cell capped after the area spec's `updated` frontmatter date, or with such a cell and no spec at all (map cells to areas by files touched); ALSO areas whose Pointers / reading-map locations have git commits or uncommitted changes after `updated` even with no cell — vibe edits outside the chain count too (decision 0003); count each area once | capped cell files + `git log --since=<updated> -- <paths>` + `git status --porcelain` vs `docs/specs/<area>.md` frontmatter |
+| stale specs | areas with a `behavior_change: true` cell capped after the area spec's `updated` frontmatter date, or with such a cell and no spec at all (map cells to areas by files touched); ALSO areas whose Pointers / reading-map locations have git commits or uncommitted changes after `updated` even with no cell — vibe edits outside the chain count too (decision 0003); count each area once | capped cell files + `git log --since=<updated> -- <paths>` + `git status --porcelain` vs the area's state-layer doc — **with a bundle** the concepts under `docs/knowledge/areas/<area>/` and `bee.mjs knowledge check`'s own findings (the branch below), **with no bundle** `docs/specs/<area>.md` frontmatter |
 | backlog-without-outcome | **machine-backlog** (`.bee/backlog.jsonl`) entries older than 30 days with no matching outcome entry — NOT `docs/backlog.md` PBI rows, which are product intent and never score entropy | `.bee/backlog.jsonl` |
 | stale work | reservations past TTL and never released; HANDOFF.json older than 7 days | `.bee/reservations.json`, `.bee/HANDOFF.json` |
 | broken tools | `.bee/bin/` helpers that error on invocation; hook crash entries in `.bee/logs/hooks.jsonl` since the last audit | run helpers with `--json`, read the log |
@@ -52,8 +52,8 @@ Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run
 
 | Question | Answered by | One-command fix when unanswerable |
 |---|---|---|
-| What is this system? | `docs/specs/system-overview.md` | run `bee-scribing` **bootstrap** (offers a provable-facts skeleton for the missing map, D2) |
-| How is it organized? | `docs/specs/reading-map.md` | run `bee-scribing` **bootstrap** (writes the missing reading-map skeleton, D2) |
+| What is this system? | `docs/specs/system-overview.md` (no-bundle branch) | run `bee-scribing` **bootstrap** (offers a provable-facts skeleton for the missing map, D2) |
+| How is it organized? | `docs/specs/reading-map.md` (no-bundle branch) | run `bee-scribing` **bootstrap** (writes the missing reading-map skeleton, D2) |
 | How do I run it? | `.bee/config.json` `commands` (setup/start) | run `node .bee/bin/lib/commands_detect.mjs`, confirm the candidates into `.bee/config.json` (D3) |
 | How do I verify it? | `.bee/config.json` `commands` (test/verify) — run it, don't just read it | run `node .bee/bin/lib/commands_detect.mjs`, confirm test/verify into `.bee/config.json` (D3) |
 | Where are we now? | `node .bee/bin/bee.mjs status --json` | (self-answering — the command is the artifact) |

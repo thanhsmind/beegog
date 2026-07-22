@@ -33,7 +33,7 @@ Scribing is bee's BA. It owns the state layer. An **area is domain-general**: a 
 | **capture** | any discuss → build → test → adjust loop **settles an outcome**, any phase — a rule agreed, a behavior confirmed by test, a threshold/tuning value chosen, an error policy adjusted; an explicit user settlement signal ("chốt", "final", "ok ship it") makes capture **mandatory in the same turn** (decision 0003) | log the decision same turn, then: **high-risk lane → merge into the spec immediately**; every other lane → append a capture stub (`node .bee/bin/bee.mjs capture add`) and keep working — the merge happens at flush (decision 0017) |
 | **flush** | capture queue non-empty at a flush point — session wrap-up, the PreCompact/close warning, or the session-start offer (decision 0017) | drain the queue oldest-first: full merge of each stub into its area's spec, mark it flushed (`bee.mjs capture flush --id <id> --into <spec>`), record the scribing run |
 | **harvest** | user asks to document an existing area, or grooming files a missing-spec item | write the first spec for an area built before/outside bee |
-| **bootstrap** | `docs/specs/` lacks `system-overview.md` or `reading-map.md` — typically right after onboarding | **offer — never auto-run** (D2 of harness10) a bounded skeleton pass creating ONLY the missing map file(s) from mechanically provable facts; an existing map file is never touched. Full binding rules + skeleton shapes: the reference's Bootstrap section |
+| **bootstrap** | **no-bundle repos only** — `docs/specs/` lacks `system-overview.md` or `reading-map.md`, typically right after onboarding. A repo WITH a bundle has no equivalent bootstrap: its `docs/knowledge/index.md` and `areas/index.md` are pure functions of the concepts and are regenerated (`bee.mjs knowledge index`), never skeletoned | **offer — never auto-run** (D2 of harness10) a bounded skeleton pass creating ONLY the missing map file(s) from mechanically provable facts; an existing map file is never touched. Full binding rules + skeleton shapes: the reference's Bootstrap section |
 
 Bootstrap is inventory, harvest is meaning: bootstrap writes only what code, tree, and verbatim README extracts prove, marks every meaning as an Open Gap (`coverage: partial`), and asks no interview questions — its loudly stated gaps are harvest's worklist.
 
@@ -118,7 +118,7 @@ Merge rules:
 - Every enum value in the Data Dictionary carries its business meaning ("`paused` — hidden from applicants, still editable by the owner"). A value without a meaning is an Open Gap, not a table row.
 - Every Behavior block answers: what triggers it, what blocks it, what changes, what side effects fire, and **what each actor or consuming system observes afterwards**.
 - Business Rules are numbered (R1, R2…) and cite the active D-ID that decided them.
-- UI areas: refresh the settled snapshot under `docs/specs/visuals/<area>/` when the screen visibly changed (ask the user for one if you cannot produce it); a UI area with no current snapshot records that as an Open Gap, never silently (decision 0003).
+- UI areas: refresh the settled snapshot when the screen visibly changed (ask the user for one if you cannot produce it); a UI area with no current snapshot records that as an Open Gap, never silently (decision 0003). **With no bundle** the snapshot lives under `docs/specs/visuals/<area>/`, unchanged. **With a bundle there is no snapshot home yet, and this skill does not invent one:** the compatibility surface is read-only for new content (`scripts/okf_specs_fence.mjs` fails the chain, G2) and the bundle profile defines no visuals location. Until one is decided, record the missing snapshot as an **Open Gap** in the area's concept — naming the screen and stating that the bundle has no visuals home — and never write the image into the retired tree. The gap itself is tracked in `docs/knowledge/areas/okf-profile/concept-model-and-authoring.md` §Open Gaps.
 - If the feature added or removed an area, or changed shared entities, the role model, or a cross-area flow: sync `docs/specs/system-overview.md` in the same pass (template in the reference). In bundle mode the same duty falls on the area's `overview` concept and the area index.
 - Update frontmatter: `updated`, append to `sources`, reconcile `decisions`, set `coverage: full | partial` honestly. In bundle mode this means re-emitting the whole block through `emitFrontmatter` with `timestamp` refreshed and `bee.sources`/`bee.decisions` extended — never hand-editing a line of it.
 
@@ -159,7 +159,7 @@ Before finishing, re-read the spec with the Pointers section covered and ask: co
 
 ## 7. Refresh the Reading Map
 
-`docs/specs/reading-map.md`: add lines for locations created or repurposed, fix lines made wrong, delete lines for removed locations. One line each; a map, not documentation.
+**With no bundle** — `docs/specs/reading-map.md`: add lines for locations created or repurposed, fix lines made wrong, delete lines for removed locations. One line each; a map, not documentation.
 
 In bundle mode, the generated indexes carry the per-area map instead — run `node .bee/bin/bee.mjs knowledge index` after any new concept or new area (the run is a pure function of the bundle, so re-running it is always safe), and keep the hand-written reading map pointing at the areas that exist.
 
@@ -203,7 +203,7 @@ Record the scribing run: `node .bee/bin/bee.mjs state scribing-run --feature <fe
 - a capture that ran only because the user asked "ghi lại" — a silent settlement the agent should have caught itself (decision 0007)
 - the user deferred work ("để sau", "phase 2", "later") and the turn ended with no `proposed` row appended to `docs/backlog.md` — the missed-capture failure applied to backlog items (D8)
 - asking "should I document this?" instead of announcing the capture and doing it
-- a UI screen that visibly changed while its snapshot under `docs/specs/visuals/` did not (and no Open Gap says why)
+- a UI screen that visibly changed while its snapshot did not, and no Open Gap says why — with no bundle the snapshot is `docs/specs/visuals/`; with a bundle there is no home yet, so the Open Gap IS the required output
 - an area added or removed with `system-overview.md` left unsynced
 - treating scribing as UI-only — backend jobs, APIs, integrations, and processes are areas too
 

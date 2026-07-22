@@ -103,18 +103,18 @@ async function maybeDecisionNudge(root) {
 // bee-scribing capture before closing. Never blocks.
 async function maybeCaptureNudge(root) {
   try {
-    // docs/specs/ is a PRODUCT doc tree — resolve against the product root so the
-    // nudge reads the real specs under the repo-divorce topology, not the empty
-    // workshop-side docs/specs/ (GitHub #14).
+    // docs/specs/ and the bundle are both PRODUCT doc trees — resolve against
+    // the product root so the nudge reads the real ones under the repo-divorce
+    // topology, not the empty workshop-side copies (GitHub #14).
     const stateLib = await import(libModuleUrl(root, "state.mjs"));
     const productRoot = stateLib.resolveProductRoot(root);
     const specsDir = path.join(productRoot, "docs", "specs");
-    // okf-foundation D34: knowledge migrates out of docs/specs/ area by area
-    // (legacy specs become pointer stubs whose mtime never moves again). A
-    // capture that lands as a bundle concept under docs/knowledge/ must count
-    // as "captured", or this nudge fires forever once knowledge moves. The
-    // bundle nests (areas/<slug>/, work/<id>/), so it is walked recursively;
-    // docs/specs/ keeps its historical flat scan.
+    // okf-foundation D34: knowledge migrates out of docs/specs/ into the bundle
+    // area by area (legacy specs become pointer stubs whose mtime never moves
+    // again). A capture that lands as a bundle concept under docs/knowledge/
+    // must count as "captured", or this nudge fires forever once knowledge
+    // moves. The bundle nests (areas/<slug>/, work/<id>/), so it is walked
+    // recursively; the retired tree keeps its historical flat scan.
     const knowledgeDir = path.join(productRoot, "docs", "knowledge");
     if (!fs.existsSync(specsDir) && !fs.existsSync(knowledgeDir)) {
       return null;
@@ -163,14 +163,33 @@ async function maybeCaptureNudge(root) {
       return null;
     }
     injectLib.markInjected(root, "capture-nudge", hash);
-    return (
+    // f4-6 (D3): the nudge NAMES THE RESOLVED TARGET. The logic above has been
+    // bundle-aware since okf-foundation D34 — it maxes the retired tree against
+    // the bundle — so in a migrated repo this fires precisely BECAUSE the
+    // bundle is stale, and the old unconditional wording then sent the agent to
+    // the wrong tree: "merge it into the touched area's spec" under a tree that
+    // `scripts/okf_specs_fence.mjs` fails the chain for accepting new content.
+    // An agent obeying the nudge would have been stopped by another guard. This
+    // is the session-CLOSE twin of the session-INIT fix in f4-3 (inject.mjs's
+    // scribing-debt nudge), and it routes on the same ONE predicate. The
+    // no-bundle branch is byte-identical to what shipped before.
+    const knowledgeLib = await import(libModuleUrl(root, "knowledge.mjs"));
+    if (knowledgeLib.bundleMode(root)) {
+      return (
+        "bee capture nudge (decision 0003): the newest decision is more recent than every " +
+        "concept in the knowledge bundle (docs/knowledge/) — a settled outcome may exist only " +
+        "in the decision log and the chat. Before finishing, invoke bee-scribing capture to " +
+        "author it as a concept in the touched area's bundle folder (or confirm no area is affected)."
+      );
+    }
+    return ( // no-bundle branch: today's wording, byte for byte.
       "bee capture nudge (decision 0003): the newest decision is more recent than every " +
-      "area spec under docs/specs/ — a settled outcome may exist only in the decision log " +
+      "area spec under docs/specs/ — a settled outcome may exist only in the decision log " + // no-bundle branch
       "and the chat. Before finishing, invoke bee-scribing capture to merge it into the " +
       "touched area's spec (or confirm no spec is affected)."
     );
   } catch {
-    // fail-open: no specs, no lib, no problem
+    // fail-open: no specs, no bundle, no lib, no problem
     return null;
   }
 }

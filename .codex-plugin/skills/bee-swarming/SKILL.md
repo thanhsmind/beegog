@@ -31,7 +31,7 @@ Everything below this section is the multi-worker wave protocol for `standard`/`
 
 - Gate 3 is approved: run `node .bee/bin/bee.mjs status --json` and confirm `gates.execution` is true. If not, stop — return to bee-validating. Never spawn workers before execution approval.
 - Sweep stale reservations: `node .bee/bin/bee.mjs reservations sweep`
-- `docs/history/learnings/critical-patterns.md` has been read when present.
+- The critical patterns have been read: with a bundle, `docs/knowledge/index.md`'s `## Critical patterns` section; with no bundle, `docs/history/learnings/critical-patterns.md` when present.
 
 
 ## Operating Contract

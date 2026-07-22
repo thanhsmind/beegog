@@ -26,7 +26,7 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 
 1. **Scope**
    - Classify: `Quick`, `Standard`, or `Deep`.
-   - Read `docs/history/learnings/critical-patterns.md` and `.bee/state.json` if present.
+   - Read the critical patterns — with a bundle, `docs/knowledge/index.md`'s `## Critical patterns` section; with no bundle, `docs/history/learnings/critical-patterns.md` — and `.bee/state.json` if present.
    - If the request spans independent subsystems, pick one and defer the rest.
    - **Backlog flip (D11a):** when this feature matches an existing `docs/backlog.md` row, flip that row to `in-flight` and add the feature slug, same turn; if the request never passed through the backlog, create the `proposed` row first, then flip it. This is the only place a row goes `in-flight` (table schema + merge rules live in the scribing reference; prose-ruled, never hook-enforced — D7).
    - If `.bee/config.json` lacks `commands` (setup/start/test/verify), run detection first: `node .bee/bin/lib/commands_detect.mjs` prints JSON candidates from the repo's manifests. Present the candidates as **one** pre-filled confirmation question (`key: value — source`), still skippable; fall back to the open question when detection finds nothing. Write only user-confirmed values to `.bee/config.json` `commands`. Never invent command values (docs/09 item 1, D3 of harness10).

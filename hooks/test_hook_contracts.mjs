@@ -1909,6 +1909,115 @@ function editPayload({ sessionId, cwd, filePath }) {
   });
 }
 
+// okf-integration-close-f4 f4-6: bee-session-close's decision-0003 CAPTURE
+// NUDGE names the RESOLVED state layer, not a hardcoded `docs/specs/`.
+//
+// This is the session-CLOSE twin of the session-INIT fix in f4-3. The nudge's
+// LOGIC has been bundle-aware since okf-foundation D34 (it maxes the retired
+// tree's newest .md against the bundle's), so in a migrated repo it fires
+// precisely BECAUSE the bundle is stale — and the wording then sent the agent
+// to merge the settlement into "the touched area's spec", under a tree that
+// `scripts/okf_specs_fence.mjs` fails the chain for accepting new content. An
+// agent obeying the nudge would have been stopped by another guard.
+//
+// Both branches are asserted end-to-end through the real wrapper, on two
+// fixtures identical except for the presence of ONE parsing concept, because
+// that one file is the whole predicate (`bundleMode`). The no-bundle branch is
+// pinned to its EXACT pre-change wording: a never-migrated host must not be
+// able to tell this shipped.
+const CAPTURE_NUDGE_NO_BUNDLE =
+  "bee capture nudge (decision 0003): the newest decision is more recent than every " +
+  "area spec under docs/specs/ — a settled outcome may exist only in the decision log " +
+  "and the chat. Before finishing, invoke bee-scribing capture to merge it into the " +
+  "touched area's spec (or confirm no spec is affected).";
+
+function buildCaptureNudgeFixture(label, { withBundle }) {
+  const root = buildFixture(`hook-contracts-capture-nudge-${label}-`);
+  // A settled decision, dated far enough ahead that it is unambiguously newer
+  // than every doc mtime the fixture just wrote (the nudge compares a decision
+  // DATE against file mtimes, so "now" would be a coin flip).
+  fs.writeFileSync(
+    path.join(root, ".bee", "decisions.jsonl"),
+    `${JSON.stringify({
+      id: "f4-6-capture-nudge-fixture",
+      type: "decide",
+      date: "2099-01-01T00:00:00.000Z",
+      decision: "A settled outcome that never reached the state layer.",
+      rationale: "fixture",
+      scope: "repo",
+      source: "user",
+    })}\n`,
+  );
+  // The retired tree exists in BOTH fixtures — the branch must come from the
+  // bundle predicate, never from "docs/specs/ is missing".
+  fs.mkdirSync(path.join(root, "docs", "specs"), { recursive: true });
+  fs.writeFileSync(path.join(root, "docs", "specs", "billing.md"), "# Billing\n");
+  if (withBundle) {
+    const conceptDir = path.join(root, "docs", "knowledge", "areas", "billing");
+    fs.mkdirSync(conceptDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(conceptDir, "overview.md"),
+      ["---", "type: bee.area", "title: Billing — purpose", "description: A fixture concept.", "timestamp: 2026-07-22", "---", "", "# Billing", "", "Body.", ""].join("\n"),
+    );
+  }
+  return root;
+}
+
+async function runCaptureNudgeRows() {
+  const rows = [];
+
+  const noBundleRoot = buildCaptureNudgeFixture("nobundle", { withBundle: false });
+  const noBundle = await runWrapper(
+    "bee-session-close.mjs",
+    JSON.stringify({ hook_event_name: "Stop", cwd: noBundleRoot }),
+    noBundleRoot,
+  );
+  const noBundleParsed = parseAdvisoryStdout(noBundle.stdout);
+  const noBundleMsg =
+    noBundleParsed.json && typeof noBundleParsed.json.systemMessage === "string" ? noBundleParsed.json.systemMessage : "";
+  const noBundlePass = noBundle.status === 0 && noBundleMsg.includes(CAPTURE_NUDGE_NO_BUNDLE);
+  rows.push(
+    adapterRow(
+      "session-close-capture-nudge",
+      "no-bundle-wording-is-byte-identical-to-before",
+      noBundlePass,
+      noBundlePass
+        ? "a repo with no bundle gets the pre-change nudge verbatim — a never-migrated host cannot tell this shipped"
+        : `expected the exact pre-change no-bundle nudge; got status=${noBundle.status} stdout=${truncate(noBundle.stdout, 400)}`,
+      noBundle,
+    ),
+  );
+
+  const bundleRoot = buildCaptureNudgeFixture("bundle", { withBundle: true });
+  const withBundle = await runWrapper(
+    "bee-session-close.mjs",
+    JSON.stringify({ hook_event_name: "Stop", cwd: bundleRoot }),
+    bundleRoot,
+  );
+  const bundleParsed = parseAdvisoryStdout(withBundle.stdout);
+  const bundleMsg =
+    bundleParsed.json && typeof bundleParsed.json.systemMessage === "string" ? bundleParsed.json.systemMessage : "";
+  const bundlePass =
+    withBundle.status === 0 &&
+    bundleMsg.includes("bee capture nudge (decision 0003)") &&
+    bundleMsg.includes("knowledge bundle (docs/knowledge/)") &&
+    !bundleMsg.includes("docs/specs/") &&
+    !bundleMsg.includes("touched area's spec");
+  rows.push(
+    adapterRow(
+      "session-close-capture-nudge",
+      "bundle-mode-names-the-bundle-and-never-the-retired-tree",
+      bundlePass,
+      bundlePass
+        ? "one parsing concept flips the nudge to the bundle: it names docs/knowledge/ and never sends the agent to a tree okf_specs_fence would fail it for writing"
+        : `expected a bundle-branch nudge naming docs/knowledge/ and no docs/specs/; got status=${withBundle.status} stdout=${truncate(withBundle.stdout, 400)}`,
+      withBundle,
+    ),
+  );
+
+  return rows;
+}
+
 async function runHoldSessionRows() {
   const rows = [];
 
@@ -3537,6 +3646,7 @@ async function main() {
   results.push(...await runCodexSubagentAuditRows());
   results.push(...await runNicknameRows());
   results.push(...await runLaneSessionRows());
+  results.push(...await runCaptureNudgeRows());
   results.push(...await runHoldSessionRows());
   results.push(...await runHandoffSessionRows());
   results.push(...await runCoverageGapRows());

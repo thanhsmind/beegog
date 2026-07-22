@@ -100,6 +100,14 @@ const MANDATORY_SUITES = [
   // guard that silently stops running is worse than no guard: new prose would
   // land in the compatibility surface again with nothing to say so.
   "scripts/okf_specs_fence.mjs",
+  // f4-6: the fence over the INSTRUCTION layer. Pinned exact-path for the same
+  // reason as its sibling — it does not match the `test_*.mjs` discovery glob,
+  // so EXTRA_SUITES membership is its only way into the chain. It exists
+  // because three hand audits each found instruction-layer misroutes the
+  // previous one missed while the chain stayed green; a guard against that
+  // failure mode which can itself silently stop running would be the same
+  // failure mode wearing a script.
+  "scripts/okf_instructions_fence.mjs",
 ];
 
 // f2-3 (F6): a migration cell's coverage gate must be in the chain, and the
@@ -158,6 +166,13 @@ export const MANDATORY_SUITE_ARGS = [
   // must be in the chain, so both are pinned: the argument variant here, the
   // bare live run by the path pin.
   ["scripts/okf_specs_fence.mjs", "--selftest"],
+  // f4-6: same shape, same reason — the bare live run of the instruction fence
+  // passes trivially whenever the instruction layer happens to be clean (its
+  // normal state), so the `--selftest` variant is the only thing proving the
+  // fence still bites, that it stays inert with no bundle, and that its four
+  // exemption classes still hold. The path pin above protects the script; this
+  // pins the argument variant riding it.
+  ["scripts/okf_instructions_fence.mjs", "--selftest"],
 ];
 
 // Floor count: total discovered suites must never silently drop below this
@@ -183,7 +198,11 @@ export const MANDATORY_SUITE_ARGS = [
 // f3-4: +2 for the docs/specs read-only fence — `okf_specs_fence --selftest`
 // (the fixtures that prove it bites, and that it stays inert with no bundle)
 // and the bare live run against this repo's own docs/specs/ = 62.
-const SUITE_FLOOR_COUNT = 62;
+// f4-6: +2 for the INSTRUCTION-layer fence — `okf_instructions_fence --selftest`
+// (the fixtures that prove it bites, that it stays inert with no bundle, and
+// that all four exemption classes hold) and the bare live run against this
+// repo's own skills/, hooks/ and AGENTS.md = 64.
+const SUITE_FLOOR_COUNT = 64;
 
 /**
  * Checks a discovered suite list against a mandatory list and a floor count.
