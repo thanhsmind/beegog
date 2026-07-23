@@ -1228,6 +1228,184 @@ try {
     record('without --cleanup, the worktree was left in place', stillThere, suggestCreated.worktreeRoot);
   }
 
+  // ── cov-4 (ci-owned-verify D5): the merge gate command becomes
+  // `configCommands.test || configCommands.verify` — commands.test (the
+  // impacted/dev-loop command) is preferred when present, and merge still
+  // falls back to commands.verify when commands.test is absent (the
+  // verifySkipped path, and mainA's plain-commands.verify fixture above,
+  // stay byte-untouched). Both fixtures below write a distinct marker file
+  // from whichever script actually ran, so "which command executed" is
+  // proven by a file on disk rather than inferred from the green/red
+  // outcome alone. ────────────────────────────────────────────────────────
+  {
+    // commands.test AND commands.verify both configured, and they disagree:
+    // commands.test exits 0 (would report green), commands.verify exits 1
+    // (would report red/MERGE_VERIFY_RED). A green merge result here is only
+    // possible if commands.test — not commands.verify — is what ran.
+    const mainTestPref = path.join(mergeTmp, 'mainTestPref');
+    fs.mkdirSync(mainTestPref, { recursive: true });
+    git(mainTestPref, ['init', '-q', '-b', 'main']);
+    git(mainTestPref, ['config', 'user.email', 's@e']);
+    git(mainTestPref, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(mainTestPref, '.gitignore'), BEE_GITIGNORE);
+    fs.mkdirSync(path.join(mainTestPref, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(mainTestPref, '.bee', 'onboarding.json'), JSON.stringify({ schema_version: '1.0', bee_version: '0.0.0' }));
+    fs.writeFileSync(
+      path.join(mainTestPref, '.bee', 'config.json'),
+      JSON.stringify({ commands: { test: 'node test-cmd.mjs', verify: 'node verify-cmd.mjs' } }),
+    );
+    fs.writeFileSync(path.join(mainTestPref, 'f'), 'x');
+    fs.writeFileSync(
+      path.join(mainTestPref, 'test-cmd.mjs'),
+      "import fs from 'node:fs';\nfs.writeFileSync('test-cmd-ran.txt', 'x\\n');\nprocess.exit(0);\n",
+    );
+    fs.writeFileSync(
+      path.join(mainTestPref, 'verify-cmd.mjs'),
+      "import fs from 'node:fs';\nfs.writeFileSync('verify-cmd-ran.txt', 'x\\n');\nprocess.exit(1);\n",
+    );
+    git(mainTestPref, ['add', '.']);
+    git(mainTestPref, ['commit', '-q', '-m', 'init']);
+
+    const prefCreated = mergeNewWorktree(mainTestPref, 'wsr-merge-test-pref');
+    fs.writeFileSync(path.join(prefCreated.worktreeRoot, 'pref-work.txt'), 'x\n');
+    git(prefCreated.worktreeRoot, ['add', 'pref-work.txt']);
+    git(prefCreated.worktreeRoot, ['commit', '-q', '-m', 'test-pref fixture work']);
+    const prefResult = bee(mainTestPref, ['worktree', 'merge', '--id', prefCreated.id, '--json']);
+    let prefJson = null;
+    try {
+      prefJson = JSON.parse(prefResult.stdout);
+    } catch {
+      /* checked below */
+    }
+    {
+      const ok = prefResult.status === 0 && prefJson && prefJson.ok === true && prefJson.verify === 'green';
+      record('(cov-4) worktree merge with BOTH commands.test and commands.verify configured — a green result is only possible if commands.test ran, not commands.verify', ok, prefResult.stdout);
+    }
+    {
+      const testRan = fs.existsSync(path.join(mainTestPref, 'test-cmd-ran.txt'));
+      const verifyRan = fs.existsSync(path.join(mainTestPref, 'verify-cmd-ran.txt'));
+      record('(cov-4) commands.test is preferred over commands.verify: the test-cmd marker exists and the verify-cmd marker does not', testRan && !verifyRan, `test-cmd-ran=${testRan} verify-cmd-ran=${verifyRan}`);
+    }
+  }
+  {
+    // commands.test ABSENT, only commands.verify configured — merge must
+    // still fall back to commands.verify (the pre-existing contract, now
+    // proven directly by the same marker-file technique rather than only
+    // inferred from mainA's earlier green/red assertions).
+    const mainFallback = path.join(mergeTmp, 'mainTestFallback');
+    fs.mkdirSync(mainFallback, { recursive: true });
+    git(mainFallback, ['init', '-q', '-b', 'main']);
+    git(mainFallback, ['config', 'user.email', 's@e']);
+    git(mainFallback, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(mainFallback, '.gitignore'), BEE_GITIGNORE);
+    fs.mkdirSync(path.join(mainFallback, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(mainFallback, '.bee', 'onboarding.json'), JSON.stringify({ schema_version: '1.0', bee_version: '0.0.0' }));
+    fs.writeFileSync(path.join(mainFallback, '.bee', 'config.json'), JSON.stringify({ commands: { verify: 'node verify-cmd.mjs' } }));
+    fs.writeFileSync(path.join(mainFallback, 'f'), 'x');
+    fs.writeFileSync(
+      path.join(mainFallback, 'verify-cmd.mjs'),
+      "import fs from 'node:fs';\nfs.writeFileSync('verify-cmd-ran.txt', 'x\\n');\nprocess.exit(0);\n",
+    );
+    git(mainFallback, ['add', '.']);
+    git(mainFallback, ['commit', '-q', '-m', 'init']);
+
+    const fallbackCreated = mergeNewWorktree(mainFallback, 'wsr-merge-test-fallback');
+    fs.writeFileSync(path.join(fallbackCreated.worktreeRoot, 'fallback-work.txt'), 'x\n');
+    git(fallbackCreated.worktreeRoot, ['add', 'fallback-work.txt']);
+    git(fallbackCreated.worktreeRoot, ['commit', '-q', '-m', 'test-fallback fixture work']);
+    const fallbackResult = bee(mainFallback, ['worktree', 'merge', '--id', fallbackCreated.id, '--json']);
+    let fallbackJson = null;
+    try {
+      fallbackJson = JSON.parse(fallbackResult.stdout);
+    } catch {
+      /* checked below */
+    }
+    {
+      const ok = fallbackResult.status === 0 && fallbackJson && fallbackJson.ok === true && fallbackJson.verify === 'green';
+      record('(cov-4) worktree merge with only commands.verify configured (no commands.test) still exits green', ok, fallbackResult.stdout);
+    }
+    {
+      const verifyRan = fs.existsSync(path.join(mainFallback, 'verify-cmd-ran.txt'));
+      record('(cov-4) with commands.test absent, merge falls back to running commands.verify (the verify-cmd marker exists)', verifyRan, `verify-cmd-ran=${verifyRan}`);
+    }
+  }
+  {
+    // P1-4 regression: a REAL staged merge (git merge --no-ff --no-commit,
+    // exactly the state mergeFeatureWorktree gates in) with a
+    // registry-mapped changed file must show the gate actually enumerating
+    // the STAGED changes and selecting >0 suites — never the trivial
+    // "0 suites" pass a wiring bug (wrong cwd, reading committed HEAD
+    // instead of the staged index, an empty/stale registry) would produce
+    // silently. Wiring the real scripts/run_verify.mjs + the real
+    // scripts/impact-registry.json into this temp-repo fixture is
+    // disproportionate (it would need the whole repo's suite tree present
+    // under the fixture root) — this uses a small stub commands.test that
+    // does the same two things the real gate does: (1) reads `git status
+    // --porcelain` for the currently staged/working changes, exactly like
+    // run_verify.mjs's statusPorcelainFiles(), and (2) maps changed paths
+    // through a tiny on-disk registry file, exactly like
+    // impact_registry.mjs's queryRegistry(). The property under test is the
+    // WIRING (does the gate see the staged merge state and pick >0 suites
+    // for a mapped file), not run_verify.mjs's own suite-selection logic,
+    // which is exercised directly by scripts/test_impact_registry.mjs and
+    // scripts/test_run_verify_impacted.mjs elsewhere in the chain.
+    const mainP14 = path.join(mergeTmp, 'mainP14');
+    fs.mkdirSync(mainP14, { recursive: true });
+    git(mainP14, ['init', '-q', '-b', 'main']);
+    git(mainP14, ['config', 'user.email', 's@e']);
+    git(mainP14, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(mainP14, '.gitignore'), BEE_GITIGNORE);
+    fs.mkdirSync(path.join(mainP14, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(mainP14, '.bee', 'onboarding.json'), JSON.stringify({ schema_version: '1.0', bee_version: '0.0.0' }));
+    fs.writeFileSync(path.join(mainP14, '.bee', 'config.json'), JSON.stringify({ commands: { test: 'node impacted-stub.mjs' } }));
+    fs.writeFileSync(path.join(mainP14, 'f'), 'x');
+    // tiny stand-in for scripts/impact-registry.json: maps one known changed
+    // path to one known suite label.
+    fs.writeFileSync(path.join(mainP14, 'stub-registry.json'), JSON.stringify({ 'mapped.txt': 'fake-suite-A' }));
+    fs.writeFileSync(
+      path.join(mainP14, 'impacted-stub.mjs'),
+      [
+        "import fs from 'node:fs';",
+        "import { execSync } from 'node:child_process';",
+        "const out = execSync('git status --porcelain', { encoding: 'utf8' });",
+        "const changedFiles = out.split('\\n').filter(Boolean).map((l) => l.slice(3).trim());",
+        "const registry = JSON.parse(fs.readFileSync('stub-registry.json', 'utf8'));",
+        "const suites = [...new Set(changedFiles.map((f) => registry[f]).filter(Boolean))];",
+        "fs.writeFileSync('impacted-result.json', JSON.stringify({ changedFiles, suites }));",
+        "console.log(`IMPACTED RUN: ${suites.length} suite(s) from ${changedFiles.length} changed file(s)`);",
+        'process.exit(0);',
+        '',
+      ].join('\n'),
+    );
+    git(mainP14, ['add', '.']);
+    git(mainP14, ['commit', '-q', '-m', 'init']);
+
+    const p14Created = mergeNewWorktree(mainP14, 'wsr-merge-p14');
+    fs.writeFileSync(path.join(p14Created.worktreeRoot, 'mapped.txt'), 'registry-mapped change\n');
+    git(p14Created.worktreeRoot, ['add', 'mapped.txt']);
+    git(p14Created.worktreeRoot, ['commit', '-q', '-m', 'add a registry-mapped file']);
+    const p14Result = bee(mainP14, ['worktree', 'merge', '--id', p14Created.id, '--json']);
+    {
+      const ok = p14Result.status === 0 && JSON.parse(p14Result.stdout).ok === true;
+      record('(cov-4 P1-4) worktree merge with a registry-mapped changed file exits 0', ok, `status=${p14Result.status} stdout=${p14Result.stdout} stderr=${p14Result.stderr}`);
+    }
+    const p14ResultFile = path.join(mainP14, 'impacted-result.json');
+    let p14Stub = null;
+    try {
+      p14Stub = JSON.parse(fs.readFileSync(p14ResultFile, 'utf8'));
+    } catch {
+      /* checked below */
+    }
+    {
+      const ok = p14Stub !== null && p14Stub.changedFiles.includes('mapped.txt');
+      record('(cov-4 P1-4) the gate ran against the STAGED merge state — it enumerated the staged "mapped.txt" change, not an empty/committed tree', ok, JSON.stringify(p14Stub));
+    }
+    {
+      const ok = p14Stub !== null && p14Stub.suites.length > 0 && p14Stub.suites.includes('fake-suite-A');
+      record('(cov-4 P1-4) a registry-mapped changed file selects >0 suites — never the trivial "0 suites" pass', ok, JSON.stringify(p14Stub));
+    }
+  }
+
   // ── #46 (issues-46-53 D4): the worktree's identity is fixed at creation and
   // is no longer read from the MUTABLE state.feature. The paved road creates
   // the worktree at session-scout time, BEFORE exploring settles the feature's

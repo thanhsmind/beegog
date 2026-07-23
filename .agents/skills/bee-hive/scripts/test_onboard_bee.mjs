@@ -302,7 +302,7 @@ try {
     "AGENTS.md contains BEE:START/END markers");
   check(agentsText.includes("node .bee/bin/bee.mjs status --json"), "AGENTS block mentions bee.mjs status first step");
   check(agentsText.includes("commands.verify") && agentsText.includes("never build on red"),
-    "AGENTS block carries the baseline-gate startup step");
+    "AGENTS block carries the CI-status-gate startup step");
 
   // --- 3a. minimal header above the block (D4, propose_agents_header) -------
   check(agentsText.startsWith(`# ${path.basename(tmp)}\n`),

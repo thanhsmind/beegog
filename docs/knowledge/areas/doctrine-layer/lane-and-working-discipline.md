@@ -91,26 +91,32 @@ govern the working residue of a cell rather than its content.
   go, the mechanism that reclaims them is specified against that same shape, not
   against the shape someone assumed.
 
-- **The verify ladder (cli-performance D4, `e54878b1`):** a cell's verify is its
-  TARGETED suite (seconds), run red-first and green by the worker; the full
-  configured chain (~minute) runs at exactly four milestones — the **baseline
-  before a session's first cell claim**, wave close (once, by the orchestrator,
-  the independent full proof for the whole wave), session finish, and
-  worktree-merge/release gates.
+- **The verify ladder (cli-performance D4, `e54878b1`) — retired by
+  ci-owned-verify D1/D6:** a cell's verify is its TARGETED suite (seconds),
+  run red-first and green by the worker; the full configured chain is now
+  CI-owned and never runs locally. Its former four milestones are all
+  superseded: the session-first-claim moment is now a cheap CI-status check
+  (latest full-verify run on the base branch plus any open `verify-red`
+  issue, never a local run), wave close and worktree merge both run the
+  impact-registry-scoped `commands.test` instead of the full chain, and the
+  full chain itself runs on push in CI, auto-filing a deduped `verify-red`
+  issue when red.
 
-  **The baseline's trigger is the claim, not arrival.** It is stated
-  claim-first, in the execution discipline rather than in any startup
-  checklist, because a conditional rule rendered inside an unconditional list
-  reads as unconditional: an agent working a numbered "every session" list
-  top-to-bottom ran a minute-long chain to answer a question that touched no
-  cell. A session that answers, reads or explores without ever claiming owes no
-  baseline run. Nothing about the gate's strength changed — a red baseline is
-  still surfaced and still becomes its own fix-first cell, and building on red
-  is still forbidden. What changed is when it fires, and where the rule lives so
-  that its structure and its meaning agree.
+  **The claim is still the trigger, not arrival.** It is stated claim-first,
+  in the execution discipline rather than in any startup checklist, because a
+  conditional rule rendered inside an unconditional list reads as
+  unconditional: an agent working a numbered "every session" list
+  top-to-bottom used to run a minute-long chain to answer a question that
+  touched no cell. A session that answers, reads or explores without ever
+  claiming owes no CI check either. Nothing about the gate's strength
+  changed — a red result is still surfaced and still becomes its own
+  fix-first cell, and building on red is still forbidden. What changed is the
+  proof itself: a local run became a CI-status read, and the four milestones
+  collapsed into one CI-owned full pass plus registry-scoped local checks.
   Judges and reviewers never run the full chain as part of a verdict. Proven
-  the day it landed: the wave-close run caught a real escape (raw NUL bytes in
-  a lib file) that every targeted suite had missed. Companion performance
+  the day the ladder first landed: the wave-close run caught a real escape
+  (raw NUL bytes in a lib file) that every targeted suite had missed — now
+  the impacted run's job. Companion performance
   idiom for derived read paths (D1/D2, cells cp-1/cp-2): shared inputs are
   read once per call and threaded down — never re-read per item — and
   repeated child-process answers are memoized in a pass-local map that dies

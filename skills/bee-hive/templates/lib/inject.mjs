@@ -447,7 +447,7 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
     for (const key of recordedKeys) lines.push(`- ${key}: \`${commands[key]}\``);
     if (commands.verify) {
       lines.push(
-        '- Baseline gate: before your first `cells claim` of this session, run the verify command once; a red baseline is surfaced and becomes its own fix-first tiny cell — never build on red. The claim is the trigger, not arrival: a session that claims no cell owes no baseline run.',
+        '- CI status gate: before your first `cells claim` of this session, check CI instead of running anything locally — the latest full-verify run on the base branch plus any open verify-red issue; red is surfaced and becomes its own fix-first tiny cell — never build on red. No local full-suite run is ever owed: the dev loop runs registry-scoped tests only, and the full suite is CI-owned. The claim is the trigger, not arrival: a session that claims no cell owes no CI check.',
       );
     }
   }

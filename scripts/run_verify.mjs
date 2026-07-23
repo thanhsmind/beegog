@@ -17,14 +17,16 @@
 // Each suite is spawned directly (no shell), stdout/stderr is buffered and
 // only printed when a suite fails, so a green run stays quiet.
 
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildRegistry, serializeRegistry, queryRegistry, normalizeQueryPath } from "./impact_registry.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
+const IMPACT_REGISTRY_PATH = path.join(__dirname, "impact-registry.json");
 
 // ─── suite discovery (cs-4, contention-split) ──────────────────────────────
 // This array used to be a manually maintained list: every feature adding a
@@ -596,44 +598,152 @@ async function runPool(units, concurrency) {
   return results;
 }
 
-// Default concurrency: validated empirically on this repo's suite mix.
-// Math.min(6, cpus) was the original target but produced a real flake in
-// validation (test_onboard_bee starved to 56s when it landed alongside 4-5
-// other 30s+ suites at once); Math.min(5, cpus) removed that clustering and
-// passed 8/8 consecutive runs at ~32s wall-time. Still fully overridable via
-// BEE_VERIFY_CONCURRENCY for machines with a different core/load profile.
-async function main() {
-  const concurrency = Math.max(
-    1,
-    Number(process.env.BEE_VERIFY_CONCURRENCY) || Math.min(5, os.cpus().length),
-  );
+// ─── Impacted-file selection (cov-2, ci-owned-verify CONTEXT.md D4) ────────
+// A repeatable/comma-separated `--impacted <file...>` CLI flag plus
+// `--impacted-from-git` (staged + unstaged + untracked tree changes, UNION
+// committed changes since the merge-base with main/origin-main) select
+// suites through the impact registry (scripts/impact_registry.mjs) instead
+// of running the full pool. Mutually exclusive with --only/BEE_VERIFY_ONLY
+// (typed refusal, mirroring the zero-match refusal idiom above) — the two
+// selection modes answer different questions and silently combining them
+// would narrow one against the other with no signal. A changed test_*.mjs
+// suite always selects itself: the registry's own closure walk includes
+// each suite's own entry file (closureFor visits the entry before any
+// edge), so no special-casing is needed here — plain registry lookup
+// already covers it.
 
-  const rootFilteredSuites = filterSuitesByRoot(SUITES);
-  if (process.env.BEE_VERIFY_ROOT_FILTER && rootFilteredSuites.length === 0) {
-    console.error(
-      `run_verify: BEE_VERIFY_ROOT_FILTER="${process.env.BEE_VERIFY_ROOT_FILTER}" matched zero suites — refusing a silent trivial-green run. FIX: check the root prefix.`,
-    );
-    process.exit(1);
+function parseImpactedArgs(argv) {
+  const files = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] !== "--impacted") continue;
+    const value = argv[i + 1];
+    if (!value) continue;
+    for (const raw of value.split(",")) {
+      const f = raw.trim();
+      if (f) files.push(f);
+    }
   }
+  return files;
+}
 
-  const onlyTokens = resolveOnlyTokens();
-  const onlyFilteredSuites = filterSuitesByOnly(rootFilteredSuites, onlyTokens);
-  const isScopedRun = onlyTokens.length > 0;
-  if (isScopedRun && onlyFilteredSuites.length === 0) {
-    console.error(
-      `run_verify: --only "${onlyTokens.join(",")}" matched zero suites — refusing a silent trivial-green run. FIX: check the token(s) against a suite's repo-relative path or display name.`,
-    );
-    process.exit(1);
+function hasImpactedFromGitFlag(argv) {
+  return argv.includes("--impacted-from-git");
+}
+
+// git plumbing is best-effort: not a git repo, no `main`/`origin/main` ref,
+// or a detached HEAD with no merge-base all yield an empty contribution
+// from that half rather than crashing the run.
+function runGitLines(args) {
+  try {
+    const out = execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8" });
+    return out.split("\n").filter((l) => l.length > 0);
+  } catch {
+    return [];
   }
+}
 
-  const activeSuites = filterExcludedSuites(onlyFilteredSuites);
-  if (process.env.BEE_VERIFY_EXCLUDE && activeSuites.length === 0) {
-    console.error(
-      `run_verify: BEE_VERIFY_EXCLUDE="${process.env.BEE_VERIFY_EXCLUDE}" excluded every remaining suite — refusing a silent trivial-green run. FIX: check the excluded paths.`,
-    );
-    process.exit(1);
+function unquoteGitPath(raw) {
+  const s = raw.trim();
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+    try {
+      return JSON.parse(s);
+    } catch {
+      return s.slice(1, -1);
+    }
   }
+  return s;
+}
 
+// `git status --porcelain` lines are "XY <path>" (2-char status + space) or
+// "XY <path> -> <path>" for renames, where the destination is what changed
+// under its new name. Untracked files carry the `??` code and are included
+// — a brand-new file is exactly the kind of change --impacted-from-git
+// exists to catch. This covers staged AND unstaged AND untracked in one
+// pass, so a staged-but-uncommitted merge (the exact state `bee worktree
+// merge` gates in) yields its full changed-file set.
+function statusPorcelainFiles() {
+  const files = [];
+  for (const line of runGitLines(["status", "--porcelain"])) {
+    const rest = line.slice(3);
+    const arrowIdx = rest.indexOf(" -> ");
+    const rawPath = arrowIdx === -1 ? rest : rest.slice(arrowIdx + 4);
+    const cleaned = unquoteGitPath(rawPath);
+    if (cleaned) files.push(cleaned);
+  }
+  return files;
+}
+
+function resolveMergeBaseCommit() {
+  for (const ref of ["main", "origin/main"]) {
+    const out = runGitLines(["merge-base", "HEAD", ref]);
+    if (out.length > 0 && out[0]) return out[0];
+  }
+  return null;
+}
+
+// Committed-changes half of the union: every file touched by a commit made
+// since this branch diverged from main/origin-main, independent of the
+// working tree's current dirty state.
+function committedDiffFiles() {
+  const base = resolveMergeBaseCommit();
+  if (!base) return [];
+  return runGitLines(["diff", "--name-only", base, "HEAD"]).map(unquoteGitPath);
+}
+
+function gitImpactedFiles() {
+  const files = new Set();
+  for (const f of statusPorcelainFiles()) files.add(f);
+  for (const f of committedDiffFiles()) files.add(f);
+  return [...files];
+}
+
+// Registry-backed EXACT selection (must-have: never the --only substring
+// matcher — a suite label used as a substring token could over-match a
+// different suite whose label happens to contain it).
+export function filterSuitesByLabels(suites, labelSet) {
+  if (labelSet.size === 0) return [];
+  return suites.filter((entry) => labelSet.has(suiteLabel(entry)));
+}
+
+// "load scripts/impact-registry.json when fresh; on staleness rebuild in
+// memory with a one-line warning" (D4/cov-2 action): the freshness check
+// itself requires recomputing the registry (same idiom as
+// impact_registry.mjs --check), so this always rebuilds and byte-compares;
+// build cost is ~130ms (cov-1 report) — negligible next to a suite run.
+// Missing-on-disk counts as stale, same as --check.
+async function loadImpactRegistry() {
+  let onDisk = null;
+  try {
+    onDisk = fs.readFileSync(IMPACT_REGISTRY_PATH, "utf8");
+  } catch {
+    onDisk = null;
+  }
+  const registry = await buildRegistry();
+  const fresh = serializeRegistry(registry);
+  if (onDisk !== fresh) {
+    console.log(
+      `IMPACTED: scripts/impact-registry.json is ${onDisk === null ? "missing" : "stale"} — rebuilt in memory for this run (regen: node scripts/impact_registry.mjs --write)`,
+    );
+  }
+  return registry;
+}
+
+function printImpactedUnmapped(unmapped) {
+  for (const u of unmapped) {
+    console.error(`UNMAPPED: ${u} (no known suite relates to this file — full verify still covers it)`);
+  }
+}
+
+function printImpactedBanner(selectedCount, changedCount) {
+  console.log(`IMPACTED RUN: ${selectedCount} suite(s) from ${changedCount} changed file(s)`);
+}
+
+// Shared execution + reporting tail, used by both the normal (full/--only)
+// path and the impacted path: build the serial/bundle/parallel units for
+// whatever suite set was selected, run the pool, print PASS/FAIL lines and
+// the summary, then exit. `beforeBanner`/`afterBanner` are the mode-specific
+// scoped-run banners (--only's or --impacted's) — null for an unscoped run.
+async function runSelectedSuites(activeSuites, { concurrency, beforeBanner, afterBanner }) {
   const serialEntries = activeSuites.filter((entry) => SERIAL_SENSITIVE.has(entry[0]));
   const rest = activeSuites.filter((entry) => !SERIAL_SENSITIVE.has(entry[0]));
   const bundleEntries = rest.filter((entry) => LIVE_BUNDLE_GROUP.has(suiteLabel(entry)));
@@ -650,13 +760,11 @@ async function main() {
     units.push(() => runOne(entry).then((r) => [r]));
   }
 
+  if (beforeBanner) beforeBanner();
+
   const wallStart = Date.now();
   const results = await runPool(units, concurrency);
   const wallMs = Date.now() - wallStart;
-
-  if (isScopedRun) {
-    printScopedBanner(onlyFilteredSuites.length, rootFilteredSuites.length);
-  }
 
   results.sort((a, b) => a.label.localeCompare(b.label));
 
@@ -689,11 +797,114 @@ async function main() {
   console.log(
     `${anyFail ? "FAIL" : "PASS"} run_verify: ${results.length} suite(s), concurrency=${concurrency}, wall=${wallMs}ms`,
   );
-  if (isScopedRun) {
-    printScopedBanner(onlyFilteredSuites.length, rootFilteredSuites.length);
-  }
+  if (afterBanner) afterBanner();
 
   process.exit(anyFail ? 1 : 0);
+}
+
+function impactedConcurrency() {
+  return Math.max(1, Number(process.env.BEE_VERIFY_CONCURRENCY) || Math.min(5, os.cpus().length));
+}
+
+// The impacted-mode entry point: resolves the changed-file set (explicit
+// --impacted files UNION --impacted-from-git's git-derived set), maps it
+// through the registry, and either exits with the loud zero-impacted pass
+// or runs the exact-selected suite set through the shared execution tail.
+async function runImpactedMode(explicitFiles, fromGit) {
+  const changed = new Set();
+  for (const raw of explicitFiles) changed.add(normalizeQueryPath(raw));
+  if (fromGit) {
+    for (const raw of gitImpactedFiles()) changed.add(normalizeQueryPath(raw));
+  }
+  const changedList = [...changed];
+
+  const registry = await loadImpactRegistry();
+  const { mappedSuites, unmapped } = queryRegistry(registry, changedList);
+
+  if (mappedSuites.length === 0) {
+    printImpactedUnmapped(unmapped);
+    console.log(
+      `IMPACTED RUN: 0 suite(s) from ${changedList.length} changed file(s) — full verify delegated to CI`,
+    );
+    process.exit(0);
+    return;
+  }
+
+  const activeSuites = filterSuitesByLabels(SUITES, new Set(mappedSuites));
+  printImpactedUnmapped(unmapped);
+
+  await runSelectedSuites(activeSuites, {
+    concurrency: impactedConcurrency(),
+    beforeBanner: () => printImpactedBanner(activeSuites.length, changedList.length),
+    afterBanner: () => printImpactedBanner(activeSuites.length, changedList.length),
+  });
+}
+
+// Default concurrency: validated empirically on this repo's suite mix.
+// Math.min(6, cpus) was the original target but produced a real flake in
+// validation (test_onboard_bee starved to 56s when it landed alongside 4-5
+// other 30s+ suites at once); Math.min(5, cpus) removed that clustering and
+// passed 8/8 consecutive runs at ~32s wall-time. Still fully overridable via
+// BEE_VERIFY_CONCURRENCY for machines with a different core/load profile.
+async function main() {
+  const argv = process.argv.slice(2);
+  const impactedFilesArg = parseImpactedArgs(argv);
+  const impactedFromGit = hasImpactedFromGitFlag(argv);
+  const isImpactedRun = impactedFilesArg.length > 0 || impactedFromGit;
+
+  if (isImpactedRun) {
+    const onlyTokensCheck = resolveOnlyTokens();
+    if (onlyTokensCheck.length > 0) {
+      console.error(
+        "run_verify: --impacted/--impacted-from-git and --only/BEE_VERIFY_ONLY are mutually exclusive selection modes — pick one.",
+      );
+      process.exit(1);
+      return;
+    }
+    await runImpactedMode(impactedFilesArg, impactedFromGit);
+    return;
+  }
+
+  const concurrency = Math.max(
+    1,
+    Number(process.env.BEE_VERIFY_CONCURRENCY) || Math.min(5, os.cpus().length),
+  );
+
+  const rootFilteredSuites = filterSuitesByRoot(SUITES);
+  if (process.env.BEE_VERIFY_ROOT_FILTER && rootFilteredSuites.length === 0) {
+    console.error(
+      `run_verify: BEE_VERIFY_ROOT_FILTER="${process.env.BEE_VERIFY_ROOT_FILTER}" matched zero suites — refusing a silent trivial-green run. FIX: check the root prefix.`,
+    );
+    process.exit(1);
+  }
+
+  const onlyTokens = resolveOnlyTokens();
+  const onlyFilteredSuites = filterSuitesByOnly(rootFilteredSuites, onlyTokens);
+  const isScopedRun = onlyTokens.length > 0;
+  if (isScopedRun && onlyFilteredSuites.length === 0) {
+    console.error(
+      `run_verify: --only "${onlyTokens.join(",")}" matched zero suites — refusing a silent trivial-green run. FIX: check the token(s) against a suite's repo-relative path or display name.`,
+    );
+    process.exit(1);
+  }
+
+  const activeSuites = filterExcludedSuites(onlyFilteredSuites);
+  if (process.env.BEE_VERIFY_EXCLUDE && activeSuites.length === 0) {
+    console.error(
+      `run_verify: BEE_VERIFY_EXCLUDE="${process.env.BEE_VERIFY_EXCLUDE}" excluded every remaining suite — refusing a silent trivial-green run. FIX: check the excluded paths.`,
+    );
+    process.exit(1);
+  }
+
+  const scopedBanner = isScopedRun
+    ? () => printScopedBanner(onlyFilteredSuites.length, rootFilteredSuites.length)
+    : null;
+
+  await runSelectedSuites(activeSuites, {
+    concurrency,
+    beforeBanner: scopedBanner,
+    afterBanner: scopedBanner,
+  });
 }
 
 // Only run the suite pool when this file is executed directly (`node

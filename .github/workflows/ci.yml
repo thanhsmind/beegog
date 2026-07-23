@@ -14,6 +14,14 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # issues: write is scoped to this job only, for scripts/ci_verify_issue.mjs
+    # (D2) to file/comment on a verify-red issue when the chain goes red;
+    # contents: read must be listed explicitly too — specifying any
+    # permission here resets every unlisted scope to `none`, and
+    # actions/checkout below still needs it.
+    permissions:
+      contents: read
+      issues: write
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +44,29 @@ jobs:
 
       # scripts/verify_all.mjs reads .bee/config.json `commands.verify` and
       # runs it verbatim — this is the single source of truth for the verify
-      # chain, so CI can never drift from what a local session runs.
+      # chain, so CI can never drift from what a local session runs. Output
+      # is additionally teed to a file so a red run has a tail to attach to
+      # the auto-filed issue below — the invocation itself (still exactly
+      # `node scripts/verify_all.mjs`, still the full commands.verify chain)
+      # is unchanged.
       - name: Run verify chain
-        run: node scripts/verify_all.mjs
+        run: node scripts/verify_all.mjs 2>&1 | tee verify-output.log
+
+      # D3: registry freshness only matters on the green path — the default
+      # step condition already skips this after the verify step above fails.
+      - name: Check impact registry freshness
+        run: node scripts/impact_registry.mjs --check
+
+      # D2 + plan-check P3: exactly one matrix leg files/comments the issue.
+      # fail-fast: false means all three legs go red together on a real
+      # failure, so without this gate all three would race to file/comment;
+      # node 20 is the arbitrary single leg. Scoped to `github.event_name ==
+      # push` — pull_request runs (including fork PRs) get a read-only
+      # GITHUB_TOKEN with no issues:write, so this keeps push and PR
+      # behavior consistent rather than failing PRs on the issue step too.
+      - name: File verify-red issue on failure
+        if: failure() && github.event_name == 'push' && matrix.node-version == 20
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFY_TAIL_FILE: verify-output.log
+        run: node scripts/ci_verify_issue.mjs

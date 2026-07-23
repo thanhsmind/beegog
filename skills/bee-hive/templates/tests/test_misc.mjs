@@ -223,7 +223,7 @@ await check('readConfig returns empty commands when config.json absent', async (
 await check('buildSessionPreamble omits commands section when none recorded', async () => {
   const preamble = buildSessionPreamble(root);
   assert(!/Standard commands/.test(preamble), 'no commands section without recorded commands');
-  assert(!/Baseline gate/.test(preamble), 'no baseline-gate line without recorded commands');
+  assert(!/CI status gate/.test(preamble), 'no CI-status-gate line without recorded commands');
 });
 
 await check('readConfig keeps only known non-empty string commands', async () => {
@@ -238,11 +238,11 @@ await check('readConfig keeps only known non-empty string commands', async () =>
   assert(!('start' in config.commands), 'blank string dropped');
 });
 
-await check('buildSessionPreamble shows commands and baseline gate when verify recorded', async () => {
+await check('buildSessionPreamble shows commands and CI status gate when verify recorded', async () => {
   const preamble = buildSessionPreamble(root);
   assert(/Standard commands/.test(preamble), 'commands section present');
   assert(preamble.includes('npm test'), 'verify command shown');
-  assert(/Baseline gate/.test(preamble), 'baseline-gate instruction present');
+  assert(/CI status gate/.test(preamble), 'CI-status-gate instruction present');
   assert(/never build on red/i.test(preamble), 'fix-first rule stated');
 });
 
@@ -287,13 +287,13 @@ await check('reservation-conflict reason carries a FIX (reserve or [BLOCKED])', 
   }
 });
 
-await check('buildSessionPreamble shows commands but no baseline gate without verify', async () => {
+await check('buildSessionPreamble shows commands but no CI status gate without verify', async () => {
   writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
     commands: { test: 'npm run unit' },
   });
   const preamble = buildSessionPreamble(root);
   assert(/Standard commands/.test(preamble), 'commands section present without verify');
-  assert(!/Baseline gate/.test(preamble), 'no baseline-gate line without verify command');
+  assert(!/CI status gate/.test(preamble), 'no CI-status-gate line without verify command');
   writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
     commands: { setup: 'npm install', verify: 'npm test' },
   });
