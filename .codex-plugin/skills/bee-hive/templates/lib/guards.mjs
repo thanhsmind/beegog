@@ -152,6 +152,14 @@ const TERMINAL_PHASES = new Set(['idle', 'compounding-complete']);
 const DIRECT_EDIT_DENY = {
   '.bee/state.json': 'bee.mjs state set --owner <selected pre-mutation phase>, or the dedicated state gate/worker/scribing-run verb',
   '.bee/backlog.jsonl': 'bee.mjs backlog add',
+  // backlog-unification D3: docs/backlog.md is the generated VIEW over the
+  // .bee/backlog.jsonl fold — a hand-edit here is invisible to the fold and
+  // is silently overwritten by the next `backlog render`, reintroducing the
+  // exact double-truth trap D3 retired `backlog rank --write` to close. One
+  // exact key is sufficient (no prefix branch): v2 has no per-item files
+  // under docs/, only this single rendered path.
+  'docs/backlog.md':
+    'bee.mjs backlog pbi add / bee.mjs backlog pbi status / bee.mjs backlog pbi amend to change data, or bee.mjs backlog render --write to regenerate the view',
   // xwh-4: the cross-worktree coordination stores are CLI-owned too — the
   // holds ledger is mirrored/released only by bee.mjs reservations (xwh-2)
   // and the grant registry only by bee.mjs worktree register/unregister. A

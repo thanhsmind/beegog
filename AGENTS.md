@@ -67,7 +67,7 @@ Independent review is user-invoked, not an automatic chain stage (decision 565e6
   HANDOFF.json        <- pause/resume artifact (exists only while paused)
   reservations.json   <- file reservations for same-session swarms
   decisions.jsonl     <- append-only decision events (use bee.mjs decisions)
-  backlog.jsonl       <- friction + grooming items
+  backlog.jsonl       <- machine friction events + event-sourced PBI records
   cells/              <- one JSON file per cell: <feature>-<n>.json
   logs/hooks.jsonl    <- fail-open hook crash/audit log
   bin/                <- bee.mjs (single dispatcher, all 9 command groups; sole shipped CLI)
@@ -77,7 +77,7 @@ docs/history/<feature>/    <- always: CONTEXT.md, reports/; plan.md frozen at Ga
 docs/history/learnings/    <- critical-patterns.md + dated learnings
 docs/knowledge/       <- knowledge bundle: areas/<area>/ concepts — the state layer; read FIRST
 docs/specs/           <- read-only compat surface: stubs + reading-map.md (the state layer when no bundle)
-docs/backlog.md       <- product backlog: PBI rows (proposed/in-flight/done), scribing-owned; NOT .bee/backlog.jsonl (that stays machine friction/grooming)
+docs/backlog.md       <- GENERATED view of .bee/backlog.jsonl pbi events — bee backlog pbi/render, never hand-edited
 docs/decisions/       <- long-form decision records
 .bee/spikes/<feature>/    <- disposable feasibility proofs
 ```

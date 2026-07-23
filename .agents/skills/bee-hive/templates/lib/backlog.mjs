@@ -524,15 +524,18 @@ export function rankBacklog(root, { write = false } = {}) {
 }
 
 // ─── uniqueness check (i-1, docs/history/issues-46-53/CONTEXT.md D1) ───────
-// #49 reported "ids allocated max+1, concurrent readers collide" — there is
-// no allocator anywhere in this repo; the id rule lives in prose
-// (skills/bee-scribing references, "next free integer, never reused") and is
-// executed by an agent hand-editing this table. The committed duplicate (two
-// `P50` rows, authored a day apart on different branches) proves it was
-// never a race: each author computed "next free" from a snapshot that
-// predated the other's commit. A lock prevents nothing here; what was
-// missing is a CHECK. This is that check, over the SAME row walk rankBacklog
-// already does — no second parser.
+// #49 reported "ids allocated max+1, concurrent readers collide" — at the
+// time, there was no allocator anywhere in this repo; the id rule lived only
+// in prose (an agent computing the sequential integer that came after every
+// id already on the table, then hand-editing the row in) and the committed
+// duplicate (two `P50` rows, authored a day apart on different branches)
+// proved it was never a race: each author computed "next" from a snapshot
+// that predated the other's commit. A lock would have prevented nothing —
+// what was missing was a CHECK. This is that check. backlog-unification D2
+// later closed the underlying gap for real: new PBI ids are now generated
+// (`p-<8hex>`, crypto randomness, no read-then-increment, no lock needed),
+// so this check now also guards the legacy `P<n>` ids the migration
+// preserved verbatim.
 /**
  * Find IDs that appear on more than one data row of docs/backlog.md.
  * @returns {{id:string, lines:number[]}[]} one entry per duplicated,

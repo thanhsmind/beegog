@@ -106,16 +106,19 @@ drives bee by invoking skills in sequence can call this stage.
         `bee-exploring`/`bee-planning` do at their own gates. This is not a second bypass
         channel — an uncovered lane surfaces to a human here too, even under direct
         instruction to proceed.
-     5. Once both gates clear (auto or human), flip the item's `docs/backlog.md` Status
-        row to `in-flight` (the same convention `bee-exploring` step 1 already uses) —
-        this is "ready" for a dispatch loop to pick up.
+     5. Once both gates clear (auto or human), flip the item's status with
+        `node .bee/bin/bee.mjs backlog pbi status --id <id> --to in-flight --feature <slug>`
+        (the same convention `bee-exploring` step 1 already uses) — this is "ready" for
+        a dispatch loop to pick up. Then `node .bee/bin/bee.mjs backlog render --write`
+        so `docs/backlog.md` reflects it.
    - **4b. Park:**
      1. Hand what you gathered (evidence + what is unclear) to `bee-context-locking`,
         which writes it into the feature's `CONTEXT.md` **`Outstanding Questions`**
         section — reuse that existing structure, never a new brief file format.
-     2. In the same call, instruct `bee-context-locking` to also set the item's
-        `docs/backlog.md` **`Status`** row to **`parked`** (D13) — same commit as the
-        brief, never a separate write.
+     2. In the same call, instruct `bee-context-locking` to also run
+        `node .bee/bin/bee.mjs backlog pbi status --id <id> --to parked` (D13) and
+        `node .bee/bin/bee.mjs backlog render --write` — same commit as the brief,
+        never a separate write, and never a hand-edited `docs/backlog.md` row.
      3. Stop. The item is parked; no synchronous question is asked. A human picks it up
         later via `bee-exploring`, which loads this brief instead of re-gathering from
         scratch — not this skill's job to run that dialogue.

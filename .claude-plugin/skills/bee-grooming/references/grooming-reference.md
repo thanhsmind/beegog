@@ -60,15 +60,15 @@ Trend: after each audit, append an entry to `.bee/backlog.jsonl` so the next run
 
 Five minutes per audit; this catches system-of-record decay the entropy formula cannot see (a spec can be fresh and the repo still unanswerable to a cold start). A probe finding is filed with its fix named, never as "document the project" — the fix is one bounded command (bootstrap/regenerate for Q1/Q2, detect-and-confirm for Q3/Q4).
 
-**Product-backlog (PBI) drift** — audit `docs/backlog.md` (the product backlog of PBI rows — distinct from `.bee/backlog.jsonl`, the machine friction/grooming layer) for three drift patterns, each a tiny fix cell (prose-ruled correction, never a hook — D7):
+**Product-backlog (PBI) drift** — audit `node .bee/bin/bee.mjs backlog pbi list --json` (the fold over `.bee/backlog.jsonl` — the one unified store; friction/grooming events live in the same stream but are a separate `kind`) for three drift patterns, each a tiny fix cell (prose-ruled correction, never a hook — D7):
 
 | Drift | Meaning | Fix cell |
 |---|---|---|
-| `in-flight` row, no active feature | a row claims work is underway but no `docs/history/<feature>/` matches the slug | tiny: flip to `done`+link if the feature shipped, or back to `proposed` if it was dropped |
-| `done` feature, no row | a shipped feature under `docs/history/` has no backlog row (bypassed the backlog) | tiny: append the `done` row retroactively, linked |
-| duplicate rows for one story | two rows describe the same PBI (parser counts both honestly — dedup is this prose audit, not the counter's job) | tiny: merge into the higher-priority row, delete the fork |
+| `in-flight` PBI, no active feature | a PBI claims work is underway but no `docs/history/<feature>/` matches its `feature` slug | tiny: `backlog pbi status --id <id> --to done` + link if the feature shipped, or `--to proposed` if it was dropped |
+| `done` feature, no PBI | a shipped feature under `docs/history/` has no matching PBI (bypassed the backlog) | tiny: `backlog pbi add --title ... --cos ...` at `done` status, linked, retroactively |
+| duplicate PBIs for one story | two records describe the same story (the fold counts both honestly — dedup is this prose audit, not the fold's job) | tiny: `backlog pbi status --id <lower-priority id> --to declined`, note the merge into the surviving id's `cos` via `pbi amend` |
 
-Status counts come from `node .bee/bin/bee.mjs status --json` (`pbi`) — the audit reconciles those counts against active features and `docs/history/`, it does not recount by hand.
+Any fix cell ends with `node .bee/bin/bee.mjs backlog render --write` so the generated `docs/backlog.md` reflects the correction. Status counts come from `node .bee/bin/bee.mjs status --json` (`pbi`) — the audit reconciles those counts against active features and `docs/history/`, it does not recount by hand.
 
 **TODO/stub debris** — grep `TODO|FIXME|HACK|XXX|not implemented|placeholder`; each hit is either a real backlog item (file it with predicted impact) or debris (kill candidate). Never leave it as a comment-shaped promise.
 

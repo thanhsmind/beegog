@@ -12,7 +12,7 @@ never a generation timestamp or any other wall-clock value.
 
 - [advisor-protocol/](advisor-protocol/index.md) — 4 concept(s)
 - [bee-herding/](bee-herding/index.md) — 1 concept(s)
-- [decision-memory/](decision-memory/index.md) — 1 concept(s)
+- [decision-memory/](decision-memory/index.md) — 2 concept(s)
 - [doctrine-layer/](doctrine-layer/index.md) — 8 concept(s)
 - [feedback-digest/](feedback-digest/index.md) — 4 concept(s)
 - [hook-runtime/](hook-runtime/index.md) — 15 concept(s)

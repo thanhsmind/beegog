@@ -301,6 +301,29 @@ check('an unrecognized (non-bee-shaped) Bash call is left alone by check (d)', (
 
 // ─── (b) existing checks unaffected — zero regression, via the real hook ──
 
+check('direct-edit guard: a write to docs/backlog.md is denied naming the owning verbs (backlog-unification bu-3)', () => {
+  const root = makeFixtureRoot();
+  const result = runHook(root, {
+    tool_name: 'Write',
+    tool_input: { file_path: 'docs/backlog.md', content: 'x\n' },
+  });
+  assert(result.status === 2, `expected exit 2, got ${result.status} (stderr: ${result.stderr})`);
+  assert(result.stderr.includes('direct-edit'), `expected the direct-edit guard identified, got: ${result.stderr}`);
+  assert(result.stderr.includes('bee.mjs backlog pbi add'), `expected pbi add named, got: ${result.stderr}`);
+  assert(result.stderr.includes('bee.mjs backlog pbi status'), `expected pbi status named, got: ${result.stderr}`);
+  assert(result.stderr.includes('bee.mjs backlog pbi amend'), `expected pbi amend named, got: ${result.stderr}`);
+  assert(result.stderr.includes('bee.mjs backlog render --write'), `expected render --write named, got: ${result.stderr}`);
+});
+
+check('direct-edit guard: a write elsewhere under docs/ still passes (rest of docs/ unaffected)', () => {
+  const root = makeFixtureRoot();
+  const result = runHook(root, {
+    tool_name: 'Write',
+    tool_input: { file_path: 'docs/specs/some-area.md', content: 'x\n' },
+  });
+  assert(result.status === 0, `expected exit 0, got ${result.status} (stderr: ${result.stderr})`);
+});
+
 check('gate guard (idle intake gate): a write outside the allowed prefixes is still denied', () => {
   const root = makeFixtureRoot({ phase: 'idle' });
   const result = runHook(root, {

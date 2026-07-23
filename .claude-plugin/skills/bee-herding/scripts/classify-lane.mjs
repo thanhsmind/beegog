@@ -2,27 +2,33 @@
 'use strict';
 
 /**
- * classify-lane.mjs — decide whether a docs/backlog.md row is safe for an
- * unattended dispatcher to pick up (D6, agent-pane-orchestration).
+ * classify-lane.mjs — decide whether a PBI is safe for an unattended
+ * dispatcher to pick up (D6, agent-pane-orchestration; retargeted to the
+ * fold by backlog-unification D6/bu-4).
  *
- * Usage: node classify-lane.mjs <PBI-ID> [--backlog PATH]
+ * Usage: node classify-lane.mjs <PBI-ID> [--bee-cmd "node .bee/bin/bee.mjs"]
+ *
+ * Reads the PBI's current record from the fold — `bee backlog pbi list
+ * --json` (event-sourced records in .bee/backlog.jsonl, never
+ * docs/backlog.md, which is only the generated view) — never a markdown
+ * table row.
  *
  * Emits exactly one JSON object on stdout:
  *   {pbi, lane, hard_gate_flags[], lane_safe, reason}
  *
- * This answers only "is this row's lane safe for an unattended agent" — one
+ * This answers only "is this PBI's lane safe for an unattended agent" — one
  * input to D1's four-condition dispatchable set, never the whole of it.
  *
  * Fail-closed contract: anything the rules cannot classify with confidence
- * (no matching row, unreadable backlog file, empty/unparseable row text, or
+ * (no matching id, an unreachable fold, empty/unparseable title+cos text, or
  * a signal the rules do not cover) returns lane_safe:false with lane
  * "high-risk" and a reason naming why confidence failed. An unclassifiable
- * row must never come back safe.
+ * PBI must never come back safe.
  */
 
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
-const STATUS_VALUES = new Set(['proposed', 'in-flight', 'done']);
+const STATUS_VALUES = new Set(['proposed', 'in-flight', 'parked', 'done', 'declined']);
 
 // Mode-gate risk flags, from bee-planning SKILL.md's "Mode Gate" section:
 //   auth · authorization · data model · audit/security · external systems ·
@@ -109,11 +115,11 @@ function unclassifiable(pbi, reason) {
 function parseArgs(argv) {
   const args = argv.slice(2);
   let pbi = null;
-  let backlog = 'docs/backlog.md';
+  let beeCmd = 'node .bee/bin/bee.mjs';
   const positional = [];
   for (let i = 0; i < args.length; i += 1) {
-    if (args[i] === '--backlog') {
-      backlog = args[i + 1];
+    if (args[i] === '--bee-cmd') {
+      beeCmd = args[i + 1];
       i += 1;
     } else {
       positional.push(args[i]);
@@ -122,59 +128,48 @@ function parseArgs(argv) {
   if (positional.length > 0) {
     [pbi] = positional;
   }
-  return { pbi, backlog };
+  return { pbi, beeCmd };
 }
 
-// Split one markdown table row into its logical columns (ID, description,
-// status, notes). A cell's own text can contain a literal "|" (verified in
-// docs/backlog.md, e.g. "POST /api/panes|agents" or "start\|stop\|..."), so
-// naive positional splitting is unsafe. The status column is a closed
-// three-value vocabulary (proposed/in-flight/done, docs/backlog.md:3), so it
-// is located by value and used as the anchor: everything between the ID
-// field and the status field is the description, everything after the
-// status field (minus a trailing empty cell from a closing "|") is notes.
-function parseRow(fields) {
-  let statusIdx = -1;
-  for (let i = 2; i < fields.length; i += 1) {
-    if (STATUS_VALUES.has(fields[i].trim())) {
-      statusIdx = i;
-      break;
-    }
+// Read the PBI's current record from the fold — `bee backlog pbi list
+// --json` (event-sourced records in .bee/backlog.jsonl, last-event-wins per
+// field) — never docs/backlog.md, which is only the generated view and can
+// lag the fold between renders. Returns null when the fold has no matching
+// id, throws when the command itself cannot be run or its output cannot be
+// parsed as JSON (both are caller-classified fail-closed).
+function findPbi(beeCmd, pbi) {
+  const [cmd, ...cmdArgs] = beeCmd.split(/\s+/);
+  const result = spawnSync(cmd, [...cmdArgs, 'backlog', 'pbi', 'list', '--json'], {
+    encoding: 'utf8',
+  });
+  if (result.error) {
+    throw new Error(`spawn "${beeCmd}" failed: ${result.error.message}`);
   }
-  if (statusIdx === -1) {
-    return { description: fields.slice(2).join('|').trim(), notes: '', status: null };
+  if (result.status !== 0) {
+    throw new Error(`"${beeCmd} backlog pbi list --json" exited ${result.status}: ${(result.stderr || '').trim()}`);
   }
-  const description = fields.slice(2, statusIdx).join('|').trim();
-  let lastIdx = fields.length;
-  if (fields.length > 0 && fields[fields.length - 1].trim() === '') {
-    lastIdx = fields.length - 1;
+  let records;
+  try {
+    records = JSON.parse(result.stdout);
+  } catch (err) {
+    throw new Error(`could not parse "${beeCmd} backlog pbi list --json" output as JSON: ${err.message}`);
   }
-  const notes = fields.slice(statusIdx + 1, lastIdx).join('|').trim();
-  return { description, notes, status: fields[statusIdx].trim() };
+  if (!Array.isArray(records)) {
+    throw new Error('"backlog pbi list --json" did not return an array');
+  }
+  return records.find((r) => r && r.id === pbi) || null;
 }
 
-function findRow(content, pbi) {
-  const lines = content.split(/\r?\n/);
-  for (const line of lines) {
-    if (!line.includes('|')) continue;
-    const fields = line.split('|');
-    if (fields.length < 4) continue;
-    const trimmedFields = fields.map((f) => f.trim());
-    const inner = trimmedFields.slice(1, -1);
-    const isSeparator = inner.length > 0 && inner.every((f) => f === '' || /^:?-+:?$/.test(f));
-    if (isSeparator) continue;
-    const idRaw = trimmedFields[1];
-    if (!idRaw || idRaw === 'ID') continue; // blank leading cell or header row
-    if (idRaw !== pbi) continue;
-    return parseRow(fields);
-  }
-  return null;
-}
-
-function classify(pbi, row) {
-  const text = [row.description, row.notes].filter((part) => part.length > 0).join(' ').trim();
+function classify(pbi, record) {
+  const title = typeof record.title === 'string' ? record.title : '';
+  const cos = typeof record.cos === 'string' ? record.cos : '';
+  const text = [title, cos].filter((part) => part.length > 0).join(' ').trim();
   if (!text) {
-    unclassifiable(pbi, `row for ${pbi} has empty or unparseable text (no description or notes found)`);
+    unclassifiable(pbi, `record for ${pbi} has empty or unparseable text (no title or cos found)`);
+    return;
+  }
+  if (record.status !== undefined && record.status !== null && !STATUS_VALUES.has(record.status)) {
+    unclassifiable(pbi, `record for ${pbi} has out-of-enum status "${record.status}"`);
     return;
   }
 
@@ -211,33 +206,32 @@ function classify(pbi, row) {
   // the safer (larger) of the two, "small".
   const lane = matched.length >= 2 ? 'standard' : 'small';
   const reason = matched.length === 0
-    ? 'no mode-gate risk flags matched in row text'
+    ? 'no mode-gate risk flags matched in title/cos text'
     : `${matched.length} mode-gate risk flag(s) matched, below the high-risk threshold: ${matched.map((rule) => rule.label).join(', ')}`;
   emit({ pbi, lane, hard_gate_flags: [], lane_safe: true, reason });
 }
 
 function main() {
-  const { pbi, backlog } = parseArgs(process.argv);
+  const { pbi, beeCmd } = parseArgs(process.argv);
   if (!pbi) {
     unclassifiable('', 'no PBI id provided on the command line');
     return;
   }
 
-  let content;
+  let record;
   try {
-    content = readFileSync(backlog, 'utf8');
+    record = findPbi(beeCmd, pbi);
   } catch (err) {
-    unclassifiable(pbi, `cannot read backlog file "${backlog}": ${err.code || err.message}`);
+    unclassifiable(pbi, `cannot read PBI fold via "${beeCmd} backlog pbi list --json": ${err.message}`);
     return;
   }
 
-  const row = findRow(content, pbi);
-  if (!row) {
-    unclassifiable(pbi, `no matching row found for ${pbi} in ${backlog}`);
+  if (!record) {
+    unclassifiable(pbi, `no matching PBI found for ${pbi} in the fold`);
     return;
   }
 
-  classify(pbi, row);
+  classify(pbi, record);
 }
 
 main();

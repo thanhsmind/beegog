@@ -1046,11 +1046,12 @@ export const COMMAND_REGISTRY = [
   {
     name: 'backlog.rank',
     invoke: 'bee backlog rank',
-    description: 'P2 mechanical pass: reorder docs/backlog.md rows by status group (in-flight, proposed, done). Reports the resulting order; --write persists it, otherwise nothing is changed.',
+    description:
+      'P2 mechanical pass (dry-run reporting only): reports docs/backlog.md rows reordered by status group (in-flight, proposed, done). RETIRED: --write (backlog-unification D3) — "bee backlog render --write" now owns the generated view; passing --write refuses, naming render.',
     parameters: {
       type: 'object',
       properties: {
-        write: { type: 'boolean', description: 'Persist the reordering to docs/backlog.md.' },
+        write: { type: 'boolean', description: 'RETIRED — refuses, naming "bee backlog render --write" instead.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
       },
       required: [],
@@ -1092,6 +1093,102 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: ['bee backlog add --type friction --title "example backlog row" --severity P2 --layer state --json'],
+    deprecated: null,
+  },
+
+  // ─── backlog pbi / backlog render (backlog-unification D1-D5): the
+  // event-sourced product-backlog layer. `backlog add` above is a DISTINCT
+  // verb family (friction/proposal rows for the feedback digest); these PBI
+  // verbs append kind:'pbi' records to the SAME .bee/backlog.jsonl stream,
+  // which lib/backlog.mjs's foldPbis derives current state from
+  // (last-event-wins) — never a hand-edit, never a second store. `render`
+  // is the generated docs/backlog.md view that replaces the retired
+  // `backlog rank --write`. ────────────────────────────────────────────────
+  {
+    name: 'backlog.pbi.add',
+    invoke: 'bee backlog pbi add',
+    description:
+      'Append a PBI "add" event to .bee/backlog.jsonl and print the created id. --id generates a collision-free `p-<8hex>` id via crypto randomness (no lock, no read-then-increment); pass --id yourself ONLY to preserve a legacy id during migration — a given or generated id that already names an item refuses (duplicate add). --status defaults to "proposed".',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'PBI title (Story). Required, non-empty.' },
+        cos: { type: 'string', description: 'Optional Condition of Satisfaction text.' },
+        status: { type: 'string', description: 'Initial status (default "proposed").', enum: ['proposed', 'in-flight', 'parked', 'done', 'declined'] },
+        feature: { type: 'string', description: 'Optional feature slug.' },
+        id: { type: 'string', description: 'Migration-only override: preserve an existing id (e.g. a legacy P<n>) instead of generating one.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['title'],
+    },
+    examples: ['bee backlog pbi add --title "Unify the backlog" --cos "one store, no hand-edits" --json'],
+    deprecated: null,
+  },
+  {
+    name: 'backlog.pbi.status',
+    invoke: 'bee backlog pbi status',
+    description:
+      'Append a PBI "status" event, flipping --id to --to. --feature optionally stamps the feature slug in the same move (the exploring-D11a flip needs both at once). Refuses an unknown --id or an out-of-enum --to.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The PBI id to flip.' },
+        to: { type: 'string', description: 'The new status.', enum: ['proposed', 'in-flight', 'parked', 'done', 'declined'] },
+        feature: { type: 'string', description: 'Optional feature slug to stamp in the same event.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['id', 'to'],
+    },
+    examples: ['bee backlog pbi status --id p-a1b2c3d4 --to in-flight --feature backlog-unification --json'],
+    deprecated: null,
+  },
+  {
+    name: 'backlog.pbi.amend',
+    invoke: 'bee backlog pbi amend',
+    description: 'Append a PBI "amend" event updating --title and/or --cos (at least one required). Status/feature never move through amend — that is "pbi status"\'s job. Refuses an unknown --id.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The PBI id to amend.' },
+        title: { type: 'string', description: 'New title text.' },
+        cos: { type: 'string', description: 'New Condition of Satisfaction text.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['id'],
+    },
+    examples: ['bee backlog pbi amend --id p-a1b2c3d4 --cos "revised CoS text" --json'],
+    deprecated: null,
+  },
+  {
+    name: 'backlog.pbi.list',
+    invoke: 'bee backlog pbi list',
+    description: 'List current PBIs from the fold over .bee/backlog.jsonl (the token-cheap query — no docs/backlog.md read). --status filters to one enum value; id-sorted.',
+    parameters: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Filter to one status.', enum: ['proposed', 'in-flight', 'parked', 'done', 'declined'] },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line-per-PBI summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee backlog pbi list --status in-flight --json'],
+    deprecated: null,
+  },
+  {
+    name: 'backlog.render',
+    invoke: 'bee backlog render',
+    description:
+      'Render the generated docs/backlog.md view from the .bee/backlog.jsonl PBI fold (proposed/in-flight/parked as full rows; done/declined collapse to one-line links, so the view stays short forever). Deterministic — no generation timestamp. --write persists; --check compares against what is on disk and refuses (non-zero exit) on drift; with neither, reports what would change.',
+    parameters: {
+      type: 'object',
+      properties: {
+        write: { type: 'boolean', description: 'Persist the generated content to docs/backlog.md.' },
+        check: { type: 'boolean', description: 'Refuse (non-zero exit) if the generated content differs from what is on disk.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee backlog render --check', 'bee backlog render --write'],
     deprecated: null,
   },
 
