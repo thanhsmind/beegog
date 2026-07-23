@@ -67,10 +67,10 @@
   "deps": [
     "cz-4"
   ],
-  "status": "claimed",
+  "status": "open",
   "decisions": [],
   "trace": {
-    "worker": "capsule-wright",
+    "worker": null,
     "outcome": null,
     "files_changed": [],
     "deviations": [],
@@ -80,8 +80,18 @@
     "verification_evidence": null,
     "verify_output": null,
     "verify_passed": null,
-    "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
-    "claimed_at": "2026-07-23T06:30:25.825Z"
+    "claim_session": null,
+    "claimed_at": null,
+    "ownership_overrides": [
+      {
+        "verb": "unclaimCell",
+        "forced_by": "92b2eab7-fb20-4569-99ac-1efd39917dda",
+        "owner_bypassed": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+        "at": "2026-07-23T06:37:14.112Z"
+      }
+    ],
+    "verify_command": null,
+    "verified_at": null
   },
   "tier": "ceiling"
 }

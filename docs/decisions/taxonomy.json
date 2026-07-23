@@ -163,6 +163,10 @@
     }
   ],
   "candidates": [
-    "verify"
+    "verify",
+    "backlog-auto-triage",
+    "context-import",
+    "gate-bypass",
+    "scope-interpretation"
   ]
 }

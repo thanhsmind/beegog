@@ -80,6 +80,7 @@ Then read the critical patterns — but the preamble's `### Critical patterns (d
 | Request | Route |
 |---|---|
 | Vague or new feature | `bee-exploring` |
+| Explicit request to run the automatic backlog-triage pass on a `docs/backlog.md` row (a human or an external caller invoking the pipeline path directly — no auto-trigger exists yet, D12 of `backlog-auto-triage`) | `bee-qualifying` |
 | Research task, clear scope | `bee-planning` |
 | Small clear fix | `bee-planning` (tiny/small mode) |
 | Docs/spec/README/sample-only change | docs lane — announce, write, format-check, capture; no pipeline |

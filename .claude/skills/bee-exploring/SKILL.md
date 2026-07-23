@@ -40,7 +40,8 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
    - Classify: `Quick`, `Standard`, or `Deep`.
    - Read the critical patterns — with a bundle, `docs/knowledge/index.md`'s `## Critical patterns` section; with no bundle, `docs/history/learnings/critical-patterns.md` — and `.bee/state.json` if present.
    - If the request spans independent subsystems, pick one and defer the rest.
-   - **Backlog flip (D11a):** when this feature matches an existing `docs/backlog.md` row, flip that row to `in-flight` and add the feature slug, same turn; if the request never passed through the backlog, create the `proposed` row first, then flip it. This is the only place a row goes `in-flight` (table schema + merge rules live in the scribing reference; prose-ruled, never hook-enforced — D7).
+   - **Backlog flip (D11a):** when this feature matches an existing `docs/backlog.md` row, flip that row to `in-flight` and add the feature slug, same turn; if the request never passed through the backlog, create the `proposed` row first, then flip it. This is the only place a row goes `in-flight` (table schema + merge rules live in the scribing reference; prose-ruled, never hook-enforced — D7). A row whose `Status` is `parked` is the one exception — see the Brief check below before touching it.
+   - **Brief check (D9, backlog-auto-triage):** if this feature's `docs/history/<feature>/CONTEXT.md` already exists and its `Outstanding Questions` → `Resolve Before Planning` section holds a `bee-qualifying`-written park brief (evidence gathered + what's still unclear, written via `bee-context-locking`'s park mode), load it instead of a fresh quick-scout — treat what it already gathered as settled ground, and let step 3 draw candidate gray-area questions only from what the brief itself still marks unclear. Flip the row's `Status` from `parked` to `in-flight` once the still-open questions are resolved (step 4), same convention as the `proposed → in-flight` flip above. No brief present → scope and scout from scratch exactly as today; this bullet changes nothing for a feature that never went through `bee-qualifying`.
    - If `.bee/config.json` lacks `commands` (setup/start/test/verify), run detection first: `node .bee/bin/lib/commands_detect.mjs` prints JSON candidates from the repo's manifests. Present the candidates as **one** pre-filled confirmation question (`key: value — source`), still skippable; fall back to the open question when detection finds nothing. Write only user-confirmed values to `.bee/config.json` `commands`. Never invent command values (docs/09 item 1, D3 of harness10).
 
 2. **Domain**
@@ -54,7 +55,8 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 
 3. **Gray Areas**
    - Generate 2–4 unstated *product* decisions that would otherwise make planning guess.
-   - Do a **quick scout only** — one keyword pass, then read 2–3 relevant files:
+   - **When step 1's Brief check loaded a park brief:** draw candidates only from what the brief itself still marks unclear — skip the quick-scout entirely, its evidence already covers that ground.
+   - Do a **quick scout only** — one keyword pass, then read 2–3 relevant files (skip this when a brief was loaded, per the bullet above):
      ```bash
      rg "<feature-keyword>" src app packages --glob "*.{ts,tsx,js,jsx,py,md}" | head -20
      ```
