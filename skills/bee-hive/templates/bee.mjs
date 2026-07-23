@@ -2498,11 +2498,34 @@ function runBacklogGit(root, args) {
  * (no .git, spawn error, non-zero exit): appendJsonl already succeeded by
  * the time this runs, and that success must never be rolled back or turned
  * into a command failure — this is what keeps the no-.git tmpdir fixture in
- * test_bee_cli.mjs's backlog.add example passing unchanged. */
-function commitBacklogRow(root, line) {
+ * test_bee_cli.mjs's backlog.add example passing unchanged.
+ *
+ * Gated on `queueSubmit` (D1): a human queue-submit row (`--queue-submit`)
+ * is the only case that attempts a commit at all — an agent's own
+ * self-observation row (friction/debt/finding about its own session) is
+ * appended by appendJsonl but never committed, so the flag stays false and
+ * this returns immediately without invoking git. When queueSubmit is true,
+ * a merge in progress is detected up front (D2) by resolving the REAL
+ * git-dir via `git rev-parse --git-dir` — never a hardcoded .git/MERGE_HEAD,
+ * since linked worktrees point .git elsewhere — and checking for a
+ * MERGE_HEAD file there before attempting the scoped commit. */
+function commitBacklogRow(root, line, queueSubmit) {
+  if (!queueSubmit) {
+    return { committed: false, sha: null };
+  }
+
   const inWorkTree = runBacklogGit(root, ['rev-parse', '--is-inside-work-tree']);
   if (inWorkTree.error || inWorkTree.status !== 0 || (inWorkTree.stdout || '').trim() !== 'true') {
     return { committed: false, sha: null };
+  }
+
+  const gitDirResult = runBacklogGit(root, ['rev-parse', '--git-dir']);
+  if (gitDirResult.error || gitDirResult.status !== 0 || !(gitDirResult.stdout || '').trim()) {
+    return { committed: false, sha: null };
+  }
+  const gitDir = path.resolve(root, gitDirResult.stdout.trim());
+  if (fs.existsSync(path.join(gitDir, 'MERGE_HEAD'))) {
+    return { committed: false, sha: null, commit_skipped_reason: 'merge_in_progress' };
   }
 
   const backlogPathspec = path.join('.bee', 'backlog.jsonl');
@@ -2551,6 +2574,7 @@ function handleBacklogAdd(root, flags) {
   }
   const detail = flags.detail !== undefined && flags.detail !== true ? String(flags.detail) : '';
   const feature = flags.feature !== undefined && flags.feature !== true ? String(flags.feature) : '';
+  const queueSubmit = flags['queue-submit'] === true;
   const line = {
     ts: new Date().toISOString(),
     type,
@@ -2561,10 +2585,19 @@ function handleBacklogAdd(root, flags) {
     feature,
   };
   appendJsonl(path.join(root, '.bee', 'backlog.jsonl'), line);
-  const { committed, sha } = commitBacklogRow(root, line);
-  const commitSuffix = committed ? ` (committed ${sha.slice(0, 7)})` : '';
+  const { committed, sha, commit_skipped_reason: commitSkippedReason } = commitBacklogRow(root, line, queueSubmit);
+  const commitSuffix = committed
+    ? ` (committed ${sha.slice(0, 7)})`
+    : commitSkippedReason === 'merge_in_progress'
+      ? ' (auto-commit skipped: merge in progress)'
+      : '';
   return {
-    result: { ...line, committed, ...(committed ? { commit_sha: sha } : {}) },
+    result: {
+      ...line,
+      committed,
+      ...(committed ? { commit_sha: sha } : {}),
+      ...(commitSkippedReason ? { commit_skipped_reason: commitSkippedReason } : {}),
+    },
     text: `Appended ${severity} ${type} row to .bee/backlog.jsonl: "${title}"${commitSuffix}`,
   };
 }
@@ -5202,7 +5235,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict', 'queue-submit']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

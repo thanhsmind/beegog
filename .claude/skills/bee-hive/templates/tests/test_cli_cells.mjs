@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
 import {
@@ -607,6 +608,33 @@ function runBeeBacklog(cwd, args) {
 // weakened.
 const PIN = '2020-01-01T00:00:00.000Z';
 
+// A REAL git repo (git init, not the synthetic `.git`-less makeStateRepo
+// scaffold) — commitBacklogRow's --queue-submit path runs `git rev-parse
+// --is-inside-work-tree` / `--git-dir` and a scoped `git add`/`git commit`,
+// none of which succeed against a bare mkdir. Same shape as
+// test_herding_cli.mjs's makeHerdingRepo.
+function git(cwd, args) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  assert(r.status === 0, `git ${args.join(' ')} (cwd=${cwd}) failed: ${r.stderr}`);
+  return r.stdout;
+}
+
+function makeGitBacklogRepo(prefix) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  git(root, ['init', '-q', '-b', 'main']);
+  git(root, ['config', 'user.email', 's@e']);
+  git(root, ['config', 'user.name', 's']);
+  fs.writeFileSync(path.join(root, 'f'), 'x');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-q', '-m', 'init']);
+  fs.mkdirSync(path.join(root, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(root, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  return fs.realpathSync(root);
+}
+
 function readBacklogJsonlLines(repoRoot) {
   const file = path.join(repoRoot, '.bee', 'backlog.jsonl');
   if (!fs.existsSync(file)) return [];
@@ -759,6 +787,152 @@ await check('bee.mjs backlog add accepts an arbitrary free-string --layer with n
     assert(result.status === 0, `a free-string layer with no fixed enum is accepted, got ${result.status}: ${result.stderr}`);
     const lines = readBacklogJsonlLines(dir);
     assert(lines[0].layer === 'security', 'layer stored as given, no allowlist rewriting');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── backlog-auto-commit-2 (D1/D2): --queue-submit scopes commitBacklogRow's
+// auto-commit to explicit human queue-submits, and a merge-in-progress skip
+// is surfaced instead of silent. Real git-repo fixtures (makeGitBacklogRepo)
+// — commitBacklogRow's git calls are no-ops against the synthetic
+// makeStateRepo scaffold used by every test above this block. ──────────────
+
+await check('bee.mjs backlog add with --queue-submit omitted never invokes git and returns committed:false with no commit created', async () => {
+  const dir = makeGitBacklogRepo('bee-backlog-add-noqueue-');
+  try {
+    const before = git(dir, ['rev-parse', 'HEAD']).trim();
+    const result = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'agent self-observation row',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--json',
+    ]);
+    assert(result.status === 0, `add should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(row.committed === false, `expected committed:false with --queue-submit omitted, got ${JSON.stringify(row)}`);
+    assert(!('commit_sha' in row), `no commit_sha when uncommitted, got ${JSON.stringify(row)}`);
+    assert(!('commit_skipped_reason' in row), `no commit_skipped_reason for the default-false path, got ${JSON.stringify(row)}`);
+    const after = git(dir, ['rev-parse', 'HEAD']).trim();
+    assert(before === after, 'HEAD unchanged — no commit was created');
+    const lines = readBacklogJsonlLines(dir);
+    assert(lines.length === 1, `row still appended to the jsonl despite no commit, got ${lines.length}`);
+
+    const explicitFalse = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'second self-observation row',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--queue-submit=false',
+      '--json',
+    ]);
+    assert(explicitFalse.status === 0, `add should succeed, got ${explicitFalse.status}: ${explicitFalse.stderr}`);
+    const explicitRow = JSON.parse(explicitFalse.stdout);
+    assert(explicitRow.committed === false, `explicit --queue-submit=false also skips the commit, got ${JSON.stringify(explicitRow)}`);
+    const afterExplicit = git(dir, ['rev-parse', 'HEAD']).trim();
+    assert(before === afterExplicit, 'HEAD still unchanged after an explicit --queue-submit=false add');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog add --queue-submit performs the scoped commit, returns committed:true + commit_sha, touching only .bee/backlog.jsonl', async () => {
+  const dir = makeGitBacklogRepo('bee-backlog-add-queue-');
+  try {
+    const result = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'human queue-submitted row',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--queue-submit',
+      '--json',
+    ]);
+    assert(result.status === 0, `add should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(row.committed === true, `expected committed:true with --queue-submit, got ${JSON.stringify(row)}`);
+    assert(typeof row.commit_sha === 'string' && row.commit_sha.length > 0, `expected a commit_sha, got ${JSON.stringify(row)}`);
+
+    const headSha = git(dir, ['rev-parse', 'HEAD']).trim();
+    assert(headSha === row.commit_sha, `HEAD advanced to the returned commit_sha, got HEAD=${headSha} vs ${row.commit_sha}`);
+    const changedFiles = git(dir, ['show', '--name-only', '--pretty=format:', 'HEAD'])
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    assert(
+      changedFiles.length === 1 && changedFiles[0] === path.join('.bee', 'backlog.jsonl'),
+      `commit touches only .bee/backlog.jsonl, got ${JSON.stringify(changedFiles)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog add --queue-submit with a merge in progress returns commit_skipped_reason:"merge_in_progress" and the text output carries the warning suffix, without committing', async () => {
+  const dir = makeGitBacklogRepo('bee-backlog-add-mergeskip-');
+  try {
+    const gitDir = git(dir, ['rev-parse', '--git-dir']).trim();
+    const mergeHeadPath = path.resolve(dir, gitDir, 'MERGE_HEAD');
+    const headSha = git(dir, ['rev-parse', 'HEAD']).trim();
+    fs.writeFileSync(mergeHeadPath, `${headSha}\n`, 'utf8');
+
+    const jsonResult = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'row during an in-progress merge',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--queue-submit',
+      '--json',
+    ]);
+    assert(jsonResult.status === 0, `add should succeed (the row still appends), got ${jsonResult.status}: ${jsonResult.stderr}`);
+    const row = JSON.parse(jsonResult.stdout);
+    assert(row.committed === false, `expected committed:false during a merge, got ${JSON.stringify(row)}`);
+    assert(
+      row.commit_skipped_reason === 'merge_in_progress',
+      `expected commit_skipped_reason:"merge_in_progress", got ${JSON.stringify(row)}`,
+    );
+    assert(!('commit_sha' in row), `no commit_sha when the commit was skipped, got ${JSON.stringify(row)}`);
+
+    const textResult = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'a second row during the same merge',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--queue-submit',
+    ]);
+    assert(textResult.status === 0, `add should succeed, got ${textResult.status}: ${textResult.stderr}`);
+    assert(
+      /auto-commit skipped: merge in progress/.test(textResult.stdout),
+      `text output names the merge-in-progress skip, got stdout="${textResult.stdout}"`,
+    );
+
+    const headAfter = git(dir, ['rev-parse', 'HEAD']).trim();
+    assert(headAfter === headSha, 'HEAD unchanged — no commit was attempted while MERGE_HEAD was present');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
