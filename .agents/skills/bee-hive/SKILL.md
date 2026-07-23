@@ -19,6 +19,21 @@ Bootstrap meta-skill. Load this first in bee repos. It verifies onboarding, read
 
 For the full routing table, state bootstrap, resume logic, chaining contracts, and communication standards, open `references/routing-and-contracts.md`. For the full pipeline, open `references/go-mode.md`.
 
+## Triage first
+
+Decide the lane from the request itself, before loading a second skill. Two counts decide it: how many of the risk flags listed under **Modes and Lanes** below the change trips, and how many **product files** it must touch (product files only — `.bee/**`, docs, plans, and generated renders never count).
+
+| From the request alone | Lane | What you load next |
+|---|---|---|
+| every touched file is knowledge, not runtime (docs, README, samples, plans) | `docs` | nothing more |
+| 0–1 flags, ≤2 product files, one direct task | `tiny` | nothing more |
+| 0–1 flags, ≤3 product files, no gray areas | `small` | nothing more |
+| 2+ flags or story-sized behavior · **any hard-gate flag** (auth, authorization, data loss, audit/security, external provider, validation removal) · genuine uncertainty about which row you are in | `standard` / `high-risk` | the normal chain, `bee-planning` included |
+
+The first three rows go straight to the merged shape+execution gate and the one dispatched execution worker described below, with **no `bee-planning` load** — the ~21 KB this triage exists to avoid. It saves nothing on *this* file: skills load whole, so `bee-hive` is already fully in context. The only saving on offer is the second load.
+
+**Uncertainty resolves downward, into loading more — never upward into skipping.** This is an early exit for the obviously-small, never a licence to shortcut. One hard-gate flag is `high-risk` at one product file, and re-counting flags to land under a threshold means you are already in `standard`.
+
 ## Onboarding
 
 1. Run `node --version`. Missing or below 18 → stop; bee requires Node.js 18+.
