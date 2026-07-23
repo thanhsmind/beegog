@@ -167,6 +167,10 @@
     "backlog-auto-triage",
     "context-import",
     "gate-bypass",
-    "scope-interpretation"
+    "scope-interpretation",
+    "feedback-digest",
+    "compounding",
+    "swarming",
+    "worktree-coordination"
   ]
 }

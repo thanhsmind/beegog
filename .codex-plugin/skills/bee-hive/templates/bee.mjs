@@ -2480,6 +2480,55 @@ function handleBacklogBadges(root, flags) {
   return { result: badges, text: `${verb}: ${badges.badges}` };
 }
 
+const BACKLOG_COMMIT_SUBJECT_MAX = 72;
+
+/** Runs a git subcommand scoped to `root` — same spawnSync('git', args, {
+ * cwd, encoding: 'utf8' }) shape as lib/worktree-store.mjs's runGit and
+ * lib/reviews.mjs's defaultRunGit, kept local here since bee.mjs's own
+ * handleBacklogAdd is the only caller. */
+function runBacklogGit(root, args) {
+  return spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+}
+
+/** Commits the just-appended backlog row on its own, scoped to ONLY
+ * .bee/backlog.jsonl — never `git add -A` / a plain `git commit` — so any
+ * other staged or unstaged change in the tree is left untouched. Degrades
+ * to {committed:false, sha:null} without throwing on every failure path
+ * (no .git, spawn error, non-zero exit): appendJsonl already succeeded by
+ * the time this runs, and that success must never be rolled back or turned
+ * into a command failure — this is what keeps the no-.git tmpdir fixture in
+ * test_bee_cli.mjs's backlog.add example passing unchanged. */
+function commitBacklogRow(root, line) {
+  const inWorkTree = runBacklogGit(root, ['rev-parse', '--is-inside-work-tree']);
+  if (inWorkTree.error || inWorkTree.status !== 0 || (inWorkTree.stdout || '').trim() !== 'true') {
+    return { committed: false, sha: null };
+  }
+
+  const backlogPathspec = path.join('.bee', 'backlog.jsonl');
+  const addResult = runBacklogGit(root, ['add', '--', backlogPathspec]);
+  if (addResult.error || addResult.status !== 0) {
+    return { committed: false, sha: null };
+  }
+
+  const truncatedTitle =
+    line.title.length > BACKLOG_COMMIT_SUBJECT_MAX ? `${line.title.slice(0, BACKLOG_COMMIT_SUBJECT_MAX)}...` : line.title;
+  const bodyLines = [`type: ${line.type}`, `severity: ${line.severity}`, `layer: ${line.layer}`];
+  if (line.feature) bodyLines.push(`feature: ${line.feature}`);
+  if (line.detail) bodyLines.push(`detail: ${line.detail}`);
+  const message = `chore(backlog): ${truncatedTitle}\n\n${bodyLines.join('\n')}`;
+
+  const commitResult = runBacklogGit(root, ['commit', '-m', message, '--', backlogPathspec]);
+  if (commitResult.error || commitResult.status !== 0) {
+    return { committed: false, sha: null };
+  }
+
+  const shaResult = runBacklogGit(root, ['rev-parse', 'HEAD']);
+  if (shaResult.error || shaResult.status !== 0 || !(shaResult.stdout || '').trim()) {
+    return { committed: false, sha: null };
+  }
+  return { committed: true, sha: shaResult.stdout.trim() };
+}
+
 function handleBacklogAdd(root, flags) {
   const type = requireFlag(flags, 'type');
   if (!Object.prototype.hasOwnProperty.call(KIND_ALIASES, type) && !NORMALIZED_KINDS.has(type)) {
@@ -2511,7 +2560,12 @@ function handleBacklogAdd(root, flags) {
     feature,
   };
   appendJsonl(path.join(root, '.bee', 'backlog.jsonl'), line);
-  return { result: line, text: `Appended ${severity} ${type} row to .bee/backlog.jsonl: "${title}"` };
+  const { committed, sha } = commitBacklogRow(root, line);
+  const commitSuffix = committed ? ` (committed ${sha.slice(0, 7)})` : '';
+  return {
+    result: { ...line, committed, ...(committed ? { commit_sha: sha } : {}) },
+    text: `Appended ${severity} ${type} row to .bee/backlog.jsonl: "${title}"${commitSuffix}`,
+  };
 }
 
 // ─── capture: full port of bee_capture.mjs's add/list/flush/count verbs
