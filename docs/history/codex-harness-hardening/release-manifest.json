@@ -2826,7 +2826,7 @@
     },
     {
       "path": "skills/bee-hive/templates/bee.mjs",
-      "sha256": "388a3e879089a0f515735dde3d5284bb0174e63a742a09367fe69997d34061dd",
+      "sha256": "791df421e0182b38c3ec6178a70780871c1e118483799f85884ab5710f66594e",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/bee.mjs"
