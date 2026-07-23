@@ -145,9 +145,9 @@ Swarming is complete when either:
 
 Before declaring completion: all wave cells capped or explicitly blocked/dropped, `node .bee/bin/bee.mjs reservations list --active-only` is empty, and `.bee/state.json` `workers` is cleared.
 
-## Fresh-Session Handoff (offer, never auto)
+## Fresh-Session Handoff (silent, never a stop)
 
-When a cell or wave finishes (capped, verify green) and further execution-approved work remains — this lane or another Gate-3-approved one — the finish → claim-next → planned-next handoff flow is available (fresh-session-handoff D1/D2): claim the next unit (`bee cells claim-next`), write the handoff (`bee state handoff write --kind planned-next --writer-session <id> --previous-cell <capped-id> --next-cell <claimed-id>`), and offer the user a `/clear` — the fresh session that follows adopts the carried claim automatically and opens straight into the next cell, no confirmation asked. The orchestrator **offers** this; it never issues `/clear` itself and never treats the offer as accepted by default — the user decides. Declining leaves the claimed cell exactly where it is; nothing is lost.
+When a cell or wave finishes (capped, verify green) and further execution-approved work remains — this lane or another Gate-3-approved one — continue with the next unit in this session: finishing a unit is never a reason to stop, ask, or wait. The planned-next handoff (fresh-session-handoff D1/D2) is a session-exit artifact, not an offer: only when this session is actually ending (context budget reached, or the run is otherwise terminating), claim the next unit (`bee cells claim-next`), write the handoff (`bee state handoff write --kind planned-next --writer-session <id> --previous-cell <capped-id> --next-cell <claimed-id>`), and end cleanly — the next fresh session (a `/clear` or a fresh start) adopts the carried claim automatically and opens straight into the next cell, no confirmation asked (no-clear-stop D1). Never stop to suggest `/clear`, never wait for one, and never issue `/clear` yourself.
 
 ## Hard Rules
 
