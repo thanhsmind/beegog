@@ -1,0 +1,52 @@
+{
+  "id": "bu-4",
+  "feature": "backlog-unification",
+  "lane": "standard",
+  "title": "Instruction layer + knowledge: every surface teaches the verbs, none the hand-edit",
+  "files": [
+    "skills/bee-scribing/SKILL.md",
+    "skills/bee-scribing/references/scribing-reference.md",
+    "skills/bee-qualifying/SKILL.md",
+    "skills/bee-exploring/SKILL.md",
+    "skills/bee-grooming/references/grooming-reference.md",
+    "skills/bee-herding/SKILL.md",
+    "skills/bee-hive/templates/AGENTS.block.md",
+    "AGENTS.md",
+    "docs/knowledge/areas/decision-memory/index.md",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    "scripts/impact-registry.json"
+  ],
+  "read_first": [
+    "docs/history/backlog-unification/CONTEXT.md",
+    "skills/bee-scribing/references/scribing-reference.md"
+  ],
+  "action": "Per CONTEXT D6, plan.md bu-4. Reword every surface that teaches hand-editing the PBI table to the CLI verbs: scribing D8 append + close-flip => pbi add / pbi status; qualifying D13 park flip => pbi status --to parked; exploring D11a => pbi status --to in-flight (pbi add first if no row); grooming drift audit reads pbi list --json; herding Status interlock reads pbi list --json or the generated index; scribing-reference 'two backlogs, two owners' section rewritten to the two-LAYER model (PBI items store + machine jsonl) with the new file layout; AGENTS.block.md + root AGENTS.md working-files lines updated byte-parallel. Author/update the knowledge concept for the backlog store shape in the appropriate area (follow the bundle's authoring template; regen knowledge index, knowledge check green). Grep-proof in report: zero non-archive surfaces instruct hand-editing docs/backlog.md. Mirrors + manifest + registry regen.",
+  "must_haves": {
+    "truths": [
+      "grep-proof: no surface teaches the hand-edit",
+      "AGENTS twins byte-parallel; doctrine_parity green",
+      "knowledge concept updated; index+check green",
+      "mirrors + manifest + registry regenerated"
+    ]
+  },
+  "verify": "node scripts/test_doctrine_parity.mjs && node scripts/test_skill_render.mjs && node scripts/release_manifest.mjs --check && node scripts/impact_registry.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "bu-2"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

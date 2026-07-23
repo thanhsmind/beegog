@@ -1,0 +1,46 @@
+{
+  "id": "bu-3",
+  "lane": "standard",
+  "feature": "backlog-unification",
+  "title": "docs/backlog.md + items/ become CLI-owned (write-guard)",
+  "files": [
+    "skills/bee-hive/templates/lib/guards.mjs",
+    ".bee/bin/lib/guards.mjs",
+    "hooks/test_write_guard.mjs",
+    "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    "scripts/impact-registry.json"
+  ],
+  "read_first": [
+    "docs/history/backlog-unification/CONTEXT.md",
+    ".bee/bin/lib/guards.mjs"
+  ],
+  "action": "Per CONTEXT D3, plan.md bu-3. In guards.mjs (BOTH twins): docs/backlog.md and docs/backlog/items/** join the CLI-owned set (like .bee/state.json) — direct Write/Edit/Bash edits denied with a refusal naming the owning verbs (backlog pbi add/status, backlog render --write); the CLI's own writes pass. Extend the write-guard test suites with deny + allow cases, red-first. Regen manifest + ledger + registry.",
+  "must_haves": {
+    "truths": [
+      "direct edit of generated index or an item file is denied naming the verb",
+      "CLI writes pass; migration script path documented as CLI-mediated",
+      "both twins identical; guard tests cover deny and allow"
+    ]
+  },
+  "verify": "node hooks/test_write_guard.mjs && node skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check && node scripts/impact_registry.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "bu-2"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

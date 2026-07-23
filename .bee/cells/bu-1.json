@@ -1,0 +1,51 @@
+{
+  "id": "bu-1",
+  "feature": "backlog-unification",
+  "lane": "standard",
+  "title": "PBI item store + CLI verbs + generated-index renderer",
+  "files": [
+    "skills/bee-hive/templates/lib/backlog.mjs",
+    ".bee/bin/lib/backlog.mjs",
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    ".bee/bin/lib/command-registry.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/bee.mjs",
+    "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    "scripts/impact-registry.json"
+  ],
+  "read_first": [
+    "docs/history/backlog-unification/CONTEXT.md",
+    "docs/history/backlog-unification/plan.md",
+    ".bee/bin/lib/backlog.mjs",
+    ".bee/bin/lib/knowledge.mjs"
+  ],
+  "action": "Per CONTEXT D2/D3/D4 and plan.md bu-1. Edit BOTH twins of backlog.mjs/command-registry.mjs/bee.mjs identically (test_lib_mirror parity). Item-store reader: parse docs/backlog/items/P<n>.md frontmatter (id,status,feature,opened,closed?); enum proposed|in-flight|parked|done|declined. Verbs: backlog pbi add (allocates next free integer id from existing item filenames, writes the item file), backlog pbi status --id --to (validated), backlog pbi list [--status] [--json] (frontmatter only), backlog render --write|--check (generated docs/backlog.md, KNOWLEDGE_INDEX_HEADER idiom from knowledge.mjs:1100 — deterministic, done/declined as one-line links, counts block badges can scrape). counts/rank/badges/featureBacklogRank re-derive from items WHEN docs/backlog/items exists, else legacy table parse (host-repo compat). Extend test_backlog_capture.mjs: id allocation (incl. race-adjacent double-add refusing duplicate), enum refusals, list filtering, render determinism + --check drift, legacy fallback. Red-first evidence required. Regen manifest + ledger + impact registry.",
+  "must_haves": {
+    "truths": [
+      "both twins byte-identical; lib_mirror green",
+      "pbi add allocates mechanically — duplicate id impossible by construction",
+      "render deterministic with generated-file header; --check catches drift",
+      "enum covers parked+declined; counts include them",
+      "legacy table fallback keeps un-migrated repos working"
+    ]
+  },
+  "verify": "node skills/bee-hive/templates/tests/test_backlog_capture.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check && node scripts/impact_registry.mjs --check",
+  "behavior_change": true,
+  "deps": [],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

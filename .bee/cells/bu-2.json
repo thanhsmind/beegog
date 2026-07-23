@@ -1,0 +1,46 @@
+{
+  "id": "bu-2",
+  "feature": "backlog-unification",
+  "lane": "standard",
+  "title": "Migrate 73 rows to item files; uniqueness suite retargeted",
+  "files": [
+    "scripts/migrate_backlog_items.mjs",
+    "scripts/backlog_uniqueness.mjs",
+    "docs/backlog.md",
+    "scripts/impact-registry.json"
+  ],
+  "read_first": [
+    "docs/history/backlog-unification/CONTEXT.md",
+    "docs/backlog.md",
+    "scripts/backlog_uniqueness.mjs"
+  ],
+  "action": "Per CONTEXT D5, plan.md bu-2. scripts/migrate_backlog_items.mjs: parse the legacy table (reuse bu-1's reader where possible), write docs/backlog/items/P<n>.md for all 73 rows (IDs kept; P74 declined normalized; in-flight rows keep Feature), then run backlog render --write producing the generated docs/backlog.md. Idempotent (re-run = no-op) and refuses if items/ already populated with different content. RUN the migration in this cell — items committed, index generated. Retarget scripts/backlog_uniqueness.mjs: id↔filename parity, frontmatter enum validity, and render --check freshness (derive ground truth from the store, never a second hand list); keep it a mandatory suite (test_verify_manifest floor intact — same path, same name). impact_registry --write (new files/suites).",
+  "must_haves": {
+    "truths": [
+      "all 73 IDs present as item files, none renumbered",
+      "generated index committed; render --check green",
+      "uniqueness suite green pre- and post-migration and still discovered by the manifest guard",
+      "migration idempotent + refuses divergent re-run"
+    ]
+  },
+  "verify": "node scripts/backlog_uniqueness.mjs --check && node .bee/bin/bee.mjs backlog render --check && node scripts/impact_registry.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "bu-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
