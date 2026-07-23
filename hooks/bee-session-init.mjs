@@ -30,6 +30,17 @@ import { readHookContext, logCrash, libModuleUrl } from "./adapter.mjs";
 const HOOK_NAME = "session-init";
 const ADOPT_SOURCES = new Set(["clear", "startup"]);
 
+// compaction-hardening cz-6 (D6/D8): the ONE source whose orientation trims to
+// the compact capsule. `startup`, `clear` and `resume` keep today's full
+// preamble, byte-identical — `resume` deliberately included, because a resume
+// is a fresh human-initiated return where startup orientation is exactly what
+// is wanted; only `compact` is the mid-work interruption.
+//
+// Deliberately NOT ANCHOR_LEAD_SOURCES below, which also carries `resume`:
+// leading with the anchor and trimming the body are two different questions
+// with two different answers, and collapsing them would trim `resume` too.
+const CAPSULE_SOURCE = "compact";
+
 // intent-anchor ia-1 (D4): the sources that mean "this same task is
 // continuing after its context was compressed". On those, and ONLY those, the
 // emitted block LEADS with the intent anchor and the phase/workflow detail
@@ -61,6 +72,39 @@ async function intentLeadBlock(root, eventSource, sessionId) {
     // fail-open: the preamble is orientation, never a place to fail a session.
     return "";
   }
+}
+
+// The body under the anchor: the compact capsule on `source=compact`, today's
+// full session preamble on every other source (D6/D8).
+//
+// THIN CALLER, BY DECISION (D3). Nothing here decides what a capsule contains,
+// what a compaction record holds, or how the counts work — all of that lives in
+// lib/compaction.mjs, reachable without any hook at all through
+// `bee.mjs state compact-capsule` and `state compact-log`. This function knows
+// exactly two things: which source trims, and that `handoffOutcome` — already
+// computed by main() and already handed to buildSessionPreamble — must be
+// carried into the capsule too (D27). Dropping it there is invisible to every
+// suite in this feature and to the full verify, while a compacted session
+// holding a planned-next handoff silently loses the `- Adoption not applied:`
+// line that says WHY it is being told to wait.
+async function sessionBody(root, eventSource, { sessionId, handoffOutcome }) {
+  const inject = await import(libModuleUrl(root, "inject.mjs"));
+  if (eventSource === CAPSULE_SOURCE) {
+    try {
+      const compaction = await import(libModuleUrl(root, "compaction.mjs"));
+      // D5: SessionStart(compact) IS the `resume` event — the other half of
+      // the PreCompact record, and the one that proves the session came back.
+      // The append is fail-open inside the module (D4); it never affects what
+      // renders below.
+      compaction.appendCompactionRecord(root, { event: "resume", sessionId });
+      return String(compaction.buildCompactCapsule(root, { sessionId, handoffOutcome }));
+    } catch (error) {
+      // fail-open: a repo vendored before compaction.mjs shipped still gets
+      // its orientation. Orientation is never a place to fail a session.
+      logCrash(root, HOOK_NAME, error, "session-init-capsule");
+    }
+  }
+  return String(inject.buildSessionPreamble(root, { sessionId, handoffOutcome }));
 }
 
 async function main() {
@@ -140,14 +184,16 @@ async function main() {
       }
     }
 
-    const inject = await import(libModuleUrl(root, "inject.mjs"));
-    const preamble = inject.buildSessionPreamble(root, { sessionId, handoffOutcome });
-    // intent-anchor ia-1 (D4/D5): PREFIX ONLY. The preamble bytes below are
-    // exactly the bytes this hook has always written; the anchor is prepended
-    // ahead of them on a compact/resume start, and with no anchor the emitted
-    // string is `preamble` itself, unchanged.
+    const body = await sessionBody(root, eventSource, { sessionId, handoffOutcome });
+    // intent-anchor ia-1 (D4/D5): PREFIX ONLY, and UNCHANGED by cz-6 (D19).
+    // The anchor is prepended ahead of the body on a compact/resume start, and
+    // with no anchor the emitted string is the body itself. cz-6 changed which
+    // body renders on `compact` (D6) and changed nothing here: the anchor is
+    // still rendered exactly once, by this hook, and the capsule never renders
+    // it — under capsule ownership it would print twice and `startsWith` would
+    // hold either way.
     const anchorBlock = await intentLeadBlock(root, eventSource, sessionId);
-    const output = anchorBlock ? `${anchorBlock}\n\n${String(preamble)}` : String(preamble);
+    const output = anchorBlock ? `${anchorBlock}\n\n${body}` : body;
     if (output && output.trim()) {
       process.stdout.write(output);
     }

@@ -67,6 +67,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { check, assert, printSummaryAndExit } from './lib/test-fixture.mjs';
+import { runModuleWorker } from './lib/run-module-worker.mjs';
 import { BEE_VERSION } from '../skills/bee-hive/templates/lib/state.mjs';
 import {
   buildSessionPreamble,
@@ -79,12 +80,25 @@ import {
   buildCompactCapsule,
   appendCompactionRecord,
   nonAdoptingHandoffOutcome,
+  readCompactionRecords,
 } from '../skills/bee-hive/templates/lib/compaction.mjs';
+import { readIntent, resumeBlock } from '../skills/bee-hive/templates/lib/intent.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, '..');
 const GOLDEN_FILE = path.join(REPO_ROOT, 'scripts', 'fixtures', 'preamble-golden.txt');
 const UPDATE_GOLDEN = process.argv.includes('--update-golden');
+const REAL_LIB_DIR = path.join(REPO_ROOT, '.bee', 'bin', 'lib');
+const SESSION_INIT_HOOK = path.join(REPO_ROOT, 'hooks', 'bee-session-init.mjs');
+
+// Async rows (the through-the-hook section) are registered at module level but
+// settle later; `check` returns their promise, so they are collected here and
+// awaited before the summary — otherwise printSummaryAndExit would run while
+// they are still in flight and report a green suite that never finished.
+const pending = [];
+const acheck = (name, fn) => {
+  pending.push(check(name, fn));
+};
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
 
@@ -644,6 +658,187 @@ check('buildSessionPreamble matches the COMMITTED golden byte for byte (D8)', ()
   assert(missing.get('handoff-adopted').includes('### PLANNED-NEXT ADOPTED'), 'the golden covers the start-now arm');
 });
 
+// ─── 7. THROUGH THE HOOK (cz-6, D5/D6/D8/D19/D27) ──────────────────────────
+//
+// Everything above renders the builders in-process. These rows execute the
+// real hooks/bee-session-init.mjs against a vendored temp repo, which is the
+// only place three obligations are observable at all:
+//
+//   * THE ANCHOR MUST APPEAR EXACTLY ONCE, ASSERTED BY COUNT (D19). The hook
+//     keeps prefixing it and the capsule never renders it — but a capsule that
+//     ALSO rendered it would still satisfy `startsWith("## INTENT ANCHOR")`
+//     and would still satisfy the existing additivity row, which compares two
+//     compact renders to each other. Only a count catches the double.
+//   * handoffOutcome MUST REACH THE CAPSULE FROM THE CALL SITE (D27). cz-5
+//     proved the renderer honours the parameter; nothing yet proved the hook
+//     passes it. A hook that drops it is green everywhere else in this feature
+//     and in the full verify, while a compacted session holding a planned-next
+//     handoff silently loses the `- Adoption not applied:` line.
+//   * `resume` STAYS THE FULL PREAMBLE (D8). The capsule branch is keyed on
+//     one source value; the negative control is the sibling source that also
+//     leads with the anchor, so a branch written on ANCHOR_LEAD_SOURCES rather
+//     than on `compact` reds here and nowhere else.
+
+/** Vendor the real .bee/bin/lib into a fixture — the hook loads lib from root. */
+function vendorLib(root) {
+  const libDir = path.join(root, '.bee', 'bin', 'lib');
+  fs.mkdirSync(libDir, { recursive: true });
+  for (const name of fs.readdirSync(REAL_LIB_DIR)) {
+    if (name.endsWith('.mjs')) fs.copyFileSync(path.join(REAL_LIB_DIR, name), path.join(libDir, name));
+  }
+  return root;
+}
+
+async function runSessionStart(root, { source, sessionId }) {
+  const result = await runModuleWorker(SESSION_INIT_HOOK, {
+    input: JSON.stringify({
+      hook_event_name: 'SessionStart',
+      source,
+      session_id: sessionId,
+      cwd: root,
+    }),
+    cwd: root,
+    timeout: 30_000,
+  });
+  assert(
+    result.status === 0,
+    `SessionStart is fail-open and must exit 0 — got status=${result.status}\nstderr: ${result.stderr}`,
+  );
+  return result.stdout || '';
+}
+
+function occurrences(haystack, needle) {
+  return haystack.split(needle).length - 1;
+}
+
+/** Split `anchor + "\n\n" + body` back apart, asserting the shape as it goes. */
+function splitAnchorLed(out, root, sessionId) {
+  const anchor = resumeBlock(readIntent(root, { sessionId }));
+  assert(anchor, 'the fixture must hold a readable anchor — otherwise this row proves nothing');
+  assert(
+    out.startsWith(`${anchor}\n\n`),
+    `the emitted block leads with the anchor and one blank line (D19) — got:\n${out}`,
+  );
+  return out.slice(anchor.length + 2);
+}
+
+acheck('THROUGH THE HOOK: source=compact emits anchor-then-CAPSULE, anchor exactly ONCE by count (D6/D19)', async () => {
+  const root = vendorLib(
+    makeRepo({
+      nextAction: 'finish cz-6 and cap it',
+      config: { schema_version: '1.0', commands: { setup: 'npm ci', verify: 'node scripts/run_verify.mjs' } },
+    }),
+  );
+  addAnchor(root, 'demo');
+  const sid = 'sess-hook-compact';
+  const out = await runSessionStart(root, { source: 'compact', sessionId: sid });
+
+  assert(
+    occurrences(out, '## INTENT ANCHOR') === 1,
+    `the anchor must appear EXACTLY ONCE — the hook owns it and the capsule must not re-render it (D19). ` +
+      `Counted ${occurrences(out, '## INTENT ANCHOR')} in:\n${out}`,
+  );
+  assert(
+    occurrences(out, 'do the thing the user actually asked for') === 1,
+    'the verbatim objective is printed once, not twice — a doubled anchor still passes startsWith()',
+  );
+
+  const body = splitAnchorLed(out, root, sid);
+  assert(
+    body === buildCompactCapsule(root, { sessionId: sid, handoffOutcome: null }),
+    `D6: the body below the anchor is the capsule, byte for byte — got:\n${body}`,
+  );
+  assert(
+    body.startsWith(`## bee v${BEE_VERSION} — compact capsule (source=compact)`),
+    `the compact branch must emit the capsule, not the startup preamble — got:\n${body}`,
+  );
+  assert(!body.includes('- Gates: '), 'the full preamble\'s gates line is startup orientation the capsule drops (D6)');
+  assert(body.includes('- Critical patterns: '), 'D7: the capsule carries the pointer');
+
+  // D5: source=compact is the `resume` EVENT — one record, and only one.
+  const records = readCompactionRecords(root);
+  assert(records.length === 1, `exactly one compaction record is appended per compact start (D5) — got ${records.length}`);
+  assert(records[0].event === 'resume', `the SessionStart(compact) record's event is "resume" (D5) — got "${records[0].event}"`);
+  assert(records[0].session === sid, 'the record names the acting session');
+  assert(records[0].compact_index === 0, 'D5: a resume carries the PLAIN prior precompact count, never +1');
+});
+
+acheck('THROUGH THE HOOK: compact + planned-next renders `- Adoption not applied:` — handoffOutcome reached the capsule (D27)', async () => {
+  const root = vendorLib(makeRepo());
+  addHandoff(root, {
+    kind: 'planned-next',
+    phase: 'swarming',
+    feature: 'demo',
+    mode: 'standard',
+    cells_in_flight: ['k-1'],
+    next_action: 'start k-2',
+    writer_session: 'sess-other',
+  });
+  const sid = 'sess-hook-handoff';
+  const out = await runSessionStart(root, { source: 'compact', sessionId: sid });
+
+  // The line alone proves nothing: buildSessionPreamble renders it too (D26),
+  // so an UN-WIRED hook would pass a bare "the line is there" assertion. The
+  // discriminator is that the line rides the CAPSULE.
+  assert(
+    out.startsWith(`## bee v${BEE_VERSION} — compact capsule (source=compact)`),
+    `the compact branch must emit the capsule — got:\n${out}`,
+  );
+  assert(
+    out.includes('### HANDOFF present — present it and WAIT — never auto-resume'),
+    `D6 item 4: the wait heading is verbatim — got:\n${out}`,
+  );
+  assert(
+    /^- Adoption not applied: .+/m.test(out),
+    `D27: the hook computes handoffOutcome and MUST pass it to the capsule — without it a compacted session ` +
+      `is told to wait and never told why. Got:\n${out}`,
+  );
+  // Pin the PARAMETER, not just the resulting bytes: the emitted capsule is
+  // the one built WITH the outcome, and is provably not the one built without.
+  const withOutcome = buildCompactCapsule(root, { sessionId: sid, handoffOutcome: nonAdoptingHandoffOutcome(root) });
+  const withoutOutcome = buildCompactCapsule(root, { sessionId: sid });
+  assert(withOutcome !== withoutOutcome, 'the fixture must make the parameter observable — otherwise this row proves nothing');
+  assert(out === withOutcome, `the hook must render the WITH-outcome capsule (D27) — got:\n${out}`);
+  assert(out !== withoutOutcome, 'the hook dropped handoffOutcome at the capsule call site (D27)');
+  assert(
+    out.includes('never auto-adopts on source "compact"'),
+    'the reason names the actual source, so it is the hook\'s own computed outcome and not a capsule-side guess',
+  );
+  assert(!out.includes('PLANNED-NEXT ADOPTED'), 'a compact start never adopts — ADOPT_SOURCES is untouched');
+  assert(fs.existsSync(path.join(root, '.bee', 'HANDOFF.json')), 'the handoff stays on disk, unread and unadopted');
+});
+
+acheck('THROUGH THE HOOK: source=resume still emits anchor-then-FULL-preamble, byte-identical (D8)', async () => {
+  const root = vendorLib(
+    makeRepo({
+      nextAction: 'keep going',
+      config: { schema_version: '1.0', commands: { verify: 'node scripts/run_verify.mjs' } },
+    }),
+  );
+  addAnchor(root, 'demo');
+  const sid = 'sess-hook-resume';
+  const out = await runSessionStart(root, { source: 'resume', sessionId: sid });
+
+  assert(
+    occurrences(out, '## INTENT ANCHOR') === 1,
+    `the anchor still leads a resume exactly once — got ${occurrences(out, '## INTENT ANCHOR')} in:\n${out}`,
+  );
+  const body = splitAnchorLed(out, root, sid);
+  assert(
+    body === buildSessionPreamble(root, { sessionId: sid, handoffOutcome: null }),
+    `D8: "resume" keeps today's full preamble, byte-identical — got:\n${body}`,
+  );
+  assert(body.includes('- Gates: '), 'the resume body is the full preamble, gates line included');
+  assert(
+    !body.includes('compact capsule (source=compact)'),
+    'ANCHOR_LEAD_SOURCES is not the capsule predicate — only "compact" trims (D8)',
+  );
+  assert(
+    readCompactionRecords(root).length === 0,
+    'D5: only SessionStart(source=compact) writes a `resume` record; a plain resume writes nothing',
+  );
+});
+
 // ─── cleanup ────────────────────────────────────────────────────────────────
 
 process.on('exit', () => {
@@ -655,5 +850,7 @@ process.on('exit', () => {
     }
   }
 });
+
+await Promise.all(pending);
 
 printSummaryAndExit();

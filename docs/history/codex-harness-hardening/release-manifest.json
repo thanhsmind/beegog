@@ -2326,7 +2326,7 @@
     },
     {
       "path": "hooks/bee-session-init.mjs",
-      "sha256": "e804dea1eb1ccbf2d615491c29f3fb39b3436a054f529d024d449288c83aa7ea",
+      "sha256": "0f2bf378191f21d75063d0823374f616df073bf8324ae6e4bd813a029bdf8351",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/bee-session-init.mjs"

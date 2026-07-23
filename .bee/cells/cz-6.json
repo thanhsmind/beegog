@@ -47,19 +47,42 @@
   "deps": [
     "cz-5"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "hook-wright",
+    "outcome": "SessionStart emits the D6 compact capsule on source=compact, carrying the hook's already-computed handoffOutcome (D27) and appending D5's resume compaction record; every other source keeps buildSessionPreamble byte-identical (D8). intentLeadBlock/ANCHOR_LEAD_SOURCES untouched (D19) — the anchor still renders exactly once, asserted BY COUNT in three new through-the-hook rows. hooks/test_hook_contracts.mjs green with zero edits (193 rows). D24 regen chain run in order.",
+    "files_changed": [
+      "hooks/bee-session-init.mjs",
+      ".bee/bin/hooks/bee-session-init.mjs",
+      "scripts/test_compact_capsule.mjs",
+      "docs/history/codex-harness-hardening/release-manifest.json",
+      ".bee/onboarding.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
-  }
+    "capped_at": "2026-07-23T07:39:49.863Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\n    \"hooks/test_hook_contracts.mjs:2740-2780 (compact/resume anchor additivity — the D19 negative control, NOT edited)\",\n    \"hooks/test_hook_contracts.mjs:2427-2455 (resume/compact never adopt a planned-next handoff — NOT edited)\",\n    \"hooks/test_hook_contracts.mjs:2864-2872 (anchor never changes handoff adoption on compact — NOT edited)\",\n    \"hooks/test_hook_contracts.mjs:2819-2850 (corrupt anchor renders like no anchor, two compact renders compared — NOT edited)\",\n    \"scripts/test_compact_capsule.mjs (cz-5's in-process capsule/golden rows — all 11 kept green)\"\n  ],\n  \"tests_added\": [\n    \"scripts/test_compact_capsule.mjs — THROUGH THE HOOK: source=compact emits anchor-then-CAPSULE, anchor asserted EXACTLY ONCE BY COUNT (not startsWith), body byte-equal to buildCompactCapsule, plus D5's single `resume` compaction record with compact_index 0\",\n    \"scripts/test_compact_capsule.mjs — THROUGH THE HOOK: compact + planned-next renders `- Adoption not applied:` ON THE CAPSULE; pinned by asserting the emitted bytes equal buildCompactCapsule(...with outcome) and differ from buildCompactCapsule(...without) (D27)\",\n    \"scripts/test_compact_capsule.mjs — THROUGH THE HOOK: source=resume still emits anchor-then-FULL-preamble byte-identical to buildSessionPreamble, and writes no compaction record (D8/D5)\"\n  ],\n  \"red_failure_evidence\": \"Recorded against the UN-WIRED hook before any hook edit, saved at .bee/tmp/cz-6/red.txt: `12 passed, 2 failed`. (1) compact row FAILED — 'D6: the body below the anchor is the capsule, byte for byte' with the emitted body being the full preamble (`## bee v1.11.3` / `- Gates: ...` / `### Project map`). (2) handoff row FAILED — 'the compact branch must emit the capsule' with the emitted body again the full preamble. NOTE: the handoff row's FIRST draft passed red because buildSessionPreamble ALSO renders `- Adoption not applied:` (D26); it was strengthened to assert the line rides the capsule and to compare against buildCompactCapsule with vs without the outcome, which is what made it discriminate. The resume row passed red by design — it is the negative control.\",\n  \"verification_run\": \"node scripts/test_compact_capsule.mjs && node hooks/test_hook_contracts.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check -> exit 0. capsule 14 passed/0 failed; hook contracts 193 rows across 23 groups, 0 skipped, 0 failing, ALL PASS (zero edits to that file); mirror byte-identical (29 lib + 10 hook files); release_manifest --check 499 files match. Full output: .bee/tmp/cz-6/verify.txt\",\n  \"decisions_honored\": {\n    \"D5\": \"SessionStart(source=compact) appends the `resume` compaction record; asserted as exactly one record, event=resume, compact_index=0 (plain prior count, never +1).\",\n    \"D6\": \"the capsule replaces the preamble on compact only\",\n    \"D8\": \"startup/clear/resume keep buildSessionPreamble byte-identical — asserted for resume through the hook, and startup/clear covered by the untouched contract rows\",\n    \"D19\": \"intentLeadBlock and ANCHOR_LEAD_SOURCES untouched; the capsule predicate is a SEPARATE constant (CAPSULE_SOURCE = 'compact'), deliberately not reusing ANCHOR_LEAD_SOURCES which also carries 'resume'\",\n    \"D24\": \"regen chain run in order: render_plugin_skill_trees -> onboard_bee --repo-root . --apply -> release_manifest --write; release_manifest --check carried in the verify\",\n    \"D27\": \"buildCompactCapsule(root, {sessionId, handoffOutcome}) — the hook's already-computed handoffOutcome is carried through, asserted at the call site\",\n    \"D3\": \"the hook stays a thin caller: sessionBody() knows only which source trims and that handoffOutcome must be carried; all capsule/record logic stays in lib/compaction.mjs\"\n  },\n  \"fail_open\": \"the compact branch is wrapped so a repo vendored before compaction.mjs shipped falls back to buildSessionPreamble and logs the crash — orientation never fails a session.\"\n}\n",
+    "verify_output": "PASS  the capsule renders D6 items 2-12 in order, asserted positionally\nPASS  the capsule NEVER renders the intent anchor — the hook owns it (D19)\nPASS  the `- Phase:` label is preserved verbatim (the :2762 ordering check depends on it)\nPASS  anchor-independence, CLEAN sweep: the paired renders are byte-equal\nPASS  anchor-independence, FAILING sweep: the STATE MISMATCH line never names the anchor check\nPASS  a planned-next handoff renders `- Adoption not applied:` when the outcome is passed (D27)\nPASS  D15: a bare repo renders a capsule with no warning and no mismatch line\nPASS  a lane-bound session shows its OWN lane, never the default state.json\nPASS  the STATE MISMATCH block names each failed check and the rule that settles it (D13)\nPASS  the three renderers are exported and render the preamble bytes verbatim\nPASS  buildSessionPreamble matches the COMMITTED golden byte for byte (D8)\nPASS  THROUGH THE HOOK: source=compact emits anchor-then-CAPSULE, anchor exactly ONCE by count (D6/D19)\nPASS  THROUGH THE HOOK: compact + planned-next renders `- Adoption not applied:` — handoffOutcome reached the capsule (D27)\nPASS  THROUGH THE HOOK: source=resume still emits anchor-then-FULL-preamble, byte-identical (D8)\n\n14 passed, 0 failed\n--- hooks/test_hook_contracts.mjs (tail) ---\n193 rows across 23 check group(s) (0 skipped), 0 failing target contract\n\nALL PASS\n--- scripts/test_lib_mirror.mjs ---\nPASS test_lib_mirror: runtime hook inventory derives launchers/imports and catches missing, extra, and byte drift\nPASS test_lib_mirror: templates/lib and .bee/bin/lib are byte-identical (29 files)\nPASS test_lib_mirror: runtime-derived hook inventory is byte-identical (10 files)\n--- scripts/release_manifest.mjs --check ---\nrelease_manifest --check: 499 file(s) match stored manifest\n",
+    "verify_passed": true,
+    "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+    "claimed_at": "2026-07-23T07:31:11.101Z",
+    "verify_command": "node scripts/test_compact_capsule.mjs && node hooks/test_hook_contracts.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+    "verified_at": "2026-07-23T07:39:16.478Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T07:39:16.478Z",
+        "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+        "claimed_at": "2026-07-23T07:31:11.099Z",
+        "acquired_at": "2026-07-23T07:31:11.099Z",
+        "worker": "hook-wright",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
+  },
+  "tier": "ceiling"
 }
