@@ -11,4 +11,5 @@ never a generation timestamp or any other wall-clock value.
 ## Concepts
 
 - [Verify Pipeline — concurrency safety and hermetic runs](concurrency-and-hermetic-runs.md) — Keeping whole-tree regeneration lock-serialized and atomic-swapped, keeping every child suite hermetic to session identity, and the deterministic race/isolation proofs that back both claims.
+- [Verify Pipeline — skill reference pointer integrity](skill-reference-pointer-integrity.md) — The gate that proves every pointer an instruction document makes to a reference document still resolves, why it checks named sections and not just files, and why its negative controls are the part that matters.
 - [Verify Pipeline — suite topology and discovery](suite-topology-and-discovery.md) — Keeping full-repo verification fast and contention-free by giving every module its own suite file, discovering suites by convention instead of a hand-registry, and failing loudly the moment a curated suite goes missing.

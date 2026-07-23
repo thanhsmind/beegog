@@ -1,0 +1,135 @@
+---
+type: bee.area
+title: Doctrine Layer — router triage and the duplication boundary
+description: "How the router lets an obviously-small request pick its lane before a second instruction set loads, why uncertainty resolves toward loading more, and the rule deciding what the router may drop because the always-loaded operating block already carries it."
+tags: [doctrine-layer, routing, context-budget]
+timestamp: 2026-07-23
+bee:
+  id: doctrine-layer-router-triage-and-duplication-boundary
+  lifecycle: active
+  areas: [doctrine-layer]
+  required_context: [areas/doctrine-layer/overview.md, areas/verify-pipeline/skill-reference-pointer-integrity.md]
+  decisions: [router-cost D5, router-cost D6, router-cost D7]
+  sources: [docs/history/router-cost/CONTEXT.md, "docs/history/router-cost/ (cells rc-3, rc-4, capped)"]
+  authoritative_for: "doctrine-layer: router triage and the duplication boundary"
+---
+
+## Purpose
+
+The router is the instruction set an assistant loads first, on every cold entry, before it is allowed
+to decide anything. Its size is therefore a tax on every piece of work, including the smallest.
+
+Two separate costs were conflated before this concept existed, and keeping them apart is most of what
+it teaches:
+
+1. **What is loaded before the lane is known.** The lane decision happened only after both the router
+   and the planning instruction set were in context — so a one-line fix paid a full-project entry fee.
+2. **What the router says that the reader already has.** The operating block is loaded into every
+   session automatically, always. Anything the router restates from it is paid twice on every cold
+   entry.
+
+## Entry Points & Triggers
+
+- **Triage** applies the moment a request arrives and the router is loaded — before any second
+  instruction set is opened.
+- **The duplication boundary** applies whenever the router is edited: it decides what may live there
+  and what must be a pointer.
+
+## Data Dictionary
+
+| Element | Meaning |
+|---|---|
+| **the operating block** | The instruction document loaded automatically into every session. Its presence is guaranteed; nothing needs to load it. |
+| **the router** | The first instruction set loaded on entry. Chooses the lane, the gates, and what to load next. |
+| **lane** | The ceremony level a piece of work carries. Decided by two counts: risk flags tripped, and product files touched. |
+| **the second load** | The planning instruction set — roughly 21 KB — opened only when the lane genuinely needs shaping. |
+| **hard-gate flag** | A risk flag that forces the highest lane regardless of size: authentication, authorization, data loss, audit or security, an external provider, or the removal of existing validation. |
+| **pinned wording** | Wording in the router that automated checks require verbatim, in some cases identically across several documents. Ten such strings exist. |
+
+## Behaviors & Operations
+
+**Triaging from the request alone.** The router opens with a compact triage block. A reader counts
+risk flags and product files, and lands in one of four rows. Knowledge-only changes, and work with
+0–1 flags within the small file caps, route straight to the merged shape-and-execution gate and the
+single dispatched worker — **without opening the second load**. Everything else falls through to the
+full chain, which does open it.
+
+**Resolving uncertainty downward.** A reader who cannot tell which row they are in takes the *fuller*
+path. The block states this explicitly and closes the two evasions a reader under pressure reaches
+for: one hard-gate flag is the highest lane even at a single file, and re-counting flags to land
+under a threshold is itself the signal that the higher lane already applies.
+
+**Stating its own limit.** The triage block says, in its own text, that it saves nothing on the
+router itself — instruction sets load whole, so the router is already fully in context by the time
+the block is read. The only saving available is the second load. Writing this down is deliberate: a
+later reader cannot mistake the block for permission to stop reading the router.
+
+**Deferring what the operating block already carries.** Where the operating block genuinely states a
+rule, the router keeps a one-line statement of the rule and points at where it lives in full. The
+rule never disappears — only its elaboration moves.
+
+## Actors & Access
+
+| Actor | Observes |
+|---|---|
+| an assistant with an obviously-small request | a lane decision and an immediate route, with no second instruction set opened |
+| an assistant with an ambiguous request | a rule sending it to the fuller path, not a judgment call |
+| an assistant needing a deferred rule's detail | a one-line statement plus a pointer that resolves |
+| an author editing the router | a fixed set of pinned wording that must survive verbatim |
+
+## Business Rules
+
+- **R1.** Triage decides the lane from the request alone, before a second instruction set loads
+  (router-cost D7).
+- **R2.** **Uncertainty resolves downward, into loading more — never upward into skipping.** Triage
+  is an early exit for the obviously-small and is never a licence to shortcut.
+- **R3.** One hard-gate flag forces the highest lane at any file count.
+- **R4.** The router may drop only what the operating block genuinely carries — verified against the
+  real document, never assumed.
+- **R5.** **Every cut leaves a one-line pointer naming the rule and its home.** A silent deletion is a
+  regression even when the rule survives elsewhere, because nothing tells the reader to go look.
+  Section headings survive cuts for the same reason: a reader scanning headings must still learn the
+  rule exists.
+- **R6.** **A pointer chain must terminate.** Where the operating block itself defers *back* to the
+  router for a rule's full text, the router may not answer by pointing at the operating block — that
+  builds a loop in which the full rule lives nowhere. Such rules move to a reference document
+  instead.
+- **R7.** Pinned wording survives character-for-character. Some pins are cross-document consistency
+  pins: rewording one requires rewording all its siblings, which is out of scope for a size
+  reduction.
+- **R8.** Prose may not be moved into a reference until the pointer-integrity gate exists to check
+  the result (router-cost D5). See `verify-pipeline/skill-reference-pointer-integrity.md`.
+
+## Edge Cases Settled
+
+- **Three rules read as duplicated but were not.** A scratch-queue working file, a session-end
+  review nudge, and four router-specific red flags each appeared to be restatements and each proved
+  absent from the operating block on inspection. All were kept. The general lesson: the duplication
+  list is a hypothesis, and checking it against the real document is what decides.
+- **Two rules could not point at the operating block**, because the operating block already points
+  back at the router for their full text (R6). Both moved to a reference document so the chain ends
+  somewhere.
+- **Restating a pinned string in new text is safe** where the check is a presence test — an extra
+  occurrence does not break it. Rewording an existing occurrence does.
+
+## Open Gaps
+
+- **The realised saving is smaller than first projected.** The router fell 18.7%, about 1,675 tokens
+  per cold entry, against an early estimate near 5,000. The estimate counted duplication that
+  inspection showed was either genuinely needed or pinned. Going further would mean cutting
+  route-critical prose or touching pinned wording.
+- **No check measures the router's size.** Nothing prevents it from growing back. Whether a size
+  budget is the right instrument, or whether it would merely invite threshold-widening later, is
+  undecided.
+- **Triage's effect is unmeasured.** No instrumentation records how often a session takes the early
+  exit versus falling through, so the saving is modelled rather than observed.
+
+## Pointers (implementation)
+
+- `skills/bee-hive/SKILL.md` — the router; `## Triage first` sits before onboarding, and the
+  pinned region is `## Modes and Lanes`.
+- `AGENTS.md` — the operating block; its critical rules are what R4 is checked against.
+- `skills/bee-hive/references/routing-and-contracts.md` — where deferred detail lands.
+- `scripts/test_gate_bypass_doctrine.mjs`, `skills/bee-hive/templates/tests/test_misc.mjs` — the
+  suites enforcing the pinned wording.
+- `scripts/test_skill_pointers.mjs` — the gate required by R8.
