@@ -1,0 +1,43 @@
+{
+  "id": "vs-2",
+  "feature": "verify-scoping",
+  "lane": "small",
+  "title": "Bee guidance: per-cell verify is scoped; the full verify runs at baseline, close, and merge only",
+  "files": [
+    "skills/bee-planning/SKILL.md",
+    "skills/bee-executing/SKILL.md",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "skills/bee-planning/SKILL.md",
+    "skills/bee-executing/SKILL.md",
+    "scripts/test_skill_render.mjs"
+  ],
+  "action": "Per verify-scoping D2. Codify the two-tier verify strategy, host-generically, in the two skills that teach it. In skills/bee-planning/SKILL.md, at the point where cell verify commands are authored: each cell's `verify` is the NARROWEST honest scoped check covering its change — the specific test file(s)/pattern for the touched area (in bee's own repo: `node scripts/run_verify.mjs --only <suite>` or the direct test file), never the full configured verify by default; the full suite is owed at exactly three moments — session baseline before first claim, feature close/session finish, worktree merge. In skills/bee-executing/SKILL.md, in the cap-evidence section: cap evidence is the CELL's scoped verify passing; a worker never runs the full configured verify per cap, and the orchestrator's done-report re-run uses the same scoped command — the full run belongs to close. Keep both edits short (a paragraph or a few lines each), matching each file's existing voice and structure; do not restructure the skills. Then re-render the managed skill mirrors so scripts/test_skill_render.mjs stays byte-identical, and regenerate the release manifest (scripts/release_manifest.mjs) so --check passes.",
+  "must_haves": [
+    "bee-planning: scoped verify authoring rule + the three full-run moments, host-generic wording",
+    "bee-executing: cap evidence = cell's scoped verify; full verify belongs to close, not caps",
+    "mirrors re-rendered; test_skill_render green",
+    "release manifest regenerated; release_manifest --check green"
+  ],
+  "verify": "node scripts/release_manifest.mjs --check && node scripts/test_skill_render.mjs",
+  "behavior_change": true,
+  "deps": [
+    "vs-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
