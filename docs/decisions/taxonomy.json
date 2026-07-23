@@ -168,6 +168,9 @@
     "context-import",
     "gate-bypass",
     "scope-interpretation",
-    "feedback-digest"
+    "feedback-digest",
+    "compounding",
+    "swarming",
+    "worktree-coordination"
   ]
 }
