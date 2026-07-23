@@ -1,0 +1,44 @@
+{
+  "id": "cov-3",
+  "feature": "ci-owned-verify",
+  "lane": "standard",
+  "title": "CI owns test-all: red run auto-files a deduped verify-red issue",
+  "files": [
+    ".github/workflows/ci.yml",
+    "scripts/ci_verify_issue.mjs",
+    "scripts/test_ci_verify_issue.mjs",
+    "scripts/impact-registry.json"
+  ],
+  "read_first": [
+    "docs/history/ci-owned-verify/CONTEXT.md",
+    ".github/workflows/ci.yml"
+  ],
+  "action": "Per CONTEXT D2 + plan-check P1-1/P3. scripts/ci_verify_issue.mjs: pure decision core — buildIssueTitle(workflow, branch), buildIssueBody(failTail, runUrl, sha), decideAction(openIssues) => {create}|{comment,issueNumber} — gh invocations behind an injectable exec. CLI mode reads env (GITHUB_WORKFLOW, GITHUB_REF_NAME, GITHUB_SHA, GITHUB_RUN_URL or constructed, VERIFY_TAIL_FILE). ci.yml: permissions issues: write; capture verify output to a file for the tail; failure step gated to BOTH github.event_name == 'push' AND one matrix leg only (node 20) — fork PRs have read-only tokens and fail-fast:false would triple-create (P3); registry freshness step (node scripts/impact_registry.mjs --check) on the green path; existing verify_all.mjs step untouched; verify-red label created if missing (tolerate exists-error). P1-1: this cell adds a new discovered suite — finish with node scripts/impact_registry.mjs --write and commit the refreshed registry. Test scripts/test_ci_verify_issue.mjs: title/body determinism, dedupe decision, label constant, injected-exec call shapes. No network in tests.",
+  "must_haves": {
+    "truths": [
+      "failure step never runs on green; green path gains registry --check",
+      "dedupe: open verify-red issue => comment, never duplicate",
+      "pure core tested offline, gh behind injected exec",
+      "permissions issues: write added",
+      "existing verify_all step untouched"
+    ]
+  },
+  "verify": "node scripts/test_ci_verify_issue.mjs && node scripts/impact_registry.mjs --check",
+  "behavior_change": true,
+  "deps": [],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

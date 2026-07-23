@@ -1,0 +1,44 @@
+{
+  "id": "cov-1",
+  "feature": "ci-owned-verify",
+  "lane": "standard",
+  "title": "Impact registry: derived file→suite relatedness map with write/check/query verbs",
+  "files": [
+    "scripts/impact_registry.mjs",
+    "scripts/impact-registry.json",
+    "scripts/test_impact_registry.mjs"
+  ],
+  "read_first": [
+    "docs/history/ci-owned-verify/CONTEXT.md",
+    "scripts/run_verify.mjs",
+    "scripts/lib/test-fixture.mjs"
+  ],
+  "action": "Per CONTEXT D3. Build scripts/impact_registry.mjs: for every runnable run_verify discovers (import its exported SUITES/discovery — do not re-implement discovery), compute the suite's file closure via FOUR edge types: (1) static relative ESM import specifiers, resolved and BFS-expanded; (2) dynamic import(pathToFileURL(...)) string arguments; (3) spawn/exec argv string literals that name repo files — a suite that spawns bee.mjs inherits bee.mjs's own static import closure; (4) runModuleWorker(<modulePath>, ...) first-arg targets (scripts/lib/run-module-worker.mjs pattern), including path.join(REPO_ROOT, '.bee', 'bin', 'bee.mjs')-style segment reconstruction — test_conformance/test_heartbeat_touch/test_dispatch_prepare/test_compact_* reach bee.mjs and hooks ONLY this way (plan-check P2-1). Invert to file→suites, sorted, repo-relative, deterministic (no timestamps). Verbs: --write (writes scripts/impact-registry.json), --check (regenerates in memory, byte-compares, exit 1 on drift with a regen-command message), --query f1 [f2...] (union of suites, newline-separated, exit 0 even when empty but LOUD stderr note for unmapped files). Document the known blind spot (readFileSync fixtures / env-pointed paths are not edges — plan-check P3) in the file header. Commit the generated registry. Test scripts/test_impact_registry.mjs: determinism, a known static edge (test_config_validate.mjs→state.mjs), a known spawn edge, a known runModuleWorker edge (test_conformance.mjs→bee.mjs), --check drift detection, --query union + unmapped-note. Keep generation fast (<2s), regex-level scanning, no AST dependency.",
+  "must_haves": {
+    "truths": [
+      "derived from run_verify's own discovery, never a hand list",
+      "static + pathToFileURL + spawn-argv edges all captured",
+      "deterministic output, committed registry",
+      "--check catches drift with regen instructions",
+      "--query is the harness lookup: files in, suites out"
+    ]
+  },
+  "verify": "node scripts/test_impact_registry.mjs",
+  "behavior_change": true,
+  "deps": [],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "id": "cov-4",
+  "feature": "ci-owned-verify",
+  "lane": "standard",
+  "title": "Worktree merge gates on commands.test (impacted); config rewired",
+  "files": [
+    "skills/bee-hive/templates/bee.mjs",
+    ".bee/bin/bee.mjs",
+    ".bee/config.json",
+    "scripts/test_worktree_cli.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    "scripts/impact-registry.json"
+  ],
+  "read_first": [
+    "docs/history/ci-owned-verify/CONTEXT.md",
+    ".bee/bin/bee.mjs",
+    "scripts/test_worktree_cli.mjs"
+  ],
+  "action": "Per CONTEXT D5 + plan-check P1-4/P1-1. In handleWorktreeMerge (.bee/bin/bee.mjs ~:3546 and template twin skills/bee-hive/templates/bee.mjs — edit BOTH identically): gate command becomes configCommands.test || configCommands.verify (verifySkipped loud-warning path byte-untouched). Set .bee/config.json commands.test to 'node scripts/run_verify.mjs --impacted-from-git' (commands.verify unchanged — test_verify_manifest asserts its substring). Extend scripts/test_worktree_cli.mjs: (a) merge prefers commands.test when present, falls back to commands.verify when absent; (b) P1-4 regression — a REAL staged merge (git merge --no-ff --no-commit fixture) with a registry-mapped changed file must show the gate actually enumerating staged changes and running >0 suites, never the trivial '0 suites' pass. P1-1: bee.mjs closure changed — re-run node scripts/impact_registry.mjs --write, commit refreshed registry. Regenerate release manifest (--write), ledger parity green.",
+  "must_haves": {
+    "truths": [
+      "both bee.mjs twins edited identically",
+      "test||verify fallback, verifySkipped path untouched",
+      "commands.verify string unchanged",
+      "worktree test covers preference + fallback",
+      "manifest regenerated, ledger parity green"
+    ]
+  },
+  "verify": "node scripts/test_worktree_cli.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check && node scripts/impact_registry.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "cov-2"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
