@@ -1,0 +1,60 @@
+{
+  "id": "rc-3",
+  "feature": "router-cost",
+  "lane": "standard",
+  "tier": "ceiling",
+  "title": "Early triage at the top of the router, so a tiny task never loads the planning skill",
+  "files": [
+    "skills/bee-hive/SKILL.md",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    ".bee/onboarding.json"
+  ],
+  "read_first": [
+    "docs/history/router-cost/CONTEXT.md",
+    "skills/bee-hive/SKILL.md",
+    "scripts/test_gate_bypass_doctrine.mjs"
+  ],
+  "action": "Per D7. Add a compact triage block immediately after the `# hive` intro in skills/bee-hive/SKILL.md, BEFORE the Onboarding section. Its single job: let a session decide docs / tiny / small / everything-else from the request alone and act, without loading skills/bee-planning/SKILL.md (21 KB). It must state, in a few lines: the risk-flag count and product-file count that separate the lanes; that docs / tiny / small route straight to the merged shape+execution gate and the one dispatched execution worker, with no planning-skill load; and that standard / high-risk (or any hard-gate flag, or genuine uncertainty) fall through to the normal chain, which does load bee-planning. Uncertainty resolves DOWNWARD into loading more, never upward into skipping: the block is an early exit for the obviously-small, never a licence to shortcut a hard-gate change. Keep it short — a block that restates the whole Modes and Lanes section defeats its own purpose. DO NOT touch the pinned Modes and Lanes region: all ten pins in D6 must survive character-for-character, and this cell adds text rather than rewording any of it. Then the D8 regen chain: `node scripts/release_manifest.mjs --write` (skills/** is hashed at release_manifest.mjs:131) plus a self-onboard pass so the four rendered skill roots carry the new text.",
+  "must_haves": {
+    "truths": [
+      "All seven REQUIRED pins from D6 are still present verbatim in skills/bee-hive/SKILL.md.",
+      "All three BANNED strings from D6 are still absent.",
+      "The triage block appears before the Onboarding section and names the docs/tiny/small early exit explicitly.",
+      "The block states that uncertainty falls through to the full chain rather than shortcutting it.",
+      "test_gate_bypass_doctrine.mjs and test_misc.mjs are green.",
+      "The four rendered skill roots carry the new text and release_manifest --check is green."
+    ],
+    "artifacts": [
+      "The triage block in skills/bee-hive/SKILL.md, refreshed renders and manifest"
+    ],
+    "key_links": [
+      "D6",
+      "D7",
+      "D8"
+    ],
+    "prohibitions": [
+      "Never reword anything inside the pinned Modes and Lanes region in this cell.",
+      "Never let the triage block authorise skipping the chain for a hard-gate flag."
+    ]
+  },
+  "verify": "node scripts/test_gate_bypass_doctrine.mjs && node skills/bee-hive/templates/tests/test_misc.mjs && node scripts/okf_instructions_fence.mjs && node scripts/test_skill_pointers.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "rc-2"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

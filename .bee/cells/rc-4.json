@@ -1,0 +1,67 @@
+{
+  "id": "rc-4",
+  "feature": "router-cost",
+  "lane": "standard",
+  "tier": "ceiling",
+  "title": "Slim the router: cut what AGENTS.md already says, keep every pin",
+  "files": [
+    "skills/bee-hive/SKILL.md",
+    "skills/bee-hive/references/routing-and-contracts.md",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    ".bee/onboarding.json"
+  ],
+  "read_first": [
+    "docs/history/router-cost/CONTEXT.md",
+    "skills/bee-hive/SKILL.md",
+    "AGENTS.md",
+    "skills/bee-hive/references/routing-and-contracts.md"
+  ],
+  "action": "Per D5/D6. AGENTS.md is auto-loaded into every session, so anything skills/bee-hive/SKILL.md restates from it is paid twice on every cold route. Cut ONLY the unpinned duplication, and only where AGENTS.md genuinely already carries the rule: Priority Rules 2/3/4/10/11/13 (AGENTS.md critical rules 6/7/1/10/11/12), the Runtime Files section (AGENTS.md Working files, which is the fuller list), the Hook Response Protocol (AGENTS.md Guardrails), the Red Flags list (~85% identical to AGENTS.md's), the Headless section, and the bulk of the Onboarding section. Each cut leaves ONE line naming the rule and pointing at where it lives in full — a pointer, never a silent deletion; the reader must still learn the rule exists. Critical patterns are currently stated twice inside SKILL.md itself (Session Scout and Priority Rule 7): keep one. Detail worth preserving that has no home moves into skills/bee-hive/references/routing-and-contracts.md under a clearly named section, and every new pointer this cell creates must pass rc-2's check — that is why rc-2 is a dependency and not a nicety. HARD CONSTRAINT: the ten pins in D6 survive character-for-character, and the pinned Modes and Lanes region plus the Routing table and the Four Gates questions are ROUTE-CRITICAL and stay. okf_instructions_fence.mjs also runs live over skills/**/*.md: any surviving line naming docs/specs/ or critical-patterns.md must keep a bundle-branch marker on the SAME line. Report the before and after byte size of SKILL.md in the trace. Then the D8 regen chain: release_manifest --write plus self-onboard.",
+  "must_haves": {
+    "truths": [
+      "All seven REQUIRED pins survive character-for-character; all three BANNED strings stay absent.",
+      "The Routing table, the Modes and Lanes region, and the four gate questions are intact.",
+      "Every cut section leaves a one-line pointer naming the rule and its home — no rule vanishes without a trace.",
+      "Every pointer this cell creates resolves under scripts/test_skill_pointers.mjs.",
+      "Critical patterns are stated once in SKILL.md, not twice.",
+      "okf_instructions_fence.mjs is green: every retired-path line still carries its same-line bundle marker.",
+      "The full node scripts/run_verify.mjs chain is green.",
+      "The trace records SKILL.md's byte size before and after."
+    ],
+    "artifacts": [
+      "The slimmed skills/bee-hive/SKILL.md, any moved sections in routing-and-contracts.md, refreshed renders and manifest"
+    ],
+    "key_links": [
+      "D5",
+      "D6",
+      "D8"
+    ],
+    "prohibitions": [
+      "Never delete a rule without leaving a pointer to where it now lives.",
+      "Never reword a pinned string to make prose flow better.",
+      "Never cut the Routing table, the Modes and Lanes region, or the gate questions.",
+      "Never move prose into a reference without verifying the pointer resolves."
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "behavior_change": true,
+  "deps": [
+    "rc-2",
+    "rc-3"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
