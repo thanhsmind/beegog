@@ -15,6 +15,10 @@
       "sha256": "436f106996c51f7ca47e67228faee123ee2afec6dcaf1adda6854255b8d221a9"
     },
     {
+      "name": "bee-context-locking",
+      "sha256": "61d03e180c07078b77406296b7f57f25ac6fe33a15208c0a248196c15d636776"
+    },
+    {
       "name": "bee-evolving",
       "sha256": "4a6f6e0a1b44c21f52326d653f02afa0e02f446896cf869f0b8ca5a3945087cc"
     },
