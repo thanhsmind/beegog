@@ -539,7 +539,7 @@ function buildStatus(root, { lanesFull = false } = {}) {
   const staleness = [];
   if (Object.keys(commands).length === 0) {
     staleness.push(
-      "No standard commands recorded — capture the host project's setup/start/test/verify into .bee/config.json `commands` so sessions can run the baseline gate.",
+      "No standard commands recorded — capture the host project's setup/start/test/verify into .bee/config.json `commands` so sessions can run the CI status gate.",
     );
   }
   if (onboardingRaw && onboardingRaw.bee_version && onboardingRaw.bee_version !== BEE_VERSION) {
@@ -3519,9 +3519,10 @@ async function handleWorktreeNew(_root, flags) {
 // named by --id — already fails this check, which IS the "a worktree cannot
 // merge itself" refusal; mergeFeatureWorktree's own isOrdinaryCheckout(mainRoot)
 // re-check is the belt-and-braces layer, exactly like createFeatureWorktree's).
-// verifyCommand is resolved HERE (readConfig(mainRoot).commands.verify) and
-// passed down as a plain option, per worktree-store.mjs's zero-deps-beyond-
-// node-builtins module contract (see mergeFeatureWorktree's header comment).
+// verifyCommand is resolved HERE (readConfig(mainRoot).commands.test ||
+// commands.verify — ci-owned-verify D5/cov-4) and passed down as a plain
+// option, per worktree-store.mjs's zero-deps-beyond-node-builtins module
+// contract (see mergeFeatureWorktree's header comment).
 // companionEndCommand (worktree-companion-hook) is resolved the same way,
 // from commands.worktree_companion_end — see teardownCompanionIfPresent's
 // own doc comment in worktree-store.mjs for why it runs unconditionally.
@@ -3543,7 +3544,13 @@ async function handleWorktreeMerge(_root, flags) {
   }
   const mainRoot = resolution.workRoot;
   const configCommands = readConfig(mainRoot).commands;
-  const verifyCommand = configCommands.verify || undefined;
+  // ci-owned-verify D5 (cov-4): prefer commands.test (the impacted/dev-loop
+  // command) over commands.verify (the full CI-owned run) as the
+  // semantic-conflict gate — impacted over the merge diff; the full pass
+  // lands in CI on push. Falls back to commands.verify when commands.test
+  // is unset, so a host project that only configured commands.verify keeps
+  // today's behavior unchanged.
+  const verifyCommand = configCommands.test || configCommands.verify || undefined;
   // worktree-companion-hook: no --with-companion flag here — unlike `new`,
   // where a bare worktree is a real, valid choice, `merge` needs none: the
   // worktree's own .bee/companion-session.json marker (written by `new

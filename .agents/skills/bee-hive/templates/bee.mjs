@@ -539,7 +539,7 @@ function buildStatus(root, { lanesFull = false } = {}) {
   const staleness = [];
   if (Object.keys(commands).length === 0) {
     staleness.push(
-      "No standard commands recorded — capture the host project's setup/start/test/verify into .bee/config.json `commands` so sessions can run the baseline gate.",
+      "No standard commands recorded — capture the host project's setup/start/test/verify into .bee/config.json `commands` so sessions can run the CI status gate.",
     );
   }
   if (onboardingRaw && onboardingRaw.bee_version && onboardingRaw.bee_version !== BEE_VERSION) {

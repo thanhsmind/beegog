@@ -59,6 +59,17 @@ concurrency-safe and hermetic is `concurrency-and-hermetic-runs.md`.
   silent trivial green, and every scoped run prints a loud
   `SCOPED RUN (--only)` banner twice so a scoped green can never be mistaken
   for a full one (verify-scoping D1).
+- **Impact-registry-scoped dev loop (ci-owned-verify D3/D4/D5).** The dev
+  loop's own broader command, `commands.test`, runs `run_verify.mjs
+  --impacted <files>` / `--impacted-from-git`, mapping changed files through
+  the committed `scripts/impact-registry.json` (derived, never
+  hand-authored — `impact_registry.mjs --write`/`--check` regenerates and
+  byte-compares it) to the exact suites they can affect; a changed suite
+  selects itself, unmapped changed files are listed loudly rather than
+  silently dropped, and zero impacted suites is a loud pass ("full verify
+  delegated to CI") rather than a silent trivial green. Cell `verify`
+  commands are authored from the same registry's `--query <file...>`
+  answers.
 
 ## Business Rules
 
@@ -69,12 +80,18 @@ concurrency-safe and hermetic is `concurrency-and-hermetic-runs.md`.
 - **R3** — Check-count conservation is the required evidence for any test-file
   migration (counts recorded before/after; additive setup fixes allowed,
   weakened or dropped checks are not).
-- **R4** — Verify is two-tier (verify-scoping D2): a cell's `verify` command
-  is the narrowest honest scoped check covering its change (a direct test
-  file or `--only` selection), and the FULL configured verify runs at exactly
-  three moments — session baseline before the first claim, feature
-  close/session finish, and worktree merge — never per cell by default.
-  Cap evidence is the cell's scoped verify; the full run belongs to close.
+- **R4** — Verify is two-tier, but the full tier moved off the machine
+  (verify-scoping D2, superseded by ci-owned-verify D1/D5/D6): a cell's
+  `verify` command is the narrowest honest scoped check covering its change
+  (a direct test file or `--only` selection); the dev loop's own broader
+  check is `commands.test` (the impacted run, `run_verify.mjs --impacted` /
+  `--impacted-from-git`), resolved through the impact registry — never the
+  full configured verify. The FULL configured verify (`commands.verify`) is
+  CI-owned: it runs on push, never locally, and auto-files a deduped
+  `verify-red` issue when red — no session baseline, feature close, or
+  worktree-merge moment runs it locally by default; worktree merge gates on
+  `commands.test` instead. Cap evidence is the cell's scoped verify; the full
+  run belongs to CI.
 
 ## Edge Cases Settled
 

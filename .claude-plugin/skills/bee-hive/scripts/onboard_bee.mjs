@@ -2435,11 +2435,11 @@ function commandsNotices(repoRoot, { firstOnboard = false } = {}) {
   if (candidates.length > 0) {
     const proposals = candidates.map((c) => `${c.key}: ${c.value} — ${c.source}`).join("; ");
     return [
-      `No standard commands recorded. Detected candidates: ${proposals}. Present them to the user as one pre-filled confirmation question (skippable) and write only confirmed values to .bee/config.json \`commands\` — never write unconfirmed values (D3). They power the session baseline gate.`,
+      `No standard commands recorded. Detected candidates: ${proposals}. Present them to the user as one pre-filled confirmation question (skippable) and write only confirmed values to .bee/config.json \`commands\` — never write unconfirmed values (D3). They power the session CI status gate.`,
     ];
   }
   const notices = [
-    "No standard commands recorded. Ask the user for the host project's setup/start/test/verify commands and write them to .bee/config.json `commands` (skippable — never invent values). They power the session baseline gate.",
+    "No standard commands recorded. Ask the user for the host project's setup/start/test/verify commands and write them to .bee/config.json `commands` (skippable — never invent values). They power the session CI status gate.",
   ];
   // P1 / docs/09 item 6: first onboard of a repo without any detectable build →
   // offer the init lane. Planning convention, not a new skill: the first slice
