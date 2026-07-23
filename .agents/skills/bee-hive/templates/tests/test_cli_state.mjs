@@ -81,6 +81,32 @@ await check('bee.mjs state with no verb prints a Use: line listing all five verb
   }
 });
 
+await check('P0 (codex-loop-p0): start-feature is the atomic idle->exploring entry; the naive owner=exploring set from idle is refused', async () => {
+  const dir = makeStateRepo('bee-state-idle-entry-');
+  try {
+    // The bug the skill text used to walk into: from a fresh (idle) repo, the
+    // hand-written `set --owner exploring --phase exploring` is REFUSED, because
+    // --owner must equal the pre-mutation phase (idle). This is the idle->hive
+    // bounce the exploring skill's new step 0 exists to prevent.
+    const naive = await runBeeState(dir, ['set', '--owner', 'exploring', '--phase', 'exploring', '--feature', 'x']);
+    assert(naive.status !== 0, `naive owner=exploring from idle must be refused, got status ${naive.status}`);
+
+    // The documented atomic entry: start-feature moves idle->exploring in one
+    // guarded mutation and sets feature+mode.
+    const started = await runBeeState(dir, ['start-feature', '--feature', 'demo-p0', '--mode', 'standard']);
+    assert(started.status === 0, `start-feature from idle should succeed, got ${started.status}: ${started.stderr}`);
+    assert(readStateFile(dir).phase === 'exploring', `start-feature lands exploring, got ${readStateFile(dir).phase}`);
+
+    // Once entered correctly, the documented forward transition flows with no
+    // owner-mismatch — owner=exploring now matches the pre-mutation phase.
+    const fwd = await runBeeState(dir, ['set', '--owner', 'exploring', '--phase', 'swarming', '--summary', 'onward']);
+    assert(fwd.status === 0, `exploring->swarming should succeed after correct entry, got ${fwd.status}: ${fwd.stderr}`);
+    assert(readStateFile(dir).phase === 'swarming', 'forward transition landed');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await check('bee.mjs state set writes only the provided fields and creates state.json on a fresh repo', async () => {
   const dir = makeStateRepo('bee-state-set-');
   try {

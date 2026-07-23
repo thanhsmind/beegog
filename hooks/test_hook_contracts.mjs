@@ -1872,6 +1872,63 @@ async function runLaneSessionRows() {
     ),
   );
 
+  // ── bee-prompt-context (P0, codex-loop-p0): the coverage gap that let the bug
+  // survive. bee-chain-nudge and bee-session-close were session-threaded and
+  // tested; bee-prompt-context was NOT — it called buildPromptReminder(root)
+  // without the sessionId, so a bound session read the DEFAULT record's phase.
+  // This row proves the reminder now reflects the ACTING SESSION'S lane: a bound
+  // session on a swarming lane must see phase=swarming, while the default state
+  // sits at idle. A regression to the sessionId-less call fails this row.
+  const promptRoot = buildFixture("hook-contracts-lane-prompt-");
+  fs.writeFileSync(
+    path.join(promptRoot, ".bee", "state.json"),
+    `${JSON.stringify(
+      { phase: "idle", mode: null, feature: null, approved_gates: { context: false, shape: false, execution: false, review: false }, workers: [] },
+      null,
+      2,
+    )}\n`,
+  );
+  writeLaneFile(promptRoot, "lane-prompt-swarm", {
+    phase: "swarming",
+    mode: "standard",
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+    next_action: "bound-lane next action",
+  });
+  writeSessionFile(promptRoot, "sess-prompt-bound", { lane: "lane-prompt-swarm" });
+
+  const promptWithSession = (sessionId) =>
+    JSON.stringify({ hook_event_name: "UserPromptSubmit", prompt: "hi", session_id: sessionId, cwd: promptRoot });
+
+  const pBound = await runWrapper("bee-prompt-context.mjs", promptWithSession("sess-prompt-bound"), promptRoot);
+  const pBoundOut = `${pBound.stdout || ""}`;
+  const pBoundPass = pBound.status === 0 && /phase=swarming/.test(pBoundOut) && !/phase=idle/.test(pBoundOut);
+  rows.push(
+    adapterRow(
+      "prompt-context-lane",
+      "bound-session-reminder-reflects-its-own-lane-not-the-default",
+      pBoundPass,
+      pBoundPass
+        ? "the reminder for a bound session reports its lane's phase=swarming, not the default record's idle — sessionId is threaded (P0 fix)"
+        : `expected the bound lane's phase=swarming in the reminder, got status=${pBound.status} stdout=${truncate(pBoundOut, 300)}`,
+      pBound,
+    ),
+  );
+
+  // and the on-demand review gate never surfaces as pending here: the bound lane
+  // has gates 1-3 approved and is not `reviewing`, so a correct reminder is
+  // silent on gates (the false "gate pending: review" every turn is gone).
+  rows.push(
+    adapterRow(
+      "prompt-context-lane",
+      "no-false-review-gate-outside-a-review-session",
+      pBound.status === 0 && !/gate pending: review/.test(pBoundOut),
+      !/gate pending: review/.test(pBoundOut)
+        ? "the reminder does not print the on-demand review gate as pending outside a review session (P0 fix)"
+        : `the reminder still prints a false review gate: ${truncate(pBoundOut, 200)}`,
+      pBound,
+    ),
+  );
+
   return rows;
 }
 

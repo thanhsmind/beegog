@@ -24,6 +24,18 @@ Exploring turns fuzzy intent into locked decisions in `docs/history/<feature>/CO
 
 ## Flow
 
+0. **Enter the feature atomically (from `idle`).** A fresh session is phase `idle`.
+   The transition into exploring is **one call** — `node .bee/bin/bee.mjs state
+   start-feature --feature "<slug>" --mode "<mode>"` — which moves `idle →
+   exploring`, sets the feature and mode, and resets all four gates in a single
+   guarded mutation. Do this FIRST, before any `state set`. Do **not** hand-write
+   `state set --owner exploring --phase exploring` from `idle`: the owner guard
+   requires `--owner` to equal the pre-mutation phase, so from `idle` that call is
+   refused and the session bounces back to routing (the idle→exploring loop). Once
+   `start-feature` has run, phase is `exploring` and the step-6 `state set --owner
+   exploring …` below matches. If a feature is already active (phase is not `idle`
+   or a terminal phase), skip this — you are resuming, not starting.
+
 1. **Scope**
    - Classify: `Quick`, `Standard`, or `Deep`.
    - Read the critical patterns — with a bundle, `docs/knowledge/index.md`'s `## Critical patterns` section; with no bundle, `docs/history/learnings/critical-patterns.md` — and `.bee/state.json` if present.

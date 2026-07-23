@@ -54,7 +54,12 @@ async function main() {
     }
 
     const inject = await import(libModuleUrl(root, "inject.mjs"));
-    const reminder = inject.buildPromptReminder(root);
+    // P0 (codex-loop-p0): pass the resolved sessionId so a session bound to a
+    // feature lane sees ITS OWN phase/gate/next-action, not the default state's.
+    // buildPromptReminder already threads {sessionId} through resolvePipeline;
+    // dropping it here made every bound session read the default record (usually
+    // idle), which pulled it back toward hive — a top driver of the looping.
+    const reminder = inject.buildPromptReminder(root, { sessionId });
     if (!reminder || !reminder.text || !String(reminder.text).trim()) {
       return 0;
     }

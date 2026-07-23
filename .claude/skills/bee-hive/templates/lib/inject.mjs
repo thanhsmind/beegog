@@ -464,8 +464,18 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
 export function buildPromptReminder(root, { sessionId = null } = {}) {
   const pipeline = resolvePipeline(root, { sessionId });
   const record = pipeline.ok ? pipeline.record : readState(root);
+  // P0 (codex-loop-p0): the reminder must not report `review` as a pending gate
+  // outside a review session. Gate 4 is on-demand and user-invoked (SPEC R1/R8):
+  // once gates 1-3 are approved it is ALWAYS unapproved, so walking all four made
+  // the reminder print "gate pending: review" on every single turn — including
+  // at idle with nothing active — a false "there is unfinished workflow" signal
+  // that pulls the agent back into the pipeline. Walk the pre-execution gates;
+  // include `review` only when a review session is actually running (phase
+  // `reviewing`), where it is a genuine open gate.
+  const reminderGates =
+    record.phase === 'reviewing' ? GATE_NAMES : GATE_NAMES.filter((g) => g !== 'review');
   const firstOpenGate =
-    GATE_NAMES.find((gate) => record.approved_gates?.[gate] !== true) ?? null;
+    reminderGates.find((gate) => record.approved_gates?.[gate] !== true) ?? null;
   const fields = {
     phase: record.phase,
     mode: record.mode ?? null,

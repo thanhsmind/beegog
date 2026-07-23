@@ -154,6 +154,35 @@ await check('buildSessionPreamble mentions phase and gates', async () => {
   assert(/bee\.mjs status/.test(preamble), 'preamble points at bee.mjs status');
 });
 
+await check('P0 (codex-loop-p0): the reminder never reports `review` as a pending gate outside a review session', async () => {
+  const rr = makeTempRepo();
+  // gates 1-3 approved, review unapproved (the ordinary post-execution state):
+  // review is on-demand, so it must NOT surface as "gate pending: review".
+  writeState(rr, {
+    ...defaultState(),
+    phase: 'swarming',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  const swarming = buildPromptReminder(rr);
+  assert(!/gate pending: review/.test(swarming.text), `swarming must not show review pending, got: ${swarming.text}`);
+
+  // a genuine pre-execution gate still surfaces:
+  writeState(rr, {
+    ...defaultState(),
+    phase: 'exploring',
+    approved_gates: { context: false, shape: false, execution: false, review: false },
+  });
+  assert(/gate pending: context/.test(buildPromptReminder(rr).text), 'context still surfaces as the first open gate');
+
+  // inside a review session, review IS a real open gate and is reported:
+  writeState(rr, {
+    ...defaultState(),
+    phase: 'reviewing',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  assert(/gate pending: review/.test(buildPromptReminder(rr).text), 'review surfaces only when phase is reviewing');
+});
+
 // ─── standard commands (docs/09 item 1) ─────────────────────────────────────
 
 await check('readConfig returns empty commands when config.json absent', async () => {
