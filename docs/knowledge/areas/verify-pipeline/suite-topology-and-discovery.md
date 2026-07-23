@@ -7,8 +7,8 @@ bee:
   id: verify-pipeline-suite-topology-and-discovery
   lifecycle: active
   areas: [verify-pipeline]
-  decisions: [contention-split D1-D6 (decision 1ce777d9)]
-  sources: ["contention-split cells cs-1/cs-2a/cs-2b/cs-3/cs-4 (fixture extraction, monolith split 430-check conservation, monolith deletion, convention-based suite discovery; traces in .bee/cells/, 2026-07-20)", "hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — Windows CI runs the real split suites through the runner's own discovery rather than a hand-maintained list; write-guard-hook-fix wgf-1, 2026-07-21 — the fixture that vendors a module tree copies the tree, never a hand-maintained file list)", "docs/specs/verify-pipeline.md#R1", "docs/specs/verify-pipeline.md#R2", "docs/specs/verify-pipeline.md#R3", "docs/specs/verify-pipeline.md#E1", "docs/specs/verify-pipeline.md#P1", "docs/specs/verify-pipeline.md#P2", "docs/specs/verify-pipeline.md#P3", "docs/specs/verify-pipeline.md#P4"]
+  decisions: [contention-split D1-D6 (decision 1ce777d9), verify-scoping D1/D2 (decisions e39d3f89, 20534ea9)]
+  sources: ["contention-split cells cs-1/cs-2a/cs-2b/cs-3/cs-4 (fixture extraction, monolith split 430-check conservation, monolith deletion, convention-based suite discovery; traces in .bee/cells/, 2026-07-20)", "hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — Windows CI runs the real split suites through the runner's own discovery rather than a hand-maintained list; write-guard-hook-fix wgf-1, 2026-07-21 — the fixture that vendors a module tree copies the tree, never a hand-maintained file list)", "verify-scoping cells vs-1/vs-2 (scoped --only include filter + two-tier verify doctrine; traces in .bee/cells/, 2026-07-23)", "docs/specs/verify-pipeline.md#R1", "docs/specs/verify-pipeline.md#R2", "docs/specs/verify-pipeline.md#R3", "docs/specs/verify-pipeline.md#E1", "docs/specs/verify-pipeline.md#P1", "docs/specs/verify-pipeline.md#P2", "docs/specs/verify-pipeline.md#P3", "docs/specs/verify-pipeline.md#P4"]
   authoritative_for: "verify-pipeline: suite topology and discovery"
 ---
 
@@ -51,6 +51,14 @@ concurrency-safe and hermetic is `concurrency-and-hermetic-runs.md`.
   second, hand-maintained enumeration of which suites "should" run on
   Windows. There is exactly one place a suite is ever listed: the discovery
   convention itself (hardening-1-7-10).
+- **Scoped runs for development iteration.** The runner accepts an include
+  filter — a repeatable/comma `--only <token>` CLI flag or `BEE_VERIFY_ONLY`
+  env (CLI wins) — matching runnables by case-insensitive substring on
+  repo-relative path and display name, EXTRA list included, applied before
+  the exclude filter. Zero matches is a typed refusal (exit 1), never a
+  silent trivial green, and every scoped run prints a loud
+  `SCOPED RUN (--only)` banner twice so a scoped green can never be mistaken
+  for a full one (verify-scoping D1).
 
 ## Business Rules
 
@@ -61,6 +69,12 @@ concurrency-safe and hermetic is `concurrency-and-hermetic-runs.md`.
 - **R3** — Check-count conservation is the required evidence for any test-file
   migration (counts recorded before/after; additive setup fixes allowed,
   weakened or dropped checks are not).
+- **R4** — Verify is two-tier (verify-scoping D2): a cell's `verify` command
+  is the narrowest honest scoped check covering its change (a direct test
+  file or `--only` selection), and the FULL configured verify runs at exactly
+  three moments — session baseline before the first claim, feature
+  close/session finish, and worktree merge — never per cell by default.
+  Cap evidence is the cell's scoped verify; the full run belongs to close.
 
 ## Edge Cases Settled
 
