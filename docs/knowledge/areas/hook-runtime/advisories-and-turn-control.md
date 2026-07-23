@@ -2,14 +2,14 @@
 type: bee.area
 title: "Hook Runtime — advisories, session-stop output, and the one deliberate turn-control exception"
 description: "Why close-time, compaction and child-stop checkpoints only ever inform, what a session-stop handler is allowed to emit, and the single scoped exception — the gate-bypass net — that turns the close-time checkpoint into a loop-guarded block verdict on purpose."
-timestamp: 2026-07-22
+timestamp: 2026-07-23
 bee:
   id: hook-runtime-advisories-and-turn-control
   lifecycle: active
   areas: [hook-runtime]
   required_context: [areas/hook-runtime/overview.md]
   decisions: ["codex-runtime-parity D1, D2", "4c1c5921 (GitHub #18 — the gate-bypass net mechanized at runtime as a loop-guarded turn-control block)"]
-  sources: ["codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/", "post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18)", "docs/specs/hook-runtime.md#B2", "docs/specs/hook-runtime.md#B10", "docs/specs/hook-runtime.md#B15", "docs/specs/hook-runtime.md#R4", "docs/specs/hook-runtime.md#R10", "docs/specs/hook-runtime.md#R14", "docs/specs/hook-runtime.md#P4", "docs/specs/hook-runtime.md#P5"]
+  sources: ["codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/", "post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18)", "docs/specs/hook-runtime.md#B2", "docs/specs/hook-runtime.md#B10", "docs/specs/hook-runtime.md#B15", "docs/specs/hook-runtime.md#R4", "docs/specs/hook-runtime.md#R10", "docs/specs/hook-runtime.md#R14", "docs/specs/hook-runtime.md#P4", "docs/specs/hook-runtime.md#P5", "codex-loop-p0 cell clp-1 (the prompt reminder threads sessionId and stops reporting the on-demand review gate outside a review session; trace in `.bee/cells/`, 2026-07-23)"]
   authoritative_for: "hook-runtime: the advisory contract and the gate-bypass turn-control exception"
 ---
 
@@ -80,6 +80,18 @@ proceed is never trapped in a loop. Fail-open is unchanged: any internal failure
 falls through to the advisory path with a visible log, never a crash.
 
 ## Business Rules
+
+- R3a — The prompt reminder speaks for the ACTING SESSION, and reports only
+  gates that are genuinely open. Two rules the reminder must hold, each a fixed
+  loop-driver: (1) it resolves the pipeline with the caller's own `sessionId`, so
+  a session bound to a feature lane reports *its lane's* phase and gate, never the
+  default record's — dropping the id made a bound session read the default (idle)
+  state and pulled it back toward routing every turn. (2) It reports the on-demand
+  **review** gate as pending only inside a review session (phase `reviewing`);
+  outside one, review is user-invoked and permanently unapproved, so walking it
+  printed a false "gate pending: review" on every turn — a phantom
+  unfinished-workflow signal. The reminder walks the pre-execution gates
+  (context/shape/execution) always, and review only when a review session is live.
 
 - R4 — Advisory events never emit turn-control verdicts (codex-runtime-parity D2),
   with the single scoped exception of the gate-bypass net on the session-stop
