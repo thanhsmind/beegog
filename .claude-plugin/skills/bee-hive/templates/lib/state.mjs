@@ -278,9 +278,16 @@ function normalizeDogfoodRepos(raw) {
       real = fs.realpathSync(resolved);
     } catch (err) {
       // A missing or unreadable dogfood repo is warned and skipped, never thrown.
-      console.warn(
-        `dogfood_repos: skipping "${rawPath}" — ${err && err.code ? err.code : err} (dead or unreadable repo; the bee session continues)`,
-      );
+      // Inside a hook run (BEE_HOOK_CONTEXT set once by hooks/adapter.mjs's
+      // readHookContext, before any lib import) the warning is suppressed —
+      // it would otherwise prefix every hook's unrelated stdout/stderr — but
+      // the entry is still skipped identically. Plain CLI runs (status,
+      // onboarding — no adapter) never set the flag and keep the warning.
+      if (!process.env.BEE_HOOK_CONTEXT) {
+        console.warn(
+          `dogfood_repos: skipping "${rawPath}" — ${err && err.code ? err.code : err} (dead or unreadable repo; the bee session continues)`,
+        );
+      }
       continue;
     }
     out.push({ path: real, label: label || path.basename(resolved) });

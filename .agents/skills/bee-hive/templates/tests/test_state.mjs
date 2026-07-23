@@ -685,6 +685,66 @@ await check('readConfig: dogfood_repos overlay REPLACES the tracked array wholes
   }
 });
 
+// ag-2: a dead/unreadable dogfood_repos entry warns via console.warn on every
+// readConfig call. Inside a hook run that fires on EVERY hook invocation and
+// pollutes unrelated hook stderr; hooks/adapter.mjs's readHookContext marks
+// BEE_HOOK_CONTEXT once, before any lib import, so normalizeDogfoodRepos can
+// suppress the warn while still skipping the dead entry identically. Plain
+// CLI runs (status, onboarding — no adapter) never set the flag and keep the
+// warning verbatim.
+
+await check('readConfig: dogfood_repos dead entry inside hook context (BEE_HOOK_CONTEXT set) — no warn output, entry still skipped', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-config-dogfood-hookctx-'));
+  try {
+    const deadPath = path.join(dir, 'does-not-exist');
+    writeConfigFixture(dir, { dogfood_repos: [{ path: deadPath, label: 'dead' }] });
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...a) => warnings.push(a.join(' '));
+    const origFlag = process.env.BEE_HOOK_CONTEXT;
+    process.env.BEE_HOOK_CONTEXT = '1';
+    let config;
+    try {
+      config = readConfig(dir);
+    } finally {
+      console.warn = origWarn;
+      if (origFlag === undefined) delete process.env.BEE_HOOK_CONTEXT;
+      else process.env.BEE_HOOK_CONTEXT = origFlag;
+    }
+    assert(config.dogfood_repos.length === 0, `dead entry must still be skipped under hook context, got ${JSON.stringify(config.dogfood_repos)}`);
+    assert(warnings.length === 0, `hook context must suppress the dogfood_repos warn entirely, got ${JSON.stringify(warnings)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('readConfig: dogfood_repos dead entry with no BEE_HOOK_CONTEXT (plain CLI run) — warning still fires verbatim', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-config-dogfood-cli-'));
+  try {
+    const deadPath = path.join(dir, 'does-not-exist');
+    writeConfigFixture(dir, { dogfood_repos: [{ path: deadPath, label: 'dead' }] });
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...a) => warnings.push(a.join(' '));
+    const origFlag = process.env.BEE_HOOK_CONTEXT;
+    delete process.env.BEE_HOOK_CONTEXT;
+    let config;
+    try {
+      config = readConfig(dir);
+    } finally {
+      console.warn = origWarn;
+      if (origFlag !== undefined) process.env.BEE_HOOK_CONTEXT = origFlag;
+    }
+    assert(config.dogfood_repos.length === 0, `dead entry must still be skipped without hook context, got ${JSON.stringify(config.dogfood_repos)}`);
+    assert(
+      warnings.some((w) => w.includes('dogfood_repos: skipping') && w.includes(deadPath)),
+      `expected the verbatim dogfood_repos warning naming the dead path, got ${JSON.stringify(warnings)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await check('readConfig: overlay deep-merges nested objects (a partial hooks override leaves untouched siblings from the tracked file)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-config-overlay-nested-'));
   try {
