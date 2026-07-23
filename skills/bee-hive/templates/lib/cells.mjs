@@ -112,6 +112,209 @@ export function evidenceRidesExceptionDoor(evidence) {
     : typeof exceptions === 'string' && exceptions.trim().length > 0;
 }
 
+// ─── derived regen obligation (regen-obligation-derived D1/D2) ─────────────
+// A cell whose OWN `files` touch a path a standing repo-wide guard hashes
+// owes that guard's `--check` in its OWN `verify` and the guard's regen in
+// its own work (PAT37, five recurrences). bee.mjs's manifestLintWarning (H2)
+// asks the dodgeable question — "your verify mentions release_manifest but
+// your files omit the manifest?" — so a cell that never mentions it at all
+// walks straight past. This is the other direction: the obligation is DERIVED
+// from what the cell touches, and it REFUSES the write (D1). H2 keeps its
+// advisory behavior for what it already covers; nothing about it changes.
+//
+// D2 — THE ROOTS ARE NEVER HARD-CODED HERE. They are parsed out of the guard
+// scripts themselves at every add/update, so a root added to
+// release_manifest.mjs tomorrow is enforced here with no edit to this file.
+// That is the whole point of the cell: the trigger scope for this trap has
+// now been mis-stated three times running (D20 "templates/lib/ only", D24
+// "two roots", the routing brief "two roots" again), every time by copying
+// the previous summary instead of re-reading the script. Measured 2026-07-23,
+// the real answer is TWELVE manifest roots — the six anyone recites plus
+// .claude-plugin/marketplace.json, both installers and both distribution
+// tests. A literal list in this guard would inherit exactly that defect.
+//
+// Absent scripts = inactive guard (a host repo has no scripts/ of ours), so
+// this is silent everywhere but a repo that actually carries the guard.
+const REGEN_ACK_FIELD = 'regen_obligation_ack';
+
+const REGEN_GUARDS = [
+  {
+    key: 'manifest',
+    script: 'scripts/release_manifest.mjs',
+    covers: 'the release manifest hashes',
+    required: 'release_manifest.mjs --check',
+    command: 'node scripts/release_manifest.mjs --check',
+    regen: 'node scripts/render_plugin_skill_trees.mjs, then node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply, then node scripts/release_manifest.mjs --write (in that order)',
+    derive: deriveManifestScope,
+  },
+  {
+    key: 'ledger',
+    script: 'scripts/ledger_parity.mjs',
+    covers: 'the .bee/onboarding.json managed-hash ledger covers',
+    required: 'ledger_parity.mjs --check',
+    command: 'node scripts/ledger_parity.mjs --check',
+    regen: 'node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply',
+    derive: deriveLedgerScope,
+  },
+];
+
+/**
+ * Leading string-literal arguments of one path.join(...) argument list, as
+ * path segments. Stops at the first non-literal argument, so an
+ * expression-built path contributes only its literal prefix (or nothing).
+ */
+function literalJoinSegments(argText) {
+  const segments = [];
+  for (const rawArg of String(argText).split(',')) {
+    const arg = rawArg.trim();
+    if (!arg) continue;
+    const literal = /^"([^"\\]*)"$|^'([^'\\]*)'$/.exec(arg);
+    if (!literal) break;
+    segments.push(literal[1] !== undefined ? literal[1] : literal[2]);
+  }
+  return segments;
+}
+
+/** Every `path.join(<baseIdent>, "a", "b", …)` in `source`, as posix paths. */
+function joinedLiteralPaths(source, baseIdent) {
+  const found = [];
+  const call = new RegExp(`path\\.join\\(\\s*${baseIdent}\\s*,([^)]*)\\)`, 'g');
+  let match;
+  while ((match = call.exec(source)) !== null) {
+    const segments = literalJoinSegments(match[1]);
+    if (segments.length > 0) found.push(segments.join('/'));
+  }
+  return found;
+}
+
+// release_manifest.mjs builds every inventory root as path.join(REPO_ROOT, …)
+// — enumerated dirs and individually named files alike — so one pattern picks
+// up all of them, including any added later. MANIFEST_PATH is derived the same
+// way (by its const name, not its literal value) and subtracted: the manifest
+// is the RECORD of the hashed set, never a member of it. It comes back as the
+// path the cell's `files` must also list, which is what makes a cold worker's
+// regen sanctioned instead of out-of-scope.
+function deriveManifestScope(source) {
+  const named = /\bMANIFEST_PATH\s*=\s*path\.join\(\s*REPO_ROOT\s*,([^)]*)\)/.exec(source);
+  const manifestPath = named ? literalJoinSegments(named[1]).join('/') : null;
+  const roots = [...new Set(joinedLiteralPaths(source, 'REPO_ROOT'))]
+    .filter((candidate) => candidate && candidate !== manifestPath)
+    .sort();
+  return { roots, requiredFiles: manifestPath ? [manifestPath] : [] };
+}
+
+// ledger_parity.mjs's scope is "whatever checkGroup(managed.X, relDir) is
+// called with", resolved against the base its own checked path is built from
+// (path.join(root, ".bee", "bin", relDir, name)). Both halves are read out of
+// the script, so a third group added there is covered here for free.
+function deriveLedgerScope(source) {
+  const based = /path\.join\(\s*root\s*,((?:\s*(?:"[^"\\]*"|'[^'\\]*')\s*,)+)\s*relDir\b/.exec(source);
+  const base = based ? literalJoinSegments(based[1]).join('/') : null;
+  if (!base) return { roots: [], requiredFiles: [] };
+  const roots = new Set();
+  const group = /checkGroup\(\s*managed\.\w+\s*,\s*(?:"([^"\\]*)"|'([^'\\]*)')\s*\)/g;
+  let match;
+  while ((match = group.exec(source)) !== null) {
+    const relDir = match[1] !== undefined ? match[1] : match[2];
+    roots.add([base, relDir].filter(Boolean).join('/'));
+  }
+  return { roots: [...roots].sort(), requiredFiles: [] };
+}
+
+/**
+ * The active guards for `root`, each with its DERIVED roots. A guard whose
+ * script is absent is inactive. A guard whose script is present but yields no
+ * root throws: a guard that cannot see its own scope is blind, and blind is
+ * the failure this whole rule exists to end — never a silent pass.
+ */
+export function deriveRegenGuards(root) {
+  const active = [];
+  for (const guard of REGEN_GUARDS) {
+    const abs = path.join(root, ...guard.script.split('/'));
+    let source;
+    try {
+      source = fs.readFileSync(abs, 'utf8');
+    } catch {
+      continue; // guard not installed in this repo — nothing to owe
+    }
+    const scope = guard.derive(source);
+    if (!scope.roots.length) {
+      throw new Error(
+        `regen obligation: could not derive any covered root from "${guard.script}" — the guard would be blind, so the write is refused rather than passed silently. FIX: the script's shape changed; update deriveRegenGuards in lib/cells.mjs to read the new shape (never paste a literal root list in — see D2).`,
+      );
+    }
+    active.push({ ...guard, ...scope });
+  }
+  return active;
+}
+
+function normalizeCellPath(value) {
+  return String(value).trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
+function pathUnderRoot(filePath, rootPath) {
+  return filePath === rootPath || filePath.startsWith(`${rootPath}/`);
+}
+
+/**
+ * The refusal message for `cell`, or null when nothing is owed. Pure apart
+ * from reading the guard scripts; never throws on a malformed cell (that
+ * judgment belongs to validateNewCell/updateCell's own field refusals).
+ */
+export function regenObligationRefusal(root, cell, verb = 'addCell') {
+  if (!cell || typeof cell !== 'object') return null;
+  const ack = cell[REGEN_ACK_FIELD];
+  if (typeof ack === 'string' && ack.trim()) return null; // D1 escape hatch, recorded on the cell
+  const files = (Array.isArray(cell.files) ? cell.files : [])
+    .filter((f) => typeof f === 'string' && f.trim())
+    .map(normalizeCellPath);
+  if (files.length === 0) return null;
+  const verify = typeof cell.verify === 'string' ? cell.verify : '';
+  const id = typeof cell.id === 'string' && cell.id ? cell.id : '(unknown id)';
+
+  for (const guard of deriveRegenGuards(root)) {
+    let hitPath = null;
+    let hitRoot = null;
+    for (const file of files) {
+      const matched = guard.roots.find((rootPath) => pathUnderRoot(file, rootPath));
+      if (matched) {
+        hitPath = file;
+        hitRoot = matched;
+        break;
+      }
+    }
+    if (!hitPath) continue;
+
+    const missing = [];
+    if (!verify.includes(guard.required)) {
+      missing.push(`verify does not contain "${guard.required}"`);
+    }
+    for (const requiredFile of guard.requiredFiles) {
+      if (!files.includes(requiredFile)) missing.push(`files does not list "${requiredFile}"`);
+    }
+    if (missing.length === 0) continue;
+
+    const fixes = [];
+    if (!verify.includes(guard.required)) fixes.push(`add \`${guard.command}\` to this cell's verify`);
+    for (const requiredFile of guard.requiredFiles) {
+      if (!files.includes(requiredFile)) fixes.push(`add "${requiredFile}" to its files`);
+    }
+    return (
+      `${verb}: REGEN_OBLIGATION — cell "${id}" touches "${hitPath}", which falls under "${hitRoot}", ` +
+      `a root ${guard.covers} (derived at runtime from ${guard.script}, never a list kept here). ` +
+      `Missing: ${missing.join('; ')}. FIX: ${fixes.join(', ')}, and run the regen inside THIS cell — ${guard.regen}. ` +
+      `To skip deliberately, set "${REGEN_ACK_FIELD}" on the cell to a one-line reason; it is recorded in the cell, ` +
+      `so skipping is a named act rather than an oversight. The write is refused; nothing was written.`
+    );
+  }
+  return null;
+}
+
+function assertRegenObligation(root, cell, verb) {
+  const refusal = regenObligationRefusal(root, cell, verb);
+  if (refusal) throw new Error(refusal);
+}
+
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function utcNow() {
@@ -986,9 +1189,22 @@ function validateNewCell(root, cell) {
       }
     }
   }
+  // D1: the escape hatch is a REASON, not a boolean — a bare `true` records
+  // that someone skipped, never why, and the trace is the only place anyone
+  // will ever read it back.
+  if (cell[REGEN_ACK_FIELD] !== undefined && cell[REGEN_ACK_FIELD] !== null) {
+    if (typeof cell[REGEN_ACK_FIELD] !== 'string' || !cell[REGEN_ACK_FIELD].trim()) {
+      throw new Error(
+        `addCell: optional "${REGEN_ACK_FIELD}" must be a non-empty string (the one-line reason the derived regen obligation is being skipped).`,
+      );
+    }
+  }
   if (readCell(root, cell.id)) {
     throw new Error(`addCell: cell "${cell.id}" already exists.`);
   }
+  // D1/D2 — derived regen obligation, last because it is the only check here
+  // that reads outside the cell (the guard scripts).
+  assertRegenObligation(root, cell, 'addCell');
 }
 
 function normalizeNewCell(cell) {
@@ -1100,6 +1316,13 @@ const UPDATE_FIELD_VALIDATORS = {
   // "derive from behavior_change" — same null-allowed shape as pbi above.
   change_class: (v) =>
     v === null || CHANGE_CLASSES.includes(v) ? null : `must be null or one of: ${CHANGE_CLASSES.join(', ')}`,
+  // D1: updatable so a repair loop can either satisfy the derived regen
+  // obligation (patch verify/files) or record the deliberate skip — nullable
+  // to un-set it again, same shape as pbi/change_class above.
+  [REGEN_ACK_FIELD]: (v) =>
+    v === null || (typeof v === 'string' && v.trim())
+      ? null
+      : 'must be null or a non-empty string (the one-line reason for skipping the derived regen obligation)',
 };
 
 function isStringArray(value) {
@@ -1206,6 +1429,11 @@ export async function updateCell(root, id, patch) {
     if (Object.prototype.hasOwnProperty.call(patch, 'deps')) {
       assertNoCycle(root, 'updateCell', [merged]);
     }
+    // D1/D2 — the derived regen obligation is checked against the MERGED cell:
+    // a patch that adds a hashed-root path to `files` owes the same checks a
+    // fresh cell would, and a patch that fixes `verify` clears it. Refusal
+    // leaves the cell untouched, same guarantee as every refusal above.
+    assertRegenObligation(root, merged, 'updateCell');
     return writeCell(root, merged);
   });
 }

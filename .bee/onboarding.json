@@ -10,7 +10,7 @@
     "lib": {
       "backlog.mjs": "1839fe827fcd14f5e9111b4a01a1d0d1bdd90009f1a9ac0b5ef36ae6e90c6a52",
       "capture.mjs": "3779fd6bd5b28c50b50e4b93cbc368d458123ebab1cbcb3cc34757af0d24f8fa",
-      "cells.mjs": "de131b386a5447f7083aca4b6e31f7a07ad5068279edfd6fdef25e2df2f7c6c7",
+      "cells.mjs": "1b09d6380bf78105c1485c24536b5dc80131927e6012a48f7933f040603e5f99",
       "claims.mjs": "81257c8797343c0698cda1597774fe32dc59238e031bc2d27de3567e0adbfcc9",
       "command-registry.mjs": "885cec366193d89e6e0d142846bb37455a97ba708e42270508d290c22e4db456",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
@@ -74,5 +74,5 @@
     }
   },
   "created_at": "2026-07-21T17:36:03.955Z",
-  "updated_at": "2026-07-23T07:59:00.676Z"
+  "updated_at": "2026-07-23T08:58:25.969Z"
 }
