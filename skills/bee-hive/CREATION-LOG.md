@@ -2,7 +2,7 @@
 
 ## Provenance
 
-Adapted from `khuym:using-khuym` v2.2 (`plugins/khuym/skills/using-khuym/SKILL.md` plus its `references/routing-and-contracts.md` and `references/go-mode-pipeline.md`), which itself distills compound-engineering `/lfg`, GSD, and superpowers session-bootstrap patterns.
+Adapted from `khuym:using-khuym` v2.2 (`plugins/khuym/skills/using-khuym/SKILL.md` plus its `references/routing-and-contracts.md` and references/go-mode-pipeline.md, the latter renamed to `references/go-mode.md` in bee), which itself distills compound-engineering `/lfg`, GSD, and superpowers session-bootstrap patterns.
 
 ## What changed for bee
 
