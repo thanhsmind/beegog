@@ -250,9 +250,22 @@ function knowledgeContextLines(root, record) {
 }
 
 function gatesLine(state) {
-  return GATE_NAMES.map(
-    (gate) => `${gate}: ${state.approved_gates?.[gate] === true ? 'approved' : 'pending'}`,
-  ).join(' | ');
+  // codex-loop (advisor #54): the PREAMBLE was missed when the reminder stopped
+  // reporting the on-demand review gate — it still listed "review: pending" at
+  // startup and after every compaction, which is where a long session re-reads
+  // its objective and is most vulnerable to a phantom-workflow signal. Gate 4 is
+  // user-invoked: it is pending only inside a live review session, and a terminal
+  // record owes no gate at all. Same rule, both surfaces.
+  const terminal = NO_WORK_PHASES.has(state.phase);
+  const shown = terminal
+    ? []
+    : state.phase === 'reviewing'
+      ? GATE_NAMES
+      : GATE_NAMES.filter((g) => g !== 'review');
+  if (shown.length === 0) return 'none pending (no active work)';
+  return shown
+    .map((gate) => `${gate}: ${state.approved_gates?.[gate] === true ? 'approved' : 'pending'}`)
+    .join(' | ');
 }
 
 // fresh-session-handoff fsh-6 (D4): OPTIONAL sessionId — omitted (today's
@@ -472,8 +485,17 @@ export function buildPromptReminder(root, { sessionId = null } = {}) {
   // that pulls the agent back into the pipeline. Walk the pre-execution gates;
   // include `review` only when a review session is actually running (phase
   // `reviewing`), where it is a genuine open gate.
-  const reminderGates =
-    record.phase === 'reviewing' ? GATE_NAMES : GATE_NAMES.filter((g) => g !== 'review');
+  // codex-loop (advisor #54): a TERMINAL record has no pending gate at all. At
+  // `idle`/`compounding-complete` there is no feature, so reporting "gate pending:
+  // context" announces an approval owed for work that does not exist — the same
+  // phantom-workflow signal as the review gate, one gate over. Terminal states
+  // report no gate; only an ACTIVE pipeline can owe one.
+  const terminal = NO_WORK_PHASES.has(record.phase);
+  const reminderGates = terminal
+    ? []
+    : record.phase === 'reviewing'
+      ? GATE_NAMES
+      : GATE_NAMES.filter((g) => g !== 'review');
   const firstOpenGate =
     reminderGates.find((gate) => record.approved_gates?.[gate] !== true) ?? null;
   const fields = {

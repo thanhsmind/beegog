@@ -154,6 +154,33 @@ await check('buildSessionPreamble mentions phase and gates', async () => {
   assert(/bee\.mjs status/.test(preamble), 'preamble points at bee.mjs status');
 });
 
+await check('codex-loop (advisor #54): a TERMINAL record emits no re-route order and no phantom gate, in both surfaces', async () => {
+  const tr = makeTempRepo();
+  // A fresh/idle repo: nothing is active. The reminder must not order a route
+  // into hive, and must not claim a gate is pending for a feature that does not
+  // exist — both were phantom "there is unfinished workflow" signals.
+  writeState(tr, { ...defaultState() });
+  const idle = buildPromptReminder(tr).text;
+  assert(!/Invoke bee-hive/i.test(idle), `idle must not order a re-route, got: ${idle}`);
+  assert(!/gate pending/i.test(idle), `idle owes no gate, got: ${idle}`);
+
+  // The preamble is the OTHER surface — read at startup and after every
+  // compaction, which is exactly where a long session re-orients. It listed
+  // "review: pending" even at idle.
+  const pre = buildSessionPreamble(tr);
+  const gatesLine = (pre.match(/Gates:.*/) || [''])[0];
+  assert(!/review: pending/.test(gatesLine), `idle preamble must not list review pending, got: ${gatesLine}`);
+
+  // An ACTIVE pre-execution phase still owes its real gate.
+  writeState(tr, {
+    ...defaultState(),
+    phase: 'exploring',
+    feature: 'demo',
+    approved_gates: { context: false, shape: false, execution: false, review: false },
+  });
+  assert(/gate pending: context/.test(buildPromptReminder(tr).text), 'an active feature still reports its real open gate');
+});
+
 await check('P0 (codex-loop-p0): the reminder never reports `review` as a pending gate outside a review session', async () => {
   const rr = makeTempRepo();
   // gates 1-3 approved, review unapproved (the ordinary post-execution state):

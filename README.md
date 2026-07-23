@@ -185,13 +185,20 @@ Enforcement, not etiquette: until Gate 3 is approved, `bee.mjs cells claim` thro
 
 ### Gate bypass (opt-in autopilot)
 
-If you trust bee in a given repo and want speed, turn on **`bee-bypass-gate`** (`on` / `off` / `status`). When on, the agent stops asking at **Gates 1–3 for normal-lane work** — it takes its own recommendation, records the approval, logs it, and continues, posting a short `⚡ auto-approved Gate N` line instead of a question.
+If you trust bee in a given repo and want speed, turn on **`bee-bypass-gate`**. It is a **level**, not a switch (`off` / `normal` / `full` / `total`), and the level decides how far it reaches.
 
-The safety floor is **absolute and not configurable**:
+**The safety floor is real at `normal` — and you can deliberately lift it.** Earlier wording here called the floor "absolute and not configurable", which was wrong: `full` and `total` exist precisely to remove it, and saying otherwise made a safety promise the code does not keep.
 
-- **High-risk / hard-gate work always stops for you** — anything touching auth, authorization, data loss, security, an external provider, validation removal, or a database migration.
-- **Gate 4 UAT and P1 always stop** — you still confirm the feature works; the merge auto-approves only when there are zero P1s and every UAT item passed.
-- **Reading secrets always asks** — `.env`, keys, credentials, etc.
+| Level | Gates 1–3 | High-risk / hard-gate | Gate 4 UAT & P1 | Secret reads |
+|---|---|---|---|---|
+| `off` | you approve | you approve | you approve | asks |
+| `normal` | auto (normal lanes) | **stops** | **stops** | **asks** |
+| `full` | auto | **auto** | **stops** | **asks** |
+| `total` | auto | **auto** | **auto** | **auto — nothing stops** |
+
+- At **`normal`** the floor holds: high-risk/hard-gate work (auth, authorization, data loss, security, an external provider, validation removal, a database migration), Gate 4 UAT, P1 findings, and secret reads all still stop for you.
+- **`full`** lifts the high-risk floor. **`total`** lifts everything — no human checkpoint remains anywhere, including UAT, P1 findings, and reading `.env`/keys/credentials.
+- Raising to `full`/`total` is a deliberate act you take; bee never raises it for you, and the active level is printed loudly in the session preamble and `bee_status`.
 
 Bypass is **not** the same as headless mode (headless still stops at every gate). It's off by default, persists per-repo, and is surfaced loudly (`GATE BYPASS ON`) in the session preamble and `bee_status` so it's never silently in effect.
 
@@ -477,7 +484,7 @@ Recent additions, each gated by a decision record:
 - **`bee-xia`** (0005) — the anti-reinvention research scout: evidence-labeled briefs, reuse-first recommendations.
 - **`bee-briefing`** (0008) — the beekeeper's brief: one human-readable implement plan per feature, plus the post-ship walkthrough.
 - **Artifact scaling + cap-time before-state** (0009) — planning stops fanning out four overlapping documents for small work; capping a behavior change now requires a recorded "before".
-- **`bee-bypass-gate`** (0010) — opt-in autopilot that auto-approves low-risk gates while keeping an absolute safety floor (high-risk/hard-gate, Gate 4 UAT, and secrets always stop).
+- **`bee-bypass-gate`** (0010) — opt-in autopilot with LEVELS: normal keeps the safety floor (high-risk/hard-gate, Gate 4 UAT, P1 and secrets still stop); full lifts the high-risk floor; total lifts everything and leaves no human checkpoint.
 - **Capture-mode spine / scribing debt** (0011) — behavior_change cells capped since the last spec sync are counted as *scribing debt* and surfaced in `bee_status`, the preamble, and the swarming nudge, so settled behavior reaches `docs/specs/` mid-flight instead of only when a human remembers.
 - **Runtime-keyed model tiers + scarcity signal** (0012) — a per-repo `models` map (claude/codex → extraction/generation/ceiling) with a `modelForTier` resolver; cells carry a `tier`, swarming resolves tier → model, and `bee_status`/preamble warn when the ceiling share runs high — keeping the strongest model scarce.
 - **Grooming is project-first** (0014) — the hygiene pass hunts the *current project's* debt in plain language; `.bee/`, `.claude/`, `.codex/` and bee's own plumbing are out of scope (a harness bug becomes a one-line upstream note, not a project kill), and the entropy score is demoted to a short hive-housekeeping side-note. Also fixes two real bugs it caught: `capCell` now honors a cell's declared `behavior_change` even when the CLI flag is omitted, and the write-guard no longer misreads `2>&1` as a file write. (Note: this parenthetical is superseded by skill-sync above — `onboard --apply` now syncs `skills/*` into the host repo's own `.claude/skills/bee-*` and `.agents/skills/bee-*` by default, committed to the repo; downgrades refused by default. `--global-skills` extends the sync to the legacy global `~/.claude/skills` root (and, via the install scripts, `~/.codex/skills`); without it neither global root is touched.)

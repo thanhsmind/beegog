@@ -107,6 +107,23 @@ await check('P0 (codex-loop-p0): start-feature is the atomic idle->exploring ent
   }
 });
 
+await check('codex-loop (advisor #54): start-feature hands off FORWARD — its next_action never orders another hive route', async () => {
+  const dir = makeStateRepo('bee-state-nextaction-');
+  try {
+    // The loop the 1.11.1 fix left open one step later: start-feature IS the
+    // routing decision, but it wrote next_action = "Invoke bee-hive ...", which
+    // the prompt reminder then replayed on the user's NEXT turn — pulling the
+    // session straight back into routing it had just left.
+    const started = await runBeeState(dir, ['start-feature', '--feature', 'demo-fwd', '--mode', 'standard']);
+    assert(started.status === 0, `start-feature should succeed, got ${started.stderr}`);
+    const na = String(readStateFile(dir).next_action || '');
+    assert(!/Invoke bee-hive/i.test(na), `start-feature must not order another hive route, got: ${na}`);
+    assert(/continue/i.test(na) && /demo-fwd/.test(na), `next_action should hand off forward and name the feature, got: ${na}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await check('bee.mjs state set writes only the provided fields and creates state.json on a fresh repo', async () => {
   const dir = makeStateRepo('bee-state-set-');
   try {

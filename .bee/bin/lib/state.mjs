@@ -828,7 +828,12 @@ export function defaultState() {
     approved_gates: { context: false, shape: false, execution: false, review: false },
     workers: [],
     summary: '',
-    next_action: 'Invoke bee-hive.',
+    // codex-loop (advisor #54): a fresh/idle record must NOT order a re-route.
+    // 'Invoke bee-hive.' here is emitted by the prompt reminder on every turn of an
+    // idle session, which reads as 'there is workflow waiting' when there is none —
+    // the terminal-points-back-to-hive loop. Idle states what is true: nothing is
+    // active, and the next move belongs to the user.
+    next_action: 'No active bee work — awaiting a user request.',
   };
 }
 
@@ -1820,7 +1825,10 @@ export async function startFeature(
     state.phase = phaseValue;
     state.approved_gates = { context: false, shape: false, execution: false, review: false };
     state.summary = `Feature "${state.feature}" started at phase "${phaseValue}".`;
-    state.next_action = `Invoke bee-hive for "${state.feature}" (phase: ${phaseValue}).`;
+    // codex-loop (advisor #54): start-feature IS the routing decision — telling the
+    // agent to invoke hive again right after it is what re-opened the idle->hive loop
+    // one step later. Hand off forward to the phase that was just entered.
+    state.next_action = `Continue bee-${phaseValue} for "${state.feature}".`;
     writeState(root, state);
     return state;
   });
@@ -1953,7 +1961,7 @@ function startLane(root, { feature, mode, phase, sessionId, paths }) {
     phase,
     approved_gates: { context: false, shape: false, execution: false, review: false },
     summary: `Feature "${feature}" started at phase "${phase}" (lane).`,
-    next_action: `Invoke bee-hive for "${feature}" (phase: ${phase}).`,
+    next_action: `Continue bee-${phase} for "${feature}" (lane).`,
     created_at:
       existing && typeof existing.created_at === 'string' && existing.created_at
         ? existing.created_at
