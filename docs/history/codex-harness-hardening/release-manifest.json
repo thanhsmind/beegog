@@ -38,6 +38,12 @@
       "role": "runtime_lib"
     },
     {
+      "path": ".bee/bin/lib/compaction.mjs",
+      "sha256": "17f902d81830817c2b83a4b13bbaca94c794d1a459e911137f058ac331805898",
+      "mode": "644",
+      "role": "runtime_lib"
+    },
+    {
       "path": ".bee/bin/lib/decisions.mjs",
       "sha256": "60ee53219cb94e05a170e0e6491aa32d5e1573c5b111ff6ba954b5e538fcc369",
       "mode": "644",
@@ -185,7 +191,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "35057735a4c81fa3e26f3c95845bee40841d3d174d0d37e48434f647b0796dc9",
+      "sha256": "9de738f1a74e8cb652d30f0bf9d0c9d7c99079b20e695e673bec0e31d99889db",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -616,6 +622,13 @@
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/lib/commands_detect.mjs"
+    },
+    {
+      "path": ".claude-plugin/skills/bee-hive/templates/lib/compaction.mjs",
+      "sha256": "17f902d81830817c2b83a4b13bbaca94c794d1a459e911137f058ac331805898",
+      "mode": "644",
+      "role": "plugin_skill_claude_render",
+      "packagePath": ".claude-plugin/skills/bee-hive/templates/lib/compaction.mjs"
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/lib/decisions.mjs",
@@ -1193,7 +1206,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "9402145761eb3aed72ab1338731dc8c3ab73da41ea4517e613fa12244ee63ccb",
+      "sha256": "a169cbdcdde9b747f47777a1b995c30e6b5be4b53ed96f98c3e0c0837ff7f539",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1624,6 +1637,13 @@
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/lib/commands_detect.mjs"
+    },
+    {
+      "path": ".codex-plugin/skills/bee-hive/templates/lib/compaction.mjs",
+      "sha256": "17f902d81830817c2b83a4b13bbaca94c794d1a459e911137f058ac331805898",
+      "mode": "644",
+      "role": "plugin_skill_codex_render",
+      "packagePath": ".codex-plugin/skills/bee-hive/templates/lib/compaction.mjs"
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/lib/decisions.mjs",
@@ -2761,6 +2781,13 @@
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/commands_detect.mjs"
+    },
+    {
+      "path": "skills/bee-hive/templates/lib/compaction.mjs",
+      "sha256": "17f902d81830817c2b83a4b13bbaca94c794d1a459e911137f058ac331805898",
+      "mode": "644",
+      "role": "plugin_skill",
+      "packagePath": "skills/bee-hive/templates/lib/compaction.mjs"
     },
     {
       "path": "skills/bee-hive/templates/lib/decisions.mjs",
