@@ -1,15 +1,15 @@
 ---
 type: bee.area
 title: Feedback Digest — Data Model
-description: "The digest's own shape: the six allowed fields an entry may carry, the closed kind vocabulary, how pain is computed once, the dropped list, and the scoped auto-commit on filing — what a digest may hold and what it may never hold."
+description: "The digest's own shape: the six allowed fields an entry may carry, the closed kind vocabulary, how pain is computed once, the dropped list, and the scoped, gated auto-commit on filing — what a digest may hold and what it may never hold."
 timestamp: 2026-07-23
 bee:
   id: feedback-digest-data-model
   lifecycle: active
   areas: [feedback-digest]
   required_context: []
-  decisions: ["D2 8cd4c84e, 9880542e, c45d0fb3", D 9157d074]
-  sources: ["docs/history/evolving-loop/ (cells evolving-1 … evolving-11, capped)", docs/history/evolving-loop/reports/review-slice-a.md, docs/history/evolving-loop/reports/review-slice-b.md, "docs/history/cli-mutations/ (cell cli-mutations-2, capped; walkthrough.md)", "docs/specs/feedback-digest.md#R2", "docs/specs/feedback-digest.md#R7", "docs/specs/feedback-digest.md#R8", "docs/specs/feedback-digest.md#R9", "docs/specs/feedback-digest.md#E4", "docs/specs/feedback-digest.md#P8", "docs/history/backlog-auto-commit/ (cell backlog-auto-commit-1, capped)"]
+  decisions: ["D2 8cd4c84e, 9880542e, c45d0fb3", D 9157d074, D1 backlog-auto-commit, D2 backlog-auto-commit]
+  sources: ["docs/history/evolving-loop/ (cells evolving-1 … evolving-11, capped)", docs/history/evolving-loop/reports/review-slice-a.md, docs/history/evolving-loop/reports/review-slice-b.md, "docs/history/cli-mutations/ (cell cli-mutations-2, capped; walkthrough.md)", "docs/specs/feedback-digest.md#R2", "docs/specs/feedback-digest.md#R7", "docs/specs/feedback-digest.md#R8", "docs/specs/feedback-digest.md#R9", "docs/specs/feedback-digest.md#E4", "docs/specs/feedback-digest.md#P8", "docs/history/backlog-auto-commit/ (cell backlog-auto-commit-1, capped)", "docs/history/backlog-auto-commit/ (cell backlog-auto-commit-2, capped)"]
   authoritative_for: "feedback-digest: data model"
 ---
 
@@ -28,11 +28,24 @@ it, and what may not be written at all. Producing a digest from a repository's o
   (either spelling the digest accepts), its severity to the three-level scale, its label capped
   in length — and only then appended to the repository's raw records. A record that fails
   validation is refused with a corrective message naming the allowed values, and nothing is
-  written. When the append succeeds inside a version-controlled working copy, the raw-records
-  file is also committed to the repository's history in the same step, scoped to just that file
-  — no other in-progress change in the working copy is touched or swept in. Outside a
-  version-controlled working copy the append still succeeds; only the commit step is skipped,
-  silently and without error.
+  written.
+
+  Committing that append to the repository's history is a separate, explicitly requested step —
+  never an automatic side effect of every successful filing. The filer states, at filing time,
+  whether this record is a **new item being submitted into the processing queue** for someone
+  else to pick up later, or the filer's **own observation** about work already in flight. Only a
+  queue-submission is committed, scoped to just the raw-records file — no other in-progress
+  change in the working copy is touched or swept in. A self-observation is appended to the raw
+  records exactly the same as before, but is never committed on its own authority: committing an
+  agent's own mid-session friction/debt/finding note would land it on the shared history before
+  anyone reviewed it, so that class of record waits for whoever explicitly commits later. Outside
+  a version-controlled working copy the append still succeeds and no commit is ever attempted,
+  for either kind of record.
+
+  When a queue-submission's commit cannot proceed because the working copy already has an
+  unfinished merge in progress, the filer is told exactly that — the record is still appended,
+  but the response names the reason the commit did not happen, distinct from the ordinary
+  no-commit response every self-observation and every non-version-controlled filing already gets.
 
 ## Data Dictionary
 
@@ -128,11 +141,17 @@ itself a signal worth reading.
   remembered, and the next unremembered field was the next hole.
 - **R9** — Translating a record's type is idempotent: translating an already-translated type returns
   it unchanged. Without this the reader rejects exactly the vocabulary the writer emits.
-- **R10** (D 9157d074) — A successful filing never leaves the raw-records file as an unrecorded
-  change in a version-controlled working copy: the commit it produces touches that file alone,
-  regardless of what other changes happen to be in progress in the same working copy at the time.
-  A failure to record history is never surfaced as a filing failure — the record is already
-  correctly filed either way.
+- **R10** (D 9157d074; updated D1 backlog-auto-commit) — A queue-submission's successful filing
+  never leaves the raw-records file as an unrecorded change in a version-controlled working copy:
+  the commit it produces touches that file alone, regardless of what other changes happen to be
+  in progress in the same working copy at the time. A self-observation's successful filing is
+  never committed on its own authority — only appended. A failure to record history is never
+  surfaced as a filing failure — the record is already correctly filed either way.
+- **R16** (D2 backlog-auto-commit) — When a queue-submission's commit cannot proceed because the
+  working copy has an unfinished merge in progress, that specific reason is reported back to the
+  filer instead of looking identical to an ordinary no-commit response. Every other reason a
+  commit does not happen (no version control, an unexpected underlying failure) stays unreported
+  by design — only the merge-in-progress case is distinguished today.
 
 ## Edge Cases Settled
 
@@ -149,8 +168,13 @@ itself a signal worth reading.
 - **P8** — Tests: `skills/bee-hive/templates/tests/test_lib.mjs` (124 assertions, incl. a
   table-driven payload sweep over every allowed field, the ranking matrix, and a control-byte sweep
   over vendored sources)
-- **P9** — Filing + scoped commit: `skills/bee-hive/templates/bee.mjs` `handleBacklogAdd` /
+- **P9** — Filing + scoped, gated commit: `skills/bee-hive/templates/bee.mjs` `handleBacklogAdd` /
   `commitBacklogRow` (mirrored to `.bee/bin/bee.mjs` and the plugin/skill trees via
-  `skills/bee-hive/scripts/onboard_bee.mjs --apply`); example coverage in
-  `skills/bee-hive/templates/tests/test_bee_cli.mjs` (`backlog.add` example, run against a
-  directory with no version control to prove the silent-skip path)
+  `skills/bee-hive/scripts/onboard_bee.mjs --apply`); the queue-submission/self-observation
+  distinction is the `--queue-submit` flag (default false); the merge-in-progress check resolves
+  the real git-dir (`git rev-parse --git-dir`) and looks for `MERGE_HEAD` there before attempting
+  the commit. `lib/command-registry.mjs`'s `backlog.add` entry documents the flag. Example
+  coverage in `skills/bee-hive/templates/tests/test_bee_cli.mjs` (`backlog.add` example, run
+  against a directory with no version control to prove the silent-skip path) and the real-git
+  fixture tests in `skills/bee-hive/templates/tests/test_cli_cells.mjs` (queue-submit
+  omitted/true, and the merge-in-progress skip).
