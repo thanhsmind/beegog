@@ -1,15 +1,15 @@
 ---
 type: bee.area
 title: "Workflow State — authoring a unit of work, revising its plan, and the frozen plan document"
-description: "How a slice of work units is created all-or-nothing, which of a unit's plan fields may be revised afterwards and which are frozen audit, how a unit's change is classified at authoring, and why the approved plan document stops changing the moment its gate is granted."
-timestamp: 2026-07-22
+description: "How a slice of work units is created all-or-nothing, which of a unit's plan fields may be revised afterwards and which are frozen audit, how a unit's change is classified at authoring, how a scope-derived regeneration obligation refuses authoring without it, and why the approved plan document stops changing the moment its gate is granted."
+timestamp: 2026-07-23
 bee:
   id: workflow-state-cells-authoring-and-revision
   lifecycle: active
   areas: [workflow-state]
   required_context: [areas/workflow-state/overview.md]
-  decisions: ["lane-ceremony-v3 D1/D2/D9 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19 — plan document frozen at shape approval, slice-in-units)", self-correcting-loop D3 with Validating amendment Δ4 (change classification and the advisory verification standard)]
-  sources: [cells-update-verb cell cuv-1 (2026-07-12), dispatcher-unify cells-batch-add suite rows (v0.1.27), "post-advisor-hardening cell pah-2 (cells add/update manifest-lint advisory, 2026-07-18)", "lane-ceremony-v3 cells lcv3-1..lcv3-5 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19)", "docs/specs/workflow-state.md#B7", "docs/specs/workflow-state.md#B10", "docs/specs/workflow-state.md#B25", "docs/specs/workflow-state.md#B29", "docs/specs/workflow-state.md#R46", "docs/specs/workflow-state.md#E14", "docs/specs/workflow-state.md#P9", "docs/specs/workflow-state.md#P12"]
+  decisions: ["lane-ceremony-v3 D1/D2/D9 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19 — plan document frozen at shape approval, slice-in-units)", self-correcting-loop D3 with Validating amendment Δ4 (change classification and the advisory verification standard), "regen-obligation-derived D1/D2 (derived regen obligation refuses at authoring, recorded escape hatch; roots derived from the tools, never hard-coded — 2026-07-23)"]
+  sources: [cells-update-verb cell cuv-1 (2026-07-12), dispatcher-unify cells-batch-add suite rows (v0.1.27), "post-advisor-hardening cell pah-2 (cells add/update manifest-lint advisory, 2026-07-18)", "lane-ceremony-v3 cells lcv3-1..lcv3-5 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19)", "regen-obligation-derived cell ro-1 (12 suite rows + mutation red, commit e4ae329, 2026-07-23)", "docs/specs/workflow-state.md#B7", "docs/specs/workflow-state.md#B10", "docs/specs/workflow-state.md#B25", "docs/specs/workflow-state.md#B29", "docs/specs/workflow-state.md#R46", "docs/specs/workflow-state.md#E14", "docs/specs/workflow-state.md#P9", "docs/specs/workflow-state.md#P12"]
   authoritative_for: "workflow-state: unit-of-work authoring, plan revision, and the frozen plan document"
 ---
 
@@ -49,7 +49,9 @@ verification command that checks the release manifest while the unit's file
 list omits the manifest itself (a cold implementer would end red with no
 sanctioned fix). The lint is a loud advisory line naming the trap and the fix —
 it never refuses the write, never changes the outcome, and tolerates malformed
-shapes silently (cells pah-2, 2026-07-18).
+shapes silently (cells pah-2, 2026-07-18). This advisory lint keeps exactly its
+original coverage; the scope-DERIVED regeneration obligation is a separate,
+refusing check (B37).
 
 **B25 — The approved plan document is frozen; the current slice lives only in
 work units.** Trigger: shape approval is granted for a feature whose lane keeps
@@ -79,12 +81,39 @@ never appears in the machine-parseable result. What each actor observes:
 authoring behavior is otherwise unchanged; an author who ignores the warning
 is informed, not stopped (self-correcting-loop D3, Δ4).
 
+**B37 — A unit whose own scope implies a regeneration obligation cannot be
+authored without carrying it.** Trigger: creating or revising a unit of work.
+What happens: the unit's scope paths are checked against the roots the release
+manifest tool itself declares it hashes — the roots are DERIVED from the tools
+at check time, never copied into the guard, so a root added later is enforced
+with no guard change. When any scope path falls under a hashed root, the unit's
+verification command must include the release-manifest check and its scope must
+include the manifest record itself; when a path additionally falls under a root
+the runtime-mirror ledger covers, the verification command must also include
+the ledger-parity check. A unit missing any of these is refused — in a batch,
+zero units are written; in a revision, the unit is left untouched — with a
+typed error naming the offending path, the root it hit, and the exact command
+to add. The refusal is satisfiable by a deliberate recorded acknowledgement: a
+named field on the unit carrying a non-empty written reason (a bare yes is
+refused — the hatch must carry a reason); the refusal message itself names the
+field, so skipping is always an act with a name in the unit's record, never an
+oversight. A declared tool that is present but yields no derivable roots makes
+the guard refuse loudly rather than pass blind; a host repo without the tools
+owes nothing. What each actor observes: authors cannot forget the obligation,
+only decline it on the record; the advisory lint (B10) is unchanged for its
+narrower case (regen-obligation-derived D1/D2, cell ro-1, 2026-07-23).
+
 ## Business Rules
 
 - R46 — A unit's change classification is set explicitly or derived only from
   the behavior-change flag — never any richer auto-derivation — and an
   insufficient verification plan is reported as an authoring-time warning on
   the advisory channel, never a refusal (self-correcting-loop D3, Δ4).
+- R56 — A regeneration obligation implied by a unit's own scope refuses the
+  authoring write unless the verification carries the derived checks or the
+  unit records a reasoned acknowledgement; the obligated roots are always
+  derived from the regeneration tools themselves, never hard-coded in the
+  guard (regen-obligation-derived D1/D2, 2026-07-23).
 
 ## Edge Cases Settled
 
@@ -100,3 +129,9 @@ is informed, not stopped (self-correcting-loop D3, Δ4).
   in `skills/bee-hive/templates/lib/cells.mjs`; CLI `bee.mjs cells update --id ID
   --file patch.json | --stdin` (byte-mirrored to `.bee/bin/`). Evidence: cell
   `.bee/cells/cuv-1.json` (commit 127abb0), 7 suite checks.
+- Derived regen obligation: `deriveManifestScope` + `REGEN_ACK_FIELD`
+  (`regen_obligation_ack`) in `skills/bee-hive/templates/lib/cells.mjs`,
+  enforced in `addCells`/`updateCell`; roots parsed from
+  `scripts/release_manifest.mjs` and `scripts/ledger_parity.mjs`. Evidence:
+  12 suite rows in `skills/bee-hive/templates/tests/test_bee_cli.mjs` +
+  mutation red, commit e4ae329 (cell ro-1, 2026-07-23).
