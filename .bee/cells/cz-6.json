@@ -82,6 +82,46 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "anchor-exactly-once",
+            "status": "PASS",
+            "evidence": "ANCHOR_LEAD_SOURCES..intentLeadBlock block diffs IDENTICAL across ccdc3b9^..ccdc3b9 (bee-session-init.mjs:44-75); CAPSULE_SOURCE is a separate constant at :42. Assertion is occurrences(out, INTENT ANCHOR)===1 plus a second count on the verbatim objective, not startsWith. Judge drove the real hook with source=compact on an anchored fixture: anchor header count 1, objective count 1, capsule header count 1, status 0."
+          },
+          {
+            "id": "handoffOutcome-reaches-capsule-and-row-discriminates",
+            "status": "PASS",
+            "evidence": "Judge simulated the drop: temp copy of the hook calling buildCompactCapsule(root,{sessionId}) (equivalent to null via the default at compaction.mjs:662). Real hook -> all three assertions PASS. Mutated hook -> all three FAIL, byte diff shows the Adoption-not-applied line present in real and empty in mutated. The recorded red at .bee/tmp/cz-6/red.txt confirms the D26 confound the worker reported: the un-wired full preamble DOES render that line, and what red-fails the shipped row is the capsule-header assertion, not the line presence."
+          },
+          {
+            "id": "D8-non-compact-sources",
+            "status": "PASS",
+            "evidence": "Resume row is a real byte comparison against buildSessionPreamble, not a substring check. Judge four-source drive: startup/clear/resume all bodyIsFullPreamble=true isCapsule=false compactionRecords=0; compact bodyIsFullPreamble=false isCapsule=true compactionRecords=1. Advisory: startup/clear have no through-the-hook byte row in the capsule suite, covered only by relative anchor-vs-control rows plus the golden row."
+          },
+          {
+            "id": "thin-caller-D3-and-fallback",
+            "status": "PASS",
+            "evidence": "sessionBody holds one source comparison and two lib calls; all capsule/record logic stays in compaction.mjs. Judge injected a throwing buildCompactCapsule: status 0, output silently reverts to the full preamble, stderr empty, BUT .bee/logs/hooks.jsonl records a distinctly tagged session-init-capsule error and the D5 record still lands. Masked in bytes, audible in the log — strictly louder than the pre-existing intentLeadBlock catch{}. ADVISORY: the try scope covers the render, not just the import its comment justifies; neither fallback arm is tested; trace.deviations is empty though the fallback was not in the cell action."
+          },
+          {
+            "id": "test_hook_contracts-untouched-and-green",
+            "status": "PASS",
+            "evidence": "git show ccdc3b9 --name-only lists 7 files, hooks/test_hook_contracts.mjs absent. Judge re-ran the full verify: capsule suite 14/0; hook contracts 193 rows 0 failing ALL PASS; lib mirror byte-identical 29 lib + 10 hook; release_manifest --check 499 files."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "opus",
+        "judge_model": "opus",
+        "model_independence": "same-model",
+        "recorded_at": "2026-07-23T07:54:55.409Z"
+      }
     ]
   },
   "tier": "ceiling"

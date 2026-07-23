@@ -121,6 +121,56 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "anchor-independence",
+            "status": "PASS",
+            "evidence": "readIntent has 3 reachable call sites in compaction.mjs:291,358,563; :563 is compactCheck check 7 named anchor, muted by CAPSULE_MUTED_CHECKS (compaction.mjs:588) before the STATE MISMATCH render (:704-711); :358 anchorMissing is not called by buildCompactCapsule; :291 writes anchor_present which readCompactionCounts never reads. No other transitively-called lib module reads .bee/intent/. Independent probe: two repos at the SAME path, identical except .bee/intent/, FAILING sweep -> BYTE EQUAL true, 1757==1757. Second probe with the anchor written BEFORE the log so records differ (anchor_present false vs true) -> BYTE EQUAL true. The muted set is the complete fix, not a narrower one."
+          },
+          {
+            "id": "handoff-outcome-reaches-render",
+            "status": "PASS",
+            "evidence": "Probe rendered the - Adoption not applied line inside the HANDOFF block; inject.mjs:344-346 is the preserved :384-386 reason line. Verb: bee.mjs:2454-2461 passes nonAdoptingHandoffOutcome(root); programmatic diff of bee-session-init.mjs:117-120 vs compaction.mjs:611 identical modulo the interpolated variable name, same {ok:false, code:WRONG_SOURCE} shape."
+          },
+          {
+            "id": "golden-not-regenerated",
+            "status": "PASS",
+            "evidence": "git diff a4ed971 HEAD on the golden is empty; blob sha identical at both; absent from git show --stat 74ec03e. Stronger: all 7 golden cases rendered through a4ed971 PRE-extraction inject.mjs (verified lacking export function onboardingLine) -> OLD==golden, NEW==golden, OLD==NEW all true for all 7. Normalization is a single split(BEE_VERSION).join at test_compact_capsule.mjs:488-494 — the version literal only."
+          },
+          {
+            "id": "non-compact-behavior-unchanged",
+            "status": "PASS",
+            "evidence": "50-combination matrix (10 phases x 5 gate sets) comparing c60c4bb inject.mjs against HEAD: buildPromptReminder and buildSessionPreamble both 0 diffs. v1.11.1 semantics survive: firstOpenGate reviewing->review, swarming->null, idle->null, compounding-complete->null (inject.mjs:258-268)."
+          },
+          {
+            "id": "d19-anchor-rule-and-phase-label",
+            "status": "PASS",
+            "evidence": "Capsule rendered against a repo holding two anchor files: INTENT ANCHOR absent, anchor bodies absent, the substring anchor absent entirely. Status line renders - Phase: swarming | Mode: standard | Feature: demo | Lane: none (compaction.mjs:717-719), so test_hook_contracts.mjs:2762 indexOf ordering stays meaningful. That row uses two separate fixture roots and no capsule byte carries a root path, so it stays valid once cz-6 wires it."
+          },
+          {
+            "id": "second-cli-row-is-a-real-gap",
+            "status": "PASS",
+            "evidence": "test_compact_capsule.mjs:355-388 exercises buildCompactCapsule directly, so handleStateCompactCapsule could pass null and that suite would stay green. The added test_bee_cli.mjs row drives runModuleWorker with state compact-capsule --session-id sess-demo and asserts the Adoption-not-applied line on stdout — the only assertion pinning the CALL SITE, which is what D27 is."
+          },
+          {
+            "id": "verify-reproduced",
+            "status": "PASS",
+            "evidence": "Judge re-ran the cell verify at HEAD itself: test_compact_capsule 11/0; test_hook_contracts 193 rows 0 failing ALL PASS; test_bee_cli 250/0; test_lib_mirror 4 PASS (29 lib + 10 hook byte-identical); release_manifest --check 499 files; ledger_parity ok."
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "opus",
+        "judge_model": "opus",
+        "model_independence": "same-model",
+        "recorded_at": "2026-07-23T07:28:20.462Z"
+      }
     ]
   },
   "tier": "ceiling"
