@@ -38,19 +38,6 @@
       "worktree-holds.mjs": "942d180f0c04c156adf19f76992652c7907320e708dfb91da4587de407a00b55",
       "worktree-store.mjs": "76b47ff9018d288d266145db56eb4ff05464062734aaa09c1cfb186f1fbbeefb"
     },
-    "repo_hooks": {
-      "adapter.mjs": "3b5fcdca501e7a6cbb2988fcd6aa5af43c30e545dfa205b877a1d8b68f64fd85",
-      "bee-codex-subagent-audit.mjs": "f9f6900705aa20dfc0035a8c8c5c4b22fc56c9d0a4953e1b0ba3fd9466dec85e",
-      "bee-session-init.mjs": "0f2bf378191f21d75063d0823374f616df073bf8324ae6e4bd813a029bdf8351",
-      "bee-prompt-context.mjs": "1efd6ed7f90a7025648a550245c62b999a77dac77a7d1f206a44bef2e4626a6a",
-      "bee-write-guard.mjs": "ca7f73150ed59db295dfae758ecea27594b29343f67429340e0f19cf5fc24474",
-      "bee-state-sync.mjs": "9f996676e532233f68c08fe56a2a533cd6d2e3b54d2e34f3c5216389aeaa6357",
-      "bee-chain-nudge.mjs": "0520c71fad2513d93666ad4c3353b7196faeeac382430b1e1395fabd0febd9cb",
-      "bee-session-close.mjs": "c6ffb52f99e169cf7883e4b88d488e30d99b87b445b1376f786d147056d3a219",
-      "bee-model-guard.mjs": "07c22de49b17c6d349bc2ae94ad35721471fd1437a49cdc0feaad3b2d061e829",
-      "bee-tools-logger.mjs": "668634222153c37d858bd5cb8ac5183507bc0da643ef78929219dcf810a39224",
-      ".codex/hooks.json": "882cb31457271a7e30de8a257de824e4da2eaa726d9f8af6b3e683969c3763ae"
-    },
     "statusline": {
       "statusline-command.sh": "de03ffbc330cef57fe2c6ced4a56af1987b7720a2ef35277e1ee95e2945fab21",
       "statusline-usage.mjs": "1914f6e7d421b240be3987f50d40a5151723b5302866b8838f6fb5a8de438f01"
@@ -73,6 +60,6 @@
       "note": "Codex has no per-agent model selection (DEFAULT_MODELS.codex is all-null by design, templates/lib/state.mjs) - tiers are enforced as a read budget + output cap in the worker prompt instead. No agent files are rendered under .agents/ (AO11)."
     }
   },
-  "created_at": "2026-07-21T17:36:03.955Z",
-  "updated_at": "2026-07-23T10:08:42.550Z"
+  "created_at": "2026-07-23T10:10:11.450Z",
+  "updated_at": "2026-07-23T10:10:11.450Z"
 }

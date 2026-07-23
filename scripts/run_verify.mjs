@@ -476,6 +476,60 @@ function filterExcludedSuites(suites) {
   return suites.filter((entry) => !excluded.has(entry[0]));
 }
 
+// Scoped include filter (vs-1): a repeatable/comma-separated `--only <token>`
+// CLI flag plus a BEE_VERIFY_ONLY env var let a caller run a narrow subset of
+// suites while iterating — full verify is still required before close, which
+// is why every scoped run prints a loud banner rather than blending in with
+// an ordinary green summary. CLI wins when both are set (parseOnlyArgs is
+// only even consulted first). A token matches a runnable by case-insensitive
+// substring against EITHER its repo-relative path OR its display label
+// (suiteLabel), so both glob-discovered suites and EXTRA_SUITES entries with
+// trailing args (e.g. "okf_migrate --check onboarding") are reachable by a
+// short token. Applied BEFORE filterExcludedSuites so BEE_VERIFY_EXCLUDE can
+// still narrow the included set, never widen it. Unset (the default, every
+// caller today): zero behavior change, byte-identical to before this
+// existed.
+function parseOnlyArgs(argv) {
+  const tokens = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] !== "--only") continue;
+    const value = argv[i + 1];
+    if (!value) continue;
+    for (const raw of value.split(",")) {
+      const token = raw.trim();
+      if (token) tokens.push(token);
+    }
+  }
+  return tokens;
+}
+
+function resolveOnlyTokens() {
+  const cliTokens = parseOnlyArgs(process.argv.slice(2));
+  if (cliTokens.length > 0) return cliTokens; // CLI wins over env when both are set
+  const raw = process.env.BEE_VERIFY_ONLY;
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+export function filterSuitesByOnly(suites, tokens) {
+  if (tokens.length === 0) return suites; // true no-op: same array reference
+  const lowerTokens = tokens.map((t) => t.toLowerCase());
+  return suites.filter((entry) => {
+    const relPath = entry[0].toLowerCase();
+    const label = suiteLabel(entry).toLowerCase();
+    return lowerTokens.some((t) => relPath.includes(t) || label.includes(t));
+  });
+}
+
+function printScopedBanner(selected, total) {
+  console.log(
+    `SCOPED RUN (--only): ${selected} of ${total} runnables selected — full verify still required before close`,
+  );
+}
+
 export function runOne(entry) {
   const [script, ...args] = entry;
   const start = Date.now();
@@ -562,7 +616,17 @@ async function main() {
     process.exit(1);
   }
 
-  const activeSuites = filterExcludedSuites(rootFilteredSuites);
+  const onlyTokens = resolveOnlyTokens();
+  const onlyFilteredSuites = filterSuitesByOnly(rootFilteredSuites, onlyTokens);
+  const isScopedRun = onlyTokens.length > 0;
+  if (isScopedRun && onlyFilteredSuites.length === 0) {
+    console.error(
+      `run_verify: --only "${onlyTokens.join(",")}" matched zero suites — refusing a silent trivial-green run. FIX: check the token(s) against a suite's repo-relative path or display name.`,
+    );
+    process.exit(1);
+  }
+
+  const activeSuites = filterExcludedSuites(onlyFilteredSuites);
   if (process.env.BEE_VERIFY_EXCLUDE && activeSuites.length === 0) {
     console.error(
       `run_verify: BEE_VERIFY_EXCLUDE="${process.env.BEE_VERIFY_EXCLUDE}" excluded every remaining suite — refusing a silent trivial-green run. FIX: check the excluded paths.`,
@@ -589,6 +653,10 @@ async function main() {
   const wallStart = Date.now();
   const results = await runPool(units, concurrency);
   const wallMs = Date.now() - wallStart;
+
+  if (isScopedRun) {
+    printScopedBanner(onlyFilteredSuites.length, rootFilteredSuites.length);
+  }
 
   results.sort((a, b) => a.label.localeCompare(b.label));
 
@@ -621,6 +689,9 @@ async function main() {
   console.log(
     `${anyFail ? "FAIL" : "PASS"} run_verify: ${results.length} suite(s), concurrency=${concurrency}, wall=${wallMs}ms`,
   );
+  if (isScopedRun) {
+    printScopedBanner(onlyFilteredSuites.length, rootFilteredSuites.length);
+  }
 
   process.exit(anyFail ? 1 : 0);
 }
