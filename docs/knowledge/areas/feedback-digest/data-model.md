@@ -1,14 +1,15 @@
 ---
 type: bee.area
 title: Feedback Digest — Data Model
-description: "The digest's own shape: the six allowed fields an entry may carry, the closed kind vocabulary, how pain is computed once, and the dropped list — what a digest may hold and what it may never hold."
-timestamp: 2026-07-22
+description: "The digest's own shape: the six allowed fields an entry may carry, the closed kind vocabulary, how pain is computed once, the dropped list, and the scoped auto-commit on filing — what a digest may hold and what it may never hold."
+timestamp: 2026-07-23
 bee:
   id: feedback-digest-data-model
   lifecycle: active
   areas: [feedback-digest]
-  decisions: [D2 8cd4c84e, 9880542e, c45d0fb3]
-  sources: ["docs/history/evolving-loop/ (cells evolving-1 … evolving-11, capped)", docs/history/evolving-loop/reports/review-slice-a.md, docs/history/evolving-loop/reports/review-slice-b.md, "docs/history/cli-mutations/ (cell cli-mutations-2, capped; walkthrough.md)", "docs/specs/feedback-digest.md#R2", "docs/specs/feedback-digest.md#R7", "docs/specs/feedback-digest.md#R8", "docs/specs/feedback-digest.md#R9", "docs/specs/feedback-digest.md#E4", "docs/specs/feedback-digest.md#P8"]
+  required_context: []
+  decisions: ["D2 8cd4c84e, 9880542e, c45d0fb3", D 9157d074]
+  sources: ["docs/history/evolving-loop/ (cells evolving-1 … evolving-11, capped)", docs/history/evolving-loop/reports/review-slice-a.md, docs/history/evolving-loop/reports/review-slice-b.md, "docs/history/cli-mutations/ (cell cli-mutations-2, capped; walkthrough.md)", "docs/specs/feedback-digest.md#R2", "docs/specs/feedback-digest.md#R7", "docs/specs/feedback-digest.md#R8", "docs/specs/feedback-digest.md#R9", "docs/specs/feedback-digest.md#E4", "docs/specs/feedback-digest.md#P8", "docs/history/backlog-auto-commit/ (cell backlog-auto-commit-1, capped)"]
   authoritative_for: "feedback-digest: data model"
 ---
 
@@ -27,7 +28,11 @@ it, and what may not be written at all. Producing a digest from a repository's o
   (either spelling the digest accepts), its severity to the three-level scale, its label capped
   in length — and only then appended to the repository's raw records. A record that fails
   validation is refused with a corrective message naming the allowed values, and nothing is
-  written.
+  written. When the append succeeds inside a version-controlled working copy, the raw-records
+  file is also committed to the repository's history in the same step, scoped to just that file
+  — no other in-progress change in the working copy is touched or swept in. Outside a
+  version-controlled working copy the append still succeeds; only the commit step is skipped,
+  silently and without error.
 
 ## Data Dictionary
 
@@ -123,6 +128,11 @@ itself a signal worth reading.
   remembered, and the next unremembered field was the next hole.
 - **R9** — Translating a record's type is idempotent: translating an already-translated type returns
   it unchanged. Without this the reader rejects exactly the vocabulary the writer emits.
+- **R10** (D 9157d074) — A successful filing never leaves the raw-records file as an unrecorded
+  change in a version-controlled working copy: the commit it produces touches that file alone,
+  regardless of what other changes happen to be in progress in the same working copy at the time.
+  A failure to record history is never surfaced as a filing failure — the record is already
+  correctly filed either way.
 
 ## Edge Cases Settled
 
@@ -139,3 +149,8 @@ itself a signal worth reading.
 - **P8** — Tests: `skills/bee-hive/templates/tests/test_lib.mjs` (124 assertions, incl. a
   table-driven payload sweep over every allowed field, the ranking matrix, and a control-byte sweep
   over vendored sources)
+- **P9** — Filing + scoped commit: `skills/bee-hive/templates/bee.mjs` `handleBacklogAdd` /
+  `commitBacklogRow` (mirrored to `.bee/bin/bee.mjs` and the plugin/skill trees via
+  `skills/bee-hive/scripts/onboard_bee.mjs --apply`); example coverage in
+  `skills/bee-hive/templates/tests/test_bee_cli.mjs` (`backlog.add` example, run against a
+  directory with no version control to prove the silent-skip path)
