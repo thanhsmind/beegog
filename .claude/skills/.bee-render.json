@@ -24,7 +24,7 @@
     },
     {
       "name": "bee-executing",
-      "sha256": "cec76f5ed43f183bbd2462efc6939bd9a7de54b9718a25f5ef17316e81473426"
+      "sha256": "8a36a2d2ab2112d604c86017e9fe6909d0432ef1292b469ecfec3b6d070168c0"
     },
     {
       "name": "bee-exploring",
@@ -44,7 +44,7 @@
     },
     {
       "name": "bee-planning",
-      "sha256": "6367c40bfe68c2f9c38ce6b6cbfdb38d0c809fc22880a8042ad073bc43fa1a47"
+      "sha256": "55862541577bb13d3bf4fff3fcde6cde425bdd8701f0b87a21143b27d487dfbd"
     },
     {
       "name": "bee-qualifying",
