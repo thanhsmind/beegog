@@ -201,7 +201,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge', 'intent'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'herding', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge', 'intent'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -304,11 +304,11 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
 });
 
 await check('DA5 bijection: the only dot-free registry entries are "status" and "doctor", and every entry\'s group is one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
-  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge', 'intent']);
+  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'herding', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge', 'intent']);
   const allowedDotFree = new Set(['status', 'doctor']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
-    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config|dispatch|tmp`);
+    assert(allowedGroups.has(group), `${entry.name}: group "${group}" is not one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|herding|config|dispatch|tmp`);
     if (!entry.name.includes('.')) {
       assert(allowedDotFree.has(entry.name), `dot-free registry entry "${entry.name}" is not one of status|doctor — only those may be dot-free`);
     }
@@ -1824,6 +1824,51 @@ await check('worktree.register/list/unregister examples run through the real dis
     assert(!(realId in finalGrants), `real unregister (no --id) should remove the current worktree's own grant, got ${JSON.stringify(finalGrants)}`);
   } finally {
     fs.rmSync(wtTmp, { recursive: true, force: true });
+  }
+});
+
+// herding-dispatch-lock-toggle: herding.enable/disable/status resolve the
+// MAIN checkout root via `git rev-parse --git-common-dir` (mirroring
+// dispatch-interlock.mjs exactly), so — like the worktree group above — these
+// examples need a REAL git repo, not the shared `.bee`-only `root` fixture.
+await check('herding.enable/status/disable examples run through the real dispatcher against a real git repo', async () => {
+  const herdingTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-herding-'));
+  try {
+    const git = (cwd, args) => {
+      const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert(r.status === 0, `git ${args.join(' ')} (cwd=${cwd}) failed: ${r.stderr}`);
+      return r.stdout;
+    };
+
+    const herdingMain = path.join(herdingTmp, 'main');
+    fs.mkdirSync(herdingMain);
+    git(herdingMain, ['init', '-q', '-b', 'main']);
+    git(herdingMain, ['config', 'user.email', 's@e']);
+    git(herdingMain, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(herdingMain, 'f'), 'x');
+    git(herdingMain, ['add', '.']);
+    git(herdingMain, ['commit', '-q', '-m', 'init']);
+    fs.mkdirSync(path.join(herdingMain, '.bee'), { recursive: true });
+    writeJsonAtomic(path.join(herdingMain, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+
+    const marker = path.join(herdingMain, '.bee', 'tmp', 'bee-herding.enable');
+
+    // registry example: 'bee herding status --json'
+    const offResult = await assertExampleOk('herding.status', { cwd: herdingMain });
+    assert(JSON.parse(offResult.stdout).enabled === false, `expected enabled:false before any enable, got ${offResult.stdout}`);
+
+    // registry example: 'bee herding enable --json'
+    await assertExampleOk('herding.enable', { cwd: herdingMain });
+    assert(fs.existsSync(marker), 'herding.enable example should create the owner marker');
+
+    const onResult = await assertExampleOk('herding.status', { cwd: herdingMain, exampleIndex: 0 });
+    assert(JSON.parse(onResult.stdout).enabled === true, `expected enabled:true after enable, got ${onResult.stdout}`);
+
+    // registry example: 'bee herding disable --json'
+    await assertExampleOk('herding.disable', { cwd: herdingMain });
+    assert(!fs.existsSync(marker), 'herding.disable example should remove the owner marker');
+  } finally {
+    fs.rmSync(herdingTmp, { recursive: true, force: true });
   }
 });
 

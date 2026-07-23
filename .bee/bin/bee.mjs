@@ -125,6 +125,7 @@ import { findForeignHolds, releaseHolds, sweepExpiredHolds, withHoldsLock, inser
 // maxAttempts override is ever passed here.
 import { withStoreLock } from './lib/lock.mjs';
 import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree } from './lib/worktree-store.mjs';
+import { enableHerding, disableHerding, herdingStatus } from './lib/herding.mjs';
 import { prepareDispatch } from './lib/dispatch-prepare.mjs';
 import {
   classifyNativeTransport,
@@ -3667,6 +3668,34 @@ async function handleWorktreeUnregister(root, flags) {
   return { result: { ok: true, id, main_root: mainRoot }, text: `Removed worktree grant for id ${id}.` };
 }
 
+// ─── herding: enable/disable/status the dispatch loop's owner enable marker
+// (herding-dispatch-lock-toggle, decisions D1-D5). lib/herding.mjs owns the
+// filesystem operation and mirrors dispatch-interlock.mjs's own git-common-dir
+// resolution and ENABLE_BASENAME exactly, so this group and the read-only
+// interlock always agree on the same file. D4: these verbs are a convenience
+// for the human owner's own terminal action only — never called from
+// dispatch-interlock.mjs, bootstrap, dispatch, merge, or any other bee
+// automation/skill/agent code. D5: no runtime guard (no TTY check, not
+// excluded from --help --json) — convention-only safety, same level as
+// today's manual touch/rm. ──────────────────────────────────────────────────
+function handleHerdingEnable(_root, _flags) {
+  const result = enableHerding();
+  return { result, text: `Enabled bee-herding dispatch: ${result.marker}` };
+}
+
+function handleHerdingDisable(_root, _flags) {
+  const result = disableHerding();
+  return { result, text: `Disabled bee-herding dispatch: ${result.marker}` };
+}
+
+function handleHerdingStatus(_root, _flags) {
+  const result = herdingStatus();
+  const text = result.enabled
+    ? `enabled — owner marker present (${result.marker})`
+    : `disabled — no owner marker at ${result.marker}`;
+  return { result, text };
+}
+
 // ─── tmp sweep (tree-hygiene th-4, CONTEXT D1/D2) ──────────────────────────
 // `bee tmp sweep` — the broom for the one canonical scratch home (.bee/tmp/
 // and .bee/spikes/). All safety (containment, symlink-escape refusal) and
@@ -4980,6 +5009,11 @@ function worktreeUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister, new, merge.`;
 }
 
+function herdingUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: enable, disable, status.`;
+}
+
 function dispatchUsageFallback(leading) {
   const verb = leading[1];
   return `Unknown command "${verb || '(missing)'}". Use: prepare.`;
@@ -5033,6 +5067,7 @@ const GROUP_USAGE_FALLBACKS = {
   feedback: feedbackUsageFallback,
   perf: perfUsageFallback,
   worktree: worktreeUsageFallback,
+  herding: herdingUsageFallback,
   config: configUsageFallback,
   dispatch: dispatchUsageFallback,
   recovery: recoveryUsageFallback,
@@ -5134,6 +5169,9 @@ const HANDLERS = {
   'worktree.unregister': handleWorktreeUnregister,
   'worktree.new': handleWorktreeNew,
   'worktree.merge': handleWorktreeMerge,
+  'herding.enable': handleHerdingEnable,
+  'herding.disable': handleHerdingDisable,
+  'herding.status': handleHerdingStatus,
   'tmp.sweep': handleTmpSweep,
   'config.get': handleConfigGet,
   'config.set': handleConfigSet,

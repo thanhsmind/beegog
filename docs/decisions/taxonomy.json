@@ -173,6 +173,12 @@
     "swarming",
     "worktree-coordination",
     "merge",
-    "release-manifest"
+    "release-manifest",
+    "herding-dispatch-lock-toggle",
+    "safety",
+    "exploring",
+    "gate",
+    "bee-herding",
+    "dispatch-guard"
   ]
 }
