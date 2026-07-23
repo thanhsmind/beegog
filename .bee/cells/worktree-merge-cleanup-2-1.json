@@ -12,22 +12,41 @@
       "herding-dispatch-lock-toggle is merged into main and its worktree/branch/grant are cleaned up"
     ]
   },
-  "status": "claimed",
+  "status": "capped",
   "deps": [],
   "decisions": [],
   "read_first": [],
   "trace": {
     "worker": "orchestrator-wmc2",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "Merged herding-dispatch-lock-toggle worktree into main (5 real conflicts: docs/backlog.md resolved by taking the delivered/done row text, docs/decisions/taxonomy.json resolved as a tag-list union, 3 generated sidecars + release-manifest.json resolved by regenerating fresh post-merge via render_plugin_skill_trees.mjs + release_manifest.mjs --write). Full verify 88/88 green. Worktree removed, branch deleted, grant unregistered -- zero worktree grants remain.",
+    "files_changed": [
+      "docs/backlog.md",
+      "docs/decisions/taxonomy.json",
+      "docs/history/codex-harness-hardening/release-manifest.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-23T09:14:29.384Z",
     "behavior_change": false,
-    "verification_evidence": null,
+    "verification_evidence": "{\n  \"tests_inspected\": \"node scripts/run_verify.mjs full 88-suite chain, run twice (once mid-resolution catching a missing manifest entry for the new herding.mjs/test_herding_cli.mjs files, once clean after regenerating release-manifest.json)\",\n  \"tests_added_or_changed\": \"none -- infra merge cell\",\n  \"red_failure_evidence\": \"First post-merge verify: 88 suites, 1 FAIL (skills/bee-hive/scripts/test_plugin_distribution.mjs) -- release inventory missing the new herding.mjs/test_herding_cli.mjs entries because release-manifest.json had been taken via `git checkout --ours` (stale, pre-merge) rather than regenerated.\",\n  \"verification_run\": \"After node scripts/release_manifest.mjs --write (499->506 files, picking up the merged worktree's new files): run_verify.mjs PASS 88/88.\"\n}\n",
     "verify_output": null,
-    "verify_passed": null,
+    "verify_passed": true,
     "claim_session": "924196a6-afb7-4424-abfa-9a1e037da450",
-    "claimed_at": "2026-07-23T09:09:07.170Z"
+    "claimed_at": "2026-07-23T09:09:07.170Z",
+    "verify_command": "node scripts/run_verify.mjs",
+    "verified_at": "2026-07-23T09:14:20.736Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T09:14:20.736Z",
+        "claim_session": "924196a6-afb7-4424-abfa-9a1e037da450",
+        "claimed_at": "2026-07-23T09:09:07.169Z",
+        "acquired_at": "2026-07-23T09:09:07.169Z",
+        "worker": "orchestrator-wmc2",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }
