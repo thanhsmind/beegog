@@ -99,6 +99,41 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "must-haves-truths",
+            "status": "PASS",
+            "evidence": "proposePbiRow (skills/bee-hive/templates/lib/backlog.mjs:89-101) scans every '|' line matching /^P(\\d+)$/i on cells[0] with no status filter (max across whole table incl. unrecognized rows), writes '| P<n> | story | cos | proposed | feature |' with feature defaulting to '—'; handleBacklogPropose (bee.mjs) validates required+length before the sole write; gap/reject/counts tests in test_cli_cells.mjs confirm max+1-not-gap, byte-untouched-on-reject, and counts.proposed++"
+          },
+          {
+            "id": "mirror-byte-for-byte",
+            "status": "PASS",
+            "evidence": "diff -q of skills/bee-hive/templates/{bee.mjs,lib/backlog.mjs,lib/command-registry.mjs} vs .bee/bin equivalents all printed MATCH"
+          },
+          {
+            "id": "context-D1-D5",
+            "status": "PASS",
+            "evidence": "D1 verb+flags registered as backlog.propose in HANDLERS (bee.mjs) and command-registry.mjs; D2 max+1 no backfill (scan+gap test); D3 handler returns after write with no skill invocation; D4 proposePbiRow reads only backlogPath (docs/backlog.md), never .bee/backlog.jsonl; D5 new lib fn + registry entry mirrored, and diff touches no bee-exploring/bee-scribing prose"
+          },
+          {
+            "id": "task-diff-alignment",
+            "status": "PASS",
+            "evidence": "undeclared test_bee_cli.mjs adds a backlog.propose example-coverage test; the 'every registry entry had its example executed at least once' guard pre-exists at 88b3141^:skills/bee-hive/templates/tests/test_bee_cli.mjs:2679, so the new registry entry tripped it — a required blocking-fix, not scope creep"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-23T12:02:05.252Z"
+      }
     ]
   },
   "tier": "generation"
