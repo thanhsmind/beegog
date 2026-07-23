@@ -20,7 +20,7 @@
       "dispatch-prepare.mjs": "9ae99701d47589d3a1c05986e7c1ce691db568d3e6f49e3dfdd9684e838548d2",
       "feedback.mjs": "a38aabf50fc1fd597bddc208160b0f27bf270773c403de75a0c3b4783c95e02c",
       "fsutil.mjs": "c0a65d8aebfca7f7423f10cc9e13fa8ca43234c4a7b7e7ea1f05619b18e06af0",
-      "guards.mjs": "4ae977ca6704f2afc485ee6ce9ee3eeb81edc469a3a6a88b95778e16c7cea860",
+      "guards.mjs": "26da8e59b2e1d0d8ef5e6ab56af2888f589267fe075fdcac2fada7a5fad0478c",
       "inject.mjs": "76d04e84a1e6d13e0e0136b56444e79a97d1a22a41c70e133f99db2e003fe38a",
       "intent.mjs": "acb9a427caf2e1aae106407a96a9fc0a2c16a087d31af057f704afa2619255e8",
       "judge.mjs": "5057e17a6bcd3dacff21fe479e13570620cfe1b9c821c0ff5c8254f39e3c6ed1",
@@ -43,7 +43,7 @@
       "bee-codex-subagent-audit.mjs": "f9f6900705aa20dfc0035a8c8c5c4b22fc56c9d0a4953e1b0ba3fd9466dec85e",
       "bee-session-init.mjs": "0f2bf378191f21d75063d0823374f616df073bf8324ae6e4bd813a029bdf8351",
       "bee-prompt-context.mjs": "1efd6ed7f90a7025648a550245c62b999a77dac77a7d1f206a44bef2e4626a6a",
-      "bee-write-guard.mjs": "ca7f73150ed59db295dfae758ecea27594b29343f67429340e0f19cf5fc24474",
+      "bee-write-guard.mjs": "3ba400d0d8f4461be02c81f8af3eac7be46390d4d15489b70f8893f61515e533",
       "bee-state-sync.mjs": "9f996676e532233f68c08fe56a2a533cd6d2e3b54d2e34f3c5216389aeaa6357",
       "bee-chain-nudge.mjs": "0520c71fad2513d93666ad4c3353b7196faeeac382430b1e1395fabd0febd9cb",
       "bee-session-close.mjs": "c6ffb52f99e169cf7883e4b88d488e30d99b87b445b1376f786d147056d3a219",
@@ -74,5 +74,5 @@
     }
   },
   "created_at": "2026-07-21T17:36:03.955Z",
-  "updated_at": "2026-07-23T16:43:05.943Z"
+  "updated_at": "2026-07-23T18:00:22.349Z"
 }

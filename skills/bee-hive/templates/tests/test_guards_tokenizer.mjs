@@ -16,8 +16,8 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkWrite, extractBashTargets, tokenize } from './guards.mjs';
-import { tokenizeCommand } from '../hooks/tokenize-command.mjs';
+import { checkWrite, extractBashTargets, tokenize } from '../lib/guards.mjs';
+import { tokenizeCommand } from '../../../../.bee/bin/hooks/tokenize-command.mjs';
 
 const SWARMING_STATE = { phase: 'swarming', approved_gates: { execution: true } };
 
