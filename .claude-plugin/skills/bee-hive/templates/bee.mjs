@@ -172,7 +172,7 @@ import {
   buildPromotion,
   bundleMode,
 } from './lib/knowledge.mjs';
-import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
+import { readBacklogCounts, rankBacklog, updateReadmeBadges, proposePbiRow } from './lib/backlog.mjs';
 import {
   createReview,
   listReviews,
@@ -2448,6 +2448,11 @@ function handleStateCompactCheck(root, flags) {
 const BACKLOG_SEVERITIES = ['P1', 'P2', 'P3'];
 const BACKLOG_MAX_TITLE = 200;
 const BACKLOG_MAX_LAYER = 40;
+// `propose` targets docs/backlog.md's own Story/CoS cells (PD1), a
+// different table than `add`'s .bee/backlog.jsonl title/layer above —
+// BACKLOG_MAX_STORY mirrors BACKLOG_MAX_TITLE's convention on purpose.
+const BACKLOG_MAX_STORY = 200;
+const BACKLOG_MAX_COS = 2000;
 
 function backlogAllowedTypes() {
   return [...new Set([...Object.keys(KIND_ALIASES), ...NORMALIZED_KINDS])].sort();
@@ -2599,6 +2604,34 @@ function handleBacklogAdd(root, flags) {
       ...(commitSkippedReason ? { commit_skipped_reason: commitSkippedReason } : {}),
     },
     text: `Appended ${severity} ${type} row to .bee/backlog.jsonl: "${title}"${commitSuffix}`,
+  };
+}
+
+/** `backlog.propose` (backlog-submit-command D1/D2/D3/D5): registers a new
+ * PBI row directly in docs/backlog.md, targeting a different file/schema
+ * than `add` above (which targets .bee/backlog.jsonl) — validation happens
+ * here, before proposePbiRow's single write, so any rejection leaves
+ * docs/backlog.md byte-untouched, matching `add`'s own convention. */
+function handleBacklogPropose(root, flags) {
+  const story = requireFlag(flags, 'story').trim();
+  if (!story) {
+    throw new Error('propose: --story is required (non-empty).');
+  }
+  if (story.length > BACKLOG_MAX_STORY) {
+    throw new Error(`propose: --story is ${story.length} chars, over the ${BACKLOG_MAX_STORY}-char limit. FIX: shorten the story.`);
+  }
+  const cos = requireFlag(flags, 'cos').trim();
+  if (!cos) {
+    throw new Error('propose: --cos is required (non-empty).');
+  }
+  if (cos.length > BACKLOG_MAX_COS) {
+    throw new Error(`propose: --cos is ${cos.length} chars, over the ${BACKLOG_MAX_COS}-char limit. FIX: shorten the cos.`);
+  }
+  const feature = flags.feature !== undefined && flags.feature !== true ? String(flags.feature) : '';
+  const row = proposePbiRow(root, { story, cos, feature });
+  return {
+    result: row,
+    text: `Proposed ${row.id}: "${row.story}" (feature: ${row.feature})`,
   };
 }
 
@@ -4992,7 +5025,7 @@ function stateUsageFallback(leading) {
 
 function backlogUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add.`;
+  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add, propose.`;
 }
 
 function captureUsageFallback(leading) {
@@ -5166,6 +5199,7 @@ const HANDLERS = {
   'backlog.rank': handleBacklogRank,
   'backlog.badges': handleBacklogBadges,
   'backlog.add': handleBacklogAdd,
+  'backlog.propose': handleBacklogPropose,
   'capture.add': handleCaptureAdd,
   'capture.list': handleCaptureList,
   'capture.flush': handleCaptureFlush,
