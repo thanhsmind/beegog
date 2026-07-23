@@ -14,12 +14,31 @@ bee:
 
 # Shipping a lib file means shipping the manifest: regen release-manifest inside the feature
 
-Any cell that adds/renames/changes a file under `templates/lib/` or `.bee/bin/lib/` makes
-`release_manifest.mjs --check` (part of `commands.verify`) red until `--write` regenerates the
-stored manifest — so the regen is part of the FEATURE, owned by its last cell or its close step,
-never discovered at the close verify. Same rule generalized: before capping a slice, ask which
-standing repo-wide guards (manifest, mirror, census) hash the files you touched, and run their
-regen/check inside the slice. (Filed friction to mechanize the hint.)
+**Any cell that adds/renames/changes a file the manifest hashes carries the regen in ITS OWN
+work and both `--check`s in ITS OWN verify.** Not the slice's last cell, not the close step —
+the cell that moves the guard owns it, because every cell between it and the close otherwise
+caps green against a red shared baseline. Measure which files the guard hashes by reading the
+script, never by copying a scope from prose: today `release_manifest.mjs:131,133` hashes
+`skills/**` and `hooks/**` (including the rendered plugin trees themselves), while
+`ledger_parity.mjs:139-140` covers only `.bee/bin/lib` and the helpers — so a `hooks/`-only
+change moves the manifest check and does **not** move the ledger check. Order matters:
+`render_plugin_skill_trees.mjs` → `onboard --apply` → `release_manifest.mjs --write`, because
+`onboard --apply` never renders the plugin trees and a manifest written first freezes stale
+trees as authoritative with nothing going red. Same rule generalized: before capping a cell,
+ask which standing repo-wide guards hash the files you touched, run their regen inside that
+cell, and put their `--check` in that cell's verify.
+
+> **SUPERSEDED — this headline previously read:** *"the regen is part of the FEATURE, owned by
+> its last cell or its close step"*, scoped to `templates/lib/` or `.bee/bin/lib/`. Both halves
+> were wrong and both were followed faithfully. `compaction-hardening` revision 1 cited this
+> pattern **by name** and routed the whole chain to its last cell — exactly what the headline
+> said and exactly what recurrence #2 had already condemned three paragraphs below it. Revision 2
+> then inherited the `lib/`-only trigger from the same sentence and put the check that stays
+> green on the two cells that needed the one that moves. **A pattern doc whose summary is
+> authored once and whose corrections are appended transmits its own obsolete advice with the
+> authority of a critical pattern** — under compaction and under skim-reading, an agent loads
+> the summary and the citation, not the tail. Rewrite the headline on every recurrence; when the
+> fix direction changes, the old sentence is a defect, not history.
 
 **Recurred 2026-07-19 (cnt-3):** the cell regenerated rendered plugin trees, deferred the
 manifest regen to "the slice-closing cell", and its own cell verify ran neither check — it

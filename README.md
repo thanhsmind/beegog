@@ -1,7 +1,7 @@
 # bee
 
 <!-- BEE:BACKLOG-BADGES:START -->
-![backlog done](https://img.shields.io/badge/backlog%20done-38-brightgreen) ![backlog in-flight](https://img.shields.io/badge/backlog%20in--flight-3-blue) ![backlog proposed](https://img.shields.io/badge/backlog%20proposed-22-lightgrey)
+![backlog done](https://img.shields.io/badge/backlog%20done-39-brightgreen) ![backlog in-flight](https://img.shields.io/badge/backlog%20in--flight-4-blue) ![backlog proposed](https://img.shields.io/badge/backlog%20proposed-25-lightgrey)
 <!-- BEE:BACKLOG-BADGES:END -->
 
 **bee** is a lightweight, *validate-first* agentic-development plugin suite for **Claude Code** and **Codex**. It turns "vibe-coding with an AI" into a staged, gated workflow where the agent proves each step before taking the next, records what it learns, and gets less wrong over time.

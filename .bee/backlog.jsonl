@@ -329,3 +329,5 @@
 {"ts":"2026-07-23T07:04:43.105Z","type":"friction","title":"bee-write-guard enforces cross-worktree containment for Edit/Write but not for relative Bash targets","detail":"","severity":"P1","layer":"hooks","feature":""}
 {"ts":"2026-07-23T07:04:43.163Z","type":"friction","title":"startFeature refuses to bootstrap a worktree that inherited its feature's open cells","detail":"","severity":"P2","layer":"cells","feature":""}
 {"ts":"2026-07-23T08:17:17.439Z","type":"debt","title":"No concept owns the dual-runtime enforcement doctrine, so the corrected statement has no durable home","detail":"","severity":"P3","layer":"knowledge","feature":""}
+{"ts":"2026-07-23T08:34:54.162Z","type":"friction","title":"No check refuses a recurrence appended to a pattern whose headline is byte-unchanged","detail":"","severity":"P2","layer":"knowledge","feature":""}
+{"ts":"2026-07-23T08:34:54.225Z","type":"friction","title":"A shape review can pass without a single command having been executed","detail":"","severity":"P2","layer":"review","feature":""}
