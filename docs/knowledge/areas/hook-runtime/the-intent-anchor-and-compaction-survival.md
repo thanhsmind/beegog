@@ -1,15 +1,15 @@
 ---
 type: bee.area
 title: Hook Runtime — the intent anchor and compaction survival
-description: "The durable, verbatim statement of what the user asked for: written on disk, re-asserted at compaction, and read first when a compacted session restarts — so the objective outranks the harness bookkeeping instead of decaying beneath it."
+description: "The durable, verbatim statement of what the user asked for: written on disk, re-asserted at compaction, nudged into existence when missing, and read first when a compacted session restarts — so the objective outranks the harness bookkeeping instead of decaying beneath it."
 timestamp: 2026-07-23
 bee:
   id: hook-runtime-intent-anchor-and-compaction-survival
   lifecycle: active
   areas: [hook-runtime]
-  required_context: [areas/hook-runtime/advisories-and-turn-control.md]
-  decisions: [intent-anchor D1, D2, D3, D4, D5, D6]
-  sources: ["intent-anchor cell ia-1 (the anchor, the PreCompact re-assertion, the compact-resume lead; trace in `.bee/cells/`, 2026-07-23)", .bee/spikes/intent-anchor/FINDINGS.md (the measurement that justified it), CONTEXT.md `docs/history/intent-anchor/CONTEXT.md`, "advisor issue #54 (the compact-resume checkpoint field set)"]
+  required_context: [areas/hook-runtime/advisories-and-turn-control.md, areas/hook-runtime/post-compaction-orientation-and-the-compact-capsule.md]
+  decisions: ["intent-anchor D1, D2, D3, D4, D5, D6", 089905ba (compaction-hardening D19 — the hook keeps owning the anchor after a compaction), "compaction-hardening D10, D11 (the missing-anchor nudge and its forced PreCompact assertion)"]
+  sources: ["intent-anchor cell ia-1 (the anchor, the PreCompact re-assertion, the compact-resume lead; trace in `.bee/cells/`, 2026-07-23)", .bee/spikes/intent-anchor/FINDINGS.md (the measurement that justified it), CONTEXT.md `docs/history/intent-anchor/CONTEXT.md`, "advisor issue #54 (the compact-resume checkpoint field set)", "compaction-hardening cells cz-3, cz-4, cz-7 (the nudge module, its verb surface, and its two advisory wirings; traces in `.bee/cells/`, 2026-07-23)", "docs/history/compaction-hardening/CONTEXT.md D10, D11, D19"]
   authoritative_for: "hook-runtime: the intent anchor and compaction survival"
 ---
 
@@ -39,6 +39,11 @@ giving the objective the same durability the bookkeeping already had.
 ## Entry Points & Triggers
 
 - **Written** when work begins — including work that never becomes a feature.
+- **Nudged** when it is missing and work is active — the resolved phase is
+  non-terminal and either a cell is claimed or execution is approved. The
+  nudge fires on every user prompt, deduplicated, and again — forced past
+  that dedup — at the compaction checkpoint, the last point the objective can
+  still be captured verbatim before it is folded into a summary.
 - **Re-asserted** at the compaction checkpoint, before the summary is produced.
 - **Read first** when a session restarts from a compaction or a resume.
 - **Advanced** as segments complete; the objective itself never changes.
@@ -84,6 +89,28 @@ what shipped before: the anchor path is strictly **additive**, a prefix on an
 otherwise untouched block. A corrupt anchor reads as no anchor. A repo that never
 writes one cannot tell this exists.
 
+**A missing anchor is now nudged, not left to be silently absent.** Availability
+alone did not make the anchor get written, so the harness names the exact command
+to write one whenever work is active and none exists. The nudge is deduplicated
+through the standard injection cache on ordinary prompts, and forced past that same
+cache at the compaction checkpoint — the moment compaction re-asserts an anchor
+that does not yet exist is exactly the moment nudging it matters most, so the
+30-minute throttle that governs every other nudge is bypassed there deliberately.
+
+**After a compaction, the hook still owns the anchor — the narrowed orientation
+that replaces the rest of the preamble is the body only.** The anchor is rendered
+first, by the same lead the hook has always used, unchanged; the post-compaction
+orientation that follows it (see
+[`post-compaction-orientation-and-the-compact-capsule.md`](post-compaction-orientation-and-the-compact-capsule.md))
+never re-renders the anchor itself. A design where that narrowed orientation also
+carried the anchor was considered and rejected: it would render the anchor twice,
+and neither the anchor-first check nor a planned assertion built to catch a
+replacement would have caught the duplicate — both pass equally whether the anchor
+appears once or twice, because both merely check that the anchor is present and
+leads. Keeping the hook as sole owner made a planned supersession of an existing
+contract-test assertion unnecessary entirely: the feature that added the narrowed
+orientation ended with zero edits to that suite.
+
 ## Actors & Access
 
 - **The user** supplies the request and what "done" means; both are recorded in
@@ -107,6 +134,12 @@ writes one cannot tell this exists.
   behaviour (D5).
 - R6 — The claim "it survives compaction" is proven by a simulation across at
   least two compaction boundaries **with a control arm**, not by inspection (D6).
+- R7 — A missing anchor is nudged whenever work is active: on every user prompt,
+  deduplicated, and again — forced past that dedup — at the compaction checkpoint
+  (compaction-hardening D10, D11).
+- R8 — After a compaction, the hook keeps sole ownership of rendering the anchor;
+  the post-compaction orientation that replaces the rest of the preamble is the
+  body only and never re-renders it (compaction-hardening D19, `089905ba`).
 
 ## Edge Cases Settled
 
@@ -129,8 +162,6 @@ writes one cannot tell this exists.
 - The anchor is proven against a **simulation** of compaction, not against a live
   session driven through two real autocompacts. That end-to-end run is the honest
   next step and is not yet done.
-- Nothing yet *prompts* an agent to write an anchor at the start of unstructured
-  work; it is available and documented, not enforced.
 
 ## Pointers (implementation)
 
@@ -138,7 +169,16 @@ writes one cannot tell this exists.
   (`writeIntent`/`readIntent`/`advanceIntent`/`clearIntent`, `precompactBlock`,
   `resumeBlock`), mirrored to `.bee/bin/lib/`.
 - CLI: the `intent` group in `command-registry.mjs` + `bee.mjs`.
-- Checkpoints: `hooks/bee-session-close.mjs` (compaction re-assertion) and
-  `hooks/bee-session-init.mjs` (compact/resume lead).
+- Checkpoints: `hooks/bee-session-close.mjs` (compaction re-assertion, the
+  survival warning, and the forced anchor nudge), `hooks/bee-prompt-context.mjs`
+  (the deduped anchor nudge on every prompt), and `hooks/bee-session-init.mjs`
+  (compact/resume lead — `ANCHOR_LEAD_SOURCES`/`intentLeadBlock`, unchanged by
+  the capsule).
+- Nudge predicate and dedup key: `anchorMissing()` in
+  `skills/bee-hive/templates/lib/compaction.mjs` (`key: "anchor-missing-nudge"`,
+  `hash: "<sessionId>:<feature>:<cell>"`), reused by both checkpoints and by the
+  read-only `state compact-check` verb.
 - Proof: `skills/bee-hive/templates/tests/test_intent.mjs` (incl. the
-  two-boundary simulation) and the intent rows in `hooks/test_hook_contracts.mjs`.
+  two-boundary simulation), the intent rows in `hooks/test_hook_contracts.mjs`,
+  and `scripts/test_compaction_advisories.mjs` (the nudge and survival-warning
+  rows against the real hooks).

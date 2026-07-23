@@ -3,11 +3,11 @@ type: bee.pattern
 title: "Shipping a lib file means shipping the manifest: regen release-manifest inside the feature"
 description: "Shipping a lib file means shipping the manifest: regen release-manifest inside the feature"
 tags: [process, release-manifest, verify-chain, lib-files]
-timestamp: 2026-07-22
+timestamp: 2026-07-23
 bee:
   id: pattern-20260715-shipping-a-lib-file-means-shipping-the-manifest
   lifecycle: active
-  sources: ["docs/history/learnings/critical-patterns.md#PAT37", "original feature: parallel-scheduler", "okf-switchover-f3 close-out (fourth recurrence — the managed-hash ledger layer; trace in `.bee/cells/f3-5.json`, 2026-07-22)"]
+  sources: ["docs/history/learnings/critical-patterns.md#PAT37", "original feature: parallel-scheduler", "okf-switchover-f3 close-out (fourth recurrence — the managed-hash ledger layer; trace in `.bee/cells/f3-5.json`, 2026-07-22)", "compaction-hardening D24 (fifth recurrence — the trigger widens to skills/** and hooks/**; trace in `.bee/cells/cz-4.json`, 2026-07-23)"]
   polarity: pitfall
   critical: true
 ---
@@ -48,3 +48,17 @@ cap-time verify had already gone green. **A cap-time verify is evidence about th
 at that moment, and it expires the instant anything else is edited** — run the full chain again
 before ending the session, with no exception for "it was just a citation" or "the cell already
 passed". The next session opened on the red baseline and paid the repair.
+
+**Recurred 2026-07-23 (compaction-hardening D24) — FIFTH instance, and the trigger itself was
+scoped wrong.** The earlier recorded trigger was "any file under `templates/lib/` or `.bee/bin/lib/`
+changes" — but `scripts/release_manifest.mjs` was measured to actually hash `skills/**` and
+`hooks/**` in full, including the rendered plugin/skill projection trees themselves, not only the
+shared lib directory. A cell touching only `hooks/**` moves `release_manifest --check` and does
+**not** move `ledger_parity --check` (which covers only `.bee/bin/lib` and the shared helpers) — so
+two cells in the same feature each carried exactly the check that stays green for a hooks-only
+change and omitted the one that actually goes red. The ordering matters too: the plugin/skill tree
+render must run **before** the manifest write, because the onboarding apply step never renders
+those trees on its own — a manifest written first freezes stale trees as authoritative with nothing
+going red to say so. Fix direction, generalized again: before scoping a regen trigger to "the lib
+directory," check what the manifest script's own hash list actually covers — a scope written from
+assumption can pass green while hiding the exact bug it exists to catch.
