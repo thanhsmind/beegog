@@ -1060,7 +1060,7 @@ export const COMMAND_REGISTRY = [
     name: 'backlog.add',
     invoke: 'bee backlog add',
     description:
-      'Validate then append one row to .bee/backlog.jsonl (the feedback-digest source lib/feedback.mjs\'s collectFeedback reads) — agents never hand-edit .bee state. --type must be a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value (lib/feedback.mjs), --severity is P1|P2|P3, --layer is a free non-empty string <=40 chars (no allowlist), --title is required and <=200 chars. Any rejection leaves the file untouched.',
+      'Validate then append one row to .bee/backlog.jsonl (the feedback-digest source lib/feedback.mjs\'s collectFeedback reads) — agents never hand-edit .bee state. --type must be a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value (lib/feedback.mjs), --severity is P1|P2|P3, --layer is a free non-empty string <=40 chars (no allowlist), --title is required and <=200 chars. Any rejection leaves the file untouched. The row is always appended regardless of --queue-submit; only the auto-commit is gated: --queue-submit defaults false and must be passed explicitly for a human queue-submission (the caller is always the agent process, but the flag marks intent — a new item for the processing queue vs. the agent logging its own friction/debt/finding about its own session). With --queue-submit, a merge in progress is detected up front and the commit is skipped with commit_skipped_reason:"merge_in_progress" plus a visible warning suffix in the text output; every other commit failure stays a silent committed:false as before.',
     parameters: {
       type: 'object',
       properties: {
@@ -1070,11 +1070,16 @@ export const COMMAND_REGISTRY = [
         layer: { type: 'string', description: 'Free non-empty layer string, <=40 chars.' },
         detail: { type: 'string', description: 'Optional detail text.' },
         feature: { type: 'string', description: 'Optional feature slug.' },
+        'queue-submit': {
+          type: 'boolean',
+          description:
+            'Human queue-submission for this row (default false). Only when true does the scoped auto-commit run at all — an agent logging its own friction/debt/finding about its own session leaves this unset so appendJsonl still writes the row but no commit is attempted.',
+        },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: [],
     },
-    examples: ['bee backlog add --type friction --title "example backlog row" --severity P2 --layer state --json'],
+    examples: ['bee backlog add --type friction --title "example backlog row" --severity P2 --layer state --queue-submit --json'],
     deprecated: null,
   },
 
