@@ -19,7 +19,7 @@ import { withStoreLock } from './lock.mjs';
 // advisorRefAnchors reads the newest active decision id through it (AO13).
 import { activeDecisions } from './decisions.mjs';
 
-export const BEE_VERSION = '1.11.2';
+export const BEE_VERSION = '1.11.3';
 
 export const GATE_NAMES = ['context', 'shape', 'execution', 'review'];
 
