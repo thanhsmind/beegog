@@ -1,0 +1,47 @@
+{
+  "id": "ag-2",
+  "feature": "ask-guard-autofix",
+  "lane": "small",
+  "deps": [
+    "ag-1"
+  ],
+  "title": "A dead dogfood repo is skipped silently inside hooks; the warning stays for interactive CLI runs",
+  "behavior_change": true,
+  "files": [
+    "skills/bee-hive/templates/lib/state.mjs",
+    "skills/bee-hive/templates/tests/test_state.mjs",
+    "hooks/adapter.mjs",
+    ".bee/bin/lib/state.mjs",
+    ".bee/bin/hooks/adapter.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    ".bee/onboarding.json"
+  ],
+  "read_first": [
+    "skills/bee-hive/templates/lib/state.mjs",
+    "hooks/adapter.mjs"
+  ],
+  "action": "Per ask-guard-autofix D3. normalizeDogfoodRepos (skills/bee-hive/templates/lib/state.mjs:275-286) console.warns on every dead/unreadable dogfood_repos entry — which fires on EVERY hook invocation and gets rendered as part of unrelated hook errors (it prefixed an AskUserQuestion deny in the triggering screenshot). Change: mark hook context ONCE in the shared entry wrapper hooks/adapter.mjs (e.g. process.env.BEE_HOOK_CONTEXT='1' set before any lib import runs, or an exported flag the libs read — pick what the adapter's structure makes cleanest and least invasive); in normalizeDogfoodRepos, when hook context is marked, SKIP the console.warn (the entry is still skipped, behavior otherwise identical). Interactive CLI runs (status, onboarding — no adapter) keep the warning verbatim. If and only if the adapter already has a fail-open audit-log helper writing .bee/logs/hooks.jsonl, record the skip there; do NOT build new logging machinery.\n\nTESTS: in skills/bee-hive/templates/tests/test_state.mjs add rows: with hook context marked, a dead entry produces NO warn output and is still skipped; without the marker the warning still fires verbatim. MIRRORS: byte-mirror to .bee/bin/lib/state.mjs and .bee/bin/hooks/adapter.mjs; manifest + ledger parity green.",
+  "verify": "node skills/bee-hive/templates/tests/test_state.mjs && node hooks/test_write_guard.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check",
+  "must_haves": [
+    "a dead dogfood_repos entry inside a hook run prints NOTHING to stderr and is still skipped",
+    "the same dead entry in a plain CLI run still warns verbatim",
+    "release_manifest --check and ledger_parity --check green at cap"
+  ],
+  "decisions": [
+    "ask-guard-autofix D3"
+  ],
+  "status": "open",
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
