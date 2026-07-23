@@ -1204,6 +1204,63 @@ await check('backlog.add example runs through the real dispatcher and appends to
   assert(fs.existsSync(path.join(rootBacklogCapture, '.bee', 'backlog.jsonl')), 'backlog.jsonl should now exist');
 });
 
+await check('backlog.pbi.add example runs through the real dispatcher and prints a generated id', async () => {
+  const result = await assertExampleOk('backlog.pbi.add', { cwd: rootBacklogCapture });
+  const item = JSON.parse(result.stdout);
+  assert(typeof item.id === 'string' && /^p-[0-9a-f]{8}$/.test(item.id), `expected a generated p-<8hex> id, got ${result.stdout}`);
+  assert(item.title === 'Unify the backlog', `expected the example title, got ${result.stdout}`);
+});
+
+// Seed the fixed id the pbi.status/pbi.amend/pbi.list examples below hardcode
+// (--id p-a1b2c3d4, same documentation-friendly well-known-id convention as
+// the decisions.tag fixture near the top of this file) — run directly through
+// the dispatcher, not assertExampleOk('backlog.pbi.add', ...) again, which
+// would re-run examples[0] and mint a fresh random id instead of this one.
+const seedPbiResult = await runModuleWorker(BEE_MJS, {
+  args: ['backlog', 'pbi', 'add', '--id', 'p-a1b2c3d4', '--title', 'Seed PBI for the pbi.status/amend/list examples', '--json'],
+  cwd: rootBacklogCapture,
+});
+assert(seedPbiResult.status === 0, `seeding p-a1b2c3d4 failed: stdout=${seedPbiResult.stdout} stderr=${seedPbiResult.stderr}`);
+
+await check('backlog.pbi.status example runs through the real dispatcher and flips status+feature', async () => {
+  await assertExampleOk('backlog.pbi.status', { cwd: rootBacklogCapture });
+  const listResult = await runModuleWorker(BEE_MJS, {
+    args: ['backlog', 'pbi', 'list', '--json'],
+    cwd: rootBacklogCapture,
+  });
+  assert(listResult.status === 0, `pbi list failed: stdout=${listResult.stdout} stderr=${listResult.stderr}`);
+  const items = JSON.parse(listResult.stdout);
+  const seeded = items.find((item) => item.id === 'p-a1b2c3d4');
+  assert(seeded, `expected p-a1b2c3d4 in the fold, got ${listResult.stdout}`);
+  assert(seeded.status === 'in-flight', `expected status in-flight, got ${JSON.stringify(seeded)}`);
+  assert(seeded.feature === 'backlog-unification', `expected feature backlog-unification, got ${JSON.stringify(seeded)}`);
+});
+
+await check('backlog.pbi.amend example runs through the real dispatcher and updates cos', async () => {
+  const result = await assertExampleOk('backlog.pbi.amend', { cwd: rootBacklogCapture });
+  const item = JSON.parse(result.stdout);
+  assert(item.id === 'p-a1b2c3d4' && item.cos === 'revised CoS text', `expected the amended cos, got ${result.stdout}`);
+});
+
+await check('backlog.pbi.list example runs through the real dispatcher and filters to in-flight', async () => {
+  const result = await assertExampleOk('backlog.pbi.list', { cwd: rootBacklogCapture });
+  const items = JSON.parse(result.stdout);
+  assert(Array.isArray(items) && items.some((item) => item.id === 'p-a1b2c3d4'), `expected p-a1b2c3d4 in the in-flight filter, got ${result.stdout}`);
+  assert(items.every((item) => item.status === 'in-flight'), `expected every row filtered to in-flight, got ${result.stdout}`);
+});
+
+await check('backlog.render examples (--write then --check) run through the real dispatcher and land Current', async () => {
+  const writeResult = await assertExampleOk('backlog.render', { exampleIndex: 1, cwd: rootBacklogCapture });
+  assert(/^(Rendered|Already current): docs\/backlog\.md$/.test(writeResult.stdout.trim()), `expected the write confirmation, got ${writeResult.stdout}`);
+  assert(
+    fs.readFileSync(path.join(rootBacklogCapture, 'docs', 'backlog.md'), 'utf8').includes('p-a1b2c3d4'),
+    'docs/backlog.md should now list the seeded PBI',
+  );
+
+  const checkResult = await assertExampleOk('backlog.render', { exampleIndex: 0, cwd: rootBacklogCapture });
+  assert(checkResult.stdout.trim() === 'Current: docs/backlog.md', `expected --check to report Current after the write, got ${checkResult.stdout}`);
+});
+
 await check('capture.add example runs through the real dispatcher and returns a stub id', async () => {
   const result = await assertExampleOk('capture.add', { cwd: rootBacklogCapture });
   const stub = JSON.parse(result.stdout);
