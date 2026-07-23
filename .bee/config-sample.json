@@ -2,8 +2,8 @@
   "_doc": {
     "what": "Annotated sample for .bee/config.json — copy the sections you need; every key here is optional (missing keys fall back to safe defaults). JSON has no comments, so this _doc block is the documentation; bee ignores unknown top-level keys, but remove _doc from your real config to keep it lean.",
     "hooks": "Per-hook kill switches. All nine ship enabled; set one to false only to debug that hook. Names match the hook files: session-init, prompt-context, write-guard, model-guard, state-sync, chain-nudge, session-close, tools-logger, codex-subagent-audit.",
-    "guards": "idle_gate=true blocks source edits when no bee work is active (phase idle / compounding-complete). Disable per-repo only if you accept unrouted edits: bee config set --key guards.idle_gate --value false.",
-    "commands": "The host project's own lifecycle commands. verify is the load-bearing one: it gates cell capping, merge-back semantic checks, and the session baseline. Record real runnable commands, not descriptions.",
+    "guards": "idle_gate=true blocks source edits when no bee work is active (phase idle / compounding-complete). Disable per-repo only if you accept unrouted edits: bee config set --key guards.idle_gate --value false. max_read_lines (default 800) caps how many lines a single inbound file read may pull before the read guard trims it.",
+    "commands": "The host project's own lifecycle commands — record real runnable commands, not descriptions. Two-tier test doctrine (ci-owned-verify): `test` is the SCOPED dev-loop command — only the tests related to the current change (use your runner's changed-only/related mode); it powers the orchestrator's wave-close check and the `bee worktree merge` semantic gate. `verify` is the FULL suite — CI-owned: it runs on push and at release, never as a local per-cell or session-start obligation; a red CI run auto-files a `verify-red` issue. Any consumer missing `test` falls back to `verify`. Per-language recipes (node/go/rust/python/php): docs/config-reference.md.",
     "gate_bypass": {
       "values": "false | \"normal\" | \"full\" | \"total\" (legacy true = normal). Set via the bee-bypass-gate skill, not by hand.",
       "false": "default — every gate stops for the human.",
@@ -24,7 +24,8 @@
     },
     "lanes": "Reserved per-repo lane config overrides; leave {} unless a bee release documents a key.",
     "capabilities": "Reserved capability flags; leave {} unless a bee release documents a key.",
-    "dogfood_repos": "Only used in bee's own source repo (self-improvement loops); host projects can omit or leave []."
+    "dogfood_repos": "Only used in bee's own source repo (self-improvement loops); host projects can omit or leave [].",
+    "product_root": "Optional, for the workshop+nested-product topology only: where the product's own docs live when they are NOT beside .bee/ (path relative to the bee root, or absolute). Unset = the bee root; do not set it speculatively — a set-but-missing path warns loudly on every read."
   },
   "hooks": {
     "session-init": true,
@@ -38,14 +39,15 @@
     "codex-subagent-audit": true
   },
   "guards": {
-    "idle_gate": true
+    "idle_gate": true,
+    "max_read_lines": 800
   },
   "lanes": {},
   "capabilities": {},
   "commands": {
     "setup": "npm install",
     "start": "npm run dev",
-    "test": "npm test",
+    "test": "npx jest --onlyChanged",
     "verify": "npm run build && npm test"
   },
   "gate_bypass": false,

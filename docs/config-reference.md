@@ -16,6 +16,8 @@ node .bee/bin/bee.mjs config validate                                     # chec
 
 The value is parsed as JSON when it parses (`false` → boolean, `12` → number, `{...}` → object), otherwise kept as a string (`repo` → `"repo"`); pass `--string` to force a string. `set`/`unset` refuse to write if the change would make the models/cli-tier config invalid, or if the existing file is unparseable (it is never silently clobbered).
 
+One routing rule to know: `hooks.*` and `guards.*` are **local-only namespaces** — `config set`/`unset` always write them to `.bee/config.local.json` (gitignored, per-machine), even without `--local`, so one developer muting a hook never lands in the tracked config. `config get` reads overlay-over-tracked and warns if such a value still sits in the tracked file.
+
 ## Which model each tier uses
 
 There are three tiers, but **you only configure the two cheaper ones.** The **ceiling** (strongest) tier is **never configured — it is always the model you are running the session on** (decision 0015). So if you run the session on Fable, ceiling work runs on Fable; run it on Opus, ceiling is Opus. bee doesn't pick it; it inherits your session model.
@@ -69,6 +71,62 @@ You configure only `generation` and `extraction`, under **`models`**, keyed by r
   You **cannot pin an exact sub-version** for a Claude Code subagent — the model param is family-alias only, and it tracks the latest of each family as Anthropic ships new ones. (For **Codex**, the `codex` tiers take the runtime's real model ids, e.g. `"gpt-5"`, because that runtime addresses models by id.)
 - `bee_status` prints the active map (`Models (claude): generation=… extraction=… · ceiling = the session model`), and warns if too many cells sit on the ceiling tier — the point is to keep the strong (session) model scarce.
 
+### Runtimes: Claude Code and Codex — and everything else (OpenCode, agy, …)
+
+`models` accepts exactly **two runtime keys: `claude` and `codex`** — the two harnesses bee ships hooks and dispatch transports for. Any other top-level runtime key (e.g. `"opencode"`, `"gemini"`) is **silently ignored**: not an error, just dead config that never resolves.
+
+That does *not* mean other CLIs are unusable — they plug in through the **external-executor slot shape** on whichever runtime you actually run the session in. Example, routing the review tier of a Claude Code session through OpenCode:
+
+```json
+{
+  "models": {
+    "claude": {
+      "extraction": "haiku",
+      "generation": { "model": "sonnet", "effort": "medium" },
+      "review": {
+        "kind": "cli",
+        "command": "bash -lc 'opencode run --model anthropic/claude-opus \"$(cat)\"'",
+        "promptVia": "stdin"
+      }
+    }
+  }
+}
+```
+
+Two rules travel with every cli-shaped slot: it is **gather/review/advisor-only** — cell *execution* against a cli slot is refused (`cli_tier_gather_only`), so implementation work never rides an executor bee cannot supervise — and `promptVia` must state how the prompt reaches the process (`"stdin"`, or the `"$(cat)"` wrapper for CLIs that only take argv), never guessed from the command string. A ready-to-run demo with **agy** (generation) and **opencode** (review) lives at [`.bee/config-sample-cli-executors.json`](../.bee/config-sample-cli-executors.json); per-flag reasoning and more presets: [`docs/model-presets.md`](model-presets.md).
+
+## `commands` — the host project's lifecycle commands
+
+Captured at onboarding (or the first natural moment in exploring), four standard keys — all plain runnable shell commands, never descriptions:
+
+| Key | Meaning | Who runs it, when |
+|---|---|---|
+| `setup` | install dependencies from scratch | onboarding checks, fresh-clone bootstrap |
+| `start` | run the app/dev server | on demand (`/run`-style checks) |
+| `test` | **the SCOPED dev-loop test command** — only the tests related to the current change | your machine, often: the orchestrator's wave-close check after cells cap, and the `bee worktree merge` semantic gate (run against the staged merge) |
+| `verify` | **the FULL test suite** | **CI, on push** (plus the release gate). Never a local per-cell, per-cap, or session-start obligation — a red CI run auto-files a `verify-red` issue instead |
+
+The split is the point (ci-owned-verify D1/D5): `test` must be *narrower* than `verify`, or every dev-loop iteration pays the full-suite price as the suite grows. Every consumer that wants `test` falls back to `verify` when `test` is missing, so a repo that only recorded `verify` keeps working — just slower.
+
+Below `commands.test` there is a third, narrower layer that is **not** config: each work cell's own `verify` field, authored per change (one test file / one test function, seconds). Config carries the two repo-wide commands; the cell carries the per-change one.
+
+### Per-language recipes
+
+Pick your runner's changed-only/related mode for `test`; `verify` is whatever runs everything.
+
+| Language | `commands.test` (scoped) | `commands.verify` (full) |
+|---|---|---|
+| **Node** | `npx jest --onlyChanged` (jest) · `npx vitest related --run <files>` (vitest) · in bee's own repo: `node scripts/run_verify.mjs --impacted-from-git` | `npm test` / `npm run build && npm test` |
+| **Go** | `go test ./internal/<changed-pkg>/...` — derive the package set from the diff (`go list ./... \| grep …`, or reverse-deps via `go list -deps`) | `go test ./...` |
+| **Rust** | `cargo test -p <changed-crate>` (workspace: one crate) · `cargo test <module>::` (one module path) | `cargo test --workspace` |
+| **Python** | `pytest tests/test_<area>.py` (by path) · `pytest -k <expr>` (by name) · `pytest --testmon` (coverage-map impacted, needs pytest-testmon) | `pytest` |
+| **PHP** | `vendor/bin/phpunit --filter <TestClass>` · `vendor/bin/phpunit tests/<Area>/` (by dir) · Laravel: `php artisan test --filter <name>` | `vendor/bin/phpunit` (hoặc `composer test`) |
+
+Notes:
+- A command that takes the changed-file list from git itself (jest `--onlyChanged`, testmon, bee's `--impacted-from-git`) is the best `test` value — it stays correct with zero per-change editing. Where the runner has no such mode (Go, Rust, PHP), record the *narrow invocation shape* and let the session substitute the changed package/crate/class per change — the doctrine cares that the dev loop never runs the full suite, not which selector you use.
+- CI should run `commands.verify` verbatim (bee's own `ci.yml` does exactly that via `scripts/verify_all.mjs`, and files a deduped `verify-red` issue on red).
+- Where the "which tests relate to this file" answer needs a lookup: bee's own repo ships a derived impact registry (`node scripts/impact_registry.mjs --query <file>`); other languages use their native graph (Go: `go list -deps` reversed; Rust: the crate graph; Python: testmon's coverage map).
+
 ## Removed keys
 
 The **top-level** `advisor` key (old "advisor mode") was removed in v0.1.23 (decision fanout-delegation D1). If your `.bee/config.json` still has one, onboarding warns about the stale key and ignores it — delete it. This is **not** the same thing as the `models.<runtime>.advisor` slot above, which is current and valid.
@@ -77,10 +135,10 @@ The **top-level** `advisor` key (old "advisor mode") was removed in v0.1.23 (dec
 
 | Key | What it does | Default |
 |---|---|---|
-| `commands` | the host project's `setup` / `start` / `test` / `verify` commands (power the baseline gate) | none — captured at onboarding |
-| `gate_bypass` | opt-in autopilot: auto-approve Gates 1–3 for normal-lane work (safety floor stays) | `false` |
-| `hooks` | per-hook kill switch (`session-init`, `prompt-context`, `write-guard`, `state-sync`, `chain-nudge`, `session-close`) | all `true` |
-| `guards` | e.g. `{"idle_gate": false}` to disable the idle intake gate | idle gate on |
+| `commands` | the host project's `setup` / `start` / `test` (scoped, dev loop) / `verify` (full, CI-owned) commands — full section above | none — captured at onboarding |
+| `gate_bypass` | opt-in autopilot with levels `false` · `"normal"` · `"full"` · `"total"` (legacy `true` = normal); set via the `bee-bypass-gate` skill | `false` |
+| `hooks` | per-hook kill switch — nine hooks: `session-init`, `prompt-context`, `write-guard`, `model-guard`, `state-sync`, `chain-nudge`, `session-close`, `tools-logger`, `codex-subagent-audit` | all `true` (an absent key also reads `true`) |
+| `guards` | `idle_gate` (`false` disables the idle intake gate) · `max_read_lines` (line cap a single inbound file read may pull before the read guard trims it; number > 0) | idle gate on · `800` |
 | `lanes`, `capabilities` | advanced per-repo overrides | `{}` |
 | `dogfood_repos` | foreign repos whose feedback digest `bee.mjs feedback collect`/`rank` (and `bee-evolving`) fold in — see below | `null` (local digest only) |
 | `product_root` | where the project's PRODUCT docs live (`docs/backlog.md`, `docs/specs/`, the product README) when they are NOT beside `.bee/` — a path relative to the bee root, or absolute. For the "workshop + nested product repo" (repo-divorce) topology where `.bee/` sits one level above the product's own git repo. Unset ⇒ the bee root (every ordinary single-root repo is unaffected). A set-but-missing path warns loudly to stderr rather than silently reading nothing. `.bee/*` runtime state and `docs/history/` (bee's own workshop trail) are never affected — only the product's own docs. | unset ⇒ bee root |
@@ -112,9 +170,9 @@ Clean JSON — paste into `.bee/config.json` and edit values (keep any existing 
 
 ```json
 {
-  "commands": { "setup": "npm install", "start": "npm run dev", "test": "npm test", "verify": "npm run build" },
+  "commands": { "setup": "npm install", "start": "npm run dev", "test": "npx jest --onlyChanged", "verify": "npm run build && npm test" },
   "gate_bypass": false,
-  "guards": { "idle_gate": true },
+  "guards": { "idle_gate": true, "max_read_lines": 800 },
   "models": {
     "claude": {
       "extraction": "haiku",
