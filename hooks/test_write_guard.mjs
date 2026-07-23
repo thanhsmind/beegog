@@ -297,6 +297,30 @@ async function main() {
     `status=${r3b.status} stderr=${r3b.stderr}`);
   check(r3b.stderr.includes("bee.mjs state"), "row3b: stderr names bee.mjs state", r3b.stderr);
 
+  // --- 3c. Write docs/backlog.md -> denied (exit 2), message names the
+  // owning verbs (backlog-unification bu-3, D3): docs/backlog.md is the
+  // generated view over .bee/backlog.jsonl, CLI-owned same as the two rows
+  // above.
+  const r3c = await runHookPayload(
+    { tool_name: "Write", tool_input: { file_path: "docs/backlog.md", content: "x\n" } },
+    root,
+  );
+  check(r3c.status === 2, "row3c: Write docs/backlog.md is denied (exit 2)", `status=${r3c.status} stderr=${r3c.stderr}`);
+  check(r3c.stderr.includes("bee.mjs backlog pbi add"), "row3c: stderr names bee.mjs backlog pbi add", r3c.stderr);
+  check(r3c.stderr.includes("bee.mjs backlog pbi status"), "row3c: stderr names bee.mjs backlog pbi status", r3c.stderr);
+  check(r3c.stderr.includes("bee.mjs backlog pbi amend"), "row3c: stderr names bee.mjs backlog pbi amend", r3c.stderr);
+  check(r3c.stderr.includes("bee.mjs backlog render --write"), "row3c: stderr names bee.mjs backlog render --write", r3c.stderr);
+  check(r3c.stderr.includes("direct-edit"), "row3c: stderr identifies the direct-edit guard", r3c.stderr);
+
+  // --- 3d. Edit docs/history/demo/CONTEXT.md still passes: the exact-path
+  // deny on docs/backlog.md must not spill onto the rest of docs/ (the
+  // docs-lane exemption used by scribing/capture stays untouched).
+  const r3d = await runHookPayload(
+    { tool_name: "Edit", tool_input: { file_path: "docs/history/demo/CONTEXT.md" } },
+    root,
+  );
+  check(r3d.status === 0, "row3d: Edit docs/history/demo/CONTEXT.md still passes (rest of docs/ unaffected)", `status=${r3d.status} stderr=${r3d.stderr}`);
+
   // --- 4. pass row: Edit .bee/cells/x.json still passes (untouched verdict)
   const r4 = await runHookPayload(
     { tool_name: "Edit", tool_input: { file_path: ".bee/cells/demo-1.json" } },
