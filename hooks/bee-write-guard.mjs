@@ -35,6 +35,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readHookContext, logCrash, logCoverageGap, libModuleUrl } from "./adapter.mjs";
+import { tokenizeCommand } from "./tokenize-command.mjs";
 
 const HOOK_NAME = "write-guard";
 const READ_TOOLS = new Set(["Read", "Glob", "Grep"]);
@@ -450,11 +451,6 @@ function extractApplyPatchTargets(patchText) {
 const LEGACY_HELPER_RE = /^bee_([a-z]+)\.mjs$/i;
 const DISPATCHER_RE = /^bee\.mjs$/i;
 const CLI_SEGMENT_SEPARATORS = new Set(["&&", "||", ";", "|", "&"]);
-
-function tokenizeCommand(command) {
-  const matches = String(command || "").match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
-  return matches.map((token) => token.replace(/^['"]|['"]$/g, ""));
-}
 
 function splitCliSegments(tokens) {
   const segments = [];

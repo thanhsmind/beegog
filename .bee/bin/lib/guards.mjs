@@ -168,6 +168,11 @@ const DIRECT_EDIT_DENY = {
   '.bee/runtime/cross-worktree-holds.json':
     'bee.mjs reservations reserve/release (holds are mirrored into the ledger automatically)',
   '.bee/runtime/worktree-grants.json': 'bee.mjs worktree register / unregister',
+  // D12: the companion-worktree marker (worktree-store.mjs's runCompanionStart)
+  // is CLI-owned the same way — a hand edit could point resolveCompanionMountedRelPath
+  // at an arbitrary worktreePath/mountPath pair, granting access outside the
+  // physical worktree.
+  '.bee/companion-session.json': 'bee worktree new --with-companion (started/ended automatically by the companion lifecycle)',
 };
 
 function normalizeRel(relPath) {
@@ -863,9 +868,80 @@ const WRITE_COMMANDS = new Set(['rm', 'mv', 'cp', 'mkdir', 'touch', 'tee']);
 const SEPARATORS = new Set(['&&', '||', ';', '|', '&']);
 const BROAD_TARGETS = new Set(['.', '..', '/', '~', '*', './*', '/*']);
 
-function tokenize(command) {
-  const matches = String(command || '').match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
-  return matches.map((token) => token.replace(/^['"]|['"]$/g, ''));
+// Character-scanning tokenizer (replaces a regex-alternation approach that
+// could not get all three of these right at once):
+//   - Shell separators (`;`, `&`, `|`, `&&`, `||`) are always their own
+//     token, even glued to the preceding text with no space
+//     (`2>/dev/null;`, `rm file.txt;`) — SEPARATORS-consuming loops below
+//     (git add/mv/rm, WRITE_COMMANDS, the redirect branch) already assumed
+//     separators arrive as standalone tokens; a prior regex-only fix made
+//     that true for THIS case but broke the next two.
+//   - Adjacent quoted/unquoted segments with NO separating whitespace merge
+//     into ONE token, matching bash word-splitting (`'.bee/state'".json"`
+//     is the single word `.bee/state.json`). A regex-alternation tokenizer
+//     that scans quotes and bare text as independent matches (no merging)
+//     splits this into two tokens; only the first ever reaches a target
+//     check, so `DIRECT_EDIT_DENY` (and any other containment check) can be
+//     bypassed entirely by concatenating quotes around a protected path.
+//   - A backslash escapes the next character literally (`a\;b.txt` is the
+//     one-argument filename `a;b.txt`, not a separator) — without this, the
+//     escaped separator still splits the token, and the real filename is
+//     never the one that gets checked.
+// Exported so guards.test.mjs can assert byte-for-byte equivalence against
+// bee-write-guard.mjs's hand-synced copy (tokenize-command.mjs) — this is
+// the source of truth the comment there points back to.
+export function tokenize(command) {
+  const str = String(command || '');
+  const tokens = [];
+  let current = '';
+  let hasCurrent = false;
+  const flush = () => {
+    if (hasCurrent) {
+      tokens.push(current);
+      current = '';
+      hasCurrent = false;
+    }
+  };
+  let i = 0;
+  while (i < str.length) {
+    const ch = str[i];
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+      flush();
+      i += 1;
+      continue;
+    }
+    if (ch === '\\' && i + 1 < str.length) {
+      current += str[i + 1];
+      hasCurrent = true;
+      i += 2;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const close = str.indexOf(ch, i + 1);
+      const end = close === -1 ? str.length : close;
+      current += str.slice(i + 1, end);
+      hasCurrent = true;
+      i = end + 1;
+      continue;
+    }
+    if ((ch === '&' && str[i + 1] === '&') || (ch === '|' && str[i + 1] === '|')) {
+      flush();
+      tokens.push(ch + ch);
+      i += 2;
+      continue;
+    }
+    if (ch === ';' || ch === '&' || ch === '|') {
+      flush();
+      tokens.push(ch);
+      i += 1;
+      continue;
+    }
+    current += ch;
+    hasCurrent = true;
+    i += 1;
+  }
+  flush();
+  return tokens;
 }
 
 function isFlag(token) {
@@ -927,8 +1003,16 @@ export function extractBashTargets(command) {
     const cmd = token.replace(/\\/g, '/').split('/').pop();
 
     if (cmd === 'git' && ['add', 'mv', 'rm'].includes(tokens[i + 1])) {
+      // D8: `git add` only STAGES already-written content — it is not itself
+      // a content mutation, so staging a CLI-owned file (DIRECT_EDIT_DENY) is
+      // not a direct-edit target. `git mv`/`git rm` genuinely change what's
+      // on disk, so they stay fully tracked, same as any other target.
+      const gitVerb = tokens[i + 1];
       for (let j = i + 2; j < tokens.length && !SEPARATORS.has(tokens[j]); j += 1) {
-        if (!isFlag(tokens[j])) addTarget(tokens[j]);
+        if (!isFlag(tokens[j])) {
+          const cliOwnedStageOnly = gitVerb === 'add' && Object.prototype.hasOwnProperty.call(DIRECT_EDIT_DENY, normalizeRel(tokens[j]));
+          if (!cliOwnedStageOnly) addTarget(tokens[j]);
+        }
         i = j;
       }
       continue;
