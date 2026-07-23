@@ -496,6 +496,14 @@ export function collectFeedback(root) {
           skipped += 1;
           continue;
         }
+        // backlog-unification D1: kind:'pbi' rows are event-sourced PBI
+        // records (add/status/amend) — a wholly different shape from the
+        // friction/proposal rows this loop otherwise reads. They carry no
+        // `type` field at all, so without this skip every one would fall
+        // through to resolveKind and get bucketed as an unknown_type drop.
+        // Explicitly skipped instead: never merged, never dropped, never
+        // counted as skipped either (a recognized shape, not malformed).
+        if (row.kind === 'pbi') continue;
         const pain = typeof row.severity === 'string' && PAIN_SEVERITY[row.severity] ? PAIN_SEVERITY[row.severity] : 1;
         raw.push({ type: row.type, title: row.title, layer: row.layer, first_seen: row.ts, pain, source: SRC_BACKLOG });
       }

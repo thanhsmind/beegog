@@ -881,6 +881,7 @@
       "scripts/test_heartbeat_touch.mjs",
       "skills/bee-hive/scripts/test_onboard_bee.mjs",
       "skills/bee-hive/scripts/test_split_brain_regression.mjs",
+      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
       "skills/bee-hive/templates/tests/test_bee_cli.mjs",
       "skills/bee-hive/templates/tests/test_cells.mjs",
       "skills/bee-hive/templates/tests/test_claims.mjs",
@@ -1285,6 +1286,7 @@
     "skills/bee-hive/templates/lib/feedback.mjs": [
       "scripts/test_dispatch_prepare.mjs",
       "scripts/test_native_probe.mjs",
+      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
       "skills/bee-hive/templates/tests/test_bee_cli.mjs",
       "skills/bee-hive/templates/tests/test_cli_cells.mjs",
       "skills/bee-hive/templates/tests/test_feedback.mjs",

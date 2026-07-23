@@ -35,20 +35,47 @@
   "verify": "node skills/bee-hive/templates/tests/test_backlog_capture.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check && node scripts/impact_registry.mjs --check",
   "behavior_change": true,
   "deps": [],
-  "status": "claimed",
+  "status": "capped",
   "decisions": [],
   "trace": {
     "worker": "bu1-worker",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "event-sourced PBI layer shipped in backlog.jsonl: pbi add/status/amend/list + render --write/--check (generated view), crypto p-<8hex> ids, fold-first counts/badges/rank with legacy fallback, rank --write retired, digest skips pbi lines; 28-check suite green; twins byte-identical",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/backlog.mjs",
+      ".bee/bin/lib/backlog.mjs",
+      "skills/bee-hive/templates/lib/feedback.mjs",
+      ".bee/bin/lib/feedback.mjs",
+      "skills/bee-hive/templates/lib/command-registry.mjs",
+      ".bee/bin/lib/command-registry.mjs",
+      "skills/bee-hive/templates/bee.mjs",
+      ".bee/bin/bee.mjs",
+      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+      "docs/history/codex-harness-hardening/release-manifest.json",
+      "scripts/impact-registry.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
+    "capped_at": "2026-07-23T16:05:43.612Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"verify_command\": \"node skills/bee-hive/templates/tests/test_backlog_capture.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check && node scripts/impact_registry.mjs --check\",\n  \"verify_passed\": true,\n  \"verify_output\": \"28/28 backlog_capture; lib mirror byte-identical; manifest 499 match; ledger parity green; registry up to date (orchestrator re-ran all five independently)\",\n  \"red_failure_evidence\": \"Pre-implementation: importing addPbi/foldPbis from unmodified backlog.mjs => SyntaxError 'does not provide an export named addPbi' — suite red without the module, 28/28 green after.\"\n}\n",
     "verify_output": null,
-    "verify_passed": null,
+    "verify_passed": true,
     "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
-    "claimed_at": "2026-07-23T15:38:11.823Z"
+    "claimed_at": "2026-07-23T15:38:11.823Z",
+    "verify_command": "node skills/bee-hive/templates/tests/test_backlog_capture.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check && node scripts/impact_registry.mjs --check",
+    "verified_at": "2026-07-23T16:05:43.517Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T16:05:43.517Z",
+        "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
+        "claimed_at": "2026-07-23T16:05:18.894Z",
+        "acquired_at": "2026-07-23T15:38:11.821Z",
+        "worker": "bu1-worker",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }

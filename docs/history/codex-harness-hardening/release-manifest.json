@@ -3,7 +3,7 @@
   "files": [
     {
       "path": ".bee/bin/lib/backlog.mjs",
-      "sha256": "1839fe827fcd14f5e9111b4a01a1d0d1bdd90009f1a9ac0b5ef36ae6e90c6a52",
+      "sha256": "16d83876c527ad83e16fa4df6efa0b43bcab1b8ab071dedb376ed11331897fd5",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -27,7 +27,7 @@
     },
     {
       "path": ".bee/bin/lib/command-registry.mjs",
-      "sha256": "885cec366193d89e6e0d142846bb37455a97ba708e42270508d290c22e4db456",
+      "sha256": "9911a2eb3a5dd44a5d515a850f603de0e0808ddbfefb69dcb1f9447c30791d70",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -63,7 +63,7 @@
     },
     {
       "path": ".bee/bin/lib/feedback.mjs",
-      "sha256": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
+      "sha256": "a38aabf50fc1fd597bddc208160b0f27bf270773c403de75a0c3b4783c95e02c",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -2826,14 +2826,14 @@
     },
     {
       "path": "skills/bee-hive/templates/bee.mjs",
-      "sha256": "f3622ad97760f2b260b788022b5e9d56cf94325776174b56afc42414b1e4944c",
+      "sha256": "7e08b5f6cddd24831ebf829fb98d1ecccc80c2c6b0289d8aa738ee4efabbc854",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/bee.mjs"
     },
     {
       "path": "skills/bee-hive/templates/lib/backlog.mjs",
-      "sha256": "1839fe827fcd14f5e9111b4a01a1d0d1bdd90009f1a9ac0b5ef36ae6e90c6a52",
+      "sha256": "16d83876c527ad83e16fa4df6efa0b43bcab1b8ab071dedb376ed11331897fd5",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/backlog.mjs"
@@ -2861,7 +2861,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/command-registry.mjs",
-      "sha256": "885cec366193d89e6e0d142846bb37455a97ba708e42270508d290c22e4db456",
+      "sha256": "9911a2eb3a5dd44a5d515a850f603de0e0808ddbfefb69dcb1f9447c30791d70",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/command-registry.mjs"
@@ -2903,7 +2903,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/feedback.mjs",
-      "sha256": "815ecd92215e50fa91067a2069b7cf948aa53e973009107de5ec6af512c00261",
+      "sha256": "a38aabf50fc1fd597bddc208160b0f27bf270773c403de75a0c3b4783c95e02c",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/feedback.mjs"
@@ -3064,7 +3064,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "sha256": "ece82bb1564500f1455c40977c89423f7a3175c308a7756672ddb38032ee3906",
+      "sha256": "22a9829acf6f98013350cb1e74363bf5570b59e4f30382da9f0cadb7ba4ec887",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_backlog_capture.mjs"

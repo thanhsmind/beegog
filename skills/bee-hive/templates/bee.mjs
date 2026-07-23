@@ -178,7 +178,16 @@ import {
   buildPromotion,
   bundleMode,
 } from './lib/knowledge.mjs';
-import { readBacklogCounts, rankBacklog, updateReadmeBadges } from './lib/backlog.mjs';
+import {
+  readBacklogCounts,
+  rankBacklog,
+  updateReadmeBadges,
+  addPbi,
+  setPbiStatus,
+  amendPbi,
+  listPbis,
+  renderBacklogPbiView,
+} from './lib/backlog.mjs';
 import {
   createReview,
   listReviews,
@@ -2484,14 +2493,22 @@ function handleBacklogCounts(root) {
   };
 }
 
+// backlog-unification D3: rank --write is RETIRED — the generated view
+// (renderBacklogPbiView / `bee backlog render`) now owns docs/backlog.md.
+// The bare dry-run report stays (still useful, still read-only) — only
+// --write refuses, naming render.
 function handleBacklogRank(root, flags) {
-  const write = flags.write === true;
-  const ranked = rankBacklog(root, { write });
+  if (flags.write === true) {
+    throw new Error(
+      'backlog rank --write is retired — "bee backlog render --write" now owns the generated docs/backlog.md view.',
+    );
+  }
+  const ranked = rankBacklog(root, { write: false });
   if (!ranked) return { result: null, text: 'No parseable backlog table in docs/backlog.md.' };
-  const verb = write ? (ranked.changed ? 'Reordered' : 'Already ordered') : ranked.changed ? 'Would reorder to' : 'Already ordered';
+  const verb = ranked.changed ? 'Would reorder to' : 'Already ordered';
   return {
     result: ranked,
-    text: `${verb}: ${ranked.order.join(', ')}${write || !ranked.changed ? '' : ' (re-run with --write to apply)'}`,
+    text: `${verb}: ${ranked.order.join(', ')}${ranked.changed ? ' ("rank --write" is retired — run "bee backlog render --write" instead)' : ''}`,
   };
 }
 
@@ -2535,6 +2552,69 @@ function handleBacklogAdd(root, flags) {
   };
   appendJsonl(path.join(root, '.bee', 'backlog.jsonl'), line);
   return { result: line, text: `Appended ${severity} ${type} row to .bee/backlog.jsonl: "${title}"` };
+}
+
+// ─── backlog pbi / backlog render (backlog-unification D1-D5): the
+// event-sourced product-backlog layer. Enum/duplicate/unknown-id validation
+// lives in lib/backlog.mjs's writers themselves (addPbi/setPbiStatus/
+// amendPbi/listPbis all throw a FIX-bearing Error) — these handlers just
+// shape flags in and the result out, same division of labor as every other
+// thin handler in this file. ─────────────────────────────────────────────
+
+function handleBacklogPbiAdd(root, flags) {
+  const title = requireFlag(flags, 'title');
+  const cos = flags.cos !== undefined && flags.cos !== true ? String(flags.cos) : '';
+  const status = flags.status !== undefined && flags.status !== true ? String(flags.status) : 'proposed';
+  const feature = flags.feature !== undefined && flags.feature !== true ? String(flags.feature) : undefined;
+  const id = flags.id !== undefined && flags.id !== true ? String(flags.id) : undefined;
+  const item = addPbi(root, { id, title, cos, status, feature });
+  return { result: item, text: `Added PBI ${item.id}: "${item.title}"` };
+}
+
+function handleBacklogPbiStatus(root, flags) {
+  const id = requireFlag(flags, 'id');
+  const to = requireFlag(flags, 'to');
+  const feature = flags.feature !== undefined && flags.feature !== true ? String(flags.feature) : undefined;
+  const item = setPbiStatus(root, { id, to, feature });
+  return { result: item, text: `PBI ${id} -> ${to}${feature ? ` (feature: ${feature})` : ''}` };
+}
+
+function handleBacklogPbiAmend(root, flags) {
+  const id = requireFlag(flags, 'id');
+  const title = flags.title !== undefined && flags.title !== true ? String(flags.title) : undefined;
+  const cos = flags.cos !== undefined && flags.cos !== true ? String(flags.cos) : undefined;
+  const item = amendPbi(root, { id, title, cos });
+  return { result: item, text: `Amended PBI ${id}` };
+}
+
+function handleBacklogPbiList(root, flags) {
+  const status = flags.status !== undefined && flags.status !== true ? String(flags.status) : undefined;
+  const list = listPbis(root, { status });
+  return {
+    result: list,
+    text: list.length ? list.map((item) => `${item.id} [${item.status}] ${item.title}`).join('\n') : 'No PBIs.',
+  };
+}
+
+function handleBacklogRender(root, flags) {
+  const write = flags.write === true;
+  const check = flags.check === true;
+  const rendered = renderBacklogPbiView(root, { write });
+  if (check && rendered.changed) {
+    throw new Error('backlog render --check: docs/backlog.md is stale. FIX: run "bee backlog render --write" to refresh it.');
+  }
+  const verb = write
+    ? rendered.changed
+      ? 'Rendered'
+      : 'Already current'
+    : check
+      ? rendered.changed
+        ? 'STALE'
+        : 'Current'
+      : rendered.changed
+        ? 'Would render (re-run with --write to apply)'
+        : 'Already current';
+  return { result: rendered, text: `${verb}: docs/backlog.md` };
 }
 
 // ─── capture: full port of bee_capture.mjs's add/list/flush/count verbs
@@ -4906,7 +4986,13 @@ function stateUsageFallback(leading) {
 
 function backlogUsageFallback(leading) {
   const verb = leading[1];
-  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add.`;
+  // pbi (backlog-unification D3): a new nested verb family, mirroring the
+  // worker/session/handoff branches in stateUsageFallback above.
+  if (verb === 'pbi') {
+    const sub = leading[2];
+    return `Unknown pbi action "${sub || '(missing)'}". Use: add, status, amend, list.`;
+  }
+  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add, pbi, render.`;
 }
 
 function captureUsageFallback(leading) {
@@ -5075,6 +5161,11 @@ const HANDLERS = {
   'backlog.rank': handleBacklogRank,
   'backlog.badges': handleBacklogBadges,
   'backlog.add': handleBacklogAdd,
+  'backlog.pbi.add': handleBacklogPbiAdd,
+  'backlog.pbi.status': handleBacklogPbiStatus,
+  'backlog.pbi.amend': handleBacklogPbiAmend,
+  'backlog.pbi.list': handleBacklogPbiList,
+  'backlog.render': handleBacklogRender,
   'capture.add': handleCaptureAdd,
   'capture.list': handleCaptureList,
   'capture.flush': handleCaptureFlush,
