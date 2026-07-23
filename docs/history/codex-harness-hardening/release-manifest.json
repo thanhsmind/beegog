@@ -191,7 +191,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "a2808eb3afb4a7d5688e851c0fc92169e6e09d042d15b7c04626f46244dd3b04",
+      "sha256": "d6a692511d4b6909f39a1e8c5bbf90d349c22672920fd4c00012026b9a44c7c8",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -352,7 +352,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-executing/SKILL.md",
-      "sha256": "ecc3bdc14f970670f8933122f840dd092dd0cad80cc6ab4c713e98990b34bfd0",
+      "sha256": "18c5d83edd20f9432f00750afd607bd57cfde15ff73e0d5c517069e99e987a5f",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-executing/SKILL.md"
@@ -520,7 +520,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/references/routing-and-contracts.md",
-      "sha256": "f96f54487e7061b58de128a07497b2c4eef4f672c8ce0f2c48198ec99f734ed9",
+      "sha256": "c0c2eef4c7aa73468a555f35e588758020d143b8e3c271db247e6795b79d8a60",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/references/routing-and-contracts.md"
@@ -569,7 +569,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "5bb160d7506531f59bc47882366ebb29b7a17b503c22f9c9b9c498dad463b4d1",
+      "sha256": "d22eb5e998e6fc65bcb9e923b38087e0becdcdfab8def0a0d28471a8a2bc1db2",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/AGENTS.block.md"
@@ -1248,7 +1248,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "3b127f533b7f2cfe3d83eddbb60cef5269f28f9c2efa66c616cfff0bb6058359",
+      "sha256": "4034504f89992ce0aaaa427cda76c8a4109abf5883a8479dab3601c6f64ac52f",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1409,7 +1409,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-executing/SKILL.md",
-      "sha256": "2f5ff42be45ac5e23caa773b112176f6999f2b67c7714cdf636406cf799ffc26",
+      "sha256": "b63fc647fc8dd24c2c1cacfd7e3ba3d96e4cf471b90fd78d9e7bbe51b076a92b",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-executing/SKILL.md"
@@ -1577,7 +1577,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/references/routing-and-contracts.md",
-      "sha256": "c37ee3a92d06f6fd0caf71c06c16685bc4389e6295b8c5b04f09983266046c5c",
+      "sha256": "70d1166b057f00dad67f6e0af5315c89db444ea189249dd95e530a541aecea79",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/references/routing-and-contracts.md"
@@ -1626,7 +1626,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "5bb160d7506531f59bc47882366ebb29b7a17b503c22f9c9b9c498dad463b4d1",
+      "sha256": "d22eb5e998e6fc65bcb9e923b38087e0becdcdfab8def0a0d28471a8a2bc1db2",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/AGENTS.block.md"
@@ -2602,7 +2602,7 @@
     },
     {
       "path": "skills/bee-executing/SKILL.md",
-      "sha256": "fa2f41f3362c54935afab170e24ba2b4fc66f51fb8c7be869641759f21c77d10",
+      "sha256": "17f2aa115792d72589f297fc73011cef9d3a45b86b103b0bca597e12b006f8dd",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-executing/SKILL.md"
@@ -2770,7 +2770,7 @@
     },
     {
       "path": "skills/bee-hive/references/routing-and-contracts.md",
-      "sha256": "74b3d60bb699438f534d4ecf457eaf1a8711686ddcaacfd45db3b7b046b4cf13",
+      "sha256": "696856fb007d132cd1b84e2214605a850c3559696d16c55c11c7bf351936bde8",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/references/routing-and-contracts.md"
@@ -2819,7 +2819,7 @@
     },
     {
       "path": "skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "5bb160d7506531f59bc47882366ebb29b7a17b503c22f9c9b9c498dad463b4d1",
+      "sha256": "d22eb5e998e6fc65bcb9e923b38087e0becdcdfab8def0a0d28471a8a2bc1db2",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/AGENTS.block.md"

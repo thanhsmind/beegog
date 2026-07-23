@@ -131,6 +131,9 @@ Version set to ${newVersion}. Remaining release steps:
        node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply
      (refreshes .claude/ and .agents/ skill copies and .bee/onboarding.json;
       the split-brain test anchors self-update — no hand edit.)
-  2. Run the full verify suite (must be green).
+  2. Run the impacted verify run (must be green):
+       node scripts/run_verify.mjs --impacted-from-git
   3. Commit, then tag: git tag v${newVersion} && git push --tags
+  4. Dispatch the CI full run: gh workflow run CI --ref main
+     (the full suite is CI-owned; a red run files its own verify-red issue.)
 `);
