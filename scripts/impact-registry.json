@@ -845,7 +845,11 @@
       "scripts/census_stale_spawn_syntax.mjs"
     ],
     "scripts/impact_registry.mjs": [
-      "scripts/test_impact_registry.mjs"
+      "scripts/test_impact_registry.mjs",
+      "scripts/test_run_verify_impacted.mjs",
+      "scripts/test_run_verify_only.mjs",
+      "scripts/test_run_verify_skip_marker.mjs",
+      "scripts/test_verify_manifest.mjs"
     ],
     "scripts/install.ps1": [
       "scripts/test_install_ps1_flow.mjs"
@@ -940,6 +944,7 @@
     ],
     "scripts/run_verify.mjs": [
       "scripts/test_impact_registry.mjs",
+      "scripts/test_run_verify_impacted.mjs",
       "scripts/test_run_verify_only.mjs",
       "scripts/test_run_verify_skip_marker.mjs",
       "scripts/test_verify_manifest.mjs"
@@ -1024,6 +1029,9 @@
     ],
     "scripts/test_resolveroots_p40.mjs": [
       "scripts/test_resolveroots_p40.mjs"
+    ],
+    "scripts/test_run_verify_impacted.mjs": [
+      "scripts/test_run_verify_impacted.mjs"
     ],
     "scripts/test_run_verify_only.mjs": [
       "scripts/test_run_verify_only.mjs"
