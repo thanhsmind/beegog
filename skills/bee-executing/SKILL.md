@@ -131,7 +131,7 @@ At roughly 65% context before a safe finish: write `.bee/HANDOFF.json` (cell, fi
 
 ## Fresh-Session Handoff (downstream, not a worker action)
 
-This `[HANDOFF]` is the pause kind — unrelated to the planned-next handoff (fresh-session-handoff D1). When this cell caps with a green verify and further execution-approved work remains, the finish → claim-next → planned-next handoff → ask-the-user-to-`/clear` flow becomes available — but that is the orchestrator's call after collecting your `[DONE]`, never something a worker claims or writes mid-swarm on its own initiative. A worker's job stays exactly Cap → Release → Return.
+This `[HANDOFF]` is the pause kind — unrelated to the planned-next handoff (fresh-session-handoff D1). When this cell caps with a green verify and further execution-approved work remains, the orchestrator continues in-session; only at real session exit does it run the finish → claim-next → planned-next handoff flow for the next fresh session to adopt silently (no-clear-stop D1) — never a stop or a `/clear` prompt to the user, and never something a worker claims or writes mid-swarm on its own initiative. A worker's job stays exactly Cap → Release → Return.
 
 ## Headless
 
