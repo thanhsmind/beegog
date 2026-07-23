@@ -167,6 +167,10 @@
     "backlog-auto-triage",
     "context-import",
     "gate-bypass",
-    "scope-interpretation"
+    "scope-interpretation",
+    "herding-dispatch-lock-toggle",
+    "safety",
+    "exploring",
+    "gate"
   ]
 }
