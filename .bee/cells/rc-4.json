@@ -49,19 +49,44 @@
     "rc-2",
     "rc-3"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "router-trimmer",
+    "outcome": "Slimmed skills/bee-hive/SKILL.md from 35815 to 29115 bytes (-18.7%, 231->199 lines) by cutting only what AGENTS.md — auto-loaded into every session — genuinely already carries. Every cut left a one-line pointer naming the rule and its home; all 11 headings survive, so a reader scanning headings still learns each rule exists. Moved into references/routing-and-contracts.md under new named sections: the 11 onboarding status bullets (Onboarding Protocol), hive law 10 in full, and the headless contract. THE ORCHESTRATOR'S OWN ANALYSIS WAS WRONG ON TWO ROWS AND THE WORKER CAUGHT IT: the cell brief mapped Priority Rules 10 and 11 to AGENTS.md critical rules 10 and 11, but those two AGENTS.md rules themselves end with 'Full rule: bee-hive skill, critical rule 10/11' — following the brief would have built a circular pointer with the full rule living nowhere. Both were routed to routing-and-contracts.md instead so the chain terminates. Three further items proved NOT carried by AGENTS.md and were kept verbatim rather than cut: .bee/capture-queue.jsonl (added to the reference's File Quick Reference), the bee decision review session-end nudge, and four router-only red flags. Honest correction to D7's projection: the saving is ~1675 tokens per cold route, not the ~5k estimated — cutting further would have meant removing route-critical prose or touching the pinned region.",
+    "files_changed": [
+      "skills/bee-hive/SKILL.md",
+      "skills/bee-hive/references/routing-and-contracts.md",
+      "docs/history/codex-harness-hardening/release-manifest.json",
+      ".bee/onboarding.json",
+      ".claude-plugin/skills",
+      ".codex-plugin/skills",
+      ".claude/skills",
+      ".agents/skills"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "capped_at": "2026-07-23T10:06:16.814Z",
+    "behavior_change": true,
+    "verification_evidence": "{\"tests_inspected\":\"scripts/test_gate_bypass_doctrine.mjs:137-200 and skills/bee-hive/templates/tests/test_misc.mjs:1839-1844 (the ten verbatim pins); scripts/test_skill_pointers.mjs (rc-2's gate, the prerequisite this cell was sequenced behind); scripts/okf_instructions_fence.mjs (same-line bundle marker on every surviving retired-path line); the full 90-suite run_verify chain.\",\"tests_added_or_changed\":\"No test added. This cell's safety net was built as its own prerequisite: rc-2's scripts/test_skill_pointers.mjs exists precisely because moving prose into a reference is the migration whose instruction layer rots silently. That gate went from 96 to 101 pointers checked across this cell — it validated the five pointers this surgery created, which is the exact failure mode D5 sequenced it to catch.\",\"red_failure_evidence\":\"Two independent standing red-evidences, both known to bite rather than assumed to. (1) The ten pins were enumerated character-for-character before any edit (CONTEXT D6) so a reword drives a REQUIRED count to 0 and fails test_gate_bypass_doctrine.mjs; measured before and after, all ten counts are identical (REQUIRED 1/1/2/1/1/1/4, BANNED 0/0/0), and the pinned Modes and Lanes region is byte-untouched — the diff is two hunks, nothing between lines 50 and 175 changed. (2) test_skill_pointers.mjs was proven in rc-2 to DETECT both a missing target file and a missing named section, via negative controls that run on every verify; it was then pointed at this cell's five new pointers and reports 0 broken. A dangling pointer created by this surgery would have turned it red — that is the whole reason it shipped first.\",\"verification_run\":\"Orchestrator re-ran independently, not the worker's word: wc -c -> 29115 (from 35815); grep -cF of all ten pins -> REQUIRED 1/1/2/1/1/1/4, BANNED 0/0/0; grep '^## ' -> all 11 headings present; the circular-pointer claim independently confirmed by grep on AGENTS.md:52-53, which do end with 'Full rule: bee-hive skill, critical rule 10/11'; node scripts/test_skill_pointers.mjs -> 101 pointer(s) checked, 0 broken; node scripts/run_verify.mjs -> PASS 90 suite(s), concurrency=5, wall=69056ms, every suite green.\"}\n",
+    "verify_output": "Orchestrator re-ran independently. skills/bee-hive/SKILL.md: 35815 -> 29115 bytes (-6700, -18.7%), 231 -> 199 lines. All ten pins verified by direct grep -cF, before and after identical: REQUIRED 1/1/2/1/1/1/4, BANNED 0/0/0. All 11 headings survive (Triage first, Onboarding, Session Scout, Routing, Modes and Lanes, The Four Gates, Priority Rules, Runtime Files, Hook Response Protocol, Headless, Red Flags) — a reader scanning headings still sees every rule exists. test_skill_pointers: 101 pointer(s) checked, 0 broken (was 96; the 5 pointers this cell created all resolve, named sections included). PASS run_verify: 90 suite(s), concurrency=5, wall=69056ms.",
+    "verify_passed": true,
+    "claim_session": "67c07d5a-a660-4e48-b329-35ca9c348f82",
+    "claimed_at": "2026-07-23T09:54:02.897Z",
+    "verify_command": "node scripts/run_verify.mjs",
+    "verified_at": "2026-07-23T10:05:53.789Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T10:05:53.789Z",
+        "claim_session": "67c07d5a-a660-4e48-b329-35ca9c348f82",
+        "claimed_at": "2026-07-23T10:04:01.311Z",
+        "acquired_at": "2026-07-23T09:54:02.895Z",
+        "worker": "router-trimmer",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }

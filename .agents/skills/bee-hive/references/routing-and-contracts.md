@@ -42,11 +42,36 @@ Open this when the compact bootstrap in `SKILL.md` is not enough.
 
 **Surface-scope-earlier check** (runs before routing to exploring): the request contains concrete acceptance criteria AND references to existing patterns → offer "Found clear requirements. Jump straight to planning, or explore alternatives first?" On approval, planning receives a one-paragraph scoping synthesis whose decisions still carry D-IDs.
 
+## Onboarding Protocol
+
+`SKILL.md`'s Onboarding section carries the three steps a session actually runs; this is the full
+status contract behind them (moved here by router-cost rc-4 — the router keeps the steps, this file
+keeps the detail). Run from the `bee-hive` skill directory:
+
+```bash
+node scripts/onboard_bee.mjs --repo-root <repo-root> --json
+```
+
+Then inspect the result:
+
+- `status: "up_to_date"` → continue.
+- `status: "changes_needed"` → summarize the plan to the user, ask for approval, and only then re-run with `--apply`. Never apply silently. Never replace an existing compact prompt or AGENTS.md content outside the BEE markers without explicit consent. Every `--apply` also syncs the bee skill set into the host repo's two managed roots (`<repo>/.claude/skills/bee-*` for Claude Code, `<repo>/.agents/skills/bee-*` for Codex) in the same run — one command keeps vendored helpers and installed skills at the same version. The trees are committed to the host repo, never gitignored. `--global-skills` additionally syncs the legacy global `~/.claude/skills/bee-*` root; without the flag the global root is never read, written, or deleted. The payload's `skills.targets` carries one entry per target root: `{kind: "repo-claude" | "repo-agents" | "global", target_root, mode, blocked, versions, items}`. When the repo being onboarded contains the running script's own skill tree (bee's own repo), the per-project targets sync through the ordinary `applySyncSkill` path (mode `sync`/`fresh`/`noop`) like every other managed target; only the exact source-equals-target root is a `noop`. Each managed root is rendered per runtime (Claude vs Codex) and stamped with a render provenance marker, so a rendered projection is never accepted back as an onboarding source. Global sync there is unchanged.
+- `status: "blocked_downgrade"` → the source tree is older than the repo's vendored helpers or a target's installed skills (or a version could not be read — reported as `unknown`, refused the same way). The three-version preflight runs per target; ANY blocked target blocks the whole run (blocked-first), zero mutations happen anywhere, and the top-level `reason`/`versions` surface the blocked target(s). Surface the reported `versions` to the user; only pass `--force-downgrade` on explicit user instruction, and only when every blocked target resolved all three versions numeric — an `unknown` version is never forceable.
+- `status: "blocked_no_source"` → no authoritative skill source resolved for this run (identity check failed, or source/target/repo roots overlap). Fail-closed, zero mutations, never forceable with `--force-downgrade` — surface it to the user and resolve the source location before retrying. `versions` is still reported on every blocked return (identity/overlap included), with `unknown` for each of the three (resolution was never attempted) — never `null`.
+- **Forced-apply transparency (D2):** whenever a blocked result is forceable, both the plain `--json` dry-run and a refused `--apply` (no `--force-downgrade` yet) carry every target's computed `items` inside `skills.targets` — the full per-target list of `sync_skill`/`remove_skill`/`blocked_*` items a `--force-downgrade` would apply. Show this list to the user BEFORE they authorize the force — it is exactly which skills get overwritten or DELETED, per target; a forced apply then executes precisely that reviewed set.
+- Every skill-stage item (`sync_skill`, `remove_skill`, `blocked_symlink`, `blocked_alias`) carries `target` (the target kind above) and `scope: "installed" | "source"`: `installed` means `path` is relative to that target's `target_root`, `source` means `path` is relative to the running script's own skill tree. Legacy plan items (AGENTS.md, `.bee/` runtime files, vendored helpers, etc.) carry no `scope` or `target` at all — they are always repo-relative. Never resolve a skill-stage `path` against `repo_root`.
+- A `blocked_symlink` item inside `plan` means one skill directory is a symlink and was skipped (not synced, not deleted) — surface it to the user; it does not block the rest of the apply.
+- **Recheck honesty (D5):** after `--apply`, the response's `recheck` field applies blocked-first precedence aggregated across ALL targets — if the skill-sync stage is still blocked post-apply on ANY target (e.g. a residual per-skill symlink/alias block left one skill's version marker un-synced after a forced downgrade), `recheck` reports that blocked status and can never read `"up_to_date"`, even when the rest of the plan is empty. `recheck_skills` carries `{blocked, reason, versions, targets}` whenever this fires.
+- `--repo-hooks` only when the user asks for repo-local hook wiring.
+- `--claude-md` only when plugin hooks are unavailable and the user wants the CLAUDE.md `@AGENTS.md` import fallback.
+
+If onboarding is not complete, do not continue into the rest of the bee workflow.
+
 ## State Bootstrap
 
 On every session start:
 
-1. Confirm onboarding is current via `.bee/onboarding.json` (see SKILL.md onboarding protocol).
+1. Confirm onboarding is current via `.bee/onboarding.json` (see Onboarding Protocol above).
 2. Run `node .bee/bin/bee.mjs status --json`.
 3. If `.bee/HANDOFF.json` exists, check its kind: a pause handoff (or any kindless record) is presented and waited on — do not auto-resume. A planned-next handoff is adopted only at this fresh-session boundary (see Resume Logic below).
 4. **Critical patterns (bundleMode, D1):** with a bundle, read `docs/knowledge/index.md`'s `## Critical patterns` section — the live equivalent, generated from the bundle. With no bundle — today's guidance stands, unchanged: read `docs/history/learnings/critical-patterns.md` when present.
@@ -149,6 +174,14 @@ For plans, findings, blockers, and handoffs, answer in this order:
 
 Avoid "violates D5" or "non-monotonic" without immediate explanation.
 
+### The agent runs the machinery, not the user (hive law 10)
+
+Every bee command (`bee.mjs status`, `cells`, `reservations`, `decisions`, onboarding, cell verify
+commands) is run by the agent itself the moment the workflow calls for it — never printed for the
+user to execute, never "run this and tell me the output". The only human actions in bee are gate
+approvals, decision answers, and privacy approvals. `AGENTS.md` critical rule 10 states the same law
+in one line and defers here for the full form; `SKILL.md`'s hive law 10 is the router-side pointer.
+
 ### Silent Bookkeeping — work language only (decision 1689af1b)
 
 Bee is bookkeeping, not the deliverable. Every mechanical workflow act — claiming or capping cells, status and `state.json` changes, reservations, phase transitions, decision logging, capture stubs — is done silently: run it, never narrate it. Chat speaks the user's work language only: "fixing the login redirect", "done — tests pass", never "capped cell auth-3" or "phase is now swarming".
@@ -214,6 +247,17 @@ Legacy `true` maps to `normal`, so existing repos are unchanged. At **Gate 1, 2,
 The mechanical guards do not change: `claimCell` and the write-guard still require `approved_gates.execution: true` — bypass simply means the agent records that approval itself for eligible work instead of waiting for the human. Bypass state is surfaced every session (the preamble and `bee_status` both print a loud level-specific `GATE BYPASS` banner — `NORMAL` / `FULL AUTOPILOT` / `TOTAL AUTOPILOT — ZERO STOPS`) so the active level is never silently in effect.
 
 **The bypass is now mechanized at runtime, not prose-only (GitHub #18, hook-runtime B15/R14).** The rule above is still the assistant's to follow, but it is no longer the *only* thing honoring it: the session-stop checkpoint (`hooks/bee-session-close.mjs` `maybeBypassBlock`) emits a turn-control block that forces continuation when the assistant tries to stop mid-planning/validating at a gate the active level covers and is still pending. It is loop-guarded (blocks once per `sessionId:phase:gate:level`, then degrades to advisory) and excludes exploring/Gate 1 (genuine information questions still stop even under `total`). This closes the "invariant left in prose WILL be bypassed" gap (crit-pattern 20260714): the doctrine test mechanized the prose, this mechanizes the runtime.
+
+### Headless mode (never ask; defer into Outstanding Questions)
+
+With `mode:headless`: never ask blocking questions. Perform onboarding checks and routing only when
+unambiguous; defer every ambiguity (stale onboarding needing `--apply`, HANDOFF present, unclear
+route) into an `Outstanding Questions` section of a structured terminal report. The four gates are
+NEVER self-approved in headless mode — the only mechanism that self-approves gates is the explicit
+opt-in gate-bypass switch above, and how far it reaches is its level (`normal` = normal-lane only;
+`full` = also high-risk/hard-gate; `total` = everything incl. UAT/secrets). Headless and bypass are
+independent: headless without bypass still stops at every gate. Go mode's own headless behaviour is
+in `references/go-mode.md` ("Headless Go Mode").
 
 ### Delegation contract (fan-out: decide-altitude vs gather-altitude)
 
@@ -287,6 +331,7 @@ One question per message. Never bundle. Never answer your own question.
 .bee/
   onboarding.json  state.json  config.json  HANDOFF.json
   reservations.json  decisions.jsonl  backlog.jsonl
+  capture-queue.jsonl                                 ← settlement stubs awaiting their flush (0017)
   cells/<id>.json  logs/hooks.jsonl  .inject-cache.json
   bin/  bin/lib/
 

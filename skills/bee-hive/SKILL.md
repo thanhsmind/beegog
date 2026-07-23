@@ -19,26 +19,30 @@ Bootstrap meta-skill. Load this first in bee repos. It verifies onboarding, read
 
 For the full routing table, state bootstrap, resume logic, chaining contracts, and communication standards, open `references/routing-and-contracts.md`. For the full pipeline, open `references/go-mode.md`.
 
+## Triage first
+
+Decide the lane from the request itself, before loading a second skill. Two counts decide it: how many of the risk flags listed under **Modes and Lanes** below the change trips, and how many **product files** it must touch (product files only — `.bee/**`, docs, plans, and generated renders never count).
+
+| From the request alone | Lane | What you load next |
+|---|---|---|
+| every touched file is knowledge, not runtime (docs, README, samples, plans) | `docs` | nothing more |
+| 0–1 flags, ≤2 product files, one direct task | `tiny` | nothing more |
+| 0–1 flags, ≤3 product files, no gray areas | `small` | nothing more |
+| 2+ flags or story-sized behavior · **any hard-gate flag** (auth, authorization, data loss, audit/security, external provider, validation removal) · genuine uncertainty about which row you are in | `standard` / `high-risk` | the normal chain, `bee-planning` included |
+
+The first three rows go straight to the merged shape+execution gate and the one dispatched execution worker described below, with **no `bee-planning` load** — the ~21 KB this triage exists to avoid. It saves nothing on *this* file: skills load whole, so `bee-hive` is already fully in context. The only saving on offer is the second load.
+
+**Uncertainty resolves downward, into loading more — never upward into skipping.** This is an early exit for the obviously-small, never a licence to shortcut. One hard-gate flag is `high-risk` at one product file, and re-counting flags to land under a threshold means you are already in `standard`.
+
 ## Onboarding
 
 1. Run `node --version`. Missing or below 18 → stop; bee requires Node.js 18+.
-2. From this skill directory, run:
-   ```bash
-   node scripts/onboard_bee.mjs --repo-root <repo-root> --json
-   ```
-3. Inspect the result:
-   - `status: "up_to_date"` → continue.
-   - `status: "changes_needed"` → summarize the plan to the user, ask for approval, and only then re-run with `--apply`. Never apply silently. Never replace an existing compact prompt or AGENTS.md content outside the BEE markers without explicit consent. Every `--apply` also syncs the bee skill set into the host repo's two managed roots (`<repo>/.claude/skills/bee-*` for Claude Code, `<repo>/.agents/skills/bee-*` for Codex) in the same run — one command keeps vendored helpers and installed skills at the same version. The trees are committed to the host repo, never gitignored. `--global-skills` additionally syncs the legacy global `~/.claude/skills/bee-*` root; without the flag the global root is never read, written, or deleted. The payload's `skills.targets` carries one entry per target root: `{kind: "repo-claude" | "repo-agents" | "global", target_root, mode, blocked, versions, items}`. When the repo being onboarded contains the running script's own skill tree (bee's own repo), the per-project targets sync through the ordinary `applySyncSkill` path (mode `sync`/`fresh`/`noop`) like every other managed target; only the exact source-equals-target root is a `noop`. Each managed root is rendered per runtime (Claude vs Codex) and stamped with a render provenance marker, so a rendered projection is never accepted back as an onboarding source. Global sync there is unchanged.
-   - `status: "blocked_downgrade"` → the source tree is older than the repo's vendored helpers or a target's installed skills (or a version could not be read — reported as `unknown`, refused the same way). The three-version preflight runs per target; ANY blocked target blocks the whole run (blocked-first), zero mutations happen anywhere, and the top-level `reason`/`versions` surface the blocked target(s). Surface the reported `versions` to the user; only pass `--force-downgrade` on explicit user instruction, and only when every blocked target resolved all three versions numeric — an `unknown` version is never forceable.
-   - `status: "blocked_no_source"` → no authoritative skill source resolved for this run (identity check failed, or source/target/repo roots overlap). Fail-closed, zero mutations, never forceable with `--force-downgrade` — surface it to the user and resolve the source location before retrying. `versions` is still reported on every blocked return (identity/overlap included), with `unknown` for each of the three (resolution was never attempted) — never `null`.
-   - **Forced-apply transparency (D2):** whenever a blocked result is forceable, both the plain `--json` dry-run and a refused `--apply` (no `--force-downgrade` yet) carry every target's computed `items` inside `skills.targets` — the full per-target list of `sync_skill`/`remove_skill`/`blocked_*` items a `--force-downgrade` would apply. Show this list to the user BEFORE they authorize the force — it is exactly which skills get overwritten or DELETED, per target; a forced apply then executes precisely that reviewed set.
-   - Every skill-stage item (`sync_skill`, `remove_skill`, `blocked_symlink`, `blocked_alias`) carries `target` (the target kind above) and `scope: "installed" | "source"`: `installed` means `path` is relative to that target's `target_root`, `source` means `path` is relative to the running script's own skill tree. Legacy plan items (AGENTS.md, `.bee/` runtime files, vendored helpers, etc.) carry no `scope` or `target` at all — they are always repo-relative. Never resolve a skill-stage `path` against `repo_root`.
-   - A `blocked_symlink` item inside `plan` means one skill directory is a symlink and was skipped (not synced, not deleted) — surface it to the user; it does not block the rest of the apply.
-   - **Recheck honesty (D5):** after `--apply`, the response's `recheck` field applies blocked-first precedence aggregated across ALL targets — if the skill-sync stage is still blocked post-apply on ANY target (e.g. a residual per-skill symlink/alias block left one skill's version marker un-synced after a forced downgrade), `recheck` reports that blocked status and can never read `"up_to_date"`, even when the rest of the plan is empty. `recheck_skills` carries `{blocked, reason, versions, targets}` whenever this fires.
-   - `--repo-hooks` only when the user asks for repo-local hook wiring.
-   - `--claude-md` only when plugin hooks are unavailable and the user wants the CLAUDE.md `@AGENTS.md` import fallback.
+2. From this skill directory, run `node scripts/onboard_bee.mjs --repo-root <repo-root> --json`.
+3. Branch on `status`: `up_to_date` → continue. `changes_needed` → summarize the plan to the user, ask for approval, and only then re-run with `--apply` — never silently, and never over content outside the BEE markers without explicit consent. `blocked_downgrade` / `blocked_no_source` → zero mutations happened; surface the reported `versions` and resolve it with the user before retrying.
 
 If onboarding is not complete, do not continue into the rest of the bee workflow.
+
+Every status in full, the per-target `skills.targets` payload and its `scope`/`target` fields, forced-apply transparency (D2), recheck honesty (D5), and the `--global-skills` / `--repo-hooks` / `--claude-md` flags: `references/routing-and-contracts.md` ("Onboarding Protocol").
 
 **Greenfield init lane (P1, docs/09 item 6):** when the onboarding result carries the init-lane notice (first onboard, no detectable build), offer it before any feature work: the first planning slice is **one init cell** whose `must_haves` are exactly the initialization checklist — setup succeeds from scratch, one passing test exists, standard commands recorded in `.bee/config.json`, clean first commit. The user may decline; a declined offer is recorded as a deferred idea, never silently dropped.
 
@@ -161,55 +165,43 @@ Optional at Gates 2–4: a cross-model second opinion. Agreement → mention it.
 
 ## Priority Rules (hive law)
 
+The router restates only what it needs to route. Rules 2, 3, 4 and 13 below are stated in full in
+`AGENTS.md` — which is auto-loaded into **every** session, so it is already in context when you read
+this — and are kept here as one line each so no rule vanishes from the router without a trace.
+
 1. P1 review findings always block.
-2. Context budget always applies; at ~65%, write `.bee/HANDOFF.json` and pause.
-3. `CONTEXT.md` is the source of truth; locked decisions are cited, never reinterpreted.
-4. Gate 3 is the critical execution approval; no source-editing execution before it.
+2. Context budget always applies; at ~65%, write `.bee/HANDOFF.json` and pause. Full rule: `AGENTS.md` critical rule 6.
+3. `CONTEXT.md` is the source of truth; locked decisions are cited, never reinterpreted. Full rule: `AGENTS.md` critical rule 7.
+4. Gate 3 is the critical execution approval; no source-editing execution before it. Full rule: `AGENTS.md` critical rule 1.
 5. A failed reality gate or a NO spike halts the pipeline and returns to planning.
 6. Never skip validating — in tiny mode it collapses to a 2-minute reality check, it does not disappear.
-7. The critical patterns (with a bundle: `docs/knowledge/index.md`'s `## Critical patterns` section; with no bundle: `docs/history/learnings/critical-patterns.md`) and recent active decisions are mandatory context before planning or executing.
+7. The critical patterns and recent active decisions are mandatory context before planning or executing — both sources, and the preamble-first rule that usually replaces reading them, are under **Session Scout** above.
 8. Evidence before claims: any "done/passing/fixed" statement requires fresh command output in the same message.
 9. Lanes scale ceremony, never memory: a capped `behavior_change` cell obliges a `bee-scribing` sync in every lane — tiny included — and a settled discussion outcome (rule, behavior, tuned value; backend or frontend alike) is captured the moment it settles. **Settlement detection is the agent's duty, unprompted:** the routing row "user asks to document" is the fallback, not the norm — the norm is the agent noticing "this just settled", announcing it in one line, and capturing in the same turn without being asked. What same-turn capture costs is lane-scaled (decision 0017): high-risk = full spec sync inline; every other lane = decision log + a one-line capture stub (`bee.mjs capture add`), with the full merge at a flush point (wrap-up, PreCompact warning, or next session's offer). Capture writes only `docs/` + `.bee/` — no gate applies.
-10. **The agent runs the machinery, not the user.** Every bee command (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, onboarding, cell verify commands) is run by the agent itself the moment the workflow calls for it — never printed for the user to execute, never "run this and tell me the output". The only human actions in bee are gate approvals, decision answers, and privacy approvals.
-11. **Silent bookkeeping — work language only (decision 1689af1b).** Bee mechanics — cells, claims, caps, status/state writes, reservations, phase names — are never narrated into chat. The user hears the work itself in their own terms ("fixing X", "done — tests pass"). Bee vocabulary appears only when the user asks about bee directly or a gate needs their decision, and gate questions are already phrased in work language per the presentation contract. Full rule: Silent Bookkeeping in `references/routing-and-contracts.md`.
+10. **The agent runs the machinery, not the user** — never "run this and tell me the output". Full rule: `references/routing-and-contracts.md` ("The agent runs the machinery, not the user").
+11. **Silent bookkeeping — work language only (decision 1689af1b).** Bee mechanics are never narrated into chat; the user hears the work itself in their own terms. Full rule: `references/routing-and-contracts.md` ("Silent Bookkeeping").
 12. **Never hand-edit `.bee/*.json(l)`.** Every state mutation goes through its CLI (`bee.mjs state set|gate|worker|scribing-run`, `bee.mjs backlog add`, `bee.mjs cells`, `bee.mjs reservations`, `bee.mjs decisions`). Generic `state set` additionally requires `--owner <selected record's pre-mutation phase>`; the owner is checked, rolls forward with a successful phase transition, and is never persisted. Dedicated `state gate` does not accept ownership. A mutation with no CLI verb is filed as friction via `bee.mjs backlog add`, then (only then) edited by hand.
-13. **The hook is a safety net, not the authority (decision c2c46488).** The law is AGENTS.md — route through bee-hive before touching source, every time. Hooks catch the times you forget; their silence is never permission. Never reason "I'll try the edit, and route through bee only if the hook blocks me": that inverts the contract, promotes the guard's coverage into the protocol, and turns every gap in the guard into a gap in the workflow. An unblocked write is not an approved write.
+13. **The hook is a safety net, not the authority (decision c2c46488).** Hooks catch what you forget; their silence is never permission — an unblocked write is not an approved write. Full rule, with the failure that produced it: `AGENTS.md` critical rule 12.
 
 ## Runtime Files
 
-- `.bee/onboarding.json` — onboarding status and managed versions
-- `.bee/state.json` — phase, mode, feature, approved gates, workers
-- `.bee/config.json` — hook toggles, lanes, capabilities
-- `.bee/HANDOFF.json` — pause/resume data
-- `.bee/reservations.json` — file reservations
-- `.bee/decisions.jsonl` / `.bee/backlog.jsonl` — decision log / friction items
-- `.bee/capture-queue.jsonl` — settlement stubs awaiting their flush (decision 0017)
-- `.bee/cells/<id>.json` — one cell per file
-- `.bee/bin/` — vendored helpers (`bee_status`, `bee_cells`, `bee_reservations`, `bee_decisions`, `bee_capture`) + `lib/`
-- `docs/history/<feature>/CONTEXT.md` — locked decisions, source of truth
-- `docs/history/learnings/critical-patterns.md` — mandatory pre-work reading when there is no bundle; with a bundle the live equivalent is `docs/knowledge/index.md`'s `## Critical patterns` section
-- `docs/knowledge/areas/<area>/` — the state layer when the repo has a bundle, owned by `bee-scribing`: one concept per subject, `index.md` per area (read the bundle before code)
-- `docs/specs/<area>.md` + `docs/specs/reading-map.md` — with a bundle: the read-only compatibility surface (pointer stubs resolving legacy anchor citations) plus the hand-written reading map; with no bundle: the state layer itself, BA-grade tech-agnostic spec per area (read spec before code)
+Every runtime path bee owns — `.bee/` state files, `docs/history/`, the `docs/knowledge/` bundle and its compatibility surface — is listed under **Working files** in `AGENTS.md` (auto-loaded every session, and the fuller list of the two). The `.bee/` tree with `capture-queue.jsonl` and `.inject-cache.json` is in `references/routing-and-contracts.md` ("File Quick Reference").
 
 ## Hook Response Protocol
 
-Hooks block or inject; the agent responds by contract.
+Hooks block or inject; the agent responds by contract. The four block responses — privacy marker, intake block (terminal phase), Gate 3 block, reservation conflict — are stated in full under **Guardrails** in `AGENTS.md`. In every case: do **not** retry the blocked action, and route the reason to the user or the orchestrator. Read them as *reminders* of the law, never as the law itself (hive law 13).
 
-**Hooks are a safety net, not the authority (hive law 13).** They catch what you forget; their silence is not permission. Read the block reasons below as *reminders of the law*, never as the law itself — the law is: route through bee-hive before source is touched.
-
-- `@@BEE_PRIVACY@@ … @@END@@` marker on a read → route through AskUserQuestion with the file and question from the marker. Never work around the block.
-- Intake block (`bee intake gate`, a terminal phase — `idle` or `compounding-complete`) → do **not** retry the write; this session has no active bee work (nothing started, or the last feature already closed). Run bee-hive routing now: classify the mode, create the cell(s), pass the gates, then execute. Tiny fixes stay tiny.
-- Gate-guard block on a write → do **not** retry the write; surface the Gate 3 question to the user ("Feasibility validated. Approve execution?").
-- Reservation block → the worker returns `[BLOCKED]` with the conflict; the orchestrator fixes reservations or cell scope.
-- `bee decision review` nudge at session end → ask the user whether a durable decision/learning emerged; log it via `bee.mjs decisions log` if yes.
+- `bee decision review` nudge at session end → ask the user whether a durable decision/learning emerged; log it via `bee.mjs decisions log` if yes. (This one is the router's own; `AGENTS.md` Guardrails does not carry it.)
 
 ## Headless
 
-With `mode:headless`: never ask blocking questions. Perform onboarding checks and routing only when unambiguous; defer every ambiguity (stale onboarding needing `--apply`, HANDOFF present, unclear route) into an `Outstanding Questions` section of a structured terminal report. The four gates are NEVER self-approved in headless mode — the only mechanism that self-approves gates is the explicit opt-in gate-bypass switch, and how far it reaches is its level (`normal` = normal-lane only; `full` = also high-risk/hard-gate; `total` = everything incl. UAT/secrets). Headless and bypass are independent: headless without bypass still stops at every gate.
+With `mode:headless`: never ask blocking questions — defer every ambiguity into an `Outstanding Questions` section of a structured terminal report, and never self-approve a gate. Full contract: `references/routing-and-contracts.md` ("Headless mode").
 
 ## Red Flags
 
-- a docs-only change routed through the full pipeline · jumping from exploring to swarming · code before CONTEXT.md exists · skipping validating · ignoring locked decisions · workers self-selecting cells · capping without verification · commits without cell ids · continuing past open P1s · reservation leaks · stale state.json after a phase transition · resuming without surfacing HANDOFF.json · plausibility language ("should work") accepted as evidence · a tiny fix wearing epic ceremony · a hard-gate change routed below high-risk · session history pasted into a worker dispatch · a gate presented as a mechanical table with no plain-language layer · a gate question the user cannot restate in their own words · a bee command handed to the user to run instead of run by the agent · bee bookkeeping (cells, claims, status, phases) narrated into chat instead of the work itself
+The list of stop-and-re-route flags lives under **Red flags — stop and re-route** in `AGENTS.md`. Four more belong to the router itself and are here only:
+
+- a docs-only change routed through the full pipeline · a gate presented as a mechanical table with no plain-language layer · a gate question the user cannot restate in their own words · a bee command handed to the user to run instead of run by the agent
 
 Violating the letter of the rules is violating the spirit of the rules.
 
