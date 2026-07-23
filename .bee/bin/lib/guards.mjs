@@ -761,16 +761,18 @@ export function checkAskUserQuestion(toolInput) {
         reason: `bee AskUserQuestion guard: ${questions.length} question(s) — the tool takes 1–4 per call. Split into separate calls.`,
       };
     }
+    // ask-guard-autofix D1/D2: a header over 12 chars is FIXABLE, not a deny
+    // — collect the rewrite here and keep scanning the rest of this question
+    // (and later questions) for any UNFIXABLE violation, which still wins
+    // (deny) over any fix collected so far.
+    const headerFixes = []; // { index, oldHeader, newHeader }
     for (let i = 0; i < questions.length; i += 1) {
       const q = questions[i];
       if (!q || typeof q !== 'object') continue; // odd shape — fail open
       const where = questions.length > 1 ? ` (question ${i + 1})` : '';
       if (typeof q.header === 'string' && q.header.length > 12) {
-        return {
-          allow: false,
-          kind: 'ask-schema',
-          reason: `bee AskUserQuestion guard: header "${q.header}" is ${q.header.length} chars${where} — max 12 (it is a short chip label, not the question). Shorten the header.`,
-        };
+        const truncated = q.header.slice(0, 11).trimEnd();
+        headerFixes.push({ index: i, oldHeader: q.header, newHeader: `${truncated}…` });
       }
       if (Array.isArray(q.options)) {
         if (q.options.length < 2 || q.options.length > 4) {
@@ -800,7 +802,20 @@ export function checkAskUserQuestion(toolInput) {
         }
       }
     }
-    return { allow: true };
+    if (headerFixes.length === 0) {
+      return { allow: true };
+    }
+    // Every violation found was fixable (no unfixable violation returned
+    // early above) — deep-clone toolInput, rewrite each over-long header,
+    // and report the rewrite so the caller can surface it. The original
+    // toolInput is never mutated.
+    const fixed = JSON.parse(JSON.stringify(toolInput));
+    const notes = [];
+    for (const fix of headerFixes) {
+      fixed.questions[fix.index].header = fix.newHeader;
+      notes.push(`header "${fix.oldHeader}" (${fix.oldHeader.length} chars) → "${fix.newHeader}"`);
+    }
+    return { allow: true, fixed, notes };
   } catch {
     return { allow: true }; // fail-open: never block on an unexpected shape
   }

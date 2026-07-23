@@ -121,9 +121,28 @@ await check('checkAskUserQuestion turns opaque "Invalid tool parameters" into a 
   // Valid question is allowed.
   const ok = { questions: [{ question: 'Which approach?', header: 'Approach', multiSelect: false, options: [{ label: 'A', description: 'do A' }, { label: 'B', description: 'do B' }] }] };
   assert(checkAskUserQuestion(ok).allow === true, 'a valid AskUserQuestion must be allowed');
-  // header > 12 chars — the #1 cause — denied with the count named.
-  const longHeader = checkAskUserQuestion({ questions: [{ question: 'q', header: 'Xử lý external', options: [{ label: 'A', description: 'x' }, { label: 'B', description: 'y' }] }] });
-  assert(longHeader.allow === false && longHeader.kind === 'ask-schema' && /14 chars|max 12|header/.test(longHeader.reason), `long header must deny with a clear reason, got ${JSON.stringify(longHeader)}`);
+  // header > 12 chars is now a FIXABLE violation (ask-guard-autofix D1/D2):
+  // auto-rewritten to the first 11 chars right-trimmed + '…', call proceeds
+  // allowed, with the rewrite reported in `notes` and the original input
+  // never mutated.
+  const longHeaderInput = { questions: [{ question: 'q', header: 'Worktree switch', options: [{ label: 'A', description: 'x' }, { label: 'B', description: 'y' }] }] };
+  const longHeader = checkAskUserQuestion(longHeaderInput);
+  assert(longHeader.allow === true, `an over-long header must be auto-fixed and allowed, not denied, got ${JSON.stringify(longHeader)}`);
+  assert(
+    longHeader.fixed?.questions?.[0]?.header === 'Worktree sw…',
+    `the fixed header must be 'Worktree sw…', got ${JSON.stringify(longHeader.fixed)}`,
+  );
+  assert(
+    Array.isArray(longHeader.notes) &&
+      longHeader.notes.length === 1 &&
+      /Worktree switch/.test(longHeader.notes[0]) &&
+      /Worktree sw…/.test(longHeader.notes[0]),
+    `notes must name old -> new, got ${JSON.stringify(longHeader.notes)}`,
+  );
+  assert(
+    longHeaderInput.questions[0].header === 'Worktree switch',
+    'the original toolInput must never be mutated — fixed is a deep clone',
+  );
   // >4 options denied; <2 options denied.
   assert(checkAskUserQuestion({ questions: [{ question: 'q', header: 'h', options: [1, 2, 3, 4, 5].map((n) => ({ label: `L${n}`, description: 'd' })) }] }).allow === false, '5 options must deny');
   assert(checkAskUserQuestion({ questions: [{ question: 'q', header: 'h', options: [{ label: 'only', description: 'd' }] }] }).allow === false, '1 option must deny');
@@ -136,6 +155,50 @@ await check('checkAskUserQuestion turns opaque "Invalid tool parameters" into a 
   assert(checkAskUserQuestion({}).allow === true, 'no questions key -> allow (fail-open)');
   assert(checkAskUserQuestion(null).allow === true, 'null input -> allow (fail-open)');
   assert(checkAskUserQuestion({ questions: 'weird' }).allow === true, 'non-array questions -> allow (fail-open)');
+});
+
+await check('checkAskUserQuestion: multi-question call only rewrites the long header, other questions byte-identical', async () => {
+  const input = {
+    questions: [
+      { question: 'q1', header: 'Deploy staging', options: [{ label: 'A', description: 'x' }, { label: 'B', description: 'y' }] },
+      { question: 'q2', header: 'OK', options: [{ label: 'C', description: 'z' }, { label: 'D', description: 'w' }] },
+    ],
+  };
+  const verdict = checkAskUserQuestion(input);
+  assert(verdict.allow === true, `a call with one long header among several must be allowed, got ${JSON.stringify(verdict)}`);
+  assert(
+    verdict.fixed.questions[0].header === 'Deploy stag…',
+    `the long header must be truncated, got ${JSON.stringify(verdict.fixed)}`,
+  );
+  assert(
+    JSON.stringify(verdict.fixed.questions[1]) === JSON.stringify(input.questions[1]),
+    'the untouched question must stay byte-identical to the original',
+  );
+  assert(verdict.notes.length === 1, `only the fixed header should produce a note, got ${JSON.stringify(verdict.notes)}`);
+});
+
+await check('checkAskUserQuestion: a fixable header alongside an unfixable violation still denies with the unfixable reason (deny wins)', async () => {
+  const input = {
+    questions: [
+      { question: 'q1', header: 'Deploy staging', options: [{ label: 'A', description: 'x' }, { label: 'B', description: 'y' }] },
+      { question: 'q2', header: 'OK', options: [{ label: 'only-one', description: 'z' }] },
+    ],
+  };
+  const verdict = checkAskUserQuestion(input);
+  assert(verdict.allow === false && verdict.kind === 'ask-schema', `a fixable+unfixable mix must deny, got ${JSON.stringify(verdict)}`);
+  assert(/1 option/.test(verdict.reason), `the deny reason must name the unfixable violation, got ${verdict.reason}`);
+  assert(verdict.fixed === undefined, 'a deny verdict must never carry a fixed field');
+});
+
+await check('checkAskUserQuestion: an exactly-12-char header is left untouched (not a violation)', async () => {
+  const twelve = 'ExactlyTwelv';
+  assert(twelve.length === 12, 'fixture sanity: header must be exactly 12 chars');
+  const input = { questions: [{ question: 'q', header: twelve, options: [{ label: 'A', description: 'x' }, { label: 'B', description: 'y' }] }] };
+  const verdict = checkAskUserQuestion(input);
+  assert(
+    verdict.allow === true && verdict.fixed === undefined,
+    `an exactly-12-char header must be allowed untouched with no fixed field, got ${JSON.stringify(verdict)}`,
+  );
 });
 
 await check('checkWrite denies executable/code files under docs/history/ (the .md-only knowledge layer) in every phase (GitHub #17)', async () => {

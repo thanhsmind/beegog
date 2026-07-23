@@ -1,15 +1,15 @@
 ---
 type: bee.area
 title: Hook Runtime — the request shapes the write guard can read
-description: "How the write guard decides a batch file-change request target by target, how it shape-checks a workflow command against the published catalog, which command forms it still recognises, and why an intercepted-but-unreadable request is denied rather than waved through."
-timestamp: 2026-07-22
+description: "How the write guard decides a batch file-change request target by target, how it shape-checks a workflow command against the published catalog, which command forms it still recognises, how it repairs a mechanically fixable question request instead of refusing it, and why an intercepted-but-unreadable request is denied rather than waved through."
+timestamp: 2026-07-23
 bee:
   id: hook-runtime-write-guard-request-shapes
   lifecycle: active
   areas: [hook-runtime]
   required_context: [areas/hook-runtime/overview.md]
-  decisions: ["codex-runtime-parity D1, D2", "bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional)"]
-  sources: ["codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b", "dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b)", "shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14)", "docs/specs/hook-runtime.md#B3", "docs/specs/hook-runtime.md#B3a", "docs/specs/hook-runtime.md#R3", "docs/specs/hook-runtime.md#R14a", "docs/specs/hook-runtime.md#E1", "docs/specs/hook-runtime.md#P6", "docs/specs/hook-runtime.md#P7"]
+  decisions: ["codex-runtime-parity D1, D2", "bbc6bcea (shim-retire D3: dual command-shape recognition, retired form transitional)", "ask-guard-autofix D1/D2 (fixable question violations repaired + announced, deny wins, 2026-07-23)"]
+  sources: ["codex-runtime-parity repo-fallback capture 2026-07-12 — cells codex-parity-6a, 6b", "dispatcher-unify du-2 (2026-07-12, flushed capture stub 9e68432b)", "shim-retire D3 transition guard (cell shim-retire-3, 2026-07-14)", "ask-guard-autofix cell ag-1 (2026-07-23, commit 52dad26)", "docs/specs/hook-runtime.md#B3", "docs/specs/hook-runtime.md#B3a", "docs/specs/hook-runtime.md#R3", "docs/specs/hook-runtime.md#R14a", "docs/specs/hook-runtime.md#E1", "docs/specs/hook-runtime.md#P6", "docs/specs/hook-runtime.md#P7"]
   authoritative_for: "hook-runtime: write-guard request-shape recognition and per-target decisions"
 ---
 
@@ -54,6 +54,24 @@ denied with the command, the missing or wrong field, and the corrective shape;
 a well-formed one proceeds untouched. Deep verbs previously escaped this check
 unvalidated (a silent fail-open); they no longer do.
 
+**B22 — A malformed question-to-the-human request is repaired when the repair
+is mechanical, refused when it is not.** When the runtime announces the
+ask-the-human tool, the guard shape-checks the request before the platform's
+own opaque validation can reject it. Trigger: any question request. What
+happens: a violation whose repair is deterministic and meaning-preserving — a
+chip-label heading over the 12-character limit — is FIXED, not refused: the
+heading is rewritten (first 11 characters, right-trimmed, plus an ellipsis) on
+a copy of the request, and the question proceeds with the rewritten input; the
+platform is told, in the approval itself, exactly what was changed, and the
+human sees a one-line note of the rewrite. A violation with no mechanical
+repair — question count outside 1–4, option count outside 2–4, an option
+missing its label or description — refuses with the specific correction, and a
+refusal always wins over any repair collected in the same request: the mixed
+case refuses. Odd shapes still fail open. What each actor observes: the asker's
+question reaches the human instead of dying on a label-length technicality;
+the original request object is never mutated — the rewrite rides a replacement
+copy (ask-guard-autofix D1/D2, cell ag-1, 2026-07-23).
+
 ## Business Rules
 
 - R3 — An intercepted batch change with unprovable targets is denied, not
@@ -65,6 +83,13 @@ unvalidated (a silent fail-open); they no longer do.
   the unified surface — it is slated for removal once hosts have upgraded (a
   debt item tracks it), and its recognition never revives the deleted scripts
   themselves (decision bbc6bcea, D3).
+
+- R22 — A question-request violation is repaired only when the repair is
+  deterministic and meaning-preserving; everything else refuses with the
+  specific correction, and a refusal always beats a repair found in the same
+  request. The repair is announced — to the platform in the approval, and to
+  the human as a one-line note — never applied silently (ask-guard-autofix
+  D1/D2, 2026-07-23).
 
 ## Edge Cases Settled
 
@@ -78,3 +103,12 @@ unvalidated (a silent fail-open); they no longer do.
 - CLI-shape guard incl. 3-token verb resolution: `hooks/bee-write-guard.mjs`
   against the `command-registry.mjs` catalog. Evidence: `.bee/cells/du-2.json`,
   `docs/history/dispatcher-unify/`.
+
+- Question-schema guard + auto-fix: `checkAskUserQuestion` in
+  `skills/bee-hive/templates/lib/guards.mjs` (fixed-verdict shape
+  `{allow, fixed, notes}`); updatedInput emission in
+  `hooks/bee-write-guard.mjs` (`fixedAskVerdict` branch — stdout JSON
+  `hookSpecificOutput.updatedInput`, exit 0; deny path unchanged, exit 2 +
+  stderr). Evidence: `.bee/cells/ag-1.json`, tests
+  `skills/bee-hive/templates/tests/test_guards.mjs` and
+  `hooks/test_write_guard.mjs`, commit 52dad26.

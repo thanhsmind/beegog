@@ -24,7 +24,7 @@ import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
 
 import { SCHEMA_VERSION, COMMAND_REGISTRY } from '../lib/command-registry.mjs';
 import { validate, isValidParameterSchema } from '../lib/validate-args.mjs';
-import { addCell } from '../lib/cells.mjs';
+import { addCell, updateCell, deriveRegenGuards, regenObligationRefusal } from '../lib/cells.mjs';
 import { createSession, bindSessionLane } from '../lib/claims.mjs';
 import { writeJsonAtomic, hashFile, appendJsonl } from '../lib/fsutil.mjs';
 import { defaultState, writeState, writeLane, BEE_VERSION } from '../lib/state.mjs';
@@ -2845,6 +2845,261 @@ await check('manifestLintWarning tolerates malformed cell shapes without throwin
   assert(
     manifestLintWarning({ id: 'trap-6', verify: 'node scripts/release_manifest.mjs --check', files: 'not-an-array' }) !== null,
     'non-array files also defaults to [] and still fires',
+  );
+});
+
+// ─── regenObligationRefusal (regen-obligation-derived D1/D2): the DERIVED
+// regen obligation, which refuses rather than warns. The fixture repo seeds
+// its own synthetic guard scripts naming roots bee has never heard of
+// ("widgets", "gizmos", ".fixture/runtime") — so a row that goes green here
+// can ONLY have gone green by reading the script. Hard-code the roots in the
+// guard and every row below reds. ─────────────────────────────────────────
+
+const regenRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-regen-obligation-'));
+fs.mkdirSync(path.join(regenRoot, 'scripts'), { recursive: true });
+// Synthetic release_manifest.mjs: same shapes the real one uses (a named
+// MANIFEST_PATH const, enumerated dirs, individually named files), different
+// roots. "widgets" is the seventh-root proof: nothing in bee mentions it.
+fs.writeFileSync(
+  path.join(regenRoot, 'scripts', 'release_manifest.mjs'),
+  [
+    'const REPO_ROOT = path.join(__dirname, "..");',
+    'const MANIFEST_PATH = path.join(',
+    '  REPO_ROOT,',
+    '  "docs",',
+    '  "fixture",',
+    '  "release-manifest.json",',
+    ');',
+    'const WIDGET_DIR = path.join(REPO_ROOT, "widgets");',
+    'const NAMED = [path.join(REPO_ROOT, "gizmos", "one.json")];',
+    'const records = [...enumerateTree(path.join(REPO_ROOT, "hooks"), "plugin_hook")];',
+    'const skip = path.join(REPO_ROOT, target.path.split("/").join(path.sep));',
+    '',
+  ].join('\n'),
+  'utf8',
+);
+// Synthetic ledger_parity.mjs: same checkGroup(managed.X, relDir) shape, a
+// different base and a group name ("gadgets") the real script does not have.
+fs.writeFileSync(
+  path.join(regenRoot, 'scripts', 'ledger_parity.mjs'),
+  [
+    'const abs = path.join(root, ".fixture", "runtime", relDir, name);',
+    'checkGroup(managed.widgets, "gadgets");',
+    'checkGroup(managed.helpers, "");',
+    '',
+  ].join('\n'),
+  'utf8',
+);
+
+const regenCell = (extra) => ({
+  id: 'regen-probe',
+  feature: 'demo',
+  lane: 'small',
+  title: 'probe',
+  action: 'probe',
+  verify: 'node -e "process.exit(0)"',
+  files: [],
+  ...extra,
+});
+
+await check('deriveRegenGuards reads the roots out of the guard scripts — including a root the guard has never heard of, and never the manifest record itself', async () => {
+  const guards = deriveRegenGuards(regenRoot);
+  const manifest = guards.find((g) => g.key === 'manifest');
+  const ledger = guards.find((g) => g.key === 'ledger');
+  assert(manifest && ledger, `both guards must be active, got ${JSON.stringify(guards.map((g) => g.key))}`);
+  console.log(`      derived manifest roots: ${JSON.stringify(manifest.roots)}`);
+  console.log(`      derived manifest requiredFiles: ${JSON.stringify(manifest.requiredFiles)}`);
+  console.log(`      derived ledger roots: ${JSON.stringify(ledger.roots)}`);
+  assert(manifest.roots.includes('widgets'), `the synthetic seventh root must be derived, got ${JSON.stringify(manifest.roots)}`);
+  assert(manifest.roots.includes('gizmos/one.json'), `an individually named file is a root too, got ${JSON.stringify(manifest.roots)}`);
+  assert(manifest.roots.includes('hooks'), `an enumerated dir is a root, got ${JSON.stringify(manifest.roots)}`);
+  assert(
+    !manifest.roots.includes('docs/fixture/release-manifest.json'),
+    'the manifest is the RECORD of the hashed set, never a member of it',
+  );
+  assert(
+    JSON.stringify(manifest.requiredFiles) === JSON.stringify(['docs/fixture/release-manifest.json']),
+    `the required files entry is the derived MANIFEST_PATH, got ${JSON.stringify(manifest.requiredFiles)}`,
+  );
+  assert(
+    !manifest.roots.some((r) => r.includes('target.path')),
+    `an expression-built path.join must contribute nothing, got ${JSON.stringify(manifest.roots)}`,
+  );
+  assert(
+    JSON.stringify(ledger.roots) === JSON.stringify(['.fixture/runtime', '.fixture/runtime/gadgets']),
+    `ledger roots come from checkGroup + the base its own checked path uses, got ${JSON.stringify(ledger.roots)}`,
+  );
+});
+
+await check('the refusal BITES on the manifest ground: a cell touching a hashed root with no release_manifest --check is refused, naming the path, the root, the command and the escape hatch', async () => {
+  const refusal = regenObligationRefusal(regenRoot, regenCell({ files: ['widgets/panel.mjs'] }));
+  console.log(`      REFUSAL(manifest ground): ${refusal}`);
+  assert(refusal !== null, 'a hashed-root touch with no check must be refused, not warned');
+  assert(refusal.includes('widgets/panel.mjs'), `must name the offending path, got: ${refusal}`);
+  assert(refusal.includes('"widgets"'), `must name the root it hit, got: ${refusal}`);
+  assert(refusal.includes('node scripts/release_manifest.mjs --check'), `must name the exact command to add, got: ${refusal}`);
+  assert(refusal.includes('docs/fixture/release-manifest.json'), `must name the derived manifest path for files, got: ${refusal}`);
+  assert(refusal.includes('regen_obligation_ack'), `must tell the author the escape hatch exists, got: ${refusal}`);
+});
+
+await check('the refusal BITES on the manifest ground for the second half too: the check is present but files omits the manifest path', async () => {
+  const refusal = regenObligationRefusal(
+    regenRoot,
+    regenCell({ files: ['gizmos/one.json'], verify: 'node scripts/release_manifest.mjs --check' }),
+  );
+  console.log(`      REFUSAL(manifest path missing from files): ${refusal}`);
+  assert(refusal !== null && /files does not list/.test(refusal), `expected the files half to refuse, got: ${refusal}`);
+});
+
+await check('the refusal BITES on the LEDGER ground specifically — a satisfied manifest check never stands in for ledger_parity', async () => {
+  const refusal = regenObligationRefusal(
+    regenRoot,
+    regenCell({
+      files: ['.fixture/runtime/gadgets/tool.mjs', 'docs/fixture/release-manifest.json'],
+      verify: 'node scripts/release_manifest.mjs --check',
+    }),
+  );
+  console.log(`      REFUSAL(ledger ground): ${refusal}`);
+  assert(refusal !== null, 'a ledger-covered touch with no ledger check must be refused');
+  assert(refusal.includes('ledger_parity.mjs --check'), `the refusal must be on the ledger ground, got: ${refusal}`);
+  assert(refusal.includes('.fixture/runtime/gadgets/tool.mjs'), `must name the offending path, got: ${refusal}`);
+});
+
+await check('the refusal stays SILENT on a cell that satisfies the obligation, and on an untouched cell', async () => {
+  const satisfied = regenObligationRefusal(
+    regenRoot,
+    regenCell({
+      files: ['widgets/panel.mjs', '.fixture/runtime/gadgets/tool.mjs', 'docs/fixture/release-manifest.json'],
+      verify: 'node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check',
+    }),
+  );
+  console.log(`      SATISFIED cell -> ${satisfied === null ? 'SILENT (no refusal)' : satisfied}`);
+  assert(satisfied === null, `a satisfied cell must be silent, got: ${satisfied}`);
+  const untouched = regenObligationRefusal(regenRoot, regenCell({ files: ['src/app.ts', 'README.md'] }));
+  console.log(`      UNRELATED cell -> ${untouched === null ? 'SILENT (no refusal)' : untouched}`);
+  assert(untouched === null, `a cell touching no covered root must be silent, got: ${untouched}`);
+});
+
+await check('the refusal stays SILENT on an ACKNOWLEDGED cell — the D1 escape hatch keeps authoring unblocked, as a named act', async () => {
+  const acked = regenObligationRefusal(
+    regenRoot,
+    regenCell({ files: ['widgets/panel.mjs'], regen_obligation_ack: 'docs-only edit; the manifest regen rides fx-9' }),
+  );
+  console.log(`      ACKNOWLEDGED cell -> ${acked === null ? 'SILENT (no refusal)' : acked}`);
+  assert(acked === null, `an acknowledged cell must be silent, got: ${acked}`);
+});
+
+await check('a guard script present but shapeless is a BLIND guard — it throws rather than passing silently', async () => {
+  const blindRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-regen-blind-'));
+  fs.mkdirSync(path.join(blindRoot, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(blindRoot, 'scripts', 'release_manifest.mjs'), '// no roots here at all\n', 'utf8');
+  let message = null;
+  try {
+    deriveRegenGuards(blindRoot);
+  } catch (err) {
+    message = err.message;
+  }
+  console.log(`      BLIND guard -> ${message}`);
+  assert(message !== null && /could not derive any covered root/.test(message), `expected a blind-guard refusal, got: ${message}`);
+});
+
+await check('a repo with no guard scripts owes nothing — the rule is silent wherever the guard is not installed', async () => {
+  const bareRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-regen-bare-'));
+  assert(deriveRegenGuards(bareRoot).length === 0, 'no scripts, no active guards');
+  assert(
+    regenObligationRefusal(bareRoot, regenCell({ files: ['widgets/panel.mjs'] })) === null,
+    'a host repo without the guard scripts must never be refused',
+  );
+});
+
+await check('end-to-end: addCell REFUSES the offending cell and writes nothing, then accepts it once the obligation is met', async () => {
+  const offending = regenCell({ id: 'regen-e2e-1', files: ['widgets/panel.mjs'] });
+  let threw = null;
+  try {
+    addCell(regenRoot, offending);
+  } catch (err) {
+    threw = err.message;
+  }
+  console.log(`      addCell REFUSED: ${threw}`);
+  assert(threw !== null && /REGEN_OBLIGATION/.test(threw), `addCell must refuse, got: ${threw}`);
+  assert(!fs.existsSync(path.join(regenRoot, '.bee', 'cells', 'regen-e2e-1.json')), 'a refused add must write nothing');
+  const accepted = addCell(
+    regenRoot,
+    regenCell({
+      id: 'regen-e2e-1',
+      files: ['widgets/panel.mjs', 'docs/fixture/release-manifest.json'],
+      verify: 'node scripts/release_manifest.mjs --check',
+    }),
+  );
+  assert(accepted.id === 'regen-e2e-1', 'the satisfied cell writes normally');
+});
+
+await check('end-to-end: updateCell refuses a patch that drags a hashed root into files, and accepts the patch that also carries the check', async () => {
+  addCell(regenRoot, regenCell({ id: 'regen-e2e-2', files: ['src/app.ts'] }));
+  let threw = null;
+  try {
+    await updateCell(regenRoot, 'regen-e2e-2', { files: ['widgets/panel.mjs'] });
+  } catch (err) {
+    threw = err.message;
+  }
+  console.log(`      updateCell REFUSED: ${threw}`);
+  assert(threw !== null && /REGEN_OBLIGATION/.test(threw), `updateCell must refuse the merged shape, got: ${threw}`);
+  const untouched = JSON.parse(fs.readFileSync(path.join(regenRoot, '.bee', 'cells', 'regen-e2e-2.json'), 'utf8'));
+  assert(JSON.stringify(untouched.files) === JSON.stringify(['src/app.ts']), `a refused patch leaves the cell untouched, got ${JSON.stringify(untouched.files)}`);
+  const fixed = await updateCell(regenRoot, 'regen-e2e-2', {
+    files: ['widgets/panel.mjs', 'docs/fixture/release-manifest.json'],
+    verify: 'node scripts/release_manifest.mjs --check',
+  });
+  assert(fixed.files.includes('widgets/panel.mjs'), 'the satisfying patch lands');
+  const acked = await updateCell(regenRoot, 'regen-e2e-2', { regen_obligation_ack: 'deliberate: regen rides the next cell' });
+  assert(acked.regen_obligation_ack === 'deliberate: regen rides the next cell', 'the escape hatch is patchable and recorded on the cell');
+});
+
+await check('the escape hatch must carry a REASON — a bare true is refused at authoring', async () => {
+  let threw = null;
+  try {
+    addCell(regenRoot, regenCell({ id: 'regen-ack-bad', regen_obligation_ack: true }));
+  } catch (err) {
+    threw = err.message;
+  }
+  assert(threw !== null && /non-empty string/.test(threw), `a boolean ack must be refused, got: ${threw}`);
+});
+
+await check('measured against THIS checkout\'s real guard scripts (skipped where they are absent)', async () => {
+  const realRoot = path.resolve(TEMPLATES_DIR, '..', '..', '..');
+  if (!fs.existsSync(path.join(realRoot, 'scripts', 'release_manifest.mjs'))) {
+    console.log('      SKIP: this repo does not carry scripts/release_manifest.mjs');
+    return;
+  }
+  const guards = deriveRegenGuards(realRoot);
+  const manifest = guards.find((g) => g.key === 'manifest');
+  const ledger = guards.find((g) => g.key === 'ledger');
+  console.log(`      real manifest roots (${manifest.roots.length}): ${JSON.stringify(manifest.roots)}`);
+  console.log(`      real ledger roots (${ledger.roots.length}): ${JSON.stringify(ledger.roots)}`);
+  for (const expected of ['skills', 'hooks', '.bee/bin/lib', '.claude-plugin/skills', '.codex-plugin/skills']) {
+    assert(manifest.roots.includes(expected), `the real manifest roots must include "${expected}", got ${JSON.stringify(manifest.roots)}`);
+  }
+  assert(
+    manifest.roots.length > 6,
+    `the recited "six roots" is itself a copied summary — the script hashes more than that, got ${manifest.roots.length}`,
+  );
+  assert(ledger.roots.includes('.bee/bin/lib'), `the real ledger must cover .bee/bin/lib, got ${JSON.stringify(ledger.roots)}`);
+  // The cell that built this rule must pass it: it touches skills/** and
+  // .bee/bin/lib, so it owes both checks and the manifest path.
+  const selfCell = {
+    id: 'ro-1',
+    verify:
+      'node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check',
+    files: [
+      'skills/bee-hive/templates/lib/cells.mjs',
+      '.bee/bin/lib/cells.mjs',
+      'docs/history/codex-harness-hardening/release-manifest.json',
+    ],
+  };
+  assert(regenObligationRefusal(realRoot, selfCell) === null, 'this rule must pass its own cell');
+  assert(
+    regenObligationRefusal(realRoot, { ...selfCell, verify: 'node scripts/release_manifest.mjs --check' }) !== null,
+    'and must refuse that same cell once the ledger check is dropped',
   );
 });
 

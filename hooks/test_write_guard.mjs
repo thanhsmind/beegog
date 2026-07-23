@@ -230,14 +230,37 @@ async function main() {
   );
   check(r1.status === 2, "row1: Edit .bee/state.json is denied (exit 2)", `status=${r1.status} stderr=${r1.stderr}`);
 
-  // --- AskUserQuestion schema pre-validation: an over-long header is a clear,
-  // specific deny (exit 2) instead of the harness's opaque "Invalid tool parameters".
-  const rAskBad = await runHookPayload(
-    { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "q", header: "Xử lý external", options: [{ label: "A", description: "x" }, { label: "B", description: "y" }] }] } },
+  // --- AskUserQuestion schema pre-validation (ask-guard-autofix D1/D2): an
+  // over-long header is now a FIXABLE violation — the hook auto-truncates it,
+  // allows the call (exit 0), and emits an updatedInput JSON on stdout
+  // instead of denying with the harness's opaque "Invalid tool parameters".
+  const rAskFix = await runHookPayload(
+    { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "q", header: "Worktree switch", options: [{ label: "A", description: "x" }, { label: "B", description: "y" }] }] } },
     root,
   );
-  check(rAskBad.status === 2, "AskUserQuestion with a 14-char header is denied (exit 2)", `status=${rAskBad.status} stderr=${rAskBad.stderr}`);
-  check(/AskUserQuestion/.test(rAskBad.stderr) && /header|max 12/.test(rAskBad.stderr), "the deny message names the AskUserQuestion header violation", rAskBad.stderr);
+  check(rAskFix.status === 0, "AskUserQuestion with a 16-char header is auto-fixed and allowed (exit 0)", `status=${rAskFix.status} stderr=${rAskFix.stderr}`);
+  let rAskFixOutput = null;
+  try { rAskFixOutput = JSON.parse(rAskFix.stdout); } catch { /* left null, checked below */ }
+  check(rAskFixOutput !== null, "the auto-fix emits parseable JSON on stdout", rAskFix.stdout);
+  check(
+    !!rAskFixOutput && rAskFixOutput.hookSpecificOutput?.permissionDecision === "allow",
+    "the auto-fix stdout carries permissionDecision 'allow'",
+    rAskFix.stdout,
+  );
+  check(
+    !!rAskFixOutput && rAskFixOutput.hookSpecificOutput?.updatedInput?.questions?.[0]?.header === "Worktree sw…",
+    "the auto-fix stdout carries the whole rewritten toolInput with the truncated header",
+    rAskFix.stdout,
+  );
+
+  // A mixed fixable+unfixable call still denies (exit 2) with the unfixable reason.
+  const rAskMixedDeny = await runHookPayload(
+    { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "q", header: "Worktree switch", options: [{ label: "only-one", description: "x" }] }] } },
+    root,
+  );
+  check(rAskMixedDeny.status === 2, "a fixable header alongside an unfixable violation still denies (exit 2)", `status=${rAskMixedDeny.status} stderr=${rAskMixedDeny.stderr}`);
+  check(/option/.test(rAskMixedDeny.stderr), "the deny message names the unfixable option-count violation", rAskMixedDeny.stderr);
+
   const rAskOk = await runHookPayload(
     { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: "q", header: "Approach", options: [{ label: "A", description: "x" }, { label: "B", description: "y" }] }] } },
     root,

@@ -17,11 +17,13 @@ bee:
 **Any cell that adds/renames/changes a file the manifest hashes carries the regen in ITS OWN
 work and both `--check`s in ITS OWN verify.** Not the slice's last cell, not the close step —
 the cell that moves the guard owns it, because every cell between it and the close otherwise
-caps green against a red shared baseline. Measure which files the guard hashes by reading the
-script, never by copying a scope from prose: today `release_manifest.mjs:131,133` hashes
-`skills/**` and `hooks/**` (including the rendered plugin trees themselves), while
-`ledger_parity.mjs:139-140` covers only `.bee/bin/lib` and the helpers — so a `hooks/`-only
-change moves the manifest check and does **not** move the ledger check. Order matters:
+caps green against a red shared baseline. **Do not memorize which roots are hashed, and do not
+trust any list written here or anywhere else — `cells add` derives them from the scripts at
+every write and refuses the cell if the obligation is missing** (see MECHANIZED below). Every
+count ever recited for this trigger was wrong, including the ones this doc used to carry; the
+current derivation reports twelve manifest roots and two ledger roots, and it will report a
+different number the day a script grows one. `ledger_parity` covers strictly less than the
+manifest does, so it must never stand in for it. Order matters:
 `render_plugin_skill_trees.mjs` → `onboard --apply` → `release_manifest.mjs --write`, because
 `onboard --apply` never renders the plugin trees and a manifest written first freezes stale
 trees as authoritative with nothing going red. Same rule generalized: before capping a cell,
@@ -39,6 +41,20 @@ cell, and put their `--check` in that cell's verify.
 > authority of a critical pattern** — under compaction and under skim-reading, an agent loads
 > the summary and the citation, not the tail. Rewrite the headline on every recurrence; when the
 > fix direction changes, the old sentence is a defect, not history.
+
+**MECHANIZED 2026-07-23 (regen-obligation-derived, ro-1) — the recurrence log ends here.**
+`cells add`/`cells update` now REFUSE a cell whose own `files` touch a hashed root unless its
+own `verify` carries that guard's `--check` (and, for the manifest, unless `files` lists the
+manifest path). The roots are **derived from the scripts at every write**, never hard-coded —
+and that instruction was the load-bearing one, not the refusal logic. Every number anyone had
+recited for this trigger was read from a summary or a window rather than from the definition:
+D20 said one root (`templates/lib/`), D24 corrected it to two (`skills/**`, `hooks/**`), the
+P75 brief re-asserted two, the orchestrator widened it to six from `release_manifest.mjs:130-136`
+— and the derivation measures **twelve**, because `DISTRIBUTION_TOOLS`/`DISTRIBUTION_TESTS` are
+hashed at `:141-142`, outside that window. A guard built on the recited six would have shipped
+blind to five hashed roots. The escape hatch is `regen_obligation_ack`, a reason string, so a
+skip is an act with a name in the trace. A present-but-yielding-nothing guard script throws
+rather than passing silently; a repo with no `scripts/` owes nothing.
 
 **Recurred 2026-07-19 (cnt-3):** the cell regenerated rendered plugin trees, deferred the
 manifest regen to "the slice-closing cell", and its own cell verify ran neither check — it

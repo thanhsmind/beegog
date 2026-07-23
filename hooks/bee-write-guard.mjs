@@ -617,6 +617,7 @@ async function main() {
   if (!fs.existsSync(path.join(storeRoot, ".bee", "bin", "lib", "state.mjs"))) return 0;
 
   let denial = null; // { reason }
+  let fixedAskVerdict = null; // { fixed, notes } — ask-guard-autofix D1/D2
   try {
     const stateLib = await import(libModuleUrl(storeRoot, "state.mjs"));
     if (!stateLib.hookEnabled(storeRoot, HOOK_NAME)) {
@@ -637,6 +638,8 @@ async function main() {
         : { allow: true };
       if (verdict && verdict.allow === false) {
         denial = { reason: verdict.reason };
+      } else if (verdict && verdict.fixed) {
+        fixedAskVerdict = verdict;
       }
     } else if (READ_TOOLS.has(toolName)) {
       const rel = lexicalRelPath(root, cwd, toolInput.file_path || toolInput.path || "");
@@ -814,6 +817,29 @@ async function main() {
     }
   } catch (error) {
     logCrash(root, HOOK_NAME, error, ctx.source);
+    return 0;
+  }
+
+  if (fixedAskVerdict) {
+    // ask-guard-autofix D1/D2: an AskUserQuestion call with ONLY fixable
+    // violations (an over-long header) is allowed to proceed with the
+    // rewritten input. Emit the PreToolUse updatedInput contract on stdout
+    // (D2, confirmed against the Claude Code hooks doc) and exit 0 — this
+    // never runs when `denial` is also set (checkAskUserQuestion returns
+    // either a deny OR a fix, never both; deny wins).
+    const notes = Array.isArray(fixedAskVerdict.notes) ? fixedAskVerdict.notes : [];
+    const notesJoined = notes.join("; ");
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        permissionDecisionReason: notesJoined,
+        updatedInput: fixedAskVerdict.fixed,
+        additionalContext: `bee AskUserQuestion guard auto-fixed: ${notesJoined}`,
+      },
+      systemMessage: `bee AskUserQuestion guard: ${notesJoined}`,
+    };
+    process.stdout.write(JSON.stringify(output));
     return 0;
   }
 

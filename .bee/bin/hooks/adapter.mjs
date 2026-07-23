@@ -272,6 +272,15 @@ async function readRawStdin() {
 //   gaps    : coverage gaps found during normalization (already logged when
 //             a root was found)
 export async function readHookContext(hookName, { argv = process.argv } = {}) {
+  // Mark hook context ONCE, before any lib (state.mjs et al) is dynamically
+  // imported by the caller. Libs (e.g. normalizeDogfoodRepos) read this flag
+  // to suppress console.warn spam that would otherwise prefix every hook's
+  // stdout/stderr with unrelated dogfood_repos noise (ag-2); the underlying
+  // behavior — a dead/unreadable entry is skipped — is unchanged. Plain CLI
+  // runs (status, onboarding — no adapter) never set this and keep the
+  // warning verbatim.
+  process.env.BEE_HOOK_CONTEXT = "1";
+
   const gaps = [];
 
   const raw = await readRawStdin();
