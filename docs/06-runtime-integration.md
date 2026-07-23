@@ -1,9 +1,10 @@
 # 06 — Runtime Integration: The Automation Skeleton
 
-bee supports **two first-class runtimes**. Neither is a port of the other:
+bee supports **two first-class runtimes**, and neither is a port of the other — they get the same two belts:
 
-- **Claude Code** gets a *hook-driven automation skeleton* (learned from claudekit): the workflow chain, gates, reservations, and state are enforced and refreshed *mechanically* by lifecycle hooks, not by hoping the model remembers.
-- **Codex** gets the *helper-enforced skeleton* (learned from khuym): the same rules are enforced inside the vendored CLI (`bee.mjs`) plus the AGENTS.md block and compact-prompt recovery instructions.
+- **Hooks on both** (learned from claudekit). The 9 scripts in `hooks/` are rendered from one shared catalog and wired per runtime: `.codex/hooks.json` carries 8 lifecycle events for Codex, `hooks/claude-hooks.json` carries 7 for Claude Code. The workflow chain, gates, reservations, and state are refreshed *mechanically*, not by hoping the model remembers.
+- **The helper floor underneath both** (learned from khuym). The same rules are enforced inside the vendored CLI (`bee.mjs`) — identically on either runtime — plus the AGENTS.md block and compact-prompt recovery instructions.
+- **One caveat, stated honestly.** Whether an installed Codex CLI actually discovers and executes `.codex/hooks.json` is unverified (see the open question below). Shipping the file is not proof it runs, so on any runtime whose hook execution is unconfirmed the guardrails are self-honored, and the helper floor — never the hooks — is what parity rests on.
 
 The principle that makes dual-runtime cheap: **enforcement lives in the shared helpers first; hooks are a second belt, not the only belt.** `bee.mjs cells cap` refusing to cap an unverified cell works identically on both runtimes. A hook that blocks an unreserved write is a Claude Code bonus on top of the same check the Codex worker runs through the helper.
 
@@ -17,14 +18,14 @@ Reading claudekit's installed skeleton (`.claude/settings.json` + 16 hooks + `li
 4. **Chain-nudging via SubagentStop matchers.** When a `Plan` agent finishes, `cook-after-plan-reminder` fires and tells the main agent the next stage. The workflow chain is advanced by the harness, not by memory. This is the heart of the "automation skeleton".
 5. **State persistence via PostToolUse/Stop.** `session-state.cjs` fires after task-tool calls, on SubagentStop, and on Stop — state files stay fresh as a side effect of working, not as a discipline the model must maintain.
 
-And one anti-lesson bee keeps from the earlier audit: claudekit injects context via env vars and ~16 scripts with overlapping concerns. bee caps the skeleton at **6 thin scripts**, puts shared logic in `lib/` modules (claudekit itself extracts `project-detector.cjs` etc. into `lib/` precisely so another runtime's plugin can reuse it — the exact pattern bee needs), and keeps subagent context inline in spawn prompts, not env magic.
+And one anti-lesson bee keeps from the earlier audit: claudekit injects context via env vars and ~16 scripts with overlapping concerns. bee caps the skeleton at **9 thin scripts**, puts shared logic in `lib/` modules (claudekit itself extracts `project-detector.cjs` etc. into `lib/` precisely so another runtime's plugin can reuse it — the exact pattern bee needs), and keeps subagent context inline in spawn prompts, not env magic.
 
-## The bee hook skeleton (Claude Code)
+## The bee hook skeleton (both runtimes)
 
-Six scripts, six events. All ship inside the plugin (`hooks/` + `hooks.json`), so no user `settings.json` surgery is required. Every script:
+Nine scripts, wired from one shared catalog across 8 Codex lifecycle events (`.codex/hooks.json`) and 7 Claude Code ones (`hooks/claude-hooks.json`). All ship inside the plugin (`hooks/` + `hooks.json`), so no user `settings.json` surgery is required. The six **core** hooks are tabled below; `bee-model-guard`, `bee-tools-logger` and `bee-codex-subagent-audit` were added later and are documented with the features that introduced them. Every script:
 
 - exits 0 silently if the repo has no `.bee/onboarding.json` (plugin enabled ≠ repo onboarded),
-- checks `.bee/config.json → hooks.<name>` and exits 0 if disabled,
+- checks `.bee/config.json → hooks.<name>` and exits 0 if disabled — that is the six-toggle set below; the three later scripts are not individually toggleable,
 - is wrapped fail-open with crash logging to `.bee/logs/hooks.jsonl`,
 - imports its logic from `.bee/bin/lib/` — the same modules the CLI helpers use, so hook behavior and helper behavior cannot diverge.
 
@@ -37,7 +38,7 @@ Six scripts, six events. All ship inside the plugin (`hooks/` + `hooks.json`), s
 | 5 | `bee-chain-nudge` | SubagentStop | When a registered bee worker/reviewer subagent stops, inject the contract's next step: "Worker for cell auth-3 returned — collect its `[STATUS]`, update the cell, release/verify reservations" or, when the last review agent stops, "All reviewers done — synthesize findings, then Gate 4." The chain advances mechanically (claudekit `cook-after-plan-reminder` pattern generalized to the bee chain). |
 | 6 | `bee-session-close` | Stop | Warns when the session ends mid-phase with no `HANDOFF.json`, with active reservations, or with claimed-but-uncapped cells — the "you are about to leave the hive door open" check. Also nudges (deduped, warn-only): source files changed with no bee flow and no recent decision logged; and the newest decision more recent than every `docs/specs/*.md` update — something settled was never captured (decision 0003). |
 
-Not hooks (deliberately): subagent context injection (inline in spawn prompts — claudekit's own protocol says "craft prompts explicitly", the env-var channel is its bloat), naming enforcement, kanban rendering, usage-quota caching, statusline. Any future addition must name which of the six it replaces.
+Not hooks (deliberately): subagent context injection (inline in spawn prompts — claudekit's own protocol says "craft prompts explicitly", the env-var channel is its bloat), naming enforcement, kanban rendering, usage-quota caching, statusline. Any future addition must name which of the nine it replaces.
 
 ### Hook Response Protocol (skill-side contract)
 

@@ -1,0 +1,72 @@
+{
+  "id": "cz-7",
+  "feature": "compaction-hardening",
+  "lane": "high-risk",
+  "title": "The two advisory surfaces, and the PreCompact additivity row they change",
+  "files": [
+    "hooks/bee-session-close.mjs",
+    "hooks/bee-prompt-context.mjs",
+    "hooks/test_hook_contracts.mjs",
+    ".bee/bin/hooks/bee-session-close.mjs",
+    ".bee/bin/hooks/bee-prompt-context.mjs",
+    "scripts/test_compaction_advisories.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    ".bee/onboarding.json"
+  ],
+  "read_first": [
+    "docs/history/compaction-hardening/CONTEXT.md",
+    "docs/knowledge/areas/hook-runtime/advisories-and-turn-control.md",
+    "hooks/bee-session-close.mjs",
+    "hooks/bee-prompt-context.mjs",
+    "hooks/test_hook_contracts.mjs"
+  ],
+  "action": "Per D4/D5/D9/D10/D11/D23/D24. bee-session-close.mjs on PreCompact: append the precompact record, render the D9 survival warning when cell_compact_count >= 2, and emit the anchor nudge with force:true bypassing dedup (matching maybeCaptureQueueNudge's force at :412-414). All three go through emitHookOutput as a systemMessage and NEVER encodeBlock — the B2/R14 contract at :234-238. bee-prompt-context.mjs: the deduped anchor nudge via shouldInject/markInjected, key 'anchor-missing-nudge', hash <sessionId>:<feature>:<cell>. THIS CELL MUST SPLIT AN EXISTING ASSERTION (D23), and it is the reason this cell owns hooks/test_hook_contracts.mjs: the PreCompact additivity row at :2692-2712 asserts the with-anchor message equals the anchor block plus the no-anchor control's EXACT bytes. The D10 nudge fires precisely when readIntent is null — true in the control fixture (preControl, :2656) and false in preRoot (:2657) — and buildFixture (:240-259) writes phase 'swarming' with approved_gates.execution true, so D10's predicate is satisfied in the control. The control therefore gains a nudge line the with-anchor message lacks, and the row goes red BY DESIGN. Split it the way D19 made unnecessary for SessionStart: keep an additivity assertion over the portion both messages share, and add an explicit assertion that the no-anchor control carries the nudge while the with-anchor message does not. Do not weaken the row to a substring match. Then the D24 regen chain: mirror both hooks, render plugin trees, self-onboard, release_manifest --write. Author scripts/test_compaction_advisories.mjs: PreCompact output contains no decision:'block' under any input; the warning appears on a cell's second compaction and not its first; the nudge fires on PreCompact even against a freshly-marked dedup cache; the nudge is suppressed on a second UserPromptSubmit within the interval; no nudge when an anchor exists or the phase is terminal. RED-FAILURE EVIDENCE IS REQUIRED AT CAP: record the suite failing against the un-wired hooks before wiring them.",
+  "must_haves": {
+    "truths": [
+      "PreCompact output carries no turn-control verdict of any kind, asserted against the emitted payload.",
+      "The survival warning fires on a cell's second compaction and not its first.",
+      "The PreCompact nudge survives a freshly-marked dedup cache; the UserPromptSubmit nudge does not.",
+      "The split PreCompact row still asserts additivity over the shared portion and additionally asserts the nudge's presence in the control and absence in the with-anchor message — it is not weakened to a substring match.",
+      "The recorded red output against the un-wired hooks is attached as cap evidence.",
+      "release_manifest --check is green at cap time."
+    ],
+    "artifacts": [
+      "Both wired hooks, their mirrors, the split PreCompact row, scripts/test_compaction_advisories.mjs, refreshed manifest"
+    ],
+    "key_links": [
+      "D4",
+      "D5",
+      "D9",
+      "D10",
+      "D11",
+      "D23",
+      "D24"
+    ],
+    "prohibitions": [
+      "Never emit encodeBlock from PreCompact.",
+      "Never let the 30-minute dedup swallow the PreCompact nudge.",
+      "Never weaken the PreCompact additivity row to a substring or regex match to make it pass.",
+      "Never touch the SessionStart rows at :2740-2780, :2427-2455 or :2854-2883."
+    ]
+  },
+  "verify": "node scripts/test_compaction_advisories.mjs && node hooks/test_hook_contracts.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "cz-6"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "id": "cz-3",
+  "feature": "compaction-hardening",
+  "lane": "high-risk",
+  "title": "One shared compaction module: log, counts, sweep, warning, anchor predicate",
+  "files": [
+    "skills/bee-hive/templates/lib/compaction.mjs",
+    ".bee/bin/lib/compaction.mjs",
+    "scripts/test_compaction_module.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    ".bee/onboarding.json"
+  ],
+  "read_first": [
+    "docs/history/compaction-hardening/CONTEXT.md",
+    "docs/knowledge/patterns/20260715-shipping-a-lib-file-means-shipping-the-manifest.md",
+    "skills/bee-hive/templates/lib/state.mjs",
+    "skills/bee-hive/templates/lib/claims.mjs",
+    "skills/bee-hive/templates/lib/reservations.mjs",
+    "skills/bee-hive/templates/lib/intent.mjs",
+    "skills/bee-hive/templates/lib/fsutil.mjs"
+  ],
+  "action": "Per D3/D4/D5/D9/D10/D12/D13/D17/D24. Create skills/bee-hive/templates/lib/compaction.mjs — the one module both hooks and verbs call. Exports: (1) appendCompactionRecord(root,{event,sessionId}) writing .bee/logs/compaction.jsonl via fsutil appendJsonl (it calls ensureDir; a bare fs.appendFileSync would throw ENOENT), inside a LOCAL try/catch so a write failure never changes any caller's return value or exit code (precedent hooks/bee-model-guard.mjs:106-128). Record per D5: {ts,event,session,lane,feature,phase,cell,compact_index,cell_compact_count,anchor_present}, with lane/feature/phase resolved via resolvePipeline(root,{sessionId}) — WITH the id, as inject.mjs:301-305 and :477-479 both do. ONLY precompact records are counted and only a precompact counts itself: precompact = prior + 1; resume = the plain prior count, never +1 again. (2) readCompactionCounts(root,{sessionId,cell}). (3) survivalWarning(count) -> the D9 string when >= 2, else null. (4) anchorMissing(root,{sessionId}) per D10: phase non-terminal (terminal = idle | compounding-complete, state.mjs:1655) AND (cell claimed by this session OR approved_gates.execution) AND readIntent null; returns the exact command to run. (5) compactCheck(root,{sessionId}) per D12, read-only, surfacing LANE_INVALID/LANE_MISSING/LANE_CORRUPT rather than swallowing them, and reporting session-less reservation rows (reservations.mjs:92-98) as 'unbound', never a mismatch. THEN the D24 regen chain in this same cell: mirror to .bee/bin/lib/, `node scripts/render_plugin_skill_trees.mjs`, `node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply`, `node scripts/release_manifest.mjs --write`. A new lib file moves BOTH release_manifest --check and ledger_parity --check; the plugin trees must be rendered before the manifest write or the stale trees are frozen as authoritative. Author scripts/test_compaction_module.mjs: two compaction cycles asserting D9 fires on the SECOND not the first; a read-only .bee/logs/ case asserting the caller's exit code is unchanged; a lane-bound session asserting the record carries the lane's feature/phase; a corrupt lane asserting the typed code surfaces; and idempotence proven by hashing the .bee/ tree before and after two compactCheck runs.",
+  "must_haves": {
+    "truths": [
+      "A resume record never re-increments the counts — one compaction reads as one.",
+      "compactCheck leaves the .bee/ tree hash-identical across two consecutive runs; the hash is the proof, not the stdout.",
+      "A corrupt lane record surfaces its typed LANE_* code.",
+      "A failed log append leaves the caller's return value and exit code unchanged.",
+      "release_manifest --check AND ledger_parity --check are both green at cap time."
+    ],
+    "artifacts": [
+      "compaction.mjs + mirror, scripts/test_compaction_module.mjs, regenerated plugin trees, manifest and ledger"
+    ],
+    "key_links": [
+      "D3",
+      "D4",
+      "D5",
+      "D9",
+      "D10",
+      "D12",
+      "D13",
+      "D17",
+      "D24"
+    ],
+    "prohibitions": [
+      "Never edit .bee/bin/lib/ as the source (D17).",
+      "The sweep never repairs, releases, or blocks.",
+      "No log rotation or size cap.",
+      "Never run release_manifest --write before rendering the plugin trees."
+    ]
+  },
+  "verify": "node scripts/test_compaction_module.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "cz-2"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

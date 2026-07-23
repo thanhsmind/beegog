@@ -9,7 +9,7 @@
 
 Two coupled changes:
 
-1. **The ten-skill hard cap is lifted.** It is replaced by a decision gate: any new skill requires a decision record in `docs/decisions/` naming the gap no existing skill covers and why extending an existing skill would be worse. The 6-hook cap is unchanged.
+1. **The ten-skill hard cap is lifted.** It is replaced by a decision gate: any new skill requires a decision record in `docs/decisions/` naming the gap no existing skill covers and why extending an existing skill would be worse. The hook cap is unchanged.
 2. **bee gains an eleventh skill, `bee-scribing`** (scribe bees) — a dedicated BA role that owns the state layer (`docs/specs/`) at **BA grade**: technology-agnostic functional specs, one per long-lived area, complete enough that a human reads and understands the area without the code, and an agent given only the spec can rebuild the same observable behavior on a different stack. An area is **domain-general** — a screen/form, an API, a background job, an integration, a pipeline, a business process (owner clarification: the form example was illustrative; anything a vibe discuss → build → test → adjust loop settles gets recorded, whatever the domain). It runs in the chain between `bee-reviewing` and `bee-compounding`, and on demand for backfill and mid-discussion capture.
 
 ## Rationale

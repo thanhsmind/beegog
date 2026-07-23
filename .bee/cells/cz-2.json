@@ -1,0 +1,57 @@
+{
+  "id": "cz-2",
+  "feature": "compaction-hardening",
+  "lane": "high-risk",
+  "title": "A doctrine gate that derives its own scan set, knows four counts apart, and bites",
+  "files": [
+    "scripts/test_doctrine_parity.mjs"
+  ],
+  "read_first": [
+    "docs/history/compaction-hardening/CONTEXT.md",
+    "docs/knowledge/patterns/20260722-a-coverage-gate-derives-ground-truth-it-never-compares-two-hand-lists.md",
+    "docs/knowledge/patterns/20260723-a-scan-scope-set-from-assumption-passes-green-while-hiding-the-bug.md",
+    "scripts/release_manifest.mjs",
+    "scripts/test_lib_mirror.mjs"
+  ],
+  "action": "Per D22/D25. Author scripts/test_doctrine_parity.mjs (auto-discovered under scripts/, run_verify.mjs:40-45). (1) DERIVE THE SCAN SET, do not assume it: enumerate tracked markdown via `git ls-files '*.md'` and exclude docs/history/** (archive) — the scope is itself a derived quantity, and the exclusion list is the only hand-written part, stated as such. (2) FILE SET for the retired sentence: glob **/AGENTS.block.md PLUS the merged root AGENTS.md explicitly — the glob does NOT match the root file, and the root file is the one every session loads. Assert zero occurrences. (3) FOUR DERIVED COUNTS, each compared only against prose that names ITS quantity: hook scripts from a glob of hooks/bee-*.mjs (9); Codex lifecycle events from Object.keys(json.hooks).length of .codex/hooks.json (8) — NOT Object.keys(json), which is ['hooks'], length 1; Claude lifecycle events the same way from hooks/claude-hooks.json (7); config toggles from Object.keys(config.hooks).length of .bee/config.json (6). A claim of 'six hooks' meaning toggles must PASS; a claim of 'six hooks' meaning scripts must FAIL. Encode that distinction explicitly — if the two cannot be told apart from the surrounding prose, say so in the failure message rather than guessing. (4) --selftest, following scripts/release_manifest.mjs:239-292 and scripts/test_lib_mirror.mjs:113-129: run the checker against fixture roots — one with the sentence re-introduced into a root-AGENTS.md-shaped file, one whose prose count disagrees with its derived count — and assert both are reported. This requires the checker be factored to take a root/file-set parameter; do that.",
+  "must_haves": {
+    "truths": [
+      "The gate fails when the retired sentence is re-introduced into the merged root AGENTS.md specifically, not only into a projection.",
+      "The gate fails when a prose count disagrees with the quantity it names, and PASSES on a true six-toggle claim.",
+      "Both failure modes are demonstrated by --selftest with its output recorded, not asserted.",
+      "The scan set is derived from git ls-files; no projection path list and no expected count is hand-maintained."
+    ],
+    "artifacts": [
+      "scripts/test_doctrine_parity.mjs with a --selftest exhibiting both bites"
+    ],
+    "key_links": [
+      "D22",
+      "D25"
+    ],
+    "prohibitions": [
+      "Never hand-maintain the file list or the expected counts — derive both.",
+      "Never let the AGENTS.block.md glob stand in for the root AGENTS.md.",
+      "Never collapse the four counts into one number."
+    ]
+  },
+  "verify": "node scripts/test_doctrine_parity.mjs --selftest && node scripts/test_doctrine_parity.mjs",
+  "behavior_change": false,
+  "deps": [
+    "cz-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

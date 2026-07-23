@@ -60,7 +60,7 @@ Requirement for both: **Node.js 18+** on PATH (`node --version`).
 
 ### Option A — plugin install (recommended)
 
-The plugin ships skills **and** the 6-hook automation skeleton (`hooks/hooks.json`); both load automatically once installed.
+The plugin ships skills **and** the 9-script hook automation skeleton (`hooks/hooks.json`); both load automatically once installed.
 
 Inside a Claude Code session:
 
@@ -225,7 +225,7 @@ node .bee/bin/bee.mjs cells claim --id anything --worker w1
 
 **Update:** pull/copy the new plugin version, then re-run onboarding per repo (`--apply`) — it detects drift via managed versions in `.bee/onboarding.json` and refreshes the AGENTS block + CLI. Plugin route: `/plugin update bee` (or re-add the marketplace) as well.
 
-**Uninstall (per repo):** delete the BEE block (everything between and including the `BEE:START`/`BEE:END` markers) from `AGENTS.md`, remove `.bee/`, and — if `--repo-hooks` was used — remove the six `bee-*` entries from `.claude/settings.json`. `docs/history/` is yours; keep it.
+**Uninstall (per repo):** delete the BEE block (everything between and including the `BEE:START`/`BEE:END` markers) from `AGENTS.md`, remove `.bee/`, and — if `--repo-hooks` was used — remove every `bee-*` entry from `.claude/settings.json`. `docs/history/` is yours; keep it.
 
 **Uninstall (runtime):** `/plugin uninstall bee` on Claude Code, or delete the copied skill folders.
 

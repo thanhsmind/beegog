@@ -1,0 +1,54 @@
+{
+  "id": "cz-8",
+  "feature": "compaction-hardening",
+  "lane": "high-risk",
+  "title": "Close the chain and prove the whole tree green",
+  "files": [
+    ".bee/onboarding.json",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/compaction-hardening/CONTEXT.md",
+    "docs/knowledge/patterns/20260715-shipping-a-lib-file-means-shipping-the-manifest.md"
+  ],
+  "action": "Per D18/D24 and PAT37. Earlier cells each owned their own regen, so this cell CONFIRMS rather than repairs. Run: (1) `node scripts/render_plugin_skill_trees.mjs`; (2) `node skills/bee-hive/scripts/onboard_bee.mjs --repo-root . --apply`; (3) `node scripts/release_manifest.mjs --write`; (4) confirm .bee/bin/bee.mjs matches skills/bee-hive/templates/bee.mjs byte for byte — scripts/test_lib_mirror.mjs does NOT check that pair (scripts/test_native_probe.mjs:355-357). Then the FULL verify, output recorded verbatim. DIFF CRITERION, scoped: .bee/onboarding.json's `updated_at` is rewritten unconditionally on every --apply (onboard_bee.mjs:3326), so it ALWAYS differs and is not a finding. A diff in any OTHER file from steps 1-3 means an earlier cell left its own regen undone — report it as a finding with the file names. Measured baseline for comparison: 84 suites, exit 0, ~63.6s wall at concurrency 5; the feature adds five suites, so expect ~89.",
+  "must_haves": {
+    "truths": [
+      "`node scripts/run_verify.mjs` exits 0 with its output recorded verbatim.",
+      "A fresh onboarding dry-run reports no drift.",
+      "Whether steps 1-3 produced a diff in any file other than .bee/onboarding.json's updated_at is reported explicitly, with file names if so."
+    ],
+    "artifacts": [
+      "Confirmed plugin trees, manifest and ledger, plus the recorded full-verify output"
+    ],
+    "key_links": [
+      "D18",
+      "D24"
+    ],
+    "prohibitions": [
+      "Never hand-edit .bee/onboarding.json hashes.",
+      "Do not cap on a partial verify.",
+      "Do not report the updated_at churn as a finding, and do not let it mask a real one."
+    ]
+  },
+  "verify": "node scripts/run_verify.mjs",
+  "behavior_change": false,
+  "deps": [
+    "cz-7"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

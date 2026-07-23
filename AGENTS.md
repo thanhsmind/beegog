@@ -84,7 +84,7 @@ docs/decisions/       <- long-form decision records
 
 ## Guardrails (hook-equivalent rules)
 
-On Claude Code these are enforced mechanically by hooks; on Codex you must honor them yourself. **The hook is a safety net, not the gatekeeper — see critical rule 12: an edit the hook did not block is not an edit bee approved.**
+Both runtimes ship hooks rendered from one shared catalog (`.codex/hooks.json`, 8 lifecycle events, tracked in `.bee/onboarding.json`), and the enforcement floor underneath them is the shared helpers — identical on both. Whether an installed Codex CLI actually executes those hooks is unverified, so on any runtime whose hook execution is unconfirmed, honor these rules yourself. **The hook is a safety net, not the gatekeeper — see critical rule 12: an edit the hook did not block is not an edit bee approved.**
 
 - **Privacy:** before reading secret-shaped files (`.env*`, `*.pem`, `*.key`, `id_rsa*`, `*.p12`, `credentials*`, `secrets.*`), ask the user for explicit approval. If a `@@BEE_PRIVACY@@ … @@END@@` marker appears in tool output, route it through a user question — never work around the block.
 - **Scout:** do not read or scan `node_modules/`, `dist/`, `build/`, `vendor/`, `coverage/`, `.next/`, `__pycache__/`, or `.git/objects`.

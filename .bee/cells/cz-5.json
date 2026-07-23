@@ -1,0 +1,81 @@
+{
+  "id": "cz-5",
+  "feature": "compaction-hardening",
+  "lane": "high-risk",
+  "title": "The compact capsule, its golden, and the verb that renders it",
+  "files": [
+    "skills/bee-hive/templates/lib/inject.mjs",
+    "skills/bee-hive/templates/lib/compaction.mjs",
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+    ".bee/bin/lib/inject.mjs",
+    ".bee/bin/lib/compaction.mjs",
+    ".bee/bin/lib/command-registry.mjs",
+    ".bee/bin/bee.mjs",
+    "scripts/test_compact_capsule.mjs",
+    "scripts/fixtures/preamble-golden.txt",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    ".bee/onboarding.json"
+  ],
+  "read_first": [
+    "docs/history/compaction-hardening/CONTEXT.md",
+    "skills/bee-hive/templates/lib/inject.mjs",
+    "skills/bee-hive/templates/lib/intent.mjs",
+    "hooks/bee-session-init.mjs"
+  ],
+  "action": "Per D6 (as superseded by D19)/D7/D8/D15/D24/D26/D27. STEP 1 — extract three renderers from buildSessionPreamble into exported helpers, output BYTE-IDENTICAL: the onboarding-MISSING line (:318-326), the gate-bypass banner (:342-354), and the HANDOFF block (:369-387). THE HANDOFF RENDERER TAKES BOTH `handoff` AND `handoffOutcome` (D26): handoffOutcome is NOT always null on compact — hooks/bee-session-init.mjs:113-121 sets {ok:false, code:'WRONG_SOURCE'} whenever a planned-next handoff exists on a non-adopting source, and inject.mjs:384-386 renders an `- Adoption not applied: <reason>` line off it. Decide deliberately whether the leading lines.push('') at :375 belongs to the helper or the caller. STEP 2 — add buildCompactCapsule(root, {sessionId, handoffOutcome}) to compaction.mjs. THE handoffOutcome PARAMETER IS MANDATORY AND IS THE POINT OF D27: the hook already computes it at bee-session-init.mjs:113-121 and passes it to buildSessionPreamble at :144; a capsule that omits it silently drops the adoption-refused line for a compacted session holding a planned-next handoff, and NO existing assertion would notice — test_hook_contracts.mjs:2427-2455 and :2864-2872 both regex only the WAIT heading, never the reason line. D6 item 4's 'HANDOFF block verbatim' is only verbatim WITH that line. Emit D6 items 2-12 IN ORDER: STATE MISMATCH when compactCheck fails; onboarding-MISSING; the HANDOFF block (handoff + handoffOutcome); the bypass banner; phase/mode/feature/lane PRESERVING the `- Phase:` label verbatim; the claimed cell with its verify and dependency status; the first open gate; next_action; the recorded commands; the survival count and D9 warning; the critical-patterns pointer. THE CAPSULE NEVER RENDERS THE ANCHOR (D19) — the hook keeps prefixing it. NO CAPSULE BYTE MAY BE ANCHOR-CORRELATED: the additivity row at hooks/test_hook_contracts.mjs:2740-2780 compares a with-anchor capsule body against a no-anchor control body, so the STATE MISMATCH line (compactCheck reports 'an anchor exists' as a check — do not let it vary the line), the survival-count line, and blank-line ownership in the HANDOFF arm must all be anchor-independent. STEP 3 — register `state compact-capsule --session-id <id>`: registry entry, handler, dispatch-map line, the bee.mjs:4830 Use-list, and its own assertExampleOk call in test_bee_cli.mjs. STEP 4 — author scripts/test_compact_capsule.mjs: item ORDER asserted positionally; the D15 bare-repo case; a lane-bound session showing its own lane; the STATE MISMATCH path; a row asserting `- Adoption not applied:` appears in the capsule when a planned-next handoff exists (D27); and byte-identity of buildSessionPreamble against a COMMITTED GOLDEN at scripts/fixtures/preamble-golden.txt with the `## bee v${BEE_VERSION}` line (inject.mjs:317) normalized before comparison. Do NOT reconstruct the golden with `git show HEAD:` — that form passes at cap and becomes a tautology for every later cell.  STEP 4b (NAMED MECHANISM, not a delegated aim) — the anchor-independence assertion gets its own row, the way the golden got its own path: render buildCompactCapsule TWICE against paired fixtures identical except that one has an anchor at .bee/intent/ and the other does not, and assert the two outputs are BYTE-EQUAL; include one pair in which compactCheck FAILS, since D12 reports an anchor-exists check and the naive STATE MISMATCH rendering varies with anchor presence by construction. Without this row cz-5 can cap green with an anchor-correlated capsule: hooks/test_hook_contracts.mjs:2740-2780 drives the HOOK, which cz-6 has not wired yet, so during cz-5 that row compares full preambles and never touches the capsule. The red would first appear at cz-6, whose files exclude compaction.mjs and which therefore could not legally fix it. STEP 5 — D24 regen chain: mirror, render plugin trees, self-onboard, release_manifest --write.",
+  "must_haves": {
+    "truths": [
+      "buildCompactCapsule's signature carries handoffOutcome, and a capsule rendered for a session holding a planned-next handoff contains the `- Adoption not applied:` line — asserted by a test, since no existing row covers it.",
+      "buildSessionPreamble's output matches the committed golden for startup, clear and resume, with only the version line normalized.",
+      "The golden comparison still bites after cz-5 commits — it is a committed fixture, not a git-show reconstruction.",
+      "The capsule's item order is asserted positionally, so reordering fails the suite.",
+      "No capsule byte varies with anchor presence, proven by a paired-render byte-equality row inside this cell (including a compactCheck-failing pair) — never deferred to the hook-contract suite, which does not exercise the builder while the hook is un-wired.",
+      "The capsule renders on a bare repo emitting no warning and no mismatch line (D15).",
+      "The `- Phase:` label is unchanged and hooks/test_hook_contracts.mjs is green with ZERO edits.",
+      "release_manifest --check and ledger_parity --check are green at cap time."
+    ],
+    "artifacts": [
+      "Three renderers, buildCompactCapsule(root,{sessionId,handoffOutcome}), the compact-capsule verb, scripts/test_compact_capsule.mjs, the committed golden, refreshed mirrors and manifest"
+    ],
+    "key_links": [
+      "D6",
+      "D7",
+      "D8",
+      "D15",
+      "D19",
+      "D24",
+      "D26",
+      "D27"
+    ],
+    "prohibitions": [
+      "Never render the anchor inside the capsule (D19).",
+      "Never let any capsule byte depend on anchor presence.",
+      "Never drop handoffOutcome from the capsule signature or from the HANDOFF renderer.",
+      "Never rename or reformat the `- Phase:` label.",
+      "Never edit hooks/test_hook_contracts.mjs in this cell — if it reds, the capsule is wrong.",
+      "Never build the byte-identity baseline from `git show HEAD:`."
+    ]
+  },
+  "verify": "node scripts/test_compact_capsule.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "cz-4"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

@@ -309,7 +309,7 @@ If a session runs long, bee writes `.bee/HANDOFF.json` at ~65% context and pause
 
 ## Install
 
-Requirement: **Node.js 18+** on PATH. One command installs everything — the per-project skills (`.claude/skills/` for Claude Code, `.agents/skills/` for Codex), `CLAUDE.md`, the `AGENTS.md` BEE block, the `.bee/` runtime + vendored helpers, and the Claude Code repo hooks.
+Requirement: **Node.js 18+** on PATH. One command installs everything — the per-project skills (`.claude/skills/` for Claude Code, `.agents/skills/` for Codex), `CLAUDE.md`, the `AGENTS.md` BEE block, the `.bee/` runtime + vendored helpers, and the runtime hook wiring for both Claude Code and Codex.
 
 ### Brownfield — existing project (copy, paste, done)
 
@@ -428,7 +428,7 @@ Without `--apply` it only reports the plan. With `--apply` it installs/refreshes
 
 Every `--apply` now updates helpers and skills together: by default it syncs the bee skill set into the host repo's own managed roots (`<repo>/.claude/skills/bee-*` for Claude Code, `<repo>/.agents/skills/bee-*` for Codex) from this repo's `skills/` tree in the same run, so helpers and installed skills can no longer drift apart. These trees are committed to the host repo, never gitignored. `--global-skills` additionally syncs the legacy global `~/.claude/skills/bee-*` root; without the flag the global root is never read, written, or deleted. Downgrades are refused by default — if the source tree is older than the repo's vendored helpers or a target's installed skills, apply refuses with zero mutations (`blocked_downgrade`); an unidentifiable source refuses too (`blocked_no_source`), and only `blocked_downgrade` is escapable, via `--force-downgrade`, and only when every version resolves numeric.
 
-### Hooks — `hooks/` (Claude Code; the plugin route loads them automatically)
+### Hooks — `hooks/` (both runtimes; the plugin route loads them automatically)
 
 Self-arming (silent unless the repo has `.bee/onboarding.json`); per-repo kill switch in `.bee/config.json → hooks.<name>`.
 
@@ -441,7 +441,7 @@ Self-arming (silent unless the repo has `.bee/onboarding.json`); per-repo kill s
 | `bee-chain-nudge.mjs` | subagent stop | nudges the orchestrator to collect worker status / synthesize reviews |
 | `bee-session-close.mjs` | session stop | warns about claimed-uncapped cells, missing HANDOFF, or unlogged decisions |
 
-Codex now ships its own project hooks (`.codex/hooks.json`, 7 lifecycle events) rendered from the same shared catalog, replacing the earlier claim that Codex lacked hook support. The *helpers* remain the enforcement floor regardless of hook state, and the AGENTS.md block covers bootstrap either way. Parity matrix: [docs/06-runtime-integration.md](docs/06-runtime-integration.md).
+The six core hooks are tabled above; `bee-model-guard.mjs`, `bee-tools-logger.mjs` and `bee-codex-subagent-audit.mjs` complete the 9-script set. Both runtimes are wired from the same shared catalog — `.codex/hooks.json` (8 lifecycle events) for Codex, `hooks/claude-hooks.json` (7) for Claude Code. Whether an installed Codex CLI actually executes its hooks is unverified, so the *helpers* remain the enforcement floor regardless of hook state, and the AGENTS.md block covers bootstrap either way. Parity matrix: [docs/06-runtime-integration.md](docs/06-runtime-integration.md).
 
 ### Runtime files — `<repo>/.bee/`
 
@@ -468,7 +468,7 @@ Codex now ships its own project hooks (`.codex/hooks.json`, 7 lifecycle events) 
 | [02-architecture.md](docs/02-architecture.md) | Plugin layout, dual-runtime support, runtime files, cell schema, state model |
 | [03-workflow.md](docs/03-workflow.md) | The full stage-by-stage workflow contract: artifacts, gates, modes, lanes |
 | [04-skills-spec.md](docs/04-skills-spec.md) | You are about to write a SKILL.md — per-skill specifications |
-| [06-runtime-integration.md](docs/06-runtime-integration.md) | Claude Code hook automation + Codex parity matrix |
+| [06-runtime-integration.md](docs/06-runtime-integration.md) | Hook automation on both runtimes + the Codex parity matrix |
 | [07-contracts.md](docs/07-contracts.md) | You are implementing or extending v0.1 — lib API, CLI surface, hook behaviors |
 | [decisions/](docs/decisions/) | Why bee is shaped the way it is — one record per load-bearing choice (0001–0016) |
 
@@ -476,7 +476,7 @@ Codex now ships its own project hooks (`.codex/hooks.json`, 7 lifecycle events) 
 
 ## Status
 
-**v0.1.15.** Core built and green: the skills, the 6-hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
+**v0.1.15.** Core built and green: the skills, the 9-script hook automation skeleton, 4 vendored helpers over a shared `lib/`, onboarding for both runtimes, and the lib/onboarding test suites — smoke-tested end to end (onboard → gate-locked claim → verify-gated cap → hook denials).
 
 Recent additions, each gated by a decision record:
 

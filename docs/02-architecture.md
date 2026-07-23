@@ -9,7 +9,7 @@ bee/
   .claude-plugin/plugin.json     ← Claude Code plugin manifest
   .codex-plugin/plugin.json      ← Codex plugin manifest
   hooks/
-    hooks.json                   ← Claude Code hook wiring (6 events)
+    hooks.json                   ← shared hook catalog (8 lifecycle events, 9 scripts)
     bee-session-init.mjs         ← SessionStart: status + gates + handoff + patterns + decisions
     bee-prompt-context.mjs       ← UserPromptSubmit: phase/gate reminder (injection-deduped)
     bee-write-guard.mjs          ← PreToolUse: gate guard + reservation guard + privacy/scout + CLI-shape validation
@@ -214,13 +214,13 @@ The spawn *contract* is identical on both: assigned cell id, CONTEXT.md path, gl
 
 Skills, artifacts, cells, gates, helpers, templates: one copy of prose/logic in `skills/`. Each plugin manifest routes to its own **committed rendered tree** instead — `.claude-plugin/plugin.json` → `.claude-plugin/skills/` = `render(skills/, "claude")`, `.codex-plugin/plugin.json` → `.codex-plugin/skills/` = `render(skills/, "codex")` — generated only through the D9 renderer (`skills/bee-hive/scripts/onboard_bee.mjs::renderSkillBytes`, regenerated via `scripts/render_plugin_skill_trees.mjs`); with zero runtime markers today both rendered trees stay byte-identical to `skills/` (cnr2-12).
 
-## Hooks: the automation skeleton (Claude Code) + helper enforcement (Codex)
+## Hooks: one automation skeleton, both runtimes + the helper floor underneath
 
-bee ships a coherent **6-hook automation skeleton** for Claude Code — session-init, prompt-context (deduped), write-guard (gate + reservation + privacy + CLI-shape in one), state-sync, chain-nudge, session-close — learned from claudekit's tightly-wired hook system but capped and disciplined: every hook is config-gated in `.bee/config.json`, fail-open with crash logging, silent on non-onboarded repos, and a thin wrapper over the same `.bee/bin/lib/` modules the CLI helpers use.
+bee ships a coherent **9-script automation skeleton** — session-init, prompt-context (deduped), write-guard (gate + reservation + privacy + CLI-shape in one), state-sync, chain-nudge, session-close, model-guard, tools-logger, codex-subagent-audit — rendered from one shared catalog and wired per runtime: `.codex/hooks.json` carries 8 lifecycle events for Codex, `hooks/claude-hooks.json` carries 7 for Claude Code. It is learned from claudekit's tightly-wired hook system but capped and disciplined: the six core hooks are config-gated in `.bee/config.json` (six toggles, each default-on), every script is fail-open with crash logging, silent on non-onboarded repos, and a thin wrapper over the same `.bee/bin/lib/` modules the CLI helpers use.
 
-The dual-runtime rule: **enforcement lives in the shared helpers first** (cap-requires-verify, reservation conflicts, gate-locked claiming work identically under Codex); hooks are Claude Code's second, mechanical belt. Full design, the Codex parity matrix, and the hook response protocol: [06-runtime-integration.md](06-runtime-integration.md).
+The dual-runtime rule: **enforcement lives in the shared helpers first** (cap-requires-verify, reservation conflicts, gate-locked claiming work identically under Codex); the hooks are a second, mechanical belt on both runtimes. Whether an installed Codex CLI actually executes its hooks is unverified, so the helper floor — not the hooks — is what parity rests on. Full design, the Codex parity matrix, and the hook response protocol: [06-runtime-integration.md](06-runtime-integration.md).
 
-Any proposed seventh hook must name which of the six it replaces — claudekit's 16-hook sprawl remains the documented anti-goal.
+Any proposed tenth hook must name which of the nine it replaces — claudekit's 16-hook sprawl remains the documented anti-goal.
 
 ## State model
 

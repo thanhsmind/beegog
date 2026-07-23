@@ -66,5 +66,5 @@ Deliberately deferred until real usage demands them — each is upstream-proven 
 
 - The Iron Law applies to bee's own skills from the first line: no SKILL.md without a failing pressure scenario, and a CREATION-LOG.md for each.
 - Dogfood friction is captured with the harness triggers and becomes the next phase's backlog — bee is its own first grooming target.
-- Skill additions are decision-gated (decision 0002): a new skill needs a decision record naming the workflow gap no existing skill covers. Keep the 6-hook cap; any proposed hook must name which of the six it replaces.
+- Skill additions are decision-gated (decision 0002): a new skill needs a decision record naming the workflow gap no existing skill covers. Keep the hook cap; any proposed hook must name which of the nine it replaces.
 - Every enforcement rule ships in `bin/lib/` first (works on both runtimes), then optionally gets a hook belt — never hook-only enforcement.

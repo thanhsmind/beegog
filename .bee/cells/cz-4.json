@@ -1,0 +1,64 @@
+{
+  "id": "cz-4",
+  "feature": "compaction-hardening",
+  "lane": "high-risk",
+  "title": "Two verbs: compact-log and compact-check",
+  "files": [
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "skills/bee-hive/templates/bee.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+    ".bee/bin/lib/command-registry.mjs",
+    ".bee/bin/bee.mjs",
+    "scripts/test_compact_verbs.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    ".bee/onboarding.json"
+  ],
+  "read_first": [
+    "docs/history/compaction-hardening/CONTEXT.md",
+    "docs/history/learnings/20260712-dispatcher-unify.md",
+    "skills/bee-hive/templates/lib/command-registry.mjs",
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+    "scripts/test_conformance.mjs"
+  ],
+  "action": "Per D3/D17/D24. Register TWO verbs only — `state compact-log --event <precompact|resume> --session-id <id> [--json]` and `state compact-check --session-id <id> [--json]` — following state.handoff.write (command-registry.mjs:877-905 entry shape; handler in skills/bee-hive/templates/bee.mjs; one line in the name-to-handler map at bee.mjs:4992-4994). `state compact-capsule` is deliberately NOT registered here: test_bee_cli.mjs:2558 asserts every registry entry had its example executed, so a verb whose builder does not exist yet turns the repo red. It lands in cz-5 with its builder. THREE CHANGE SITES BEYOND THE REGISTRY, all of which a naive implementation misses: (a) skills/bee-hive/templates/tests/test_bee_cli.mjs — `executedNames` grows only via explicit runExample/assertExampleOk calls (:148), so each new entry needs its own call or the coverage check at :2558-2563 fails; (b) skills/bee-hive/templates/bee.mjs:4830, the `state` group's `Unknown command … Use: …` list, which the DA5 bijection check at test_bee_cli.mjs:276-303 parses in BOTH directions — the new verbs must appear there; (c) FLAG_ALONE_BOOLEANS (bee.mjs:5067) already contains `json`, and these verbs add no other bare boolean, so nothing is needed there — stated so you do not go looking. compact-check's JSON output includes an anchor_missing check carrying the same command D10's nudge names, which is how the nudge stays reachable without a hook (D3). Then the D24 regen chain: mirror both edited runtime files to .bee/bin/, render the plugin trees, self-onboard, `release_manifest.mjs --write`. Author scripts/test_compact_verbs.mjs on the runBee/record conventions at scripts/test_conformance.mjs:44,95-97,51-55, with a negative-control row proving compact-check mutated nothing.",
+  "must_haves": {
+    "truths": [
+      "Both verbs appear in `node .bee/bin/bee.mjs --help --json` with parameters, description and runnable examples derived from the registry entry.",
+      "test_bee_cli.mjs is green: both new entries had their examples executed, and the DA5 bijection holds in both directions.",
+      "state compact-check exits non-zero only on a usage error, never on a detected mismatch.",
+      "release_manifest --check and ledger_parity --check are green at cap time."
+    ],
+    "artifacts": [
+      "Two registry entries, two handlers, two dispatch-map lines, the Use-line update, new test_bee_cli rows, refreshed mirrors and manifest, scripts/test_compact_verbs.mjs"
+    ],
+    "key_links": [
+      "D3",
+      "D17",
+      "D24"
+    ],
+    "prohibitions": [
+      "Never register state compact-capsule here — its builder does not exist until cz-5 and the coverage gate is unconditional.",
+      "Never edit .bee/bin/bee.mjs as the source."
+    ]
+  },
+  "verify": "node scripts/test_compact_verbs.mjs && node scripts/test_conformance.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "cz-3"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}
