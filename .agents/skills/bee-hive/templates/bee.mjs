@@ -158,6 +158,10 @@ import {
   precompactBlock,
   resumeBlock,
 } from './lib/intent.mjs';
+// compaction-hardening (D3): the helper floor — state compact-log/compact-check
+// are thin CLI wrappers over lib/compaction.mjs, the ONE module every
+// compaction surface (hooks and verbs alike) calls.
+import { appendCompactionRecord, compactCheck, anchorMissing, ANCHOR_NUDGE_COMMAND } from './lib/compaction.mjs';
 import {
   checkBundle,
   knowledgeIndexDrift,
@@ -2391,6 +2395,46 @@ function handleStateAdvisorRefShow(root, flags) {
       `advisor="${ref.advisor}" feature="${ref.feature}" consulted_at=${ref.consulted_at} stale=${staleness.stale}` +
       `${staleness.reasons.length ? ` (${staleness.reasons.join('; ')})` : ''}`,
   };
+}
+
+// ─── state compact-*: compaction-hardening's helper floor (D3) — thin CLI
+// wrappers over lib/compaction.mjs. `state compact-capsule` is NOT wired
+// here — its builder ships in a later cell.
+
+function handleStateCompactLog(root, flags) {
+  const event = requireFlag(flags, 'event');
+  const sessionId = requireFlag(flags, 'session-id');
+  const record = appendCompactionRecord(root, { event, sessionId });
+  return {
+    result: record,
+    text: `Recorded "${record.event}" for session "${record.session}" (compact_index=${record.compact_index}, cell_compact_count=${record.cell_compact_count}, anchor_present=${record.anchor_present}).`,
+  };
+}
+
+// D12/D13: reports only, never mutates. compactCheck's own 'anchor' check
+// (item 7) is a plain presence test; the `anchor_missing` check added here is
+// the DISTINCT D10 nudge predicate (phase/gate-scoped) so the exact nudge
+// command stays reachable by command even where the predicate does not fire
+// (D3's helper floor). Both checks are legitimately present together.
+function handleStateCompactCheck(root, flags) {
+  const sessionId = requireFlag(flags, 'session-id');
+  const sweep = compactCheck(root, { sessionId });
+  const nudge = anchorMissing(root, { sessionId });
+  const anchorMissingCheck = {
+    name: 'anchor_missing',
+    ok: !nudge,
+    detail: nudge ? nudge.message : 'no anchor-missing nudge applies for this session right now.',
+    command: ANCHOR_NUDGE_COMMAND,
+  };
+  const checks = [...sweep.checks, anchorMissingCheck];
+  const mismatches = checks.filter((entry) => entry.ok !== true);
+  const result = { ok: mismatches.length === 0, session: sweep.session, checks, mismatches };
+  const lines = [`compact-check ${result.ok ? 'OK' : 'MISMATCH'} (session "${sessionId}")`];
+  for (const entry of checks) {
+    if (entry.skipped) continue;
+    lines.push(`  [${entry.ok ? 'ok' : 'MISMATCH'}] ${entry.name}: ${entry.detail}`);
+  }
+  return { result, text: lines.join('\n') };
 }
 
 // ─── backlog: full port of bee_backlog.mjs's counts/rank/badges/add verbs
@@ -4827,7 +4871,7 @@ function stateUsageFallback(leading) {
     const sub = leading[2];
     return `Unknown advisor-ref action "${sub || '(missing)'}". Use: record, show.`;
   }
-  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature, lanes, session, handoff, advisor-ref.`;
+  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature, lanes, session, handoff, advisor-ref, compact-log, compact-check.`;
 }
 
 function backlogUsageFallback(leading) {
@@ -4994,6 +5038,8 @@ const HANDLERS = {
   'state.handoff.show': handleStateHandoffShow,
   'state.advisor-ref.record': handleStateAdvisorRefRecord,
   'state.advisor-ref.show': handleStateAdvisorRefShow,
+  'state.compact-log': handleStateCompactLog,
+  'state.compact-check': handleStateCompactCheck,
   'backlog.counts': handleBacklogCounts,
   'backlog.rank': handleBacklogRank,
   'backlog.badges': handleBacklogBadges,

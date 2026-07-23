@@ -22,6 +22,7 @@
 
 import { MODEL_TIERS, KNOWN_PHASES, GATE_NAMES, HANDOFF_KINDS } from './state.mjs';
 import { REVIEW_MODES } from './reviews.mjs';
+import { COMPACT_EVENTS, ANCHOR_NUDGE_COMMAND } from './compaction.mjs';
 
 export const SCHEMA_VERSION = '1.0';
 
@@ -962,6 +963,44 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: ['bee state advisor-ref show --json'],
+    deprecated: null,
+  },
+
+  // ─── state compact-*: compaction-hardening's helper floor (D3) — two thin
+  // CLI wrappers over lib/compaction.mjs, the ONE module every compaction
+  // surface (hooks and verbs alike) calls. `state compact-capsule` is
+  // DELIBERATELY NOT registered here: its builder does not exist until the
+  // cell that renders it, and the coverage check below (every registry entry
+  // must have an executed example) is unconditional over the whole registry.
+  {
+    name: 'state.compact-log',
+    invoke: 'bee state compact-log',
+    description: "Append one compaction telemetry record (compaction-hardening D3/D4/D5) via lib/compaction.mjs's appendCompactionRecord — the durable write every compaction surface (the PreCompact hook, the SessionStart resume hook) and this verb both call, so the log stays reachable by command on any runtime whose hook execution is unconfirmed (D3's helper floor). --event is 'precompact' or 'resume'; compact_index/cell_compact_count follow D5's counting rule — only precompact records are counted, and only a precompact record counts itself. A write failure never changes the exit code (D4: fail-open, logged locally).",
+    parameters: {
+      type: 'object',
+      properties: {
+        event: { type: 'string', description: 'Compaction event being recorded.', enum: [...COMPACT_EVENTS] },
+        'session-id': { type: 'string', description: 'Session id the record is scoped to.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['event', 'session-id'],
+    },
+    examples: ['bee state compact-log --event precompact --session-id sess-demo --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.compact-check',
+    invoke: 'bee state compact-check',
+    description: "Read-only D12/D13 integrity sweep for a session (lib/compaction.mjs's compactCheck): session record, lane binding, claimed-cell ownership, execution gate, dependency capping, reservation holds, and intent-anchor presence. REPORTS ONLY — it never repairs, releases, or blocks, and it exits non-zero ONLY on a usage error, never on a detected mismatch (D13; a mismatch is reported data). The JSON output's checks[] always carries an `anchor_missing` entry naming the exact command the D10 nudge would name (ANCHOR_NUDGE_COMMAND), so the nudge stays reachable by command on a runtime that never executes a hook (D3's helper floor).",
+    parameters: {
+      type: 'object',
+      properties: {
+        'session-id': { type: 'string', description: 'Session id to sweep.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: ['session-id'],
+    },
+    examples: ['bee state compact-check --session-id sess-demo --json'],
     deprecated: null,
   },
 

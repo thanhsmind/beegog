@@ -28,6 +28,7 @@ import { addCell } from '../lib/cells.mjs';
 import { createSession, bindSessionLane } from '../lib/claims.mjs';
 import { writeJsonAtomic, hashFile, appendJsonl } from '../lib/fsutil.mjs';
 import { defaultState, writeState, writeLane, BEE_VERSION } from '../lib/state.mjs';
+import { ANCHOR_NUDGE_COMMAND } from '../lib/compaction.mjs';
 import { encodeProjectDir } from '../lib/perf.mjs';
 import { emitFrontmatter } from '../lib/knowledge.mjs';
 import {
@@ -1979,6 +1980,81 @@ await check('state.advisor-ref examples run through the real dispatcher', async 
   await assertExampleOk('state.advisor-ref.record', { cwd: dir });
   const show = await assertExampleOk('state.advisor-ref.show', { cwd: dir });
   assert(JSON.parse(show.stdout).advisor_ref.advisor === 'gpt-5.6-sol', `show example returns the recorded advisor, got ${show.stdout}`);
+});
+
+// ─── state.compact-log / state.compact-check (compaction-hardening D3): the
+// helper floor's two thin CLI wrappers over lib/compaction.mjs. A dedicated
+// isolated fixture repo, never rootState/root, so a fresh compaction.jsonl
+// and a fresh anchor-missing predicate are exercised cleanly.
+
+await check('state.compact-log + state.compact-check examples run through the real dispatcher', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-compact-example-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(dir, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'compact-demo',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+
+  const logResult = await assertExampleOk('state.compact-log', { cwd: dir });
+  const record = JSON.parse(logResult.stdout);
+  assert(
+    record.event === 'precompact' && record.session === 'sess-demo',
+    `expected a precompact record for sess-demo, got ${logResult.stdout}`,
+  );
+  assert(
+    record.compact_index === 1 && record.cell_compact_count === 0,
+    `expected the first compaction's plain counts (D5), got ${logResult.stdout}`,
+  );
+  assert(fs.existsSync(path.join(dir, '.bee', 'logs', 'compaction.jsonl')), 'compaction.jsonl should now exist');
+
+  const checkResult = await assertExampleOk('state.compact-check', { cwd: dir });
+  const sweep = JSON.parse(checkResult.stdout);
+  assert(sweep.session === 'sess-demo', `expected the session echoed back, got ${checkResult.stdout}`);
+  assert(typeof sweep.ok === 'boolean' && Array.isArray(sweep.checks), `expected a {ok, checks[]} sweep shape, got ${checkResult.stdout}`);
+  const anchorMissingCheck = sweep.checks.find((entry) => entry.name === 'anchor_missing');
+  assert(anchorMissingCheck, `expected an "anchor_missing" check in compact-check's output, got ${JSON.stringify(sweep.checks)}`);
+  assert(
+    anchorMissingCheck.command === ANCHOR_NUDGE_COMMAND,
+    `anchor_missing check must carry the exact D10 nudge command, got ${JSON.stringify(anchorMissingCheck)}`,
+  );
+});
+
+await check('state.compact-check exits 0 even when it reports a mismatch (D13: reports, never blocks)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-compact-mismatch-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(dir, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'compact-mismatch-demo',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  // No session record for "no-such-session" exists at all — the session_record
+  // check must report false, and the process must still exit 0.
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['state', 'compact-check', '--session-id', 'no-such-session', '--json'],
+    cwd: dir,
+  });
+  assert(result.status === 0, `compact-check must exit 0 on a reported mismatch, got status ${result.status}: ${result.stderr}`);
+  const sweep = JSON.parse(result.stdout);
+  assert(sweep.ok === false, `expected a mismatch to be reported (ok:false), got ${result.stdout}`);
+  const sessionCheck = sweep.checks.find((entry) => entry.name === 'session_record');
+  assert(sessionCheck && sessionCheck.ok === false, `expected a failed session_record check, got ${JSON.stringify(sweep.checks)}`);
+});
+
+await check('state.compact-log refuses (usage error, non-zero exit) on an unknown --event value', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-compact-badevent-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['state', 'compact-log', '--event', 'bogus-event', '--session-id', 'sess-demo', '--json'],
+    cwd: dir,
+  });
+  assert(result.status !== 0, `expected a non-zero exit for an invalid --event, got ${result.status}`);
+  assert(!fs.existsSync(path.join(dir, '.bee', 'logs', 'compaction.jsonl')), 'an invalid --event must never write a record');
 });
 
 // ─── doctor (codex-native-runtime-v2 cnr2-13, D11): fail-closed runtime
