@@ -2,14 +2,14 @@
   "schema_version": "1.0",
   "feature": "capture-invariant",
   "mode": "small",
-  "phase": "compounding",
+  "phase": "compounding-complete",
   "approved_gates": {
     "context": false,
     "shape": true,
     "execution": true,
     "review": false
   },
-  "summary": "Feature \"capture-invariant\" started at phase \"planning\" (lane).",
+  "summary": "capture-invariant closed: zero-exception capture codified; enforcement PBI filed",
   "next_action": "close lane",
   "created_at": "2026-07-23T15:13:27.485Z",
   "last_scribing_run": {
