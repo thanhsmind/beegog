@@ -104,7 +104,7 @@ Captured at onboarding (or the first natural moment in exploring), four standard
 | `setup` | install dependencies from scratch | onboarding checks, fresh-clone bootstrap |
 | `start` | run the app/dev server | on demand (`/run`-style checks) |
 | `test` | **the SCOPED dev-loop test command** — only the tests related to the current change | your machine, often: the orchestrator's wave-close check after cells cap, and the `bee worktree merge` semantic gate (run against the staged merge) |
-| `verify` | **the FULL test suite** | **CI, on push** (plus the release gate). Never a local per-cell, per-cap, or session-start obligation — a red CI run auto-files a `verify-red` issue instead |
+| `verify` | **the FULL test suite** | **CI-owned, on the project's own CI cadence** — push, nightly, or scheduled, the host workflow decides (plus the release gate). Never a local per-cell, per-cap, or session-start obligation — a red CI run auto-files a `verify-red` issue instead |
 
 The split is the point (ci-owned-verify D1/D5): `test` must be *narrower* than `verify`, or every dev-loop iteration pays the full-suite price as the suite grows. Every consumer that wants `test` falls back to `verify` when `test` is missing, so a repo that only recorded `verify` keeps working — just slower.
 

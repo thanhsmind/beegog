@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "feature": "ci-cadence",
+  "mode": "small",
+  "phase": "compounding",
+  "approved_gates": {
+    "context": false,
+    "shape": true,
+    "execution": true,
+    "review": false
+  },
+  "summary": "Feature \"ci-cadence\" started at phase \"planning\" (lane).",
+  "next_action": "close lane",
+  "created_at": "2026-07-23T14:58:22.065Z",
+  "last_scribing_run": {
+    "feature": "ci-cadence",
+    "date": "2026-07-23",
+    "at": "2026-07-23T15:02:43.614Z",
+    "areas_synced": [
+      "verify-pipeline"
+    ],
+    "next_action": "close lane"
+  }
+}

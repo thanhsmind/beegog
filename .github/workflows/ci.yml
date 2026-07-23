@@ -1,10 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  schedule:
+    # 16:00 UTC = 23:00 Asia/Ho_Chi_Minh
+    - cron: '0 16 * * *'
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -60,12 +60,14 @@ jobs:
       # D2 + plan-check P3: exactly one matrix leg files/comments the issue.
       # fail-fast: false means all three legs go red together on a real
       # failure, so without this gate all three would race to file/comment;
-      # node 20 is the arbitrary single leg. Scoped to `github.event_name ==
-      # push` — pull_request runs (including fork PRs) get a read-only
-      # GITHUB_TOKEN with no issues:write, so this keeps push and PR
-      # behavior consistent rather than failing PRs on the issue step too.
+      # node 20 is the arbitrary single leg. Scoped to `github.event_name !=
+      # 'pull_request'` — this workflow no longer triggers on pull_request at
+      # all (schedule + workflow_dispatch only), but the negative form keeps
+      # scheduled and manual runs filing issues even if a pull_request
+      # trigger is ever reintroduced, without re-opening the fork-PR
+      # read-only GITHUB_TOKEN hazard the original scoping avoided.
       - name: File verify-red issue on failure
-        if: failure() && github.event_name == 'push' && matrix.node-version == 20
+        if: failure() && github.event_name != 'pull_request' && matrix.node-version == 20
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERIFY_TAIL_FILE: verify-output.log

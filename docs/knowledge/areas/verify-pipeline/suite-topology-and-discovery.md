@@ -87,8 +87,9 @@ concurrency-safe and hermetic is `concurrency-and-hermetic-runs.md`.
   check is `commands.test` (the impacted run, `run_verify.mjs --impacted` /
   `--impacted-from-git`), resolved through the impact registry — never the
   full configured verify. The FULL configured verify (`commands.verify`) is
-  CI-owned: it runs on push, never locally, and auto-files a deduped
-  `verify-red` issue when red — no session baseline, feature close, or
+  CI-owned: it runs on the project's own CI cadence (push, nightly, or
+  scheduled — the host workflow decides), never locally, and auto-files a
+  deduped `verify-red` issue when red — no session baseline, feature close, or
   worktree-merge moment runs it locally by default; worktree merge gates on
   `commands.test` instead. Cap evidence is the cell's scoped verify; the full
   run belongs to CI.
