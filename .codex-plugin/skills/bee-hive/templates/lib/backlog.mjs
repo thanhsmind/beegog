@@ -79,6 +79,67 @@ export function readBacklogCounts(root) {
   return { ...counts, total };
 }
 
+// ─── proposePbiRow (backlog-submit-command D1/D2/D3/D5) ────────────────────
+// Registers a new `proposed` PBI row directly, without a human hand-editing
+// the table (`bee backlog propose`). The assigned id is always (the highest
+// existing `P<n>` id across the WHOLE table) + 1 — every ID cell counts
+// toward the max, including rows whose Status cell readBacklogCounts can't
+// classify (e.g. a link-annotated `done` row), so an existing gap (e.g.
+// P58) is read but never backfilled (D2). This is a standalone ID-cell scan
+// — deliberately not built on walkBacklogIdRows, since that walk requires a
+// recognized Status column + separator row and returns null for a still-
+// dataless table; the degenerate "brand-new table, zero P<n> rows yet" case
+// must still work and assign P1.
+/**
+ * Append one new `proposed` row to docs/backlog.md and return its id.
+ * @param {string} root
+ * @param {{story:string, cos:string, feature?:string}} fields — caller-
+ *   validated (required-ness/length caps are the CLI handler's job, D5);
+ *   this function only assigns the id, sanitizes each cell for the
+ *   single-line table-row shape, and writes.
+ * @returns {{id:string, story:string, cos:string, feature:string}}
+ * @throws when docs/backlog.md does not exist — there is no table to append to.
+ */
+export function proposePbiRow(root, { story, cos, feature } = {}) {
+  const file = backlogPath(root);
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    throw new Error(`propose: docs/backlog.md not found at ${file}.`);
+  }
+
+  let maxN = 0;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.includes('|')) continue;
+    const cells = splitRow(line);
+    if (!cells.length) continue;
+    const idCell = cells[0].replace(/[*`_]/g, '').trim();
+    const match = /^P(\d+)$/i.exec(idCell);
+    if (match) {
+      const n = Number(match[1]);
+      if (n > maxN) maxN = n;
+    }
+  }
+  const id = `P${maxN + 1}`;
+
+  // splitRow has no escape syntax, so a literal '|' inside a cell would
+  // desync every column index downstream, and a literal newline would break
+  // the row across multiple lines — both are excluded from the single-line
+  // table cell this writes (not a locked decision; a correctness
+  // requirement for the row to stay parseable, plan.md Test matrix #9).
+  const sanitize = (value) => String(value).replace(/\r?\n/g, ' ').replace(/\|/g, '/').trim();
+  const storyCell = sanitize(story);
+  const cosCell = sanitize(cos);
+  const featureCell = feature && String(feature).trim() ? sanitize(feature) : '—';
+  const row = `| ${id} | ${storyCell} | ${cosCell} | proposed | ${featureCell} |`;
+
+  const next = `${text.replace(/\s+$/, '')}\n${row}\n`;
+  fs.writeFileSync(file, next, 'utf8');
+
+  return { id, story: storyCell, cos: cosCell, feature: featureCell };
+}
+
 // ─── P2: mechanical rank pass ───────────────────────────────────────────────
 // Reorders the table's data rows by status group — in-flight first (active work
 // on top), then proposed, then done (history sinks) — stable within each group

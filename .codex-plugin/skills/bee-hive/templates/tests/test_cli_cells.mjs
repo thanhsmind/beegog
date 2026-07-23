@@ -38,6 +38,7 @@ import * as laneStore from '../lib/state.mjs';
 import * as laneBinding from '../lib/claims.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest } from '../lib/feedback.mjs';
+import { readBacklogCounts } from '../lib/backlog.mjs';
 
 const root = makeTempRepo();
 
@@ -938,6 +939,149 @@ await check('bee.mjs backlog add --queue-submit with a merge in progress returns
   }
 });
 
+// ─── bee.mjs backlog propose verb (backlog-submit-command D1/D2/D3/D5) ─────
+// Direct docs/backlog.md PBI-row registration, distinct from `add` above
+// (which targets .bee/backlog.jsonl). Reuses the makeStateRepo/runBeeBacklog
+// scaffold; docs/backlog.md's own row shape (`| ID | Story | CoS | Status |
+// Feature |`) is the table format lib/backlog.mjs's readBacklogCounts and
+// proposePbiRow both read.
+
+function makeBacklogTableRepo(prefix, table) {
+  const dir = makeStateRepo(prefix);
+  fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', 'backlog.md'), table, 'utf8');
+  return dir;
+}
+
+const BACKLOG_TABLE_HEADER = '# Backlog\n\n| ID | Story | CoS | Status | Feature |\n|----|-------|-----|--------|---------|\n';
+
+await check('bee.mjs backlog propose on a fresh table (zero P<n> rows) assigns P1, defaults --feature to "—", and is immediately counted by readBacklogCounts as proposed', async () => {
+  const dir = makeBacklogTableRepo('bee-backlog-propose-fresh-', BACKLOG_TABLE_HEADER);
+  try {
+    const result = await runBeeBacklog(dir, ['propose', '--story', 'A human can submit an item', '--cos', 'a row appears', '--json']);
+    assert(result.status === 0, `propose should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(row.id === 'P1', `expected P1 on a fresh (zero P<n> rows) table, got ${row.id}`);
+    assert(row.feature === '—', `feature defaults to "—" when --feature is omitted, got ${row.feature}`);
+
+    const counts = readBacklogCounts(dir);
+    assert(counts.proposed === 1 && counts.total === 1, `readBacklogCounts immediately sees the new row as proposed, got ${JSON.stringify(counts)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose assigns (highest existing P<n> in the fixture) + 1 across a gap, never backfilling it', async () => {
+  // A gap fixture (P3, then P10 — nothing in between) mirrors the live
+  // table's own P58-style gap; the expected id is derived from THIS
+  // fixture's own text below, never a hardcoded literal, since the live
+  // table's actual max keeps advancing independently of this test.
+  const table = `${BACKLOG_TABLE_HEADER}| P3 | Old row | old cos | done | — |\n| P10 | Newer row | newer cos | proposed | — |\n`;
+  const fixtureMax = Math.max(...[...table.matchAll(/\|\s*P(\d+)\s*\|/g)].map((m) => Number(m[1])));
+  const dir = makeBacklogTableRepo('bee-backlog-propose-gap-', table);
+  try {
+    const before = readBacklogCounts(dir);
+    const result = await runBeeBacklog(dir, ['propose', '--story', 'Fill the gap? No.', '--cos', 'assigned max+1, not the gap', '--json']);
+    assert(result.status === 0, `propose should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(row.id === `P${fixtureMax + 1}`, `expected P${fixtureMax + 1} (fixture max+1, gap never backfilled), got ${row.id}`);
+
+    const after = readBacklogCounts(dir);
+    assert(after.total === before.total + 1, 'exactly one row appended');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose rejects an oversize/missing/whitespace-only --story or --cos, leaving docs/backlog.md byte-untouched', async () => {
+  const dir = makeBacklogTableRepo('bee-backlog-propose-badfields-', BACKLOG_TABLE_HEADER);
+  try {
+    const before = fs.readFileSync(path.join(dir, 'docs', 'backlog.md'), 'utf8');
+
+    const longStory = 's'.repeat(201);
+    const badStory = await runBeeBacklog(dir, ['propose', '--story', longStory, '--cos', 'ok']);
+    assert(badStory.status !== 0, 'a story over 200 chars is rejected');
+
+    const longCos = 'c'.repeat(2001);
+    const badCos = await runBeeBacklog(dir, ['propose', '--story', 'ok', '--cos', longCos]);
+    assert(badCos.status !== 0, 'a cos over 2000 chars is rejected');
+
+    const missingStory = await runBeeBacklog(dir, ['propose', '--cos', 'ok']);
+    assert(missingStory.status !== 0, 'a missing --story is rejected');
+
+    const missingCos = await runBeeBacklog(dir, ['propose', '--story', 'ok']);
+    assert(missingCos.status !== 0, 'a missing --cos is rejected');
+
+    const blankStory = await runBeeBacklog(dir, ['propose', '--story', '   ', '--cos', 'ok']);
+    assert(blankStory.status !== 0, 'a whitespace-only --story is rejected');
+
+    const blankCos = await runBeeBacklog(dir, ['propose', '--story', 'ok', '--cos', '   ']);
+    assert(blankCos.status !== 0, 'a whitespace-only --cos is rejected');
+
+    const after = fs.readFileSync(path.join(dir, 'docs', 'backlog.md'), 'utf8');
+    assert(before === after, 'every rejected propose left docs/backlog.md byte-for-byte untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose called twice in succession never collides — each call assigns max+1 off a freshly re-read file', async () => {
+  const dir = makeBacklogTableRepo('bee-backlog-propose-twice-', BACKLOG_TABLE_HEADER);
+  try {
+    const first = await runBeeBacklog(dir, ['propose', '--story', 'first', '--cos', 'first cos', '--json']);
+    assert(first.status === 0, `first propose should succeed, got ${first.status}: ${first.stderr}`);
+    const firstRow = JSON.parse(first.stdout);
+
+    const second = await runBeeBacklog(dir, ['propose', '--story', 'second', '--cos', 'second cos', '--json']);
+    assert(second.status === 0, `second propose should succeed, got ${second.status}: ${second.stderr}`);
+    const secondRow = JSON.parse(second.stdout);
+
+    assert(firstRow.id !== secondRow.id, `two successive proposals must never collide, got ${firstRow.id} and ${secondRow.id}`);
+    const expectedSecondN = Number(firstRow.id.slice(1)) + 1;
+    assert(secondRow.id === `P${expectedSecondN}`, `second call assigns max+1 off the freshly-written file, got ${secondRow.id}`);
+
+    const counts = readBacklogCounts(dir);
+    assert(counts.proposed === 2 && counts.total === 2, `both rows counted, got ${JSON.stringify(counts)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose sanitizes a literal "|" and an embedded newline in --story/--cos so the appended row stays one parseable table row', async () => {
+  const dir = makeBacklogTableRepo('bee-backlog-propose-sanitize-', BACKLOG_TABLE_HEADER);
+  try {
+    const result = await runBeeBacklog(dir, ['propose', '--story', 'A|B\nC', '--cos', 'has a | pipe too', '--json']);
+    assert(result.status === 0, `propose should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(!row.story.includes('|') && !row.story.includes('\n'), `story sanitized for the single-line table cell, got ${JSON.stringify(row.story)}`);
+    assert(!row.cos.includes('|'), `cos sanitized for the single-line table cell, got ${JSON.stringify(row.cos)}`);
+
+    const counts = readBacklogCounts(dir);
+    assert(counts.proposed === 1 && counts.total === 1, `row stays parseable by readBacklogCounts after sanitizing, got ${JSON.stringify(counts)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose records a given --feature, appends Status=proposed at the raw file level, and confirms with a one-line text summary naming the id', async () => {
+  const dir = makeBacklogTableRepo('bee-backlog-propose-rawrow-', BACKLOG_TABLE_HEADER);
+  try {
+    const withFeature = await runBeeBacklog(dir, ['propose', '--story', 'x', '--cos', 'y', '--feature', 'my-feature', '--json']);
+    assert(withFeature.status === 0, `propose should succeed, got ${withFeature.status}: ${withFeature.stderr}`);
+    assert(JSON.parse(withFeature.stdout).feature === 'my-feature', 'a given --feature is carried through, not overridden by the "—" default');
+
+    const textResult = await runBeeBacklog(dir, ['propose', '--story', 'raw check', '--cos', 'raw cos']);
+    assert(textResult.status === 0, `propose should succeed, got ${textResult.status}: ${textResult.stderr}`);
+    assert(/^Proposed P\d+: /.test(textResult.stdout), `text confirmation names the assigned id, got stdout="${textResult.stdout}"`);
+
+    const fileText = fs.readFileSync(path.join(dir, 'docs', 'backlog.md'), 'utf8');
+    const match = /\|\s*P\d+\s*\|\s*raw check\s*\|\s*raw cos\s*\|\s*proposed\s*\|\s*—\s*\|/.exec(fileText);
+    assert(match, `appended row matches the 5-column | ID | Story | CoS | Status | Feature | shape with Status=proposed, got:\n${fileText}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await check('bee.mjs backlog counts/rank/badges verbs are unchanged by the add verb addition', async () => {
   const dir = makeStateRepo('bee-backlog-counts-');
   try {
@@ -959,15 +1103,19 @@ await check('bee.mjs backlog counts/rank/badges verbs are unchanged by the add v
   }
 });
 
-await check('bee.mjs backlog with no command prints a Use: line listing all four verbs and exits non-zero', async () => {
+await check('bee.mjs backlog with no command prints a Use: line listing all five verbs and exits non-zero', async () => {
   const dir = makeStateRepo('bee-backlog-noverb-');
   try {
     const result = await runBeeBacklog(dir, []);
     assert(result.status !== 0, 'no-command invocation exits non-zero');
     assert(/Use:/.test(result.stderr), `expected a "Use:" line, got stderr="${result.stderr}"`);
     assert(
-      /counts/.test(result.stderr) && /rank/.test(result.stderr) && /badges/.test(result.stderr) && /add/.test(result.stderr),
-      `Use: line should list all four verbs, got ${result.stderr}`,
+      /counts/.test(result.stderr) &&
+        /rank/.test(result.stderr) &&
+        /badges/.test(result.stderr) &&
+        /add/.test(result.stderr) &&
+        /propose/.test(result.stderr),
+      `Use: line should list all five verbs, got ${result.stderr}`,
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

@@ -1082,6 +1082,26 @@ export const COMMAND_REGISTRY = [
     examples: ['bee backlog add --type friction --title "example backlog row" --severity P2 --layer state --queue-submit --json'],
     deprecated: null,
   },
+  {
+    name: 'backlog.propose',
+    invoke: 'bee backlog propose',
+    description:
+      'Register a new PBI row directly in docs/backlog.md (the product backlog table — NOT .bee/backlog.jsonl) with an auto-assigned id: (highest existing P<n> id across the whole table) + 1; an existing gap (e.g. P58) is never backfilled. The row is always written Status=proposed and the command stops there — it never auto-starts bee-qualifying/bee-exploring for the new item, and it never imports a .bee/backlog.jsonl proposal entry. --story is required, <=200 chars; --cos (acceptance criteria) is required, <=2000 chars; --feature is optional and defaults to "—" (the table\'s own convention for an unassigned feature). Any validation rejection leaves docs/backlog.md untouched.',
+    parameters: {
+      type: 'object',
+      properties: {
+        story: { type: 'string', description: 'PBI story text, required, <=200 chars.' },
+        cos: { type: 'string', description: 'Acceptance criteria (conditions of satisfaction), required, <=2000 chars.' },
+        feature: { type: 'string', description: 'Optional feature slug; defaults to "—" when omitted.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['story', 'cos'],
+    },
+    examples: [
+      'bee backlog propose --story "A human can submit a backlog item on demand" --cos "bee backlog propose appends a proposed row with an auto-assigned id" --feature backlog-submit-command --json',
+    ],
+    deprecated: null,
+  },
 
   // ─── capture (bee_capture.mjs — the capture-queue CLI, decision 0017) ─────
   {

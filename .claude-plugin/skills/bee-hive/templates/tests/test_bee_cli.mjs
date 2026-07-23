@@ -1204,6 +1204,17 @@ await check('backlog.add example runs through the real dispatcher and appends to
   assert(fs.existsSync(path.join(rootBacklogCapture, '.bee', 'backlog.jsonl')), 'backlog.jsonl should now exist');
 });
 
+await check('backlog.propose example runs through the real dispatcher and appends a new proposed row to docs/backlog.md', async () => {
+  const before = fs.readFileSync(path.join(rootBacklogCapture, 'docs', 'backlog.md'), 'utf8');
+  const result = await assertExampleOk('backlog.propose', { cwd: rootBacklogCapture });
+  const row = JSON.parse(result.stdout);
+  assert(/^P\d+$/.test(row.id), `expected an assigned P<n> id, got ${result.stdout}`);
+  assert(row.feature === 'backlog-submit-command', `expected the example's --feature carried through, got ${result.stdout}`);
+  const after = fs.readFileSync(path.join(rootBacklogCapture, 'docs', 'backlog.md'), 'utf8');
+  assert(after.startsWith(before), 'the example only appends — the pre-existing content stays untouched');
+  assert(after.includes(`| ${row.id} | `), `the appended row is present in docs/backlog.md, got:\n${after}`);
+});
+
 await check('capture.add example runs through the real dispatcher and returns a stub id', async () => {
   const result = await assertExampleOk('capture.add', { cwd: rootBacklogCapture });
   const stub = JSON.parse(result.stdout);
