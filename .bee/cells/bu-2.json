@@ -29,19 +29,41 @@
   "deps": [
     "bu-1"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "bu2-worker",
+    "outcome": "76 legacy rows migrated to pbi events (ids preserved, 3 decorated statuses normalized w/ prose kept, pipe-bearing cells parsed status-anchored); docs/backlog.md now generated (29 active rows + 47 link-lines); uniqueness suite retargeted to fold invariants + render freshness; migration idempotent + divergence-refusing",
+    "files_changed": [
+      "scripts/migrate_backlog_pbis.mjs",
+      "scripts/backlog_uniqueness.mjs",
+      "docs/backlog.md",
+      ".bee/backlog.jsonl",
+      "scripts/impact-registry.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
+    "capped_at": "2026-07-23T16:17:26.772Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"verify_command\": \"node scripts/backlog_uniqueness.mjs --check && node .bee/bin/bee.mjs backlog render --check && node scripts/impact_registry.mjs --check\",\n  \"verify_passed\": true,\n  \"verify_output\": \"uniqueness: every pbi id unique, events well-formed, view current; render --check Current; registry up to date (orchestrator re-ran independently; also exercised pbi amend on P77 to update its cos to v2 and re-rendered — first live use of the amend verb, green)\",\n  \"red_failure_evidence\": \"Retargeted uniqueness --check against a fixture with a duplicated pbi id: DUPLICATE pbi id P1 (lines named) + STALE view, exit 1; migration idempotency proven (re-run: 0 added/76 skipped) and divergence refusal proven (hand-edited title => atomic refusal naming the field).\"\n}\n",
     "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "verify_passed": true,
+    "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
+    "claimed_at": "2026-07-23T16:05:43.733Z",
+    "verify_command": "node scripts/backlog_uniqueness.mjs --check && node .bee/bin/bee.mjs backlog render --check && node scripts/impact_registry.mjs --check",
+    "verified_at": "2026-07-23T16:17:26.684Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T16:17:26.684Z",
+        "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
+        "claimed_at": "2026-07-23T16:16:56.385Z",
+        "acquired_at": "2026-07-23T16:05:43.732Z",
+        "worker": "bu2-worker",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }
