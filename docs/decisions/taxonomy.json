@@ -171,6 +171,7 @@
     "herding-dispatch-lock-toggle",
     "safety",
     "exploring",
-    "gate"
+    "gate",
+    "bee-herding"
   ]
 }
