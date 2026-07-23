@@ -168,6 +168,7 @@
     "context-import",
     "gate-bypass",
     "scope-interpretation",
-    "knowledge"
+    "knowledge",
+    "workflow"
   ]
 }

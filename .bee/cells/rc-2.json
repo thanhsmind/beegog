@@ -1,0 +1,58 @@
+{
+  "id": "rc-2",
+  "feature": "router-cost",
+  "lane": "standard",
+  "tier": "generation",
+  "title": "Pointer integrity: every reference a skill defers to must exist and carry the named section",
+  "files": [
+    "scripts/test_skill_pointers.mjs",
+    "docs/history/codex-harness-hardening/release-manifest.json"
+  ],
+  "read_first": [
+    "docs/history/router-cost/CONTEXT.md",
+    "scripts/okf_instructions_fence.mjs",
+    "scripts/test_gate_bypass_doctrine.mjs",
+    "skills/bee-hive/SKILL.md"
+  ],
+  "action": "Per D5. Author scripts/test_skill_pointers.mjs — auto-discovered by run_verify because it matches test_*.mjs under the `scripts` DISCOVERY_ROOT (scripts/run_verify.mjs:40-45), so NO registration edit is needed anywhere. It scans every skills/**/*.md (sources only — skip the rendered projections under .claude/, .agents/, .claude-plugin/, .codex-plugin/, which are byte-copies and would multiply every finding) and extracts each pointer to a reference document: backtick-quoted paths ending in .md that name a references/ file, in either the bare `references/foo.md` form or the skill-qualified `bee-hive/references/foo.md` form. For each pointer assert the target file EXISTS, resolving a bare reference relative to the citing skill's own directory. Additionally, where a pointer names a section — the prose conventions in use are `references/foo.md`'s `## Bar` and the parenthetical `(`references/foo.md`, \"Bar\")` and `-> references/foo.md (\"Bar\")` forms — assert the target file actually contains a heading matching that name. Report every finding as file:line with the offending line quoted, in the style of okf_instructions_fence.mjs:211-259. Ship a --selftest mode (same convention as okf_instructions_fence.mjs and release_manifest.mjs) driving tmp fixture roots, and it MUST include NEGATIVE CONTROLS: a fixture whose pointer names a missing file and a fixture whose pointer names a missing section must each be DETECTED. A gate that has never been shown to fail is not known to work, and this repo has already shipped one scan whose scope was too narrow to catch what it existed to catch. The bare (non-selftest) run must be GREEN against the repo as it stands today; if it is not, the finding is real and gets fixed in this cell — record any such fix in the trace.",
+  "must_haves": {
+    "truths": [
+      "scripts/test_skill_pointers.mjs runs inside node scripts/run_verify.mjs with no registration edit.",
+      "The bare run is green against the current tree, or the pointers it found broken were fixed in this cell and named in the trace.",
+      "--selftest proves a missing target file is DETECTED, not merely that valid pointers pass.",
+      "--selftest proves a pointer to a missing section is DETECTED.",
+      "Rendered skill projections are excluded, so one broken source pointer yields one finding and not five.",
+      "Every finding names file:line and quotes the offending line."
+    ],
+    "artifacts": [
+      "scripts/test_skill_pointers.mjs with --selftest and negative controls"
+    ],
+    "key_links": [
+      "D5",
+      "D8"
+    ],
+    "prohibitions": [
+      "Never ship this check without a negative control — an all-green gate that cannot fail is the exact defect this cell exists to prevent downstream.",
+      "Never scan the rendered projection roots.",
+      "Never widen the scan to make a red go away; a real broken pointer gets fixed."
+    ]
+  },
+  "verify": "node scripts/test_skill_pointers.mjs --selftest && node scripts/test_skill_pointers.mjs && node scripts/release_manifest.mjs --check",
+  "behavior_change": true,
+  "deps": [],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

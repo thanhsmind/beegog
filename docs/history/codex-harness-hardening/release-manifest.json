@@ -2347,7 +2347,7 @@
     },
     {
       "path": "hooks/bee-write-guard.mjs",
-      "sha256": "1f61ddf4504ba53ee89dc963e4732df47568f4b37dd87a84c9de4a07c4ca167b",
+      "sha256": "43604e9495f61fcb890d40f0fd9aa4faa8c7f69da4a7d5b587a4a19905130c5c",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/bee-write-guard.mjs"
@@ -2396,7 +2396,7 @@
     },
     {
       "path": "hooks/test_write_guard.mjs",
-      "sha256": "738d6fe74c22d410fff3aa670016de0980f399078c3b2fe57171f46dae50d4bb",
+      "sha256": "c82caf2e30763d2216ffdbbef6d56f4fb3531f50102256115a52e67ca48c46d3",
       "mode": "644",
       "role": "plugin_hook",
       "packagePath": "hooks/test_write_guard.mjs"

@@ -987,6 +987,73 @@ async function main() {
   );
   check(r56.status === 0, "row56: `git commit` with a staged source path is unaffected outside a terminal phase (scope control)", `status=${r56.status} stderr=${r56.stderr}`);
 
+  // --- 57-64. large-read guard (router-cost rc-1, D1/D2/D3/D4): a Read of a
+  // big file with neither offset nor limit is denied; a slice read, a small
+  // file, a directory, a nonexistent path, a disabled hook, and a custom
+  // threshold all behave as specified.
+  const readRoot = buildFixture("bee-write-guard-read-size-");
+  const bigFile = path.join(readRoot, "big.md");
+  const bigLines = 900;
+  fs.writeFileSync(bigFile, `${Array.from({ length: bigLines }, (_, i) => `line ${i}`).join("\n")}\n`);
+  const smallFile = path.join(readRoot, "small.md");
+  fs.writeFileSync(smallFile, "line 1\nline 2\nline 3\n");
+  const dirTarget = path.join(readRoot, "a-directory");
+  fs.mkdirSync(dirTarget, { recursive: true });
+
+  // --- 57. over-threshold + no offset/limit -> DENY, stderr names both escapes
+  const r57 = await runHookPayload({ tool_name: "Read", tool_input: { file_path: "big.md" } }, readRoot);
+  check(r57.status === 2, "row57: a Read of an over-threshold file with no offset/limit is denied", `status=${r57.status} stderr=${r57.stderr}`);
+  check(/big\.md/.test(r57.stderr), "row57: stderr names the file", r57.stderr);
+  check(new RegExp(`${bigLines + 1}`).test(r57.stderr) || new RegExp(`${bigLines}`).test(r57.stderr), "row57: stderr names the line count", r57.stderr);
+  check(/800/.test(r57.stderr), "row57: stderr names the threshold (800 default)", r57.stderr);
+  check(/limit/.test(r57.stderr), "row57: stderr names the `limit` escape", r57.stderr);
+  check(/bee-extract/.test(r57.stderr), "row57: stderr names the `bee-extract` worker escape", r57.stderr);
+
+  // --- 58. over-threshold + limit -> allow
+  const r58 = await runHookPayload({ tool_name: "Read", tool_input: { file_path: "big.md", limit: 50 } }, readRoot);
+  check(r58.status === 0, "row58: a Read of the same over-threshold file WITH `limit` is allowed", `status=${r58.status} stderr=${r58.stderr}`);
+
+  // --- 59. over-threshold + offset -> allow
+  const r59 = await runHookPayload({ tool_name: "Read", tool_input: { file_path: "big.md", offset: 100 } }, readRoot);
+  check(r59.status === 0, "row59: a Read of the same over-threshold file WITH `offset` is allowed", `status=${r59.status} stderr=${r59.stderr}`);
+
+  // --- 60. under-threshold + neither -> allow
+  const r60 = await runHookPayload({ tool_name: "Read", tool_input: { file_path: "small.md" } }, readRoot);
+  check(r60.status === 0, "row60: a Read of an under-threshold file with no offset/limit is allowed", `status=${r60.status} stderr=${r60.stderr}`);
+
+  // --- 61. directory path -> allow (fail-open: not a regular file)
+  const r61 = await runHookPayload({ tool_name: "Read", tool_input: { file_path: "a-directory" } }, readRoot);
+  check(r61.status === 0, "row61: a Read of a directory path is allowed (fail-open)", `status=${r61.status} stderr=${r61.stderr}`);
+
+  // --- 62. nonexistent path -> allow (fail-open: stat throws ENOENT)
+  const r62 = await runHookPayload({ tool_name: "Read", tool_input: { file_path: "does-not-exist.md" } }, readRoot);
+  check(r62.status === 0, "row62: a Read of a nonexistent path is allowed (fail-open)", `status=${r62.status} stderr=${r62.stderr}`);
+
+  // --- 63. hooks.write-guard=false -> allow, even for the over-threshold file
+  const disabledReadRoot = buildFixture("bee-write-guard-read-size-disabled-");
+  fs.writeFileSync(
+    path.join(disabledReadRoot, "big.md"),
+    `${Array.from({ length: bigLines }, (_, i) => `line ${i}`).join("\n")}\n`,
+  );
+  fs.writeFileSync(
+    path.join(disabledReadRoot, ".bee", "config.json"),
+    `${JSON.stringify({ hooks: { "write-guard": false } }, null, 2)}\n`,
+  );
+  const r63 = await runHookPayload({ tool_name: "Read", tool_input: { file_path: "big.md" } }, disabledReadRoot);
+  check(r63.status === 0, "row63: hooks.write-guard=false disables the size check along with the rest of the guard", `status=${r63.status} stderr=${r63.stderr}`);
+
+  // --- 64. a custom guards.max_read_lines is honoured (small.md has 3 lines;
+  // a threshold of 2 must trip on a file that the 800 default would allow).
+  const customThresholdRoot = buildFixture("bee-write-guard-read-size-custom-");
+  fs.writeFileSync(path.join(customThresholdRoot, "small.md"), "line 1\nline 2\nline 3\n");
+  fs.writeFileSync(
+    path.join(customThresholdRoot, ".bee", "config.json"),
+    `${JSON.stringify({ guards: { max_read_lines: 2 } }, null, 2)}\n`,
+  );
+  const r64 = await runHookPayload({ tool_name: "Read", tool_input: { file_path: "small.md" } }, customThresholdRoot);
+  check(r64.status === 2, "row64: a custom guards.max_read_lines=2 trips on a 3-line file the 800 default would allow", `status=${r64.status} stderr=${r64.stderr}`);
+  check(/2/.test(r64.stderr), "row64: stderr names the custom threshold", r64.stderr);
+
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }

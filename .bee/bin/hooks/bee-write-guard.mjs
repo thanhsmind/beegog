@@ -295,6 +295,76 @@ function describeCrossWorktreeTarget(root, cwd, rawTarget) {
   }
 }
 
+// ─── large-read guard (router-cost D1/D2/D3/D4) ────────────────────────────
+// Denies an unbounded Read of a file at/above a configurable line threshold.
+// Lives directly in this branch (not guards.mjs — checkRead is pattern-only,
+// no I/O) so the fail-open posture is local and easy to audit: any stat/read
+// error, a directory, a nonexistent path, an oversized file, or binary
+// content all return null (allow) — a guard that denies because it could not
+// measure is worse than no guard. The threshold comes from
+// `.bee/config.json`'s `guards.max_read_lines` (a LOCAL_ONLY namespace, set
+// via `bee config set --key guards.max_read_lines --value <n>`), defaulting
+// to 800 (D2's measured value) when the key is absent — the same
+// absent-key-means-default reading `hookEnabled`'s `!== false` uses in
+// .bee/bin/lib/state.mjs, adapted for a numeric default instead of a boolean
+// one.
+const DEFAULT_MAX_READ_LINES = 800;
+// Files larger than this are never measured — counting lines would mean
+// reading the whole thing into memory just to decide whether to deny reading
+// the whole thing into context. Fail-open (allow) instead.
+const READ_SIZE_GUARD_CAP_BYTES = 25 * 1024 * 1024;
+
+function resolveMaxReadLines(config) {
+  const raw = config && config.guards && config.guards.max_read_lines;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_READ_LINES;
+}
+
+// Null-byte sniff over a bounded prefix: cheap and matches the common
+// heuristic other tools use to distinguish text from binary content.
+function looksBinary(buffer) {
+  const scanLen = Math.min(buffer.length, 8000);
+  for (let i = 0; i < scanLen; i += 1) {
+    if (buffer[i] === 0) return true;
+  }
+  return false;
+}
+
+// Counts newline-delimited lines, counting a non-empty trailing partial line
+// (no final "\n") as one more line — matches what a human reading the file
+// would call "how many lines", including the last one.
+function countLines(buffer) {
+  let count = 0;
+  for (let i = 0; i < buffer.length; i += 1) {
+    if (buffer[i] === 10) count += 1;
+  }
+  if (buffer.length > 0 && buffer[buffer.length - 1] !== 10) count += 1;
+  return count;
+}
+
+// Returns a denial reason string, or null to allow. `absPath` must already be
+// proven inside the repo by the caller; `label` is the repo-relative path
+// used in the message. Every error path (ENOENT, EACCES, a directory, a
+// symlink loop, ...) is caught and returns null: fail-open, never deny
+// because measurement failed.
+function checkReadSizeDenial(absPath, label, threshold) {
+  try {
+    const stat = fs.statSync(absPath);
+    if (!stat.isFile()) return null;
+    if (stat.size > READ_SIZE_GUARD_CAP_BYTES) return null;
+    const buffer = fs.readFileSync(absPath);
+    if (looksBinary(buffer)) return null;
+    const lineCount = countLines(buffer);
+    if (lineCount < threshold) return null;
+    return (
+      `bee read-size guard: "${label}" is ${lineCount} lines (threshold: ${threshold}) and this Read ` +
+      "has neither `offset` nor `limit` — reading it unbounded would load the whole file into context. " +
+      "FIX: pass `limit` (and optionally `offset`) to read a slice, or dispatch a `bee-extract` worker to read the whole file."
+    );
+  } catch {
+    return null;
+  }
+}
+
 function getNestedString(obj, keys) {
   for (const key of keys) {
     const value = obj && typeof obj === "object" ? obj[key] : undefined;
@@ -578,6 +648,22 @@ async function main() {
             parts.push(verdict.marker);
           }
           denial = { reason: parts.join("\n") };
+        } else if (
+          toolName === "Read" &&
+          toolInput.offset === undefined &&
+          toolInput.limit === undefined
+        ) {
+          // router-cost rc-1 (D1/D2/D3/D4): a Read with no offset/limit of a
+          // big file is denied, naming both escapes. Never fires for Glob/
+          // Grep (no whole-file content to load), and never fires when the
+          // call already carries offset or limit (D4: a slice read is always
+          // the correct, frictionless path).
+          const config = stateLib.readConfig(storeRoot);
+          const threshold = resolveMaxReadLines(config);
+          const sizeReason = checkReadSizeDenial(path.join(root, rel), rel, threshold);
+          if (sizeReason) {
+            denial = { reason: sizeReason };
+          }
         }
       }
     } else if (
