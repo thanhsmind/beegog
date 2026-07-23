@@ -1,0 +1,33 @@
+{
+  "id": "worktree-merge-cleanup-2-1",
+  "feature": "worktree-merge-cleanup-2",
+  "lane": "tiny",
+  "title": "Merge herding-dispatch-lock-toggle worktree back to main and clean up",
+  "action": "node .bee/bin/bee.mjs worktree merge --id beegog--wt--herding-dispatch-lock-toggle --cleanup. If it hits the same manifest-only textual conflict as backlog-auto-commit, resolve by regenerating docs/history/codex-harness-hardening/release-manifest.json fresh post-merge, then run manual cleanup (git worktree remove, branch -d, worktree unregister).",
+  "files": [],
+  "verify": "node scripts/run_verify.mjs",
+  "must_haves": {
+    "truths": [
+      "main's working tree is clean when this cell caps",
+      "herding-dispatch-lock-toggle is merged into main and its worktree/branch/grant are cleaned up"
+    ]
+  },
+  "status": "claimed",
+  "deps": [],
+  "decisions": [],
+  "read_first": [],
+  "trace": {
+    "worker": "orchestrator-wmc2",
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": "924196a6-afb7-4424-abfa-9a1e037da450",
+    "claimed_at": "2026-07-23T09:09:07.170Z"
+  }
+}
