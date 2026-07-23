@@ -118,6 +118,11 @@ const GITIGNORE_BLOCK_PATTERNS = [
   ".bee/claims/",
   ".bee/runtime/",
   ".bee/cache/",
+  // Intent anchors (intent-anchor D1/D2): the verbatim objective of whatever
+  // task is live in THIS checkout, keyed by feature or session id. Live
+  // per-session task state, exactly like .bee/sessions/ above — never tracked,
+  // never merged, and never a diff on someone else's branch.
+  ".bee/intent/",
   // Cross-process store-mutex lockfiles (hardening-4b): withStoreLock
   // (lock.mjs) writes a short-lived .lock file per named critical section —
   // machine/process-local coordination state, never tracked. Left unignored,

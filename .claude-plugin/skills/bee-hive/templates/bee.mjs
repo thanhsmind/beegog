@@ -20,6 +20,7 @@
 //   bee state <set|gate|worker add/update/remove/clear/prune|scribing-run|start-feature|lanes|session list/bind/unbind> ... [--json]
 //   bee backlog <add|counts|rank|badges> ... [--json]
 //   bee capture <add|list|flush|count> ... [--json]
+//   bee intent <set|show|advance|clear> ... [--json]
 //   bee reviews <create|list|show|record|candidate add|candidates|status> ... [--json]
 //   bee feedback <digest|count|collect|rank> ... [--json]
 //   bee knowledge <check|index|list|context> ... [--json]
@@ -146,6 +147,17 @@ import {
   decisionIndexDrift,
 } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
+// intent-anchor ia-1 (D1/D2): the durable verbatim objective. Same
+// import-the-lib-directly idiom as capture.mjs above — the CLI is a thin
+// presentation layer over lib/intent.mjs, never a second implementation.
+import {
+  writeIntent,
+  readIntent,
+  advanceIntent,
+  clearIntent,
+  precompactBlock,
+  resumeBlock,
+} from './lib/intent.mjs';
 import {
   checkBundle,
   knowledgeIndexDrift,
@@ -2508,6 +2520,83 @@ function handleCaptureCount(root) {
   return { result: { count: queue.count }, text: `${queue.count} pending capture stub(s).` };
 }
 
+// ─── intent: the intent anchor CLI (intent-anchor ia-1, D1/D2). Presentation
+// only — every rule (verbatim request, immutability of request/acceptance,
+// key resolution, fail-open reads) lives in lib/intent.mjs. ────────────────
+
+function intentLookupOptions(flags) {
+  return {
+    feature: flags.feature ? String(flags.feature) : null,
+    sessionId: flags.session ? String(flags.session) : null,
+  };
+}
+
+function formatAnchor(anchor) {
+  const lines = [
+    `Intent anchor "${anchor.key}" (written ${anchor.written_at})`,
+    'ORIGINAL REQUEST (verbatim):',
+    anchor.request,
+    `DONE MEANS: ${anchor.acceptance}`,
+  ];
+  if (anchor.next_action) lines.push(`NEXT ACTION: ${anchor.next_action}`);
+  if (anchor.do_not_reverse.length) lines.push(`DO NOT REVERSE: ${anchor.do_not_reverse.join(' | ')}`);
+  if (anchor.stop_conditions.length) lines.push(`STOP IF: ${anchor.stop_conditions.join(' | ')}`);
+  return lines.join('\n');
+}
+
+function handleIntentSet(root, flags) {
+  const anchor = writeIntent(
+    root,
+    {
+      // requireFlag returns the flag's own string unchanged — the request is
+      // never trimmed, re-wrapped, or summarized anywhere in this pipeline.
+      request: requireFlag(flags, 'request'),
+      acceptance: requireFlag(flags, 'acceptance'),
+      next_action: flags['next-action'] ? String(flags['next-action']) : null,
+      feature: flags.feature ? String(flags.feature) : null,
+      lane: flags.lane ? String(flags.lane) : null,
+      cell: flags.cell ? String(flags.cell) : null,
+      do_not_reverse: flags['do-not-reverse'] ? String(flags['do-not-reverse']) : null,
+      stop_conditions: flags['stop-conditions'] ? String(flags['stop-conditions']) : null,
+    },
+    { ...intentLookupOptions(flags), force: String(flags.force) === 'true' },
+  );
+  return {
+    result: anchor,
+    text: `Intent anchored at "${anchor.key}". It is re-asserted at PreCompact and read first on a compact/resume start.`,
+  };
+}
+
+function handleIntentShow(root, flags) {
+  const anchor = readIntent(root, intentLookupOptions(flags));
+  const render = flags.render ? String(flags.render) : null;
+  if (render === 'precompact' || render === 'resume') {
+    const block = render === 'precompact' ? precompactBlock(anchor) : resumeBlock(anchor);
+    return { result: { anchor, render, block }, text: block || '(no intent anchor)' };
+  }
+  return { result: anchor, text: anchor ? formatAnchor(anchor) : '(no intent anchor)' };
+}
+
+function handleIntentAdvance(root, flags) {
+  const nextAction = requireFlag(flags, 'next-action');
+  const anchor = advanceIntent(root, nextAction, intentLookupOptions(flags));
+  if (!anchor) {
+    throw new Error('intent advance: no intent anchor exists to advance — run `bee intent set` first.');
+  }
+  return {
+    result: anchor,
+    text: `Advanced intent anchor "${anchor.key}" — next action: ${anchor.next_action}. Request and acceptance are unchanged.`,
+  };
+}
+
+function handleIntentClear(root, flags) {
+  const record = clearIntent(root, intentLookupOptions(flags));
+  return {
+    result: record,
+    text: record.cleared ? `Cleared intent anchor "${record.key}".` : `No intent anchor at "${record.key}" to clear.`,
+  };
+}
+
 // ─── knowledge: OKF v0.1 bundle verbs (okf-foundation S1, lib/knowledge.mjs).
 // check is the two-level D4 validator over docs/knowledge/ ONLY (D23); the
 // stdout JSON is exactly the D13 shape {okf:{errors},profile:{errors,warnings},
@@ -4751,6 +4840,11 @@ function captureUsageFallback(leading) {
   return `Unknown command "${verb || '(missing)'}". Use: add, list, flush, count.`;
 }
 
+function intentUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: set, show, advance, clear.`;
+}
+
 // bee_reviews.mjs's own 'candidate' verb has a nested sub-action ('add')
 // with its own distinct legacy error text (bee_reviews.mjs:186-189); every
 // other unknown top-level verb falls through to the default review-modes
@@ -4836,6 +4930,7 @@ const GROUP_USAGE_FALLBACKS = {
   state: stateUsageFallback,
   backlog: backlogUsageFallback,
   capture: captureUsageFallback,
+  intent: intentUsageFallback,
   reviews: reviewsUsageFallback,
   feedback: feedbackUsageFallback,
   perf: perfUsageFallback,
@@ -4907,6 +5002,10 @@ const HANDLERS = {
   'capture.list': handleCaptureList,
   'capture.flush': handleCaptureFlush,
   'capture.count': handleCaptureCount,
+  'intent.set': handleIntentSet,
+  'intent.show': handleIntentShow,
+  'intent.advance': handleIntentAdvance,
+  'intent.clear': handleIntentClear,
   'knowledge.check': handleKnowledgeCheck,
   'knowledge.index': handleKnowledgeIndex,
   'knowledge.list': handleKnowledgeList,

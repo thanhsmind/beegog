@@ -30,6 +30,39 @@ import { readHookContext, logCrash, libModuleUrl } from "./adapter.mjs";
 const HOOK_NAME = "session-init";
 const ADOPT_SOURCES = new Set(["clear", "startup"]);
 
+// intent-anchor ia-1 (D4): the sources that mean "this same task is
+// continuing after its context was compressed". On those, and ONLY those, the
+// emitted block LEADS with the intent anchor and the phase/workflow detail
+// comes after it. The ordering IS the fix — the whole defect is that a
+// compacted session re-anchors on bee's own bookkeeping (which is on disk and
+// comes back intact) instead of on the objective (which is not).
+//
+// This set is deliberately DISJOINT from ADOPT_SOURCES above and changes
+// nothing about handoff adoption: a compacted session still never auto-adopts
+// a planned-next handoff. The anchor is a prefix, never a router.
+const ANCHOR_LEAD_SOURCES = new Set(["compact", "resume"]);
+
+// Read + render the anchor for a compact/resume start. Returns "" for every
+// other source, for a missing/corrupt anchor, for a repo vendored before this
+// shipped, and for any failure at all — D5: with no anchor, this hook's
+// output is byte-identical to what it printed before the feature existed.
+async function intentLeadBlock(root, eventSource, sessionId) {
+  if (!ANCHOR_LEAD_SOURCES.has(eventSource)) {
+    return "";
+  }
+  try {
+    const intent = await import(libModuleUrl(root, "intent.mjs"));
+    const anchor = intent.readIntent(root, { sessionId });
+    if (!anchor) {
+      return "";
+    }
+    return intent.resumeBlock(anchor) || "";
+  } catch {
+    // fail-open: the preamble is orientation, never a place to fail a session.
+    return "";
+  }
+}
+
 async function main() {
   const ctx = await readHookContext(HOOK_NAME);
   const root = ctx.root;
@@ -109,8 +142,14 @@ async function main() {
 
     const inject = await import(libModuleUrl(root, "inject.mjs"));
     const preamble = inject.buildSessionPreamble(root, { sessionId, handoffOutcome });
-    if (preamble && String(preamble).trim()) {
-      process.stdout.write(String(preamble));
+    // intent-anchor ia-1 (D4/D5): PREFIX ONLY. The preamble bytes below are
+    // exactly the bytes this hook has always written; the anchor is prepended
+    // ahead of them on a compact/resume start, and with no anchor the emitted
+    // string is `preamble` itself, unchanged.
+    const anchorBlock = await intentLeadBlock(root, eventSource, sessionId);
+    const output = anchorBlock ? `${anchorBlock}\n\n${String(preamble)}` : String(preamble);
+    if (output && output.trim()) {
+      process.stdout.write(output);
     }
   } catch (error) {
     logCrash(root, HOOK_NAME, error, ctx.source);

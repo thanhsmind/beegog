@@ -1105,6 +1105,92 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
 
+  // ─── intent (lib/intent.mjs — the intent anchor, feature intent-anchor
+  // D1/D2). The ONE durable record of what the user asked for: `request` is
+  // stored verbatim and, with `acceptance`, is immutable once set — only
+  // `next_action` advances. Keyed by the active feature when one exists, else
+  // the session id, else a shared default, so work that never enters a
+  // feature (a direct question, a tiny fix) is still anchorable (D2). ───────
+  {
+    name: 'intent.set',
+    invoke: 'bee intent set',
+    description:
+      "Write the intent anchor: the user's VERBATIM request plus what \"done\" means. Stored at .bee/intent/<key>.json, keyed by the active feature when one exists, else --session, else a shared default (D2 — work with no feature must still be anchorable). request/acceptance are immutable once set: re-setting the same request is idempotent, changing it refuses unless --force. Never paraphrase --request — verbatim IS the mechanism.",
+    parameters: {
+      type: 'object',
+      properties: {
+        request: { type: 'string', description: "The user's request, VERBATIM — their own words, never a paraphrase or a summary." },
+        acceptance: { type: 'string', description: 'What "done" means — the drift detector the anchor is checked against.' },
+        'next-action': { type: 'string', description: 'The single next step; the only field `intent advance` may move.' },
+        feature: { type: 'string', description: 'Override the anchor key/feature instead of resolving the active feature from state.' },
+        lane: { type: 'string', description: 'Lane the work is running at (context only).' },
+        cell: { type: 'string', description: 'Cell id currently in flight (context only).' },
+        session: { type: 'string', description: 'Session id to key on when there is no active feature.' },
+        'do-not-reverse': { type: 'string', description: 'Comma-separated decisions that must not be reversed.' },
+        'stop-conditions': { type: 'string', description: 'Comma-separated conditions under which the agent must stop and ask.' },
+        force: { type: 'boolean', description: 'Pass "true" to replace a live anchor whose request/acceptance differ — a deliberate new objective, never a drift. Takes an explicit true/false value, same as cells.verify --passed.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['request', 'acceptance'],
+    },
+    examples: [
+      'bee intent set --request "example verbatim request" --acceptance "example acceptance criteria" --next-action "example next step" --json',
+    ],
+    deprecated: null,
+  },
+  {
+    name: 'intent.show',
+    invoke: 'bee intent show',
+    description:
+      'Show the current intent anchor, or the rendered PreCompact/resume block for it. Emits nothing but a null/empty result when no anchor exists (D5 — a repo that never writes one behaves exactly as it did before).',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Look the anchor up under this key instead of resolving the active feature.' },
+        session: { type: 'string', description: 'Session id to include in key resolution.' },
+        render: { type: 'string', description: 'Render a block instead of the record: "precompact" (the labelled compaction re-assertion) or "resume" (the compact/resume lead block).', enum: ['precompact', 'resume'] },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of the text rendering.' },
+      },
+      required: [],
+    },
+    examples: ['bee intent show --json'],
+    deprecated: null,
+  },
+  {
+    name: 'intent.advance',
+    invoke: 'bee intent advance',
+    description:
+      'Move the anchor\'s next_action to the next step. Structurally cannot touch request or acceptance (D1) — the through-line is what survives, only the step advances. Refuses when no anchor exists.',
+    parameters: {
+      type: 'object',
+      properties: {
+        'next-action': { type: 'string', description: 'The new single next step.' },
+        feature: { type: 'string', description: 'Look the anchor up under this key instead of resolving the active feature.' },
+        session: { type: 'string', description: 'Session id to include in key resolution.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['next-action'],
+    },
+    examples: ['bee intent advance --next-action "example advanced next step" --json'],
+    deprecated: null,
+  },
+  {
+    name: 'intent.clear',
+    invoke: 'bee intent clear',
+    description: 'Remove the intent anchor — the objective is finished or abandoned. Idempotent: clearing when none exists reports cleared:false and never errors.',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Clear the anchor under this key instead of resolving the active feature.' },
+        session: { type: 'string', description: 'Session id to include in key resolution.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee intent clear --json'],
+    deprecated: null,
+  },
+
   // ─── reviews (bee_reviews.mjs — review-session store + candidates ledger,
   // dispatcher-unify du-3). `reviews.candidate.add` is a NESTED 3-segment
   // name resolved by the dispatcher's longest-prefix match (du-1), sitting

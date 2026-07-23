@@ -2590,6 +2590,304 @@ async function runHandoffSessionRows() {
   return rows;
 }
 
+// ─── intent anchor (intent-anchor ia-1, CONTEXT.md D3/D4/D5) ───────────────
+//
+// Three properties, each with its own row, all through the REAL hook children:
+//
+//   D3  PreCompact re-asserts the anchor and STAYS ADVISORY — a labelled
+//       systemMessage, never `decision:"block"`. The B2/R14 contract
+//       (docs/knowledge/areas/hook-runtime/advisories-and-turn-control.md)
+//       forbids a turn-control verdict on compaction and this must not become
+//       the exception that erodes it.
+//   D4  A compact/resume SessionStart LEADS with the anchor; the phase detail
+//       follows. The ordering is the fix, so the row asserts position, not
+//       mere presence.
+//   D5  With no anchor, both hooks are byte-identical to today. Proven in the
+//       durable form: the anchor path is strictly ADDITIVE — the with-anchor
+//       output is exactly (anchor block + separator + the no-anchor output),
+//       so every pre-existing byte is untouched, and a repo with no anchor
+//       (or a corrupt one) renders exactly what it always did.
+//
+// Anchors are written as plain JSON, matching this file's buildFixture style
+// (this harness executes wrappers as isolated Workers and never imports the
+// lib it is testing).
+
+const INTENT_VERBATIM_REQUEST =
+  "Make the /orders endpoint idempotent under retries — the same Idempotency-Key must never create a second order.";
+
+function writeIntentFileFixture(root, key, extra = {}) {
+  const dir = path.join(root, ".bee", "intent");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, `${key}.json`),
+    `${JSON.stringify(
+      {
+        schema_version: "1.0",
+        key,
+        written_at: new Date().toISOString(),
+        request: INTENT_VERBATIM_REQUEST,
+        acceptance: "A replayed POST with the same key returns the first order and creates no second row.",
+        next_action: "write the dedupe index migration",
+        feature: "demo",
+        lane: null,
+        cell: null,
+        do_not_reverse: [],
+        stop_conditions: [],
+        ...extra,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
+async function runIntentAnchorRows() {
+  const rows = [];
+
+  const precompactPayload = (root, sessionId) =>
+    JSON.stringify({
+      hook_event_name: "PreCompact",
+      ...(sessionId ? { session_id: sessionId } : {}),
+      cwd: root,
+    });
+
+  // ── D3: PreCompact emits the labelled anchor as an ADVISORY systemMessage.
+  const preRoot = buildFixture("hook-contracts-intent-precompact-");
+  const preControl = buildFixture("hook-contracts-intent-precompact-control-");
+  // The fixture's phase is "demo"/swarming, so the anchor keys on the feature.
+  writeIntentFileFixture(preRoot, "demo");
+  const rPre = await runWrapper("bee-session-close.mjs", precompactPayload(preRoot, "sess-pre"), preRoot);
+  const rPreControl = await runWrapper(
+    "bee-session-close.mjs",
+    precompactPayload(preControl, "sess-pre"),
+    preControl,
+  );
+  const prePayload = parseAdvisoryStdout(rPre.stdout);
+  const preControlPayload = parseAdvisoryStdout(rPreControl.stdout);
+  const preMessage = prePayload.json && typeof prePayload.json.systemMessage === "string" ? prePayload.json.systemMessage : "";
+  const preControlMessage =
+    preControlPayload.json && typeof preControlPayload.json.systemMessage === "string"
+      ? preControlPayload.json.systemMessage
+      : "";
+  const rPrePass = Boolean(
+    rPre.status === 0 &&
+      prePayload.json &&
+      prePayload.json.decision !== "block" &&
+      preMessage.startsWith("=== BEE INTENT ANCHOR") &&
+      preMessage.includes("DO NOT SUMMARIZE") &&
+      preMessage.includes(INTENT_VERBATIM_REQUEST),
+  );
+  rows.push(
+    adapterRow(
+      "session-close-intent",
+      "precompact-emits-labelled-anchor-and-stays-advisory",
+      rPrePass,
+      rPrePass
+        ? "PreCompact re-asserts the anchor VERBATIM in a labelled block, leading a parseable systemMessage advisory — never a decision:\"block\" turn-control verdict (D3, B2/R14 untouched)"
+        : `expected a labelled advisory carrying the verbatim request; got status=${rPre.status} decision=${prePayload.json && prePayload.json.decision} stdout=${truncate(rPre.stdout, 400)}`,
+      rPre,
+    ),
+  );
+
+  // ── D5 (session-close): additive-only. The anchor block is a PREFIX; every
+  // byte the hook emitted before this feature is still emitted, unchanged.
+  const preAnchorBlock = preMessage.split("\n=== END BEE INTENT ANCHOR ===\n")[0];
+  const preExpected = preControlMessage
+    ? `${preAnchorBlock}\n=== END BEE INTENT ANCHOR ===\n${preControlMessage}`
+    : `${preAnchorBlock}\n=== END BEE INTENT ANCHOR ===`;
+  const preAdditivePass = Boolean(
+    rPreControl.status === 0 &&
+      !preControlMessage.includes("BEE INTENT ANCHOR") &&
+      preMessage === preExpected,
+  );
+  rows.push(
+    adapterRow(
+      "session-close-intent",
+      "precompact-no-anchor-output-is-untouched-anchor-is-additive",
+      preAdditivePass,
+      preAdditivePass
+        ? "with no anchor the PreCompact advisory carries zero intent bytes, and with one the message is exactly the anchor block PLUS that same unchanged advisory — strictly additive (D5)"
+        : `expected an additive prefix over an unchanged control advisory; control=${truncate(preControlMessage, 300)} with=${truncate(preMessage, 400)}`,
+      rPreControl,
+    ),
+  );
+
+  // ── D3 negative: Stop is NOT the compaction event — no anchor there.
+  const rStop = await runWrapper(
+    "bee-session-close.mjs",
+    JSON.stringify({ hook_event_name: "Stop", session_id: "sess-pre", cwd: preRoot }),
+    preRoot,
+  );
+  const stopMessage = (() => {
+    const parsed = parseAdvisoryStdout(rStop.stdout);
+    return parsed.json && typeof parsed.json.systemMessage === "string" ? parsed.json.systemMessage : "";
+  })();
+  const rStopPass = Boolean(rStop.status === 0 && !stopMessage.includes("BEE INTENT ANCHOR"));
+  rows.push(
+    adapterRow(
+      "session-close-intent",
+      "stop-event-never-emits-the-anchor",
+      rStopPass,
+      rStopPass
+        ? "the anchor rides the COMPACTION event only — a Stop close is unchanged (its job is to survive a summary, not to close one)"
+        : `expected no anchor on Stop; got status=${rStop.status} stdout=${truncate(rStop.stdout, 400)}`,
+      rStop,
+    ),
+  );
+
+  // ── D4: a compact/resume SessionStart LEADS with the anchor, and the
+  // anchor path is additive over the exact preamble today's hook prints.
+  for (const source of ["compact", "resume"]) {
+    const root = buildFixture(`hook-contracts-intent-${source}-`);
+    const control = buildFixture(`hook-contracts-intent-${source}-control-`);
+    writeIntentFileFixture(root, "demo");
+    const withAnchor = await runWrapper(
+      "bee-session-init.mjs",
+      sessionStartPayload({ sessionId: "sess-anchor", source, cwd: root }),
+      root,
+    );
+    const noAnchor = await runWrapper(
+      "bee-session-init.mjs",
+      sessionStartPayload({ sessionId: "sess-anchor", source, cwd: control }),
+      control,
+    );
+    const out = withAnchor.stdout || "";
+    const controlOut = noAnchor.stdout || "";
+    const leadPass = Boolean(
+      withAnchor.status === 0 &&
+        noAnchor.status === 0 &&
+        out.startsWith("## INTENT ANCHOR — read this FIRST") &&
+        out.includes(INTENT_VERBATIM_REQUEST) &&
+        // ordering IS the fix: objective first, phase detail after
+        out.indexOf(INTENT_VERBATIM_REQUEST) < out.indexOf("- Phase:") &&
+        // additive-only: the preamble bytes are exactly the control's
+        out.endsWith(`\n\n${controlOut}`) &&
+        !controlOut.includes("INTENT ANCHOR"),
+    );
+    rows.push(
+      adapterRow(
+        "session-init-intent",
+        `${source}-source-leads-with-the-anchor-and-is-additive`,
+        leadPass,
+        leadPass
+          ? `source "${source}": the emitted block LEADS with the verbatim objective and the phase detail follows, and the preamble below it is byte-identical to the no-anchor rendering (D4/D5)`
+          : `expected an anchor-led, strictly additive preamble; got status=${withAnchor.status} startsWithAnchor=${out.startsWith("## INTENT ANCHOR")} additive=${out.endsWith(`\n\n${controlOut}`)} stdout=${truncate(out, 500)}`,
+        withAnchor,
+      ),
+    );
+    fs.rmSync(control, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+
+  // ── D4/D5 negative: clear/startup are NOT compact-resume sources — an
+  // anchor on disk changes nothing there.
+  for (const source of ["clear", "startup"]) {
+    const root = buildFixture(`hook-contracts-intent-nonresume-${source}-`);
+    const control = buildFixture(`hook-contracts-intent-nonresume-${source}-control-`);
+    writeIntentFileFixture(root, "demo");
+    const withAnchor = await runWrapper(
+      "bee-session-init.mjs",
+      sessionStartPayload({ sessionId: "sess-anchor", source, cwd: root }),
+      root,
+    );
+    const noAnchor = await runWrapper(
+      "bee-session-init.mjs",
+      sessionStartPayload({ sessionId: "sess-anchor", source, cwd: control }),
+      control,
+    );
+    const pass = Boolean(
+      withAnchor.status === 0 &&
+        noAnchor.status === 0 &&
+        withAnchor.stdout === noAnchor.stdout &&
+        !(withAnchor.stdout || "").includes("INTENT ANCHOR"),
+    );
+    rows.push(
+      adapterRow(
+        "session-init-intent",
+        `${source}-source-is-byte-identical-with-or-without-an-anchor`,
+        pass,
+        pass
+          ? `source "${source}" is a fresh-session boundary, not a compact-resume — an anchor on disk leaves its rendering byte-identical (D4 scope, D5)`
+          : `expected byte-identical rendering; got equal=${withAnchor.stdout === noAnchor.stdout} stdout=${truncate(withAnchor.stdout, 400)}`,
+        withAnchor,
+      ),
+    );
+    fs.rmSync(control, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+
+  // ── D5: a CORRUPT anchor is indistinguishable from no anchor at all.
+  const corruptRoot = buildFixture("hook-contracts-intent-corrupt-");
+  const corruptControl = buildFixture("hook-contracts-intent-corrupt-control-");
+  fs.mkdirSync(path.join(corruptRoot, ".bee", "intent"), { recursive: true });
+  fs.writeFileSync(path.join(corruptRoot, ".bee", "intent", "demo.json"), "{not json at all");
+  const rCorrupt = await runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ sessionId: "sess-anchor", source: "compact", cwd: corruptRoot }),
+    corruptRoot,
+  );
+  const rCorruptControl = await runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ sessionId: "sess-anchor", source: "compact", cwd: corruptControl }),
+    corruptControl,
+  );
+  const corruptPass = Boolean(
+    rCorrupt.status === 0 &&
+      rCorruptControl.status === 0 &&
+      rCorrupt.stdout === rCorruptControl.stdout &&
+      !(rCorrupt.stdout || "").includes("INTENT ANCHOR"),
+  );
+  rows.push(
+    adapterRow(
+      "session-init-intent",
+      "corrupt-anchor-renders-exactly-like-no-anchor",
+      corruptPass,
+      corruptPass
+        ? "an unparseable anchor file fails open to silence — byte-identical to a repo that has none (D5); a half-anchor is never handed to a summarizer"
+        : `expected byte-identical fail-open silence; got status=${rCorrupt.status} equal=${rCorrupt.stdout === rCorruptControl.stdout} stdout=${truncate(rCorrupt.stdout, 400)}`,
+      rCorrupt,
+    ),
+  );
+  fs.rmSync(corruptRoot, { recursive: true, force: true });
+  fs.rmSync(corruptControl, { recursive: true, force: true });
+
+  // ── the pin that matters most: handoff adoption is UNCHANGED. A compacted
+  // session with an anchor AND a planned-next handoff still never adopts.
+  const adoptRoot = buildPlannedNextFixture("hook-contracts-intent-handoff-");
+  writeIntentFileFixture(adoptRoot, "demo");
+  const rAdopt = await runWrapper(
+    "bee-session-init.mjs",
+    sessionStartPayload({ sessionId: "sess-anchor", source: "compact", cwd: adoptRoot }),
+    adoptRoot,
+  );
+  const adoptClaim = readJsonFileOrNull(path.join(adoptRoot, ".bee", "claims", "next-fsh10.json"));
+  const adoptPass = Boolean(
+    rAdopt.status === 0 &&
+      (rAdopt.stdout || "").startsWith("## INTENT ANCHOR — read this FIRST") &&
+      /HANDOFF present — present it and WAIT/.test(rAdopt.stdout || "") &&
+      !/PLANNED-NEXT ADOPTED/.test(rAdopt.stdout || "") &&
+      fs.existsSync(path.join(adoptRoot, ".bee", "HANDOFF.json")) &&
+      adoptClaim &&
+      adoptClaim.session === "sess-writer",
+  );
+  rows.push(
+    adapterRow(
+      "session-init-intent",
+      "anchor-never-changes-handoff-adoption-on-compact",
+      adoptPass,
+      adoptPass
+        ? "an anchor LEADS a compacted session's block and still changes nothing about adoption — the planned-next handoff stays on disk, the claim owner is unchanged, the wait block renders (D4: the anchor is a prefix, never a router)"
+        : `expected an anchor-led wait block with the handoff/claim untouched; got status=${rAdopt.status} claim=${JSON.stringify(adoptClaim)} stdout=${truncate(rAdopt.stdout, 500)}`,
+      rAdopt,
+    ),
+  );
+  fs.rmSync(adoptRoot, { recursive: true, force: true });
+  fs.rmSync(preRoot, { recursive: true, force: true });
+  fs.rmSync(preControl, { recursive: true, force: true });
+
+  return rows;
+}
+
 async function runCoverageGapRows() {
   const rows = [];
 
@@ -3706,6 +4004,7 @@ async function main() {
   results.push(...await runCaptureNudgeRows());
   results.push(...await runHoldSessionRows());
   results.push(...await runHandoffSessionRows());
+  results.push(...await runIntentAnchorRows());
   results.push(...await runCoverageGapRows());
   results.push(...await runToolsLoggerCrashRows());
   // ...plus cell codex-parity-6b's installed-route rows: the default suite

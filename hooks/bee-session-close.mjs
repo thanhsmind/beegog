@@ -224,6 +224,37 @@ async function maybeCaptureQueueNudge(root, { force = false } = {}) {
   }
 }
 
+// intent-anchor ia-1 (D3): the PreCompact re-assertion. Compaction is the
+// exact moment the user's request is at greatest risk — it lives only in the
+// conversation, which is what a summary compresses first, while every piece of
+// bee's own scaffolding is on disk and comes back at full strength. So on the
+// COMPACTION event only, the anchor block is pushed into the preserved context,
+// labelled top and bottom so a summarizer cannot treat it as ordinary prose.
+//
+// It stays ADVISORY, deliberately and permanently: this hook's PreCompact
+// output is emitted through emitHookOutput as a `systemMessage`, never
+// encodeBlock — the B2/R14 contract (docs/knowledge/areas/hook-runtime/
+// advisories-and-turn-control.md) forbids a turn-control verdict on
+// compaction, and re-asserting an objective is advice, not steering.
+//
+// D5: with no anchor (or a missing/older vendored lib, or any failure at all)
+// this returns null and every byte this hook emits is what it emitted before
+// the feature shipped.
+async function maybeIntentAnchor(root, sessionId) {
+  try {
+    const intent = await import(libModuleUrl(root, "intent.mjs"));
+    const anchor = intent.readIntent(root, { sessionId });
+    if (!anchor) {
+      return null;
+    }
+    const block = intent.precompactBlock(anchor);
+    return block && block.trim() ? block : null;
+  } catch {
+    // fail-open: no lib (a repo vendored before this shipped), no anchor, no problem
+    return null;
+  }
+}
+
 // maybePerfRefresh — keep the global performance data + matrix current WITHOUT
 // the operator doing anything. Writes the just-ended session's rollup into the
 // persistent log (performance.jsonl, upsert by session id — so Stop+PreCompact
@@ -368,6 +399,16 @@ async function main() {
     if (blockReason) {
       process.stdout.write(encodeBlock(blockReason));
       return 0;
+    }
+    // intent-anchor ia-1 (D3): FIRST in `parts` on the compaction event, so
+    // the objective leads the advisory the summary sees. Compaction only —
+    // Stop already ends the turn, and the anchor's job is to survive a
+    // summary, not to close one.
+    if (ctx.event === "PreCompact") {
+      const anchorMsg = await maybeIntentAnchor(root, getSessionId(ctx.payload));
+      if (anchorMsg) {
+        parts.push(anchorMsg);
+      }
     }
     const queueMsg = await maybeCaptureQueueNudge(root, {
       force: ctx.event === "PreCompact",

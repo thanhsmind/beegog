@@ -1439,6 +1439,7 @@ try {
     ".bee/claims/",
     ".bee/runtime/",
     ".bee/cache/",
+    ".bee/intent/",
     ".bee/locks/",
     ".bee/doctor-attest.json",
     ".bee/native-transport-probe.json",

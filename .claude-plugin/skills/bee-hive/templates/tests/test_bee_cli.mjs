@@ -200,7 +200,7 @@ await check('registry names are unique and dot-namespaced by group (status, cell
   assert(new Set(names).size === names.length, `duplicate names in registry: ${names.join(', ')}`);
   const groups = new Set(names.map((n) => (n.includes('.') ? n.split('.')[0] : n)));
   for (const group of groups) {
-    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge'].includes(group), `unexpected group "${group}"`);
+    assert(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge', 'intent'].includes(group), `unexpected group "${group}"`);
   }
 });
 
@@ -303,7 +303,7 @@ await check('DA5 bijection: every runtime verb of bee.mjs cells/reservations/dec
 });
 
 await check('DA5 bijection: the only dot-free registry entries are "status" and "doctor", and every entry\'s group is one of status|doctor|cells|reservations|decisions|state|backlog|capture|reviews|feedback|perf|worktree|config', async () => {
-  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge']);
+  const allowedGroups = new Set(['status', 'doctor', 'cells', 'reservations', 'decisions', 'state', 'backlog', 'capture', 'reviews', 'feedback', 'perf', 'worktree', 'config', 'dispatch', 'recovery', 'tmp', 'knowledge', 'intent']);
   const allowedDotFree = new Set(['status', 'doctor']);
   for (const entry of COMMAND_REGISTRY) {
     const group = entry.name.includes('.') ? entry.name.split('.')[0] : entry.name;
@@ -1229,6 +1229,53 @@ await check('capture.flush example runs through the real dispatcher against a pr
   const result = await assertExampleOk('capture.flush', { cwd: rootBacklogCapture });
   const record = JSON.parse(result.stdout);
   assert(record.id === seededId, `expected the seeded stub id flushed, got ${result.stdout}`);
+});
+
+// ─── intent.* examples (intent-anchor ia-1): its own isolated repo, since
+// every verb reads/writes .bee/intent/ and the set→show→advance→clear order
+// is the anchor's real lifecycle. ──────────────────────────────────────────
+
+const rootIntent = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-intent-example-'));
+fs.mkdirSync(path.join(rootIntent, '.bee'), { recursive: true });
+writeJsonAtomic(path.join(rootIntent, '.bee', 'onboarding.json'), {
+  schema_version: '1.0',
+  bee_version: '0.1.0',
+});
+
+await check('intent.set example runs through the real dispatcher and stores the request VERBATIM', async () => {
+  const result = await assertExampleOk('intent.set', { cwd: rootIntent });
+  const anchor = JSON.parse(result.stdout);
+  assert(anchor.request === 'example verbatim request', `expected the verbatim request, got ${result.stdout}`);
+  assert(anchor.acceptance === 'example acceptance criteria', `expected the acceptance text, got ${result.stdout}`);
+  assert(anchor.next_action === 'example next step', `expected the next action, got ${result.stdout}`);
+  // D2: no active feature in this fixture, so the anchor still lands.
+  assert(typeof anchor.key === 'string' && anchor.key, 'the anchor must carry the key it landed on');
+  const onDisk = JSON.parse(
+    fs.readFileSync(path.join(rootIntent, '.bee', 'intent', `${anchor.key}.json`), 'utf8'),
+  );
+  assert(onDisk.request === 'example verbatim request', 'the anchor is on disk under its key');
+});
+
+await check('intent.show example runs through the real dispatcher and returns the stored anchor', async () => {
+  const result = await assertExampleOk('intent.show', { cwd: rootIntent });
+  const anchor = JSON.parse(result.stdout);
+  assert(anchor && anchor.request === 'example verbatim request', `expected the anchor, got ${result.stdout}`);
+});
+
+await check('intent.advance example moves next_action ONLY (D1: request/acceptance immutable)', async () => {
+  const result = await assertExampleOk('intent.advance', { cwd: rootIntent });
+  const anchor = JSON.parse(result.stdout);
+  assert(anchor.next_action === 'example advanced next step', `expected the advanced next action, got ${result.stdout}`);
+  assert(anchor.request === 'example verbatim request', 'advance must never touch the request');
+  assert(anchor.acceptance === 'example acceptance criteria', 'advance must never touch acceptance');
+});
+
+await check('intent.clear example removes the anchor and leaves show reporting null', async () => {
+  const result = await assertExampleOk('intent.clear', { cwd: rootIntent });
+  assert(JSON.parse(result.stdout).cleared === true, `expected cleared:true, got ${result.stdout}`);
+  const after = await runModuleWorker(BEE_MJS, { args: ['intent', 'show', '--json'], cwd: rootIntent });
+  assert(after.status === 0, `intent show must stay green with no anchor, got ${after.status}`);
+  assert(JSON.parse(after.stdout) === null, `expected null with no anchor, got ${after.stdout}`);
 });
 
 // ─── chain-integrity D2/D4: scribing debt is a WALL at the close boundary ────
