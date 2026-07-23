@@ -9,7 +9,7 @@ bee:
   areas: [hook-runtime]
   required_context: [areas/hook-runtime/overview.md]
   decisions: ["codex-runtime-parity D1, D2", "4c1c5921 (GitHub #18 — the gate-bypass net mechanized at runtime as a loop-guarded turn-control block)"]
-  sources: ["codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/", "post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18)", "docs/specs/hook-runtime.md#B2", "docs/specs/hook-runtime.md#B10", "docs/specs/hook-runtime.md#B15", "docs/specs/hook-runtime.md#R4", "docs/specs/hook-runtime.md#R10", "docs/specs/hook-runtime.md#R14", "docs/specs/hook-runtime.md#P4", "docs/specs/hook-runtime.md#P5", "codex-loop-p0 cell clp-1 (the prompt reminder threads sessionId and stops reporting the on-demand review gate outside a review session; trace in `.bee/cells/`, 2026-07-23)"]
+  sources: ["codex-runtime-parity Safety foundation — cells codex-parity-2, 2b, 3, 4 (traces in .bee/cells/), reports in docs/history/codex-runtime-parity/reports/", "post-advisor-hardening cells pah-1/pah-3 (onboarding-generator drift check + B15 consult instruction, 2026-07-18)", "docs/specs/hook-runtime.md#B2", "docs/specs/hook-runtime.md#B10", "docs/specs/hook-runtime.md#B15", "docs/specs/hook-runtime.md#R4", "docs/specs/hook-runtime.md#R10", "docs/specs/hook-runtime.md#R14", "docs/specs/hook-runtime.md#P4", "docs/specs/hook-runtime.md#P5", "codex-loop-p0 cell clp-1 (the prompt reminder threads sessionId and stops reporting the on-demand review gate outside a review session; trace in `.bee/cells/`, 2026-07-23)", "loop-seams-1112 cell ls-1 (advisor issue #54 — both surfaces, terminal owes no gate, per-session dedup; trace in `.bee/cells/`, 2026-07-23)"]
   authoritative_for: "hook-runtime: the advisory contract and the gate-bypass turn-control exception"
 ---
 
@@ -92,6 +92,18 @@ falls through to the advisory path with a visible log, never a crash.
   printed a false "gate pending: review" on every turn — a phantom
   unfinished-workflow signal. The reminder walks the pre-execution gates
   (context/shape/execution) always, and review only when a review session is live.
+
+  Two corollaries the first pass missed, both fixed after an external review: the
+  rule binds **both surfaces** — the startup/compaction preamble as well as the
+  per-turn reminder, and the preamble is the more dangerous one because it is what
+  a long session re-reads to re-orient. And a **terminal record owes no gate at
+  all**: at idle or after a close there is no feature, so naming any gate pending
+  announces an approval owed for work that does not exist. Terminal states also
+  never emit a re-route order — a routing instruction on an idle record reads as
+  "there is workflow waiting" when there is none, which is the loop it creates.
+  Finally the reminder dedup is keyed **per session**, not per repo: a repo-global
+  key let two sessions on one checkout invalidate each other and collapsed the
+  throttle to nearly every turn.
 
 - R4 — Advisory events never emit turn-control verdicts (codex-runtime-parity D2),
   with the single scoped exception of the gate-bypass net on the session-stop
