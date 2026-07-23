@@ -39,19 +39,38 @@
   "deps": [
     "cz-1"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "gate-smith",
+    "outcome": "Authored scripts/test_doctrine_parity.mjs: derives its scan set from git ls-files minus docs/history/**, checks the retired doctrine sentence over every AGENTS.block.md PLUS the merged root AGENTS.md, and compares prose counts against four independently derived quantities (9 scripts / 8 Codex events / 7 Claude events / 6 toggles). Bare '<n> hook(s)' is reported as unchecked rather than guessed, so the true six-toggle claim at docs/06-runtime-integration.md:121 passes. --selftest aims the checker at fixture roots and asserts both bites; additionally verified non-destructively against the real tree (reverting AGENTS.md:87 and the 9-script count -> exit 1, both reported; tree restored via git checkout).",
+    "files_changed": [
+      "scripts/test_doctrine_parity.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-23T05:31:49.234Z",
     "behavior_change": false,
     "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
-  }
+    "verify_output": "      derived counts: 9 hook scripts (hooks/bee-*.mjs), 8 Codex lifecycle events (.codex/hooks.json), 7 Claude lifecycle events (hooks/claude-hooks.json), 6 config toggles (.bee/config.json)\nPASS test_doctrine_parity --selftest: bites on the retired sentence in the merged root AGENTS.md (which the AGENTS.block.md glob does not match), and on \"six hook scripts\" against the derived 9, while sparing the true six-toggle claims and reporting bare \"six hooks\" as unchecked\n      derived counts: 9 hook scripts (hooks/bee-*.mjs), 8 Codex lifecycle events (.codex/hooks.json), 7 Claude lifecycle events (hooks/claude-hooks.json), 6 config toggles (.bee/config.json)\nPASS test_doctrine_parity --selftest: bites on the retired sentence in the merged root AGENTS.md (which the AGENTS.block.md glob does not match), and on \"six hook scripts\" against the derived 9, while sparing the true six-toggle claims and reporting bare \"six hooks\" as unchecked\nPASS test_doctrine_parity: retired doctrine sentence absent from 6 doctrine file(s) (5 AGENTS.block.md projection(s) + the merged root AGENTS.md)\nPASS test_doctrine_parity: 23 count claim(s) across 501 tracked markdown file(s) agree with their derived quantity\n      not checked — bare \"hook\" names no single quantity (11):\n        docs/01-distillation.md:111 — \"16 hook\" (could mean any of 9/8/7/6)\n        docs/02-architecture.md:223 — \"16 hook\" (could mean any of 9/8/7/6)\n        docs/06-runtime-integration.md:13 — \"16 hooks\" (could mean any of 9/8/7/6)\n        docs/06-runtime-integration.md:121 — \"six hooks\" (could mean any of 9/8/7/6)\n        docs/decisions/index.md:236 — \"8 hook\" (could mean any of 9/8/7/6)\n        docs/decisions/index.md:446 — \"one hook\" (could mean any of 9/8/7/6)\n        docs/decisions/index.md:562 — \"3 hooks\" (could mean any of 9/8/7/6)\n        docs/knowledge/areas/okf-profile/the-instruction-layer-fence.md:57 — \"one hook\" (could mean any of 9/8/7/6)\n        docs/knowledge/log.md:581 — \"one hook\" (could mean any of 9/8/7/6)\n        docs/specs/hook-runtime.md:24 — \"one hook\" (could mean any of 9/8/7/6)\n        docs/specs/reading-map.md:50 — \"one hook\" (could mean any of 9/8/7/6)\n      not checked — number is not directly adjacent to a measured noun (11):\n        README.md:271 — \"6 lifecycle hooks\"\n        README.md:444 — \"six core hooks\"\n        docs/01-distillation.md:111 — \"9 thin hooks\"\n        docs/02-architecture.md:219 — \"six core hooks\"\n        docs/06-runtime-integration.md:25 — \"8 Codex lifecycle events\"\n        docs/06-runtime-integration.md:28 — \"three later scripts\"\n        docs/knowledge/areas/hook-runtime/hook-source-exclusivity.md:3 — \"one active hook\"\n        docs/knowledge/areas/hook-runtime/hook-source-exclusivity.md:16 — \"one active hook\"\n        docs/knowledge/areas/hook-runtime/hook-source-exclusivity.md:26 — \"one bee hook\"\n        docs/knowledge/areas/hook-runtime/index.md:21 — \"one active hook\"\n        docs/specs/hook-runtime.md:81 — \"one bee hook\"\n",
+    "verify_passed": true,
+    "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+    "claimed_at": "2026-07-23T05:14:28.740Z",
+    "verify_command": "node scripts/test_doctrine_parity.mjs --selftest && node scripts/test_doctrine_parity.mjs",
+    "verified_at": "2026-07-23T05:31:26.337Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T05:31:26.337Z",
+        "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+        "claimed_at": "2026-07-23T05:15:54.802Z",
+        "acquired_at": "2026-07-23T05:14:28.739Z",
+        "worker": "gate-smith",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
+  },
+  "tier": "ceiling"
 }

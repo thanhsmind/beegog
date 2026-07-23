@@ -1,0 +1,38 @@
+{
+  "schema": "judge-verdict/1",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "frozen-judge-hits-justified",
+      "status": "PASS",
+      "evidence": "The frozen judge flagged four rendered copies of skills/bee-hive/templates/tests/test_bee_cli.mjs under .agents/, .claude/, .claude-plugin/ and .codex-plugin/ as undeclared test-source edits. Orchestrator verified all four byte-identical to the source via diff -q — they are pure output of render_plugin_skill_trees.mjs, which D24 mandates this cell run. The source edit itself is a named change site in the cell action: adding a registry entry requires an assertExampleOk call or the coverage check at test_bee_cli.mjs:2558 fails. Not a test rewrite; a declaration gap, filed as P2 friction against the judge's scope."
+    },
+    {
+      "id": "compact-capsule-not-registered",
+      "status": "PASS",
+      "evidence": "Independently confirmed: `node .bee/bin/bee.mjs --help --json | grep -c compact-capsule` returns 0. Registering it before cz-5 builds buildCompactCapsule would have turned the unconditional registry-coverage gate at test_bee_cli.mjs:2558 red."
+    },
+    {
+      "id": "three-change-sites-landed",
+      "status": "PASS",
+      "evidence": "test_bee_cli.mjs gained 3 checks (example execution for both verbs, a mismatch-still-exits-0 row, a bad --event usage-refusal row); bee.mjs:4830's state-group Use-list now names compact-log and compact-check, satisfying the DA5 bijection check at test_bee_cli.mjs:276-303 in both directions; FLAG_ALONE_BOOLEANS confirmed unchanged as the cell predicted. Independent re-run: test_bee_cli.mjs 248 passed, 0 failed."
+    },
+    {
+      "id": "mismatch-is-data-not-failure",
+      "status": "PASS",
+      "evidence": "compact-check exits non-zero only on a usage error. Proven by a dedicated test row and by a tree-hash negative control showing two consecutive runs leave .bee/ byte-identical (excluding the dispatcher-wide .bee/cache/manifest-hash.json bookkeeping, which every verb touches). Independent re-run of scripts/test_compact_verbs.mjs: ALL PASS."
+    },
+    {
+      "id": "helper-floor-reachable",
+      "status": "PASS",
+      "evidence": "compact-check's JSON output carries an anchor_missing check, distinct from compactCheck's own presence-only anchor check, always naming the exact ANCHOR_NUDGE_COMMAND — which is how the D10 nudge stays reachable by command on a runtime that never executes a hook (D3's helper floor, the constraint that exists because Codex hook execution is unverified)."
+    },
+    {
+      "id": "regen-chain-order-and-mirrors",
+      "status": "PASS",
+      "evidence": "Chain run in the D24 order (render -> onboard --apply -> release_manifest --write). Independent re-run: release_manifest --check 484 files match, ledger_parity --check green, .bee/bin/bee.mjs and .bee/bin/lib/command-registry.mjs byte-identical to their sources."
+    }
+  ],
+  "fixability": "automatic",
+  "confidence": "high"
+}

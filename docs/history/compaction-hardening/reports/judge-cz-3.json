@@ -1,0 +1,38 @@
+{
+  "schema": "judge-verdict/1",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "resume-never-reincrements",
+      "status": "PASS",
+      "evidence": "Structurally impossible, not merely untested. Counting is a row filter over the log (compaction.mjs:103, `if (record.event !== 'precompact') continue;`), never a read of any stored index, and the written row carries `increment = event === 'precompact' ? 1 : 0` (:266). Adversarial probe on temp fixtures: five resumes with no precompact yield 0,0,0,0,0; one precompact then four resumes yields 1,1,1,1,1; a hand-forged resume row with compact_index:99 appended to the log still reads back {compact_index:1, cell_compact_count:1}."
+    },
+    {
+      "id": "compactcheck-read-only",
+      "status": "PASS",
+      "evidence": "Full call-graph audit: readJson/readJsonl/readText, readState, resolvePipeline, readLane, readSession, readClaim, listReservations->readStore, listCells/readCell, readIntent — every leaf a pure read with no normalize-and-writeback. compaction.mjs imports neither inject.mjs (whose markInjected at :527-535 is this repo's one write-on-read precedent) nor any sweep; sweepExpiredClaims, which does rmSync + writeJsonAtomic, is never called. Empirical: the real repo .bee/ tree (with cells/archive/, cache/, logs/, tmp/, sessions/, lanes/, intent/ — none present in the test fixture) hashed before, after run 1 and after run 2: all three equal and deep-equal, including no-session, bogus-session and two anchorMissing calls."
+    },
+    {
+      "id": "typed-lane-codes-surfaced",
+      "status": "PASS",
+      "evidence": "compaction.mjs:434-435 passes pipeline.code through verbatim — no mapping, no default. Producers at state.mjs:1237 (LANE_INVALID), :1245 (LANE_MISSING), :1254 (LANE_CORRUPT) are each on a distinct reachable branch, and each is asserted on both checks[lane_binding].code and result.mismatches (test_compaction_module.mjs:426-454). A fourth code LANE_UNRESOLVABLE (:430-432) covers a throw; the branch structure at :434-444 guarantees exactly one lane_binding entry, never two."
+    },
+    {
+      "id": "append-failure-leaves-caller-unchanged",
+      "status": "PASS",
+      "evidence": "The try/catch wraps only appendJsonl (compaction.mjs:281-285). The argument-error throw for an unknown event sits outside it at :256-260 — confirmed by probe: appendCompactionRecord({event:'sneeze'}) throws rather than being swallowed. appendJsonl can only throw fs errors, and the record is built entirely from strings/numbers/booleans/nulls so JSON.stringify cannot throw, leaving the bare catch no wrong class to swallow. EISDIR probe: 'append failed but returned: precompact 1 0' — return value fully intact, child process exits 0."
+    },
+    {
+      "id": "unresolvable-lane-design-call",
+      "status": "PASS",
+      "evidence": "On !ok the record carries {lane:<name>, feature:null, phase:null} (compaction.mjs:233-235). Consistent with the repo's posture split: ephemeral render surfaces fall back to the default record (inject.mjs:305, :479) while durable/decision surfaces refuse typed (guards.mjs:215-219, cells.mjs:2344-2350, 'refuses loudly rather than silently falling back'). A jsonl row is durable; writing the default pipeline's feature/phase under a lane field naming a different lane produces an internally inconsistent record a later audit cannot detect as wrong. The cell's action cites inject.mjs:301-305 for passing the session id, not for its !ok fallback, so this is not a deviation."
+    },
+    {
+      "id": "anchormissing-interface-matches-cz-7",
+      "status": "PASS",
+      "evidence": ".key = 'anchor-missing-nudge' and .hash = `${session}:${feature}:${cell}` match cz-7's spec exactly, and shouldInject/markInjected (inject.mjs:516, :527) take three positional args — drop-in. Structurally important: anchorMissing performs no dedup itself, never reading shouldInject and never calling markInjected, so dedup ownership stays with the caller; had it marked internally the forced PreCompact path would have poisoned the UserPromptSubmit cache and silently killed the deduped surface. Matches maybeCaptureQueueNudge (hooks/bee-session-close.mjs:210-215) where force skips both. The judge replicated buildFixture (hooks/test_hook_contracts.mjs:240-259) byte-for-byte and ran the predicate two cells early: control fires true, with-anchor fires false — exactly the asymmetry cz-7 predicts, confirming the D23 additivity row goes red by design."
+    }
+  ],
+  "fixability": "automatic",
+  "confidence": "high"
+}
