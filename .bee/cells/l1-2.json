@@ -1,0 +1,45 @@
+{
+  "id": "l1-2",
+  "feature": "impacted-level1",
+  "lane": "small",
+  "title": "Teach level-1 as the mid-iteration command; knowledge bullet",
+  "files": [
+    "skills/bee-planning/SKILL.md",
+    "skills/bee-executing/SKILL.md",
+    "docs/knowledge/areas/verify-pipeline/suite-topology-and-discovery.md",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    "scripts/impact-registry.json"
+  ],
+  "read_first": [
+    "skills/bee-planning/SKILL.md",
+    "skills/bee-executing/SKILL.md"
+  ],
+  "action": "Per impacted-level1 D1. One surgical line each: bee-planning :122 block and bee-executing :67-68 block gain 'mid-iteration, run the level-1 impacted run (run_verify --impacted-from-git --level 1 — direct edges only, seconds); the transitive impacted run (commands.test) stays the wave-close/merge gate'. Knowledge: suite-topology-and-discovery.md impacted bullet + R4 gain the level-1 sentence (depth recorded in the registry, direct for iteration, transitive for gates); bee knowledge index; knowledge check green. Mirrors regen (onboard --apply + render_plugin), release_manifest --write, impact_registry --check.",
+  "must_haves": {
+    "truths": [
+      "both skills name the level-1 command and keep commands.test transitive for gates",
+      "knowledge R4/bullet updated; index+check green",
+      "mirrors + manifest regenerated"
+    ]
+  },
+  "verify": "node scripts/test_doctrine_parity.mjs && node scripts/test_skill_render.mjs && node scripts/release_manifest.mjs --check && node scripts/impact_registry.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "l1-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

@@ -125,6 +125,126 @@ await check("--impacted-from-git combined with BEE_VERIFY_ONLY env is also a typ
   assert.match(r.stderr, /mutually exclusive selection modes/, `expected the refusal even via the env var form:\n${r.stderr}`);
 });
 
+// ── (g) impacted-level1 D1: --level 1 selection ─────────────────────────────
+
+await check("--level 1 without --impacted/--impacted-from-git is a typed refusal, exit 1, before any suite runs", () => {
+  const r = runVerify(["--level", "1"]);
+  assert.equal(r.status, 1, `expected exit 1, got ${r.status}; stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+  assert.match(
+    r.stderr,
+    /--level is only valid alongside --impacted\/--impacted-from-git/,
+    `expected a typed refusal naming the reason on stderr:\n${r.stderr}`,
+  );
+  assert.equal(r.stdout, "", "a --level refusal must exit before any suite runs or banner prints");
+});
+
+await check("--impacted with --level 2 (unrecognized value) is a typed refusal, exit 1", () => {
+  const r = runVerify(["--impacted", "scripts/test_release_tuple.mjs", "--level", "2"]);
+  assert.equal(r.status, 1, `expected exit 1, got ${r.status}; stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+  assert.match(r.stderr, /not a recognized level/, `expected a typed refusal on stderr:\n${r.stderr}`);
+});
+
+// A disposable, non-git fixture repo (same "copy today's implementation
+// live, run a real spawned process" idiom as the P1-4 fixture below, minus
+// the git plumbing --level 1 doesn't need): three suite files establish a
+// controlled direct-vs-transitive graph so these assertions never depend on
+// the live repo's own suite mix (which changes over time) and, critically,
+// never spawn more than two trivial, near-instant suites — the file-header
+// rule ("NEVER spawn an unfiltered full run here") stays honored even though
+// --level 1's whole point is a hub-file comparison.
+//
+//   test_direct_suite.mjs      -> inner_target.mjs                 (DIRECT)
+//   test_transitive_suite.mjs  -> spawnee.mjs                      (DIRECT,
+//                                  via a spawnSync(...) call that is present
+//                                  in source for the regex scanner but never
+//                                  actually executed — the call sits behind
+//                                  an always-false guard)
+//   spawnee.mjs                -> inner_target.mjs, deep_target.mjs (its own
+//                                  direct imports; NOT itself a discovered
+//                                  suite, so these become TRANSITIVE for
+//                                  test_transitive_suite.mjs, mirroring how
+//                                  bee.mjs's own imports go transitive for
+//                                  its spawners)
+//
+// So: inner_target.mjs is direct for 1 suite, all for 2 (level 1 strictly
+// narrower). deep_target.mjs is direct for 0 suites, all for 1 (the
+// direct=0/transitive>0 loud-note case).
+function buildLevelFixture() {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "impacted-level1-fixture-"));
+  const scriptsDir = path.join(fixture, "scripts");
+  fs.mkdirSync(scriptsDir, { recursive: true });
+  fs.copyFileSync(RUN_VERIFY, path.join(scriptsDir, "run_verify.mjs"));
+  fs.copyFileSync(IMPACT_REGISTRY_SRC, path.join(scriptsDir, "impact_registry.mjs"));
+  fs.writeFileSync(path.join(scriptsDir, "inner_target.mjs"), "export const X = 1;\n");
+  fs.writeFileSync(path.join(scriptsDir, "deep_target.mjs"), "export const Y = 2;\n");
+  fs.writeFileSync(
+    path.join(scriptsDir, "spawnee.mjs"),
+    "import \"./inner_target.mjs\";\nimport \"./deep_target.mjs\";\nprocess.exit(0);\n",
+  );
+  fs.writeFileSync(
+    path.join(scriptsDir, "test_direct_suite.mjs"),
+    "import \"./inner_target.mjs\";\nprocess.exit(0);\n",
+  );
+  fs.writeFileSync(
+    path.join(scriptsDir, "test_transitive_suite.mjs"),
+    [
+      "import path from \"node:path\";",
+      "import { fileURLToPath } from \"node:url\";",
+      "import { spawnSync } from \"node:child_process\";",
+      "const __dirname = path.dirname(fileURLToPath(import.meta.url));",
+      "// Never actually executed — present only so the registry's regex-level",
+      "// spawn-argv scanner picks up the spawnee.mjs edge as DIRECT for this",
+      "// suite, exactly as a real conditional spawn would source-scan.",
+      "if (process.env.IMPACTED_LEVEL1_FIXTURE_NEVER_SET) {",
+      "  spawnSync(process.execPath, [path.join(__dirname, \"spawnee.mjs\")]);",
+      "}",
+      "process.exit(0);",
+      "",
+    ].join("\n"),
+  );
+  return { fixture, scriptsDir, runVerifyPath: path.join(scriptsDir, "run_verify.mjs") };
+}
+
+function runFixtureVerify(runVerifyPath, cwd, args) {
+  return spawnSync(process.execPath, [runVerifyPath, ...args], {
+    cwd,
+    encoding: "utf8",
+    timeout: 30000,
+  });
+}
+
+await check("--impacted <hub file> --level 1 selects strictly fewer suites than the default (transitive) impacted run, with the level-1 banner", () => {
+  const { fixture, runVerifyPath } = buildLevelFixture();
+  try {
+    const full = runFixtureVerify(runVerifyPath, fixture, ["--impacted", "scripts/inner_target.mjs"]);
+    const level1 = runFixtureVerify(runVerifyPath, fixture, ["--impacted", "scripts/inner_target.mjs", "--level", "1"]);
+    assert.equal(full.status, 0, `expected exit 0 for the default run, got ${full.status}; stdout:\n${full.stdout}\nstderr:\n${full.stderr}`);
+    assert.equal(level1.status, 0, `expected exit 0 for the level-1 run, got ${level1.status}; stdout:\n${level1.stdout}\nstderr:\n${level1.stderr}`);
+    assert.match(full.stdout, /IMPACTED RUN: 2 suite\(s\) from 1 changed file\(s\)/, `expected both fixture suites (direct + transitive) in the default run:\n${full.stdout}`);
+    assert.match(level1.stdout, /IMPACTED RUN \(level 1\): 1 direct suite\(s\) from 1 changed file\(s\)/, `expected exactly the direct fixture suite at level 1:\n${level1.stdout}`);
+    assert.match(level1.stdout, /PASS\s+\d+ms\s+scripts\/test_direct_suite\.mjs/, `expected only the direct suite to actually run:\n${level1.stdout}`);
+    assert.doesNotMatch(level1.stdout, /test_transitive_suite/, `the transitive-only suite must NOT run at level 1:\n${level1.stdout}`);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+await check("--impacted <transitive-only file> --level 1: zero direct suites but nonzero transitive is a loud deferred-count note, exit 0, no suites run", () => {
+  const { fixture, runVerifyPath } = buildLevelFixture();
+  try {
+    const r = runFixtureVerify(runVerifyPath, fixture, ["--impacted", "scripts/deep_target.mjs", "--level", "1"]);
+    assert.equal(r.status, 0, `expected exit 0 (a loud deferred note is a pass, not a refusal), got ${r.status}; stdout:\n${r.stdout}\nstderr:\n${r.stderr}`);
+    assert.match(
+      r.stdout,
+      /IMPACTED RUN \(level 1\): 0 direct suite\(s\) from 1 changed file\(s\) — 1 suite\(s\) reachable only transitively, deferred to full verify\/CI/,
+      `expected the loud direct=0\/transitive>0 deferred note:\n${r.stdout}`,
+    );
+    assert.doesNotMatch(r.stdout, /PASS\s+\d+ms/, `zero direct selection must run no suites at all:\n${r.stdout}`);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 // ── (f) CRITICAL P1-4: --impacted-from-git counts a STAGED, uncommitted change ──
 // Built against a disposable real git fixture repo (never the live project
 // tree): one commit on `main`, then a mapped suite file is edited and

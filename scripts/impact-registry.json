@@ -1,1736 +1,2786 @@
 {
-  "version": 1,
+  "version": 2,
   "files": {
-    ".bee/bin/bee.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/hooks/adapter.mjs": [
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_worktree_grant_resolve.mjs"
-    ],
-    ".bee/bin/hooks/tokenize-command.mjs": [
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs"
-    ],
-    ".bee/bin/lib/backlog.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/capture.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/cells.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/claims.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "hooks/test_model_guard.mjs",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_config_samples_safe.mjs",
-      "scripts/test_config_validate.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_reservation_race.mjs",
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_grant_resolve.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "scripts/test_worktree_holds_race.mjs",
-      "scripts/test_worktree_store.mjs"
-    ],
-    ".bee/bin/lib/command-registry.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/compaction.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/decisions.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "hooks/test_model_guard.mjs",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_config_samples_safe.mjs",
-      "scripts/test_config_validate.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_reservation_race.mjs",
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_grant_resolve.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "scripts/test_worktree_holds_race.mjs",
-      "scripts/test_worktree_store.mjs"
-    ],
-    ".bee/bin/lib/dispatch-guard.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/dispatch-prepare.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/feedback.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/fsutil.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "hooks/test_model_guard.mjs",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/ledger_parity.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_config_samples_safe.mjs",
-      "scripts/test_config_validate.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_ledger_parity.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_reservation_race.mjs",
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_state_write_concurrency.mjs",
-      "scripts/test_store_lock.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_grant_resolve.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "scripts/test_worktree_holds_race.mjs",
-      "scripts/test_worktree_store.mjs"
-    ],
-    ".bee/bin/lib/inject.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/intent.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/judge.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/knowledge.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/lock.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "hooks/test_model_guard.mjs",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_config_samples_safe.mjs",
-      "scripts/test_config_validate.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_reservation_race.mjs",
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_store_lock.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_grant_resolve.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "scripts/test_worktree_holds_race.mjs",
-      "scripts/test_worktree_store.mjs"
-    ],
-    ".bee/bin/lib/perf.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/recovery.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/reservations.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "hooks/test_model_guard.mjs",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_config_samples_safe.mjs",
-      "scripts/test_config_validate.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_reservation_race.mjs",
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_grant_resolve.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "scripts/test_worktree_holds_race.mjs",
-      "scripts/test_worktree_store.mjs"
-    ],
-    ".bee/bin/lib/reviews.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/schedule.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/scratch.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/source-identity.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/state.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "hooks/test_model_guard.mjs",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_config_samples_safe.mjs",
-      "scripts/test_config_validate.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_grant_resolve.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/validate-args.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_holds.mjs"
-    ],
-    ".bee/bin/lib/worktree-holds.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "hooks/test_model_guard.mjs",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_config_samples_safe.mjs",
-      "scripts/test_config_validate.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_grant_resolve.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "scripts/test_worktree_holds_race.mjs",
-      "scripts/test_worktree_store.mjs"
-    ],
-    ".bee/bin/lib/worktree-store.mjs": [
-      ".bee/bin/bee.mjs knowledge check",
-      ".bee/bin/bee.mjs knowledge index --check",
-      "hooks/test_model_guard.mjs",
-      "scripts/backlog_uniqueness.mjs --check",
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_claim_race.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_config_samples_safe.mjs",
-      "scripts/test_config_validate.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_nested_clone_isolation.mjs",
-      "scripts/test_okf_pins.mjs",
-      "scripts/test_resolveroots_p40.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_worktree_cli.mjs",
-      "scripts/test_worktree_companion.mjs",
-      "scripts/test_worktree_grant_resolve.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "scripts/test_worktree_store.mjs"
-    ],
-    "hooks/adapter.mjs": [
-      "hooks/test_bypass_stop_net.mjs",
-      "hooks/test_hook_contracts.mjs",
-      "hooks/test_model_guard.mjs",
-      "hooks/test_write_guard.mjs",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
-    ],
-    "hooks/bee-model-guard.mjs": [
-      "hooks/test_model_guard.mjs"
-    ],
-    "hooks/bee-prompt-context.mjs": [
-      "scripts/test_compaction_advisories.mjs"
-    ],
-    "hooks/bee-session-close.mjs": [
-      "hooks/test_bypass_stop_net.mjs",
-      "scripts/test_compaction_advisories.mjs"
-    ],
-    "hooks/bee-session-init.mjs": [
-      "scripts/test_compact_capsule.mjs"
-    ],
-    "hooks/bee-write-guard.mjs": [
-      "hooks/test_write_guard.mjs",
-      "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
-    ],
-    "hooks/catalog.mjs": [
-      "hooks/test_hook_contracts.mjs",
-      "skills/bee-hive/scripts/test_onboard_bee.mjs"
-    ],
-    "hooks/test_bypass_stop_net.mjs": [
-      "hooks/test_bypass_stop_net.mjs"
-    ],
-    "hooks/test_hook_contracts.mjs": [
-      "hooks/test_hook_contracts.mjs"
-    ],
-    "hooks/test_model_guard.mjs": [
-      "hooks/test_model_guard.mjs"
-    ],
-    "hooks/test_write_guard.mjs": [
-      "hooks/test_write_guard.mjs"
-    ],
-    "hooks/tokenize-command.mjs": [
-      "hooks/test_write_guard.mjs",
-      "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
-    ],
-    "scripts/backlog_uniqueness.mjs": [
-      "scripts/backlog_uniqueness.mjs --check"
-    ],
-    "scripts/bump_version.mjs": [
-      "scripts/test_bump_version.mjs"
-    ],
-    "scripts/canary_codex.mjs": [
-      "scripts/test_run_verify_skip_marker.mjs"
-    ],
-    "scripts/census_stale_spawn_syntax.mjs": [
-      "scripts/census_stale_spawn_syntax.mjs"
-    ],
-    "scripts/ci_verify_issue.mjs": [
-      "scripts/test_ci_verify_issue.mjs"
-    ],
-    "scripts/impact_registry.mjs": [
-      "scripts/test_impact_registry.mjs",
-      "scripts/test_run_verify_impacted.mjs",
-      "scripts/test_run_verify_only.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_verify_manifest.mjs"
-    ],
-    "scripts/install.ps1": [
-      "scripts/test_install_ps1_flow.mjs"
-    ],
-    "scripts/install.sh": [
-      "scripts/test_installers_e2e.mjs --installer bash"
-    ],
-    "scripts/ledger_parity.mjs": [
-      "scripts/ledger_parity.mjs --check",
-      "scripts/test_ledger_parity.mjs"
-    ],
-    "scripts/lib/release-tuple.mjs": [
-      "scripts/test_bump_version.mjs",
-      "scripts/test_release_tuple.mjs"
-    ],
-    "scripts/lib/run-module-worker.mjs": [
-      "hooks/test_bypass_stop_net.mjs",
-      "hooks/test_hook_contracts.mjs",
-      "hooks/test_model_guard.mjs",
-      "hooks/test_write_guard.mjs",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_conformance.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_heartbeat_touch.mjs",
-      "skills/bee-hive/scripts/test_onboard_bee.mjs",
-      "skills/bee-hive/scripts/test_split_brain_regression.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_claims.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "scripts/lib/test-fixture.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_claims.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_reservations.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "scripts/okf_instructions_fence.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest"
-    ],
-    "scripts/okf_migrate.mjs": [
-      "scripts/okf_migrate.mjs --check advisor-protocol",
-      "scripts/okf_migrate.mjs --check decision-memory",
-      "scripts/okf_migrate.mjs --check doctrine-layer",
-      "scripts/okf_migrate.mjs --check feedback-digest",
-      "scripts/okf_migrate.mjs --check hook-runtime",
-      "scripts/okf_migrate.mjs --check okf-profile",
-      "scripts/okf_migrate.mjs --check onboarding",
-      "scripts/okf_migrate.mjs --check performance-log",
-      "scripts/okf_migrate.mjs --check verify-pipeline",
-      "scripts/okf_migrate.mjs --check workflow-state",
-      "scripts/okf_migrate.mjs --check worktree-parallelism",
-      "scripts/okf_migrate.mjs --check-patterns",
-      "scripts/test_okf_pins.mjs"
-    ],
-    "scripts/okf_specs_fence.mjs": [
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest"
-    ],
-    "scripts/release_manifest.mjs": [
-      "scripts/release_manifest.mjs --check",
-      "scripts/release_manifest.mjs --selftest",
-      "scripts/test_bump_version.mjs"
-    ],
-    "scripts/render_plugin_skill_trees.mjs": [
-      "scripts/test_render_race.mjs"
-    ],
-    "scripts/run_verify.mjs": [
-      "scripts/test_impact_registry.mjs",
-      "scripts/test_run_verify_impacted.mjs",
-      "scripts/test_run_verify_only.mjs",
-      "scripts/test_run_verify_skip_marker.mjs",
-      "scripts/test_verify_manifest.mjs"
-    ],
-    "scripts/test_agents_budget.mjs": [
-      "scripts/test_agents_budget.mjs"
-    ],
-    "scripts/test_bump_version.mjs": [
-      "scripts/test_bump_version.mjs"
-    ],
-    "scripts/test_ci_verify_issue.mjs": [
-      "scripts/test_ci_verify_issue.mjs"
-    ],
-    "scripts/test_claim_race.mjs": [
-      "scripts/test_claim_race.mjs"
-    ],
-    "scripts/test_compact_capsule.mjs": [
-      "scripts/test_compact_capsule.mjs"
-    ],
-    "scripts/test_compact_verbs.mjs": [
-      "scripts/test_compact_verbs.mjs"
-    ],
-    "scripts/test_compaction_advisories.mjs": [
-      "scripts/test_compaction_advisories.mjs"
-    ],
-    "scripts/test_compaction_module.mjs": [
-      "scripts/test_compaction_module.mjs"
-    ],
-    "scripts/test_config_samples_safe.mjs": [
-      "scripts/test_config_samples_safe.mjs"
-    ],
-    "scripts/test_config_validate.mjs": [
-      "scripts/test_config_validate.mjs"
-    ],
-    "scripts/test_conformance.mjs": [
-      "scripts/test_conformance.mjs"
-    ],
-    "scripts/test_dispatch_prepare.mjs": [
-      "scripts/test_dispatch_prepare.mjs"
-    ],
-    "scripts/test_doctrine_parity.mjs": [
-      "scripts/test_doctrine_parity.mjs"
-    ],
-    "scripts/test_gate_bypass_doctrine.mjs": [
-      "scripts/test_gate_bypass_doctrine.mjs"
-    ],
-    "scripts/test_heartbeat_touch.mjs": [
-      "scripts/test_heartbeat_touch.mjs"
-    ],
-    "scripts/test_impact_registry.mjs": [
-      "scripts/test_impact_registry.mjs"
-    ],
-    "scripts/test_install_ps1_flow.mjs": [
-      "scripts/test_install_ps1_flow.mjs"
-    ],
-    "scripts/test_installers_e2e.mjs": [
-      "scripts/test_installers_e2e.mjs --installer bash"
-    ],
-    "scripts/test_ledger_parity.mjs": [
-      "scripts/test_ledger_parity.mjs"
-    ],
-    "scripts/test_lib_mirror.mjs": [
-      "scripts/test_lib_mirror.mjs"
-    ],
-    "scripts/test_native_probe.mjs": [
-      "scripts/test_native_probe.mjs"
-    ],
-    "scripts/test_nested_clone_isolation.mjs": [
-      "scripts/test_nested_clone_isolation.mjs"
-    ],
-    "scripts/test_okf_pins.mjs": [
-      "scripts/test_okf_pins.mjs"
-    ],
-    "scripts/test_portable_paths.mjs": [
-      "scripts/test_portable_paths.mjs"
-    ],
-    "scripts/test_release_tuple.mjs": [
-      "scripts/test_release_tuple.mjs"
-    ],
-    "scripts/test_render_race.mjs": [
-      "scripts/test_render_race.mjs"
-    ],
-    "scripts/test_reservation_race.mjs": [
-      "scripts/test_reservation_race.mjs"
-    ],
-    "scripts/test_resolveroots_p40.mjs": [
-      "scripts/test_resolveroots_p40.mjs"
-    ],
-    "scripts/test_run_verify_impacted.mjs": [
-      "scripts/test_run_verify_impacted.mjs"
-    ],
-    "scripts/test_run_verify_only.mjs": [
-      "scripts/test_run_verify_only.mjs"
-    ],
-    "scripts/test_run_verify_skip_marker.mjs": [
-      "scripts/test_run_verify_skip_marker.mjs"
-    ],
-    "scripts/test_skill_pointers.mjs": [
-      "scripts/test_skill_pointers.mjs"
-    ],
-    "scripts/test_skill_render.mjs": [
-      "scripts/test_skill_render.mjs"
-    ],
-    "scripts/test_state_write_concurrency.mjs": [
-      "scripts/test_state_write_concurrency.mjs"
-    ],
-    "scripts/test_store_lock.mjs": [
-      "scripts/test_store_lock.mjs"
-    ],
-    "scripts/test_verify_manifest.mjs": [
-      "scripts/test_verify_manifest.mjs"
-    ],
-    "scripts/test_worktree_cli.mjs": [
-      "scripts/test_worktree_cli.mjs"
-    ],
-    "scripts/test_worktree_companion.mjs": [
-      "scripts/test_worktree_companion.mjs"
-    ],
-    "scripts/test_worktree_grant_resolve.mjs": [
-      "scripts/test_worktree_grant_resolve.mjs"
-    ],
-    "scripts/test_worktree_holds.mjs": [
-      "scripts/test_worktree_holds.mjs"
-    ],
-    "scripts/test_worktree_holds_race.mjs": [
-      "scripts/test_worktree_holds_race.mjs"
-    ],
-    "scripts/test_worktree_store.mjs": [
-      "scripts/test_worktree_store.mjs"
-    ],
-    "skills/bee-hive/scripts/onboard_bee.mjs": [
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs"
-    ],
-    "skills/bee-hive/scripts/plugin_distribution.mjs": [
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs"
-    ],
-    "skills/bee-hive/scripts/test_onboard_bee.mjs": [
-      "skills/bee-hive/scripts/test_onboard_bee.mjs"
-    ],
-    "skills/bee-hive/scripts/test_plugin_distribution.mjs": [
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs"
-    ],
-    "skills/bee-hive/scripts/test_split_brain_regression.mjs": [
-      "skills/bee-hive/scripts/test_split_brain_regression.mjs"
-    ],
-    "skills/bee-hive/templates/bee.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/backlog.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/capture.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/cells.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/claims.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_claims.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reservations.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/command-registry.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/commands_detect.mjs": [
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs"
-    ],
-    "skills/bee-hive/templates/lib/compaction.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/decisions.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_claims.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reservations.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/dispatch-guard.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/dispatch-prepare.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/feedback.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/fsutil.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "scripts/test_worktree_holds.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_claims.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_perf.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reservations.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/guards.mjs": [
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs"
-    ],
-    "skills/bee-hive/templates/lib/inject.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/intent.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/judge.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/knowledge.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/lock.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_claims.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reservations.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/perf.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_perf.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/recovery.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/reservations.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reservations.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/reviews.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/schedule.mjs": [
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/scratch.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/source-identity.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/state.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/validate-args.mjs": [
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/lib/worktree-holds.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/lib/worktree-store.mjs": [
-      "scripts/okf_instructions_fence.mjs",
-      "scripts/okf_instructions_fence.mjs --selftest",
-      "scripts/okf_specs_fence.mjs",
-      "scripts/okf_specs_fence.mjs --selftest",
-      "scripts/test_compact_capsule.mjs",
-      "scripts/test_compact_verbs.mjs",
-      "scripts/test_compaction_advisories.mjs",
-      "scripts/test_compaction_module.mjs",
-      "scripts/test_dispatch_prepare.mjs",
-      "scripts/test_native_probe.mjs",
-      "scripts/test_render_race.mjs",
-      "scripts/test_skill_render.mjs",
-      "skills/bee-hive/scripts/test_plugin_distribution.mjs",
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
-      "skills/bee-hive/templates/tests/test_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs",
-      "skills/bee-hive/templates/tests/test_cli_state.mjs",
-      "skills/bee-hive/templates/tests/test_config_validate.mjs",
-      "skills/bee-hive/templates/tests/test_feedback.mjs",
-      "skills/bee-hive/templates/tests/test_guards.mjs",
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
-      "skills/bee-hive/templates/tests/test_intent.mjs",
-      "skills/bee-hive/templates/tests/test_knowledge.mjs",
-      "skills/bee-hive/templates/tests/test_misc.mjs",
-      "skills/bee-hive/templates/tests/test_recovery.mjs",
-      "skills/bee-hive/templates/tests/test_reviews.mjs",
-      "skills/bee-hive/templates/tests/test_scratch.mjs",
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-hive/templates/tests/race_claims_child.mjs": [
-      "skills/bee-hive/templates/tests/test_claims.mjs"
-    ],
-    "skills/bee-hive/templates/tests/race_decisions_child.mjs": [
-      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_backlog_capture.mjs": [
-      "skills/bee-hive/templates/tests/test_backlog_capture.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_bee_cli.mjs": [
-      "skills/bee-hive/templates/tests/test_bee_cli.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs": [
-      "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_bundle_mode.mjs": [
-      "skills/bee-hive/templates/tests/test_bundle_mode.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_cells.mjs": [
-      "skills/bee-hive/templates/tests/test_cells.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_claims.mjs": [
-      "skills/bee-hive/templates/tests/test_claims.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_cli_cells.mjs": [
-      "skills/bee-hive/templates/tests/test_cli_cells.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_cli_state.mjs": [
-      "skills/bee-hive/templates/tests/test_cli_state.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_config_validate.mjs": [
-      "skills/bee-hive/templates/tests/test_config_validate.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_decisions_propagation.mjs": [
-      "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_feedback.mjs": [
-      "skills/bee-hive/templates/tests/test_feedback.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_guards.mjs": [
-      "skills/bee-hive/templates/tests/test_guards.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs": [
-      "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_herding.mjs": [
-      "skills/bee-hive/templates/tests/test_herding.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_intent.mjs": [
-      "skills/bee-hive/templates/tests/test_intent.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_knowledge.mjs": [
-      "skills/bee-hive/templates/tests/test_knowledge.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_misc.mjs": [
-      "skills/bee-hive/templates/tests/test_misc.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_perf.mjs": [
-      "skills/bee-hive/templates/tests/test_perf.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_recovery.mjs": [
-      "skills/bee-hive/templates/tests/test_recovery.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_reservations.mjs": [
-      "skills/bee-hive/templates/tests/test_reservations.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_reviews.mjs": [
-      "skills/bee-hive/templates/tests/test_reviews.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_scratch.mjs": [
-      "skills/bee-hive/templates/tests/test_scratch.mjs"
-    ],
-    "skills/bee-hive/templates/tests/test_state.mjs": [
-      "skills/bee-hive/templates/tests/test_state.mjs"
-    ],
-    "skills/bee-writing-skills/scripts/render_openai_metadata.mjs": [
-      "skills/bee-hive/templates/tests/test_misc.mjs"
-    ],
-    "skills/bee-writing-skills/scripts/test_openai_metadata.mjs": [
-      "skills/bee-hive/templates/tests/test_misc.mjs"
-    ]
+    ".bee/bin/bee.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/hooks/adapter.mjs": {
+      "direct": [
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_worktree_grant_resolve.mjs"
+      ],
+      "all": [
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_worktree_grant_resolve.mjs"
+      ]
+    },
+    ".bee/bin/hooks/tokenize-command.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs"
+      ]
+    },
+    ".bee/bin/lib/backlog.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/backlog_uniqueness.mjs --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/capture.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/cells.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/test_claim_race.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/claims.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/test_claim_race.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_reservation_race.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_grant_resolve.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "scripts/test_worktree_holds_race.mjs",
+        "scripts/test_worktree_store.mjs"
+      ]
+    },
+    ".bee/bin/lib/command-registry.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/compaction.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/decisions.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_reservation_race.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_grant_resolve.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "scripts/test_worktree_holds_race.mjs",
+        "scripts/test_worktree_store.mjs"
+      ]
+    },
+    ".bee/bin/lib/dispatch-guard.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/dispatch-prepare.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/feedback.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/fsutil.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/ledger_parity.mjs --check",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_reservation_race.mjs",
+        "scripts/test_state_write_concurrency.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "scripts/test_worktree_holds_race.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/ledger_parity.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_ledger_parity.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_reservation_race.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_state_write_concurrency.mjs",
+        "scripts/test_store_lock.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_grant_resolve.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "scripts/test_worktree_holds_race.mjs",
+        "scripts/test_worktree_store.mjs"
+      ]
+    },
+    ".bee/bin/lib/inject.mjs": {
+      "direct": [],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/intent.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/judge.mjs": {
+      "direct": [],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/knowledge.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/lock.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/test_store_lock.mjs",
+        "scripts/test_worktree_cli.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_reservation_race.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_store_lock.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_grant_resolve.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "scripts/test_worktree_holds_race.mjs",
+        "scripts/test_worktree_store.mjs"
+      ]
+    },
+    ".bee/bin/lib/perf.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/recovery.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/reservations.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/test_reservation_race.mjs",
+        "scripts/test_worktree_holds_race.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_reservation_race.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_grant_resolve.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "scripts/test_worktree_holds_race.mjs",
+        "scripts/test_worktree_store.mjs"
+      ]
+    },
+    ".bee/bin/lib/reviews.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/schedule.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/scratch.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/source-identity.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/state.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_grant_resolve.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_grant_resolve.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/validate-args.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    ".bee/bin/lib/worktree-holds.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/test_worktree_holds_race.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_grant_resolve.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "scripts/test_worktree_holds_race.mjs",
+        "scripts/test_worktree_store.mjs"
+      ]
+    },
+    ".bee/bin/lib/worktree-store.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_store.mjs"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "hooks/test_model_guard.mjs",
+        "scripts/backlog_uniqueness.mjs --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_claim_race.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_config_samples_safe.mjs",
+        "scripts/test_config_validate.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_resolveroots_p40.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_grant_resolve.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "scripts/test_worktree_store.mjs"
+      ]
+    },
+    "hooks/adapter.mjs": {
+      "direct": [
+        "hooks/test_hook_contracts.mjs"
+      ],
+      "all": [
+        "hooks/test_bypass_stop_net.mjs",
+        "hooks/test_hook_contracts.mjs",
+        "hooks/test_model_guard.mjs",
+        "hooks/test_write_guard.mjs",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
+      ]
+    },
+    "hooks/bee-model-guard.mjs": {
+      "direct": [
+        "hooks/test_model_guard.mjs"
+      ],
+      "all": [
+        "hooks/test_model_guard.mjs"
+      ]
+    },
+    "hooks/bee-prompt-context.mjs": {
+      "direct": [
+        "scripts/test_compaction_advisories.mjs"
+      ],
+      "all": [
+        "scripts/test_compaction_advisories.mjs"
+      ]
+    },
+    "hooks/bee-session-close.mjs": {
+      "direct": [
+        "hooks/test_bypass_stop_net.mjs",
+        "scripts/test_compaction_advisories.mjs"
+      ],
+      "all": [
+        "hooks/test_bypass_stop_net.mjs",
+        "scripts/test_compaction_advisories.mjs"
+      ]
+    },
+    "hooks/bee-session-init.mjs": {
+      "direct": [
+        "scripts/test_compact_capsule.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs"
+      ]
+    },
+    "hooks/bee-write-guard.mjs": {
+      "direct": [
+        "hooks/test_write_guard.mjs",
+        "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
+      ],
+      "all": [
+        "hooks/test_write_guard.mjs",
+        "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
+      ]
+    },
+    "hooks/catalog.mjs": {
+      "direct": [
+        "hooks/test_hook_contracts.mjs",
+        "skills/bee-hive/scripts/test_onboard_bee.mjs"
+      ],
+      "all": [
+        "hooks/test_hook_contracts.mjs",
+        "skills/bee-hive/scripts/test_onboard_bee.mjs"
+      ]
+    },
+    "hooks/test_bypass_stop_net.mjs": {
+      "direct": [
+        "hooks/test_bypass_stop_net.mjs"
+      ],
+      "all": [
+        "hooks/test_bypass_stop_net.mjs"
+      ]
+    },
+    "hooks/test_hook_contracts.mjs": {
+      "direct": [
+        "hooks/test_hook_contracts.mjs"
+      ],
+      "all": [
+        "hooks/test_hook_contracts.mjs"
+      ]
+    },
+    "hooks/test_model_guard.mjs": {
+      "direct": [
+        "hooks/test_model_guard.mjs"
+      ],
+      "all": [
+        "hooks/test_model_guard.mjs"
+      ]
+    },
+    "hooks/test_write_guard.mjs": {
+      "direct": [
+        "hooks/test_write_guard.mjs"
+      ],
+      "all": [
+        "hooks/test_write_guard.mjs"
+      ]
+    },
+    "hooks/tokenize-command.mjs": {
+      "direct": [],
+      "all": [
+        "hooks/test_write_guard.mjs",
+        "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
+      ]
+    },
+    "scripts/backlog_uniqueness.mjs": {
+      "direct": [
+        "scripts/backlog_uniqueness.mjs --check"
+      ],
+      "all": [
+        "scripts/backlog_uniqueness.mjs --check"
+      ]
+    },
+    "scripts/bump_version.mjs": {
+      "direct": [
+        "scripts/test_bump_version.mjs"
+      ],
+      "all": [
+        "scripts/test_bump_version.mjs"
+      ]
+    },
+    "scripts/canary_codex.mjs": {
+      "direct": [
+        "scripts/test_run_verify_skip_marker.mjs"
+      ],
+      "all": [
+        "scripts/test_run_verify_skip_marker.mjs"
+      ]
+    },
+    "scripts/census_stale_spawn_syntax.mjs": {
+      "direct": [
+        "scripts/census_stale_spawn_syntax.mjs"
+      ],
+      "all": [
+        "scripts/census_stale_spawn_syntax.mjs"
+      ]
+    },
+    "scripts/ci_verify_issue.mjs": {
+      "direct": [
+        "scripts/test_ci_verify_issue.mjs"
+      ],
+      "all": [
+        "scripts/test_ci_verify_issue.mjs"
+      ]
+    },
+    "scripts/impact_registry.mjs": {
+      "direct": [
+        "scripts/test_impact_registry.mjs"
+      ],
+      "all": [
+        "scripts/test_impact_registry.mjs",
+        "scripts/test_run_verify_impacted.mjs",
+        "scripts/test_run_verify_only.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_verify_manifest.mjs"
+      ]
+    },
+    "scripts/install.ps1": {
+      "direct": [
+        "scripts/test_install_ps1_flow.mjs"
+      ],
+      "all": [
+        "scripts/test_install_ps1_flow.mjs"
+      ]
+    },
+    "scripts/install.sh": {
+      "direct": [
+        "scripts/test_installers_e2e.mjs --installer bash"
+      ],
+      "all": [
+        "scripts/test_installers_e2e.mjs --installer bash"
+      ]
+    },
+    "scripts/ledger_parity.mjs": {
+      "direct": [
+        "scripts/ledger_parity.mjs --check",
+        "scripts/test_ledger_parity.mjs"
+      ],
+      "all": [
+        "scripts/ledger_parity.mjs --check",
+        "scripts/test_ledger_parity.mjs"
+      ]
+    },
+    "scripts/lib/release-tuple.mjs": {
+      "direct": [
+        "scripts/test_bump_version.mjs",
+        "scripts/test_release_tuple.mjs"
+      ],
+      "all": [
+        "scripts/test_bump_version.mjs",
+        "scripts/test_release_tuple.mjs"
+      ]
+    },
+    "scripts/lib/run-module-worker.mjs": {
+      "direct": [
+        "hooks/test_bypass_stop_net.mjs",
+        "hooks/test_hook_contracts.mjs",
+        "hooks/test_model_guard.mjs",
+        "hooks/test_write_guard.mjs",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_heartbeat_touch.mjs",
+        "skills/bee-hive/scripts/test_onboard_bee.mjs",
+        "skills/bee-hive/scripts/test_split_brain_regression.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ],
+      "all": [
+        "hooks/test_bypass_stop_net.mjs",
+        "hooks/test_hook_contracts.mjs",
+        "hooks/test_model_guard.mjs",
+        "hooks/test_write_guard.mjs",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_heartbeat_touch.mjs",
+        "skills/bee-hive/scripts/test_onboard_bee.mjs",
+        "skills/bee-hive/scripts/test_split_brain_regression.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "scripts/lib/test-fixture.mjs": {
+      "direct": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "scripts/okf_instructions_fence.mjs": {
+      "direct": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest"
+      ]
+    },
+    "scripts/okf_migrate.mjs": {
+      "direct": [
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_okf_pins.mjs"
+      ],
+      "all": [
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_okf_pins.mjs"
+      ]
+    },
+    "scripts/okf_specs_fence.mjs": {
+      "direct": [
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest"
+      ],
+      "all": [
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest"
+      ]
+    },
+    "scripts/release_manifest.mjs": {
+      "direct": [
+        "scripts/release_manifest.mjs --check",
+        "scripts/release_manifest.mjs --selftest"
+      ],
+      "all": [
+        "scripts/release_manifest.mjs --check",
+        "scripts/release_manifest.mjs --selftest",
+        "scripts/test_bump_version.mjs"
+      ]
+    },
+    "scripts/render_plugin_skill_trees.mjs": {
+      "direct": [
+        "scripts/test_render_race.mjs"
+      ],
+      "all": [
+        "scripts/test_render_race.mjs"
+      ]
+    },
+    "scripts/run_verify.mjs": {
+      "direct": [
+        "scripts/test_run_verify_impacted.mjs",
+        "scripts/test_run_verify_only.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_verify_manifest.mjs"
+      ],
+      "all": [
+        "scripts/test_impact_registry.mjs",
+        "scripts/test_run_verify_impacted.mjs",
+        "scripts/test_run_verify_only.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_verify_manifest.mjs"
+      ]
+    },
+    "scripts/test_agents_budget.mjs": {
+      "direct": [
+        "scripts/test_agents_budget.mjs"
+      ],
+      "all": [
+        "scripts/test_agents_budget.mjs"
+      ]
+    },
+    "scripts/test_bump_version.mjs": {
+      "direct": [
+        "scripts/test_bump_version.mjs"
+      ],
+      "all": [
+        "scripts/test_bump_version.mjs"
+      ]
+    },
+    "scripts/test_ci_verify_issue.mjs": {
+      "direct": [
+        "scripts/test_ci_verify_issue.mjs"
+      ],
+      "all": [
+        "scripts/test_ci_verify_issue.mjs"
+      ]
+    },
+    "scripts/test_claim_race.mjs": {
+      "direct": [
+        "scripts/test_claim_race.mjs"
+      ],
+      "all": [
+        "scripts/test_claim_race.mjs"
+      ]
+    },
+    "scripts/test_compact_capsule.mjs": {
+      "direct": [
+        "scripts/test_compact_capsule.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs"
+      ]
+    },
+    "scripts/test_compact_verbs.mjs": {
+      "direct": [
+        "scripts/test_compact_verbs.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_verbs.mjs"
+      ]
+    },
+    "scripts/test_compaction_advisories.mjs": {
+      "direct": [
+        "scripts/test_compaction_advisories.mjs"
+      ],
+      "all": [
+        "scripts/test_compaction_advisories.mjs"
+      ]
+    },
+    "scripts/test_compaction_module.mjs": {
+      "direct": [
+        "scripts/test_compaction_module.mjs"
+      ],
+      "all": [
+        "scripts/test_compaction_module.mjs"
+      ]
+    },
+    "scripts/test_config_samples_safe.mjs": {
+      "direct": [
+        "scripts/test_config_samples_safe.mjs"
+      ],
+      "all": [
+        "scripts/test_config_samples_safe.mjs"
+      ]
+    },
+    "scripts/test_config_validate.mjs": {
+      "direct": [
+        "scripts/test_config_validate.mjs"
+      ],
+      "all": [
+        "scripts/test_config_validate.mjs"
+      ]
+    },
+    "scripts/test_conformance.mjs": {
+      "direct": [
+        "scripts/test_conformance.mjs"
+      ],
+      "all": [
+        "scripts/test_conformance.mjs"
+      ]
+    },
+    "scripts/test_dispatch_prepare.mjs": {
+      "direct": [
+        "scripts/test_dispatch_prepare.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs"
+      ]
+    },
+    "scripts/test_doctrine_parity.mjs": {
+      "direct": [
+        "scripts/test_doctrine_parity.mjs"
+      ],
+      "all": [
+        "scripts/test_doctrine_parity.mjs"
+      ]
+    },
+    "scripts/test_gate_bypass_doctrine.mjs": {
+      "direct": [
+        "scripts/test_gate_bypass_doctrine.mjs"
+      ],
+      "all": [
+        "scripts/test_gate_bypass_doctrine.mjs"
+      ]
+    },
+    "scripts/test_heartbeat_touch.mjs": {
+      "direct": [
+        "scripts/test_heartbeat_touch.mjs"
+      ],
+      "all": [
+        "scripts/test_heartbeat_touch.mjs"
+      ]
+    },
+    "scripts/test_impact_registry.mjs": {
+      "direct": [
+        "scripts/test_impact_registry.mjs"
+      ],
+      "all": [
+        "scripts/test_impact_registry.mjs"
+      ]
+    },
+    "scripts/test_install_ps1_flow.mjs": {
+      "direct": [
+        "scripts/test_install_ps1_flow.mjs"
+      ],
+      "all": [
+        "scripts/test_install_ps1_flow.mjs"
+      ]
+    },
+    "scripts/test_installers_e2e.mjs": {
+      "direct": [
+        "scripts/test_installers_e2e.mjs --installer bash"
+      ],
+      "all": [
+        "scripts/test_installers_e2e.mjs --installer bash"
+      ]
+    },
+    "scripts/test_ledger_parity.mjs": {
+      "direct": [
+        "scripts/test_ledger_parity.mjs"
+      ],
+      "all": [
+        "scripts/test_ledger_parity.mjs"
+      ]
+    },
+    "scripts/test_lib_mirror.mjs": {
+      "direct": [
+        "scripts/test_lib_mirror.mjs"
+      ],
+      "all": [
+        "scripts/test_lib_mirror.mjs"
+      ]
+    },
+    "scripts/test_native_probe.mjs": {
+      "direct": [
+        "scripts/test_native_probe.mjs"
+      ],
+      "all": [
+        "scripts/test_native_probe.mjs"
+      ]
+    },
+    "scripts/test_nested_clone_isolation.mjs": {
+      "direct": [
+        "scripts/test_nested_clone_isolation.mjs"
+      ],
+      "all": [
+        "scripts/test_nested_clone_isolation.mjs"
+      ]
+    },
+    "scripts/test_okf_pins.mjs": {
+      "direct": [
+        "scripts/test_okf_pins.mjs"
+      ],
+      "all": [
+        "scripts/test_okf_pins.mjs"
+      ]
+    },
+    "scripts/test_portable_paths.mjs": {
+      "direct": [
+        "scripts/test_portable_paths.mjs"
+      ],
+      "all": [
+        "scripts/test_portable_paths.mjs"
+      ]
+    },
+    "scripts/test_release_tuple.mjs": {
+      "direct": [
+        "scripts/test_release_tuple.mjs"
+      ],
+      "all": [
+        "scripts/test_release_tuple.mjs"
+      ]
+    },
+    "scripts/test_render_race.mjs": {
+      "direct": [
+        "scripts/test_render_race.mjs"
+      ],
+      "all": [
+        "scripts/test_render_race.mjs"
+      ]
+    },
+    "scripts/test_reservation_race.mjs": {
+      "direct": [
+        "scripts/test_reservation_race.mjs"
+      ],
+      "all": [
+        "scripts/test_reservation_race.mjs"
+      ]
+    },
+    "scripts/test_resolveroots_p40.mjs": {
+      "direct": [
+        "scripts/test_resolveroots_p40.mjs"
+      ],
+      "all": [
+        "scripts/test_resolveroots_p40.mjs"
+      ]
+    },
+    "scripts/test_run_verify_impacted.mjs": {
+      "direct": [
+        "scripts/test_run_verify_impacted.mjs"
+      ],
+      "all": [
+        "scripts/test_run_verify_impacted.mjs"
+      ]
+    },
+    "scripts/test_run_verify_only.mjs": {
+      "direct": [
+        "scripts/test_run_verify_only.mjs"
+      ],
+      "all": [
+        "scripts/test_run_verify_only.mjs"
+      ]
+    },
+    "scripts/test_run_verify_skip_marker.mjs": {
+      "direct": [
+        "scripts/test_run_verify_skip_marker.mjs"
+      ],
+      "all": [
+        "scripts/test_run_verify_skip_marker.mjs"
+      ]
+    },
+    "scripts/test_skill_pointers.mjs": {
+      "direct": [
+        "scripts/test_skill_pointers.mjs"
+      ],
+      "all": [
+        "scripts/test_skill_pointers.mjs"
+      ]
+    },
+    "scripts/test_skill_render.mjs": {
+      "direct": [
+        "scripts/test_skill_render.mjs"
+      ],
+      "all": [
+        "scripts/test_skill_render.mjs"
+      ]
+    },
+    "scripts/test_state_write_concurrency.mjs": {
+      "direct": [
+        "scripts/test_state_write_concurrency.mjs"
+      ],
+      "all": [
+        "scripts/test_state_write_concurrency.mjs"
+      ]
+    },
+    "scripts/test_store_lock.mjs": {
+      "direct": [
+        "scripts/test_store_lock.mjs"
+      ],
+      "all": [
+        "scripts/test_store_lock.mjs"
+      ]
+    },
+    "scripts/test_verify_manifest.mjs": {
+      "direct": [
+        "scripts/test_verify_manifest.mjs"
+      ],
+      "all": [
+        "scripts/test_verify_manifest.mjs"
+      ]
+    },
+    "scripts/test_worktree_cli.mjs": {
+      "direct": [
+        "scripts/test_worktree_cli.mjs"
+      ],
+      "all": [
+        "scripts/test_worktree_cli.mjs"
+      ]
+    },
+    "scripts/test_worktree_companion.mjs": {
+      "direct": [
+        "scripts/test_worktree_companion.mjs"
+      ],
+      "all": [
+        "scripts/test_worktree_companion.mjs"
+      ]
+    },
+    "scripts/test_worktree_grant_resolve.mjs": {
+      "direct": [
+        "scripts/test_worktree_grant_resolve.mjs"
+      ],
+      "all": [
+        "scripts/test_worktree_grant_resolve.mjs"
+      ]
+    },
+    "scripts/test_worktree_holds.mjs": {
+      "direct": [
+        "scripts/test_worktree_holds.mjs"
+      ],
+      "all": [
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
+    "scripts/test_worktree_holds_race.mjs": {
+      "direct": [
+        "scripts/test_worktree_holds_race.mjs"
+      ],
+      "all": [
+        "scripts/test_worktree_holds_race.mjs"
+      ]
+    },
+    "scripts/test_worktree_store.mjs": {
+      "direct": [
+        "scripts/test_worktree_store.mjs"
+      ],
+      "all": [
+        "scripts/test_worktree_store.mjs"
+      ]
+    },
+    "skills/bee-hive/scripts/onboard_bee.mjs": {
+      "direct": [
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs"
+      ],
+      "all": [
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs"
+      ]
+    },
+    "skills/bee-hive/scripts/plugin_distribution.mjs": {
+      "direct": [
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs"
+      ]
+    },
+    "skills/bee-hive/scripts/test_onboard_bee.mjs": {
+      "direct": [
+        "skills/bee-hive/scripts/test_onboard_bee.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/scripts/test_onboard_bee.mjs"
+      ]
+    },
+    "skills/bee-hive/scripts/test_plugin_distribution.mjs": {
+      "direct": [
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs"
+      ]
+    },
+    "skills/bee-hive/scripts/test_split_brain_regression.mjs": {
+      "direct": [
+        "skills/bee-hive/scripts/test_split_brain_regression.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/scripts/test_split_brain_regression.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/bee.mjs": {
+      "direct": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/backlog.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/capture.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/cells.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/claims.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/command-registry.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/commands_detect.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/compaction.mjs": {
+      "direct": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/decisions.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/dispatch-guard.mjs": {
+      "direct": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/dispatch-prepare.mjs": {
+      "direct": [
+        "scripts/test_dispatch_prepare.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/feedback.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/fsutil.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "scripts/test_worktree_holds.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_perf.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/guards.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/inject.mjs": {
+      "direct": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/intent.mjs": {
+      "direct": [
+        "scripts/test_compact_capsule.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/judge.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/knowledge.mjs": {
+      "direct": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/lock.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_claims.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/perf.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_perf.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_perf.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/recovery.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_recovery.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/reservations.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reservations.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/reviews.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_reviews.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/schedule.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/scratch.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/source-identity.mjs": {
+      "direct": [
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/state.mjs": {
+      "direct": [
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/validate-args.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+      ],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/worktree-holds.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/worktree-store.mjs": {
+      "direct": [],
+      "all": [
+        "scripts/okf_instructions_fence.mjs",
+        "scripts/okf_instructions_fence.mjs --selftest",
+        "scripts/okf_specs_fence.mjs",
+        "scripts/okf_specs_fence.mjs --selftest",
+        "scripts/test_compact_capsule.mjs",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_compaction_advisories.mjs",
+        "scripts/test_compaction_module.mjs",
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_render_race.mjs",
+        "scripts/test_skill_render.mjs",
+        "skills/bee-hive/scripts/test_plugin_distribution.mjs",
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs",
+        "skills/bee-hive/templates/tests/test_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
+        "skills/bee-hive/templates/tests/test_cli_state.mjs",
+        "skills/bee-hive/templates/tests/test_config_validate.mjs",
+        "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_intent.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_misc.mjs",
+        "skills/bee-hive/templates/tests/test_recovery.mjs",
+        "skills/bee-hive/templates/tests/test_reviews.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs",
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/race_claims_child.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_claims.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_claims.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/race_decisions_child.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_backlog_capture.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_backlog_capture.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_bee_cli.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_bundle_mode.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_bundle_mode.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_cells.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_cells.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_cells.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_claims.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_claims.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_claims.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_cli_cells.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_cli_state.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_cli_state.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_cli_state.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_config_validate.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_config_validate.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_config_validate.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_decisions_propagation.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_decisions_propagation.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_feedback.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_feedback.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_feedback.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_guards.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_guards.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_guards.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_herding.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_herding.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_herding.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_intent.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_intent.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_intent.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_knowledge.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_knowledge.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_knowledge.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_misc.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_perf.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_perf.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_perf.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_recovery.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_recovery.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_recovery.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_reservations.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_reservations.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_reservations.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_reviews.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_reviews.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_reviews.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_scratch.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_state.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_state.mjs"
+      ]
+    },
+    "skills/bee-writing-skills/scripts/render_openai_metadata.mjs": {
+      "direct": [],
+      "all": [
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ]
+    },
+    "skills/bee-writing-skills/scripts/test_openai_metadata.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_misc.mjs"
+      ]
+    }
   }
 }

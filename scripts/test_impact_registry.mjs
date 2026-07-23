@@ -57,7 +57,7 @@ await check("buildRegistry() run twice produces byte-identical serialized output
 // ── known static edge: test_config_validate.mjs -> state.mjs ──────────────
 await check("a known static ESM import edge is captured: scripts/test_config_validate.mjs -> .bee/bin/lib/state.mjs", async () => {
   const registry = await buildRegistry();
-  const suites = registry.files[".bee/bin/lib/state.mjs"] || [];
+  const suites = registry.files[".bee/bin/lib/state.mjs"]?.all || [];
   assert.ok(
     suites.includes("scripts/test_config_validate.mjs"),
     `expected scripts/test_config_validate.mjs among the suites for .bee/bin/lib/state.mjs, got: ${JSON.stringify(suites)}`,
@@ -67,7 +67,7 @@ await check("a known static ESM import edge is captured: scripts/test_config_val
 // ── known spawn edge: test_worktree_cli.mjs spawns .bee/bin/bee.mjs ───────
 await check("a known spawn-argv edge is captured: scripts/test_worktree_cli.mjs -> .bee/bin/bee.mjs", async () => {
   const registry = await buildRegistry();
-  const suites = registry.files[".bee/bin/bee.mjs"] || [];
+  const suites = registry.files[".bee/bin/bee.mjs"]?.all || [];
   assert.ok(
     suites.includes("scripts/test_worktree_cli.mjs"),
     `expected scripts/test_worktree_cli.mjs (spawnSync('node', [BEE_MJS, ...args])) among the suites for .bee/bin/bee.mjs, got ${suites.length} suites`,
@@ -77,7 +77,7 @@ await check("a known spawn-argv edge is captured: scripts/test_worktree_cli.mjs 
 // ── known runModuleWorker edge: test_conformance.mjs -> bee.mjs ───────────
 await check("a known runModuleWorker edge is captured: scripts/test_conformance.mjs -> .bee/bin/bee.mjs", async () => {
   const registry = await buildRegistry();
-  const suites = registry.files[".bee/bin/bee.mjs"] || [];
+  const suites = registry.files[".bee/bin/bee.mjs"]?.all || [];
   assert.ok(
     suites.includes("scripts/test_conformance.mjs"),
     `expected scripts/test_conformance.mjs (runModuleWorker(BEE_MJS, ...)) among the suites for .bee/bin/bee.mjs, got ${suites.length} suites`,
@@ -87,21 +87,71 @@ await check("a known runModuleWorker edge is captured: scripts/test_conformance.
 // ── inherited closure: bee.mjs's own static imports flow to its spawners ──
 await check("a spawned/worker-run bee.mjs inherits its own static import closure (state.mjs reachable via test_worktree_cli.mjs)", async () => {
   const registry = await buildRegistry();
-  const suites = registry.files[".bee/bin/lib/state.mjs"] || [];
+  const suites = registry.files[".bee/bin/lib/state.mjs"]?.all || [];
   assert.ok(
     suites.includes("scripts/test_worktree_cli.mjs"),
     `expected scripts/test_worktree_cli.mjs to reach .bee/bin/lib/state.mjs THROUGH bee.mjs's own closure, got: ${JSON.stringify(suites)}`,
   );
 });
 
-// ── every suite maps to at least itself ────────────────────────────────────
-await check("every discovered suite's own entry file maps to (at least) itself", async () => {
+// ── every suite maps to at least itself, DIRECTLY ──────────────────────────
+await check("every discovered suite's own entry file maps to (at least) itself, and directly so", async () => {
   const registry = await buildRegistry();
-  const selfSuites = registry.files["scripts/test_run_verify_only.mjs"] || [];
+  const entry = registry.files["scripts/test_run_verify_only.mjs"];
+  assert.ok(entry, "expected scripts/test_run_verify_only.mjs to be a known registry entry");
   assert.ok(
-    selfSuites.includes("scripts/test_run_verify_only.mjs"),
-    "a suite's own file must always be in its own impacted set",
+    entry.all.includes("scripts/test_run_verify_only.mjs"),
+    "a suite's own file must always be in its own impacted set ('all')",
   );
+  assert.ok(
+    entry.direct.includes("scripts/test_run_verify_only.mjs"),
+    "a suite's own path is direct too (must-have) — must also be in its own 'direct' set",
+  );
+});
+
+// ── edge DEPTH: direct vs transitive (impacted-level1 D1) ──────────────────
+// scripts/test_conformance.mjs never imports .bee/bin/lib/state.mjs itself —
+// it only reaches .bee/bin/bee.mjs via runModuleWorker(BEE_MJS, ...) (a
+// direct edge for test_conformance.mjs -> bee.mjs), and bee.mjs's own static
+// import of state.mjs comes along for the ride. So state.mjs is reachable
+// from test_conformance.mjs ONLY transitively: present in 'all', absent from
+// 'direct'.
+await check("edge depth: a transitive-only edge (state.mjs via bee.mjs's runModuleWorker closure) is in 'all' but absent from 'direct': scripts/test_conformance.mjs -> .bee/bin/lib/state.mjs", async () => {
+  const registry = await buildRegistry();
+  const entry = registry.files[".bee/bin/lib/state.mjs"];
+  assert.ok(entry, "expected .bee/bin/lib/state.mjs to be a known registry entry");
+  assert.ok(
+    entry.all.includes("scripts/test_conformance.mjs"),
+    `expected scripts/test_conformance.mjs in 'all' (reachable transitively through bee.mjs), got: ${JSON.stringify(entry.all)}`,
+  );
+  assert.ok(
+    !entry.direct.includes("scripts/test_conformance.mjs"),
+    `expected scripts/test_conformance.mjs ABSENT from 'direct' (test_conformance.mjs's own source never mentions state.mjs), got: ${JSON.stringify(entry.direct)}`,
+  );
+});
+
+// ── edge DEPTH: a suite that spawns bee.mjs directly (bee.mjs itself is direct) ──
+await check("edge depth: bee.mjs itself is a DIRECT edge for its spawner: scripts/test_worktree_cli.mjs -> .bee/bin/bee.mjs", async () => {
+  const registry = await buildRegistry();
+  const entry = registry.files[".bee/bin/bee.mjs"];
+  assert.ok(entry, "expected .bee/bin/bee.mjs to be a known registry entry");
+  assert.ok(
+    entry.direct.includes("scripts/test_worktree_cli.mjs"),
+    `expected scripts/test_worktree_cli.mjs (spawns bee.mjs directly) in 'direct' for .bee/bin/bee.mjs, got: ${JSON.stringify(entry.direct)}`,
+  );
+});
+
+// ── direct is always a subset of all ────────────────────────────────────────
+await check("determinism/shape: every file's 'direct' suite list is a subset of its 'all' list", async () => {
+  const registry = await buildRegistry();
+  for (const [file, entry] of Object.entries(registry.files)) {
+    for (const suite of entry.direct) {
+      assert.ok(
+        entry.all.includes(suite),
+        `direct-not-in-all violation for ${file}: ${suite} is in 'direct' but missing from 'all'`,
+      );
+    }
+  }
 });
 
 // ── committed registry stays in sync with a fresh build ───────────────────
@@ -186,6 +236,48 @@ await check("CLI: --query prints mapped suites on stdout and an UNMAPPED note on
   assert.equal(r.status, 0, `expected exit 0 even with an unmapped file, got ${r.status}; stderr:\n${r.stderr}`);
   assert.match(r.stdout, /scripts\/test_config_validate\.mjs/, `expected a suite name on stdout:\n${r.stdout}`);
   assert.match(r.stderr, /UNMAPPED.*zz-definitely-not-a-real-file\.mjs/, `expected an UNMAPPED note on stderr:\n${r.stderr}`);
+});
+
+// ── query: --level 1 narrows to direct edges only ──────────────────────────
+await check("query: level 1 is strictly narrower than the default (full/transitive) for a hub file (.bee/bin/lib/state.mjs)", async () => {
+  const registry = await buildRegistry();
+  const full = queryRegistry(registry, [".bee/bin/lib/state.mjs"]);
+  const level1 = queryRegistry(registry, [".bee/bin/lib/state.mjs"], { level: 1 });
+  assert.equal(full.unmapped.length, 0);
+  assert.equal(level1.unmapped.length, 0, "a file known to the registry (has 'all' suites) is never unmapped at level 1");
+  assert.ok(
+    level1.mappedSuites.length < full.mappedSuites.length,
+    `expected level-1 (direct only) to be strictly narrower than full/transitive for a hub file, got level1=${level1.mappedSuites.length} full=${full.mappedSuites.length}`,
+  );
+  for (const s of level1.mappedSuites) {
+    assert.ok(full.mappedSuites.includes(s), `every level-1 suite must also appear in the full/transitive set: ${s}`);
+  }
+});
+
+// ── query: a fully transitive-only file (zero direct suites) is not unmapped at level 1 ──
+await check("query: a file with zero direct edges but nonzero transitive edges maps to zero suites at level 1, yet is NOT unmapped", async () => {
+  const registry = await buildRegistry();
+  const entry = registry.files[".bee/bin/lib/judge.mjs"];
+  assert.ok(entry, "fixture assumption: .bee/bin/lib/judge.mjs must be a known registry entry");
+  assert.equal(entry.direct.length, 0, "fixture assumption: .bee/bin/lib/judge.mjs must have zero direct suites (only bee.mjs imports it)");
+  assert.ok(entry.all.length > 0, "fixture assumption: .bee/bin/lib/judge.mjs must be reachable transitively");
+  const level1 = queryRegistry(registry, [".bee/bin/lib/judge.mjs"], { level: 1 });
+  assert.equal(level1.mappedSuites.length, 0, "zero direct suites at level 1");
+  assert.deepEqual(level1.unmapped, [], "a known-but-transitive-only file must NOT be reported as unmapped");
+});
+
+// ── CLI --query --level 1 end-to-end ────────────────────────────────────────
+await check("CLI: --query --level 1 prints strictly fewer suites than the default query for the same hub file", async () => {
+  const full = runCli(["--query", ".bee/bin/lib/state.mjs"]);
+  const level1 = runCli(["--query", ".bee/bin/lib/state.mjs", "--level", "1"]);
+  assert.equal(full.status, 0, `default query should exit 0, got ${full.status}; stderr:\n${full.stderr}`);
+  assert.equal(level1.status, 0, `--level 1 query should exit 0, got ${level1.status}; stderr:\n${level1.stderr}`);
+  const fullCount = full.stdout.trim().split("\n").filter(Boolean).length;
+  const level1Count = level1.stdout.trim().split("\n").filter(Boolean).length;
+  assert.ok(
+    level1Count < fullCount,
+    `expected --level 1 to print fewer suites than the default for a hub file, got level1=${level1Count} full=${fullCount}`,
+  );
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

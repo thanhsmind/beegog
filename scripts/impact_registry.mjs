@@ -54,6 +54,11 @@
 //                       always, even for zero matches — but any input file
 //                       absent from the registry gets a loud `UNMAPPED:`
 //                       note on stderr; it is never silently dropped.
+//   --level 1           (--query only) narrow the union to DIRECT edges only
+//                       — files the suite's own source references — instead
+//                       of the full transitive closure (the default). A file
+//                       reachable only transitively is still not UNMAPPED;
+//                       it just contributes no suites at this depth.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -397,23 +402,44 @@ function suiteLabel(entry) {
   return [entry[0], ...entry.slice(1)].join(" ");
 }
 
+// Per-file edge DEPTH (impacted-level1 D1): 'direct' = the suite's own
+// source references the file — any of the four edge types read straight off
+// the suite's entry file (getEdges(entry[0])), plus the entry file itself
+// (a suite's own path is always direct for itself). 'transitive' = reached
+// only through a spawned/worker entrypoint's inherited closure — e.g. a
+// suite spawns .bee/bin/bee.mjs (bee.mjs is direct for that suite) and
+// bee.mjs's own static imports (state.mjs, etc.) come along for the ride
+// (transitive for that suite, since the suite's own source never mentions
+// them). `all` is exactly the full BFS closure this registry always
+// computed (unchanged semantics); `direct` is the depth-1 subset of it —
+// direct is always a subset of all, never the other way around.
 export async function buildRegistry() {
   edgeCache.clear();
   const { SUITES } = await import(pathToFileURL(RUN_VERIFY_PATH).href);
-  const fileToSuites = new Map();
+  const fileToAll = new Map();
+  const fileToDirect = new Map();
   for (const entry of SUITES) {
     const label = suiteLabel(entry);
     const closure = closureFor(entry[0]);
     for (const f of closure) {
-      if (!fileToSuites.has(f)) fileToSuites.set(f, new Set());
-      fileToSuites.get(f).add(label);
+      if (!fileToAll.has(f)) fileToAll.set(f, new Set());
+      fileToAll.get(f).add(label);
+    }
+    const directSet = new Set([entry[0], ...getEdges(entry[0])]);
+    for (const f of directSet) {
+      if (!fileToDirect.has(f)) fileToDirect.set(f, new Set());
+      fileToDirect.get(f).add(label);
     }
   }
   const files = {};
-  for (const key of [...fileToSuites.keys()].sort()) {
-    files[key] = [...fileToSuites.get(key)].sort();
+  const allKeys = new Set([...fileToAll.keys(), ...fileToDirect.keys()]);
+  for (const key of [...allKeys].sort()) {
+    files[key] = {
+      direct: [...(fileToDirect.get(key) ?? [])].sort(),
+      all: [...(fileToAll.get(key) ?? [])].sort(),
+    };
   }
-  return { version: 1, files };
+  return { version: 2, files };
 }
 
 export function serializeRegistry(registry) {
@@ -425,17 +451,28 @@ export function normalizeQueryPath(inputPath) {
   return toRepoRelative(abs);
 }
 
-export function queryRegistry(registry, files) {
+// `level: 1` narrows the per-file suite list to `direct` edges only; the
+// default (no `level`, or any other value) uses `all` — the full closure, as
+// this always behaved. A file's "known to the registry at all" status is
+// judged by `all` regardless of `level`: a file that's reachable only
+// transitively (all non-empty, direct empty) is NOT unmapped at level 1 — it
+// legitimately contributes zero suites at that depth, which is a different,
+// louder thing than "no suite relates to this file at all" (the caller is
+// expected to surface that distinction, e.g. run_verify.mjs's
+// direct=0-but-transitive>0 note).
+export function queryRegistry(registry, files, { level } = {}) {
   const mapped = new Set();
   const unmapped = [];
   for (const f of files) {
     const rel = normalizeQueryPath(f);
-    const suites = registry.files[rel];
-    if (suites && suites.length > 0) {
-      for (const s of suites) mapped.add(s);
-    } else {
+    const entry = registry.files[rel];
+    const allSuites = entry ? entry.all : undefined;
+    if (!allSuites || allSuites.length === 0) {
       unmapped.push(rel);
+      continue;
     }
+    const suites = level === 1 ? entry.direct : allSuites;
+    for (const s of suites) mapped.add(s);
   }
   return { mappedSuites: [...mapped].sort(), unmapped };
 }
@@ -478,8 +515,23 @@ async function main() {
   }
 
   if (mode === "--query") {
-    if (rest.length === 0) {
-      console.error("usage: node scripts/impact_registry.mjs --query <file...>");
+    let level;
+    const queryFiles = [];
+    for (let i = 0; i < rest.length; i += 1) {
+      if (rest[i] === "--level") {
+        const value = rest[i + 1];
+        if (value !== "1") {
+          console.error(`usage: node scripts/impact_registry.mjs --query <file...> [--level 1] (got --level ${JSON.stringify(value)})`);
+          process.exit(1);
+        }
+        level = 1;
+        i += 1;
+        continue;
+      }
+      queryFiles.push(rest[i]);
+    }
+    if (queryFiles.length === 0) {
+      console.error("usage: node scripts/impact_registry.mjs --query <file...> [--level 1]");
       process.exit(1);
     }
     let registry;
@@ -491,7 +543,7 @@ async function main() {
       );
       process.exit(1);
     }
-    const { mappedSuites, unmapped } = queryRegistry(registry, rest);
+    const { mappedSuites, unmapped } = queryRegistry(registry, queryFiles, { level });
     for (const u of unmapped) {
       console.error(`UNMAPPED: ${u} (no known suite relates to this file — full verify still covers it)`);
     }
@@ -499,7 +551,7 @@ async function main() {
     process.exit(0);
   }
 
-  console.error("usage: node scripts/impact_registry.mjs --write | --check | --query <file...>");
+  console.error("usage: node scripts/impact_registry.mjs --write | --check | --query <file...> [--level 1]");
   process.exit(2);
 }
 

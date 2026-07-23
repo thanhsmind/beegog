@@ -630,6 +630,19 @@ function hasImpactedFromGitFlag(argv) {
   return argv.includes("--impacted-from-git");
 }
 
+// impacted-level1 D1: `--level 1` narrows impacted-mode selection to DIRECT
+// edges only (files the suite's own source references), never the full
+// transitive closure --impacted/--impacted-from-git use by default. Only
+// `1` is a recognized value; main() refuses both a bare `--level` (used
+// without --impacted/--impacted-from-git) and an unrecognized value outright
+// rather than silently falling back to full selection.
+function getLevelFlagValue(argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === "--level") return argv[i + 1];
+  }
+  return undefined;
+}
+
 // git plumbing is best-effort: not a git repo, no `main`/`origin/main` ref,
 // or a detached HEAD with no merge-base all yield an empty contribution
 // from that half rather than crashing the run.
@@ -734,7 +747,11 @@ function printImpactedUnmapped(unmapped) {
   }
 }
 
-function printImpactedBanner(selectedCount, changedCount) {
+function printImpactedBanner(selectedCount, changedCount, level) {
+  if (level === 1) {
+    console.log(`IMPACTED RUN (level 1): ${selectedCount} direct suite(s) from ${changedCount} changed file(s)`);
+    return;
+  }
   console.log(`IMPACTED RUN: ${selectedCount} suite(s) from ${changedCount} changed file(s)`);
 }
 
@@ -810,7 +827,7 @@ function impactedConcurrency() {
 // --impacted files UNION --impacted-from-git's git-derived set), maps it
 // through the registry, and either exits with the loud zero-impacted pass
 // or runs the exact-selected suite set through the shared execution tail.
-async function runImpactedMode(explicitFiles, fromGit) {
+async function runImpactedMode(explicitFiles, fromGit, level) {
   const changed = new Set();
   for (const raw of explicitFiles) changed.add(normalizeQueryPath(raw));
   if (fromGit) {
@@ -819,12 +836,27 @@ async function runImpactedMode(explicitFiles, fromGit) {
   const changedList = [...changed];
 
   const registry = await loadImpactRegistry();
-  const { mappedSuites, unmapped } = queryRegistry(registry, changedList);
+  const { mappedSuites, unmapped } = queryRegistry(registry, changedList, { level });
 
   if (mappedSuites.length === 0) {
     printImpactedUnmapped(unmapped);
+    if (level === 1) {
+      // direct=0: check whether the same changed set maps to anything at
+      // all transitively — that's a materially different, louder story
+      // ("suites exist but are deferred") than a plain zero-impacted pass,
+      // and must never be silent (must-have: "direct=0 => loud
+      // transitive-deferred note, never silent").
+      const { mappedSuites: transitiveSuites } = queryRegistry(registry, changedList);
+      if (transitiveSuites.length > 0) {
+        console.log(
+          `IMPACTED RUN (level 1): 0 direct suite(s) from ${changedList.length} changed file(s) — ${transitiveSuites.length} suite(s) reachable only transitively, deferred to full verify/CI`,
+        );
+        process.exit(0);
+        return;
+      }
+    }
     console.log(
-      `IMPACTED RUN: 0 suite(s) from ${changedList.length} changed file(s) — full verify delegated to CI`,
+      `IMPACTED RUN${level === 1 ? " (level 1)" : ""}: 0 suite(s) from ${changedList.length} changed file(s) — full verify delegated to CI`,
     );
     process.exit(0);
     return;
@@ -835,8 +867,8 @@ async function runImpactedMode(explicitFiles, fromGit) {
 
   await runSelectedSuites(activeSuites, {
     concurrency: impactedConcurrency(),
-    beforeBanner: () => printImpactedBanner(activeSuites.length, changedList.length),
-    afterBanner: () => printImpactedBanner(activeSuites.length, changedList.length),
+    beforeBanner: () => printImpactedBanner(activeSuites.length, changedList.length, level),
+    afterBanner: () => printImpactedBanner(activeSuites.length, changedList.length, level),
   });
 }
 
@@ -851,6 +883,16 @@ async function main() {
   const impactedFilesArg = parseImpactedArgs(argv);
   const impactedFromGit = hasImpactedFromGitFlag(argv);
   const isImpactedRun = impactedFilesArg.length > 0 || impactedFromGit;
+  const levelRaw = getLevelFlagValue(argv);
+  const hasLevelFlag = levelRaw !== undefined;
+
+  if (hasLevelFlag && !isImpactedRun) {
+    console.error(
+      "run_verify: --level is only valid alongside --impacted/--impacted-from-git — pick an impacted selection mode first.",
+    );
+    process.exit(1);
+    return;
+  }
 
   if (isImpactedRun) {
     const onlyTokensCheck = resolveOnlyTokens();
@@ -861,7 +903,15 @@ async function main() {
       process.exit(1);
       return;
     }
-    await runImpactedMode(impactedFilesArg, impactedFromGit);
+    if (hasLevelFlag && levelRaw !== "1") {
+      console.error(
+        `run_verify: --level "${levelRaw}" is not a recognized level — only "--level 1" is supported.`,
+      );
+      process.exit(1);
+      return;
+    }
+    const level = hasLevelFlag ? 1 : undefined;
+    await runImpactedMode(impactedFilesArg, impactedFromGit, level);
     return;
   }
 
