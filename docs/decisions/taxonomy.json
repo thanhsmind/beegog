@@ -172,6 +172,8 @@
     "safety",
     "exploring",
     "gate",
-    "bee-herding"
+    "bee-herding",
+    "swarming",
+    "dispatch-guard"
   ]
 }

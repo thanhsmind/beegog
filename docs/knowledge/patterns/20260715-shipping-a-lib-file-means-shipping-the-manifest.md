@@ -48,3 +48,17 @@ cap-time verify had already gone green. **A cap-time verify is evidence about th
 at that moment, and it expires the instant anything else is edited** — run the full chain again
 before ending the session, with no exception for "it was just a citation" or "the cell already
 passed". The next session opened on the red baseline and paid the repair.
+
+**Recurred 2026-07-23 (herding-dispatch-lock-toggle, cell hdlt-1) — FIFTH instance, first in a
+`small`-lane feature.** A single `small`-lane cell added `skills/bee-hive/templates/lib/herding.mjs`
+and wired it into `bee.mjs`; its own targeted verify (`test_herding_cli.mjs`) went green and the
+cell capped clean. The orchestrator's mandatory wave-close full-chain run (`scripts/run_verify.mjs`,
+required even for a one-cell `small`-lane wave) then failed the same four-deep set this pattern
+already names: `.bee/bin` mirror, both plugin skill-route trees, and the release manifest — fixed
+with the same three commands (`onboard_bee.mjs --apply`, `render_plugin_skill_trees.mjs`,
+`release_manifest.mjs --write`) and committed as a separate fixup before the wave could close.
+No new derived layer surfaced this time; the four-deep set (mirror → plugin tree render → manifest
+write → self-onboard) held. What's new: this is the first confirmed recurrence in a `tiny`/`small`
+lane, where the single-cell dispatch and the merged Gate 2+3 fast path give even less natural
+surface area for a mid-feature "did I regen everything" check than a multi-cell standard/high-risk
+plan does — the wave-close full-chain run remains the only backstop that catches it, and it did.
