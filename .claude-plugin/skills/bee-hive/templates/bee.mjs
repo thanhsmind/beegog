@@ -158,10 +158,17 @@ import {
   precompactBlock,
   resumeBlock,
 } from './lib/intent.mjs';
-// compaction-hardening (D3): the helper floor — state compact-log/compact-check
-// are thin CLI wrappers over lib/compaction.mjs, the ONE module every
-// compaction surface (hooks and verbs alike) calls.
-import { appendCompactionRecord, compactCheck, anchorMissing, ANCHOR_NUDGE_COMMAND } from './lib/compaction.mjs';
+// compaction-hardening (D3): the helper floor — state compact-log/compact-check/
+// compact-capsule are thin CLI wrappers over lib/compaction.mjs, the ONE module
+// every compaction surface (hooks and verbs alike) calls.
+import {
+  appendCompactionRecord,
+  compactCheck,
+  anchorMissing,
+  buildCompactCapsule,
+  nonAdoptingHandoffOutcome,
+  ANCHOR_NUDGE_COMMAND,
+} from './lib/compaction.mjs';
 import {
   checkBundle,
   knowledgeIndexDrift,
@@ -2398,8 +2405,8 @@ function handleStateAdvisorRefShow(root, flags) {
 }
 
 // ─── state compact-*: compaction-hardening's helper floor (D3) — thin CLI
-// wrappers over lib/compaction.mjs. `state compact-capsule` is NOT wired
-// here — its builder ships in a later cell.
+// wrappers over lib/compaction.mjs. All three of D3's locked verbs are wired
+// here now that cz-5 has landed buildCompactCapsule.
 
 function handleStateCompactLog(root, flags) {
   const event = requireFlag(flags, 'event');
@@ -2435,6 +2442,22 @@ function handleStateCompactCheck(root, flags) {
     lines.push(`  [${entry.ok ? 'ok' : 'MISMATCH'}] ${entry.name}: ${entry.detail}`);
   }
   return { result, text: lines.join('\n') };
+}
+
+// D6/D27: the capsule's `handoffOutcome` is a CALL-SITE obligation, not merely
+// a parameter the renderer accepts. The SessionStart hook computes it and
+// passes it to buildSessionPreamble (bee-session-init.mjs:113-121,144); this
+// verb reaches the same truth through nonAdoptingHandoffOutcome so the
+// command-line surface renders the exact bytes the hook renders — including
+// the `- Adoption not applied:` line a compacted session holding a planned-next
+// handoff would otherwise silently lose. Read-only, like compact-check.
+function handleStateCompactCapsule(root, flags) {
+  const sessionId = requireFlag(flags, 'session-id');
+  const capsule = buildCompactCapsule(root, {
+    sessionId,
+    handoffOutcome: nonAdoptingHandoffOutcome(root),
+  });
+  return { result: { session: sessionId, capsule }, text: capsule };
 }
 
 // ─── backlog: full port of bee_backlog.mjs's counts/rank/badges/add verbs
@@ -4871,7 +4894,7 @@ function stateUsageFallback(leading) {
     const sub = leading[2];
     return `Unknown advisor-ref action "${sub || '(missing)'}". Use: record, show.`;
   }
-  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature, lanes, session, handoff, advisor-ref, compact-log, compact-check.`;
+  return `Unknown command "${verb || '(missing)'}". Use: set, gate, worker, scribing-run, start-feature, lanes, session, handoff, advisor-ref, compact-log, compact-check, compact-capsule.`;
 }
 
 function backlogUsageFallback(leading) {
@@ -5040,6 +5063,7 @@ const HANDLERS = {
   'state.advisor-ref.show': handleStateAdvisorRefShow,
   'state.compact-log': handleStateCompactLog,
   'state.compact-check': handleStateCompactCheck,
+  'state.compact-capsule': handleStateCompactCapsule,
   'backlog.counts': handleBacklogCounts,
   'backlog.rank': handleBacklogRank,
   'backlog.badges': handleBacklogBadges,

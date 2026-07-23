@@ -2057,6 +2057,78 @@ await check('state.compact-log refuses (usage error, non-zero exit) on an unknow
   assert(!fs.existsSync(path.join(dir, '.bee', 'logs', 'compaction.jsonl')), 'an invalid --event must never write a record');
 });
 
+// ─── state.compact-capsule (compaction-hardening D3/D6/D19/D27): the third
+// helper-floor wrapper. Same isolated-fixture pattern as the two above — the
+// capsule reads state, onboarding, config, HANDOFF.json and the compaction log,
+// so it needs a repo of its own rather than the shared rootState fixture.
+
+await check('state.compact-capsule example renders the D6 capsule through the real dispatcher', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-compact-capsule-example-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(dir, {
+    ...defaultState(),
+    phase: 'swarming',
+    mode: 'standard',
+    feature: 'capsule-demo',
+    next_action: 'cap the cell',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+
+  const result = await assertExampleOk('state.compact-capsule', { cwd: dir });
+  const capsule = result.stdout;
+  // D6 item 6: the `- Phase:` label is verbatim, and the capsule orients.
+  assert(/^- Phase: swarming \| Mode: standard \| Feature: capsule-demo \| Lane: none$/m.test(capsule), `expected D6 item 6's phase line, got:\n${capsule}`);
+  assert(capsule.includes('- Cell: none claimed by this session'), `with no claimed cell the capsule says so, got:\n${capsule}`);
+  assert(capsule.includes('- Next action: cap the cell'), `D6 item 9 renders next_action, got:\n${capsule}`);
+  // D7: a POINTER to the critical patterns, never the 10-line digest.
+  assert(/^- Critical patterns: /m.test(capsule), `D7's pointer is never dropped, got:\n${capsule}`);
+  assert(!capsule.includes('### Critical patterns (digest)'), 'D7: the capsule carries a pointer, never the digest');
+  // D6's whole point: the startup-only sections stay out.
+  for (const section of ['### Project map', '### Recent decisions']) {
+    assert(!capsule.includes(section), `"${section}" is startup orientation and must never ride the capsule (D6)`);
+  }
+  // D19: the hook owns the anchor; the capsule is the preamble replacement only.
+  assert(!capsule.includes('INTENT ANCHOR'), `D19: the capsule never renders the anchor, got:\n${capsule}`);
+});
+
+await check('state.compact-capsule carries the adoption-refusal reason for a planned-next handoff (D27)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-compact-capsule-handoff-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeState(dir, {
+    ...defaultState(),
+    phase: 'swarming',
+    feature: 'capsule-handoff-demo',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  writeJsonAtomic(path.join(dir, '.bee', 'HANDOFF.json'), {
+    kind: 'planned-next',
+    phase: 'swarming',
+    feature: 'capsule-handoff-demo',
+    mode: 'standard',
+    cells_in_flight: ['k-1'],
+    next_action: 'start k-2',
+    writer_session: 'sess-other',
+  });
+
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['state', 'compact-capsule', '--session-id', 'sess-demo'],
+    cwd: dir,
+  });
+  assert(result.status === 0, `compact-capsule must exit 0, got ${result.status}: ${result.stderr}`);
+  assert(
+    result.stdout.includes('### HANDOFF present — present it and WAIT — never auto-resume'),
+    `D6 item 4: the wait heading is verbatim, got:\n${result.stdout}`,
+  );
+  // D27 is a CALL-SITE obligation: the verb must pass handoffOutcome through,
+  // or a compacted session silently loses the explanation of the refusal.
+  assert(
+    /^- Adoption not applied: .+never auto-adopts/m.test(result.stdout),
+    `D27: the verb must pass handoffOutcome so the refusal reason renders, got:\n${result.stdout}`,
+  );
+});
+
 // ─── doctor (codex-native-runtime-v2 cnr2-13, D11): fail-closed runtime
 // health report. A dedicated isolated fixture repo per test — doctor reads
 // .codex/hooks.json, .claude/settings.json, hooks/*.mjs, and

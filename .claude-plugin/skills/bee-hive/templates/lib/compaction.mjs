@@ -4,13 +4,14 @@
 // inside a hook, so a runtime whose hook execution is unconfirmed can still
 // reach every surface by command.
 //
-// Five things live here and nothing else:
+// Six things live here and nothing else:
 //
 //   appendCompactionRecord  the durable telemetry write (D4/D5)
 //   readCompactionCounts    the counting rule, read-only (D5)
 //   survivalWarning         the D9 advisory string (never a verdict)
 //   anchorMissing           the D10 nudge predicate + the exact command
 //   compactCheck            the D12/D13 integrity sweep — reports, never repairs
+//   buildCompactCapsule     the D6 compact-scoped orientation body (cz-5)
 //
 // THE COUNTING RULE IS THE LOAD-BEARING PART (D5). Only `precompact` records
 // are counted, and only a `precompact` record counts itself:
@@ -40,11 +41,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { appendJsonl, readJsonl, readJson } from './fsutil.mjs';
-import { readState, resolvePipeline, gateApproved } from './state.mjs';
+import {
+  BEE_VERSION,
+  COMMAND_KEYS,
+  readState,
+  readConfig,
+  readHandoff,
+  readOnboarding,
+  resolvePipeline,
+  gateApproved,
+  bypassLevel,
+} from './state.mjs';
 import { readIntent } from './intent.mjs';
 import { claimsDir, sessionPath, readClaim } from './claims.mjs';
 import { listReservations } from './reservations.mjs';
 import { listCells, readCell } from './cells.mjs';
+import { onboardingLine, bypassBannerLines, handoffBlockLines, firstOpenGate } from './inject.mjs';
+import { bundleMode } from './knowledge.mjs';
 
 /** The two events, and the only two (D5). */
 export const COMPACT_EVENTS = ['precompact', 'resume'];
@@ -558,4 +571,220 @@ export function compactCheck(root, { sessionId = null, now = Date.now() } = {}) 
 
   const mismatches = checks.filter((entry) => entry.ok !== true);
   return { ok: mismatches.length === 0, session, checks, mismatches };
+}
+
+// ─── the D6 compact capsule ─────────────────────────────────────────────────
+
+/**
+ * The sweep checks the capsule NEVER renders.
+ *
+ * THIS SET IS THE LOAD-BEARING PART OF THE WHOLE CAPSULE (D19). compactCheck
+ * reports "an anchor exists" as check 7, so a STATE MISMATCH line rendered off
+ * the raw sweep varies with anchor presence BY CONSTRUCTION — and
+ * hooks/test_hook_contracts.mjs:2740-2780 compares a with-anchor render
+ * against a no-anchor control render, both through the same source=compact
+ * path, asserting the bodies are byte-identical. An anchor-correlated capsule
+ * reds a suite this feature is forbidden to edit.
+ *
+ * Muting it loses nothing: the hook already prefixes the anchor when one
+ * exists (bee-session-init.mjs:44,148-150), so "no anchor" is visible from the
+ * capsule's ABSENCE of a lead block, and the D10 nudge — reachable by command
+ * through `state compact-check` — is the surface that names the fix.
+ */
+export const CAPSULE_MUTED_CHECKS = new Set(['anchor']);
+
+/**
+ * The handoff outcome a NON-ADOPTING source produces, or null.
+ *
+ * One truth for the string the SessionStart hook builds at
+ * bee-session-init.mjs:113-121: a planned-next handoff never auto-adopts on
+ * `compact`/`resume`, so the capsule must be able to say WHY it is asking the
+ * session to wait (D26/D27). The `state compact-capsule` verb calls this so
+ * the command-line surface renders the exact bytes the hook renders — that is
+ * D3's helper floor, not a convenience.
+ */
+export function nonAdoptingHandoffOutcome(root, { source = 'compact' } = {}) {
+  let handoff = null;
+  try {
+    handoff = readHandoff(root);
+  } catch {
+    return null;
+  }
+  if (!handoff || handoff.kind !== 'planned-next') return null;
+  return {
+    ok: false,
+    code: 'WRONG_SOURCE',
+    reason: `a planned-next handoff never auto-adopts on source "${source || 'unknown'}" — only "clear"/"startup" qualify (D1).`,
+  };
+}
+
+function safeCell(root, id) {
+  try {
+    return readCell(root, id);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * D6 — the compact-scoped orientation body, emitted only on SessionStart with
+ * source=compact. It REPLACES the full startup preamble; it does not extend
+ * it, and it is not asserted to be a byte-subset of it (D15).
+ *
+ * IT NEVER RENDERS THE ANCHOR (D19). The hook keeps prefixing it, exactly as
+ * it does today; rendering it here too would print the objective twice and
+ * neither the anchor-first assertion nor an additivity assertion would notice.
+ *
+ * Item order is D6's, verbatim, items 2-12:
+ *   2 STATE MISMATCH (the D12 sweep, anchor check muted — see above)
+ *   3 the onboarding-MISSING line
+ *   4 the HANDOFF block, wait-instruction verbatim, WITH its refusal reason
+ *   5 the gate-bypass banner
+ *   6 phase / mode / feature / lane  ← the `- Phase:` label is verbatim
+ *   7 the claimed cell, its verify command, its dependency status
+ *   8 the first open gate
+ *   9 next_action
+ *  10 the recorded standard commands
+ *  11 the compaction survival count + the D9 advisory
+ *  12 a POINTER to the critical patterns, never the digest (D7)
+ *
+ * handoffOutcome is MANDATORY at the call site (D27), not merely accepted:
+ * every existing row exercising compact + a planned-next handoff regexes only
+ * the WAIT heading, so a caller that drops it passes every suite while a
+ * compacted session silently loses the explanation of why adoption was
+ * refused.
+ *
+ * Every section is composed as its own line array and the non-empty ones are
+ * joined by a blank line. That is what makes the blank lines deterministic —
+ * and, with the anchor check muted, makes every byte of the output independent
+ * of whether `.bee/intent/` holds anything.
+ */
+export function buildCompactCapsule(root, { sessionId = null, handoffOutcome = null } = {}) {
+  const session = norm(sessionId);
+  const sections = [];
+
+  sections.push([`## bee v${BEE_VERSION} — compact capsule (source=compact)`]);
+
+  // ── item 2: the integrity sweep, reported and never repaired (D12/D13).
+  let sweep = null;
+  try {
+    sweep = compactCheck(root, { sessionId: session });
+  } catch {
+    sweep = null;
+  }
+  const mismatches = (sweep?.mismatches ?? []).filter((entry) => !CAPSULE_MUTED_CHECKS.has(entry.name));
+  if (mismatches.length > 0) {
+    const block = ['⚠ STATE MISMATCH — disk state overrides conversational recollection:'];
+    for (const entry of mismatches) {
+      block.push(`- ${entry.name}${entry.code ? ` (${entry.code})` : ''}: ${entry.detail}`);
+    }
+    sections.push(block);
+  }
+
+  // ── item 3: onboarding, but only the MISSING arm (D6 item 3 cites
+  // inject.mjs:319 specifically). A version drift is startup housekeeping; a
+  // MISSING onboarding means the vendored helpers this capsule was rendered by
+  // may not exist at all, which a compacted session must know immediately.
+  let onboarding = null;
+  try {
+    onboarding = readOnboarding(root);
+  } catch {
+    onboarding = null;
+  }
+  if (!onboarding) sections.push([onboardingLine(onboarding)]);
+
+  // ── item 4: the HANDOFF block, wait instruction verbatim, refusal reason
+  // included (D26/D27). The blank separating it is this caller's, per the
+  // blank-line ownership note in inject.mjs.
+  let handoff = null;
+  try {
+    handoff = readHandoff(root);
+  } catch {
+    handoff = null;
+  }
+  const handoffLines = handoffBlockLines(handoff, handoffOutcome);
+  if (handoffLines.length > 0) sections.push(handoffLines);
+
+  // ── item 5: the bypass banner — mandatory wherever orientation renders.
+  const banner = bypassBannerLines(bypassLevel(root));
+  if (banner.length > 0) sections.push(banner);
+
+  // ── items 6-9: which pipeline, which cell, which gate, what next.
+  let pipeline = null;
+  try {
+    pipeline = resolvePipeline(root, { sessionId: session });
+  } catch {
+    pipeline = null;
+  }
+  const record = pipeline && pipeline.ok && pipeline.record ? pipeline.record : readState(root);
+  const lane = pipeline && pipeline.ok && pipeline.source === 'lane' ? norm(pipeline.feature) : null;
+
+  const status = [
+    `- Phase: ${record.phase ?? 'unknown'} | Mode: ${record.mode ?? 'none'} | Feature: ${record.feature ?? 'none'} | Lane: ${lane ?? 'none'}`,
+  ];
+  const cellId = claimedCellId(root, session);
+  if (cellId) {
+    const cell = safeCell(root, cellId);
+    status.push(`- Cell: ${cellId}${cell?.title ? ` — ${cell.title}` : ''} (${cell?.status ?? 'unknown'}${cell?.lane ? `, ${cell.lane} lane` : ''})`);
+    status.push(`- Verify: ${cell?.verify ? `\`${cell.verify}\`` : 'NONE RECORDED — a cell with no runnable verify cannot be capped'}`);
+    const deps = Array.isArray(cell?.deps) ? cell.deps : [];
+    status.push(
+      deps.length === 0
+        ? '- Deps: none'
+        : `- Deps: ${deps.map((dep) => `${dep} (${safeCell(root, dep)?.status ?? 'no cell record'})`).join(', ')}`,
+    );
+  } else {
+    status.push('- Cell: none claimed by this session');
+  }
+  const gate = firstOpenGate(record);
+  if (gate) status.push(`- Gate pending: ${gate}`);
+  const nextAction = norm(record.next_action);
+  if (nextAction) status.push(`- Next action: ${nextAction}`);
+  sections.push(status);
+
+  // ── item 10: the recorded standard commands.
+  let commands = {};
+  try {
+    commands = readConfig(root).commands || {};
+  } catch {
+    commands = {};
+  }
+  const recordedKeys = COMMAND_KEYS.filter((key) => commands[key]);
+  if (recordedKeys.length > 0) {
+    sections.push([
+      '### Standard commands (host project)',
+      ...recordedKeys.map((key) => `- ${key}: \`${commands[key]}\``),
+    ]);
+  }
+
+  // ── item 11: the survival count and, when it applies, the D9 advisory.
+  // Silent on a repo with no records at all (D15) — a first compaction has
+  // nothing to report and must not manufacture a line saying so.
+  const counts = readCompactionCounts(root, { sessionId: session, cell: cellId });
+  if (counts.compact_index > 0 || counts.cell_compact_count > 0) {
+    const block = [
+      `- Compactions survived: ${counts.compact_index} in this session${cellId ? ` | ${counts.cell_compact_count} on ${cellId}` : ''}`,
+    ];
+    const warning = survivalWarning(counts.cell_compact_count);
+    if (warning) block.push(`- ⚠ ${warning}.`);
+    sections.push(block);
+  }
+
+  // ── item 12: the POINTER (D7). Never dropped, never expanded to the digest.
+  let bundle = false;
+  try {
+    bundle = bundleMode(root) === true;
+  } catch {
+    bundle = false;
+  }
+  sections.push([
+    `- Critical patterns: ${
+      bundle ? 'docs/knowledge/index.md ("## Critical patterns")' : 'docs/history/learnings/critical-patterns.md'
+    } — re-read the doctrine after a compaction (AGENTS.md startup step 1); this capsule carries the pointer, never the digest (D7).`,
+  ]);
+
+  return sections
+    .filter((block) => block.length > 0)
+    .map((block) => block.join('\n'))
+    .join('\n\n');
 }

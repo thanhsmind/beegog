@@ -249,23 +249,104 @@ function knowledgeContextLines(root, record) {
   ];
 }
 
+// codex-loop (advisor #54): the PREAMBLE was missed when the reminder stopped
+// reporting the on-demand review gate — it still listed "review: pending" at
+// startup and after every compaction, which is where a long session re-reads
+// its objective and is most vulnerable to a phantom-workflow signal. Gate 4 is
+// user-invoked: it is pending only inside a live review session, and a terminal
+// record owes no gate at all. Same rule, every surface — which is why the rule
+// lives HERE once and is read by gatesLine, buildPromptReminder and the compact
+// capsule (lib/compaction.mjs, D6 item 8) rather than copied three times.
+function visibleGates(record) {
+  if (NO_WORK_PHASES.has(record.phase)) return [];
+  return record.phase === 'reviewing' ? GATE_NAMES : GATE_NAMES.filter((g) => g !== 'review');
+}
+
+/**
+ * The first gate this record still owes, or null. Shared with the compact
+ * capsule (compaction-hardening D6 item 8) so a compacted session is told
+ * about exactly the gates a live session would be told about.
+ */
+export function firstOpenGate(record) {
+  return visibleGates(record).find((gate) => record.approved_gates?.[gate] !== true) ?? null;
+}
+
 function gatesLine(state) {
-  // codex-loop (advisor #54): the PREAMBLE was missed when the reminder stopped
-  // reporting the on-demand review gate — it still listed "review: pending" at
-  // startup and after every compaction, which is where a long session re-reads
-  // its objective and is most vulnerable to a phantom-workflow signal. Gate 4 is
-  // user-invoked: it is pending only inside a live review session, and a terminal
-  // record owes no gate at all. Same rule, both surfaces.
-  const terminal = NO_WORK_PHASES.has(state.phase);
-  const shown = terminal
-    ? []
-    : state.phase === 'reviewing'
-      ? GATE_NAMES
-      : GATE_NAMES.filter((g) => g !== 'review');
+  const shown = visibleGates(state);
   if (shown.length === 0) return 'none pending (no active work)';
   return shown
     .map((gate) => `${gate}: ${state.approved_gates?.[gate] === true ? 'approved' : 'pending'}`)
     .join(' | ');
+}
+
+// ─── the three shared renderers (compaction-hardening cz-5, D6/D26) ─────────
+//
+// buildSessionPreamble below and buildCompactCapsule (lib/compaction.mjs) are
+// two callers of ONE truth for each of these three blocks, never two copies of
+// it: D6 items 3, 4 and 5 require the capsule to carry these EXACT bytes, and
+// a second hand-written copy is the classic way "verbatim" quietly stops being
+// verbatim one edit later.
+//
+// BLANK-LINE OWNERSHIP IS THE CALLER'S — decided deliberately (cz-5 STEP 1).
+// The preamble opens its HANDOFF block with a bare lines.push(''). That blank
+// is SPACING BETWEEN SECTIONS, not part of the block: the capsule composes its
+// own sections with its own joiner, and a helper that carried a leading blank
+// would force the capsule to inherit the preamble's spacing assumptions (and
+// would make the block's first byte depend on what happens to precede it).
+// handoffBlockLines therefore returns the block's OWN lines only; each caller
+// emits its own separator.
+
+/** inject.mjs's onboarding line, all three arms (missing / drifted / ok). */
+export function onboardingLine(onboarding) {
+  if (!onboarding) {
+    return '- Onboarding: MISSING — run bee-hive onboarding before anything else.';
+  }
+  if (onboarding.bee_version && onboarding.bee_version !== BEE_VERSION) {
+    return `- Onboarding: installed at bee ${onboarding.bee_version} but plugin is ${BEE_VERSION} — re-run onboarding to refresh vendored helpers.`;
+  }
+  return `- Onboarding: ok (bee ${onboarding.bee_version || BEE_VERSION})`;
+}
+
+/** The loud gate-bypass banner: [] when off, 1 line for normal, 2 for full/total. */
+export function bypassBannerLines(level) {
+  if (!level || level === 'off') return [];
+  const lines = [`- ${bypassBanner(level)}`];
+  if (level === 'full' || level === 'total') {
+    lines.push(
+      `  The agent does NOT stop for these gates — it records the recommended choice, logs a one-line audit decision, and continues. ${
+        level === 'total'
+          ? 'This includes secret-file reads and review P1 findings: nothing pauses for the human.'
+          : 'Only reading a secret-shaped file and a review P1 finding still pause for the human.'
+      }`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * The wait-and-never-auto-resume HANDOFF block, WITHOUT its leading blank.
+ *
+ * handoffOutcome is a real parameter, not a formality (D26): the SessionStart
+ * hook sets {ok:false, code:"WRONG_SOURCE"} whenever a planned-next handoff
+ * exists on a non-adopting source — `compact` included
+ * (hooks/bee-session-init.mjs:113-121) — and the refusal REASON is the only
+ * thing telling the session why it is waiting instead of starting. Dropping
+ * the parameter renders a block that looks verbatim and is not.
+ */
+export function handoffBlockLines(handoff, handoffOutcome = null) {
+  if (!handoff) return [];
+  const lines = ['### HANDOFF present — present it and WAIT — never auto-resume'];
+  lines.push(
+    `- Phase: ${handoff.phase ?? 'unknown'} | Feature: ${handoff.feature ?? 'unknown'} | Mode: ${handoff.mode ?? 'unknown'}`,
+  );
+  if (Array.isArray(handoff.cells_in_flight) && handoff.cells_in_flight.length > 0) {
+    lines.push(`- Cells in flight: ${handoff.cells_in_flight.join(', ')}`);
+  }
+  if (handoff.next_action) lines.push(`- Saved next action: ${handoff.next_action}`);
+  if (handoff.kind === 'planned-next' && handoffOutcome && handoffOutcome.ok === false) {
+    lines.push(`- Adoption not applied: ${handoffOutcome.reason ?? handoffOutcome.code ?? 'unknown reason'}`);
+  }
+  return lines;
 }
 
 // fresh-session-handoff fsh-6 (D4): OPTIONAL sessionId — omitted (today's
@@ -315,15 +396,7 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
   const lines = [];
 
   lines.push(`## bee v${BEE_VERSION}`);
-  if (!onboarding) {
-    lines.push('- Onboarding: MISSING — run bee-hive onboarding before anything else.');
-  } else if (onboarding.bee_version && onboarding.bee_version !== BEE_VERSION) {
-    lines.push(
-      `- Onboarding: installed at bee ${onboarding.bee_version} but plugin is ${BEE_VERSION} — re-run onboarding to refresh vendored helpers.`,
-    );
-  } else {
-    lines.push(`- Onboarding: ok (bee ${onboarding.bee_version || BEE_VERSION})`);
-  }
+  lines.push(onboardingLine(onboarding));
   lines.push(
     `- Phase: ${pipelineRecord.phase} | Mode: ${pipelineRecord.mode ?? 'none'} | Feature: ${pipelineRecord.feature ?? 'none'}`,
   );
@@ -339,19 +412,7 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
       );
     }
   }
-  const bypass = bypassLevel(root);
-  if (bypass !== 'off') {
-    lines.push(`- ${bypassBanner(bypass)}`);
-    if (bypass === 'full' || bypass === 'total') {
-      lines.push(
-        `  The agent does NOT stop for these gates — it records the recommended choice, logs a one-line audit decision, and continues. ${
-          bypass === 'total'
-            ? 'This includes secret-file reads and review P1 findings: nothing pauses for the human.'
-            : 'Only reading a secret-shaped file and a review P1 finding still pause for the human.'
-        }`,
-      );
-    }
-  }
+  for (const line of bypassBannerLines(bypassLevel(root))) lines.push(line);
   if (handoffOutcome && handoffOutcome.ok === true) {
     // fsh-10 (D1): adoption succeeded — start-now, no confirmation needed.
     // NOTE: adoptHandoff already cleared .bee/HANDOFF.json as part of the
@@ -372,18 +433,10 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
     // attempted at all — e.g. no session_id). A planned-next handoff whose
     // adoption was attempted and refused/lost adds one reason line, still a
     // wait block (fsh-10, D1).
+    // The leading blank is the CALLER's separator, never the block's own
+    // first byte (see the blank-line ownership note above handoffBlockLines).
     lines.push('');
-    lines.push('### HANDOFF present — present it and WAIT — never auto-resume');
-    lines.push(
-      `- Phase: ${handoff.phase ?? 'unknown'} | Feature: ${handoff.feature ?? 'unknown'} | Mode: ${handoff.mode ?? 'unknown'}`,
-    );
-    if (Array.isArray(handoff.cells_in_flight) && handoff.cells_in_flight.length > 0) {
-      lines.push(`- Cells in flight: ${handoff.cells_in_flight.join(', ')}`);
-    }
-    if (handoff.next_action) lines.push(`- Saved next action: ${handoff.next_action}`);
-    if (handoff.kind === 'planned-next' && handoffOutcome && handoffOutcome.ok === false) {
-      lines.push(`- Adoption not applied: ${handoffOutcome.reason ?? handoffOutcome.code ?? 'unknown reason'}`);
-    }
+    for (const line of handoffBlockLines(handoff, handoffOutcome)) lines.push(line);
   }
 
   const commands = readConfig(root).commands || {};
@@ -490,19 +543,11 @@ export function buildPromptReminder(root, { sessionId = null } = {}) {
   // context" announces an approval owed for work that does not exist — the same
   // phantom-workflow signal as the review gate, one gate over. Terminal states
   // report no gate; only an ACTIVE pipeline can owe one.
-  const terminal = NO_WORK_PHASES.has(record.phase);
-  const reminderGates = terminal
-    ? []
-    : record.phase === 'reviewing'
-      ? GATE_NAMES
-      : GATE_NAMES.filter((g) => g !== 'review');
-  const firstOpenGate =
-    reminderGates.find((gate) => record.approved_gates?.[gate] !== true) ?? null;
   const fields = {
     phase: record.phase,
     mode: record.mode ?? null,
     next_action: record.next_action ?? null,
-    first_open_gate: firstOpenGate,
+    first_open_gate: firstOpenGate(record),
   };
 
   const lines = [`bee: phase=${fields.phase}${fields.mode ? ` mode=${fields.mode}` : ''}`];

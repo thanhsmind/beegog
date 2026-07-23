@@ -966,12 +966,14 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
 
-  // ─── state compact-*: compaction-hardening's helper floor (D3) — two thin
+  // ─── state compact-*: compaction-hardening's helper floor (D3) — three thin
   // CLI wrappers over lib/compaction.mjs, the ONE module every compaction
-  // surface (hooks and verbs alike) calls. `state compact-capsule` is
-  // DELIBERATELY NOT registered here: its builder does not exist until the
-  // cell that renders it, and the coverage check below (every registry entry
-  // must have an executed example) is unconditional over the whole registry.
+  // surface (hooks and verbs alike) calls. All three of D3's locked verbs are
+  // registered here now that cz-5 has landed buildCompactCapsule; the earlier
+  // note that `state compact-capsule` was deliberately withheld described a
+  // builder that did not yet exist, and the coverage check below (every
+  // registry entry must have an executed example) is unconditional over the
+  // whole registry, so each one carries its own example.
   {
     name: 'state.compact-log',
     invoke: 'bee state compact-log',
@@ -1001,6 +1003,21 @@ export const COMMAND_REGISTRY = [
       required: ['session-id'],
     },
     examples: ['bee state compact-check --session-id sess-demo --json'],
+    deprecated: null,
+  },
+  {
+    name: 'state.compact-capsule',
+    invoke: 'bee state compact-capsule',
+    description: "Render the D6 compact capsule for a session (lib/compaction.mjs's buildCompactCapsule) — the narrow orientation body a SessionStart with source=compact emits INSTEAD of the full startup preamble: the D12 mismatch block, the onboarding-MISSING line, the HANDOFF block with its adoption-refusal reason, the gate-bypass banner, phase/mode/feature/lane, the claimed cell with its verify and dependency status, the first open gate, next_action, the recorded commands, the compaction survival count with D9's advisory, and a POINTER to the critical patterns (D7), in that order. It NEVER renders the intent anchor — the hook owns that (D19) — and no byte of it varies with anchor presence. Read-only, and reachable by command on any runtime whose hook execution is unconfirmed (D3's helper floor).",
+    parameters: {
+      type: 'object',
+      properties: {
+        'session-id': { type: 'string', description: 'Session id the capsule is rendered for.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of the rendered capsule text.' },
+      },
+      required: ['session-id'],
+    },
+    examples: ['bee state compact-capsule --session-id sess-demo'],
     deprecated: null,
   },
 

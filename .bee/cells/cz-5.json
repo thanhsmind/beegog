@@ -67,21 +67,38 @@
   "deps": [
     "cz-4"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "capsule-wright-3",
+    "outcome": "The compact capsule ships: three renderers extracted from buildSessionPreamble (onboardingLine, bypassBannerLines, handoffBlockLines) plus a shared firstOpenGate, proven byte-identical against the committed golden; buildCompactCapsule(root,{sessionId,handoffOutcome}) renders D6 items 2-12 in order with the anchor check muted so no capsule byte varies with anchor presence; the state compact-capsule verb wired end to end (registry entry, handler passing handoffOutcome via nonAdoptingHandoffOutcome, dispatch map, Use list, two assertExampleOk rows); scripts/test_compact_capsule.mjs authored (11 rows incl. the STEP 4b paired-render byte-equality on a failing sweep); D24 regen chain run in order. hooks/test_hook_contracts.mjs green with ZERO edits.",
+    "files_changed": [
+      "skills/bee-hive/templates/lib/inject.mjs",
+      "skills/bee-hive/templates/lib/compaction.mjs",
+      "skills/bee-hive/templates/lib/command-registry.mjs",
+      "skills/bee-hive/templates/bee.mjs",
+      "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+      ".bee/bin/lib/inject.mjs",
+      ".bee/bin/lib/compaction.mjs",
+      ".bee/bin/lib/command-registry.mjs",
+      ".bee/bin/bee.mjs",
+      "scripts/test_compact_capsule.mjs",
+      "docs/history/codex-harness-hardening/release-manifest.json",
+      ".bee/onboarding.json",
+      ".agents/skills/bee-hive/templates/tests/test_bee_cli.mjs",
+      ".claude/skills/bee-hive/templates/tests/test_bee_cli.mjs",
+      ".claude-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs",
+      ".codex-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null,
-    "claimed_at": null,
+    "capped_at": "2026-07-23T07:15:46.822Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\n    \"hooks/test_hook_contracts.mjs:2740-2780 (the additivity row that compares a with-anchor source=compact render against a no-anchor control) — read, NOT edited; it is green with zero edits\",\n    \"hooks/test_hook_contracts.mjs:2762 (the INTENT_VERBATIM_REQUEST vs '- Phase:' indexOf ordering check) — the label is preserved verbatim so this stays meaningful\",\n    \"hooks/test_hook_contracts.mjs:2427-2455 and :2864-2872 — confirmed they regex only the WAIT heading and never the '- Adoption not applied:' reason line, which is why D27 needed its own row\",\n    \"skills/bee-hive/templates/tests/test_bee_cli.mjs:1990-2058 — the isolated-fixture pattern the new compact-capsule rows follow\",\n    \"skills/bee-hive/templates/tests/test_bee_cli.mjs:~2558 — the unconditional 'every registry entry's example executed' coverage check that makes an assertExampleOk row mandatory for a new registry entry\",\n    \"scripts/test_lib_mirror.mjs:16-20 — the mirror gate D17/D18 answer to\",\n    \"scripts/test_compact_verbs.mjs — cz-4's suite for the sibling compact-log/compact-check verbs\"\n  ],\n  \"tests_added_or_changed\": [\n    \"ADDED scripts/test_compact_capsule.mjs — 11 rows: (1) D6 items 2-12 asserted POSITIONALLY, so a reorder reds; (2) D19 the capsule never renders the anchor; (3) the '- Phase:' label preserved verbatim; (4) STEP 4b anchor-independence on a CLEAN sweep — the same repo rendered before and after .bee/intent/ is written, asserted byte-equal, plus a hashTree assertion that the fixture actually changed; (5) STEP 4b anchor-independence on a FAILING sweep, plus a direct assertion that no rendered mismatch line names the anchor check; (6) D27 both ways — the '- Adoption not applied:' line appears with handoffOutcome, is absent without it, and the two renders differ (so the parameter cannot be decorative); (7) D15 the bare repo, no warning and no mismatch line, with and without a session id; (8) a lane-bound session shows its OWN lane; (9) the STATE MISMATCH block names each failed check and its typed code; (10) the three extracted renderers' exact bytes for all three onboarding arms, all three bypass shapes and all handoff arms; (11) D8 buildSessionPreamble byte-identity against the COMMITTED golden scripts/fixtures/preamble-golden.txt across 7 cases, version literal normalized\",\n    \"ADDED skills/bee-hive/templates/tests/test_bee_cli.mjs — two rows: the state.compact-capsule registry example run through the real dispatcher (phase line, no-claimed-cell line, next_action, D7 pointer not digest, no startup-only sections, D19 no anchor); and a planned-next-handoff row asserting the VERB passes handoffOutcome so '- Adoption not applied: ... never auto-adopts' renders — D27's call-site obligation, which the renderer-level row cannot prove\"\n  ],\n  \"red_failure_evidence\": \"BEFORE (captured in this run against the live tree, prior to any lib edit): `node scripts/test_compact_capsule.mjs` => file:///home/thanhsmind/projects/goglbe/beegog/scripts/test_compact_capsule.mjs:79\\\\n  buildCompactCapsule,\\\\n  ^^^^^^^^^^^^^^^^^^^\\\\nSyntaxError: The requested module '../skills/bee-hive/templates/lib/compaction.mjs' does not provide an export named 'buildCompactCapsule'\\\\n    at #asyncInstantiate (node:internal/modules/esm/module_job:319:21)\\\\nNode.js v24.14.1 -- EXIT=1. Prior behavior characterized: compaction.mjs exported five things and no capsule builder; inject.mjs kept the onboarding line, the bypass banner and the HANDOFF block inlined inside buildSessionPreamble with no exported renderer; `bee state compact-capsule` was an unregistered verb whose registry comment said it was DELIBERATELY NOT registered, and bee.mjs:2400-2402 said the builder ships in a later cell. A SessionStart with source=compact therefore had no compact-scoped orientation body at all -- only the full startup preamble existed. Matches the preserved .bee/tmp/cz-5/red-1.txt from the attempt a concurrent merge destroyed.\",\n  \"extraction_proof\": \"git diff c60c4bb HEAD -- skills/bee-hive/templates/lib/inject.mjs was EMPTY before the first edit, so the committed golden (generated at c60c4bb against the pre-extraction buildSessionPreamble) was still a true baseline. Its row went green on the first run after the three-renderer extraction — that is the byte-identity proof for STEP 1, not a restatement of the new code. The golden was NOT regenerated (9144 bytes, unmodified in git status).\",\n  \"anchor_independence_proof\": \"CAPSULE_MUTED_CHECKS = new Set(['anchor']) filters compactCheck's check 7 before the STATE MISMATCH block renders. Proven inside this cell by paired renders of the SAME repo before/after .bee/intent/ is written, asserted byte-equal, for a clean sweep AND for a sweep whose mismatches are non-empty (an uncapped dep). hooks/test_hook_contracts.mjs is green with ZERO edits (193 rows, 0 failing).\",\n  \"verification_run\": {\n    \"command\": \"node scripts/test_compact_capsule.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check\",\n    \"result\": \"green, exit 0\",\n    \"summary\": \"11 passed 0 failed | 193 rows 0 failing ALL PASS | 250 passed 0 failed | 4 mirror PASS (29 lib files + 10 hook files byte-identical) | 499 file(s) match stored manifest | ledger parity ok\"\n  },\n  \"regen_chain\": \"D24 order run exactly: render_plugin_skill_trees.mjs -> onboard_bee.mjs --repo-root . --apply -> release_manifest.mjs --write. The four rendered test_bee_cli.mjs projections were confirmed byte-identical to the source with cmp; none was hand-edited.\",\n  \"advisor_consults\": 0\n}\n",
+    "verify_output": "test_compact_capsule.mjs: 11 passed, 0 failed\nhooks/test_hook_contracts.mjs: 193 rows across 23 check group(s) (0 skipped), 0 failing target contract -- ALL PASS (file edited ZERO times)\nskills/bee-hive/templates/tests/test_bee_cli.mjs: 250 passed, 0 failed\nscripts/test_lib_mirror.mjs: PASS internal self-test; PASS runtime hook inventory; PASS templates/lib and .bee/bin/lib byte-identical (29 files); PASS runtime-derived hook inventory byte-identical (10 files)\nscripts/release_manifest.mjs --check: 499 file(s) match stored manifest\nscripts/ledger_parity.mjs --check: .bee/bin/** matches the .bee/onboarding.json managed-hash ledger\nexit 0",
+    "verify_passed": true,
+    "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+    "claimed_at": "2026-07-23T07:07:28.122Z",
     "ownership_overrides": [
       {
         "verb": "unclaimCell",
@@ -90,8 +107,21 @@
         "at": "2026-07-23T06:37:14.112Z"
       }
     ],
-    "verify_command": null,
-    "verified_at": null
+    "verify_command": "node scripts/test_compact_capsule.mjs && node hooks/test_hook_contracts.mjs && node skills/bee-hive/templates/tests/test_bee_cli.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check",
+    "verified_at": "2026-07-23T07:14:03.754Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T07:14:03.754Z",
+        "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+        "claimed_at": "2026-07-23T07:07:28.120Z",
+        "acquired_at": "2026-07-23T07:07:28.120Z",
+        "worker": "capsule-wright-3",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   },
   "tier": "ceiling"
 }
