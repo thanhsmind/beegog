@@ -69,8 +69,16 @@ measurement, recorded in `reports/validation-slice1.md`:
 1. **The `inject.mjs` extraction is not blocked.** The onboarding line (`:318-326`) and
    bypass banner (`:342-354`) are pure `lines.push` of locally-computed strings. The
    HANDOFF block (`:369-387`) is the `else if` arm of a two-arm branch — extract that
-   arm's body alone; `ADOPT_SOURCES` excludes `compact`, so `handoffOutcome` is always
-   null on the capsule path and only that arm is ever needed.
+   arm's body alone. **RETRACTED at the source (D26/D27):** this item originally read
+   "`ADOPT_SOURCES` excludes `compact`, so `handoffOutcome` is always null on the capsule
+   path and only that arm is ever needed." That is **false**, and it entered this record
+   wearing a measurement's authority (`reports/validation-slice1.md:162`, stated by the
+   feasibility lens as a measured result). `hooks/bee-session-init.mjs:113-121` sets
+   `{ok:false, code:"WRONG_SOURCE"}` whenever a planned-next handoff exists on a
+   non-adopting source — `compact` included — and `inject.mjs:384-386` renders an
+   `- Adoption not applied:` line off it. The extracted renderer takes the outcome (D26)
+   **and** the capsule's caller must pass it through (D27). Only the `else if` arm is
+   needed; the claim about the parameter being null was the error.
 2. **`resolvePipeline` — the question rested on a false premise.** `buildSessionPreamble`
    (`:301-305`) and `buildPromptReminder` (`:477-479`) make the *identical*
    `resolvePipeline(root, { sessionId })` call. `buildSessionPreamble` was never the
