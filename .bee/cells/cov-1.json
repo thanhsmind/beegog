@@ -26,19 +26,39 @@
   "verify": "node scripts/test_impact_registry.mjs",
   "behavior_change": true,
   "deps": [],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "cov1-worker",
+    "outcome": "impact registry shipped: 4-edge derivation (static/pathToFileURL/spawn-argv/runModuleWorker), deterministic 157-entry committed registry, write/check/query verbs, 13-check test green, 131ms generation",
+    "files_changed": [
+      "scripts/impact_registry.mjs",
+      "scripts/impact-registry.json",
+      "scripts/test_impact_registry.mjs"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
+    "capped_at": "2026-07-23T13:19:25.538Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"verify_command\": \"node scripts/test_impact_registry.mjs\",\n  \"verify_passed\": true,\n  \"verify_output\": \"13 passed, 0 failed (orchestrator re-ran independently); --write 131ms; --check green; sample queries: .bee/bin/lib/state.mjs => 30 suites, scripts/run_verify.mjs => 4 suites; registry 157 entries / 77386 bytes, deterministic\",\n  \"red_failure_evidence\": \"node scripts/test_impact_registry.mjs before implementation: ERR_MODULE_NOT_FOUND for scripts/impact_registry.mjs — test red without the module, green after.\"\n}\n",
     "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "verify_passed": true,
+    "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
+    "claimed_at": "2026-07-23T13:02:44.534Z",
+    "verify_command": "node scripts/test_impact_registry.mjs",
+    "verified_at": "2026-07-23T13:19:25.437Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T13:19:25.437Z",
+        "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
+        "claimed_at": "2026-07-23T13:19:10.751Z",
+        "acquired_at": "2026-07-23T13:02:44.532Z",
+        "worker": "cov1-worker",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }
