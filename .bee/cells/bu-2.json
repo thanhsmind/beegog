@@ -2,11 +2,12 @@
   "id": "bu-2",
   "feature": "backlog-unification",
   "lane": "standard",
-  "title": "Migrate 73 rows to item files; uniqueness suite retargeted",
+  "title": "Migrate 76 rows to pbi events; docs/backlog.md becomes the generated view; uniqueness retargeted",
   "files": [
-    "scripts/migrate_backlog_items.mjs",
+    "scripts/migrate_backlog_pbis.mjs",
     "scripts/backlog_uniqueness.mjs",
     "docs/backlog.md",
+    ".bee/backlog.jsonl",
     "scripts/impact-registry.json"
   ],
   "read_first": [
@@ -14,12 +15,12 @@
     "docs/backlog.md",
     "scripts/backlog_uniqueness.mjs"
   ],
-  "action": "Per CONTEXT D5, plan.md bu-2. scripts/migrate_backlog_items.mjs: parse the legacy table (reuse bu-1's reader where possible), write docs/backlog/items/P<n>.md for all 73 rows (IDs kept; P74 declined normalized; in-flight rows keep Feature), then run backlog render --write producing the generated docs/backlog.md. Idempotent (re-run = no-op) and refuses if items/ already populated with different content. RUN the migration in this cell — items committed, index generated. Retarget scripts/backlog_uniqueness.mjs: id↔filename parity, frontmatter enum validity, and render --check freshness (derive ground truth from the store, never a second hand list); keep it a mandatory suite (test_verify_manifest floor intact — same path, same name). impact_registry --write (new files/suites).",
+  "action": "Per CONTEXT v2 D5. scripts/migrate_backlog_pbis.mjs: status-anchored parse of the legacy table (NEVER positional — Story/CoS contain literal '|'; anchor on the status cell like classify-lane's parseRow), assert exactly 76 unique P-ids max P77; normalize decorated statuses (P8/P13/P32: strip to enum, preserve the decoration text into the item's cos/notes via the add event — nothing dropped); append one pbi add event per row (id preserved via the migration-only --id path or the lib call), plus a status event where needed; idempotent (re-run detects existing pbi events for those ids => no-op) and refuses divergence. RUN it in this cell. Then bee backlog render --write => generated docs/backlog.md committed. Retarget scripts/backlog_uniqueness.mjs (same path/name — test_verify_manifest pins it at :117 and the --check arg-variant at :187): fold invariants (unique ids, valid enum, every kind:pbi line parseable) + render --check freshness; green pre- and post-migration. impact_registry --write (new script file).",
   "must_haves": {
     "truths": [
-      "all 73 IDs present as item files, none renumbered",
-      "generated index committed; render --check green",
-      "uniqueness suite green pre- and post-migration and still discovered by the manifest guard",
+      "76 ids migrated, none renumbered, decorated status prose preserved",
+      "generated view committed; render --check green; view is short (done/declined links only)",
+      "uniqueness suite same path, still manifest-pinned, green",
       "migration idempotent + refuses divergent re-run"
     ]
   },

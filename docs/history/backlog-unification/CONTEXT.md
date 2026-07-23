@@ -1,67 +1,84 @@
-# backlog-unification — CONTEXT (locked decisions)
+# backlog-unification — CONTEXT (locked decisions, v2)
 
-User request (2026-07-23, verbatim intent): why two backlog stores? `docs/backlog.md`
-grows without bound, multi-session hand-edits of one file collide, and reading the
-whole file burns tokens. Unify the concept and support concurrent sessions.
+User request (2026-07-23): unify the backlog concept, support many concurrent
+sessions, stop paying whole-file token reads. **v2 pivot (user, mid-validating):
+"tôi thích khái niệm backlog.jsonl"** — the append-only machine store IS the
+unified backlog: in bee's own repo it holds bee-improvement items; deployed into a
+real project it holds that project's items. One concept everywhere, with generated
+IDs that never collide however many sessions run at once. v1's per-item-markdown
+design (superseded below) is replaced by event-sourcing into the existing stream.
 
-Measured pains (gather 2026-07-23): 72 data rows / 79 lines, paragraph-sized Story/CoS
-cells; live statuses `declined` (P74) and `parked` (D13) sit OUTSIDE the machine enum
-`BACKLOG_STATUSES = ['proposed','in-flight','done']` (backlog.mjs:13) so counts silently
-drop them; ID allocation is "next free integer" executed by hand — already caused the
-P50 duplicate incident (backlog.mjs:173-182); five skills flip rows by hand-editing the
-shared table (scribing D8/close-sync, qualifying D13, exploring D11a, grooming, herding
-reads Status as its dispatch interlock).
+Measured pains (gather + plan-check, 2026-07-23): 76 unique P-ids (not 72/73 as
+first counted), max P77; three rows carry decorated status cells (`P8`, `P13`,
+`P32`) that exact-enum matching silently miscounts today; live statuses `declined`
+(P74) and `parked` (D13) sit outside `BACKLOG_STATUSES`; hand ID allocation already
+produced the P50 duplicate; five skills hand-edit one shared table;
+`classify-lane.mjs` (herding's hard-gate classifier) reads row prose the short
+index would no longer carry — it must read the store, not the view.
 
-## Locked decisions
+## Locked decisions (v2 — supersedes v1 D1-D6 of this feature)
 
-- **D1 — Two layers stay two layers; the unification is the PBI layer's storage.**
-  `.bee/backlog.jsonl` (machine friction stream) is already append-only, CLI-guarded,
-  multi-session-safe and token-cheap via the feedback digest — untouched. The product
-  PBI layer is what gets rebuilt. The "one problem, two stores" impression dissolves
-  because each layer's role is (re)stated where agents read: they never held the same
-  items.
-- **D2 — Per-item store + generated index (the knowledge-bundle pattern, reused).**
-  Each PBI becomes one file `docs/backlog/items/P<n>.md` with frontmatter
-  (`id, status, feature, opened, closed?`) and body (Story + CoS prose).
-  `docs/backlog.md` becomes a GENERATED index with the exact `KNOWLEDGE_INDEX_HEADER`
-  idiom (generated-file comment naming render + check commands; deterministic, no
-  timestamps, path-sorted, LF): `proposed`/`in-flight`/`parked` render full rows;
-  `done`/`declined` render one-line links only — the index stays short forever.
-  Safety = purity + `--check` drift gate (no lockfile), same as knowledge.mjs.
-- **D3 — CLI verbs replace every hand-edit.** Extend the `backlog` group:
-  `pbi add` (mechanical next-free-ID allocation — kills the P50 bug class),
-  `pbi status --id --to` (validated enum), `pbi list [--status] [--json]`
-  (frontmatter-only read — the token-cheap query), `render --write|--check`
-  (the index). Write-guard: `docs/backlog.md` + `docs/backlog/items/` become
-  CLI-owned like `.bee/state.json` (direct edits denied, verb named in refusal).
-- **D4 — Status enum matches reality:** `proposed | in-flight | parked | done |
-  declined`. `readBacklogCounts`, rank, badges, `featureBacklogRank`, and the herding
-  interlock re-derive from item frontmatter (or the generated index), never from a
-  hand-table.
-- **D5 — Migration is one script, one commit:** split the 72 existing rows into item
-  files (status normalized incl. P74 `declined`), render the index, retarget
-  `scripts/backlog_uniqueness.mjs` (uniqueness becomes id↔filename parity + index
-  freshness — ground truth derived, never a second hand list). History rows keep their
-  IDs; nothing renumbered.
-- **D6 — Instruction layer migrates in the same feature** (the 2026-07-22 pattern):
-  bee-scribing (D8 append + close-sync flip), bee-qualifying (D13 park flip),
-  bee-exploring (D11a flip), bee-grooming (drift audit), bee-herding (Status
-  interlock), scribing-reference "two backlogs" section, AGENTS.md working-files
-  lines — all reworded to the CLI verbs; zero surfaces left teaching the hand-edit.
+- **D1 — ONE store: `.bee/backlog.jsonl`.** Append-only, CLI-owned (write-guard
+  already names `backlog add` as sole writer — the new verbs join it). PBIs are
+  **event-sourced records in the same stream**: `{ts, kind:"pbi",
+  event:"add"|"status"|"amend", id, ...fields}`; current state = fold by id,
+  last-event-wins per field. Friction/feedback events keep their existing shape
+  untouched; `collectFeedback`/digest skip `kind:"pbi"` lines explicitly (never
+  bucketed as unknown_type). In a host repo the same stream is simply that
+  project's backlog — the two-concept split dissolves by unification, not by
+  another parallel store.
+- **D2 — IDs are generated, collision-free under concurrency.** New PBIs get
+  `p-<8 hex>` from crypto randomness at `pbi add` — no read-then-increment, no
+  lock, no coordination; the fold refuses a duplicate id defensively. Legacy
+  `P<n>` ids are preserved verbatim by migration and stay first-class (cells'
+  optional `pbi` field keeps pointing at them).
+- **D3 — CLI verbs replace every hand-edit.** `backlog pbi add` (title/cos/
+  status?/feature? → add event, prints the generated id), `backlog pbi status
+  --id --to <enum> [--feature <slug>]` (status event; `--feature` stamps the slug
+  — the exploring-D11a flip needs both in one move), `backlog pbi amend --id`
+  (title/cos), `backlog pbi list [--status] [--json]` (the fold — the token-cheap
+  query), `backlog render --write|--check` (the generated `docs/backlog.md` view).
+  **`backlog rank --write` is retired** (the deterministic render owns the view;
+  a second writer was the double-truth trap); `badges` re-derives counts from the
+  fold. `docs/backlog.md` becomes CLI-owned in the write-guard (exact-path deny,
+  same early-return branch as `.bee/state.json` — plan-check confirmed this does
+  not disturb the docs-lane exemption for the rest of docs/).
+- **D4 — status enum matches reality:** `proposed | in-flight | parked | done |
+  declined`; counts/preamble include every value.
+- **D5 — migration is one script, one commit, real numbers.** Fold all **76**
+  legacy rows into `pbi` add(+status) events (P-ids kept; decorated statuses
+  normalized to the enum with their decoration preserved in the item's cos/notes,
+  never dropped — P8/P13/P32; status-anchored parsing, never positional — Story/
+  CoS cells contain literal `|`). Then `render --write` produces the generated
+  `docs/backlog.md` (proposed/in-flight/parked as full rows; done/declined as
+  one-line links — the view stays short forever). `scripts/backlog_uniqueness.mjs`
+  retargets (same path/name — manifest pins it, arg-variant `--check` included):
+  fold invariants (unique ids, valid enum, every event parseable) + render
+  freshness.
+- **D6 — instruction layer + missed consumers migrate in the same feature.**
+  bee-scribing (D8 append + close-flip), bee-qualifying (D13 park), bee-exploring
+  (D11a flip incl. `--feature`), bee-grooming (drift audit), bee-herding (§6
+  Status interlock **and** §6(a) slug read **and** §7 impact-text — its documented
+  table schema is stale and gets fixed), **`skills/bee-herding/scripts/
+  classify-lane.mjs`** (the plan-check P1: it keyword-scans row prose — retarget
+  to `pbi list --json` fold output, enum updated), scribing-reference "two
+  backlogs" section rewritten to the one-store model, AGENTS.block.md + root
+  working-files lines byte-parallel. Zero surfaces left teaching the hand-edit.
 
-## Constraints (measured)
+## Constraints (measured, carried from plan-check)
 
-- backlog.mjs:150-344 carries rank/badges/counts/featureBacklogRank — all parse the
-  markdown table today; every parser moves to the item store behind one shared reader.
-- scripts/backlog_uniqueness.mjs is a mandatory verify suite (manifest floor) — must
-  stay a suite, retargeted.
-- bee-herding reads `docs/backlog.md` Status directly (SKILL.md:177,203,254) — its
-  interlock must read the generated index or `pbi list --json`.
-- Cells may carry an optional `pbi` field naming a row ID — unchanged (IDs stable).
-- The generated index must keep the counts/badges data the README badges verb scrapes.
+- backlog.mjs twins byte-identical (test_lib_mirror); all five current exports are
+  covered by templates/tests/test_backlog_capture.mjs:22-32 — extend, not new.
+- `KNOWLEDGE_INDEX_HEADER` is module-private (knowledge.mjs:1100) — copy the
+  idiom into the render, command strings swapped to `bee backlog render`.
+- `DIRECT_EDIT_DENY` (guards.mjs:152) is exact-path, checked first in checkWrite
+  (:576) — `docs/backlog.md` is one exact key; no prefix branch needed (no item
+  files in v2).
+- `okf_instructions_fence.mjs:506` writes a backlog.md fixture — confirm temp-root.
+- inject.mjs/status/badges/featureBacklogRank/cells.mjs all flow through
+  backlog.mjs exports — one rework point.
 
 ## Out of scope
 
-- Any change to `.bee/backlog.jsonl`, feedback digest, clustering, or bee-evolving.
-- A promote verb (jsonl finding → PBI); today's manual promote note stays; file as its
-  own PBI if wanted later.
+- feedback digest/clustering/evolving semantics (only the explicit kind:"pbi"
+  skip is added); a promote verb (friction → pbi) — its own PBI later.

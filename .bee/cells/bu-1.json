@@ -2,10 +2,12 @@
   "id": "bu-1",
   "feature": "backlog-unification",
   "lane": "standard",
-  "title": "PBI item store + CLI verbs + generated-index renderer",
+  "title": "Event-sourced PBIs in backlog.jsonl: verbs, fold, generated-view renderer",
   "files": [
     "skills/bee-hive/templates/lib/backlog.mjs",
     ".bee/bin/lib/backlog.mjs",
+    "skills/bee-hive/templates/lib/feedback.mjs",
+    ".bee/bin/lib/feedback.mjs",
     "skills/bee-hive/templates/lib/command-registry.mjs",
     ".bee/bin/lib/command-registry.mjs",
     "skills/bee-hive/templates/bee.mjs",
@@ -20,23 +22,23 @@
     ".bee/bin/lib/backlog.mjs",
     ".bee/bin/lib/knowledge.mjs"
   ],
-  "action": "Per CONTEXT D2/D3/D4 and plan.md bu-1. Edit BOTH twins of backlog.mjs/command-registry.mjs/bee.mjs identically (test_lib_mirror parity). Item-store reader: parse docs/backlog/items/P<n>.md frontmatter (id,status,feature,opened,closed?); enum proposed|in-flight|parked|done|declined. Verbs: backlog pbi add (allocates next free integer id from existing item filenames, writes the item file), backlog pbi status --id --to (validated), backlog pbi list [--status] [--json] (frontmatter only), backlog render --write|--check (generated docs/backlog.md, KNOWLEDGE_INDEX_HEADER idiom from knowledge.mjs:1100 — deterministic, done/declined as one-line links, counts block badges can scrape). counts/rank/badges/featureBacklogRank re-derive from items WHEN docs/backlog/items exists, else legacy table parse (host-repo compat). Extend test_backlog_capture.mjs: id allocation (incl. race-adjacent double-add refusing duplicate), enum refusals, list filtering, render determinism + --check drift, legacy fallback. Red-first evidence required. Regen manifest + ledger + impact registry.",
+  "action": "Per CONTEXT v2 D1-D4 (read docs/history/backlog-unification/CONTEXT.md first — it is v2, event-sourced, NOT per-item markdown). Edit BOTH twins of each lib identically (test_lib_mirror parity). In backlog.mjs: PBI event records in .bee/backlog.jsonl — {ts, kind:'pbi', event:'add'|'status'|'amend', id, title?, cos?, status?, feature?}; foldPbis(root) derives current items (last-event-wins per field; duplicate add for an existing id refused; enum proposed|in-flight|parked|done|declined). Verbs (bee.mjs + command-registry, both twins): backlog pbi add [--id P<n> migration-only] (generates p-<8hex> via crypto, prints id), backlog pbi status --id --to <enum> [--feature <slug>], backlog pbi amend --id [--title] [--cos], backlog pbi list [--status] [--json], backlog render --write|--check (generated docs/backlog.md — copy the KNOWLEDGE_INDEX_HEADER idiom from knowledge.mjs:1100 with command strings swapped to 'bee backlog render'; proposed/in-flight/parked full rows, done/declined one-line links; deterministic, path/id-sorted, LF, no timestamps). RETIRE backlog rank --write (verb refuses with a message naming render; registry entry updated) — render owns the view. counts/badges/featureBacklogRank re-derive from foldPbis WHEN any kind:pbi event exists, else legacy table parse (host-repo compat). In feedback.mjs (both twins): collectFeedback explicitly skips kind:'pbi' lines (never unknown_type). Extend test_backlog_capture.mjs: fold semantics (add/status/amend, last-wins, dup-add refusal), generated-id shape + no-collision-on-concurrent-adds (two adds, distinct ids), enum refusals incl parked/declined counting, --feature stamp on status flip, render determinism + --check drift + short-view collapse, rank retirement refusal, digest skip of pbi lines, legacy fallback. Red-first evidence. Regen manifest + ledger + impact registry.",
   "must_haves": {
     "truths": [
-      "both twins byte-identical; lib_mirror green",
-      "pbi add allocates mechanically — duplicate id impossible by construction",
-      "render deterministic with generated-file header; --check catches drift",
-      "enum covers parked+declined; counts include them",
-      "legacy table fallback keeps un-migrated repos working"
+      "all twins byte-identical; lib_mirror green",
+      "ids crypto-generated, collision-free — no read-then-increment anywhere",
+      "fold last-event-wins; duplicate add refused",
+      "render deterministic w/ generated header; --check catches drift; done/declined collapse to links",
+      "rank --write retired; digest skips kind:pbi; legacy fallback intact"
     ]
   },
   "verify": "node skills/bee-hive/templates/tests/test_backlog_capture.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check && node scripts/impact_registry.mjs --check",
   "behavior_change": true,
   "deps": [],
-  "status": "open",
+  "status": "claimed",
   "decisions": [],
   "trace": {
-    "worker": null,
+    "worker": "bu1-worker",
     "outcome": null,
     "files_changed": [],
     "deviations": [],
@@ -46,6 +48,7 @@
     "verification_evidence": null,
     "verify_output": null,
     "verify_passed": null,
-    "claim_session": null
+    "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
+    "claimed_at": "2026-07-23T15:38:11.823Z"
   }
 }

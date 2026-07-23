@@ -2,7 +2,7 @@
   "id": "bu-3",
   "lane": "standard",
   "feature": "backlog-unification",
-  "title": "docs/backlog.md + items/ become CLI-owned (write-guard)",
+  "title": "docs/backlog.md becomes CLI-owned (exact-path write-guard deny)",
   "files": [
     "skills/bee-hive/templates/lib/guards.mjs",
     ".bee/bin/lib/guards.mjs",
@@ -15,12 +15,12 @@
     "docs/history/backlog-unification/CONTEXT.md",
     ".bee/bin/lib/guards.mjs"
   ],
-  "action": "Per CONTEXT D3, plan.md bu-3. In guards.mjs (BOTH twins): docs/backlog.md and docs/backlog/items/** join the CLI-owned set (like .bee/state.json) — direct Write/Edit/Bash edits denied with a refusal naming the owning verbs (backlog pbi add/status, backlog render --write); the CLI's own writes pass. Extend the write-guard test suites with deny + allow cases, red-first. Regen manifest + ledger + registry.",
+  "action": "Per CONTEXT v2 D3 + plan-check P2-5 resolution: docs/backlog.md joins DIRECT_EDIT_DENY (guards.mjs:152, exact-path map checked first in checkWrite:576 — one exact key, NO prefix branch needed in v2 since there are no item files) in BOTH guards.mjs twins; refusal names the owning verbs (backlog pbi add/status/amend, backlog render --write). Confirm okf_instructions_fence.mjs:506's backlog fixture writes a temp root, not the repo (adjust the fixture if it does). Extend hooks/test_write_guard.mjs + templates/tests/test_bee_write_guard_hook.mjs: deny direct Write/Edit of docs/backlog.md naming the verbs; docs-lane writes elsewhere in docs/ still pass. Red-first. Regen manifest + ledger + registry.",
   "must_haves": {
     "truths": [
-      "direct edit of generated index or an item file is denied naming the verb",
-      "CLI writes pass; migration script path documented as CLI-mediated",
-      "both twins identical; guard tests cover deny and allow"
+      "direct edit of docs/backlog.md denied naming the verbs; rest of docs/ unaffected",
+      "both twins identical; guard tests cover deny + allow",
+      "fence fixture confirmed temp-root"
     ]
   },
   "verify": "node hooks/test_write_guard.mjs && node skills/bee-hive/templates/tests/test_bee_write_guard_hook.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check && node scripts/ledger_parity.mjs --check && node scripts/impact_registry.mjs --check",

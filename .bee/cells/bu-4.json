@@ -10,6 +10,7 @@
     "skills/bee-exploring/SKILL.md",
     "skills/bee-grooming/references/grooming-reference.md",
     "skills/bee-herding/SKILL.md",
+    "skills/bee-herding/scripts/classify-lane.mjs",
     "skills/bee-hive/templates/AGENTS.block.md",
     "AGENTS.md",
     "docs/knowledge/areas/decision-memory/index.md",
@@ -20,10 +21,11 @@
     "docs/history/backlog-unification/CONTEXT.md",
     "skills/bee-scribing/references/scribing-reference.md"
   ],
-  "action": "Per CONTEXT D6, plan.md bu-4. Reword every surface that teaches hand-editing the PBI table to the CLI verbs: scribing D8 append + close-flip => pbi add / pbi status; qualifying D13 park flip => pbi status --to parked; exploring D11a => pbi status --to in-flight (pbi add first if no row); grooming drift audit reads pbi list --json; herding Status interlock reads pbi list --json or the generated index; scribing-reference 'two backlogs, two owners' section rewritten to the two-LAYER model (PBI items store + machine jsonl) with the new file layout; AGENTS.block.md + root AGENTS.md working-files lines updated byte-parallel. Author/update the knowledge concept for the backlog store shape in the appropriate area (follow the bundle's authoring template; regen knowledge index, knowledge check green). Grep-proof in report: zero non-archive surfaces instruct hand-editing docs/backlog.md. Mirrors + manifest + registry regen.",
+  "action": "Per CONTEXT v2 D6 (+ plan-check P1-1, P2-4, P3-7). Reword every surface that teaches hand-editing the PBI table to the CLI verbs: scribing D8 append => backlog pbi add, close-flip => pbi status --to done (partial delivery => amend with Delivered/Remaining in cos); qualifying D13 => pbi status --to parked; exploring D11a => pbi status --to in-flight --feature <slug> (pbi add first when no row); grooming drift audit => pbi list --json; herding: §6(b) Status interlock AND §6(a) feature-slug read AND §7 highest-impact prose read all move to pbi list --json (fold carries title+cos text), and its stale documented schema (| ID | PBI | Status | Ghi chú |) is corrected. skills/bee-herding/scripts/classify-lane.mjs: retarget parseRow/findRow to the fold (spawn bee backlog pbi list --json or read via lib), STATUS_VALUES => 5-value enum; its render mirrors regen via the normal skill-sync. scribing-reference 'two backlogs, two owners' section rewritten to the ONE-store model (pbi events + friction events in one stream; docs/backlog.md = generated view). AGENTS.block.md + root AGENTS.md working-files lines byte-parallel ('docs/backlog.md <- GENERATED view of .bee/backlog.jsonl pbi events; edit via bee backlog pbi/render'). Author/update the knowledge concept for the unified backlog store (follow the bundle authoring template; bee knowledge index; knowledge check green). Grep-proof: zero non-archive surfaces instruct hand-editing docs/backlog.md. Mirrors + manifest + registry regen.",
   "must_haves": {
     "truths": [
       "grep-proof: no surface teaches the hand-edit",
+      "classify-lane reads the fold; 5-value enum; herding schema fixed",
       "AGENTS twins byte-parallel; doctrine_parity green",
       "knowledge concept updated; index+check green",
       "mirrors + manifest + registry regenerated"
