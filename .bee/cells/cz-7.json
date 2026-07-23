@@ -54,19 +54,45 @@
   "deps": [
     "cz-6"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "advisory-wright",
+    "outcome": "Both advisory surfaces wired: PreCompact appends the precompact record, renders the D9 survival warning off it, and forces the D10 anchor nudge past the dedup cache without marking it; UserPromptSubmit emits the same nudge deduped on anchor-missing-nudge. New 7-row scripts/test_compaction_advisories.mjs drives both real hooks; the D23 PreCompact additivity row split into two byte-exact rows (identical tails below the two leads + nudge present/absent), never weakened to a substring.",
+    "files_changed": [
+      "hooks/bee-session-close.mjs",
+      "hooks/bee-prompt-context.mjs",
+      "hooks/test_hook_contracts.mjs",
+      "scripts/test_compaction_advisories.mjs",
+      ".bee/bin/hooks/bee-session-close.mjs",
+      ".bee/bin/hooks/bee-prompt-context.mjs",
+      ".bee/onboarding.json",
+      "docs/history/codex-harness-hardening/release-manifest.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
-  }
+    "capped_at": "2026-07-23T07:53:26.526Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"tests_inspected\": [\n    \"hooks/test_hook_contracts.mjs:2692-2713 — the PreCompact additivity row D23 names. SPLIT here (the one assertion this cell is licensed to change), never weakened.\",\n    \"hooks/test_hook_contracts.mjs:2740-2780 (SessionStart compact/resume additivity) — NOT touched, still green.\",\n    \"hooks/test_hook_contracts.mjs:2427-2455 and :2864-2872 (handoff adoption on compact) — NOT touched, still green.\",\n    \"hooks/test_hook_contracts.mjs:1875-1930 (prompt-context lane rows) — read before editing bee-prompt-context.mjs; the added nudge fires in that fixture and both regex rows stay green.\",\n    \"hooks/test_bypass_stop_net.mjs — the PreCompact-never-blocks row (case 9) and the whole fire matrix; re-run green after the session-close edit.\",\n    \"scripts/test_heartbeat_touch.mjs — drives the REAL bee-prompt-context.mjs; re-run green (29 rows) after the stdout restructure.\",\n    \"scripts/test_compaction_module.mjs / scripts/test_compact_capsule.mjs — the module-level proofs this cell deliberately does NOT duplicate.\"\n  ],\n  \"tests_added\": [\n    \"scripts/test_compaction_advisories.mjs (NEW, 7 rows) — every row drives the real hooks against a vendored temp repo: (1) PreCompact carries no turn-control verdict under four inputs, with a POSITIVE CONTROL proving the same fixture DOES block on Stop; (2) the survival warning fires on a unit's SECOND compaction and not its first, plus the record's event/cell/cell_compact_count; (3) the PreCompact nudge survives a freshly-marked dedup cache (D11 force); (4) PreCompact does NOT mark the cache, so the next UserPromptSubmit still nudges; (5) the UserPromptSubmit nudge IS deduped on a second prompt in the interval; (6) no nudge on either surface with an anchor; (7) no nudge on either surface at a terminal phase (idle and compounding-complete, gates still approved).\",\n    \"hooks/test_hook_contracts.mjs — the D23 split, two byte-exact rows replacing one: `precompact-anchor-and-nudge-leads-share-an-identical-advisory-tail` (each message is lead + \\\"\\\\n\\\" + tail; the TAILS must be identical bytes, and the tail is additionally asserted non-empty and carrying the hive-door warning so it cannot pass vacuously) and `precompact-nudges-when-no-anchor-exists-and-never-when-one-does` (the control's lead line must EQUAL the bytes anchorMissing itself produces — resolved by importing the fixture's own vendored compaction.mjs — and the with-anchor message must not contain them at all). No substring or regex match was used to make anything pass.\"\n  ],\n  \"red_failure_evidence\": \"TWO reds, both recorded BEFORE the wiring. (A) scripts/test_compaction_advisories.mjs against the UN-WIRED hooks: `3 passed, 4 failed`. FAIL 'the survival warning fires on a unit's SECOND compaction and not its first (D9)' :: 'PreCompact appends exactly one `precompact` record (D4/D5) — got []'. FAIL 'the PreCompact nudge survives a freshly-marked dedup cache (D11 force)' :: the emitted advisory was only 'bee session-close warning: session is ending mid-phase (phase: swarming) with no .bee/HANDOFF.json...'. FAIL 'PreCompact does NOT mark the dedup cache — the next UserPromptSubmit still nudges (D11)' :: same un-nudged advisory. FAIL 'the UserPromptSubmit nudge is deduped within the interval (D11)' :: stdout was only 'bee: phase=swarming mode=standard'. The three negative rows (no verdict / anchored / terminal) passed red as designed — they are guards, and are called out as such. (B) hooks/test_hook_contracts.mjs after wiring and BEFORE the split: exactly one row red, the one D23 predicted — 'FAIL - session-close-intent :: precompact-no-anchor-output-is-untouched-anchor-is-additive :: expected an additive prefix over an unchanged control advisory; control=bee: work is active and NO INTENT ANCHOR is stored (feature=demo)...' with '1 FAILURE(S)'. That red is the proof the split was necessary rather than convenient.\",\n  \"verification_run\": \"node scripts/test_compaction_advisories.mjs && node hooks/test_hook_contracts.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check → 7 passed / 0 failed; 194 rows across 23 check groups, 0 failing, ALL PASS; test_lib_mirror 4/4 PASS (29 lib files + 10 hook files byte-identical); release_manifest --check: 499 file(s) match stored manifest. Adjacent (not in the recorded verify, run as insurance because both drive the two edited hooks): hooks/test_bypass_stop_net.mjs ALL PASS, scripts/test_heartbeat_touch.mjs 29 rows 0 failing ALL PASS.\",\n  \"behavior_delta\": \"PreCompact now appends the `precompact` compaction record, renders the D9 survival advisory off THAT record's cell_compact_count, and emits the D10 anchor nudge FORCED past the dedup cache without marking it. UserPromptSubmit now emits the same nudge, deduped through shouldInject/markInjected on key `anchor-missing-nudge`, hash `<sessionId>:<feature>:<cell>`. All three PreCompact strings ride `parts` into emitHookOutput as a systemMessage; encodeBlock is untouched and the B2/R14 contract holds (asserted with a positive control). UserPromptSubmit stdout stays plain context — with no nudge the bytes written are exactly the reminder's, as before.\",\n  \"deviations\": \"None. compaction.mjs was NOT edited (it is not in this cell's files): the dedup gate lives in each hook, which is the established maybeCaptureQueueNudge shape at bee-session-close.mjs:201-225 and keeps both hooks thin callers of anchorMissing (D3).\"\n}\n",
+    "verify_output": "PASS  the PreCompact nudge survives a freshly-marked dedup cache (D11 force)\nPASS  the survival warning fires on a unit's SECOND compaction and not its first (D9)\nPASS  PreCompact does NOT mark the dedup cache — the next UserPromptSubmit still nudges (D11)\nPASS  the UserPromptSubmit nudge is deduped within the interval (D11)\nPASS  no nudge on either surface when an anchor exists (D10)\nPASS  no nudge on either surface when the phase is terminal (D10)\nPASS  PreCompact carries NO turn-control verdict under any input (B2/R14) — with the Stop positive control\n\n7 passed, 0 failed\n[... hooks/test_hook_contracts.mjs, 194 rows, including the two split rows ...]\nok   - session-close-intent :: precompact-anchor-and-nudge-leads-share-an-identical-advisory-tail :: below its lead line each PreCompact advisory is BYTE-IDENTICAL to the other's — the anchor (or, with no anchor, the D10 nudge) is a lead, and every byte the hook emitted before this feature is still emitted unchanged (D5/D23)\nok   - session-close-intent :: precompact-nudges-when-no-anchor-exists-and-never-when-one-does :: with no anchor the PreCompact advisory LEADS with D10's nudge, byte-for-byte as compaction.mjs builds it; with an anchor stored the nudge is absent entirely — the two leads are mutually exclusive by predicate (D10/D11/D23)\n\n194 rows across 23 check group(s) (0 skipped), 0 failing target contract\n\nALL PASS\nPASS test_lib_mirror: internal self-test — checker correctly flags injected byte-diff, missing file, and extra file\nPASS test_lib_mirror: runtime hook inventory derives launchers/imports and catches missing, extra, and byte drift\nPASS test_lib_mirror: templates/lib and .bee/bin/lib are byte-identical (29 files)\nPASS test_lib_mirror: runtime-derived hook inventory is byte-identical (10 files)\nrelease_manifest --check: 499 file(s) match stored manifest",
+    "verify_passed": true,
+    "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+    "claimed_at": "2026-07-23T07:41:40.840Z",
+    "verify_command": "node scripts/test_compaction_advisories.mjs && node hooks/test_hook_contracts.mjs && node scripts/test_lib_mirror.mjs && node scripts/release_manifest.mjs --check",
+    "verified_at": "2026-07-23T07:52:43.082Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-23T07:52:43.082Z",
+        "claim_session": "bf74e71a-d6ec-4088-b486-3cd5a8fa170c",
+        "claimed_at": "2026-07-23T07:46:18.275Z",
+        "acquired_at": "2026-07-23T07:41:40.838Z",
+        "worker": "advisory-wright",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
+  },
+  "tier": "ceiling"
 }

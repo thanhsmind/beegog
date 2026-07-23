@@ -255,6 +255,78 @@ async function maybeIntentAnchor(root, sessionId) {
   }
 }
 
+// compaction-hardening cz-7 (D4/D5/D9): the compaction record, and the D9
+// survival advisory rendered off the record this compaction just wrote.
+//
+// THIN CALLER, BY DECISION (D3). Nothing here decides the record's shape, the
+// counting rule, or the threshold — all of that lives in lib/compaction.mjs and
+// is reachable without any hook at all through `bee.mjs state compact-log`.
+// This function knows exactly two things: that a PreCompact is a `precompact`
+// event, and that the returned record's `cell_compact_count` is what the
+// advisory is rendered from.
+//
+// The COUNT IS TAKEN FROM THE RECORD THIS COMPACTION WROTE (D9), not from a
+// separate read: the threshold is evaluated against the compaction NOW
+// beginning, which is exactly what makes the warning first appear on a unit's
+// SECOND compaction rather than its first.
+//
+// It stays ADVISORY, like every other part on this event: the string is
+// collected into `parts` and emitted through emitHookOutput as a systemMessage,
+// never encodeBlock — the B2/R14 contract documented at :234-238 above. D9 says
+// the warning "never blocks", and on this event a blocking design is
+// unimplementable rather than merely undesirable.
+async function maybeCompactionRecord(root, sessionId) {
+  try {
+    const compaction = await import(libModuleUrl(root, "compaction.mjs"));
+    const record = compaction.appendCompactionRecord(root, { event: "precompact", sessionId });
+    const warning = compaction.survivalWarning(record.cell_compact_count);
+    if (!warning) {
+      return null;
+    }
+    return `⚠ bee compaction watch (D9): ${record.cell ? `cell ${record.cell} — ` : ""}${warning}.`;
+  } catch {
+    // fail-open: a repo vendored before compaction.mjs shipped, or any failure
+    // at all, emits exactly what this hook emitted before the feature existed.
+    return null;
+  }
+}
+
+// compaction-hardening cz-7 (D10/D11): the anchor nudge. An anchor that is
+// never written protects nothing, so the two orientation surfaces that see a
+// session mid-work — this one and UserPromptSubmit — say so when work is active
+// and no anchor exists.
+//
+// THE DEDUP IS THE CALLER'S, BOTH HALVES OF IT. `anchorMissing` is a pure
+// predicate: it never reads shouldInject and never calls markInjected. So on
+// the FORCED path (PreCompact) this function must skip BOTH — skipping only
+// shouldInject would mark the cache and let a compaction swallow the deduped
+// surface's next nudge. That is exactly maybeCaptureQueueNudge's shape at
+// :201-225 above, where `force` skips the gate and the mark together.
+//
+// D11: forced on PreCompact deliberately — that is the last moment the
+// objective can still be captured verbatim, and a 30-minute throttle must not
+// swallow it.
+async function maybeAnchorNudge(root, sessionId, { force = false } = {}) {
+  try {
+    const compaction = await import(libModuleUrl(root, "compaction.mjs"));
+    const nudge = compaction.anchorMissing(root, { sessionId });
+    if (!nudge) {
+      return null;
+    }
+    if (!force) {
+      const injectLib = await import(libModuleUrl(root, "inject.mjs"));
+      if (!injectLib.shouldInject(root, nudge.key, nudge.hash)) {
+        return null;
+      }
+      injectLib.markInjected(root, nudge.key, nudge.hash);
+    }
+    return nudge.message;
+  } catch {
+    // fail-open: no lib, no predicate, no problem
+    return null;
+  }
+}
+
 // maybePerfRefresh — keep the global performance data + matrix current WITHOUT
 // the operator doing anything. Writes the just-ended session's rollup into the
 // persistent log (performance.jsonl, upsert by session id — so Stop+PreCompact
@@ -405,9 +477,26 @@ async function main() {
     // Stop already ends the turn, and the anchor's job is to survive a
     // summary, not to close one.
     if (ctx.event === "PreCompact") {
-      const anchorMsg = await maybeIntentAnchor(root, getSessionId(ctx.payload));
+      const sessionId = getSessionId(ctx.payload);
+      const anchorMsg = await maybeIntentAnchor(root, sessionId);
       if (anchorMsg) {
         parts.push(anchorMsg);
+      }
+      // cz-7 (D10/D11): the anchor's ABSENCE leads the advisory in exactly the
+      // place its presence would. The two are mutually exclusive by
+      // construction — anchorMissing fires only when readIntent returns null,
+      // which is the one case maybeIntentAnchor returns null — so this position
+      // costs nothing and keeps the objective (or the demand to write one)
+      // first, ahead of everything the summary sees. FORCED: never deduped,
+      // and the cache is left untouched (D11).
+      const nudgeMsg = await maybeAnchorNudge(root, sessionId, { force: true });
+      if (nudgeMsg) {
+        parts.push(nudgeMsg);
+      }
+      // cz-7 (D4/D5/D9): the record, then the advisory rendered off it.
+      const survivalMsg = await maybeCompactionRecord(root, sessionId);
+      if (survivalMsg) {
+        parts.push(survivalMsg);
       }
     }
     const queueMsg = await maybeCaptureQueueNudge(root, {

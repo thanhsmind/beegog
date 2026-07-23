@@ -14,6 +14,42 @@ import { readHookContext, logCrash, libModuleUrl } from "./adapter.mjs";
 
 const HOOK_NAME = "prompt-context";
 
+// compaction-hardening cz-7 (D10/D11): the deduped half of the anchor nudge.
+// D10 closes the gap the intent-anchor feature recorded against itself —
+// nothing yet PROMPTED an agent to write an anchor, and an anchor that is never
+// written protects nothing. This is the surface that asks for it during
+// ordinary work; hooks/bee-session-close.mjs asks again, forced, at the one
+// moment it is about to matter.
+//
+// THIN CALLER, BY DECISION (D3): the predicate, the message, the cache key and
+// the dedup hash (`<sessionId>:<feature>:<cell>`) all come from
+// lib/compaction.mjs and are reachable without any hook through
+// `bee.mjs state compact-check`. This function owns only the dedup gate —
+// `anchorMissing` is pure and performs none itself — and it uses the SAME
+// shouldInject/markInjected cache every other nudge in this repo uses
+// (30-minute interval), so a session is asked once per interval and not once
+// per turn.
+//
+// Its own try/catch, separate from the reminder logic: a throw here must never
+// cost the hook its primary job.
+async function maybeAnchorNudge(root, sessionId, inject) {
+  try {
+    const compaction = await import(libModuleUrl(root, "compaction.mjs"));
+    const nudge = compaction.anchorMissing(root, { sessionId });
+    if (!nudge) {
+      return null;
+    }
+    if (!inject.shouldInject(root, nudge.key, nudge.hash)) {
+      return null;
+    }
+    inject.markInjected(root, nudge.key, nudge.hash);
+    return nudge.message;
+  } catch (error) {
+    logCrash(root, HOOK_NAME, error, "anchor-nudge");
+    return null;
+  }
+}
+
 async function main() {
   const ctx = await readHookContext(HOOK_NAME);
   const root = ctx.root;
@@ -59,20 +95,34 @@ async function main() {
     // buildPromptReminder already threads {sessionId} through resolvePipeline;
     // dropping it here made every bound session read the default record (usually
     // idle), which pulled it back toward hive — a top driver of the looping.
+    // cz-7 (D10): the reminder and the nudge are INDEPENDENT surfaces with
+    // independent dedup keys, so an empty or throttled reminder must not
+    // swallow the nudge — hence parts, and no early return above it. With no
+    // nudge to add, the bytes written are exactly the reminder's, as before.
+    const parts = [];
     const reminder = inject.buildPromptReminder(root, { sessionId });
-    if (!reminder || !reminder.text || !String(reminder.text).trim()) {
-      return 0;
+    if (reminder && reminder.text && String(reminder.text).trim()) {
+      // codex-loop (advisor #54): the dedup key was the repo-global string
+      // "prompt", so two sessions working the same checkout each invalidated the
+      // other's last-injected hash — turning the 30-minute throttle into a
+      // reminder on nearly every turn. Key it by the acting session (falling back
+      // to the global key only when no session id is available, which preserves
+      // today's single-session behaviour exactly).
+      const injectKey = sessionId ? `prompt:${sessionId}` : "prompt";
+      if (inject.shouldInject(root, injectKey, reminder.hash)) {
+        parts.push(String(reminder.text));
+        inject.markInjected(root, injectKey, reminder.hash);
+      }
     }
-    // codex-loop (advisor #54): the dedup key was the repo-global string
-    // "prompt", so two sessions working the same checkout each invalidated the
-    // other's last-injected hash — turning the 30-minute throttle into a
-    // reminder on nearly every turn. Key it by the acting session (falling back
-    // to the global key only when no session id is available, which preserves
-    // today's single-session behaviour exactly).
-    const injectKey = sessionId ? `prompt:${sessionId}` : "prompt";
-    if (inject.shouldInject(root, injectKey, reminder.hash)) {
-      process.stdout.write(String(reminder.text));
-      inject.markInjected(root, injectKey, reminder.hash);
+    const nudge = await maybeAnchorNudge(root, sessionId, inject);
+    if (nudge) {
+      parts.push(nudge);
+    }
+    if (parts.length > 0) {
+      // UserPromptSubmit stdout stays PLAIN developer context on both hosts
+      // (adapter.mjs: it is a context event, never an advisory) — so this is a
+      // direct write, never emitHookOutput's JSON envelope.
+      process.stdout.write(parts.join("\n\n"));
     }
   } catch (error) {
     logCrash(root, HOOK_NAME, error, ctx.source);

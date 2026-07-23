@@ -47,7 +47,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { runModuleWorker } from "../scripts/lib/run-module-worker.mjs";
 import { resolveRoots as resolveHookRoots } from "./adapter.mjs";
 import {
@@ -2689,25 +2689,91 @@ async function runIntentAnchorRows() {
     ),
   );
 
-  // ── D5 (session-close): additive-only. The anchor block is a PREFIX; every
-  // byte the hook emitted before this feature is still emitted, unchanged.
+  // ── D5 (session-close) + D23 (compaction-hardening cz-7): additivity, SPLIT.
+  //
+  // Until cz-7 this was ONE assertion: the with-anchor message equals the
+  // anchor block plus the no-anchor control's exact bytes. D10's anchor nudge
+  // fires precisely when readIntent returns null — true in `preControl` and
+  // false in `preRoot` — and the shared fixture (buildFixture, :240-259) writes
+  // phase "swarming" with approved_gates.execution true, satisfying D10's
+  // predicate. So the control now leads with a nudge line the with-anchor
+  // message does not have, and the single assertion goes red BY DESIGN. That is
+  // recorded as locked decision D23, which also fixes the split below.
+  //
+  // SPLIT, NEVER WEAKENED. Two byte-exact assertions replace one; neither is a
+  // substring or regex sniff of the whole message:
+  //
+  //   (a) ADDITIVITY OVER THE SHARED PORTION. Each message is `lead + "\n" +
+  //       tail` (main() joins `parts` with "\n"). The leads differ by
+  //       construction — the anchor block in one, the nudge in the other — and
+  //       the TAILS MUST BE IDENTICAL BYTES: every byte this hook emitted
+  //       before the feature is still emitted, unchanged, on both paths. The
+  //       tail is additionally asserted NON-EMPTY and carrying the "hive door
+  //       open" warning, because with an empty tail (a) would be vacuously true
+  //       and would still pass against a hook that emitted nothing else.
+  //
+  //   (b) THE NUDGE, BOTH DIRECTIONS, EXACTLY. The control's lead line must
+  //       equal the bytes `anchorMissing` itself produces for that fixture —
+  //       resolved by importing the very compaction.mjs the hook loaded, out of
+  //       the fixture's own vendored lib — and the with-anchor message must not
+  //       contain those bytes anywhere at all.
   const preAnchorBlock = preMessage.split("\n=== END BEE INTENT ANCHOR ===\n")[0];
-  const preExpected = preControlMessage
-    ? `${preAnchorBlock}\n=== END BEE INTENT ANCHOR ===\n${preControlMessage}`
-    : `${preAnchorBlock}\n=== END BEE INTENT ANCHOR ===`;
+  const preAnchorLead = `${preAnchorBlock}\n=== END BEE INTENT ANCHOR ===`;
+  // `lead + "\n" + tail` → tail, or null when the message does not lead as claimed.
+  const tailBelow = (message, lead) => {
+    if (message === lead) return "";
+    return message.startsWith(`${lead}\n`) ? message.slice(lead.length + 1) : null;
+  };
+  const preControlLead = preControlMessage.split("\n")[0];
+  const preTail = tailBelow(preMessage, preAnchorLead);
+  const preControlTail = tailBelow(preControlMessage, preControlLead);
   const preAdditivePass = Boolean(
     rPreControl.status === 0 &&
       !preControlMessage.includes("BEE INTENT ANCHOR") &&
-      preMessage === preExpected,
+      preTail !== null &&
+      preControlTail !== null &&
+      preTail === preControlTail &&
+      preTail.includes("bee session-close warning: session is ending mid-phase"),
   );
   rows.push(
     adapterRow(
       "session-close-intent",
-      "precompact-no-anchor-output-is-untouched-anchor-is-additive",
+      "precompact-anchor-and-nudge-leads-share-an-identical-advisory-tail",
       preAdditivePass,
       preAdditivePass
-        ? "with no anchor the PreCompact advisory carries zero intent bytes, and with one the message is exactly the anchor block PLUS that same unchanged advisory — strictly additive (D5)"
-        : `expected an additive prefix over an unchanged control advisory; control=${truncate(preControlMessage, 300)} with=${truncate(preMessage, 400)}`,
+        ? "below its lead line each PreCompact advisory is BYTE-IDENTICAL to the other's — the anchor (or, with no anchor, the D10 nudge) is a lead, and every byte the hook emitted before this feature is still emitted unchanged (D5/D23)"
+        : `expected identical advisory tails below the two leads; controlTail=${truncate(String(preControlTail), 300)} withTail=${truncate(String(preTail), 300)}`,
+      rPreControl,
+    ),
+  );
+
+  // (b) — the nudge is present in the control and absent with an anchor. The
+  // expected bytes come from the module the hook actually ran, so this row
+  // cannot drift into asserting a paraphrase of the nudge.
+  const preNudgeExpected = await (async () => {
+    try {
+      const mod = await import(
+        pathToFileURL(path.join(preControl, ".bee", "bin", "lib", "compaction.mjs")).href
+      );
+      const nudge = mod.anchorMissing(preControl, { sessionId: "sess-pre" });
+      return nudge ? nudge.message : null;
+    } catch {
+      return null;
+    }
+  })();
+  const preNudgePass = Boolean(
+    preNudgeExpected &&
+      preControlLead === preNudgeExpected &&
+      !preMessage.includes(preNudgeExpected),
+  );
+  rows.push(
+    adapterRow(
+      "session-close-intent",
+      "precompact-nudges-when-no-anchor-exists-and-never-when-one-does",
+      preNudgePass,
+      preNudgePass
+        ? "with no anchor the PreCompact advisory LEADS with D10's nudge, byte-for-byte as compaction.mjs builds it; with an anchor stored the nudge is absent entirely — the two leads are mutually exclusive by predicate (D10/D11/D23)"
+        : `expected the control to lead with the module's nudge and the with-anchor message to carry none; expected=${truncate(String(preNudgeExpected), 300)} controlLead=${truncate(preControlLead, 300)}`,
       rPreControl,
     ),
   );
