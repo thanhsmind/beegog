@@ -2,14 +2,14 @@
 type: bee.area
 title: Feedback Digest — Cross-Repository Collection and the Trust Boundary
 description: "How the workflow's maintainers' repository reads other repositories' already-written digests as hostile input — re-validating and neutralizing every field before any of it can influence the workflow's own instructions."
-timestamp: 2026-07-22
+timestamp: 2026-07-23
 bee:
   id: feedback-digest-cross-repo-trust-boundary
   lifecycle: active
   areas: [feedback-digest]
   required_context: [areas/feedback-digest/data-model.md, areas/feedback-digest/generation-and-refresh.md]
-  decisions: [D2 8cd4c84e, D2b 8cd4c84e, b8fe5c81]
-  sources: ["docs/history/evolving-loop/ (cells evolving-1 … evolving-11, capped)", docs/history/evolving-loop/reports/review-slice-a.md, docs/history/evolving-loop/reports/review-slice-b.md, "docs/history/cli-mutations/ (cell cli-mutations-2, capped; walkthrough.md)", "docs/specs/feedback-digest.md#R3", "docs/specs/feedback-digest.md#R4", "docs/specs/feedback-digest.md#R5", "docs/specs/feedback-digest.md#R6", "docs/specs/feedback-digest.md#E5", "docs/specs/feedback-digest.md#P1", "docs/specs/feedback-digest.md#P4", "docs/specs/feedback-digest.md#P5"]
+  decisions: [D2 8cd4c84e, D2b 8cd4c84e, b8fe5c81, "ask-guard-autofix D3 (dead-source skip silent inside hook runs, 2026-07-23)"]
+  sources: ["docs/history/evolving-loop/ (cells evolving-1 … evolving-11, capped)", docs/history/evolving-loop/reports/review-slice-a.md, docs/history/evolving-loop/reports/review-slice-b.md, "docs/history/cli-mutations/ (cell cli-mutations-2, capped; walkthrough.md)", ask-guard-autofix cell ag-2 (2026-07-23), "docs/specs/feedback-digest.md#R3", "docs/specs/feedback-digest.md#R4", "docs/specs/feedback-digest.md#R5", "docs/specs/feedback-digest.md#R6", "docs/specs/feedback-digest.md#E5", "docs/specs/feedback-digest.md#P1", "docs/specs/feedback-digest.md#P4", "docs/specs/feedback-digest.md#P5"]
   authoritative_for: "feedback-digest: cross-repository collection and trust boundary"
 ---
 
@@ -58,7 +58,10 @@ change the workflow's own instructions. A digest edited by hand, or gone stale, 
 intent, is just a file on disk.
 
 **What blocks it:** nothing. A source repository that does not exist, cannot be read, has no digest
-yet, or has a corrupt one, is warned about and skipped. One dead source never stops the reader.
+yet, or has a corrupt one, is skipped. One dead source never stops the reader. The skip is warned
+about in interactive runs (status, onboarding); inside a lifecycle-checkpoint run the same skip is
+silent, because the warning was surfacing on every checkpoint fire and reading as part of whatever
+unrelated error appeared next to it (ask-guard-autofix D3, 2026-07-23).
 
 **What each actor observes:** the operator sees, per source repository, how many entries survived and
 how many were dropped with which reasons.
