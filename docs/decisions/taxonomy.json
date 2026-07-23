@@ -171,6 +171,8 @@
     "feedback-digest",
     "compounding",
     "swarming",
-    "worktree-coordination"
+    "worktree-coordination",
+    "merge",
+    "release-manifest"
   ]
 }
