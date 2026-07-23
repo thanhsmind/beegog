@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "feature": "capture-invariant",
+  "mode": "small",
+  "phase": "compounding",
+  "approved_gates": {
+    "context": false,
+    "shape": true,
+    "execution": true,
+    "review": false
+  },
+  "summary": "Feature \"capture-invariant\" started at phase \"planning\" (lane).",
+  "next_action": "close lane",
+  "created_at": "2026-07-23T15:13:27.485Z",
+  "last_scribing_run": {
+    "feature": "capture-invariant",
+    "date": "2026-07-23",
+    "at": "2026-07-23T15:17:23.678Z",
+    "areas_synced": [
+      "doctrine-layer"
+    ],
+    "next_action": "close lane"
+  }
+}
