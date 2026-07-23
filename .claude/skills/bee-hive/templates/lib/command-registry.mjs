@@ -1716,6 +1716,60 @@ export const COMMAND_REGISTRY = [
     deprecated: null,
   },
 
+  // ─── herding (herding-dispatch-lock-toggle, decisions D1-D5) — the human
+  // owner's terminal-only convenience for the bee-herding dispatch loop's
+  // owner enable marker. Byte-for-byte the same filesystem operation as
+  // today's manual `touch`/`rm` of `<main-root>/.bee/tmp/bee-herding.enable`;
+  // `.claude/skills/bee-herding/scripts/dispatch-interlock.mjs` stays the
+  // sole reader and is never modified or called from here (D4). No runtime
+  // guard is added (D5, explicit user decision) — no TTY/interactivity
+  // check, and this group is NOT hidden from `bee.mjs --help --json`. ──────
+  {
+    name: 'herding.enable',
+    invoke: 'bee herding enable',
+    description:
+      "Create the bee-herding dispatch loop's owner enable marker (<main-root>/.bee/tmp/bee-herding.enable) — the SAME marker `.claude/skills/bee-herding/scripts/dispatch-interlock.mjs` reads before dispatch may build any dispatchable set. The main checkout root is resolved via `git rev-parse --git-common-dir`, identically to dispatch-interlock.mjs. Idempotent: running this on an already-enabled marker is not an error. Human-only convenience (D4) — never call this from dispatch-interlock.mjs, bootstrap, dispatch, merge, or any other bee automation/skill/agent code.",
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee herding enable --json'],
+    deprecated: null,
+  },
+  {
+    name: 'herding.disable',
+    invoke: 'bee herding disable',
+    description:
+      "Remove the bee-herding dispatch loop's owner enable marker (<main-root>/.bee/tmp/bee-herding.enable), so `.claude/skills/bee-herding/scripts/dispatch-interlock.mjs` refuses to let dispatch build a dispatchable set again. Idempotent: running this on an already-absent marker is not an error. Human-only convenience (D4) — never call this from dispatch-interlock.mjs, bootstrap, dispatch, merge, or any other bee automation/skill/agent code.",
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee herding disable --json'],
+    deprecated: null,
+  },
+  {
+    name: 'herding.status',
+    invoke: 'bee herding status',
+    description:
+      "Report whether the bee-herding dispatch loop's owner enable marker currently exists — {enabled, marker, main_root}, the same shape dispatch-interlock.mjs itself emits on stdout.",
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee herding status --json'],
+    deprecated: null,
+  },
+
   // ─── tmp (tree-hygiene th-4, docs/history/tree-hygiene/CONTEXT.md D1/D2) —
   // the ONE canonical scratch home (.bee/tmp/<feature-or-session>/,
   // .bee/spikes/<feature>/) and its broom. lib/scratch.mjs owns every safety
