@@ -166,6 +166,7 @@
     "verify",
     "backlog-auto-triage",
     "context-import",
-    "gate-bypass"
+    "gate-bypass",
+    "scope-interpretation"
   ]
 }
