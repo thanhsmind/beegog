@@ -844,6 +844,9 @@
     "scripts/census_stale_spawn_syntax.mjs": [
       "scripts/census_stale_spawn_syntax.mjs"
     ],
+    "scripts/ci_verify_issue.mjs": [
+      "scripts/test_ci_verify_issue.mjs"
+    ],
     "scripts/impact_registry.mjs": [
       "scripts/test_impact_registry.mjs",
       "scripts/test_run_verify_impacted.mjs",
@@ -954,6 +957,9 @@
     ],
     "scripts/test_bump_version.mjs": [
       "scripts/test_bump_version.mjs"
+    ],
+    "scripts/test_ci_verify_issue.mjs": [
+      "scripts/test_ci_verify_issue.mjs"
     ],
     "scripts/test_claim_race.mjs": [
       "scripts/test_claim_race.mjs"
