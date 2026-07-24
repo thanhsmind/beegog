@@ -128,7 +128,12 @@ import { findForeignHolds, releaseHolds, sweepExpiredHolds, withHoldsLock, inser
 // wraps its own body inside lib/state.mjs); CLI verbs WAIT normally, so no
 // maxAttempts override is ever passed here.
 import { withStoreLock } from './lib/lock.mjs';
-import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree } from './lib/worktree-store.mjs';
+import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree, WorktreeCreateError } from './lib/worktree-store.mjs';
+// wcg-3 (D1a): the worktree-new-time half of the concurrency guard. The
+// directory-scan companion to the write-guard's point-check — reused here to
+// refuse `bee worktree new` (without --with-companion) when another session is
+// live and the checkout holds a companion-eligible shared nested checkout.
+import { hasAnySharedNestedCheckout } from './lib/guards.mjs';
 import { enableHerding, disableHerding, herdingStatus } from './lib/herding.mjs';
 import { prepareDispatch } from './lib/dispatch-prepare.mjs';
 import {
@@ -3860,6 +3865,21 @@ async function handleWorktreeNew(_root, flags) {
     );
   }
   const mainRoot = resolution.workRoot;
+  // wcg-3 (D1a/D3/D4): before creating anything, refuse a plain `bee worktree
+  // new` when another session is concurrently live AND this checkout holds a
+  // companion-eligible shared nested checkout another session could also reach.
+  // Fires BEFORE any mutation (zero-mutation, matching the invalid-slug/bad-
+  // base-ref/existing-path refusals in createFeatureWorktree); hard fail-closed
+  // with no override (D3); teaches the paved road — re-enter via --with-companion
+  // so the shared checkout is mounted and tracked (D4, never an in-place
+  // conversion). --with-companion is never refused by this check. A solo
+  // checkout, or one with nothing shared, is a pure no-op (D6).
+  if (!withCompanion && hasAnySharedNestedCheckout(mainRoot)) {
+    throw new WorktreeCreateError(
+      'WORKTREE_CONCURRENT_SHARED_NESTED',
+      `refusing to create a worktree: another session is concurrently live on ${mainRoot} and it contains a shared nested checkout a companion mount must cover — running unguarded is how one session silently ate another's work. Re-run with "bee worktree new --feature ${feature} --with-companion" so the shared checkout is mounted and tracked (the paved road for concurrent shared-checkout work — AGENTS.md rule 14). This creates a NEW companion-mounted worktree; it does not retrofit the checkout you are in.`,
+    );
+  }
   // worktree-companion-hook: resolved HERE (readConfig(mainRoot).commands.*)
   // and passed down as plain option strings, same posture as verifyCommand
   // below in handleWorktreeMerge — worktree-store.mjs stays zero-deps-beyond-
