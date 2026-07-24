@@ -885,4 +885,129 @@ await check('bee.mjs CLI: "backlog rank --write" is retired (refuses, naming ren
   }
 });
 
+// ─── sqs-b2 (state-query-surface plan §Approach cell sqs-b2, gather Q3):
+// "backlog findings --feature <slug> [--text <terms>]" — a read verb over
+// .bee/backlog.jsonl's friction/finding rows. TWO schemas coexist on this
+// stream: legacy rows carry `kind: "friction"|"finding"`, current rows
+// (handleBacklogAdd above) carry `type: "friction"|"finding"` — a row
+// counts if EITHER field matches. kind:'pbi' rows are a disjoint shape
+// (foldPbis) and must never surface. --feature is a word-boundary/exact
+// match, NOT substring — "auth" must not match "authz", same discipline
+// sqs-b1 applied to decisions --cell/--feature.
+
+await check(
+  'bee.mjs CLI: "backlog findings --feature" returns both a legacy kind: row and a current type: row for their feature, excludes a different feature, and skips pbi rows',
+  async () => {
+    const pRoot = makePbiRoot('bee-backlog-findings-cli-');
+    try {
+      fs.writeFileSync(
+        path.join(pRoot, '.bee', 'backlog.jsonl'),
+        [
+          JSON.stringify({ ts: 't0', kind: 'pbi', event: 'add', id: 'p-aaaaaaaa', title: 'unrelated pbi', status: 'proposed' }),
+          JSON.stringify({
+            ts: 't1',
+            kind: 'friction',
+            feature: 'auth',
+            title: 'legacy friction row',
+            detail: 'grep-heavy triage',
+            severity: 'P2',
+            impact: 'medium',
+          }),
+          JSON.stringify({
+            ts: 't2',
+            type: 'finding',
+            feature: 'auth',
+            title: 'current finding row',
+            detail: 'schema drift found',
+            severity: 'P1',
+            layer: 'state',
+          }),
+          JSON.stringify({
+            ts: 't3',
+            type: 'friction',
+            feature: 'authz',
+            title: 'a different feature, must be excluded',
+            detail: 'nothing to do with auth',
+            severity: 'P3',
+            layer: 'state',
+          }),
+        ].join('\n') + '\n',
+        'utf8',
+      );
+
+      const run = await runBeeMjs(pRoot, ['backlog', 'findings', '--feature', 'auth', '--json']);
+      assert(run.status === 0, `backlog findings exited ${run.status} :: ${run.stderr || run.stdout}`);
+      const { findings } = JSON.parse(run.stdout);
+      const titles = findings.map((f) => f.title);
+      assert(titles.includes('legacy friction row'), `expected the legacy kind: row present, got ${JSON.stringify(titles)}`);
+      assert(titles.includes('current finding row'), `expected the current type: row present, got ${JSON.stringify(titles)}`);
+      assert(
+        !titles.includes('a different feature, must be excluded'),
+        `--feature auth must NOT match the "authz" feature (substring collision), got ${JSON.stringify(titles)}`,
+      );
+      assert(!titles.includes('unrelated pbi'), 'pbi rows must never surface from backlog findings');
+    } finally {
+      fs.rmSync(pRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+await check('bee.mjs CLI: "backlog findings --feature --text" further filters by substring over title/detail', async () => {
+  const pRoot = makePbiRoot('bee-backlog-findings-text-cli-');
+  try {
+    fs.writeFileSync(
+      path.join(pRoot, '.bee', 'backlog.jsonl'),
+      [
+        JSON.stringify({
+          ts: 't1',
+          type: 'friction',
+          feature: 'billing',
+          title: 'slow invoice render',
+          detail: 'render takes 4s',
+          severity: 'P2',
+          layer: 'perf',
+        }),
+        JSON.stringify({
+          ts: 't2',
+          type: 'friction',
+          feature: 'billing',
+          title: 'refund flow confusing',
+          detail: 'no docs',
+          severity: 'P3',
+          layer: 'ux',
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    );
+
+    const run = await runBeeMjs(pRoot, ['backlog', 'findings', '--feature', 'billing', '--text', 'invoice', '--json']);
+    assert(run.status === 0, `backlog findings --text exited ${run.status} :: ${run.stderr || run.stdout}`);
+    const { findings } = JSON.parse(run.stdout);
+    assert(
+      findings.length === 1 && findings[0].title === 'slow invoice render',
+      `--text invoice should narrow to one row, got ${JSON.stringify(findings)}`,
+    );
+  } finally {
+    fs.rmSync(pRoot, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs CLI: "backlog findings" is advertised in --help --json', async () => {
+  const pRoot = makePbiRoot('bee-backlog-findings-help-cli-');
+  try {
+    const help = await runBeeMjs(pRoot, ['backlog', '--help', '--json']);
+    assert(help.status === 0, `backlog --help --json exited ${help.status} :: ${help.stderr || help.stdout}`);
+    const manifest = JSON.parse(help.stdout);
+    const commands = Array.isArray(manifest) ? manifest : manifest.commands;
+    const findingsCmd = commands.find((c) => c.name === 'backlog.findings');
+    assert(findingsCmd, 'backlog.findings is registered in the command manifest');
+    assert(
+      'feature' in findingsCmd.parameters.properties && 'text' in findingsCmd.parameters.properties,
+      'backlog.findings advertises --feature and --text',
+    );
+  } finally {
+    fs.rmSync(pRoot, { recursive: true, force: true });
+  }
+});
+
 printSummaryAndExit();

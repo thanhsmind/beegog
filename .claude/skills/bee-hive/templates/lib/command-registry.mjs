@@ -1225,6 +1225,23 @@ export const COMMAND_REGISTRY = [
     examples: ['bee backlog render --check', 'bee backlog render --write'],
     deprecated: null,
   },
+  {
+    name: 'backlog.findings',
+    invoke: 'bee backlog findings',
+    description:
+      'List friction/finding rows from .bee/backlog.jsonl for one --feature (required). Two row schemas coexist on that stream and BOTH are read: legacy rows carry `kind: "friction"|"finding"`, current rows (from "backlog add") carry `type: "friction"|"finding"` — a row is returned if either field matches. --feature is a word-boundary/exact match, NOT substring ("auth" does not match "authz"); kind:\'pbi\' rows never surface. Optional --text narrows further by substring over title+detail (any whitespace-split term hitting either field is enough).',
+    parameters: {
+      type: 'object',
+      properties: {
+        feature: { type: 'string', description: 'Feature slug to match (word-boundary/exact over the row\'s feature field, not substring).' },
+        text: { type: 'string', description: 'Optional substring filter over title+detail (whitespace-split terms, any-term match).' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line-per-row summary.' },
+      },
+      required: ['feature'],
+    },
+    examples: ['bee backlog findings --feature state-query-surface --json', 'bee backlog findings --feature state-query-surface --text grep --json'],
+    deprecated: null,
+  },
 
   // ─── capture (bee_capture.mjs — the capture-queue CLI, decision 0017) ─────
   {

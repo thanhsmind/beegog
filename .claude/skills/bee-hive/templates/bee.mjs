@@ -205,7 +205,7 @@ import {
   CANDIDATE_STATUSES,
   REVIEW_MODES,
 } from './lib/reviews.mjs';
-import { readJson, writeJsonAtomic, appendJsonl, hashFile, removeFileIfExists } from './lib/fsutil.mjs';
+import { readJson, writeJsonAtomic, appendJsonl, hashFile, removeFileIfExists, readJsonl } from './lib/fsutil.mjs';
 // tree-hygiene th-4 (D1/D2): the canonical scratch home + its broom.
 import { runSweep } from './lib/scratch.mjs';
 // perf.mjs is imported ONLY here (never by command-registry.mjs) so it stays
@@ -2983,6 +2983,68 @@ function handleBacklogRender(root, flags) {
   return { result: rendered, text: `${verb}: docs/backlog.md` };
 }
 
+// sqs-b2 (state-query-surface plan §Approach cell sqs-b2, gather Q3): a read
+// verb over .bee/backlog.jsonl's friction/finding rows. TWO schemas coexist
+// on this stream: legacy rows carry `kind: "friction"|"finding"` (pre-
+// backlog-unification), current rows (handleBacklogAdd above) carry
+// `type: "friction"|"finding"` — a row counts if EITHER field matches. Reuses
+// readJsonl's generic read/parse/skip-malformed loop (fsutil.mjs, the same
+// backbone lib/feedback.mjs's collectFeedback and lib/backlog.mjs's foldPbis
+// build their own row-specific logic on top of); kind:'pbi' rows are always
+// skipped first — a disjoint shape (foldPbis), never a friction/finding.
+const BACKLOG_FINDING_KINDS = new Set(['friction', 'finding']);
+
+function isBacklogFindingRow(row) {
+  if (!row || typeof row !== 'object') return false;
+  if (row.kind === 'pbi') return false;
+  return BACKLOG_FINDING_KINDS.has(row.kind) || BACKLOG_FINDING_KINDS.has(row.type);
+}
+
+// --feature is a word-boundary/exact match, NOT substring ("auth" must not
+// match "authz") — reuses matchesWholeToken, the same discipline sqs-b1
+// applied to decisions --cell/--feature (there is no structural join there;
+// here there IS a structural `feature` field on the row, so this is exact-
+// modulo-case rather than a free-text scan, but the collision guard is the
+// same word-boundary regex).
+function matchesBacklogFeature(row, feature) {
+  const value = row.feature != null ? String(row.feature) : '';
+  if (!value) return false;
+  return matchesWholeToken([value], feature);
+}
+
+// --text is substring over title+detail (like the existing decisions --text
+// convention): any whitespace-split term hitting either field is enough.
+function matchesBacklogText(row, text) {
+  const terms = String(text).toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const haystacks = [row.title, row.detail]
+    .filter((v) => v !== null && v !== undefined && v !== '')
+    .map((v) => String(v).toLowerCase());
+  return terms.some((term) => haystacks.some((h) => h.includes(term)));
+}
+
+function readBacklogFindings(root, { feature, text }) {
+  const rows = readJsonl(path.join(root, '.bee', 'backlog.jsonl'));
+  return rows.filter((row) => {
+    if (!isBacklogFindingRow(row)) return false;
+    if (!matchesBacklogFeature(row, feature)) return false;
+    if (text && !matchesBacklogText(row, text)) return false;
+    return true;
+  });
+}
+
+function handleBacklogFindings(root, flags) {
+  const feature = requireFlag(flags, 'feature');
+  const text = flags.text !== undefined && flags.text !== true ? String(flags.text) : null;
+  const findings = readBacklogFindings(root, { feature, text });
+  return {
+    result: { findings },
+    text: findings.length
+      ? findings.map((f) => `[${f.severity || '—'}] ${f.title}`).join('\n')
+      : `No friction/finding rows for feature "${feature}".`,
+  };
+}
+
 // ─── capture: full port of bee_capture.mjs's add/list/flush/count verbs
 // (dispatcher-unify du-2). Reuses lib/capture.mjs's exports exactly as
 // bee_capture.mjs did — no logic change there. ─────────────────────────────
@@ -5393,7 +5455,7 @@ function backlogUsageFallback(leading) {
     const sub = leading[2];
     return `Unknown pbi action "${sub || '(missing)'}". Use: add, status, amend, list.`;
   }
-  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add, propose, pbi, render.`;
+  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add, propose, pbi, render, findings.`;
 }
 
 function captureUsageFallback(leading) {
@@ -5574,6 +5636,7 @@ const HANDLERS = {
   'backlog.pbi.amend': handleBacklogPbiAmend,
   'backlog.pbi.list': handleBacklogPbiList,
   'backlog.render': handleBacklogRender,
+  'backlog.findings': handleBacklogFindings,
   'capture.add': handleCaptureAdd,
   'capture.list': handleCaptureList,
   'capture.flush': handleCaptureFlush,
