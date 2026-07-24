@@ -44,6 +44,12 @@ gate, direct-edit, and reservation decisions that govern single writes.
   through.
 - The outer event itself malformed (no batch envelope present at all) →
   fail-open, logged: the guard cannot know a write was intended.
+- Containment recognizes the worktree-companion mount (PR #61, cell mp61-1,
+  2026-07-24): a path under the recorded `commands.worktree_companion_mount`
+  symlink — the mount `bee worktree new --with-companion` creates for a nested
+  repo's own worktree — resolves to its companion-relative form instead of
+  being denied as an out-of-worktree escape. Every other out-of-worktree
+  target keeps today's denial.
 
 **B3a — Workflow-command requests are shape-checked against the published
 catalog.** When a shell request invokes a workflow verb, the guard resolves the
