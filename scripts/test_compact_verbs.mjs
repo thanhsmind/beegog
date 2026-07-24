@@ -105,7 +105,22 @@ function readCompactionRecords(root) {
 // compactCheck's OWN behavior, so the idempotence proof below excludes the
 // whole .bee/cache/ subtree rather than let dispatcher-wide noise manufacture
 // a false mutation report.
-const DISPATCH_NOISE_DIRS = new Set(["cache"]);
+//
+// Root-caused via a MEASURED tree diff (rb-2, not assumption): the same
+// applies to .bee/logs/. Every `bee.mjs` invocation of ANY command also
+// appends one line to .bee/logs/timings.jsonl (the direct-run timing block
+// added by wv-1 — CLI-wide, fail-open, append-only telemetry, unrelated to
+// compaction), and hooks already write .bee/logs/hooks.jsonl there
+// unconditionally too. Neither is bee STATE — D13's claim is about
+// compactCheck's own STATE side effects, not CLI-wide telemetry noise, so
+// the idempotence proof excludes the whole .bee/logs/ subtree as well.
+// This exemption is deliberately narrow (two named top-level dirs, not a
+// blanket pass) and scenarioCompactCheckMutatesNothing pairs it with a
+// negative control: a genuine .bee/state.json content mutation between two
+// hashes must still register as a diff, proving the exemption did not widen
+// the check into blindness (the "clearing a red by widening the threshold"
+// trap this suite exists to avoid).
+const HASH_EXEMPT_DIRS = new Set(["cache", "logs"]);
 
 /** sha256 over every path + byte under a directory tree (idempotence proof). */
 function hashTree(dir) {
@@ -116,7 +131,7 @@ function hashTree(dir) {
       const childAbs = path.join(abs, entry.name);
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        if (DISPATCH_NOISE_DIRS.has(childRel)) continue;
+        if (HASH_EXEMPT_DIRS.has(childRel)) continue;
         hash.update(`D:${childRel}\n`);
         walk(childAbs, childRel);
       } else {
@@ -291,6 +306,39 @@ async function scenarioCompactCheckMutatesNothing() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+// PROVING negative control for the HASH_EXEMPT_DIRS exemption above: the
+// exemption scopes to .bee/cache/** and .bee/logs/** ONLY. A genuine content
+// mutation to a real state file (.bee/state.json) must still register as a
+// hash diff — otherwise the exemption would have quietly widened the check
+// into blindness instead of narrowly excluding telemetry. This is the
+// control case the cell asks for by name: it never runs compact-check at
+// all, it just proves hashTree() itself still has teeth outside the
+// exempted dirs.
+// ═════════════════════════════════════════════════════════════════════════
+
+async function scenarioCompactCheckMutatesNothingControlDetectsRealMutation() {
+  const root = buildStoreFixture("bee-compact-check-negative-control-");
+  writeSessionRecord(root, "sess-negative-control");
+  const beeDir = path.join(root, ".bee");
+  const stateFile = path.join(beeDir, "state.json");
+
+  const before = hashTree(beeDir);
+  const original = fs.readFileSync(stateFile, "utf8");
+  const mutated = JSON.parse(original);
+  mutated.mode = "high-risk"; // any genuine content change to a real state file
+  fs.writeFileSync(stateFile, `${JSON.stringify(mutated, null, 2)}\n`, "utf8");
+  const afterMutation = hashTree(beeDir);
+
+  record(
+    "compact-check-negative-control-detects-real-mutation",
+    "a genuine .bee/state.json content mutation between two hashes still turns the tree hash red — proves HASH_EXEMPT_DIRS did not widen the check into blindness, only excluded telemetry (.bee/cache/**, .bee/logs/**)",
+    before !== afterMutation,
+    `before=${before} afterMutation=${afterMutation}`,
+  );
+  rm(root);
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 
 async function main() {
   await scenarioCompactLogHappyPath();
@@ -300,6 +348,7 @@ async function main() {
   await scenarioCompactCheckMissingSession();
   await scenarioCompactCheckAnchorMissingCommand();
   await scenarioCompactCheckMutatesNothing();
+  await scenarioCompactCheckMutatesNothingControlDetectsRealMutation();
 
   console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
   process.exitCode = failures === 0 ? 0 : 1;
