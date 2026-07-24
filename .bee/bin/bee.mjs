@@ -4797,14 +4797,36 @@ function doctorPermissionModeCodex(root) {
 function doctorHookSourcesCodex(root) {
   const repoPresent = fs.existsSync(path.join(root, '.codex', 'hooks.json'));
   const pluginProjectionCheckedIn = fs.existsSync(path.join(root, 'hooks', 'hooks.json'));
-  const configured = { repo: repoPresent, plugin_projection_checked_in: pluginProjectionCheckedIn };
+  // D5/#54 item 8: hooks/claude-hooks.json (the plugin.json-declared Claude
+  // manifest) is a distinct rendered target from hooks/hooks.json (the Codex
+  // plugin projection) — named separately here so the two Claude-shaped
+  // renders are never conflated in the configured listing or the evidence text.
+  const claudeHooksManifestCheckedIn = fs.existsSync(path.join(root, 'hooks', 'claude-hooks.json'));
+  const configured = {
+    repo: repoPresent,
+    plugin_projection_checked_in: pluginProjectionCheckedIn,
+    claude_hooks_manifest_checked_in: claudeHooksManifestCheckedIn,
+  };
+  // D5: both-present is a distinct, named risk state — never silently folded
+  // into the same "ok" sentence as the single-source case. Verdict semantics
+  // (ok/warn from repoPresent alone) and active:unknown honesty stay exactly
+  // as before; this only widens what the evidence text says (hook-runtime
+  // knowledge: hook-source-exclusivity B14 — exactly one source is active).
+  const dualSourceNote = repoPresent && pluginProjectionCheckedIn
+    ? ` Both hooks/hooks.json (plugin projection) and .codex/hooks.json (repo fallback) are present on disk, so two hook sources exist; exactly-one-active is the law (hook-source-exclusivity B14). The current premise is capability matrix row B1 — plugin hooks are not-observed on codex-cli ${PROBED_CODEX_VERSION} — and this premise must be re-proved whenever the probed codex version changes.`
+    : '';
+  const claudeHooksNote = claudeHooksManifestCheckedIn
+    ? ` hooks/claude-hooks.json (the plugin.json-declared Claude manifest) is a distinct rendered target from hooks/hooks.json and is tracked separately in this row's configured listing.`
+    : '';
   return doctorRow(
     'hook_sources',
     repoPresent ? 'ok' : 'warn',
     { configured, active: 'unknown' },
-    repoPresent
+    (repoPresent
       ? `repo-fallback .codex/hooks.json is configured and is the sole exercisable source today (plugin hooks not-observed on codex-cli ${PROBED_CODEX_VERSION}, capability matrix row B1); which source is actively loaded has no runtime surface, so "active" stays unknown rather than inferred from presence.`
-      : 'no repo-fallback .codex/hooks.json found; nothing configured to load.',
+      : 'no repo-fallback .codex/hooks.json found; nothing configured to load.')
+      + dualSourceNote
+      + claudeHooksNote,
   );
 }
 

@@ -2649,6 +2649,56 @@ await check('doctor: an unknown --runtime is refused, never silently defaulted',
   }
 });
 
+await check('doctor: hook_sources names the both-present dual-source risk (D5, #54 item 8) — never blocking, active stays unknown, distinguishes claude-hooks.json from hooks.json', async () => {
+  // Single-source baseline: buildDoctorFixture() only writes .codex/hooks.json
+  // (repo fallback) — no hooks/hooks.json (plugin projection) checked in — so
+  // the dual-source sentence must NOT appear yet.
+  const singleSourceDir = buildDoctorFixture();
+  try {
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: singleSourceDir });
+    assert(result.status === 0, `doctor must not throw on the single-source fixture, got exit ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    const row = parsed.rows.find((r) => r.row === 'hook_sources');
+    assert(row, `hook_sources row must be present, got ${JSON.stringify(parsed.rows.map((r) => r.row))}`);
+    assert(row.status === 'ok', `hook_sources should be ok with .codex/hooks.json present, got ${JSON.stringify(row)}`);
+    assert(row.value.configured.plugin_projection_checked_in === false, `plugin projection must read false when hooks/hooks.json is absent, got ${JSON.stringify(row.value)}`);
+    assert(row.value.active === 'unknown', `active must stay unknown even in the single-source case, got ${JSON.stringify(row.value)}`);
+    assert(!row.evidence.includes('two hook sources exist'), `single-source evidence must not carry the dual-source sentence, got: ${row.evidence}`);
+    assert(!row.blocking, `hook_sources must never become a blocking row, got ${JSON.stringify(row)}`);
+  } finally {
+    fs.rmSync(singleSourceDir, { recursive: true, force: true });
+  }
+
+  // Both-present: add the plugin projection (hooks/hooks.json) AND the
+  // plugin.json-declared Claude manifest (hooks/claude-hooks.json) alongside
+  // the repo fallback (.codex/hooks.json, written by buildDoctorFixture()).
+  const bothPresentDir = buildDoctorFixture();
+  try {
+    fs.writeFileSync(path.join(bothPresentDir, 'hooks', 'hooks.json'), `${JSON.stringify(DOCTOR_HOOKS_JSON, null, 2)}\n`, 'utf8');
+    fs.writeFileSync(path.join(bothPresentDir, 'hooks', 'claude-hooks.json'), `${JSON.stringify(DOCTOR_HOOKS_JSON, null, 2)}\n`, 'utf8');
+    const result = await runModuleWorker(BEE_MJS, { args: ['doctor', '--runtime', 'codex', '--json'], cwd: bothPresentDir });
+    assert(result.status === 0, `doctor must not throw on the both-present fixture, got exit ${result.status}: ${result.stderr}`);
+    const parsed = JSON.parse(result.stdout);
+    const row = parsed.rows.find((r) => r.row === 'hook_sources');
+    assert(row, `hook_sources row must be present, got ${JSON.stringify(parsed.rows.map((r) => r.row))}`);
+    // Verdict semantics stay conservative — still ok/warn as today, never a
+    // new blocking row, and active is never inferred from presence.
+    assert(row.status === 'ok', `hook_sources should stay ok (verdict semantics unchanged) with both sources present, got ${JSON.stringify(row)}`);
+    assert(!row.blocking, `hook_sources must never become a blocking row even in the both-present state, got ${JSON.stringify(row)}`);
+    assert(row.value.active === 'unknown', `active must stay unknown (never inferred from presence) in the both-present state, got ${JSON.stringify(row.value)}`);
+    assert(row.value.configured.repo === true, `configured.repo must be true, got ${JSON.stringify(row.value.configured)}`);
+    assert(row.value.configured.plugin_projection_checked_in === true, `configured.plugin_projection_checked_in must be true, got ${JSON.stringify(row.value.configured)}`);
+    assert(row.value.configured.claude_hooks_manifest_checked_in === true, `configured.claude_hooks_manifest_checked_in must be true, got ${JSON.stringify(row.value.configured)}`);
+    assert(row.evidence.includes('two hook sources exist'), `both-present evidence must name the dual-source state, got: ${row.evidence}`);
+    assert(row.evidence.includes('hook-source-exclusivity B14'), `both-present evidence must cite the exactly-one-active law (hook-source-exclusivity B14), got: ${row.evidence}`);
+    assert(row.evidence.includes('capability matrix row B1'), `both-present evidence must name the current premise (capability matrix row B1), got: ${row.evidence}`);
+    assert(row.evidence.includes('re-proved') && row.evidence.includes('probed codex version changes'), `both-present evidence must state the premise must be re-proved when the probed version changes, got: ${row.evidence}`);
+    assert(row.evidence.includes('hooks/claude-hooks.json') && row.evidence.includes('plugin.json-declared'), `evidence must distinguish hooks/claude-hooks.json from hooks/hooks.json (#54 item 8), got: ${row.evidence}`);
+  } finally {
+    fs.rmSync(bothPresentDir, { recursive: true, force: true });
+  }
+});
+
 // ─── recovery.* (transcript-recovery-2, D1-D6): CLI verbs `recovery scan` /
 // `recovery window`, and the fail-open `recovery` status block. Own isolated
 // repo (own .bee) + own transcript fixtures written under the SAME fake
