@@ -187,6 +187,7 @@
     "bookkeeping",
     "bypass",
     "drift",
-    "lib-mirror"
+    "lib-mirror",
+    "tiny"
   ]
 }
