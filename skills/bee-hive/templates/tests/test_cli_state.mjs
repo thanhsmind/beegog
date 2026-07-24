@@ -1838,6 +1838,48 @@ await check('si-1: state scribing-run can stamp a NON-active feature — writes 
   }
 });
 
+await check('tst-1: state scribing-run for a NON-active feature succeeds from phase "compounding-complete" — the phase gate never applies to a repair-path call that leaves the default record untouched', async () => {
+  const dir = makeStateRepo('bee-scribing-nonactive-terminal-');
+  try {
+    const before = { phase: 'compounding-complete', feature: 'demo' };
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), before);
+    const beforeBytes = fs.readFileSync(path.join(dir, '.bee', 'state.json'));
+    const result = await runBeeState(dir, [
+      'scribing-run', '--feature', 'cli-ergonomics', '--areas', 'workflow-state,doctrine-layer', '--next-action', '-', '--json',
+    ]);
+    assert(
+      result.status === 0,
+      `a non-active-feature scribing stamp must succeed from any phase (including terminal), got ${result.status}: ${result.stdout}${result.stderr}`,
+    );
+    const afterBytes = fs.readFileSync(path.join(dir, '.bee', 'state.json'));
+    assert(afterBytes.equals(beforeBytes), 'the default record must stay byte-unchanged when the stamped feature is not the active one');
+    const ledgerPath = path.join(dir, '.bee', 'logs', 'scribing-runs.jsonl');
+    const lines = fs.readFileSync(ledgerPath, 'utf8').trim().split('\n');
+    const entry = JSON.parse(lines[lines.length - 1]);
+    assert(entry.feature === 'cli-ergonomics', `the ledger line must name the stamped feature, got ${JSON.stringify(entry)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('tst-1: state scribing-run for the ACTIVE feature still refuses from phase "compounding-complete" — the phase gate is unchanged for the run that actually advances the default record', async () => {
+  const dir = makeStateRepo('bee-scribing-active-terminal-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'compounding-complete', feature: 'demo' });
+    const result = await runBeeState(dir, [
+      'scribing-run', '--feature', 'demo', '--areas', 'workflow-state', '--next-action', '-', '--json',
+    ]);
+    assert(result.status !== 0, 'an active-feature scribing-run from the terminal phase must still be refused');
+    const out = result.stdout + result.stderr;
+    assert(
+      /scribing-run: refused from phase \\?"compounding-complete\\?"/.test(out),
+      `refusal must name the phase-gate reason, got: ${out}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await check('si-1 (D5): status --json scribing_debt gains an ADDITIVE orphaned block {count, features} from the global sweep, independent of the active feature', async () => {
   const dir = makeStateRepo('bee-status-orphan-');
   fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });

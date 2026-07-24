@@ -2363,18 +2363,26 @@ async function handleStateScribingRun(root, flags) {
   let activeFeatureAtCall = null;
   const state = await withStoreLock(root, 'state', () => {
     const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
-    // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
-    // so it is also the door that must be guarded. It used to advance the phase
-    // from anywhere, with no check that execution had happened at all.
-    const phaseCheck = checkScribingRunPhase(state.phase);
-    if (!phaseCheck.ok) throw new Error(phaseCheck.reason);
     activeFeatureAtCall = state.feature;
     // No active feature at all (idle) means nothing is being abandoned — a
     // lane call is never ambiguous either (--lane already pins the record to
     // one feature). Only a genuine mismatch against an EXISTING active
     // feature is the repair path.
     stampedActive = laneFeature ? true : !state.feature || state.feature === feature;
+    // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
+    // so it is also the door that must be guarded. It used to advance the phase
+    // from anywhere, with no check that execution had happened at all.
+    //
+    // scribing-run-terminal-stamp (tst-1): the gate protects the run that
+    // ACTUALLY produces a phase transition on the record it targets — the
+    // default record stamping its OWN active feature (or no active feature
+    // yet), or any lane call (always its own lane record). A non-active
+    // default-record call is the si-1 repair path: it never touches phase or
+    // last_scribing_run, so it is not the door D3 guards and must stay legal
+    // from any phase, including the terminal "compounding-complete"/"idle".
     if (stampedActive) {
+      const phaseCheck = checkScribingRunPhase(state.phase);
+      if (!phaseCheck.ok) throw new Error(phaseCheck.reason);
       state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
       // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
       state.phase = 'compounding';
