@@ -14,7 +14,7 @@ never a generation timestamp or any other wall-clock value.
 ## Sections
 
 - [areas/](areas/index.md) — 79 concept(s)
-- [patterns/](patterns/index.md) — 57 concept(s)
+- [patterns/](patterns/index.md) — 59 concept(s)
 - [work/](work/index.md) — 4 concept(s)
 
 ## Critical patterns
@@ -76,3 +76,5 @@ never a generation timestamp or any other wall-clock value.
 - [A pinned read-only worker type and a cell-execution dispatch are different jobs — never spawn one for the other](patterns/20260723-pinned-readonly-type-vs-execution-dispatch.md) — bee-gather/bee-extract/bee-review are read-only by hard system contract; a cell that edits, runs git, or runs verify must never be dispatched as one of them, even when a skill doc offers it as a valid tier-matched choice.
 - [Split automation where an action becomes irreversible — automate the recoverable half, keep the irreversible half a human gesture](patterns/20260723-split-automation-where-an-action-becomes-irreversible.md) — When automation both produces work and lands it, the two halves have different blast radii. Autonomy should track blast radius, not convenience.
 - [A managed-file ledger needs a removal path derived from its own diff, not a hand-maintained retired list](patterns/20260724-ledger-diff-derived-removal.md) — A managed-file ledger needs a removal path derived from its own diff, not a hand-maintained retired list
+- [A cell scheduler that serializes on declared files alone misses shared regen side-effects](patterns/20260724-scheduler-blind-to-regen-side-effects.md) — A cell scheduler that serializes on declared files alone misses shared regen side-effects
+- [A fresh worktree inherits every other feature's stale claimed cells because .bee/cells/ is git-tracked](patterns/20260724-worktree-inherits-stale-cells.md) — A fresh worktree inherits every other feature's stale claimed cells because .bee/cells/ is git-tracked

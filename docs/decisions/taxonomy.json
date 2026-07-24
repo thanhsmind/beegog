@@ -187,6 +187,17 @@
     "bookkeeping",
     "bypass",
     "drift",
-    "lib-mirror"
+    "lib-mirror",
+    "worktree-concurrency-guard",
+    "enforcement-point",
+    "detection-signal",
+    "fail-closed",
+    "recovery-path",
+    "gate-bypass-scope",
+    "backward-compat",
+    "gate1",
+    "gate2",
+    "gate3",
+    "batch2"
   ]
 }

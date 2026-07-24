@@ -88,6 +88,36 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "must_haves_truths",
+            "status": "PASS",
+            "evidence": "hooks/bee-write-guard.mjs:867-875 denies via guards.isSharedNestedCheckoutTarget(root,cand.abs,{excludeSessionId:sessionId}); rows 78/81 DENY concurrent, row80 ALLOW solo, row82 ALLOW verified companion; refusal at :44-55 names `bee worktree new --with-companion` as FRESH ('The current worktree cannot be converted') -- all green (ALL PASS, 82 rows)"
+          },
+          {
+            "id": "decision_citations",
+            "status": "PASS",
+            "evidence": "D1b wired at main() dispatch (hooks/bee-write-guard.mjs:826-837,861-869), D3 hard pre-checkWrite fail-closed (:865-875), D4 fresh-worktree wording (:50-53); only gate_bypass token in file is a comment at :863 asserting it is never consulted -- no code reads config gate_bypass (D5 honored)"
+          },
+          {
+            "id": "task_diff_alignment",
+            "status": "PASS",
+            "evidence": "git show 264daae --stat: guards.mjs NOT in diff (function only called, not modified); changes confined to declared files (both bee-write-guard.mjs copies, test_write_guard.mjs, release-manifest.json, onboarding.json) plus cell/regen artifacts"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-24T09:15:41.037Z"
+      }
     ]
   },
   "tier": "ceiling"

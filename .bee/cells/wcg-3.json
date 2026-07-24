@@ -109,6 +109,36 @@
         "failure_signature": null,
         "note": null
       }
+    ],
+    "semantic_judge": [
+      {
+        "schema": "judge-verdict/1",
+        "verdict": "PASS",
+        "checks": [
+          {
+            "id": "must_haves_truths",
+            "status": "PASS",
+            "evidence": ".bee/bin/bee.mjs:3878 `if (!withCompanion && hasAnySharedNestedCheckout(mainRoot))` throws; guards.mjs:826 returns false unless isConcurrentMode AND (companion|nested) -- case6 refuses zero-mutation, case7/8 proceed (D6), case9 --with-companion never refused"
+          },
+          {
+            "id": "decision_citations",
+            "status": "PASS",
+            "evidence": "D1a/D3/D4 in bee.mjs:3878-3888 (typed WorktreeCreateError, no override, message directs to fresh --with-companion 'does not retrofit'); guards.mjs:826 hasAnySharedNestedCheckout reuses refactored resolveVerifiedCompanionMountReal (guards.mjs:874, verification now single-sourced, targetInsideVerifiedCompanionMount:906 delegates) + isRegisteredSubmodule exclusion -- no duplication/divergence"
+          },
+          {
+            "id": "task_diff_alignment",
+            "status": "PASS",
+            "evidence": "all 15 declared files present in `git show c3c0f43 --stat`; the 5 extras are the cell's own record (.bee/cells/wcg-3.json) + 4 deterministic .bee-render.json regen artifacts from the sanctioned render chain, explicitly declared in wcg-3.json trace.friction"
+          }
+        ],
+        "failure_signature": null,
+        "fixability": "automatic",
+        "confidence": "high",
+        "builder_model": "sonnet",
+        "judge_model": "opus",
+        "model_independence": "confirmed",
+        "recorded_at": "2026-07-24T09:31:40.315Z"
+      }
     ]
   },
   "tier": "ceiling"
