@@ -7,8 +7,8 @@ bee:
   id: verify-pipeline-suite-topology-and-discovery
   lifecycle: active
   areas: [verify-pipeline]
-  decisions: [contention-split D1-D6 (decision 1ce777d9), verify-scoping D1/D2 (decisions e39d3f89, 20534ea9), impacted-level1 D1 (decision 4f8295fb)]
-  sources: ["contention-split cells cs-1/cs-2a/cs-2b/cs-3/cs-4 (fixture extraction, monolith split 430-check conservation, monolith deletion, convention-based suite discovery; traces in .bee/cells/, 2026-07-20)", "hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — Windows CI runs the real split suites through the runner's own discovery rather than a hand-maintained list; write-guard-hook-fix wgf-1, 2026-07-21 — the fixture that vendors a module tree copies the tree, never a hand-maintained file list)", "verify-scoping cells vs-1/vs-2 (scoped --only include filter + two-tier verify doctrine; traces in .bee/cells/, 2026-07-23)", "impacted-level1 cells l1-1/l1-2 (registry per-edge depth split + run_verify --level 1 direct-only selection; traces in .bee/cells/, 2026-07-23)", "docs/specs/verify-pipeline.md#R1", "docs/specs/verify-pipeline.md#R2", "docs/specs/verify-pipeline.md#R3", "docs/specs/verify-pipeline.md#E1", "docs/specs/verify-pipeline.md#P1", "docs/specs/verify-pipeline.md#P2", "docs/specs/verify-pipeline.md#P3", "docs/specs/verify-pipeline.md#P4"]
+  decisions: [contention-split D1-D6 (decision 1ce777d9), verify-scoping D1/D2 (decisions e39d3f89, 20534ea9), impacted-level1 D1 (decision 4f8295fb), i54-closeout D2]
+  sources: ["contention-split cells cs-1/cs-2a/cs-2b/cs-3/cs-4 (fixture extraction, monolith split 430-check conservation, monolith deletion, convention-based suite discovery; traces in .bee/cells/, 2026-07-20)", "hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21 — Windows CI runs the real split suites through the runner's own discovery rather than a hand-maintained list; write-guard-hook-fix wgf-1, 2026-07-21 — the fixture that vendors a module tree copies the tree, never a hand-maintained file list)", "verify-scoping cells vs-1/vs-2 (scoped --only include filter + two-tier verify doctrine; traces in .bee/cells/, 2026-07-23)", "impacted-level1 cells l1-1/l1-2 (registry per-edge depth split + run_verify --level 1 direct-only selection; traces in .bee/cells/, 2026-07-23)", "docs/specs/verify-pipeline.md#R1", "docs/specs/verify-pipeline.md#R2", "docs/specs/verify-pipeline.md#R3", "docs/specs/verify-pipeline.md#E1", "docs/specs/verify-pipeline.md#P1", "docs/specs/verify-pipeline.md#P2", "docs/specs/verify-pipeline.md#P3", "docs/specs/verify-pipeline.md#P4", "i54-closeout cell i54-closeout-2 (run_verify per-suite wall-clock timeout + heartbeat; trace in .bee/cells/, 2026-07-24)"]
   authoritative_for: "verify-pipeline: suite topology and discovery"
 ---
 
@@ -73,6 +73,17 @@ concurrency-safe and hermetic is `concurrency-and-hermetic-runs.md`.
   transitive); mid-iteration, `run_verify --impacted-from-git --level 1`
   selects direct edges only (seconds), while the transitive impacted run
   (`commands.test`) stays the wave-close/merge gate (impacted-level1 D1).
+
+- **A hung suite is killed and named, never left to hang the whole run.** Every
+  suite the runner launches carries a per-suite wall-clock timeout (default
+  300s, overridable via `BEE_VERIFY_SUITE_TIMEOUT_MS`; `0`/`none` disables it).
+  On expiry the runner kills the suite's whole child process group — not just
+  the direct child, so a grandchild the suite itself spawned cannot outlive it
+  either — and reports a distinct `TIMEOUT` status, never conflated with an
+  ordinary `FAIL`. A stderr heartbeat (default every 30s, overridable via
+  `BEE_VERIFY_HEARTBEAT_MS`) names whichever suites are still in flight, so a
+  long-running full verify never reads as frozen. Hermetic env scrub and
+  non-timeout pass/fail semantics are unaffected (i54-closeout D2).
 
 ## Business Rules
 

@@ -2,14 +2,14 @@
 type: bee.area
 title: "Workflow State — working sessions, self-derived identity, lanes, and the renewing heartbeat"
 description: "Who the acting session is (resolved from its own environment, never handed down), how a feature gets its own pipeline lane that every reader resolves through, and how a live session's heartbeat renews itself and carries its claims and holds forward with it."
-timestamp: 2026-07-22
+timestamp: 2026-07-24
 bee:
   id: workflow-state-sessions-lanes-and-identity
   lifecycle: active
   areas: [workflow-state]
   required_context: [areas/workflow-state/overview.md]
-  decisions: [multi-session-hardening D3/D5 with Δ1-Δ6 amendments (session self-derivation; throttled heartbeat and lease renewal), "fresh-session-handoff D2 (a lane never borrows the default pipeline's authority)", "hardening-1-7-10 (the durable single-fresh-session identity fallback, audited, at library and CLI levels)"]
-  sources: ["fresh-session-handoff cells fsh-3/fsh-4 (lane store, resolvePipeline, lane-mode startFeature; validation-s2, 2026-07-13)", "multi-session-hardening cells msh-1..7 (traces in .bee/cells/, reports docs/history/multi-session-hardening/reports/, 2026-07-19)", hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21), "docs/specs/workflow-state.md#B12", "docs/specs/workflow-state.md#B13", "docs/specs/workflow-state.md#B22", "docs/specs/workflow-state.md#B24", "docs/specs/workflow-state.md#R38", "docs/specs/workflow-state.md#R55", "docs/specs/workflow-state.md#E22", "docs/specs/workflow-state.md#P14"]
+  decisions: [multi-session-hardening D3/D5 with Δ1-Δ6 amendments (session self-derivation; throttled heartbeat and lease renewal), "fresh-session-handoff D2 (a lane never borrows the default pipeline's authority)", "hardening-1-7-10 (the durable single-fresh-session identity fallback, audited, at library and CLI levels)", i54-closeout D7]
+  sources: ["fresh-session-handoff cells fsh-3/fsh-4 (lane store, resolvePipeline, lane-mode startFeature; validation-s2, 2026-07-13)", "multi-session-hardening cells msh-1..7 (traces in .bee/cells/, reports docs/history/multi-session-hardening/reports/, 2026-07-19)", hardening-1-7-10 cells 1710-1..1710-11 (2026-07-21), "docs/specs/workflow-state.md#B12", "docs/specs/workflow-state.md#B13", "docs/specs/workflow-state.md#B22", "docs/specs/workflow-state.md#B24", "docs/specs/workflow-state.md#R38", "docs/specs/workflow-state.md#R55", "docs/specs/workflow-state.md#E22", "docs/specs/workflow-state.md#P14", "i54-closeout cell i54-closeout-7 (resolveMutationTarget lane auto-resolve for state-write verbs; trace in .bee/cells/, 2026-07-24)"]
   authoritative_for: "workflow-state: session identity, per-feature lanes, and heartbeat/lease renewal"
 ---
 
@@ -50,6 +50,22 @@ the suite against the real operation. What each actor observes: an agent in a
 zero-lane repo sees exactly the pre-lane behavior of every verb; an agent
 using lanes sees per-feature pipelines whose gates never bleed into each
 other.
+
+**Lane-scoped writes auto-resolve the same way lane reads already do
+(i54-closeout D7).** `resolveMutationTarget` — the shared resolution behind
+`state set`, `state gate`, `state scribing-run`, and `state advisor-ref record`
+— picks its target in one fixed precedence: an explicit `--lane` always wins;
+absent that, the calling session's own bound lane (identity self-resolved at
+the moment of the operation, per B22) is used; absent both, the default record
+is used, exactly as before lanes existed. `--no-lane` forces the default record
+even from a bound session; passing it together with an explicit `--lane` is
+refused. A missing or corrupt bound lane refuses the write loudly, with zero
+writes performed — it never silently falls back to the default record (the
+same never-borrow-the-default's-authority discipline as B13's read path,
+fresh-session-handoff D2). An unbound session sees no behavior change at all:
+every one of the four mutation verbs resolves to the default record exactly as
+it always did. `--owner`, where a verb accepts it, is still checked against
+the *selected* record's own pre-mutation phase, never the default's.
 
 **B13 — Readers resolve through the acting session's lane.** Trigger: any
 read of "where does the workflow stand" while lanes exist. What happens, per
@@ -175,6 +191,12 @@ its knowledge actually landed — the state and the specs can no longer disagree
   session in the store is adopted (audited, never silent); two or more refuse
   rather than guess. The chain applies identically at the library level and
   every CLI surface that resolves identity (hardening-1-7-10).
+- R56 — A lane-scoped state mutation (`state set`, `state gate`, `state
+  scribing-run`, `state advisor-ref record`) resolves its target in the order
+  explicit `--lane` > the calling session's own bound lane > the default
+  record, symmetric with the read-path resolution in B13; `--no-lane` forces
+  the default from a bound session, and a missing or corrupt bound lane
+  refuses the write loudly rather than falling back (i54-closeout D7).
 
 ## Edge Cases Settled
 

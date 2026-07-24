@@ -9,7 +9,7 @@ bee:
   areas: [onboarding]
   required_context: [areas/onboarding/overview.md]
   decisions: [55ff17ef (release-version parity is fail-closed across every distributed projection), 09b776b5 (both installers prove complete greenfield/brownfield postconditions before success), "fe6593c0 (runtime-lib downgrade refusal targets the vendored copy path; zero-mutation, self-install included)", 485e949a (honest status drift reference = the onboarding managed-hash ledger), "579bbad7 (status drift is report-only, stays a boolean + optional detail; fail-open on absent/legacy ledger)", "ce4eee19 (SRC-01..06 shipped as a pure shared classifier, wrap-not-replace, consumed by status + onboarding)", 21be04f7 (status gains a report-only source field; unknown/legacy never implicit source), cba8b832 (release-version single-source), 9927fafb (a switch that narrows what an upgrade compares must equally narrow what it claims), "6eacf846 (auto-approved shape+execution for installer-verify-orphan-drift, bypass total)", "053a49fa (retired library modules are removed on apply via a ledger-diff derivation, not a hand-maintained list)"]
-  sources: ["installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; cells -4/-2/-3, 2026-07-16; field fix cells -5/-6)", "codex-harness-hardening cell codex-harness-hardening-1b-1 (runtime-lib downgrade guard R15; split-brain regression 3->0, 2026-07-15)", "codex-harness-hardening-1c cell codex-harness-hardening-1c-1 (honest status drift R16 via the onboarding managed-hash ledger; 5 drift tests, 2026-07-15)", "codex-harness-hardening-1d cells 1d-1/1d-2 (SRC-01..06 source-identity classifier R17 + status source field; 8 classifier/status tests, 2026-07-15)", "sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)", "cell p49-force-downgrade-blast-radius-1 (PBI P49, v1.1.0 review P2; advisor-consulted)", "cell installer-verify-orphan-drift-1 (R27: retired-library removal on apply; repro was install.sh reporting version-parity failure/drift=true post-apply on a host still carrying a retired templates/lib module, 2026-07-24)", "docs/specs/onboarding.md#R15", "docs/specs/onboarding.md#R16", "docs/specs/onboarding.md#R17", "docs/specs/onboarding.md#R21", "docs/specs/onboarding.md#R22", "docs/specs/onboarding.md#R26", "docs/specs/onboarding.md#E8", "docs/specs/onboarding.md#P5"]
+  sources: ["installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; cells -4/-2/-3, 2026-07-16; field fix cells -5/-6)", "codex-harness-hardening cell codex-harness-hardening-1b-1 (runtime-lib downgrade guard R15; split-brain regression 3->0, 2026-07-15)", "codex-harness-hardening-1c cell codex-harness-hardening-1c-1 (honest status drift R16 via the onboarding managed-hash ledger; 5 drift tests, 2026-07-15)", "codex-harness-hardening-1d cells 1d-1/1d-2 (SRC-01..06 source-identity classifier R17 + status source field; 8 classifier/status tests, 2026-07-15)", "sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)", "cell p49-force-downgrade-blast-radius-1 (PBI P49, v1.1.0 review P2; advisor-consulted)", "cell installer-verify-orphan-drift-1 (R27: retired-library removal on apply; repro was install.sh reporting version-parity failure/drift=true post-apply on a host still carrying a retired templates/lib module, 2026-07-24)", "docs/specs/onboarding.md#R15", "docs/specs/onboarding.md#R16", "docs/specs/onboarding.md#R17", "docs/specs/onboarding.md#R21", "docs/specs/onboarding.md#R22", "docs/specs/onboarding.md#R26", "docs/specs/onboarding.md#E8", "docs/specs/onboarding.md#P5", "docs/history/installer-verify-extra-drift/ (cell installer-verify-extra-drift-1: install.sh verify step tolerates extra-file-only drift, 2026-07-24)"]
   authoritative_for: "onboarding: release identity, version parity, and honest reporting"
 ---
 
@@ -114,6 +114,20 @@ and the strongest of them is the one that reports success.
   its own. Re-running an apply after the removal reports nothing left to do
   (decision 053a49fa; cell installer-verify-orphan-drift-1).
 
+- **R28** — The installer's own final verify step distinguishes real drift from
+  extra-file-only drift before deciding whether to hard-fail. It keeps the
+  existing fatal check unchanged for a `bee_version`/`plugin_version` mismatch
+  against the expected release, and unchanged for any drift entry that is a
+  real hash mismatch or a missing managed file. But when the only drift present
+  is one or more entries suffixed "(extra)" — an unmanaged file sitting in the
+  vendored library location, with every version already matching expected — the
+  verify step does not hard-fail on that alone: it prints the specific extra
+  file path(s) with guidance to remove them (or notes they self-heal on the
+  next onboarding refresh) and continues to its up-to-date recheck. A real
+  hash-mismatch or missing-file entry anywhere in the same drift set still
+  hard-fails exactly as before — extra-file-only is the only tolerated shape
+  (installer-verify-extra-drift cell installer-verify-extra-drift-1, 2026-07-24).
+
 ## Edge Cases Settled
 
 - **A partial upgrade that reports success is worse than one that fails.** The
@@ -146,3 +160,10 @@ and the strongest of them is the one that reports success.
   `copy_lib`/`RETIRED_HELPERS` items it mirrors); apply executes it with the
   same exact-dirname safety `remove_helper` uses. Regression coverage:
   `skills/bee-hive/scripts/test_onboard_bee.mjs` ("stale lib" block).
+- Extra-file-only drift tolerance (R28): the verify node snippet at the tail of
+  `scripts/install.sh` (piped after `printf '%s' "$STATUS" | node -e '...'`),
+  reading `s.onboarding.drift_detail` (populated by `computeRuntimeDrift`,
+  `skills/bee-hive/templates/bee.mjs`). Regression test:
+  `scripts/test_installers_e2e.mjs` ("extra unmanaged .mjs in .bee/bin/lib/
+  does not hard-fail install.sh's verify step" case). Evidence:
+  `.bee/cells/installer-verify-extra-drift-1.json`.
