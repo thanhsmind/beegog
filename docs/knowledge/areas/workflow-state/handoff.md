@@ -8,7 +8,7 @@ bee:
   lifecycle: active
   areas: [workflow-state]
   required_context: [areas/workflow-state/overview.md]
-  decisions: [fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md — auto-resume authority exists only at the fresh-session boundary; the puller never widens authority)]
+  decisions: [fresh-session-handoff D1-D4 (docs/history/fresh-session-handoff/CONTEXT.md — auto-resume authority exists only at the fresh-session boundary; the puller never widens authority), no-clear-stop D1 (planned-next is written only at real session exit; the orchestrator never stops mid-flow to offer /clear)]
   sources: ["fresh-session-handoff S1 cells fsh-1/fsh-2 (traces in .bee/cells/, reports docs/history/fresh-session-handoff/reports/, 2026-07-13)", fresh-session-handoff validation-s4 C10/C11 (docs/history/fresh-session-handoff/reports/validation-s4.md), "GH #20 live-owner lane guard (trace .bee/cells/cnlg-1.json)", "docs/specs/workflow-state.md#B15", "docs/specs/workflow-state.md#B16", "docs/specs/workflow-state.md#R19", "docs/specs/workflow-state.md#R20", "docs/specs/workflow-state.md#R21", "docs/specs/workflow-state.md#P16"]
   authoritative_for: "workflow-state: the two-kind session handoff and the cross-lane work puller"
 ---
@@ -29,7 +29,11 @@ verification) and a next unit has been claimed for it. What happens: the
 planned-next handoff is written through its guarded verb — the verb itself
 refuses (typed, zero mutation) when the previous unit is unfinished, its
 verification did not pass, or the carried claim is absent or not owned by the
-writer; the owner then starts a fresh session (types the clear command). At
+writer. The write happens only at **real session exit** (no-clear-stop D1):
+while work remains, the orchestrator continues in-session and never stops
+mid-flow to offer the clear command — the handoff is not a mid-session pause
+gesture. When it is written, the owner then starts a fresh session (types the
+clear command); adoption machinery below is unchanged by this. At
 session start, only on the **fresh-session boundaries** (a cleared or newly
 started session) does the runtime adopt the carried claim for the new session
 — ownership transfers through the claim's gate, the record staying present

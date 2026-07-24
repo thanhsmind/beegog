@@ -8,7 +8,7 @@ bee:
   lifecycle: active
   areas: [doctrine-layer]
   required_context: [areas/doctrine-layer/overview.md]
-  decisions: [c2c46488 (an unblocked write is not an approved write), 1689af1b (silent bookkeeping)]
+  decisions: [c2c46488 (an unblocked write is not an approved write), 1689af1b (silent bookkeeping), 4439bd7e (purpose-first narration + intent-carrying dispatch descriptions)]
   sources: ["terminal-phase-gate (cell tpg-2, 2026-07-13)", "docs/specs/doctrine-layer.md#B5", "docs/specs/doctrine-layer.md#R6", "docs/specs/doctrine-layer.md#R7", "docs/specs/doctrine-layer.md#R8", "docs/specs/doctrine-layer.md#E3"]
   authoritative_for: "doctrine-layer: unenforced obedience and the human boundary"
 ---
@@ -39,6 +39,15 @@ every rule it fails to cover (decision c2c46488).
   the human. The human's only actions are approvals, decisions, and permissions.
 - **R8** — The workflow's internal vocabulary stays out of the conversation. The
   human hears the work in their own terms; the machinery runs silently (1689af1b).
+  This carries a positive duty — purpose-first narration (4439bd7e, work-visibility
+  D1/D2): every perceivable work unit (a phase of real work starting, a worker sent
+  out, a long-running step, a change of direction) opens with one work-language
+  sentence naming what is being done and for what outcome, and every dispatched
+  worker's description is one work-language intent sentence plus the model name —
+  never a model name or codename alone. Twin litmus pair: strip the bee terms — if
+  nothing is lost, they didn't belong; strip the message entirely — if the human
+  loses the thread of what/why, the sentence was owed. Silence about mechanics is
+  never silence about purpose.
 
 ## Edge Cases Settled
 

@@ -18,7 +18,7 @@ never a generation timestamp or any other wall-clock value.
 - [hook-runtime/](hook-runtime/index.md) — 15 concept(s)
 - [okf-profile/](okf-profile/index.md) — 7 concept(s)
 - [onboarding/](onboarding/index.md) — 8 concept(s)
-- [performance-log/](performance-log/index.md) — 3 concept(s)
+- [performance-log/](performance-log/index.md) — 4 concept(s)
 - [verify-pipeline/](verify-pipeline/index.md) — 3 concept(s)
 - [workflow-state/](workflow-state/index.md) — 15 concept(s)
 - [worktree-parallelism/](worktree-parallelism/index.md) — 7 concept(s)
