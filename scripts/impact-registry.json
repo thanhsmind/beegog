@@ -1216,7 +1216,8 @@
         "scripts/test_run_verify_impacted.mjs",
         "scripts/test_run_verify_only.mjs",
         "scripts/test_run_verify_skip_marker.mjs",
-        "scripts/test_verify_manifest.mjs"
+        "scripts/test_verify_manifest.mjs",
+        "scripts/test_verify_timeout.mjs"
       ]
     },
     "scripts/install.ps1": {
@@ -1267,6 +1268,7 @@
         "scripts/test_conformance.mjs",
         "scripts/test_dispatch_prepare.mjs",
         "scripts/test_heartbeat_touch.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "skills/bee-hive/scripts/test_onboard_bee.mjs",
         "skills/bee-hive/scripts/test_split_brain_regression.mjs",
         "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
@@ -1295,6 +1297,7 @@
         "scripts/test_conformance.mjs",
         "scripts/test_dispatch_prepare.mjs",
         "scripts/test_heartbeat_touch.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "skills/bee-hive/scripts/test_onboard_bee.mjs",
         "skills/bee-hive/scripts/test_split_brain_regression.mjs",
         "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
@@ -1433,14 +1436,16 @@
         "scripts/test_run_verify_impacted.mjs",
         "scripts/test_run_verify_only.mjs",
         "scripts/test_run_verify_skip_marker.mjs",
-        "scripts/test_verify_manifest.mjs"
+        "scripts/test_verify_manifest.mjs",
+        "scripts/test_verify_timeout.mjs"
       ],
       "all": [
         "scripts/test_impact_registry.mjs",
         "scripts/test_run_verify_impacted.mjs",
         "scripts/test_run_verify_only.mjs",
         "scripts/test_run_verify_skip_marker.mjs",
-        "scripts/test_verify_manifest.mjs"
+        "scripts/test_verify_manifest.mjs",
+        "scripts/test_verify_timeout.mjs"
       ]
     },
     "scripts/test_agents_budget.mjs": {
@@ -1457,6 +1462,14 @@
       ],
       "all": [
         "scripts/test_bump_version.mjs"
+      ]
+    },
+    "scripts/test_bypass_matrix.mjs": {
+      "direct": [
+        "scripts/test_bypass_matrix.mjs"
+      ],
+      "all": [
+        "scripts/test_bypass_matrix.mjs"
       ]
     },
     "scripts/test_ci_verify_issue.mjs": {
@@ -1561,6 +1574,14 @@
       ],
       "all": [
         "scripts/test_heartbeat_touch.mjs"
+      ]
+    },
+    "scripts/test_hook_vendor_closure.mjs": {
+      "direct": [
+        "scripts/test_hook_vendor_closure.mjs"
+      ],
+      "all": [
+        "scripts/test_hook_vendor_closure.mjs"
       ]
     },
     "scripts/test_impact_registry.mjs": {
@@ -1731,6 +1752,14 @@
         "scripts/test_verify_manifest.mjs"
       ]
     },
+    "scripts/test_verify_timeout.mjs": {
+      "direct": [
+        "scripts/test_verify_timeout.mjs"
+      ],
+      "all": [
+        "scripts/test_verify_timeout.mjs"
+      ]
+    },
     "scripts/test_worktree_cli.mjs": {
       "direct": [
         "scripts/test_worktree_cli.mjs"
@@ -1781,10 +1810,12 @@
     },
     "skills/bee-hive/scripts/onboard_bee.mjs": {
       "direct": [
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_skill_render.mjs",
         "skills/bee-hive/scripts/test_plugin_distribution.mjs"
       ],
       "all": [
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
         "skills/bee-hive/scripts/test_plugin_distribution.mjs"
@@ -1948,6 +1979,7 @@
         "scripts/test_compaction_advisories.mjs",
         "scripts/test_compaction_module.mjs",
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
@@ -1990,6 +2022,7 @@
         "skills/bee-hive/templates/tests/test_misc.mjs"
       ],
       "all": [
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
         "skills/bee-hive/scripts/test_plugin_distribution.mjs",
@@ -2034,6 +2067,7 @@
         "scripts/test_compaction_advisories.mjs",
         "scripts/test_compaction_module.mjs",
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
@@ -2150,6 +2184,7 @@
         "scripts/test_compaction_advisories.mjs",
         "scripts/test_compaction_module.mjs",
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
@@ -2324,6 +2359,7 @@
         "scripts/test_compaction_advisories.mjs",
         "scripts/test_compaction_module.mjs",
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
@@ -2397,6 +2433,7 @@
         "scripts/test_compaction_advisories.mjs",
         "scripts/test_compaction_module.mjs",
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
@@ -2479,6 +2516,7 @@
       ],
       "all": [
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
@@ -2516,6 +2554,7 @@
         "scripts/test_compaction_advisories.mjs",
         "scripts/test_compaction_module.mjs",
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
@@ -2566,6 +2605,7 @@
         "scripts/test_compaction_advisories.mjs",
         "scripts/test_compaction_module.mjs",
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
@@ -2601,6 +2641,7 @@
         "scripts/test_compaction_advisories.mjs",
         "scripts/test_compaction_module.mjs",
         "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_hook_vendor_closure.mjs",
         "scripts/test_native_probe.mjs",
         "scripts/test_render_race.mjs",
         "scripts/test_skill_render.mjs",
