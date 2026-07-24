@@ -72,7 +72,19 @@ function sha256(buf) {
 // stamps .bee/cache/manifest-hash.json ({ hash, checked_at }) on every read, and
 // logs churn; excluding these lets an idempotency check target the MANAGED files
 // only. `.bee/cache` is bee's derived/scratch dir (GitHub #11) — skip it wholesale.
-const RUNTIME_CACHE = [".bee/cache", ".bee/logs/hooks.jsonl", ".git"];
+// `.bee/logs` is excluded wholesale too (rb-3): every file under it is a
+// fail-open, append-only runtime log — never installer-managed content, and
+// already git-ignored in full (.gitignore: `.bee/logs/`). It used to list only
+// `.bee/logs/hooks.jsonl`, which missed `.bee/logs/timings.jsonl` (the
+// per-invocation direct-run timing log bee.mjs itself appends to on every
+// call, decision 4439bd7e/work-visibility D3) — install.sh's own final
+// verification step shells out to `node .bee/bin/bee.mjs status --json`
+// (scripts/install.sh:487), so a repeat install appends a second timings.jsonl
+// line and the tree digest churns even though every actually-managed file is
+// byte-identical. Excluding the whole directory (matching lib/compaction.mjs's
+// own "every other .bee/logs/*.jsonl" convention) closes this for any future
+// sibling log too, not just this one file.
+const RUNTIME_CACHE = [".bee/cache", ".bee/logs", ".git"];
 
 function treeDigest(root, ignore = []) {
   if (!fs.existsSync(root)) return "ABSENT";
