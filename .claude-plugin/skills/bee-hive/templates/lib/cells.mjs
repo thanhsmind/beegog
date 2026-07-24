@@ -1250,7 +1250,19 @@ function normalizeNewCell(cell) {
 // pre-existing cycle among untouched on-disk cells never blocks unrelated
 // writes — per D2 those are reported by `cells schedule` diagnostics, not
 // enforced here.
-function assertNoCycle(root, verb, incomingCells) {
+// computeIncomingCycles (D2) — pure, non-throwing core of the cycle check:
+// union of ALL on-disk cells (every status — detectCycles is a structural
+// check, not a schedulability one; overlap stays legal and is never checked
+// here) with the incoming set (new cells being added, or an existing cell
+// carrying a patched `deps`), overlaid by id so a batch/patch that also
+// touches an on-disk id sees its OWN version, not the stale disk copy.
+// Returns only the cycles that touch an incoming id — a pre-existing cycle
+// among untouched on-disk cells is never reported here (per D2, that is
+// `cells schedule` diagnostics territory). Factored out of assertNoCycle
+// (ce-2) so `cells add --dry-run`'s report can fold cycle failures into the
+// SAME per-cell verdicts the write path validates against, without either
+// side re-implementing cycle detection.
+function computeIncomingCycles(root, incomingCells) {
   const byId = new Map();
   for (const cell of listCells(root)) {
     if (cell && typeof cell.id === 'string' && cell.id) byId.set(cell.id, cell);
@@ -1262,14 +1274,23 @@ function assertNoCycle(root, verb, incomingCells) {
       incomingIds.add(cell.id);
     }
   }
-  const cycles = detectCycles([...byId.values()]).filter((cycle) =>
-    cycle.some((id) => incomingIds.has(id)),
-  );
+  return detectCycles([...byId.values()]).filter((cycle) => cycle.some((id) => incomingIds.has(id)));
+}
+
+function formatCycleRefusal(verb, cycles) {
+  const named = cycles.map((cycle) => cycle.join(' -> ')).join('; ');
+  return `${verb}: dependency cycle refused — ${named}. Cycles are illegal at every dep-mutating write (D2); file overlap stays legal and is never refused.`;
+}
+
+// assertNoCycle (D2) — the ONE cycle refusal used at every dep-mutating
+// write: addCell, addCells (write path), updateCell (when it changes deps).
+// Must run BEFORE any writeCell — a refusal here must never leave partial
+// state behind (addCells stays all-or-nothing; addCell/updateCell touch
+// nothing on a refusal). Unchanged by ce-2: same detection, same message.
+function assertNoCycle(root, verb, incomingCells) {
+  const cycles = computeIncomingCycles(root, incomingCells);
   if (cycles.length > 0) {
-    const named = cycles.map((cycle) => cycle.join(' -> ')).join('; ');
-    throw new Error(
-      `${verb}: dependency cycle refused — ${named}. Cycles are illegal at every dep-mutating write (D2); file overlap stays legal and is never refused.`,
-    );
+    throw new Error(formatCycleRefusal(verb, cycles));
   }
 }
 
@@ -1280,28 +1301,92 @@ export function addCell(root, cell) {
   return writeCell(root, normalized);
 }
 
-// Batch add: validates EVERY cell (against disk and against duplicate ids
-// within the batch itself) before writing any — all-or-nothing, so a failing
-// cell in the middle of a slice never leaves partial state behind. The cycle
-// check (D2) runs over the whole batch + on-disk store, also before any
-// write, so a cycle spanning two cells in the same batch (or a batch cell and
-// an existing on-disk cell) refuses the entire batch, nothing written.
+// buildAddCellsReport (D2/ce-2) — the ONE aggregator both addCells' all-or-
+// nothing write path and `cells add --dry-run`'s no-write preview build on.
+// Runs EVERY per-cell validateNewCell (schema + regen obligations included)
+// and the duplicate-id check across the WHOLE array before returning — a
+// multi-cell payload never needs re-sending to discover the next error,
+// unlike the pre-ce-2 code that threw at the first bad cell in the loop.
+// Only once every cell clears its own validation does the batch-wide cycle
+// check (D2, same computeIncomingCycles detection assertNoCycle always used)
+// run, folded into the SAME per-cell problems array so a cycle spanning
+// otherwise-valid cells names exactly the cells it touches. Never writes,
+// never throws — callers decide whether to throw (addCells) or report
+// (previewAddCells).
+function buildAddCellsReport(root, cells) {
+  const seen = new Set();
+  const entries = cells.map((cell, index) => {
+    const id = cell && typeof cell.id === 'string' && cell.id ? cell.id : `(index ${index})`;
+    const problems = [];
+    try {
+      validateNewCell(root, cell);
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+    }
+    if (cell && typeof cell.id === 'string' && cell.id) {
+      if (seen.has(cell.id)) {
+        problems.push(`addCells: duplicate id "${cell.id}" within the batch.`);
+      } else {
+        seen.add(cell.id);
+      }
+    }
+    return { id, cell, problems };
+  });
+  let normalized = null;
+  if (entries.every((entry) => entry.problems.length === 0)) {
+    normalized = entries.map((entry) => normalizeNewCell(entry.cell));
+    const cycles = computeIncomingCycles(root, normalized);
+    if (cycles.length > 0) {
+      const cycleIds = new Set(cycles.flat());
+      const message = formatCycleRefusal('addCells', cycles);
+      for (const entry of entries) {
+        if (cycleIds.has(entry.id)) entry.problems.push(message);
+      }
+      normalized = null;
+    }
+  }
+  const ok = entries.every((entry) => entry.problems.length === 0);
+  return {
+    ok,
+    cells: entries.map((entry) => ({ id: entry.id, ok: entry.problems.length === 0, problems: entry.problems })),
+    normalized: ok ? normalized : null,
+  };
+}
+
+// Batch add: validates EVERY cell of the WHOLE array (schema, regen
+// obligations, duplicate ids, then — only once every cell is individually
+// clean — the batch-wide cycle check) before writing any — all-or-nothing,
+// so a failing cell anywhere in a slice never leaves partial state behind.
+// ce-2: the refusal on failure names EVERY failing cell and EVERY problem in
+// one message (buildAddCellsReport), not just the first cell the old
+// first-throw-wins loop happened to reach.
 export function addCells(root, cells) {
   if (!Array.isArray(cells) || cells.length === 0) {
     throw new Error('addCells: expected a non-empty JSON array of cells.');
   }
-  const seen = new Set();
-  const normalized = [];
-  for (const cell of cells) {
-    validateNewCell(root, cell);
-    if (seen.has(cell.id)) {
-      throw new Error(`addCells: duplicate id "${cell.id}" within the batch.`);
-    }
-    seen.add(cell.id);
-    normalized.push(normalizeNewCell(cell));
+  const report = buildAddCellsReport(root, cells);
+  if (!report.ok) {
+    const failing = report.cells.filter((c) => !c.ok);
+    const named = failing.map((c) => `${c.id} (${c.problems.join('; ')})`).join(', ');
+    throw new Error(
+      `addCells: ${failing.length} of ${cells.length} cell(s) failed validation — ${named}. Nothing written.`,
+    );
   }
-  assertNoCycle(root, 'addCells', normalized);
-  return normalized.map((cell) => writeCell(root, cell));
+  return report.normalized.map((cell) => writeCell(root, cell));
+}
+
+// previewAddCells (D2/ce-2) — the non-throwing, non-writing sibling of
+// addCells behind `cells add --dry-run`: same whole-array aggregate
+// validation (buildAddCellsReport), reported instead of thrown, so a caller
+// can discover every problem in a batch without ever risking a write. The
+// CLI handler wraps a single-object payload as a one-element array before
+// calling this — `cells` here is always an array.
+export function previewAddCells(root, cells) {
+  if (!Array.isArray(cells) || cells.length === 0) {
+    throw new Error('previewAddCells: expected a non-empty JSON array of cells.');
+  }
+  const report = buildAddCellsReport(root, cells);
+  return { ok: report.ok, cells: report.cells };
 }
 
 // ─── updateCell — door-validated in-place revision (cells-update-verb) ─────

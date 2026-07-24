@@ -87,6 +87,7 @@ import {
   readCell,
   addCell,
   addCells,
+  previewAddCells,
   updateCell,
   claimCellCrossSession,
   recordVerify,
@@ -1001,6 +1002,29 @@ function handleCellsAdd(root, flags) {
   } catch {
     throw new Error('add: input is not valid JSON.');
   }
+  // ce-2: --dry-run reports the SAME whole-batch validation addCells uses
+  // (previewAddCells — schema, regen obligations, duplicate ids, dependency
+  // cycle, all folded per-cell) instead of writing. A single-object payload
+  // is wrapped as a one-element array so the report shape is always
+  // {dry_run, ok, cells:[{id, ok, problems}]} — nothing is ever persisted,
+  // clean or dirty (worker-prune's --dry-run precedent), but unlike prune's
+  // always-exit-0 report this one carries a pass/fail verdict, so the exit
+  // code follows it (reservations reserve's `result.ok ? 0 : 1` precedent).
+  if (flags['dry-run'] !== undefined) {
+    const batch = Array.isArray(cell) ? cell : [cell];
+    const preview = previewAddCells(root, batch);
+    const lines = preview.cells.map(
+      (c) => `${c.ok ? 'OK' : 'FAIL'} ${c.id}${c.problems.length ? `: ${c.problems.join('; ')}` : ''}`,
+    );
+    const summary = preview.ok
+      ? `dry-run: ${batch.length} cell(s) valid — nothing written.`
+      : `dry-run: ${preview.cells.filter((c) => !c.ok).length} of ${batch.length} cell(s) failed validation — nothing written.`;
+    return {
+      result: { dry_run: true, ok: preview.ok, cells: preview.cells },
+      text: [summary, ...lines].join('\n'),
+      exitCode: preview.ok ? 0 : 1,
+    };
+  }
   // A JSON array is a batch: every cell validated before any is written
   // (all-or-nothing), so one heredoc creates a whole slice in one call
   // (ported from bee_cells.mjs's own add case, dispatcher-unify du-4 —
@@ -1805,14 +1829,6 @@ function handleDecisionsRender(root, flags) {
 // / .result.md|json. Files outside this suffix set are never prune candidates.
 const WORKER_TRANSIENT_SUFFIX = /\.(prompt\.md|result\.md|result\.json|out\d*\.log|log)$/;
 
-function requireBoolFlag(flags, name) {
-  const raw = requireFlag(flags, name);
-  if (raw !== 'true' && raw !== 'false') {
-    throw new Error(`--${name} must be "true" or "false", got "${raw}".`);
-  }
-  return raw === 'true';
-}
-
 function splitList(raw) {
   return String(raw)
     .split(',')
@@ -2015,10 +2031,9 @@ async function handleStateGate(root, flags) {
     );
   }
   // ce-1: name/approved batched into one refusal (requireFlags) — 'approved'
-  // is enum-checked against the literal CLI-string encoding ('true'/'false',
-  // the same set requireBoolFlag enforced) rather than parsed as a boolean
-  // first, so an invalid value still lands in the SAME batch as a missing
-  // --name instead of throwing separately.
+  // is enum-checked against the literal CLI-string encoding ('true'/'false')
+  // rather than parsed as a boolean first, so an invalid value still lands
+  // in the SAME batch as a missing --name instead of throwing separately.
   const { name, approved: approvedRaw } = requireFlags(
     flags,
     [

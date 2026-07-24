@@ -107,17 +107,22 @@ export const COMMAND_REGISTRY = [
     name: 'cells.add',
     invoke: 'bee cells add',
     description:
-      'Add a cell (or a whole-slice JSON array) from stdin, or from a JSON file. Prefer --stdin: pipe one cell object or an array for the whole slice in one call — no per-cell scratchpad files. Exactly one of --stdin / --file is required at call time (both satisfy the schema; the handler itself enforces the choice).',
+      'Add a cell (or a whole-slice JSON array) from stdin, or from a JSON file. Prefer --stdin: pipe one cell object or an array for the whole slice in one call — no per-cell scratchpad files. Exactly one of --stdin / --file is required at call time (both satisfy the schema; the handler itself enforces the choice). A batch is validated WHOLE (ce-2): schema, regen obligations, duplicate ids, and the dependency-cycle check are checked for every cell before any is written, so one call names every problem instead of stopping at the first. --dry-run runs that same whole-batch validation and reports {dry_run:true, ok, cells:[{id, ok, problems}]} without writing anything, clean or dirty — exit 0 when every cell is clean, non-zero otherwise.',
     parameters: {
       type: 'object',
       properties: {
         file: { type: 'string', description: 'Path to a cell JSON file. Required unless --stdin is set.' },
         stdin: { type: 'boolean', description: 'Read the cell JSON from stdin instead of --file.' },
+        'dry-run': {
+          type: 'boolean',
+          description:
+            'Report the whole-batch validation verdict (schema, regen obligations, duplicate ids, dependency cycle) without writing anything.',
+        },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: [],
     },
-    examples: ['bee cells add --file cell-demo-1.json --json'],
+    examples: ['bee cells add --file cell-demo-1.json --json', 'bee cells add --stdin --dry-run --json'],
     deprecated: null,
   },
   {
@@ -642,7 +647,7 @@ export const COMMAND_REGISTRY = [
   // validate() layer emits a structured error on STDOUT, but the legacy
   // bee_state.mjs contract (pinned by test_lib.mjs) emits missing-flag / bad-
   // value errors on STDERR. So each state handler owns its own required-flag
-  // and enum checks (requireFlag / requireBoolFlag / MODEL_TIERS / GATE_NAMES),
+  // and enum checks (requireFlag / requireFlags / MODEL_TIERS / GATE_NAMES),
   // throwing the legacy message text — which the dispatcher routes to STDERR —
   // rather than letting validate() preempt it onto STDOUT. Types stay 'string'
   // for the same reason (a bad --approved must reach the handler, not validate).

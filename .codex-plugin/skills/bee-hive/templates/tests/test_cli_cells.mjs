@@ -902,4 +902,99 @@ await check('capCell on a verify-none cell in a declared no-test repo waives the
   }
 });
 
+// ─── cells add --dry-run (ce-2): whole-batch report, never persists ────────
+
+await check('bee.mjs cells add --dry-run: a clean batch reports ok:true, exit 0, and writes nothing', async () => {
+  const dir = makeStateRepo('bee-cells-dryrun-clean-');
+  try {
+    const batch = [makeCell('dryrun-clean-1'), makeCell('dryrun-clean-2')];
+    const res = await runModuleWorker(beeBacklogModulePath(), {
+      args: ['cells', 'add', '--stdin', '--dry-run', '--json'],
+      cwd: dir,
+      input: JSON.stringify(batch),
+    });
+    assert(res.status === 0, `clean dry-run exits 0, got ${res.status}: ${res.stderr}`);
+    const parsed = JSON.parse(res.stdout);
+    assert(parsed.dry_run === true, 'dry_run:true reported');
+    assert(parsed.ok === true, 'ok:true for a clean batch');
+    assert(
+      parsed.cells.length === 2 && parsed.cells.every((c) => c.ok === true && c.problems.length === 0),
+      'both cells verdict clean',
+    );
+    assert(
+      readCell(dir, 'dryrun-clean-1') === null && readCell(dir, 'dryrun-clean-2') === null,
+      'dry-run never writes, even when clean',
+    );
+    const cellsDir = path.join(dir, '.bee', 'cells');
+    assert(
+      !fs.existsSync(cellsDir) || fs.readdirSync(cellsDir).length === 0,
+      '.bee/cells stays empty (or absent) after a clean dry-run',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check(
+  'bee.mjs cells add --dry-run: a batch with BOTH cells broken DIFFERENTLY names both, writes nothing, exits non-zero',
+  async () => {
+    const dir = makeStateRepo('bee-cells-dryrun-dirty-');
+    try {
+      const batch = [
+        makeCell('dryrun-bad-lane', { lane: 'bogus-lane' }),
+        makeCell('dryrun-bad-title', { title: '' }),
+      ];
+      const res = await runModuleWorker(beeBacklogModulePath(), {
+        args: ['cells', 'add', '--stdin', '--dry-run', '--json'],
+        cwd: dir,
+        input: JSON.stringify(batch),
+      });
+      assert(res.status !== 0, `dirty dry-run exits non-zero, got ${res.status}`);
+      const parsed = JSON.parse(res.stdout);
+      assert(parsed.dry_run === true, 'dry_run:true reported even on refusal');
+      assert(parsed.ok === false, 'ok:false for a dirty batch');
+      const byId = Object.fromEntries(parsed.cells.map((c) => [c.id, c]));
+      assert(
+        byId['dryrun-bad-lane'] &&
+          byId['dryrun-bad-lane'].ok === false &&
+          byId['dryrun-bad-lane'].problems.some((p) => p.toLowerCase().includes('lane')),
+        'the lane cell is named with its OWN problem',
+      );
+      assert(
+        byId['dryrun-bad-title'] && byId['dryrun-bad-title'].ok === false && byId['dryrun-bad-title'].problems.length > 0,
+        'the title cell is ALSO named — the batch never stops at the first bad cell to discover the next error',
+      );
+      assert(
+        readCell(dir, 'dryrun-bad-lane') === null && readCell(dir, 'dryrun-bad-title') === null,
+        'nothing written on a dirty dry-run',
+      );
+      assert(
+        !fs.existsSync(path.join(dir, '.bee', 'cells', 'dryrun-bad-lane.json')) &&
+          !fs.existsSync(path.join(dir, '.bee', 'cells', 'dryrun-bad-title.json')),
+        'no cell files landed on disk for either broken cell',
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+await check('bee.mjs cells add without --dry-run is unaffected: a valid batch still writes normally', async () => {
+  const dir = makeStateRepo('bee-cells-nodryrun-');
+  try {
+    const batch = [makeCell('nodryrun-1'), makeCell('nodryrun-2')];
+    const res = await runModuleWorker(beeBacklogModulePath(), {
+      args: ['cells', 'add', '--stdin', '--json'],
+      cwd: dir,
+      input: JSON.stringify(batch),
+    });
+    assert(res.status === 0, `normal add exits 0, got ${res.status}: ${res.stderr}`);
+    const parsed = JSON.parse(res.stdout);
+    assert(parsed.dry_run === undefined, 'a real add carries no dry_run field');
+    assert(readCell(dir, 'nodryrun-1') !== null && readCell(dir, 'nodryrun-2') !== null, 'both cells actually written');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 printSummaryAndExit();

@@ -27,6 +27,7 @@ import {
 import {
   addCell,
   addCells,
+  previewAddCells,
   updateCell,
   readCell,
   listCells,
@@ -220,6 +221,71 @@ await check('addCells refuses a non-array and an empty array', async () => {
   assertThrows(() => addCells(root, []), 'array', 'empty array refused');
 });
 
+// ─── cells: whole-array batch validation report + dry-run (ce-2) ───────────
+// A multi-cell payload never needs re-sending to discover the next error —
+// EVERY cell's problem is collected before the batch refuses, not just the
+// first one the old loop happened to reach.
+
+await check('addCells aggregates EVERY failing cell in one refusal — two bad cells among three, both named with their own problem, nothing written', async () => {
+  assertThrows(
+    () =>
+      addCells(root, [
+        makeCell('batch-agg-1'),
+        makeCell('batch-agg-2', { lane: 'huge' }),
+        makeCell('batch-agg-3', { title: '' }),
+      ]),
+    'batch-agg-2',
+    'the first bad cell (invalid lane) is named',
+  );
+  assertThrows(
+    () =>
+      addCells(root, [
+        makeCell('batch-agg-1b'),
+        makeCell('batch-agg-2b', { lane: 'huge' }),
+        makeCell('batch-agg-3b', { title: '' }),
+      ]),
+    'batch-agg-3b',
+    'the batch does NOT stop at the first bad cell — the second bad cell (missing title) is also named in the SAME refusal',
+  );
+  for (const id of ['batch-agg-1', 'batch-agg-2', 'batch-agg-3', 'batch-agg-1b', 'batch-agg-2b', 'batch-agg-3b']) {
+    assert(readCell(root, id) === null, `${id} must not exist — nothing written on a failed batch`);
+  }
+});
+
+await check('previewAddCells: a clean batch reports ok:true, every cell verdict ok, and writes nothing', async () => {
+  const preview = previewAddCells(root, [makeCell('preview-clean-1'), makeCell('preview-clean-2')]);
+  assert(preview.ok === true, 'batch-level ok true');
+  assert(preview.cells.length === 2, 'two cell verdicts returned');
+  assert(preview.cells.every((c) => c.ok === true && c.problems.length === 0), 'every cell verdict clean');
+  assert(
+    readCell(root, 'preview-clean-1') === null && readCell(root, 'preview-clean-2') === null,
+    'a dry-run preview never writes, even on a clean batch',
+  );
+});
+
+await check('previewAddCells: a dirty batch names EVERY failing cell (not just the first), the clean cell still verdicts ok, and writes nothing', async () => {
+  const preview = previewAddCells(root, [
+    makeCell('preview-ok'),
+    makeCell('preview-bad-lane', { lane: 'huge' }),
+    makeCell('preview-bad-title', { title: '' }),
+  ]);
+  assert(preview.ok === false, 'batch-level ok false');
+  const byId = Object.fromEntries(preview.cells.map((c) => [c.id, c]));
+  assert(byId['preview-ok'].ok === true, 'the one valid cell in the batch still verdicts ok');
+  assert(
+    byId['preview-bad-lane'].ok === false &&
+      byId['preview-bad-lane'].problems.some((p) => p.toLowerCase().includes('lane')),
+    'the lane cell is named with its own problem',
+  );
+  assert(
+    byId['preview-bad-title'].ok === false && byId['preview-bad-title'].problems.length > 0,
+    'the title cell is ALSO named — never swallowed by the first bad cell',
+  );
+  for (const id of ['preview-ok', 'preview-bad-lane', 'preview-bad-title']) {
+    assert(readCell(root, id) === null, `${id} must not exist — a dry-run preview never writes`);
+  }
+});
+
 // ─── cells: dependency-cycle refusal at every dep-mutating write (D2, ────────
 // parallel-scheduler-2) — addCell, addCells, updateCell-when-deps-change all
 // refuse fail-fast, all-or-nothing, before any writeCell. File overlap is
@@ -254,6 +320,29 @@ await check('addCells refuses an in-batch cycle (a<->b), nothing written, messag
     );
     assert(readCell(cRoot, 'cyc-a') === null, 'cyc-a must not exist — batch refused before any write');
     assert(readCell(cRoot, 'cyc-b') === null, 'cyc-b must not exist — batch refused before any write');
+  } finally {
+    fs.rmSync(cRoot, { recursive: true, force: true });
+  }
+});
+
+await check('previewAddCells folds a batch-wide cycle into the cells it touches (ce-2), writes nothing', async () => {
+  const cRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cycle-preview-'));
+  try {
+    const preview = previewAddCells(cRoot, [
+      cycMakeCell('prev-cyc-a', { deps: ['prev-cyc-b'] }),
+      cycMakeCell('prev-cyc-b', { deps: ['prev-cyc-a'] }),
+    ]);
+    assert(preview.ok === false, 'a cycle refuses the whole batch');
+    const byId = Object.fromEntries(preview.cells.map((c) => [c.id, c]));
+    assert(
+      byId['prev-cyc-a'].ok === false && byId['prev-cyc-a'].problems.some((p) => p.toLowerCase().includes('cycle')),
+      'cycle named on prev-cyc-a',
+    );
+    assert(
+      byId['prev-cyc-b'].ok === false && byId['prev-cyc-b'].problems.some((p) => p.toLowerCase().includes('cycle')),
+      'cycle named on prev-cyc-b too',
+    );
+    assert(readCell(cRoot, 'prev-cyc-a') === null, 'a dry-run preview never writes, even on a cycle');
   } finally {
     fs.rmSync(cRoot, { recursive: true, force: true });
   }
