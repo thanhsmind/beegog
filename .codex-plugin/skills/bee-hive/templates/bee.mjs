@@ -5650,13 +5650,51 @@ export async function main(argv) {
 // computeManifestHash, parseFlags, ...) must never trigger it as a side effect.
 const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirectRun) {
-  main(process.argv.slice(2)).then(
+  // work-visibility D3 (decision 4439bd7e): every direct invocation is
+  // wall-timed and fail-open logged, stderr-only — stdout stays byte-identical
+  // for every verb (--json consumers and tests never see a "[bee]" line).
+  // `cmd` is resolved the SAME way main() resolves it (splitCommandTokens +
+  // resolveCommand), computed here — not inside main() — so the guard can
+  // time the whole call including argv parsing; 'unknown' covers every
+  // resolution miss (no command given, --help's flag-only argv, ...),
+  // mirroring "resolved command name, 'unknown' when resolution failed".
+  const directArgv = process.argv.slice(2);
+  const t0 = Date.now();
+  let timingCmd = 'unknown';
+  try {
+    const { leading } = splitCommandTokens(directArgv);
+    const { commandName } = resolveCommand(leading);
+    if (commandName) timingCmd = commandName.split('.').join(' ');
+  } catch {
+    // resolution failure never blocks the run — cmd stays 'unknown'
+  }
+  const recordTiming = (ok) => {
+    const ms = Date.now() - t0;
+    // Fail-open append, mirroring hooks/adapter.mjs's appendHookLog: a
+    // logging failure (unwritable/missing .bee/logs, no repo root, ...)
+    // never changes the command's outcome, exit code, or output.
+    try {
+      const timingRoot = findRepoRoot(process.cwd()) || process.cwd();
+      const logsDir = path.join(timingRoot, '.bee', 'logs');
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.appendFileSync(
+        path.join(logsDir, 'timings.jsonl'),
+        `${JSON.stringify({ ts: new Date().toISOString(), cmd: timingCmd, ms, ok })}\n`,
+      );
+    } catch {
+      // fail-open: never break (or flip) a command over timing-log I/O
+    }
+    process.stderr.write(`[bee] ${timingCmd} ${ms}ms\n`);
+  };
+  main(directArgv).then(
     (code) => {
       process.exitCode = code;
+      recordTiming(!code);
     },
     (error) => {
       process.stderr.write(`${error instanceof Error ? (error.stack || error.message) : String(error)}\n`);
       process.exitCode = 1;
+      recordTiming(false);
     },
   );
 }

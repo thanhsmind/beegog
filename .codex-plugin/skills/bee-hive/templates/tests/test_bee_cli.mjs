@@ -4370,6 +4370,60 @@ await check('malformed advisor_ref reads as missing — the gate verb refuses cl
   assert(show.status === 0 && JSON.parse(show.stdout) === null, `show reads a corrupt ref as missing, got ${show.stdout}`);
 });
 
+// ─── work-visibility D3 (decision 4439bd7e): CLI self-timing [wv-1] ────────
+// Every direct `bee.mjs` run wall-times itself: a fail-open JSON line to
+// .bee/logs/timings.jsonl plus exactly one stderr summary line. stdout stays
+// byte-identical for every verb — timing is stderr/log-only, never stdout.
+
+function readLastTimingLine(dir) {
+  const raw = fs.readFileSync(path.join(dir, '.bee', 'logs', 'timings.jsonl'), 'utf8');
+  const lines = raw.trim().split('\n');
+  return JSON.parse(lines[lines.length - 1]);
+}
+
+await check('timing (a): a --json verb keeps stdout pure JSON with no "[bee]" text; stderr carries the one summary line', async () => {
+  const result = await runBee(['status', '--json']);
+  assert(result.status === 0, `status --json should succeed: ${result.stderr}`);
+  JSON.parse(result.stdout); // must parse cleanly as JSON — no timing text mixed in
+  assert(!/\[bee\]/.test(result.stdout), `stdout must never carry the timing line, got: ${result.stdout}`);
+  assert(/\[bee\] \S+ \d+ms/.test(result.stderr), `stderr must carry the "[bee] <cmd> <ms>ms" summary line, got: ${result.stderr}`);
+});
+
+await check('timing (b): an unknown command still logs a timing line, recorded as ok:false', async () => {
+  const result = await runBee(['definitely-not-a-real-command']);
+  assert(result.status !== 0, `an unknown command must fail, got status ${result.status}`);
+  const last = readLastTimingLine(root2);
+  assert(last.ok === false, `an unknown/failing command must log ok:false, got ${JSON.stringify(last)}`);
+});
+
+await check('timing (c): the timings.jsonl line JSON-parses with ts/cmd/ms/ok fields', async () => {
+  const result = await runBee(['status', '--json']);
+  assert(result.status === 0, `status --json should succeed: ${result.stderr}`);
+  const last = readLastTimingLine(root2);
+  assert(typeof last.ts === 'string' && !Number.isNaN(Date.parse(last.ts)), `ts must be a parseable ISO string, got ${JSON.stringify(last)}`);
+  assert(typeof last.cmd === 'string' && last.cmd.length > 0, `cmd must be a non-empty string, got ${JSON.stringify(last)}`);
+  assert(typeof last.ms === 'number' && last.ms >= 0, `ms must be a non-negative number, got ${JSON.stringify(last)}`);
+  assert(typeof last.ok === 'boolean' && last.ok === true, `a successful status call must log ok:true, got ${JSON.stringify(last)}`);
+});
+
+await check('timing (d): an unwritable/blocked logs path never breaks the command — stdout stays normal, exit stays 0', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-cli-timing-failopen-'));
+  fs.mkdirSync(path.join(dir, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  writeState(dir, { ...defaultState(), phase: 'idle' });
+  // A plain FILE sitting where the logs directory should be makes the
+  // fail-open mkdirSync/appendFileSync throw regardless of process
+  // privilege (unlike chmod, which a root-run test would ignore).
+  fs.writeFileSync(path.join(dir, '.bee', 'logs'), 'not a directory');
+  const result = await runModuleWorker(BEE_MJS, { args: ['status', '--json'], cwd: dir });
+  assert(result.status === 0, `command must still succeed despite a blocked logs path: ${result.stderr}`);
+  JSON.parse(result.stdout); // stdout must still be normal, parseable JSON
+  assert(fs.statSync(path.join(dir, '.bee', 'logs')).isFile(), 'the blocking file must be left untouched (fail-open never replaces it)');
+});
+
 // ─── summary ────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed} passed, ${failed} failed`);
