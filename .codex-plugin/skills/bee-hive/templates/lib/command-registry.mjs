@@ -793,7 +793,7 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: [
-      'bee state scribing-run --feature demo --areas auth --next-action bee-compounding --json',
+      'bee state scribing-run --feature newf --areas auth --next-action bee-compounding --json',
       'bee state scribing-run --lane demo-lane --feature demo-lane --areas auth --next-action bee-compounding --json',
     ],
     deprecated: null,

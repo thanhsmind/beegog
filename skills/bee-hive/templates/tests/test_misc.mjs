@@ -72,6 +72,8 @@ import {
   FROZEN_JUDGE_PATTERNS,
   recordJudgeVerdict,
   claimCellCrossSession,
+  scribingDebt,
+  globalScribingDebt,
 } from '../lib/cells.mjs';
 import { validateJudgeVerdict, deriveModelIndependence, JUDGE_VERDICT_SCHEMA } from '../lib/judge.mjs';
 import { readClaim, claimCellFile } from '../lib/claims.mjs';
@@ -211,6 +213,134 @@ await check('P0 (codex-loop-p0): the reminder never reports `review` as a pendin
     approved_gates: { context: true, shape: true, execution: true, review: false },
   });
   assert(/gate pending: review/.test(buildPromptReminder(rr).text), 'review surfaces only when phase is reviewing');
+});
+
+// ─── scribing-integrity si-1: the orphan sweep + its loud preamble line ────
+// scribingDebt() only ever fires at ONE feature's own explicit close — a dead
+// session that never attempts that close leaves capped behavior_change cells
+// silently unsynced forever, invisible to every existing surface. globalScribingDebt
+// answers "which capped cells, across every feature, were never proven synced"
+// without requiring the owning feature to still be the active one.
+
+function writeOrphanCell(dir, id, feature, cappedAt) {
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'cells', `${id}.json`), {
+    id,
+    feature,
+    status: 'capped',
+    trace: { behavior_change: true, capped_at: cappedAt },
+  });
+}
+
+await check('globalScribingDebt counts a capped behavior_change cell for a NON-active feature with no stamp anywhere; a durable ledger line for it clears the orphan', async () => {
+  const gRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-global-debt-'));
+  fs.mkdirSync(path.join(gRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  // The default record sits on a totally different feature (idle) — the
+  // orphan the post-mortem names lived on a feature nobody is even working
+  // any more, so its debt must be visible with no active feature at all.
+  writeJsonAtomic(path.join(gRoot, '.bee', 'state.json'), { phase: 'idle', feature: null });
+  writeOrphanCell(gRoot, 'orphan-1', 'ghost-feature', '2026-07-20T00:00:00.000Z');
+  try {
+    const before = globalScribingDebt(gRoot);
+    assert(before.count === 1, `an orphaned capped cell with no stamp anywhere must be counted, got ${before.count}`);
+    assert(
+      before.features.length === 1 &&
+        before.features[0].feature === 'ghost-feature' &&
+        before.features[0].cells.includes('orphan-1'),
+      `orphan grouped under its own feature, got ${JSON.stringify(before.features)}`,
+    );
+
+    // A durable ledger line for that feature written AFTER the cap is what
+    // "someone ran bee-scribing and stamped it after the fact" looks like —
+    // the sweep must honor it even though it never touched the default
+    // record's last_scribing_run and there is no lane record either.
+    fs.mkdirSync(path.join(gRoot, '.bee', 'logs'), { recursive: true });
+    fs.appendFileSync(
+      path.join(gRoot, '.bee', 'logs', 'scribing-runs.jsonl'),
+      `${JSON.stringify({ ts: '2026-07-21T00:00:00.000Z', feature: 'ghost-feature', areas: ['ghost'] })}\n`,
+    );
+    const after = globalScribingDebt(gRoot);
+    assert(after.count === 0, `a ledger stamp after the cap clears the orphan, got ${after.count} :: ${JSON.stringify(after.features)}`);
+  } finally {
+    fs.rmSync(gRoot, { recursive: true, force: true });
+  }
+});
+
+await check('globalScribingDebt clears a cap for the CURRENTLY active feature when the default record already carries its own last_scribing_run stamp', async () => {
+  const gRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-global-debt-active-'));
+  fs.mkdirSync(path.join(gRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'state.json'), {
+    phase: 'compounding',
+    feature: 'active-feat',
+    last_scribing_run: { feature: 'active-feat', at: '2026-07-22T00:00:00.000Z' },
+  });
+  writeOrphanCell(gRoot, 'a-1', 'active-feat', '2026-07-21T00:00:00.000Z');
+  try {
+    const debt = globalScribingDebt(gRoot);
+    assert(debt.count === 0, `the default record's own last_scribing_run stamp must clear the sweep too, got ${debt.count}`);
+  } finally {
+    fs.rmSync(gRoot, { recursive: true, force: true });
+  }
+});
+
+await check('globalScribingDebt clears a lane feature cap via the LANE record last_scribing_run, with no ledger and no default-record involvement', async () => {
+  const gRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-global-debt-lane-'));
+  fs.mkdirSync(path.join(gRoot, '.bee', 'lanes'), { recursive: true });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'state.json'), { phase: 'idle', feature: null });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'lanes', 'lane-feat.json'), {
+    schema_version: '1.0',
+    feature: 'lane-feat',
+    phase: 'compounding-complete',
+    last_scribing_run: { feature: 'lane-feat', at: '2026-07-23T00:00:00.000Z' },
+  });
+  writeOrphanCell(gRoot, 'l-1', 'lane-feat', '2026-07-22T00:00:00.000Z');
+  try {
+    const debt = globalScribingDebt(gRoot);
+    assert(debt.count === 0, `the lane's own last_scribing_run stamp must clear its feature's sweep entry, got ${debt.count}`);
+  } finally {
+    fs.rmSync(gRoot, { recursive: true, force: true });
+  }
+});
+
+await check('scribingDebt(root) default call stays byte-for-byte compatible: no opts still scopes strictly to the default record feature/threshold', async () => {
+  const dRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-debt-compat-'));
+  fs.mkdirSync(path.join(dRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(dRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  assert(scribingDebt(dRoot).count === 0, 'no feature → zero debt, unchanged');
+  writeJsonAtomic(path.join(dRoot, '.bee', 'state.json'), { phase: 'swarming', feature: 'feat' });
+  writeOrphanCell(dRoot, 'c-1', 'feat', new Date().toISOString());
+  writeOrphanCell(dRoot, 'c-2', 'other-feat', new Date().toISOString());
+  try {
+    const debt = scribingDebt(dRoot);
+    assert(debt.count === 1 && debt.cells[0] === 'c-1', `default call scopes to the default record's own feature only, got ${JSON.stringify(debt)}`);
+  } finally {
+    fs.rmSync(dRoot, { recursive: true, force: true });
+  }
+});
+
+await check('buildSessionPreamble prints ONE loud line when the orphan sweep is non-zero, mirroring the capture-queue line style', async () => {
+  const pRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-preamble-orphan-'));
+  fs.mkdirSync(path.join(pRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(pRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeJsonAtomic(path.join(pRoot, '.bee', 'state.json'), { phase: 'idle', feature: null });
+  writeOrphanCell(pRoot, 'orphan-2', 'stale-feature', '2026-07-20T00:00:00.000Z');
+  try {
+    const preamble = buildSessionPreamble(pRoot);
+    assert(/Orphaned scribing debt/.test(preamble), `expected an orphan section, got:\n${preamble}`);
+    assert(/orphan-2/.test(preamble) && /stale-feature/.test(preamble), `orphan line must name the cell and feature, got:\n${preamble}`);
+    const orphanLines = (preamble.match(/Orphaned scribing debt/g) || []).length;
+    assert(orphanLines === 1, `exactly one loud line, got ${orphanLines}`);
+  } finally {
+    fs.rmSync(pRoot, { recursive: true, force: true });
+  }
+});
+
+await check('buildSessionPreamble omits the orphan section when the sweep is clean', async () => {
+  const preamble = buildSessionPreamble(root); // top-level fixture: idle, no cells
+  assert(!/Orphaned scribing debt/.test(preamble), 'no orphan line on a clean repo');
 });
 
 // ─── standard commands (docs/09 item 1) ─────────────────────────────────────

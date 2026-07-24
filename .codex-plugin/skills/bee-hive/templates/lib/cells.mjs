@@ -4,12 +4,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { readJson, writeJsonAtomic, ensureDir, removeFileIfExists } from './fsutil.mjs';
+import { readJson, writeJsonAtomic, ensureDir, removeFileIfExists, readJsonl, appendJsonl } from './fsutil.mjs';
 import {
   readState,
   gateApproved,
   MODEL_TIERS,
   lanePath,
+  readLane,
   readLaneStrict,
   resolvePipeline,
   listLanes,
@@ -2034,15 +2035,29 @@ export async function setTier(root, id, tier) {
 // being "never a blocker" is precisely why a feature could be marked closed
 // with six capped behavior_change cells whose behavior never reached
 // docs/specs/. Debt is a signal through the work, and a wall at the door.
-export function scribingDebt(root) {
+//
+// scribing-integrity si-1: `opts.feature`/`opts.sinceTs` are OPTIONAL
+// overrides so every debt-wall door (feature close, feature swap, lane
+// close) can reuse this one function instead of forking its logic. Calling
+// scribingDebt(root) with no opts stays byte-for-byte identical to before
+// this cell — it still derives both the feature and the threshold from the
+// default state record alone. Passing opts.feature scopes the read to that
+// feature; passing opts.sinceTs replaces the derived threshold outright
+// (used by the lane-close wall, which threshold's off the LANE record's own
+// last_scribing_run, never the default record's).
+export function scribingDebt(root, opts = {}) {
   const state = readState(root);
-  const feature = state.feature;
+  const feature = opts.feature !== undefined && opts.feature !== null ? opts.feature : state.feature;
   if (!feature) return { count: 0, cells: [] };
-  const lastRun = state.last_scribing_run;
   let threshold = 0;
-  if (lastRun && lastRun.feature === feature) {
-    const parsed = Date.parse(lastRun.at || lastRun.date);
-    if (Number.isFinite(parsed)) threshold = parsed;
+  if (opts.sinceTs !== undefined && opts.sinceTs !== null) {
+    threshold = Number.isFinite(opts.sinceTs) ? opts.sinceTs : 0;
+  } else {
+    const lastRun = state.last_scribing_run;
+    if (lastRun && lastRun.feature === feature) {
+      const parsed = Date.parse(lastRun.at || lastRun.date);
+      if (Number.isFinite(parsed)) threshold = parsed;
+    }
   }
   const cells = listCells(root, { feature, status: 'capped' })
     .filter((cell) => {
@@ -2053,6 +2068,109 @@ export function scribingDebt(root) {
     })
     .map((cell) => cell.id);
   return { count: cells.length, cells };
+}
+
+// scribing-integrity si-1: the durable ledger. `state scribing-run` used to
+// be the ONLY record of a sync ever happening, and it lived exclusively on
+// whichever record (default or lane) the call happened to target — so a
+// feature that never got its own explicit close (a dead session, never came
+// back) left no trace ANYWHERE that scribing had or hadn't run for it. This
+// is that trace: one durable, append-only line per scribing-run call,
+// independent of which record was mutated (or whether one was mutated at
+// all — see the non-active-feature repair path in bee.mjs).
+export function scribingLedgerPath(root) {
+  return path.join(root, '.bee', 'logs', 'scribing-runs.jsonl');
+}
+
+function readScribingLedger(root) {
+  return readJsonl(scribingLedgerPath(root));
+}
+
+// LOUD, never a crash: a scribing-run call's whole job is recording that a
+// sync happened, and the state-field stamp on the record being mutated stays
+// authoritative for that record regardless of this call's outcome — but a
+// silent ledger-write failure would defeat globalScribingDebt's orphan sweep
+// without anyone ever finding out. fs.appendFileSync/mkdir failures (full
+// disk, permissions, ...) are caught here and reported to stderr; the caller
+// (bee.mjs's scribing-run verb) never sees or handles this failure.
+export function appendScribingLedger(root, { feature, ts, areas }) {
+  try {
+    appendJsonl(scribingLedgerPath(root), { ts, feature, areas });
+  } catch (error) {
+    process.stderr.write(
+      `[bee] WARNING: failed to append the scribing ledger (${scribingLedgerPath(root)}): ${
+        error && error.message ? error.message : error
+      }. The state-field stamp still recorded for the active record; the durable ledger did not.\n`,
+    );
+  }
+}
+
+function scribingRunStampMs(run) {
+  if (!run) return null;
+  const parsed = Date.parse(run.at || run.date);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// scribing-integrity si-1 (D1-D3): the orphan sweep. scribingDebt() only ever
+// looks at ONE record's own idea of "the active feature" — the default
+// record's `state.feature`, or (via opts) a single named lane. A feature that
+// never comes back to its own close (a dead session) is invisible to every
+// existing debt surface: nothing ever asks "is THIS feature's debt paid",
+// because nothing routes through it again. This walks every LIVE capped
+// behavior_change cell instead — across every feature at once — and asks the
+// same question the wall asks, using the best sync evidence available for
+// that cell's OWN feature: the durable ledger (any repair stamp, ever,
+// anywhere), that feature's lane record (if it has one), or the default
+// record's own last_scribing_run (only when it names that same feature).
+// Archived cells are out of scope (decision: sweep covers live cells only —
+// rewriting historical debt is not this cell's job). Returns
+// { count, features: [{ feature, cells }] }, features sorted by name.
+export function globalScribingDebt(root) {
+  const cells = listCells(root, { status: 'capped' }).filter(
+    (cell) => (cell.trace || {}).behavior_change === true,
+  );
+  if (cells.length === 0) return { count: 0, features: [] };
+
+  const state = readState(root);
+  const ledger = readScribingLedger(root);
+  const stampCache = new Map();
+
+  const bestStampMs = (feature) => {
+    if (stampCache.has(feature)) return stampCache.get(feature);
+    let best = null;
+    for (const entry of ledger) {
+      if (!entry || entry.feature !== feature) continue;
+      const parsed = Date.parse(entry.ts);
+      if (Number.isFinite(parsed) && (best === null || parsed > best)) best = parsed;
+    }
+    const lane = readLane(root, feature);
+    const laneStamp = lane ? scribingRunStampMs(lane.last_scribing_run) : null;
+    if (laneStamp !== null && (best === null || laneStamp > best)) best = laneStamp;
+    if (state.feature === feature) {
+      const defaultStamp = scribingRunStampMs(state.last_scribing_run);
+      if (defaultStamp !== null && (best === null || defaultStamp > best)) best = defaultStamp;
+    }
+    stampCache.set(feature, best);
+    return best;
+  };
+
+  const byFeature = new Map();
+  for (const cell of cells) {
+    const feature = cell.feature;
+    if (!feature) continue;
+    const cappedAt = Date.parse((cell.trace || {}).capped_at);
+    const stamp = bestStampMs(feature);
+    const orphaned = stamp === null || (Number.isFinite(cappedAt) && cappedAt > stamp);
+    if (!orphaned) continue;
+    if (!byFeature.has(feature)) byFeature.set(feature, []);
+    byFeature.get(feature).push(cell.id);
+  }
+
+  const features = Array.from(byFeature.entries())
+    .map(([feature, ids]) => ({ feature, cells: ids }))
+    .sort((a, b) => a.feature.localeCompare(b.feature, 'en'));
+  const count = features.reduce((sum, entry) => sum + entry.cells.length, 0);
+  return { count, features };
 }
 
 // P12 / decision 0018 — the frozen judge. A worker that rewrites the test

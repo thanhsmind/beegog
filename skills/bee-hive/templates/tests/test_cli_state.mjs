@@ -337,7 +337,14 @@ await check('bee.mjs state gate rejects an unknown gate name and a non-boolean -
   try {
     const badName = await runBeeState(dir, ['gate', '--name', 'launch', '--approved', 'true']);
     assert(badName.status !== 0, 'unknown gate name rejected');
-    assert(/gate name/i.test(badName.stderr), `error names the bad gate, got ${badName.stderr}`);
+    // Pre-existing drift found (unrelated to si-1): the ce-1 refactor (see the
+    // comment above handleStateGate) moved --name validation into the shared
+    // requireFlags enum batching, which names the flag and the bad value
+    // ("--name \"launch\" (must be one of ...)") rather than the bespoke
+    // "gate name" wording this assertion still expected. The CLI behavior is
+    // correct and unchanged by this cell; only this stale regex needed fixing
+    // to match it.
+    assert(/--name/i.test(badName.stderr) && /launch/.test(badName.stderr), `error names the bad --name value, got ${badName.stderr}`);
     const badBool = await runBeeState(dir, ['gate', '--name', 'context', '--approved', 'yes']);
     assert(badBool.status !== 0, 'non-boolean --approved rejected');
   } finally {
@@ -1627,5 +1634,213 @@ await check(
     }
   },
 );
+
+// ─── scribing-integrity si-1: debt wall on every door ───────────────────────
+// The post-mortem's three structural holes: (1) scribingDebt only ever fires
+// as a WALL at a feature's own explicit compounding-complete — swapping the
+// default record to a different feature over unpaid debt has the identical
+// silent-abandonment effect and nothing catches it; (2) lane closes never
+// compute debt at all, since scribingDebt reads only the default record; (3)
+// scribing-run now writes a durable ledger line on every call, including a
+// repair stamp for a feature that is not the currently active one.
+
+function makeSwapDebtRepo(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming', feature: 'demo' });
+  for (const id of ['sw-1', 'sw-2']) {
+    writeJsonAtomic(path.join(dir, '.bee', 'cells', `${id}.json`), {
+      id,
+      feature: 'demo',
+      status: 'capped',
+      trace: { behavior_change: true, capped_at: new Date().toISOString() },
+    });
+  }
+  return dir;
+}
+
+await check('si-1 (D1): state set --feature <different> is REFUSED while the CURRENT feature carries unpaid scribing debt — a swap has the same silent-abandonment effect as a close', async () => {
+  const dir = makeSwapDebtRepo('bee-swap-debt-');
+  try {
+    const refused = await runBeeState(dir, ['set', '--owner', 'swarming', '--feature', 'other-feature', '--json']);
+    assert(refused.status !== 0, 'swapping away from a feature with unpaid debt must be refused');
+    const out = refused.stdout + refused.stderr;
+    assert(/sw-1/.test(out) && /sw-2/.test(out), `refusal must name every unscribed cell, got: ${out}`);
+    assert(/waive-scribing-debt/.test(out), `refusal must disclose the waiver door, got: ${out}`);
+    assert(
+      JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8')).feature === 'demo',
+      'a refused swap must leave feature untouched — no partial write',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('si-1: --waive-scribing-debt permits a feature swap over unpaid debt and logs the waiver, same as a close', async () => {
+  const dir = makeSwapDebtRepo('bee-swap-debt-waive-');
+  try {
+    const ok = await runBeeState(dir, ['set', '--owner', 'swarming', '--feature', 'other-feature', '--waive-scribing-debt', '--json']);
+    assert(ok.status === 0, `the waiver must permit the swap, got: ${ok.stdout}${ok.stderr}`);
+    assert(
+      JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8')).feature === 'other-feature',
+      'the waived swap must actually write the new feature',
+    );
+    const log = fs.readFileSync(path.join(dir, '.bee', 'decisions.jsonl'), 'utf8');
+    assert(/sw-1/.test(log) && /sw-2/.test(log), `the waiver decision must name every waived cell, got: ${log}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('si-1: state set --feature <same value> is never treated as a swap — no debt check fires even with unpaid debt standing', async () => {
+  const dir = makeSwapDebtRepo('bee-swap-debt-noop-');
+  try {
+    const ok = await runBeeState(dir, ['set', '--owner', 'swarming', '--feature', 'demo', '--summary', 'noop-rewrite', '--json']);
+    assert(ok.status === 0, `setting --feature to its own current value is not a swap, got: ${ok.stdout}${ok.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function makeLaneDebtRepo(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.bee', 'lanes'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  // The default record sits on a totally different, clean feature — proof
+  // the lane close computes the LANE's own feature debt, not the default's.
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'idle', feature: null });
+  writeJsonAtomic(path.join(dir, '.bee', 'lanes', 'lane-feat.json'), {
+    schema_version: '1.0',
+    feature: 'lane-feat',
+    phase: 'compounding',
+    approved_gates: { context: true, shape: true, execution: true, review: false },
+  });
+  for (const id of ['ln-1', 'ln-2']) {
+    writeJsonAtomic(path.join(dir, '.bee', 'cells', `${id}.json`), {
+      id,
+      feature: 'lane-feat',
+      status: 'capped',
+      trace: { behavior_change: true, capped_at: new Date().toISOString() },
+    });
+  }
+  return dir;
+}
+
+await check('si-1 (D2): a LANE close (state set --lane X --phase compounding-complete) checks the LANE feature\'s own debt — an idle/clean default record does not let a debt-carrying lane through', async () => {
+  const dir = makeLaneDebtRepo('bee-lane-debt-');
+  try {
+    const refused = await runBeeState(dir, ['set', '--lane', 'lane-feat', '--owner', 'compounding', '--phase', 'compounding-complete', '--json']);
+    assert(refused.status !== 0, 'a lane close over unpaid lane debt must be refused, even with an idle/clean default record');
+    const out = refused.stdout + refused.stderr;
+    assert(/ln-1/.test(out) && /ln-2/.test(out), `refusal must name every unscribed lane cell, got: ${out}`);
+    assert(/waive-scribing-debt/.test(out), `refusal must disclose the waiver door, got: ${out}`);
+    assert(
+      JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'lanes', 'lane-feat.json'), 'utf8')).phase === 'compounding',
+      'a refused lane close must leave the lane phase untouched',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('si-1: --waive-scribing-debt permits a lane close over unpaid lane debt and logs the waiver', async () => {
+  const dir = makeLaneDebtRepo('bee-lane-debt-waive-');
+  try {
+    const ok = await runBeeState(dir, ['set', '--lane', 'lane-feat', '--owner', 'compounding', '--phase', 'compounding-complete', '--waive-scribing-debt', '--json']);
+    assert(ok.status === 0, `the waiver must permit the lane close, got: ${ok.stdout}${ok.stderr}`);
+    assert(
+      JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'lanes', 'lane-feat.json'), 'utf8')).phase === 'compounding-complete',
+      'the waived lane close must write the terminal phase',
+    );
+    const log = fs.readFileSync(path.join(dir, '.bee', 'decisions.jsonl'), 'utf8');
+    assert(/ln-1/.test(log) && /ln-2/.test(log), `the waiver decision must name every waived lane cell, got: ${log}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('si-1: a lane close with a scribing run stamped AFTER the lane cells were capped (the lane\'s own last_scribing_run) passes cleanly with no waiver', async () => {
+  const dir = makeLaneDebtRepo('bee-lane-debt-synced-');
+  try {
+    const laneFile = path.join(dir, '.bee', 'lanes', 'lane-feat.json');
+    const lane = JSON.parse(fs.readFileSync(laneFile, 'utf8'));
+    lane.last_scribing_run = { feature: 'lane-feat', at: new Date(Date.now() + 60000).toISOString() };
+    writeJsonAtomic(laneFile, lane);
+    const ok = await runBeeState(dir, ['set', '--lane', 'lane-feat', '--owner', 'compounding', '--phase', 'compounding-complete', '--json']);
+    assert(ok.status === 0, `a lane synced after its caps must close cleanly with no waiver needed, got: ${ok.stdout}${ok.stderr}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('si-1: state scribing-run appends a parseable line to .bee/logs/scribing-runs.jsonl on every call', async () => {
+  const dir = makeStateRepo('bee-scribing-ledger-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming', feature: 'demo' });
+    const result = await runBeeState(dir, [
+      'scribing-run', '--feature', 'demo', '--areas', 'demo-area', '--next-action', 'bee-compounding', '--json',
+    ]);
+    assert(result.status === 0, `scribing-run should succeed, got ${result.status}: ${result.stderr}`);
+    const ledgerPath = path.join(dir, '.bee', 'logs', 'scribing-runs.jsonl');
+    assert(fs.existsSync(ledgerPath), 'ledger file must exist after a scribing-run call');
+    const lines = fs.readFileSync(ledgerPath, 'utf8').trim().split('\n');
+    assert(lines.length === 1, `exactly one ledger line for one call, got ${lines.length}`);
+    const entry = JSON.parse(lines[0]);
+    assert(entry.feature === 'demo', `ledger entry must name the feature, got ${JSON.stringify(entry)}`);
+    assert(typeof entry.ts === 'string' && Number.isFinite(Date.parse(entry.ts)), 'ledger entry carries a parseable ts');
+    assert(Array.isArray(entry.areas) && entry.areas.includes('demo-area'), 'ledger entry carries the synced areas');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('si-1: state scribing-run can stamp a NON-active feature — writes the ledger line but leaves the default record feature/phase untouched', async () => {
+  const dir = makeStateRepo('bee-scribing-nonactive-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming', feature: 'demo' });
+    const result = await runBeeState(dir, [
+      'scribing-run', '--feature', 'orphan-feature', '--areas', 'ghost', '--next-action', 'repair', '--json',
+    ]);
+    assert(result.status === 0, `scribing-run for a non-active feature should still succeed (repair path), got ${result.status}: ${result.stderr}`);
+    const after = JSON.parse(fs.readFileSync(path.join(dir, '.bee', 'state.json'), 'utf8'));
+    assert(after.feature === 'demo', 'the default record feature must NOT be corrupted by stamping a different feature');
+    assert(after.phase === 'swarming', 'the default record phase must NOT advance when the stamped feature is not the active one');
+    const ledgerPath = path.join(dir, '.bee', 'logs', 'scribing-runs.jsonl');
+    const lines = fs.readFileSync(ledgerPath, 'utf8').trim().split('\n');
+    const entry = JSON.parse(lines[lines.length - 1]);
+    assert(entry.feature === 'orphan-feature', `the ledger line must name the stamped feature, got ${JSON.stringify(entry)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('si-1 (D5): status --json scribing_debt gains an ADDITIVE orphaned block {count, features} from the global sweep, independent of the active feature', async () => {
+  const dir = makeStateRepo('bee-status-orphan-');
+  fs.mkdirSync(path.join(dir, '.bee', 'cells'), { recursive: true });
+  writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'idle', feature: null });
+  writeJsonAtomic(path.join(dir, '.bee', 'cells', 'st-orphan-1.json'), {
+    id: 'st-orphan-1',
+    feature: 'orphan-feat',
+    status: 'capped',
+    trace: { behavior_change: true, capped_at: new Date().toISOString() },
+  });
+  try {
+    const zero = await runBeeMjs(dir, ['status', '--json'], { env: CLEAN_ENV });
+    assert(zero.status === 0, `bee.mjs status --json exited ${zero.status} :: ${zero.stderr}`);
+    const payload = JSON.parse(zero.stdout);
+    assert(payload.scribing_debt && typeof payload.scribing_debt === 'object', 'scribing_debt object present');
+    assert(payload.scribing_debt.count === 0, 'no active feature → the direct debt count is still 0 (unchanged field)');
+    assert(payload.scribing_debt.orphaned && typeof payload.scribing_debt.orphaned === 'object', 'orphaned block present');
+    assert(payload.scribing_debt.orphaned.count === 1, `orphan sweep must count the orphaned cell, got ${JSON.stringify(payload.scribing_debt.orphaned)}`);
+    assert(
+      payload.scribing_debt.orphaned.features.some((f) => f.feature === 'orphan-feat' && f.cells.includes('st-orphan-1')),
+      `orphaned.features must name the feature and cell, got ${JSON.stringify(payload.scribing_debt.orphaned.features)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 printSummaryAndExit();

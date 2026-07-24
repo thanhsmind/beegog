@@ -5,14 +5,14 @@
     "agents_block": "c9b72a33de0b96d203eb1d62491e934cff4efa3e826901b45ef0fbd263fad007",
     "gitignore_block": "97bc58361c5dee4c4212b3c2ba1b5b91d5c3c17c2be4690baa2abe9bd014253c",
     "helpers": {
-      "bee.mjs": "2227293f7376ac91443496b3b3d39e86be39079127660213bfdbf7550ef3b9a5"
+      "bee.mjs": "ace4f81b4b33b016dd36b10021f1247e444a49517af399435744135f1902eb01"
     },
     "lib": {
       "backlog.mjs": "ba800e500b5b1515cff059421bdbe4f42d693f71b64350b7fabc7e9fd90a47a5",
       "capture.mjs": "3779fd6bd5b28c50b50e4b93cbc368d458123ebab1cbcb3cc34757af0d24f8fa",
-      "cells.mjs": "a53edb70e9af5e1328fe48deb00c126a971b719383869836251246d4861eb9e6",
+      "cells.mjs": "b967574d5b189ad0e9ea521340f86b26f5b0f2ba5b2c580315497f1617b3a5c5",
       "claims.mjs": "81257c8797343c0698cda1597774fe32dc59238e031bc2d27de3567e0adbfcc9",
-      "command-registry.mjs": "ee32a0ef92c336a2938d9c36854b6f781e4abec83a224c791b7783a57ad4c128",
+      "command-registry.mjs": "ffbf807434942e04a273f593f40b2643cda3ecc329ebe376565374f7fa508176",
       "commands_detect.mjs": "4724f404ef220c662bbda670e6393ae0a01cdbecc0beed6e12ad716b4f684acb",
       "compaction.mjs": "0799e8b4a703a453a0ce8490c36991cd74f50312abec88f91a78fbcfbb1a3779",
       "decisions.mjs": "60ee53219cb94e05a170e0e6491aa32d5e1573c5b111ff6ba954b5e538fcc369",
@@ -22,7 +22,7 @@
       "fsutil.mjs": "c0a65d8aebfca7f7423f10cc9e13fa8ca43234c4a7b7e7ea1f05619b18e06af0",
       "guards.mjs": "26da8e59b2e1d0d8ef5e6ab56af2888f589267fe075fdcac2fada7a5fad0478c",
       "herding.mjs": "fb813a3f843109164cdfe56a095f5707202c11b24dae28bb81e794c973c62b7a",
-      "inject.mjs": "d8346d93212d8164eede52f9f2e88049a9b5d3eaa85cf6050fdc0426f3a5b5f3",
+      "inject.mjs": "5c2f03aa404423ed5bdae62291a780167622fc88e00c462b7f1f3090291eef1c",
       "intent.mjs": "acb9a427caf2e1aae106407a96a9fc0a2c16a087d31af057f704afa2619255e8",
       "judge.mjs": "5057e17a6bcd3dacff21fe479e13570620cfe1b9c821c0ff5c8254f39e3c6ed1",
       "knowledge.mjs": "081da291c155bd85e9e88bf96c2a6302c4da4543086dab88efd6db76618b135a",
@@ -62,5 +62,5 @@
     }
   },
   "created_at": "2026-07-24T03:53:44.750Z",
-  "updated_at": "2026-07-24T03:53:44.750Z"
+  "updated_at": "2026-07-24T04:36:54.633Z"
 }

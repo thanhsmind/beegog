@@ -23,7 +23,7 @@ import {
 } from './state.mjs';
 import { activeDecisions, datamark } from './decisions.mjs';
 import { readBacklogCounts } from './backlog.mjs';
-import { scribingDebt, ceilingScarcityWarning, CEILING_MAX_SHARE } from './cells.mjs';
+import { scribingDebt, globalScribingDebt, ceilingScarcityWarning, CEILING_MAX_SHARE } from './cells.mjs';
 import { captureQueue } from './capture.mjs';
 import { collectConcepts, bundleMode, bundleDir } from './knowledge.mjs';
 
@@ -490,6 +490,20 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
     lines.push(`### Scribing debt: ${debt.count} behavior_change cell(s) uncaptured`);
     lines.push(
       `- ${debt.cells.join(', ')} capped since the last scribing run — run bee-scribing capture now; settled behavior belongs in ${bundle ? 'docs/knowledge/' : 'docs/specs/'} before it evaporates (decision 0011).`,
+    );
+  }
+
+  // scribing-integrity si-1: the orphan sweep, one loud line — mirrors the
+  // capture-queue line style directly below. The debt block just above only
+  // ever sees the CURRENT feature; a feature that never comes back to its own
+  // close (a dead session) never gets that block at all. This is the line
+  // that surfaces it regardless of which feature is active right now.
+  const orphaned = globalScribingDebt(root);
+  if (orphaned.count > 0) {
+    lines.push('');
+    lines.push(`### Orphaned scribing debt: ${orphaned.count} cell(s) across ${orphaned.features.length} feature(s)`);
+    lines.push(
+      `- ${orphaned.features.map((entry) => `${entry.feature} (${entry.cells.join(', ')})`).join('; ')} — capped with no scribing sync ever recorded for their feature; run bee-scribing for each, then \`bee state scribing-run --feature <feature> --areas "<a,b>" --next-action "<n>"\` to stamp the repair.`,
     );
   }
 

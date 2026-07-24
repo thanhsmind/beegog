@@ -99,6 +99,8 @@ import {
   setTier,
   judgeCell,
   scribingDebt,
+  globalScribingDebt,
+  appendScribingLedger,
   tierMix,
   ceilingScarcityWarning,
   claimNextCell,
@@ -690,7 +692,10 @@ function buildStatus(root, { lanesFull = false } = {}) {
     lanes: lanesFull ? buildLaneRows(root) : buildLaneSummary(root),
     review,
     recovery,
-    scribing_debt: scribingDebt(root),
+    // scribing-integrity si-1 (D5): `orphaned` is ADDITIVE — the pre-existing
+    // {count, cells} shape scoped to the active feature is unchanged; the
+    // sweep across every feature rides alongside it as a new sub-field.
+    scribing_debt: { ...scribingDebt(root), orphaned: globalScribingDebt(root) },
     capture_queue: (() => {
       const queue = captureQueue(root);
       return { count: queue.count, ids: queue.stubs.map((s) => s.id) };
@@ -1908,17 +1913,35 @@ async function handleStateSet(root, flags) {
     );
   }
 
-  const { state, changed, waived } = await withStoreLock(root, 'state', () => {
+  const { state, changed, waivedClose, waivedSwap, swapFromFeature } = await withStoreLock(root, 'state', () => {
     const { record: state, write } = resolveMutationTarget(root, laneFeature, 'set');
     // chain-integrity D1-REVISED / D2 — read `from` off the record actually being
     // mutated (lanes included), never off global state.
-    let waived = null;
+    let waivedClose = null;
     if (flags.phase !== undefined) {
       const target = String(flags.phase);
       const transition = checkPhaseTransition(state.phase, target);
       if (!transition.ok) throw new Error(transition.reason);
       if (target === 'compounding-complete') {
-        waived = closeGuardScribingDebt(root, flags);
+        // scribing-integrity si-1 (D2): a lane close checks the LANE's own
+        // feature debt (thresholded on the lane's own last_scribing_run) —
+        // closeGuardScribingDebt stays the default-record path, unchanged.
+        waivedClose = laneFeature
+          ? laneCloseGuardScribingDebt(root, state, flags)
+          : closeGuardScribingDebt(root, flags);
+      }
+    }
+    // scribing-integrity si-1 (D1): a feature SWAP over unpaid debt on the
+    // CURRENT feature is the second door — same wall, same waiver. Only the
+    // default record ever reaches here: --feature is already refused
+    // alongside --lane above, and a same-value --feature is not a swap.
+    let waivedSwap = null;
+    let swapFromFeature = null;
+    if (!laneFeature && flags.feature !== undefined) {
+      const newFeature = String(flags.feature);
+      if (state.feature && newFeature !== state.feature) {
+        swapFromFeature = state.feature;
+        waivedSwap = featureSwapGuardScribingDebt(root, state.feature, flags);
       }
     }
     const selectedRecord = laneFeature ? `lane "${laneFeature}"` : 'default state';
@@ -1960,13 +1983,14 @@ async function handleStateSet(root, flags) {
       changed.push('summary');
     }
     write(state);
-    return { state, changed, waived };
+    return { state, changed, waivedClose, waivedSwap, swapFromFeature };
   });
 
   // D4 — the waiver is loud and attributable. Logged AFTER the write succeeds so
   // a refused close never leaves a decision claiming one happened. decisions.jsonl
   // is append-only and outside the 'state' lock's store scope, so this stays
   // after the lock releases, unchanged from before.
+  const waived = waivedClose; // legacy alias — keeps the block below untouched
   if (waived && waived.length > 0) {
     // jrt-2: this audit record was itself UNTAGGED — the one internal
     // decision-logging call the widened census (test_cells.mjs) was written
@@ -1997,8 +2021,24 @@ async function handleStateSet(root, flags) {
       tags: ['scribing', 'state'],
     });
   }
-  const waiverNote = waived && waived.length > 0
-    ? ` — SCRIBING DEBT WAIVED for ${waived.length} cell(s): ${waived.join(', ')} (decision logged)`
+  // scribing-integrity si-1 (D1) — the swap-waiver twin of the block above:
+  // same logged-after-write discipline, same tags, its own decision text
+  // naming the ABANDONED feature (there is no "closed feature" here — the
+  // record just moved on to a different one).
+  if (waivedSwap && waivedSwap.length > 0) {
+    const stateLayer = bundleMode(root) ? 'the knowledge bundle (docs/knowledge/)' : 'docs/specs/';
+    logDecision(root, {
+      decision: `Swapped away from feature "${swapFromFeature}" with scribing debt WAIVED for ${waivedSwap.length} capped behavior_change cell(s): ${waivedSwap.join(', ')}. Their settled behavior is NOT in ${stateLayer}.`,
+      rationale:
+        'Explicitly waived via `state set --feature <new> --waive-scribing-debt`. bee refuses a feature swap over unpaid debt by default (scribing-integrity D1); the waiver is the sanctioned door, and this record is its price.',
+      scope: 'repo',
+      source: 'agent',
+      tags: ['scribing', 'state'],
+    });
+  }
+  const allWaived = [...(waivedClose || []), ...(waivedSwap || [])];
+  const waiverNote = allWaived.length > 0
+    ? ` — SCRIBING DEBT WAIVED for ${allWaived.length} cell(s): ${allWaived.join(', ')} (decision logged)`
     : '';
   return {
     result: state,
@@ -2021,6 +2061,61 @@ function closeGuardScribingDebt(root, flags) {
       'FIX: run bee-scribing to merge the settled behavior into its area spec, then `bee state scribing-run ...` to stamp it.\n' +
       'If the behavior genuinely belongs in no spec, close with --waive-scribing-debt — it is permitted, but it logs a decision naming every cell you waived.',
   );
+}
+
+// scribing-integrity si-1 (D1) — the SECOND door. Swapping the default
+// record's `feature` to something else while the CURRENT feature carries
+// unpaid scribing debt has the exact same effect as closing it silently: the
+// abandoned feature's capped behavior_change cells never get their sync, and
+// (unlike an explicit close attempt) nothing ever even TRIES the
+// compounding-complete wall for it — a dead session just never comes back.
+// Same message shape, same --waive-scribing-debt escape, same caller-side
+// logged-waiver pattern as closeGuardScribingDebt above (reused, not forked).
+// Lanes never reach this: --feature is already refused alongside --lane.
+function featureSwapGuardScribingDebt(root, currentFeature, flags) {
+  if (!currentFeature) return null; // idle → nothing was abandoned
+  const debt = scribingDebt(root, { feature: currentFeature });
+  if (debt.count === 0) return null;
+  if (flags['waive-scribing-debt']) return debt.cells;
+  throw new Error(
+    `set: refusing to swap away from feature "${currentFeature}" — ${debt.count} capped behavior_change cell(s) have not been synced to docs/specs/: ${debt.cells.join(', ')}.\n` +
+      `Setting --feature abandons "${currentFeature}" without ever reaching its close — the scribing debt would go silent, with no session left to hit the compounding-complete wall for it.\n` +
+      'FIX: run bee-scribing to merge the settled behavior into its area spec, then `bee state scribing-run ...` to stamp it.\n' +
+      'If the behavior genuinely belongs in no spec, swap with --waive-scribing-debt — it is permitted, but it logs a decision naming every cell you waived.',
+  );
+}
+
+// scribing-integrity si-1 (D2) — the THIRD door. A lane close used to run
+// through closeGuardScribingDebt unconditionally, which reads ONLY the
+// default record's `state.feature` — a lane close never computed debt for
+// its OWN feature at all, so a debt-carrying lane closed clean whenever the
+// default record happened to be idle or on some other feature. This computes
+// debt scoped to the LANE's own feature, thresholded on the LANE's own
+// last_scribing_run (never the default record's) — same wall shape, same
+// waiver escape as the other two doors.
+function laneCloseGuardScribingDebt(root, laneRecord, flags) {
+  const sinceTs = scribingRunStampMsForGuard(laneRecord.last_scribing_run);
+  const debt = scribingDebt(root, { feature: laneRecord.feature, sinceTs });
+  if (debt.count === 0) return null;
+  if (flags['waive-scribing-debt']) return debt.cells;
+  throw new Error(
+    `set: refusing to close lane "${laneRecord.feature}" — ${debt.count} capped behavior_change cell(s) have not been synced to docs/specs/: ${debt.cells.join(', ')}.\n` +
+      '"compounding-complete" asserts that scribing already ran for them. It has not.\n' +
+      'FIX: run bee-scribing to merge the settled behavior into its area spec, then `bee state scribing-run --lane ' +
+      `${laneRecord.feature} ...\` to stamp it.\n` +
+      'If the behavior genuinely belongs in no spec, close with --waive-scribing-debt — it is permitted, but it logs a decision naming every cell you waived.',
+  );
+}
+
+// Local mirror of cells.mjs's internal scribingRunStampMs — the lane-close
+// guard above is the only bee.mjs caller that needs a lane record's own
+// last_scribing_run turned into a threshold ms value, so this stays a small
+// unexported helper rather than growing cells.mjs's export surface for one
+// caller.
+function scribingRunStampMsForGuard(run) {
+  if (!run) return 0;
+  const parsed = Date.parse(run.at || run.date);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 // D6 — async: record-read through write() runs inside withStoreLock('state').
@@ -2258,6 +2353,14 @@ async function handleStateScribingRun(root, flags) {
   const date = at.slice(0, 10);
   const laneFeature = optionalLaneFlag(flags, 'scribing-run');
 
+  // scribing-integrity si-1 (D2): a DEFAULT-record call stamping some OTHER
+  // feature than the one currently active is a REPAIR — evidence for
+  // globalScribingDebt's orphan sweep, not a claim that the default record's
+  // own phase should advance. A lane call has no such ambiguity: --lane
+  // already pins the record to one feature, so its phase-production stays
+  // exactly as today, unconditional.
+  let stampedActive = true;
+  let activeFeatureAtCall = null;
   const state = await withStoreLock(root, 'state', () => {
     const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
     // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
@@ -2265,16 +2368,36 @@ async function handleStateScribingRun(root, flags) {
     // from anywhere, with no check that execution had happened at all.
     const phaseCheck = checkScribingRunPhase(state.phase);
     if (!phaseCheck.ok) throw new Error(phaseCheck.reason);
-    state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
-    // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
-    state.phase = 'compounding';
-    state.next_action = nextAction;
-    write(state);
+    activeFeatureAtCall = state.feature;
+    // No active feature at all (idle) means nothing is being abandoned — a
+    // lane call is never ambiguous either (--lane already pins the record to
+    // one feature). Only a genuine mismatch against an EXISTING active
+    // feature is the repair path.
+    stampedActive = laneFeature ? true : !state.feature || state.feature === feature;
+    if (stampedActive) {
+      state.last_scribing_run = { feature, date, at, areas_synced: areas, next_action: nextAction };
+      // "plus top-level phase/next_action" (bee-scribing SKILL.md:112).
+      state.phase = 'compounding';
+      state.next_action = nextAction;
+      write(state);
+    }
     return state;
   });
+
+  // scribing-integrity si-1 (D2): the durable ledger append — ALWAYS, even on
+  // the repair path above where the record itself was left untouched. This is
+  // the trace globalScribingDebt's orphan sweep reads for a feature that has
+  // no lane and is no longer the active default feature. Fail-open but LOUD
+  // (appendScribingLedger's own contract): never masks or blocks this verb's
+  // success, never silent either.
+  appendScribingLedger(root, { feature, ts: at, areas });
+
+  const repairNote = stampedActive
+    ? ''
+    : ` — recorded in the durable ledger only: the default record tracks feature "${activeFeatureAtCall}", not "${feature}", so its phase/last_scribing_run were left untouched (repair path for an orphaned feature; \`bee status --json\`'s scribing_debt.orphaned names it).`;
   return {
     result: state,
-    text: `Recorded scribing run for "${feature}" at ${at}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
+    text: `Recorded scribing run for "${feature}" at ${at}.${laneFeature ? ` (lane "${laneFeature}")` : ''}${repairNote}`,
   };
 }
 
