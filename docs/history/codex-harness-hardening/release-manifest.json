@@ -197,7 +197,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "7815f772613eafe78ed40092feeaeca0d109de926250f85da507a6b56bd1e783",
+      "sha256": "4b4312092ac7876de42f94c4abb9452900dc5cb3e995bd4c05dfaed279d1aac2",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -575,7 +575,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "c292d74e21d57c8eae69880cd69cab532bc329c5c49c5bb517b5a1311a3d499f",
+      "sha256": "033eb8f284d207a2bc0f6d3522cff4d81b25cc58250f0aefd5d46e8813edacae",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/AGENTS.block.md"
@@ -1268,7 +1268,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "b9f134bf8ba6ab56ad716290bdc9d0c33009b22f4a0ada2b7d91b1d4e4d7e7c6",
+      "sha256": "6d3c9f0f57aa4a015b04494fbfce758035a340bcd4283876015f6a6b3f70bced",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1646,7 +1646,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "c292d74e21d57c8eae69880cd69cab532bc329c5c49c5bb517b5a1311a3d499f",
+      "sha256": "033eb8f284d207a2bc0f6d3522cff4d81b25cc58250f0aefd5d46e8813edacae",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/AGENTS.block.md"
@@ -2853,7 +2853,7 @@
     },
     {
       "path": "skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "c292d74e21d57c8eae69880cd69cab532bc329c5c49c5bb517b5a1311a3d499f",
+      "sha256": "033eb8f284d207a2bc0f6d3522cff4d81b25cc58250f0aefd5d46e8813edacae",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/AGENTS.block.md"
