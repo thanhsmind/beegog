@@ -987,6 +987,65 @@ async function main() {
   );
   check(r56.status === 0, "row56: `git commit` with a staged source path is unaffected outside a terminal phase (scope control)", `status=${r56.status} stderr=${r56.stderr}`);
 
+  // --- 57-61. worktree-companion-hook mount recognition (fix-write-guard-
+  // symlink): `bee worktree new --with-companion` symlinks a nested repo's
+  // own worktree into this one at a `mountPath`, recorded in
+  // `<root>/.bee/companion-session.json` as `{sessionId, worktreePath,
+  // mountPath}`. A target that lexically escapes the physical worktree
+  // PURELY by crossing that specific, marker-declared symlink is the
+  // companion's own working tree, not an escape.
+  const companionRoot = buildFixture("bee-write-guard-companion-");
+  const companionMountTarget = mkFixture("bee-write-guard-companion-mount-");
+  fs.writeFileSync(path.join(companionMountTarget, "foo.js"), "// companion file\n");
+  fs.symlinkSync(companionMountTarget, path.join(companionRoot, "repo"));
+  fs.writeFileSync(
+    path.join(companionRoot, ".bee", "companion-session.json"),
+    `${JSON.stringify({ sessionId: "s1", worktreePath: companionMountTarget, mountPath: "repo" }, null, 2)}\n`,
+  );
+
+  const r57 = await runHookPayload(
+    { tool_name: "Edit", tool_input: { file_path: "repo/foo.js", old_string: "x", new_string: "y" } },
+    companionRoot,
+  );
+  check(r57.status === 0, "row57: an Edit inside the matched companion mount is allowed (denied pre-fix)", `status=${r57.status} stderr=${r57.stderr}`);
+
+  const r58 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: "cp new.js repo/foo.js" } },
+    companionRoot,
+  );
+  check(r58.status === 0, "row58: a Bash-extracted target under the mount is also mapped and allowed", `status=${r58.status} stderr=${r58.stderr}`);
+
+  const noMarkerRoot = buildFixture("bee-write-guard-companion-no-marker-");
+  fs.symlinkSync(companionMountTarget, path.join(noMarkerRoot, "repo"));
+  const r59 = await runHookPayload(
+    { tool_name: "Edit", tool_input: { file_path: "repo/foo.js", old_string: "x", new_string: "y" } },
+    noMarkerRoot,
+  );
+  check(r59.status === 2, "row59: the same symlinked mount with NO marker file is still denied (generic containment)", `status=${r59.status} stderr=${r59.stderr}`);
+
+  const mismatchRoot = buildFixture("bee-write-guard-companion-mismatch-");
+  const otherReal = mkFixture("bee-write-guard-companion-other-");
+  fs.symlinkSync(companionMountTarget, path.join(mismatchRoot, "repo"));
+  fs.writeFileSync(
+    path.join(mismatchRoot, ".bee", "companion-session.json"),
+    `${JSON.stringify({ sessionId: "s1", worktreePath: otherReal, mountPath: "repo" }, null, 2)}\n`,
+  );
+  const r60 = await runHookPayload(
+    { tool_name: "Edit", tool_input: { file_path: "repo/foo.js", old_string: "x", new_string: "y" } },
+    mismatchRoot,
+  );
+  check(
+    r60.status === 2,
+    "row60: a marker whose declared worktreePath does NOT match the live symlink target is still denied",
+    `status=${r60.status} stderr=${r60.stderr}`,
+  );
+
+  const r61 = await runHookPayload(
+    { tool_name: "Read", tool_input: { file_path: "repo/foo.js" } },
+    noMarkerRoot,
+  );
+  check(r61.status === 0, "row61: a companion-mounted Read stays allowed regardless of the marker (read tools are untouched)", `status=${r61.status} stderr=${r61.stderr}`);
+
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }
