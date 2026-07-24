@@ -192,6 +192,8 @@
     "guard",
     "execution",
     "mirror",
-    "doctrine"
+    "doctrine",
+    "tiny",
+    "ship"
   ]
 }

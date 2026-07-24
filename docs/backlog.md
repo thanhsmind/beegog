@@ -48,6 +48,7 @@ never a generation timestamp or any other wall-clock value.
 ## Done / Declined
 
 - [p-0aa807b9] run_verify --impacted gains --level 1: direct-edge-only selection for the dev loop, transitive closure reserved for wave-close/merge — done
+- [p-ccc558a0] Installer verify fails: bee.mjs status reports drift=true post-apply when repo-copy sync leaves an orphaned extra lib file — done
 - [P1] A greenfield repo with no build gets an init lane on its first onboard — done
 - [P10] Gate 4 walkthrough can quiz the approver — done
 - [P11] SEE gray areas can be locked by reacting to a throwaway HTML mock — done
