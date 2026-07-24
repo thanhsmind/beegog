@@ -129,6 +129,8 @@ Retrieval triggers, not reading lists. Token budgets by lane:
 
 Do not read `node_modules/`, `dist/`, `build/`, `.git/` internals, `vendor/`, `coverage/` — the scout guard blocks them anyway.
 
+**Orphaned scribing debt (scribing-integrity si-1/si-2/si-3):** when `bee.mjs status --json` reports a non-zero `scribing_debt.orphaned` count (the preamble already prints one loud line for it), surface it and offer it as fix-first knowledge work with the same one-line offer discipline as the capture-queue flush — e.g. "N cell(s) across M feature(s) never got their scribing sync — close the gap now, or after the current task?" One line, user chooses; orphaned scribing debt is never silently ignored. The repair verb is `bee.mjs state scribing-run --feature <feature> --areas "<a,b>" --next-action "<n>"`, which can stamp a non-active feature directly — no need to reactivate it first.
+
 ## Chaining Contract
 
 | Skill | Reads | Writes |

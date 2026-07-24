@@ -36,11 +36,11 @@
     },
     {
       "name": "bee-herding",
-      "sha256": "de85e353d7c05c4ce38d64e4a42b62d72014aa8ff89969abba97eb4d09deb126"
+      "sha256": "c8cf3c80ac9ca5527779366c9bb0dc6cd7de3f90ac05206b5309881777d2b69a"
     },
     {
       "name": "bee-hive",
-      "sha256": "020ff4c9a1056ac5c9e200a4df1f0cd213220a0b19f68576b8733dad154539d1"
+      "sha256": "5c1cafd615ce51d68148e8572de44e95be33570ba9cb464311c60d9b758a5b0a"
     },
     {
       "name": "bee-planning",

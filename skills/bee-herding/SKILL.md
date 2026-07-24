@@ -159,6 +159,8 @@ herdr pane read <chat_pane_id> --source recent --lines 200
 
 — and check whether it already names this exact `pane_id` with this exact reason. If it does, say nothing. If it does not, send exactly one line naming the `pane_id`, the slug (if labelled), and the reason, and take no other action: do not relabel, close, or reclaim the pane. Reporting is the whole of this role's response to an anomaly.
 
+**Naming a tail-stuck worktree distinctly (scribing-integrity si-2):** when the only D2 condition failing for a labelled pane is phase — zero cells in `open`/`claimed`, a clean tree, and `HEAD` on `wt/<S>` all hold, but `phase` is short of `compounding-complete` — the report line names that case distinctly as **tail-stuck (scribing/close owed)** instead of the generic anomaly wording above, and states the paved repair in the same line: the owner opens a session in that worktree to run the scribing/compounding tail, or waives it with the logged flag. This role still takes no other action beyond reporting — the report-only contract is unchanged.
+
 ### 5. Build the dispatchable set (D1) — but only past the enable interlock (D10)
 
 **Interlock first — before ANY of the four conditions below.** This role does not get to decide its own first minute from a language-model reading of a backlog column. Run the enable interlock:
@@ -318,6 +320,8 @@ A worktree is **finished** (D2) iff all four hold:
 **herdr's `agent_status`/`agent_session` are never read as evidence a worktree is finished (D20)** — this role does not consult them at all for the finished test. A Claude agent goes idle the moment it stops typing: mid-item, waiting, or crashed all look identical from outside, and bee's four conditions above are the only signal that can only be late, never wrong. If a granted worktree fails the D2 test, it is simply not finished yet — that is ordinary work in progress, not an anomaly; skip it and let a later iteration find it once it settles.
 
 If no granted worktree meets all four conditions, there is nothing to merge this iteration: end it quietly.
+
+When a worktree fails this test only on condition 1 (phase), with the other three clean, that is the tail-stuck case: the dispatch role's §4 names it distinctly (tail-stuck, scribing/close owed) and states the paved repair there — this role still treats it as not-finished and takes no action on it, silently, same as any other not-yet-finished worktree.
 
 ### 4. Check for a red-stop marker before merging anything (D3, D18)
 
