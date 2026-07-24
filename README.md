@@ -1,7 +1,7 @@
 # bee
 
 <!-- BEE:BACKLOG-BADGES:START -->
-![backlog declined](https://img.shields.io/badge/backlog%20declined-1-red) ![backlog done](https://img.shields.io/badge/backlog%20done-48-brightgreen) ![backlog parked](https://img.shields.io/badge/backlog%20parked-0-yellow) ![backlog in-flight](https://img.shields.io/badge/backlog%20in--flight-4-blue) ![backlog proposed](https://img.shields.io/badge/backlog%20proposed-25-lightgrey)
+![backlog declined](https://img.shields.io/badge/backlog%20declined-1-red) ![backlog done](https://img.shields.io/badge/backlog%20done-48-brightgreen) ![backlog parked](https://img.shields.io/badge/backlog%20parked-0-yellow) ![backlog in-flight](https://img.shields.io/badge/backlog%20in--flight-4-blue) ![backlog proposed](https://img.shields.io/badge/backlog%20proposed-29-lightgrey)
 <!-- BEE:BACKLOG-BADGES:END -->
 
 **bee** is a lightweight, *validate-first* agentic-development plugin suite for **Claude Code** and **Codex**. It turns "vibe-coding with an AI" into a staged, gated workflow where the agent proves each step before taking the next, records what it learns, and gets less wrong over time.
@@ -492,3 +492,18 @@ Recent additions, each gated by a decision record:
 **Known debt before 1.0** (recorded in each skill's `CREATION-LOG.md`): the newer skills and the two most recent decisions have not yet been dogfooded/pressure-tested per bee's own Iron Law; the gate-bypass safety floor in particular wants RED-baseline testing on a real high-risk feature.
 
 Try it: onboard a repo, scout with `bee_status`, then ask the agent for a tiny fix and watch it route.
+
+## Grep Tool
+sudo apt update
+sudo apt install ripgrep
+sudo apt install fd-find
+# Tạo liên kết hệ thống để đổi fdfind -> fd
+sudo ln -s $(which fdfind) /usr/local/bin/fd
+
+## Claude.md
+# Search Commands Instructions
+When exploring the codebase or searching for information, DO NOT use `grep` or `find`. 
+Instead, strictly use the following modern alternatives which are already installed on this system:
+
+- Use `rg` (ripgrep) to search for text/content inside files.
+- Use `fd` to search for filenames and directory paths.
