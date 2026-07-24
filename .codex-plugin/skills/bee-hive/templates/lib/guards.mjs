@@ -1053,3 +1053,101 @@ export function extractBashTargets(command) {
 
   return { paths, broadWrite };
 }
+
+// ─── internals-reach guard (state-query-surface, cell sqs-a, D 3fbe2f79) ──
+//
+// Denies ONLY the inline-eval reach — `node -e`/`--eval`/`-p` whose script
+// text imports/requires a `bin/lib/` or `templates/lib/` module — never a
+// file-based `node <path>.mjs` run (tests legitimately import lib modules
+// that way, and this guard must never trap them). The reach fetches
+// internals with no compatibility promise, by the worst possible path, when
+// the same data is already a paved public read (`bee status --json`,
+// `bee <group> --help --json`) — the FIX line always names both.
+const NODE_INVOCATION_BASENAMES = new Set(['node', 'nodejs']);
+const INLINE_EVAL_FLAGS = new Set(['-e', '--eval', '-p']);
+const LIB_IMPORT_SPECIFIER_RE =
+  /(?:\brequire\s*\(\s*|\bimport\s*\(\s*|\bimport\b[^'"()]*\bfrom\s*)['"`]([^'"`]+)['"`]/g;
+
+/** Every inline-eval script string found in one `&&`/`;`/`|`-separated
+ * command segment: the token(s) right after a bare `-e`/`--eval`/`-p` flag,
+ * plus the attached `--eval=<script>` form. */
+function inlineEvalScriptsInSegment(segment) {
+  const scripts = [];
+  for (let i = 0; i < segment.length; i += 1) {
+    const token = segment[i];
+    if (INLINE_EVAL_FLAGS.has(token)) {
+      const next = segment[i + 1];
+      if (typeof next === 'string') scripts.push(next);
+      continue;
+    }
+    const attached = /^--eval=(.*)$/.exec(token);
+    if (attached) scripts.push(attached[1]);
+  }
+  return scripts;
+}
+
+/** First `import(...)`/`require(...)`/`import ... from '...'` specifier in
+ * `script` that resolves into a `bin/lib/` or `templates/lib/` module, or
+ * null when the script never reaches into either. */
+function libImportSpecifierIn(script) {
+  if (typeof script !== 'string' || !script) return null;
+  LIB_IMPORT_SPECIFIER_RE.lastIndex = 0;
+  let match;
+  while ((match = LIB_IMPORT_SPECIFIER_RE.exec(script))) {
+    const specifier = match[1];
+    if (specifier && /(^|\/)(?:bin\/lib|templates\/lib)(\/|$)/.test(specifier)) {
+      return specifier;
+    }
+  }
+  return null;
+}
+
+/**
+ * Bash-command guard (D 3fbe2f79): deny an inline-eval `node -e`/`--eval`/
+ * `-p` command whose script text imports/requires a `bin/lib/` or
+ * `templates/lib/` module. Returns:
+ *   null                    — not a node inline-eval invocation, or the
+ *                              script never reaches into bin/lib or
+ *                              templates/lib (includes every file-based
+ *                              `node <path>.mjs` run — never blocked here).
+ *   { allow: false, reason } — the inline eval reaches an internal module;
+ *                              `reason` names the paved read instead.
+ */
+export function checkBinLibImportBashCommand(command) {
+  const str = typeof command === 'string' ? command : '';
+  if (!str.trim()) return null;
+  const tokens = tokenize(str);
+
+  let i = 0;
+  while (i < tokens.length) {
+    if (SEPARATORS.has(tokens[i])) {
+      i += 1;
+      continue;
+    }
+    let end = i;
+    while (end < tokens.length && !SEPARATORS.has(tokens[end])) end += 1;
+    const segment = tokens.slice(i, end);
+    i = end;
+
+    const cmd = (segment[0] || '').replace(/\\/g, '/').split('/').pop();
+    if (!NODE_INVOCATION_BASENAMES.has(cmd)) continue;
+
+    for (const script of inlineEvalScriptsInSegment(segment)) {
+      const specifier = libImportSpecifierIn(script);
+      if (specifier) {
+        return {
+          allow: false,
+          reason:
+            `bee internals-reach guard: this inline eval imports "${specifier}" — a bin/lib/ or ` +
+            'templates/lib/ internal module, reached via `node -e`/`--eval`/`-p` rather than the CLI. ' +
+            'Internals carry no compatibility promise and this bypasses the CLI\'s own validation. ' +
+            'FIX: use the paved read instead — `bee status --json` for current state, or ' +
+            '`bee <group> --help --json` for a command group\'s full schema. ' +
+            '(File-based `node <path>.mjs` runs that import lib modules, e.g. tests, are unaffected.)',
+        };
+      }
+    }
+  }
+
+  return null;
+}

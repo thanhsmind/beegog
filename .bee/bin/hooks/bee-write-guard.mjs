@@ -842,6 +842,25 @@ async function main() {
           }
         }
       }
+
+      // Internals-reach guard (state-query-surface, cell sqs-a, D 3fbe2f79):
+      // deny an inline-eval `node -e`/`--eval`/`-p` Bash command whose script
+      // text imports/requires a `bin/lib/` or `templates/lib/` module — never
+      // a file-based `node <path>.mjs` run (tests import lib legitimately
+      // that way). Additive, scoped to Bash, and can only ever ASSIGN a
+      // denial when none exists yet, same first-hit-wins precedence as every
+      // other check above.
+      if (!denial && toolName === "Bash" && typeof guards.checkBinLibImportBashCommand === "function") {
+        const bashCommand = typeof toolInput.command === "string" ? toolInput.command : "";
+        if (bashCommand) {
+          const internalsVerdict = guards.checkBinLibImportBashCommand(bashCommand);
+          if (internalsVerdict && internalsVerdict.allow === false) {
+            denial = {
+              reason: internalsVerdict.reason || `bee internals-reach guard denied: ${bashCommand}`,
+            };
+          }
+        }
+      }
     }
 
     // Check (d) — CLI-shape validation (additive, D4). Runs unconditionally

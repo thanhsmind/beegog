@@ -1160,6 +1160,29 @@ async function main() {
   );
   check(r69.status === 0, "row69: a companion-mounted Read stays allowed regardless of the marker (read tools are untouched)", `status=${r69.status} stderr=${r69.stderr}`);
 
+  // --- 70-71. internals-reach guard (state-query-surface, cell sqs-a, D
+  // 3fbe2f79): two-direction negative control. An inline `node -e` reach that
+  // imports a bin/lib/ module is DENIED; a file-based `node <path>.mjs` run
+  // that imports the same lib module (exactly how legitimate tests and
+  // scripts use it) is never touched by this guard.
+  const r70 = await runHookPayload(
+    {
+      tool_name: "Bash",
+      tool_input: { command: `node -e "import('.${path.sep}.bee/bin/lib/cells.mjs').then(() => {})"` },
+    },
+    root,
+  );
+  check(r70.status === 2, "row70: inline `node -e` importing bin/lib/cells.mjs is denied (exit 2)",
+    `status=${r70.status} stderr=${r70.stderr}`);
+  check(r70.stderr.includes("bee status --json"), "row70: stderr names the paved read bee status --json", r70.stderr);
+  check(r70.stderr.includes("bee <group> --help --json"), "row70: stderr names the paved read bee <group> --help --json", r70.stderr);
+
+  const r71 = await runHookPayload(
+    { tool_name: "Bash", tool_input: { command: "node skills/bee-hive/templates/tests/test_guards.mjs" } },
+    root,
+  );
+  check(r71.status === 0, "row71: file-based `node <path>.mjs` run of a test that legitimately imports lib/guards.mjs is never blocked", `status=${r71.status} stderr=${r71.stderr}`);
+
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }
