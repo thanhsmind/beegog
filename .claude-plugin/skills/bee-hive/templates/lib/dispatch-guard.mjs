@@ -22,11 +22,19 @@
 
 import { resolveTier, resolveAdvisor, modelForTier, CONFIGURABLE_SLOTS } from './state.mjs';
 
-// Codex-native collaboration spawn (codex-native-runtime-v2 D4): Codex exposes
-// agent spawns through PreToolUse as tool_name "spawn_agent", with tool_input
-// {agent_type: "worker", message: "..."}. This is an ISOLATED branch, never
-// mixed with the Claude Agent/Task rules below.
+// Codex-native collaboration spawn (codex-native-runtime-v2 D4; schema
+// re-probed live on codex-cli 0.145.0 — i54-closeout D1,
+// docs/history/i54-closeout/reports/validation-canary.md): Codex exposes
+// agent spawns through PreToolUse as tool_name "spawn_agent". The 0.145.0
+// server-governed schema is {task_name (required), message (required),
+// fork_turns?, model?, reasoning_effort?} — `agent_type` does not exist in
+// it; the legacy 0.144.4 spike shape was {agent_type: "worker", message}.
+// The guard therefore keys on the TOOL NAME plus the message field, never on
+// agent_type/task_name presence (both shapes get the same verdict). This is
+// an ISOLATED branch, never mixed with the Claude Agent/Task rules below.
 export const CODEX_SPAWN_TOOL = 'spawn_agent';
+// Legacy 0.144.4 vocabulary — no longer part of any guard verdict (0.145.0
+// has no agent_type field); kept exported for external readers of the old ABI.
 export const CODEX_SPAWN_WORKER_TYPE = 'worker';
 
 export const DISPATCH_TOOLS = new Set(['Agent', 'Task']);
@@ -164,14 +172,20 @@ function denyResult(reason, transport, { tier = null, model = null, subagentType
   return { decision: 'deny', transport, reason, tier, model, subagentType };
 }
 
-// Codex-native spawn guard (codex-native-runtime-v2 D4, decision 0023 parity).
-// Triggered ONLY by the exact envelope the codex-cli 0.144.4 spike observed
-// (capability-matrix row D1): tool_input {agent_type: "worker", message}. The
-// authoritative task field is MESSAGE, not prompt, and the [bee-tier: <tier>]
-// marker must anchor to the START of message (leading whitespace allowed).
-// Every UNOBSERVED shape is a no-opinion (allow, unlogged), never a deny —
-// the spike only ever captured agent_type "worker"; denying a shape it never
-// saw would guess at semantics the evidence does not support.
+// Codex-native spawn guard (codex-native-runtime-v2 D4, decision 0023 parity;
+// widened by i54-closeout D1). Triggered by tool_name "spawn_agent" for EVERY
+// payload carrying a non-empty string message — the live codex 0.145.0 probe
+// (validation-canary) observed the server-governed schema {task_name,
+// message} (required) with no agent_type field, and the doc-canonical shape
+// swarming-reference.md teaches ({task_name, message, fork_turns}) must get
+// a real verdict, never a silent noOpinion. The legacy 0.144.4 spike shape
+// ({agent_type: "worker", message}) is evaluated identically: the verdict
+// keys on the tool name plus the message, NEVER on agent_type/task_name
+// presence. The authoritative task field is MESSAGE, not prompt, and the
+// [bee-tier: <tier>] marker must anchor to the START of message (leading
+// whitespace allowed). Only a missing/empty/non-string message stays a
+// no-opinion (there is no task text to judge); the unmarked-spawn deny is
+// never weakened.
 //
 // D6 route-check gap (codex-native-transport, decision 350f1e82, bound to
 // cnt-4): CONTEXT.md's D6 calls for this function to validate an override-
@@ -186,15 +200,12 @@ function denyResult(reason, transport, { tier = null, model = null, subagentType
 // reaches tool execution to inspect (full evidence:
 // docs/history/codex-native-transport/reports/probe-evidence.md). A spawn
 // that carries override fields therefore passes through exactly like one
-// that doesn't — evaluated on agent_type + message only — by design: this is
+// that doesn't — evaluated on the anchored message marker only — by design: this is
 // a defense-in-depth allow-hole (ADVISOR-R2 Δ3), not an oversight, and it
 // stays this way until a codex build lets V3 be observed and this comment
 // is replaced by the real route-check.
 function evaluateCodexSpawn(toolInput) {
   if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) {
-    return noOpinion();
-  }
-  if (toolInput.agent_type !== CODEX_SPAWN_WORKER_TYPE) {
     return noOpinion();
   }
   const message = toolInput.message;
@@ -206,11 +217,11 @@ function evaluateCodexSpawn(toolInput) {
     return allowResult('codex-spawn-marker', { tier });
   }
   const reason =
-    `bee-model-guard: Codex spawn_agent(agent_type: "worker") needs an explicit ` +
-    "tier — its message must OPEN with a [bee-tier: <tier>] marker (decision 0023 " +
-    "parity, codex-native-runtime-v2 D4). A marker anywhere but the start of the " +
-    "message does not count, and a marker in any other field is ignored; without " +
-    "one the spawned worker silently inherits the session model.\n" +
+    'bee-model-guard: every Codex spawn_agent needs an explicit tier — its ' +
+    "message must OPEN with a [bee-tier: <tier>] marker (decision 0023 " +
+    "parity, codex-native-runtime-v2 D4, i54-closeout D1). A marker anywhere but the " +
+    "start of the message does not count, and a marker in any other field is ignored; " +
+    "without one the spawned worker silently inherits the session model.\n" +
     "FIX: begin the spawn message with the marker, e.g. " +
     '"[bee-tier: generation] <task>" (tiers: ceiling/generation/extraction/review/advisor).';
   return denyResult(reason, 'codex-spawn-unmarked');

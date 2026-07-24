@@ -388,11 +388,24 @@ export function prepareDispatch(root, { runtime, kind, cell: cellId, worker, for
     channel = 'cli-exec';
   } else if (runtime === 'codex') {
     tool = 'spawn_agent';
+    // Live-probed codex 0.145.0 schema (i54-closeout D1, validation-canary):
+    // {task_name, message} are REQUIRED and `agent_type` does not exist in
+    // the server-governed schema, so the ordinary emit is the doc-canonical
+    // {task_name, message, fork_turns} shape swarming-reference.md teaches.
+    // `model`/`reasoning_effort` exist in that schema but the override path
+    // is rejected end-to-end on 0.145.0 (`native_budget_only`) — the
+    // ordinary path never attaches them (R18: emit only what was observed
+    // accepted; overrides ride the confirmed-native branch above only).
     payload = {
-      agent_type: 'worker',
+      // A stable, followup_task-addressable name: the cell id for cell
+      // dispatches, the kind otherwise (the caller may rename before spawn).
+      task_name: cell ? cell.id : `bee-${kind}`,
       // Marker at the very start of message — the exact position
       // dispatch-guard.mjs's evaluateDispatch checks (ANCHORED_TIER_MARKER_RE).
       message: `[bee-tier: ${tierToken}]\n${promptBody}`,
+      // ORCH-02 isolation guarantee: never fork the parent history for
+      // routine dispatches (swarming-reference.md "Isolation guarantee").
+      fork_turns: 'none',
     };
     channel = 'codex-native';
     // Codex's Multi-Agent V2 spawn_agent DOES accept a per-agent model

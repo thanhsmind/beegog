@@ -784,11 +784,15 @@ async function main() {
   check(r39.status === 0, "row39: bare param (no marker) + general-purpose stays allowed",
     `status=${r39.status} stderr=${r39.stderr}`);
 
-  // === Codex spawn ABI rows (cnr2-8, codex-native-runtime-v2 D4) ===========
-  // The isolated Codex branch triggers ONLY on the spike-observed envelope
-  // (tool_name "spawn_agent", tool_input {agent_type:"worker", message}). The
-  // [bee-tier:] marker anchors at the START of message; every unobserved shape
-  // fails open. These rows are the recognition boundary as fixtures.
+  // === Codex spawn ABI rows (cnr2-8, codex-native-runtime-v2 D4; widened by
+  // i54-closeout D1) =========================================================
+  // The isolated Codex branch triggers on tool_name "spawn_agent" and judges
+  // the [bee-tier:] marker anchored at the START of message — for EVERY
+  // payload shape carrying a non-empty string message. Live-probed codex
+  // 0.145.0 schema (validation-canary): {task_name, message} required,
+  // agent_type does not exist; the legacy 0.144.4 {agent_type:"worker"} shape
+  // is still evaluated identically. Only a missing/empty/non-string message
+  // stays a no-opinion. These rows are the recognition boundary as fixtures.
   const codexDispatchLog = path.join(enabledRoot, ".bee", "logs", "dispatch.jsonl");
 
   // --- 40. anchored marker in message -> allow, logged codex-spawn-marker --
@@ -877,27 +881,32 @@ async function main() {
   );
   check(c46.status === 0, "row46: non-string message fails open", `status=${c46.status} stderr=${c46.stderr}`);
 
-  // --- 47. agent_type "default" (unobserved) -> fail open -----------------
+  // --- 47. agent_type "default", unmarked -> deny (i54-closeout D1: the
+  // verdict keys on tool name + message, never on agent_type — the 0.145.0
+  // schema has no agent_type field at all) ----------------------------------
   const c47 = await runHookPayload(
     { tool_name: "spawn_agent", tool_input: { agent_type: "default", message: "no marker here at all" } },
     enabledRoot,
   );
-  check(c47.status === 0, "row47: agent_type default fails open (only worker was observed)",
+  check(c47.status === 2, "row47: agent_type default, unmarked message is denied (verdict never keys on agent_type)",
     `status=${c47.status} stderr=${c47.stderr}`);
 
-  // --- 48. agent_type "explorer" (unobserved) -> fail open ----------------
+  // --- 48. agent_type "explorer", unmarked -> deny (same D1 widening) ------
   const c48 = await runHookPayload(
     { tool_name: "spawn_agent", tool_input: { agent_type: "explorer", message: "no marker here at all" } },
     enabledRoot,
   );
-  check(c48.status === 0, "row48: agent_type explorer fails open", `status=${c48.status} stderr=${c48.stderr}`);
+  check(c48.status === 2, "row48: agent_type explorer, unmarked message is denied",
+    `status=${c48.status} stderr=${c48.stderr}`);
 
-  // --- 49. missing agent_type -> fail open --------------------------------
+  // --- 49. missing agent_type, unmarked -> deny (0.145.0 payloads carry no
+  // agent_type at all — this is the live shape, it must get a real verdict) --
   const c49 = await runHookPayload(
     { tool_name: "spawn_agent", tool_input: { message: "no marker here at all" } },
     enabledRoot,
   );
-  check(c49.status === 0, "row49: missing agent_type fails open", `status=${c49.status} stderr=${c49.stderr}`);
+  check(c49.status === 2, "row49: missing agent_type, unmarked message is denied (the live 0.145.0 shape gets a real verdict)",
+    `status=${c49.status} stderr=${c49.stderr}`);
 
   // --- 50. non-object tool_input -> fail open -----------------------------
   const c50 = await runHookPayload({ tool_name: "spawn_agent", tool_input: "oops" }, enabledRoot);
@@ -1004,6 +1013,37 @@ async function main() {
   );
   check(c57.status === 2, "row57: override fields present but unmarked message still denied (marker rule unaffected by the D6 gap)",
     `status=${c57.status} stderr=${c57.stderr}`);
+
+  // === i54-closeout D1 rows: the doc-canonical spawn shape (swarming-
+  // reference.md "Spawn" row; live-probed codex 0.145.0 schema — task_name +
+  // message required, no agent_type) is an OBSERVED shape and gets a real
+  // verdict, never a silent noOpinion ========================================
+
+  // --- 58. doc-canonical {task_name, message, fork_turns}, anchored marker
+  // -> allow, logged codex-spawn-marker --------------------------------------
+  const c58 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { task_name: "wt-a1", message: "[bee-tier: generation] gather the callers", fork_turns: "none" } },
+    enabledRoot,
+  );
+  check(c58.status === 0, "row58: doc-canonical marked spawn is allowed",
+    `status=${c58.status} stderr=${c58.stderr}`);
+  const d58 = readLastJsonl(codexDispatchLog);
+  check(
+    d58 && d58.transport === "codex-spawn-marker" && d58.tier === "generation" && d58.tool === "spawn_agent",
+    "row58: doc-canonical marked spawn logged as codex-spawn-marker (real verdict, not noOpinion)",
+    JSON.stringify(d58),
+  );
+
+  // --- 59. doc-canonical shape, unmarked -> deny (exit 2), logged unmarked --
+  const c59 = await runHookPayload(
+    { tool_name: "spawn_agent", tool_input: { task_name: "wt-a1", message: "no marker here at all", fork_turns: "none" } },
+    enabledRoot,
+  );
+  check(c59.status === 2, "row59: doc-canonical unmarked spawn is denied (unmarked deny never weakened)",
+    `status=${c59.status} stderr=${c59.stderr}`);
+  const d59 = readLastJsonl(codexDispatchLog);
+  check(d59 && d59.transport === "codex-spawn-unmarked",
+    "row59: doc-canonical unmarked spawn logged as codex-spawn-unmarked", JSON.stringify(d59));
 
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;

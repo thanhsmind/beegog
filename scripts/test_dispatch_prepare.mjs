@@ -120,7 +120,12 @@ await check("codex gather payload round-trips ALLOW through the real evaluateDis
 
   const out = await prepareOk(["--runtime", "codex", "--kind", "gather"], root);
   assert(out.tool === "spawn_agent", `expected tool spawn_agent, got ${JSON.stringify(out)}`);
-  assert(out.payload.agent_type === "worker", `expected agent_type worker, got ${JSON.stringify(out.payload)}`);
+  // i54-closeout D1 (validation-canary, live codex 0.145.0): the observed
+  // schema requires task_name + message; agent_type does not exist in it
+  // (R18: never emit a field the probe did not observe).
+  assert(out.payload.task_name === "bee-gather", `expected task_name "bee-gather" (0.145.0: task_name is required), got ${JSON.stringify(out.payload)}`);
+  assert(!("agent_type" in out.payload), `agent_type does not exist in the live-probed 0.145.0 schema (R18), got ${JSON.stringify(out.payload)}`);
+  assert(out.payload.fork_turns === "none", `expected fork_turns "none" (ORCH-02 isolation), got ${JSON.stringify(out.payload)}`);
   assert(
     /^\[bee-tier: generation\]/.test(out.payload.message),
     `expected message to open with the generation marker, got ${JSON.stringify(out.payload.message)}`,
@@ -130,11 +135,53 @@ await check("codex gather payload round-trips ALLOW through the real evaluateDis
 
   const allowed = dispatchGuard.evaluateDispatch("spawn_agent", out.payload, root);
   assert(allowed.decision === "allow", `expected ALLOW for prepare's own codex payload, got ${JSON.stringify(allowed)}`);
+  assert(
+    allowed.transport === "codex-spawn-marker" && allowed.tier === "generation",
+    `expected a real codex-spawn-marker verdict (never noOpinion) for the helper-emitted shape, got ${JSON.stringify(allowed)}`,
+  );
 
   const stripped = { ...out.payload, message: out.payload.message.replace(/^\[bee-tier: generation\]\n/, "") };
   const denied = dispatchGuard.evaluateDispatch("spawn_agent", stripped, root);
   assert(denied.decision === "deny", `expected DENY once the marker is stripped, got ${JSON.stringify(denied)}`);
   assert(denied.transport === "codex-spawn-unmarked", `expected codex-spawn-unmarked, got ${JSON.stringify(denied)}`);
+});
+
+// ─── i54-closeout D1: the doc-canonical shape (swarming-reference.md "Spawn"
+// row) and the legacy 0.144.4 shape BOTH get real guard verdicts — marked =
+// allow, unmarked = deny, never a silent noOpinion. This is exactly the
+// untested direction issue #54 flagged. ─────────────────────────────────────
+
+await check("doc-canonical {task_name, message, fork_turns} AND legacy {agent_type, message} payloads round-trip marked=ALLOW / unmarked=DENY through the guard", async () => {
+  const root = mkFixture("dispatch-prepare-doc-canonical-");
+  writeConfig(root, { codex: { extraction: "gpt-5.5", generation: "gpt-5.5", review: null } });
+
+  const docCanonical = { task_name: "wt-a1", message: "[bee-tier: generation]\ndo the gather", fork_turns: "none" };
+  const allowed = evaluateDispatch("spawn_agent", docCanonical, root);
+  assert(
+    allowed.decision === "allow" && allowed.transport === "codex-spawn-marker" && allowed.tier === "generation",
+    `expected a real ALLOW verdict for the doc-canonical shape, got ${JSON.stringify(allowed)}`,
+  );
+
+  const unmarked = { ...docCanonical, message: "do the gather, no marker" };
+  const denied = evaluateDispatch("spawn_agent", unmarked, root);
+  assert(
+    denied.decision === "deny" && denied.transport === "codex-spawn-unmarked",
+    `expected DENY for the unmarked doc-canonical shape (never noOpinion), got ${JSON.stringify(denied)}`,
+  );
+
+  const legacyMarked = { agent_type: "worker", message: "[bee-tier: extraction]\nlegacy 0.144.4 shape" };
+  const legacyAllowed = evaluateDispatch("spawn_agent", legacyMarked, root);
+  assert(
+    legacyAllowed.decision === "allow" && legacyAllowed.transport === "codex-spawn-marker",
+    `expected the legacy 0.144.4 shape to stay ALLOWed when marked, got ${JSON.stringify(legacyAllowed)}`,
+  );
+
+  const legacyUnmarked = { agent_type: "worker", message: "legacy shape, no marker" };
+  const legacyDenied = evaluateDispatch("spawn_agent", legacyUnmarked, root);
+  assert(
+    legacyDenied.decision === "deny" && legacyDenied.transport === "codex-spawn-unmarked",
+    `expected the legacy unmarked shape to stay DENIED (deny never weakened), got ${JSON.stringify(legacyDenied)}`,
+  );
 });
 
 // ─── Claude payload through evaluateDispatch's claude branch ───────────────
