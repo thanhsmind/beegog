@@ -188,6 +188,7 @@
     "bypass",
     "drift",
     "lib-mirror",
-    "tiny"
+    "tiny",
+    "ship"
   ]
 }
