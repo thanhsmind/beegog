@@ -235,6 +235,82 @@ await check('CLI: decisions search --text alone (legacy call shape) still works 
   assert(ids.includes(legacy.id), 'legacy metadata-less event is still found by --text substring search');
 });
 
+// ─── sqs-b1 (D 5ca69717): --cell / --feature word-boundary text filters ───
+// Cell ids/feature slugs have NO structural field on a decide event (gather
+// Q1) — --cell/--feature are word-boundary matches over
+// decision/rationale/alternatives, not a substring (that is the si-1≈si-10
+// bug in plain --text). Proven both ways: "si-1" must exclude "si-10", and
+// a hyphen-suffixed slug ("billing-export-v2") must not falsely match its
+// hyphen-prefix ("billing-export") — a plain \b would let the latter through
+// because "-" is itself a non-word boundary character.
+
+const cellSi1 = logDecision(root, {
+  decision: 'Cell si-1 renders the CLI manifest header',
+  rationale: 'keeps --help --json in sync with the registry',
+});
+const cellSi10 = logDecision(root, {
+  decision: 'Cell si-10 renders the CLI manifest footer',
+  rationale: 'unrelated cell, deliberately digit-adjacent to its shorter sibling id',
+});
+const featureExport = logDecision(root, {
+  decision: 'Adopt streaming export for the billing-export feature',
+  rationale: 'avoids buffering the whole file in memory',
+});
+const featureExportV2 = logDecision(root, {
+  decision: 'Adopt chunked upload for the billing-export-v2 feature',
+  rationale: 'billing-export-v2 supersedes the streaming approach',
+});
+
+await check('CLI: decisions search --cell matches whole-token id, excludes a substring-colliding id (si-1 vs si-10)', async () => {
+  const run = await runBee(['decisions', 'search', '--cell', 'si-1', '--json'], root);
+  assert(run.status === 0, `search --cell exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(cellSi1.id), 'search --cell si-1 must match the si-1 event');
+  assert(!ids.includes(cellSi10.id), 'search --cell si-1 must NOT match si-10 (substring collision)');
+});
+
+await check('CLI: decisions active --cell matches whole-token id, excludes a substring-colliding id (si-1 vs si-10)', async () => {
+  const run = await runBee(['decisions', 'active', '--cell', 'si-1', '--json'], root);
+  assert(run.status === 0, `active --cell exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(cellSi1.id), 'active --cell si-1 must match the si-1 event');
+  assert(!ids.includes(cellSi10.id), 'active --cell si-1 must NOT match si-10 (substring collision)');
+});
+
+await check('CLI: decisions search --feature matches whole-token slug, excludes a hyphen-suffixed collision (billing-export vs billing-export-v2)', async () => {
+  const run = await runBee(['decisions', 'search', '--feature', 'billing-export', '--json'], root);
+  assert(run.status === 0, `search --feature exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(featureExport.id), 'search --feature billing-export must match the billing-export event');
+  assert(!ids.includes(featureExportV2.id), 'search --feature billing-export must NOT match billing-export-v2 (hyphen-suffix collision)');
+});
+
+await check('CLI: decisions active --feature matches whole-token slug, excludes a hyphen-suffixed collision (billing-export vs billing-export-v2)', async () => {
+  const run = await runBee(['decisions', 'active', '--feature', 'billing-export', '--json'], root);
+  assert(run.status === 0, `active --feature exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.includes(featureExport.id), 'active --feature billing-export must match the billing-export event');
+  assert(!ids.includes(featureExportV2.id), 'active --feature billing-export must NOT match billing-export-v2 (hyphen-suffix collision)');
+});
+
+await check('CLI: decisions search --cell alone satisfies the "at least one filter" requirement (no --text needed)', async () => {
+  const run = await runBee(['decisions', 'search', '--cell', 'si-10', '--json'], root);
+  assert(run.status === 0, `search --cell alone exited ${run.status} :: ${run.stderr || run.stdout}`);
+  const ids = JSON.parse(run.stdout).decisions.map((d) => d.id);
+  assert(ids.length === 1 && ids[0] === cellSi10.id, `expected only the si-10 event, got ${JSON.stringify(ids)}`);
+});
+
+await check('CLI: decisions search --cell/--feature are advertised in --help --json for both active and search', async () => {
+  const help = await runBee(['decisions', '--help', '--json'], root);
+  assert(help.status === 0, `decisions --help --json exited ${help.status} :: ${help.stderr || help.stdout}`);
+  const manifest = JSON.parse(help.stdout);
+  const commands = Array.isArray(manifest) ? manifest : manifest.commands;
+  const activeCmd = commands.find((c) => c.name === 'decisions.active');
+  const searchCmd = commands.find((c) => c.name === 'decisions.search');
+  assert(activeCmd && 'cell' in activeCmd.parameters.properties && 'feature' in activeCmd.parameters.properties, 'decisions.active advertises --cell/--feature');
+  assert(searchCmd && 'cell' in searchCmd.parameters.properties && 'feature' in searchCmd.parameters.properties, 'decisions.search advertises --cell/--feature');
+});
+
 // ─── decisions active: same filter set as a deliberate sibling extension ──
 
 await check('CLI: decisions active (no flags) is unchanged — lists every active decision, newest first', async () => {

@@ -150,6 +150,7 @@ import {
   taxonomyFileExists,
   renderDecisionIndex,
   decisionIndexDrift,
+  escapeRegExp,
 } from './lib/decisions.mjs';
 import { captureQueue, addCaptureStub, pendingCaptureStubs, flushCaptureStub } from './lib/capture.mjs';
 // intent-anchor ia-1 (D1/D2): the durable verbatim objective. Same
@@ -1663,10 +1664,42 @@ function handleDecisionsRedact(root, flags) {
 // out of "stable-sort the already-date-ordered list by hit count" with no
 // separate date comparison, no wall-clock read, and no dependence on Map or
 // object iteration order.
-function filterDecisionEvents(decisions, { text, tag, scope, since, untagged } = {}) {
+// sqs-b1 (D 5ca69717): --cell/--feature are word-boundary TEXT matches over
+// decision/rationale/alternatives — a decide event has no structural cell/
+// feature field (gather Q1), cell ids and feature slugs only ever appear in
+// free-text prose. A plain \b...\b is not enough for hyphenated ids/slugs:
+// "-" is itself a non-word character, so \b treats a following hyphen as a
+// boundary and would let "si-1" falsely match inside "si-1-extra", or
+// "billing-export" falsely match inside "billing-export-v2". The lookaround
+// form below explicitly excludes "-" (alongside \w) from both edges, so
+// "si-1" matches "si-1" and excludes both "si-10" and "si-1-extra".
+function matchesWholeToken(haystacks, token) {
+  const pattern = new RegExp(`(?<![\\w-])${escapeRegExp(token)}(?![\\w-])`, 'i');
+  return haystacks.some((h) => pattern.test(h));
+}
+
+function filterDecisionEvents(decisions, { text, tag, scope, since, untagged, cell, feature } = {}) {
   let result = decisions;
   if (untagged) {
     result = result.filter((event) => !(Array.isArray(event.tags) && event.tags.length > 0));
+  }
+  if (cell) {
+    const token = String(cell);
+    result = result.filter((event) => {
+      const haystacks = [event.decision, event.rationale, event.alternatives]
+        .filter((v) => v !== null && v !== undefined && v !== '')
+        .map((v) => String(v));
+      return matchesWholeToken(haystacks, token);
+    });
+  }
+  if (feature) {
+    const token = String(feature);
+    result = result.filter((event) => {
+      const haystacks = [event.decision, event.rationale, event.alternatives]
+        .filter((v) => v !== null && v !== undefined && v !== '')
+        .map((v) => String(v));
+      return matchesWholeToken(haystacks, token);
+    });
   }
   if (tag) {
     const needle = tag.toLowerCase();
@@ -1732,7 +1765,9 @@ function handleDecisionsActive(root, flags) {
   const since = resolveSinceFilter(flags);
   const all = flags.all !== undefined; // decision-propagation dp-3 (D4c): union read including .bee/decisions-archive.jsonl
   const untagged = flags.untagged !== undefined; // decision-propagation dp-6 (D7d): events with no tags after overlay
-  let decisions = filterDecisionEvents(activeDecisions(root, { all }), { tag, scope, since, untagged });
+  const cell = flags.cell !== undefined ? String(flags.cell) : null; // sqs-b1 (D 5ca69717): word-boundary text match, no structural field
+  const feature = flags.feature !== undefined ? String(flags.feature) : null; // sqs-b1 (D 5ca69717): word-boundary text match, no structural field
+  let decisions = filterDecisionEvents(activeDecisions(root, { all }), { tag, scope, since, untagged, cell, feature });
   if (recent != null) decisions = decisions.slice(0, recent);
   const text = decisions.length ? decisions.map(formatDecision).join('\n') : 'No active decisions.';
   return { result: { decisions }, text };
@@ -1745,12 +1780,14 @@ function handleDecisionsSearch(root, flags) {
   const since = resolveSinceFilter(flags);
   const all = flags.all !== undefined; // decision-propagation dp-3 (D4c): union read including .bee/decisions-archive.jsonl
   const untagged = flags.untagged !== undefined; // decision-propagation dp-6 (D7d): events with no tags after overlay
-  if (!text && !tag && !scope && !since && !untagged) {
+  const cell = flags.cell !== undefined ? String(flags.cell) : null; // sqs-b1 (D 5ca69717): word-boundary text match, no structural field
+  const feature = flags.feature !== undefined ? String(flags.feature) : null; // sqs-b1 (D 5ca69717): word-boundary text match, no structural field
+  if (!text && !tag && !scope && !since && !untagged && !cell && !feature) {
     throw new Error(
-      'decisions search requires --text, or at least one structured filter (--tag/--scope/--area/--since/--untagged).',
+      'decisions search requires --text, or at least one structured filter (--tag/--scope/--area/--since/--untagged/--cell/--feature).',
     );
   }
-  const decisions = filterDecisionEvents(activeDecisions(root, { all }), { text, tag, scope, since, untagged });
+  const decisions = filterDecisionEvents(activeDecisions(root, { all }), { text, tag, scope, since, untagged, cell, feature });
   const resultText = decisions.length
     ? decisions.map(formatDecision).join('\n')
     : 'No active decisions matching the given filters.';

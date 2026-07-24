@@ -347,7 +347,10 @@ export function logDecision(
 const SWEEP_TEXT_EXTENSIONS = new Set(['.md', '.json', '.yaml', '.yml', '.txt']);
 const SWEEP_EXCERPT_MAX = 160;
 
-function escapeRegExp(value) {
+// Exported (sqs-b1, D 5ca69717) so bee.mjs's --cell/--feature word-boundary
+// text filters reuse the SAME escaping discipline as sweepDecisionCitations
+// below, rather than a second copy drifting out of sync.
+export function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
