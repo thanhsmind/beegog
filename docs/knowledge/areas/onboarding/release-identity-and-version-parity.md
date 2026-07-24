@@ -1,15 +1,15 @@
 ---
 type: bee.area
 title: "Onboarding — release identity, version parity, and honest reporting"
-description: "One release version across every projection, the refusal to downgrade a project's vendored runtime, drift reported from real file content, the five source origins named rather than guessed, and the blast radius a forceable refusal must enumerate before consent."
-timestamp: 2026-07-22
+description: "One release version across every projection, the refusal to downgrade a project's vendored runtime, drift reported from real file content, the five source origins named rather than guessed, the blast radius a forceable refusal must enumerate before consent, and a retired library module removed from the project the moment its ledger entry drops."
+timestamp: 2026-07-24
 bee:
   id: onboarding-release-identity-and-version-parity
   lifecycle: active
   areas: [onboarding]
   required_context: [areas/onboarding/overview.md]
-  decisions: [55ff17ef (release-version parity is fail-closed across every distributed projection), 09b776b5 (both installers prove complete greenfield/brownfield postconditions before success), "fe6593c0 (runtime-lib downgrade refusal targets the vendored copy path; zero-mutation, self-install included)", 485e949a (honest status drift reference = the onboarding managed-hash ledger), "579bbad7 (status drift is report-only, stays a boolean + optional detail; fail-open on absent/legacy ledger)", "ce4eee19 (SRC-01..06 shipped as a pure shared classifier, wrap-not-replace, consumed by status + onboarding)", 21be04f7 (status gains a report-only source field; unknown/legacy never implicit source), cba8b832 (release-version single-source), 9927fafb (a switch that narrows what an upgrade compares must equally narrow what it claims)]
-  sources: ["installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; cells -4/-2/-3, 2026-07-16; field fix cells -5/-6)", "codex-harness-hardening cell codex-harness-hardening-1b-1 (runtime-lib downgrade guard R15; split-brain regression 3->0, 2026-07-15)", "codex-harness-hardening-1c cell codex-harness-hardening-1c-1 (honest status drift R16 via the onboarding managed-hash ledger; 5 drift tests, 2026-07-15)", "codex-harness-hardening-1d cells 1d-1/1d-2 (SRC-01..06 source-identity classifier R17 + status source field; 8 classifier/status tests, 2026-07-15)", "sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)", "cell p49-force-downgrade-blast-radius-1 (PBI P49, v1.1.0 review P2; advisor-consulted)", "docs/specs/onboarding.md#R15", "docs/specs/onboarding.md#R16", "docs/specs/onboarding.md#R17", "docs/specs/onboarding.md#R21", "docs/specs/onboarding.md#R22", "docs/specs/onboarding.md#R26", "docs/specs/onboarding.md#E8", "docs/specs/onboarding.md#P5"]
+  decisions: [55ff17ef (release-version parity is fail-closed across every distributed projection), 09b776b5 (both installers prove complete greenfield/brownfield postconditions before success), "fe6593c0 (runtime-lib downgrade refusal targets the vendored copy path; zero-mutation, self-install included)", 485e949a (honest status drift reference = the onboarding managed-hash ledger), "579bbad7 (status drift is report-only, stays a boolean + optional detail; fail-open on absent/legacy ledger)", "ce4eee19 (SRC-01..06 shipped as a pure shared classifier, wrap-not-replace, consumed by status + onboarding)", 21be04f7 (status gains a report-only source field; unknown/legacy never implicit source), cba8b832 (release-version single-source), 9927fafb (a switch that narrows what an upgrade compares must equally narrow what it claims), "6eacf846 (auto-approved shape+execution for installer-verify-orphan-drift, bypass total)", "053a49fa (retired library modules are removed on apply via a ledger-diff derivation, not a hand-maintained list)"]
+  sources: ["installer-version-parity-1-3-1 locked rules (fail-closed release tuple, full projection parity, greenfield/brownfield end-to-end success contract; cells -4/-2/-3, 2026-07-16; field fix cells -5/-6)", "codex-harness-hardening cell codex-harness-hardening-1b-1 (runtime-lib downgrade guard R15; split-brain regression 3->0, 2026-07-15)", "codex-harness-hardening-1c cell codex-harness-hardening-1c-1 (honest status drift R16 via the onboarding managed-hash ledger; 5 drift tests, 2026-07-15)", "codex-harness-hardening-1d cells 1d-1/1d-2 (SRC-01..06 source-identity classifier R17 + status source field; 8 classifier/status tests, 2026-07-15)", "sticky-repo-hooks (cell sticky-hooks-1, 2026-07-13; found auditing 8 host projects after the v0.1.30 rollout)", "cell p49-force-downgrade-blast-radius-1 (PBI P49, v1.1.0 review P2; advisor-consulted)", "cell installer-verify-orphan-drift-1 (R27: retired-library removal on apply; repro was install.sh reporting version-parity failure/drift=true post-apply on a host still carrying a retired templates/lib module, 2026-07-24)", "docs/specs/onboarding.md#R15", "docs/specs/onboarding.md#R16", "docs/specs/onboarding.md#R17", "docs/specs/onboarding.md#R21", "docs/specs/onboarding.md#R22", "docs/specs/onboarding.md#R26", "docs/specs/onboarding.md#E8", "docs/specs/onboarding.md#P5"]
   authoritative_for: "onboarding: release identity, version parity, and honest reporting"
 ---
 
@@ -97,6 +97,22 @@ and the strongest of them is the one that reports success.
   preview is exact: forcing applies precisely the enumerated runtime set, no
   more, no fewer (PBI P49, v1.1.0 review P2; advisor-consulted; cell
   p49-force-downgrade-blast-radius-1).
+- **R27** — A vendored library module the managed-hash ledger no longer names
+  is removed from the project on the next apply, not merely reported. R16's
+  fingerprint set only ever grows or refreshes toward what the current source
+  still ships, so a module the source has since retired would otherwise
+  linger on disk forever, forever reported as drifted (an unrecorded file
+  present) — the exact failure a top-level installer's final parity check
+  cannot tolerate, since a project can never reach zero drift on its own.
+  Removal compares the ledger's previous recorded set against the set the
+  apply is about to write and deletes exactly the vendored library files
+  whose names dropped out of it — never a name still present, never anything
+  outside the vendored library location, and never a file the ledger already
+  agreed was gone. Unlike the nine superseded helper scripts (a one-time,
+  hand-enumerated migration), this removal is derived fresh from the ledger
+  diff every run, so a future library retirement needs no enumerated list of
+  its own. Re-running an apply after the removal reports nothing left to do
+  (decision 053a49fa; cell installer-verify-orphan-drift-1).
 
 ## Edge Cases Settled
 
@@ -123,3 +139,10 @@ and the strongest of them is the one that reports success.
   proves the writer covers every registry component and preserves each file's
   surrounding bytes. Plugin manifests keep a literal `.version` because external
   plugin systems read them as raw JSON and cannot import the JS const.
+- Retired-library removal (R27): `onboard_bee.mjs`'s plan builder derives a
+  `remove_lib` item per retired library module by diffing the previous
+  `.bee/onboarding.json` `managed.lib` keys against the current
+  `listTemplateLibModules()` set (section 3c, immediately after the existing
+  `copy_lib`/`RETIRED_HELPERS` items it mirrors); apply executes it with the
+  same exact-dirname safety `remove_helper` uses. Regression coverage:
+  `skills/bee-hive/scripts/test_onboard_bee.mjs` ("stale lib" block).
