@@ -318,6 +318,174 @@ await check('bee.mjs state set derives ownership from the selected lane and isol
   }
 });
 
+// ─── i54-closeout-7 (D7): write-path lane auto-resolution ───────────────────
+// Writes resolve like reads: explicit --lane > the calling session's bound
+// lane > the default record; --no-lane forces the default from a bound
+// session. The child process's identity must be fully controlled here: strip
+// the harness's own session env, then hand the fixture session id via
+// BEE_SESSION_ID (the highest env rung of resolveSessionId's chain — B22).
+const D7_BASE_ENV = { ...process.env };
+delete D7_BASE_ENV.BEE_SESSION_ID;
+delete D7_BASE_ENV.CLAUDE_CODE_SESSION_ID;
+function runBeeStateAs(cwd, sessionId, args) {
+  return runModuleWorker(beeStateModulePath(), {
+    args: ['state', ...args],
+    cwd,
+    env: sessionId ? { ...D7_BASE_ENV, BEE_SESSION_ID: sessionId } : { ...D7_BASE_ENV },
+  });
+}
+
+await check('D7: a lane-bound session with --lane omitted writes the LANE record across set/gate/scribing-run, with --owner judged against the lane pre-mutation phase and --feature refused', async () => {
+  const dir = makeStateRepo('bee-state-d7-bound-');
+  try {
+    const defaultPath = path.join(dir, '.bee', 'state.json');
+    const lanePath = path.join(dir, '.bee', 'lanes', 'alpha.json');
+    writeJsonAtomic(defaultPath, { phase: 'validating', feature: 'default-feat', summary: 'untouched' });
+    writeJsonAtomic(lanePath, { phase: 'swarming', feature: 'alpha', summary: 'before' });
+    laneBinding.createSession(dir, { id: 'sess-d7' });
+    laneBinding.bindSessionLane(dir, 'sess-d7', 'alpha');
+    const defaultBefore = fs.readFileSync(defaultPath, 'utf8');
+
+    // --owner comes from the SELECTED record: the default record's phase is
+    // refused because the auto-resolved lane's phase is the contract.
+    const wrongOwner = await runBeeStateAs(dir, 'sess-d7', ['set', '--owner', 'validating', '--summary', 'wrong']);
+    assert(wrongOwner.status !== 0 && /--owner swarming/.test(wrongOwner.stderr), `owner is judged against the auto-resolved lane pre-mutation phase, got ${wrongOwner.stderr}`);
+    assert(fs.readFileSync(defaultPath, 'utf8') === defaultBefore, 'owner refusal writes nothing');
+
+    // --feature would rename the lane's identity (writeLane derives the file
+    // from record.feature) — refused on the auto-resolved target too, naming
+    // the --no-lane escape hatch.
+    const feat = await runBeeStateAs(dir, 'sess-d7', ['set', '--owner', 'swarming', '--feature', 'renamed']);
+    assert(feat.status !== 0 && /--no-lane/.test(feat.stderr), `--feature on an auto-resolved lane refuses and names --no-lane, got ${feat.stderr}`);
+
+    const set = await runBeeStateAs(dir, 'sess-d7', ['set', '--owner', 'swarming', '--summary', 'lane-auto']);
+    assert(set.status === 0, `bound-session set targets the lane, got ${set.status}: ${set.stderr}`);
+    assert(/\(lane "alpha"\)/.test(set.stdout), `set output names the auto-resolved lane, got ${set.stdout}`);
+    const gate = await runBeeStateAs(dir, 'sess-d7', ['gate', '--name', 'execution', '--approved', 'true']);
+    assert(gate.status === 0 && /\(lane "alpha"\)/.test(gate.stdout), `bound-session gate targets the lane, got ${gate.status}: ${gate.stderr} ${gate.stdout}`);
+    const scribe = await runBeeStateAs(dir, 'sess-d7', ['scribing-run', '--feature', 'alpha', '--areas', 'auth', '--next-action', 'bee-compounding']);
+    assert(scribe.status === 0 && /\(lane "alpha"\)/.test(scribe.stdout), `bound-session scribing-run targets the lane, got ${scribe.status}: ${scribe.stderr} ${scribe.stdout}`);
+
+    const lane = JSON.parse(fs.readFileSync(lanePath, 'utf8'));
+    assert(lane.summary === 'lane-auto', 'set landed on the lane record');
+    assert(lane.approved_gates && lane.approved_gates.execution === true, 'gate landed on the lane record');
+    assert(lane.phase === 'compounding' && lane.last_scribing_run && lane.last_scribing_run.feature === 'alpha', 'scribing-run stamped the lane record and advanced its phase');
+    assert(fs.readFileSync(defaultPath, 'utf8') === defaultBefore, 'default state.json bytes are never touched by lane-routed mutations');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('D7: an unbound session (or an identity with no session record) with --lane omitted writes the default record exactly as before', async () => {
+  const dir = makeStateRepo('bee-state-d7-unbound-');
+  try {
+    const defaultPath = path.join(dir, '.bee', 'state.json');
+    const lanePath = path.join(dir, '.bee', 'lanes', 'alpha.json');
+    writeJsonAtomic(defaultPath, { phase: 'validating', feature: 'default-feat', summary: 'untouched' });
+    writeJsonAtomic(lanePath, { phase: 'swarming', feature: 'alpha', summary: 'before' });
+    laneBinding.createSession(dir, { id: 'sess-free' });
+    const laneBefore = fs.readFileSync(lanePath, 'utf8');
+
+    const set = await runBeeStateAs(dir, 'sess-free', ['set', '--owner', 'validating', '--summary', 'default-write']);
+    assert(set.status === 0, `unbound session writes the default record, got ${set.status}: ${set.stderr}`);
+    assert(!/\(lane/.test(set.stdout), `unbound session output never names a lane, got ${set.stdout}`);
+    assert(readStateFile(dir).summary === 'default-write', 'default record updated');
+
+    // An identity with no session record in this repo is also "unbound".
+    const ghost = await runBeeStateAs(dir, 'ghost-session', ['gate', '--name', 'context', '--approved', 'true']);
+    assert(ghost.status === 0, `no-session identity writes the default record, got ${ghost.status}: ${ghost.stderr}`);
+    assert(readStateFile(dir).approved_gates.context === true, 'gate landed on the default record');
+    assert(fs.readFileSync(lanePath, 'utf8') === laneBefore, 'lane bytes never touched by unbound-session mutations');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('D7: explicit --lane always wins over the session binding, and --no-lane forces the default record from a bound session', async () => {
+  const dir = makeStateRepo('bee-state-d7-explicit-');
+  try {
+    const defaultPath = path.join(dir, '.bee', 'state.json');
+    const alphaPath = path.join(dir, '.bee', 'lanes', 'alpha.json');
+    const betaPath = path.join(dir, '.bee', 'lanes', 'beta.json');
+    writeJsonAtomic(defaultPath, { phase: 'validating', feature: 'default-feat', summary: 'untouched' });
+    writeJsonAtomic(alphaPath, { phase: 'swarming', feature: 'alpha', summary: 'before' });
+    writeJsonAtomic(betaPath, { phase: 'exploring', feature: 'beta', summary: 'before' });
+    laneBinding.createSession(dir, { id: 'sess-d7x' });
+    laneBinding.bindSessionLane(dir, 'sess-d7x', 'alpha');
+    const alphaBefore = fs.readFileSync(alphaPath, 'utf8');
+    const defaultBefore = fs.readFileSync(defaultPath, 'utf8');
+
+    const explicit = await runBeeStateAs(dir, 'sess-d7x', ['set', '--lane', 'beta', '--owner', 'exploring', '--summary', 'explicit-wins']);
+    assert(explicit.status === 0 && /\(lane "beta"\)/.test(explicit.stdout), `explicit --lane beats the session binding, got ${explicit.status}: ${explicit.stderr} ${explicit.stdout}`);
+    assert(JSON.parse(fs.readFileSync(betaPath, 'utf8')).summary === 'explicit-wins', 'explicit lane record updated');
+    assert(fs.readFileSync(alphaPath, 'utf8') === alphaBefore, 'bound lane untouched when another lane is explicit');
+    assert(fs.readFileSync(defaultPath, 'utf8') === defaultBefore, 'default untouched by explicit lane write');
+
+    const forced = await runBeeStateAs(dir, 'sess-d7x', ['set', '--no-lane', '--owner', 'validating', '--summary', 'forced-default']);
+    assert(forced.status === 0 && !/\(lane/.test(forced.stdout), `--no-lane forces the default record, got ${forced.status}: ${forced.stderr} ${forced.stdout}`);
+    assert(readStateFile(dir).summary === 'forced-default', '--no-lane wrote the default record');
+    assert(fs.readFileSync(alphaPath, 'utf8') === alphaBefore, '--no-lane leaves the bound lane untouched');
+
+    const both = await runBeeStateAs(dir, 'sess-d7x', ['set', '--no-lane', '--lane', 'alpha', '--owner', 'swarming', '--summary', 'contradiction']);
+    assert(both.status !== 0 && /--no-lane cannot be combined with --lane/.test(both.stderr), `--no-lane + --lane is refused, got ${both.stderr}`);
+    assert(fs.readFileSync(alphaPath, 'utf8') === alphaBefore, 'contradictory selector writes nothing');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('D7: a bound session whose lane record is corrupt or missing refuses loudly with zero writes — never a silent fall-back to the default record', async () => {
+  const dir = makeStateRepo('bee-state-d7-corrupt-');
+  try {
+    const defaultPath = path.join(dir, '.bee', 'state.json');
+    const lanePath = path.join(dir, '.bee', 'lanes', 'alpha.json');
+    writeJsonAtomic(defaultPath, { phase: 'validating', feature: 'default-feat', summary: 'untouched' });
+    fs.mkdirSync(path.dirname(lanePath), { recursive: true });
+    fs.writeFileSync(lanePath, '{corrupt', 'utf8');
+    laneBinding.createSession(dir, { id: 'sess-d7c' });
+    laneBinding.bindSessionLane(dir, 'sess-d7c', 'alpha');
+    const defaultBefore = fs.readFileSync(defaultPath, 'utf8');
+    const corruptBefore = fs.readFileSync(lanePath, 'utf8');
+
+    const corrupt = await runBeeStateAs(dir, 'sess-d7c', ['set', '--owner', 'validating', '--summary', 'must-not-land']);
+    assert(corrupt.status !== 0 && /corrupt|could not read/.test(corrupt.stderr), `corrupt bound lane refuses loudly, got ${corrupt.status}: ${corrupt.stderr}`);
+    assert(fs.readFileSync(defaultPath, 'utf8') === defaultBefore, 'corrupt-lane refusal never falls back to writing the default record');
+    assert(fs.readFileSync(lanePath, 'utf8') === corruptBefore, 'corrupt lane bytes untouched');
+
+    // Missing lane record: bound to a lane that was never started.
+    laneBinding.createSession(dir, { id: 'sess-d7m' });
+    laneBinding.bindSessionLane(dir, 'sess-d7m', 'ghost-lane');
+    const missing = await runBeeStateAs(dir, 'sess-d7m', ['gate', '--name', 'context', '--approved', 'true']);
+    assert(missing.status !== 0 && /ghost-lane/.test(missing.stderr) && /--no-lane/.test(missing.stderr), `missing bound lane refuses and names the --no-lane escape hatch, got ${missing.stderr}`);
+    assert(fs.readFileSync(defaultPath, 'utf8') === defaultBefore, 'missing-lane refusal writes nothing');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('D7: advisor-ref record follows the same write-path resolution — a bound session with --lane omitted records onto the LANE record', async () => {
+  const dir = makeStateRepo('bee-state-d7-advisor-');
+  try {
+    const defaultPath = path.join(dir, '.bee', 'state.json');
+    const lanePath = path.join(dir, '.bee', 'lanes', 'alpha.json');
+    writeJsonAtomic(defaultPath, { phase: 'validating', feature: 'default-feat', summary: 'untouched' });
+    writeJsonAtomic(lanePath, { phase: 'planning', feature: 'alpha', summary: 'before' });
+    laneBinding.createSession(dir, { id: 'sess-d7a' });
+    laneBinding.bindSessionLane(dir, 'sess-d7a', 'alpha');
+    const defaultBefore = fs.readFileSync(defaultPath, 'utf8');
+    const digestPath = path.join(dir, 'consult.txt');
+    fs.writeFileSync(digestPath, 'advisor digest for the D7 row', 'utf8');
+
+    const rec = await runBeeStateAs(dir, 'sess-d7a', ['advisor-ref', 'record', '--advisor', 'test-advisor', '--digest-file', digestPath]);
+    assert(rec.status === 0 && /\(lane "alpha"\)/.test(rec.stdout), `bound-session advisor-ref record targets the lane, got ${rec.status}: ${rec.stderr} ${rec.stdout}`);
+    const lane = JSON.parse(fs.readFileSync(lanePath, 'utf8'));
+    assert(lane.advisor_ref && lane.advisor_ref.advisor === 'test-advisor' && lane.advisor_ref.feature === 'alpha', 'advisor_ref landed on the lane record with lane-bound anchors');
+    assert(fs.readFileSync(defaultPath, 'utf8') === defaultBefore, 'default record untouched by the lane-routed advisor_ref');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await check('bee.mjs state set treats a missing/invalid stored phase as corrupt before ownership and leaves bytes untouched', async () => {
   const dir = makeStateRepo('bee-state-owner-corrupt-phase-');
   try {

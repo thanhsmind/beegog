@@ -1926,15 +1926,65 @@ function optionalLaneFlag(flags, verb) {
   return String(flags.lane);
 }
 
-function resolveMutationTarget(root, laneFeature, verb) {
-  if (!laneFeature) return { record: readStateStrict(root), write: (record) => writeState(root, record) };
-  const record = readLaneStrict(root, laneFeature);
-  if (!record) {
+// i54-closeout-7 (D7) — write-path lane selection, shared by the four
+// mutation verbs (state set/gate/scribing-run/advisor-ref record). Pairs the
+// existing --lane parse with the --no-lane escape hatch: a session bound to a
+// lane targets that lane by default (resolveMutationTarget below), so
+// --no-lane is the explicit way for a bound session to address the DEFAULT
+// record. Combining the two is contradictory — refuse, never pick one.
+function mutationLaneSelector(flags, verb) {
+  const laneFeature = optionalLaneFlag(flags, verb);
+  const noLane = flags['no-lane'] !== undefined;
+  if (noLane && laneFeature) {
     throw new Error(
-      `${verb}: refused — lane "${laneFeature}" does not exist (no .bee/lanes/${laneFeature}.json). FIX: start it first ("state start-feature --feature ${laneFeature} --as-lane"), then retry.`,
+      `${verb}: --no-lane cannot be combined with --lane — --no-lane forces the default record, --lane names a lane record. Pick one.`,
     );
   }
-  return { record, write: (updated) => writeLane(root, updated) };
+  return { laneFeature, noLane };
+}
+
+// i54-closeout-7 (D7) — writes resolve like reads. Resolution order, symmetric
+// with the read path's resolvePipeline (state.mjs): explicit --lane always
+// wins > the calling session's bound lane (identity self-resolved at operation
+// moment via resolveSessionId — B22, the exact primitive claims/reservations
+// and buildLaneSummary already use) > the default state.json. --no-lane skips
+// the session step and forces the default record. A bound session whose lane
+// record is missing or corrupt refuses loudly with zero writes (B12/B13 —
+// the lane never borrows the default record's authority, and resolution never
+// silently guesses back to the default; fresh-session-handoff D2). An unbound
+// session (no resolvable identity, no session record, or no lane binding)
+// targets the default record exactly as before this cell.
+function resolveMutationTarget(root, laneFeature, verb, { noLane = false } = {}) {
+  const defaultTarget = () => ({
+    record: readStateStrict(root),
+    write: (record) => writeState(root, record),
+    source: 'default',
+    lane: null,
+  });
+  if (laneFeature) {
+    const record = readLaneStrict(root, laneFeature);
+    if (!record) {
+      throw new Error(
+        `${verb}: refused — lane "${laneFeature}" does not exist (no .bee/lanes/${laneFeature}.json). FIX: start it first ("state start-feature --feature ${laneFeature} --as-lane"), then retry.`,
+      );
+    }
+    return { record, write: (updated) => writeLane(root, updated), source: 'lane', lane: laneFeature };
+  }
+  if (noLane) return defaultTarget();
+  const sessionId = resolveSessionId({ root });
+  const session = sessionId ? readSession(root, sessionId) : null;
+  const bound = session && typeof session.lane === 'string' ? session.lane.trim() : '';
+  if (!bound) return defaultTarget();
+  // Bound session: the lane IS the target. readLaneStrict throws loud on a
+  // corrupt/unreadable record; a missing record is refused explicitly here —
+  // never a silent fall-through to the default record.
+  const record = readLaneStrict(root, bound);
+  if (!record) {
+    throw new Error(
+      `${verb}: refused — calling session "${sessionId}" is bound to lane "${bound}" but no .bee/lanes/${bound}.json exists; resolution never guesses back to the default record. FIX: start the lane ("state start-feature --feature ${bound} --as-lane"), unbind the session, or pass --no-lane to target the default record explicitly.`,
+    );
+  }
+  return { record, write: (updated) => writeLane(root, updated), source: 'lane', lane: bound };
 }
 
 // D6 — async: the whole record-read through write() body runs inside
@@ -1963,27 +2013,38 @@ async function handleStateSet(root, flags) {
       'set: at least one of --phase, --mode, --feature, --next-action, --summary is required.',
     );
   }
-  const laneFeature = optionalLaneFlag(flags, 'set');
+  const { laneFeature, noLane } = mutationLaneSelector(flags, 'set');
   if (laneFeature && flags.feature !== undefined) {
     throw new Error(
       "set: --feature cannot be combined with --lane — a lane's feature is its identity (the lane record's filename), not a mutable field. FIX: omit --feature, or start a new lane instead.",
     );
   }
 
-  const { state, changed, waivedClose, waivedSwap, swapFromFeature } = await withStoreLock(root, 'state', () => {
-    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'set');
+  const { state, changed, waivedClose, waivedSwap, swapFromFeature, targetLane } = await withStoreLock(root, 'state', () => {
+    const target = resolveMutationTarget(root, laneFeature, 'set', { noLane });
+    const { record: state, write } = target;
+    // i54-closeout-7 (D7): the fsh-4 identity guard above only sees an
+    // EXPLICIT --lane; a session-bound auto-resolved lane hits the same
+    // writeLane path (record.feature names the lane file), so --feature must
+    // refuse here too — letting it through would silently rename the lane's
+    // identity into a second file.
+    if (target.source === 'lane' && flags.feature !== undefined) {
+      throw new Error(
+        `set: --feature cannot target lane "${target.lane}" (auto-resolved from this session's lane binding) — a lane's feature is its identity (the lane record's filename), not a mutable field. FIX: omit --feature, or pass --no-lane to address the default record.`,
+      );
+    }
     // chain-integrity D1-REVISED / D2 — read `from` off the record actually being
     // mutated (lanes included), never off global state.
     let waivedClose = null;
     if (flags.phase !== undefined) {
-      const target = String(flags.phase);
-      const transition = checkPhaseTransition(state.phase, target);
+      const targetPhase = String(flags.phase);
+      const transition = checkPhaseTransition(state.phase, targetPhase);
       if (!transition.ok) throw new Error(transition.reason);
-      if (target === 'compounding-complete') {
+      if (targetPhase === 'compounding-complete') {
         // scribing-integrity si-1 (D2): a lane close checks the LANE's own
         // feature debt (thresholded on the lane's own last_scribing_run) —
         // closeGuardScribingDebt stays the default-record path, unchanged.
-        waivedClose = laneFeature
+        waivedClose = target.source === 'lane'
           ? laneCloseGuardScribingDebt(root, state, flags)
           : closeGuardScribingDebt(root, flags);
       }
@@ -1994,14 +2055,14 @@ async function handleStateSet(root, flags) {
     // alongside --lane above, and a same-value --feature is not a swap.
     let waivedSwap = null;
     let swapFromFeature = null;
-    if (!laneFeature && flags.feature !== undefined) {
+    if (target.source === 'default' && flags.feature !== undefined) {
       const newFeature = String(flags.feature);
       if (state.feature && newFeature !== state.feature) {
         swapFromFeature = state.feature;
         waivedSwap = featureSwapGuardScribingDebt(root, state.feature, flags);
       }
     }
-    const selectedRecord = laneFeature ? `lane "${laneFeature}"` : 'default state';
+    const selectedRecord = target.source === 'lane' ? `lane "${target.lane}"` : 'default state';
     if (!isKnownPhase(state.phase)) {
       throw new Error(
         `set: refused — selected ${selectedRecord} has missing or invalid pre-mutation phase "${state.phase ?? ''}". Ownership cannot be derived from a corrupt routing record, so nothing was written. FIX: restore a valid phase before retrying.`,
@@ -2040,7 +2101,7 @@ async function handleStateSet(root, flags) {
       changed.push('summary');
     }
     write(state);
-    return { state, changed, waivedClose, waivedSwap, swapFromFeature };
+    return { state, changed, waivedClose, waivedSwap, swapFromFeature, targetLane: target.lane };
   });
 
   // D4 — the waiver is loud and attributable. Logged AFTER the write succeeds so
@@ -2099,7 +2160,7 @@ async function handleStateSet(root, flags) {
     : '';
   return {
     result: state,
-    text: `Updated state: ${changed.join(' ')}.${laneFeature ? ` (lane "${laneFeature}")` : ''}${waiverNote}`,
+    text: `Updated state: ${changed.join(' ')}.${targetLane ? ` (lane "${targetLane}")` : ''}${waiverNote}`,
   };
 }
 
@@ -2196,10 +2257,11 @@ async function handleStateGate(root, flags) {
     exampleFor('state.gate'),
   );
   const approved = approvedRaw === 'true';
-  const laneFeature = optionalLaneFlag(flags, 'gate');
+  const { laneFeature, noLane } = mutationLaneSelector(flags, 'gate');
 
-  const state = await withStoreLock(root, 'state', () => {
-    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'gate');
+  const { state, targetLane } = await withStoreLock(root, 'state', () => {
+    const target = resolveMutationTarget(root, laneFeature, 'gate', { noLane });
+    const { record: state, write } = target;
     // Gate 3 advisor precondition (AO3/AO13): high-risk execution never opens
     // without a non-stale advisor_ref. Computed BEFORE any write, so a refusal
     // makes zero mutations. Bound to the SELECTED record's feature (M1): a lane
@@ -2212,7 +2274,7 @@ async function handleStateGate(root, flags) {
             `Reason(s): ${staleness.reasons.join('; ')}. ` +
             `FIX: resolve the advisor from config (models.<runtime>.advisor), run it read-only with the evidence bundle on stdin, ` +
             `then record the consult: bee state advisor-ref record --advisor "<identity>" --digest-file <path>` +
-            `${laneFeature ? ` --lane ${laneFeature}` : ''}. Nothing is written until a non-stale advisor_ref exists.`,
+            `${target.lane ? ` --lane ${target.lane}` : ''}. Nothing is written until a non-stale advisor_ref exists.`,
         );
       }
     }
@@ -2224,11 +2286,11 @@ async function handleStateGate(root, flags) {
     }
     state.approved_gates = { ...state.approved_gates, [name]: approved };
     write(state);
-    return state;
+    return { state, targetLane: target.lane };
   });
   return {
     result: state,
-    text: `Gate "${name}" set to ${approved}.${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
+    text: `Gate "${name}" set to ${approved}.${targetLane ? ` (lane "${targetLane}")` : ''}`,
   };
 }
 
@@ -2440,7 +2502,7 @@ async function handleStateScribingRun(root, flags) {
   const now = new Date();
   const at = now.toISOString();
   const date = at.slice(0, 10);
-  const laneFeature = optionalLaneFlag(flags, 'scribing-run');
+  const { laneFeature, noLane } = mutationLaneSelector(flags, 'scribing-run');
 
   // scribing-integrity si-1 (D2): a DEFAULT-record call stamping some OTHER
   // feature than the one currently active is a REPAIR — evidence for
@@ -2450,14 +2512,17 @@ async function handleStateScribingRun(root, flags) {
   // exactly as today, unconditional.
   let stampedActive = true;
   let activeFeatureAtCall = null;
+  let targetLane = null;
   const state = await withStoreLock(root, 'state', () => {
-    const { record: state, write } = resolveMutationTarget(root, laneFeature, 'scribing-run');
+    const target = resolveMutationTarget(root, laneFeature, 'scribing-run', { noLane });
+    const { record: state, write } = target;
+    targetLane = target.lane;
     activeFeatureAtCall = state.feature;
     // No active feature at all (idle) means nothing is being abandoned — a
-    // lane call is never ambiguous either (--lane already pins the record to
-    // one feature). Only a genuine mismatch against an EXISTING active
-    // feature is the repair path.
-    stampedActive = laneFeature ? true : !state.feature || state.feature === feature;
+    // lane call is never ambiguous either (a lane record, explicit --lane or
+    // session-resolved, is already pinned to one feature). Only a genuine
+    // mismatch against an EXISTING active feature is the repair path.
+    stampedActive = target.source === 'lane' ? true : !state.feature || state.feature === feature;
     // chain-integrity D3 — scribing-run is the SOLE producer of phase=compounding,
     // so it is also the door that must be guarded. It used to advance the phase
     // from anywhere, with no check that execution had happened at all.
@@ -2494,7 +2559,7 @@ async function handleStateScribingRun(root, flags) {
     : ` — recorded in the durable ledger only: the default record tracks feature "${activeFeatureAtCall}", not "${feature}", so its phase/last_scribing_run were left untouched (repair path for an orphaned feature; \`bee status --json\`'s scribing_debt.orphaned names it).`;
   return {
     result: state,
-    text: `Recorded scribing run for "${feature}" at ${at}.${laneFeature ? ` (lane "${laneFeature}")` : ''}${repairNote}`,
+    text: `Recorded scribing run for "${feature}" at ${at}.${targetLane ? ` (lane "${targetLane}")` : ''}${repairNote}`,
   };
 }
 
@@ -2649,8 +2714,9 @@ function handleStateAdvisorRefRecord(root, flags) {
   rejectDryRun(flags);
   const advisor = requireFlag(flags, 'advisor');
   const digestFile = requireFlag(flags, 'digest-file');
-  const laneFeature = optionalLaneFlag(flags, 'advisor-ref record');
-  const { record: state, write } = resolveMutationTarget(root, laneFeature, 'advisor-ref record');
+  const { laneFeature, noLane } = mutationLaneSelector(flags, 'advisor-ref record');
+  const target = resolveMutationTarget(root, laneFeature, 'advisor-ref record', { noLane });
+  const { record: state, write } = target;
   const phase = state.phase;
   if (!state.feature || phase === 'idle' || phase === 'compounding-complete') {
     throw new Error(
@@ -2680,7 +2746,7 @@ function handleStateAdvisorRefRecord(root, flags) {
   write(state);
   return {
     result: state.advisor_ref,
-    text: `Recorded advisor_ref (advisor "${advisor}", feature "${anchors.feature}").${laneFeature ? ` (lane "${laneFeature}")` : ''}`,
+    text: `Recorded advisor_ref (advisor "${advisor}", feature "${anchors.feature}").${target.lane ? ` (lane "${target.lane}")` : ''}`,
   };
 }
 
@@ -5784,7 +5850,7 @@ const HANDLERS = {
 // here or `state scribing-run --show --feature X` would consume `--feature`
 // as --show's own value, same class of bug dry-run/write/as-lane guard
 // against above.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict', 'queue-submit', 'show']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'no-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict', 'queue-submit', 'show']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

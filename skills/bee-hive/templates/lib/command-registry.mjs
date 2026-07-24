@@ -659,7 +659,7 @@ export const COMMAND_REGISTRY = [
     name: 'state.set',
     invoke: 'bee state set',
     description:
-      'Set one or more top-level routing fields; only the flags given are written and every other field is preserved. Every call requires explicit --owner equal to the selected default/lane record\'s valid pre-mutation phase; missing/mismatched ownership or a corrupt phase refuses before write, and a successful phase change rolls ownership forward without persisting an owner field. --phase is validated against the known-phase enum AND against the tail guard (chain-integrity D1-REVISED): "compounding" is never settable directly (only `state scribing-run` produces it), and "compounding-complete" is legal only from "compounding" and only with zero scribing debt. Every other transition, including all backward moves and --phase idle, stays permissive. Optional --lane <feature> routes the mutation to that per-feature lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes. --feature is rejected when --lane is given.',
+      'Set one or more top-level routing fields; only the flags given are written and every other field is preserved. Every call requires explicit --owner equal to the selected default/lane record\'s valid pre-mutation phase; missing/mismatched ownership or a corrupt phase refuses before write, and a successful phase change rolls ownership forward without persisting an owner field. --phase is validated against the known-phase enum AND against the tail guard (chain-integrity D1-REVISED): "compounding" is never settable directly (only `state scribing-run` produces it), and "compounding-complete" is legal only from "compounding" and only with zero scribing debt. Every other transition, including all backward moves and --phase idle, stays permissive. Target resolution (i54-closeout D7, symmetric with the read path): explicit --lane <feature> always wins > the calling session\'s bound lane when --lane is omitted (identity self-resolved at operation moment) > the default state.json for an unbound session. --no-lane forces the default record from a bound session. A missing or corrupt lane — explicit or session-bound — refuses loudly with zero writes, never a silent fall-back to the default. --feature is rejected whenever the selected target is a lane record.',
     parameters: {
       type: 'object',
       properties: {
@@ -669,7 +669,8 @@ export const COMMAND_REGISTRY = [
         'next-action': { type: 'string', description: 'Top-level next_action string.' },
         summary: { type: 'string', description: 'Session summary string.' },
         owner: { type: 'string', description: 'Selected record\'s exact pre-mutation phase. Required for every state set mutation; never persisted.' },
-        lane: { type: 'string', description: 'Route the mutation to this lane record instead of the default state.json. Refuses if the lane is missing or corrupt.' },
+        lane: { type: 'string', description: 'Route the mutation to this lane record instead of the default state.json. Refuses if the lane is missing or corrupt. Omitted: the calling session\'s bound lane is targeted automatically; unbound sessions target the default record.' },
+        'no-lane': { type: 'boolean', description: 'Force the default state.json even when the calling session is bound to a lane. Cannot be combined with --lane.' },
         'waive-scribing-debt': { type: 'boolean', description: 'Permit --phase compounding-complete while capped behavior_change cells are still unsynced to docs/specs/. Never silent: it logs a decision naming every waived cell (chain-integrity D4).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
@@ -684,13 +685,14 @@ export const COMMAND_REGISTRY = [
   {
     name: 'state.gate',
     invoke: 'bee state gate',
-    description: 'Approve or unapprove a named gate. This dedicated command does not accept routing --owner. Idempotent: the same call run twice yields an identical file. Optional --lane <feature> routes the gate mutation to that lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes.',
+    description: 'Approve or unapprove a named gate. This dedicated command does not accept routing --owner. Idempotent: the same call run twice yields an identical file. Target resolution (i54-closeout D7, symmetric with the read path): explicit --lane <feature> always wins > the calling session\'s bound lane when --lane is omitted > the default state.json for an unbound session. --no-lane forces the default record. A missing or corrupt lane — explicit or session-bound — refuses loudly with zero writes.',
     parameters: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Gate name.', enum: [...GATE_NAMES] },
         approved: { type: 'string', description: 'Whether the gate is approved ("true" or "false").' },
-        lane: { type: 'string', description: 'Route the mutation to this lane record instead of the default state.json. Refuses if the lane is missing or corrupt.' },
+        lane: { type: 'string', description: 'Route the mutation to this lane record instead of the default state.json. Refuses if the lane is missing or corrupt. Omitted: the calling session\'s bound lane is targeted automatically; unbound sessions target the default record.' },
+        'no-lane': { type: 'boolean', description: 'Force the default state.json even when the calling session is bound to a lane. Cannot be combined with --lane.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: [],
@@ -784,14 +786,15 @@ export const COMMAND_REGISTRY = [
   {
     name: 'state.scribing-run',
     invoke: 'bee state scribing-run',
-    description: 'Stamp last_scribing_run (date + ISO-precise at), mirror --next-action to the top-level next_action, and advance phase to compounding. Optional --lane <feature> (D2/D4) routes the stamp to that lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes. --show (sqs-b3) is a READ-ONLY query mode: it never appends to the scribing ledger and never advances phase, returning the most-recent recorded stamp overall, or for --feature <slug> if given; it needs neither --areas nor --next-action.',
+    description: 'Stamp last_scribing_run (date + ISO-precise at), mirror --next-action to the top-level next_action, and advance phase to compounding. Target resolution (i54-closeout D7, symmetric with the read path): explicit --lane <feature> always wins > the calling session\'s bound lane when --lane is omitted > the default state.json for an unbound session. --no-lane forces the default record. A missing or corrupt lane — explicit or session-bound — refuses loudly with zero writes. --show (sqs-b3) is a READ-ONLY query mode: it never appends to the scribing ledger and never advances phase, returning the most-recent recorded stamp overall, or for --feature <slug> if given; it needs neither --areas nor --next-action.',
     parameters: {
       type: 'object',
       properties: {
         feature: { type: 'string', description: 'Feature slug the scribing run covers (write mode), or the feature to filter by (read-only --show mode).' },
         areas: { type: 'string', description: 'Comma-separated areas synced.' },
         'next-action': { type: 'string', description: 'Next action after scribing.' },
-        lane: { type: 'string', description: 'Route the mutation to this lane record instead of the default state.json. Refuses if the lane is missing or corrupt.' },
+        lane: { type: 'string', description: 'Route the mutation to this lane record instead of the default state.json. Refuses if the lane is missing or corrupt. Omitted: the calling session\'s bound lane is targeted automatically; unbound sessions target the default record.' },
+        'no-lane': { type: 'boolean', description: 'Force the default state.json even when the calling session is bound to a lane. Cannot be combined with --lane.' },
         show: { type: 'boolean', description: 'Read-only query mode: return the most-recent scribing stamp (overall, or for --feature <slug>) without appending to the ledger or advancing phase.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
@@ -948,13 +951,14 @@ export const COMMAND_REGISTRY = [
   {
     name: 'state.advisor-ref.record',
     invoke: 'bee state advisor-ref record',
-    description: "Record an AO3/AO13 advisor consult onto the selected record's advisor_ref (hive law 12: the Gate 3 high-risk precondition needs a state field AND a verb). The verb stamps the staleness anchors ITSELF — current feature, newest active decision id, and sha256 of that feature's plan.md — so anchors are never caller-supplied; the caller passes only --advisor (identity) and --digest-file (its first 500 chars are stored as digest_head for audit). Refuses when no feature is active (phase idle/compounding-complete or no feature). Optional --lane <feature> records onto that lane record with anchors bound to the lane's own feature and plan.md, leaving the default state.json untouched. There is no clear verb — staleness makes an old ref inert.",
+    description: "Record an AO3/AO13 advisor consult onto the selected record's advisor_ref (hive law 12: the Gate 3 high-risk precondition needs a state field AND a verb). The verb stamps the staleness anchors ITSELF — current feature, newest active decision id, and sha256 of that feature's plan.md — so anchors are never caller-supplied; the caller passes only --advisor (identity) and --digest-file (its first 500 chars are stored as digest_head for audit). Refuses when no feature is active (phase idle/compounding-complete or no feature). Target resolution (i54-closeout D7, symmetric with the read path): explicit --lane <feature> always wins > the calling session's bound lane when --lane is omitted > the default state.json for an unbound session; --no-lane forces the default record. A lane target — explicit or session-bound — records with anchors bound to the lane's own feature and plan.md, leaving the default state.json untouched; a missing or corrupt lane refuses loudly with zero writes. There is no clear verb — staleness makes an old ref inert.",
     parameters: {
       type: 'object',
       properties: {
         advisor: { type: 'string', description: 'Advisor identity that was consulted (e.g. the configured advisor model or cli command label).' },
         'digest-file': { type: 'string', description: 'Path to the captured advisor consult digest; its first 500 chars are stored as digest_head for audit.' },
-        lane: { type: 'string', description: 'Route the record to this lane instead of the default state.json. Refuses if the lane is missing or corrupt.' },
+        lane: { type: 'string', description: 'Route the record to this lane instead of the default state.json. Refuses if the lane is missing or corrupt. Omitted: the calling session\'s bound lane is targeted automatically; unbound sessions target the default record.' },
+        'no-lane': { type: 'boolean', description: 'Force the default state.json even when the calling session is bound to a lane. Cannot be combined with --lane.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: ['advisor', 'digest-file'],
