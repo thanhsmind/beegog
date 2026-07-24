@@ -8,7 +8,7 @@ bee:
   lifecycle: active
   areas: [workflow-state]
   required_context: [areas/workflow-state/overview.md]
-  decisions: ["chain-integrity D1-REVISED/D2/D3/D4 (the tail of the chain: learning capture is produced not asserted, the sync demands executed work, the close demands zero spec debt, the waiver is audited)", "AO3/AO13 (Gate 3 adviser precondition, event-based staleness, never a TTL — cells ao-4-1/ao-4-2 2026-07-17)", codex-hook-state-parity D4-D6 (pre-phase routing ownership and review isolation)]
+  decisions: ["chain-integrity D1-REVISED/D2/D3/D4 (the tail of the chain: learning capture is produced not asserted, the sync demands executed work, the close demands zero spec debt, the waiver is audited)", "AO3/AO13 (Gate 3 adviser precondition, event-based staleness, never a TTL — cells ao-4-1/ao-4-2 2026-07-17)", codex-hook-state-parity D4-D6 (pre-phase routing ownership and review isolation), "scribing-integrity D1-D3/D6 (the wall at every door — feature-swap guard, lane-aware close, durable scribing ledger + orphan sweep, pre-ledger amnesty; cells si-1/si-3, 2026-07-24)"]
   sources: ["chain-integrity cells ci-1/ci-2/ci-3 (traces in .bee/cells/, CONTEXT docs/history/chain-integrity/CONTEXT.md, 2026-07-14 — origin: an owner-supplied post-mortem of a real session in which the chain's tail was bypassed seven times)", "advisor-and-orchestration Slice 4 cells ao-4-1/ao-4-2 (adviser consult record + event-based staleness + high-risk execution precondition, live-throw verified, 2026-07-17)", "codex-hook-state-parity cell codex-hook-state-parity-1 (pre-phase routing ownership and review isolation; report and capped trace, 2026-07-16)", "docs/specs/workflow-state.md#B1", "docs/specs/workflow-state.md#B2", "docs/specs/workflow-state.md#B9a", "docs/specs/workflow-state.md#B19", "docs/specs/workflow-state.md#R1", "docs/specs/workflow-state.md#R2", "docs/specs/workflow-state.md#R3", "docs/specs/workflow-state.md#R19a", "docs/specs/workflow-state.md#R20a", "docs/specs/workflow-state.md#R21a", "docs/specs/workflow-state.md#R22", "docs/specs/workflow-state.md#R23", "docs/specs/workflow-state.md#R25", "docs/specs/workflow-state.md#R29", "docs/specs/workflow-state.md#R30", "docs/specs/workflow-state.md#R31", "docs/specs/workflow-state.md#E1", "docs/specs/workflow-state.md#E2", "docs/specs/workflow-state.md#P2", "docs/specs/workflow-state.md#P3", "docs/specs/workflow-state.md#P4", "docs/specs/workflow-state.md#P5"]
   authoritative_for: "workflow-state: feature start, the phase vocabulary, phase-owned routing mutation, and the closing tail"
 ---
@@ -110,6 +110,26 @@ Everything outside the tail stays permissive: moving backward to an earlier
 phase is always legal (a failed feasibility check or a negative proof must be
 able to return to planning), and returning to idle — the way an abandoned
 exploration is dropped — is unaffected.
+
+**The wall stands at every door, not only the front one (scribing-integrity
+D1-D3, 8ef2bae6-adjacent decision of 2026-07-24).** Three holes let "done-looking"
+work escape the close wall silently: a session that died after completing its
+units never attempted the close at all; swapping the routing record to a NEW
+feature abandoned the old one's debt with no session left to hit its wall; and
+a per-feature lane close never computed debt (the wall read only the default
+record). Now: swapping away from a feature with standing debt refuses exactly
+like the close does (same exhaustive naming, same audited waiver); a lane close
+checks the LANE feature's own debt against that lane record's own sync stamp;
+and every sync stamp is also appended to a durable ledger
+(`.bee/logs/scribing-runs.jsonl`) — the repair verb may stamp a feature that is
+not the active one, so an orphan left by a dead session can be paid later. A
+global sweep over every completed behavior-changing unit versus its feature's
+best stamp (ledger, lane record, or the default record's own attributed stamp
+— attribution by the stamp's OWN feature field, never by which feature happens
+to be active) surfaces orphaned debt in the status payload and as one loud
+session-start line. Historical pre-ledger features received one audited
+backfill stamp (amnesty decision): the alarm starts at zero real debt, because
+an alarm born crying 119 teaches everyone to ignore the 120th.
 
 **What each actor observes.** The agent attempting a dishonest close gets a
 refusal that says which step was skipped and how to perform it, and the record is

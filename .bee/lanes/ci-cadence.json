@@ -2,14 +2,14 @@
   "schema_version": "1.0",
   "feature": "ci-cadence",
   "mode": "small",
-  "phase": "compounding",
+  "phase": "compounding-complete",
   "approved_gates": {
     "context": false,
     "shape": true,
     "execution": true,
     "review": false
   },
-  "summary": "Feature \"ci-cadence\" started at phase \"planning\" (lane).",
+  "summary": "ci-cadence lane closed (zombie-close probe)",
   "next_action": "close lane",
   "created_at": "2026-07-23T14:58:22.065Z",
   "last_scribing_run": {

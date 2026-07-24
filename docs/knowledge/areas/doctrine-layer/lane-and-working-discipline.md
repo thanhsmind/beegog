@@ -113,6 +113,10 @@ govern the working residue of a cell rather than its content.
   fix-first cell, and building on red is still forbidden. What changed is the
   proof itself: a local run became a CI-status read, and the four milestones
   collapsed into one CI-owned full pass plus registry-scoped local checks.
+  full-run-retirement (cell frr-1) completed the retirement: the session-finish
+  obligation and the release gate — the last two local full-suite mandates —
+  now run the impacted registry scope as well, never the full chain locally
+  (repair recorded by scribing-integrity D5, 2026-07-24).
   Judges and reviewers never run the full chain as part of a verdict. Proven
   the day the ladder first landed: the wave-close run caught a real escape
   (raw NUL bytes in a lib file) that every targeted suite had missed — now
