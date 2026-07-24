@@ -185,6 +185,7 @@ import {
   buildContextManifest,
   buildPromotion,
   bundleMode,
+  KNOWLEDGE_CONTEXT_LANE_BUDGETS,
 } from './lib/knowledge.mjs';
 import {
   readBacklogCounts,
@@ -249,6 +250,23 @@ function requireFlag(flags, name) {
     throw new Error(`Missing required flag --${name}.`);
   }
   return String(value);
+}
+
+// i54-closeout D3: knowledge.context's `--lane` shorthand resolves to a
+// numeric --budget BEFORE the generic validate() layer runs (dispatch, below)
+// so `budget` can stay a required field, byte-identical to before this cell —
+// a bare call with neither --budget nor --lane hits the exact same
+// required-missing refusal it always did. Explicit --budget always wins: this
+// only fills the gap when --budget is absent. An unrecognized --lane value is
+// left unfilled on purpose — validate() then reports it exactly like any
+// other invalid enum value would, never a silent fallback to a wrong number.
+function resolveKnowledgeContextLaneBudget(commandName, flags) {
+  if (commandName !== 'knowledge.context') return;
+  if (flags.budget !== undefined && flags.budget !== '' && flags.budget !== true) return;
+  const lane = flags.lane;
+  if (lane === undefined || lane === '' || lane === true) return;
+  const preset = KNOWLEDGE_CONTEXT_LANE_BUDGETS[String(lane)];
+  if (preset !== undefined) flags.budget = preset;
 }
 
 // ce-1 (cli-ergonomics D1): batch cousin of requireFlag — collects EVERY
@@ -6120,6 +6138,12 @@ export async function main(argv) {
   // NOT a real flag and errors must go to stderr — byte-parity with the legacy
   // helpers, which read json only from their own parsed args.
   const useJson = parsed.json;
+
+  // i54-closeout D3: resolve knowledge.context's --lane shorthand into
+  // --budget before validate() sees the flags — see
+  // resolveKnowledgeContextLaneBudget's own comment for why this must run
+  // here rather than inside the handler.
+  resolveKnowledgeContextLaneBudget(commandName, parsed.flags);
 
   const validation = validate(entry, parsed.flags);
   if (!validation.ok) {

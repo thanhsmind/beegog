@@ -1233,6 +1233,27 @@ export function estimateTokens(bytes) {
   return Math.ceil(bytes / 4);
 }
 
+// ─── i54-closeout D3: lane-scaled `knowledge context` budget presets ────────
+//
+// The single source both consumers read from — the CLI's `--lane` shorthand
+// (bee.mjs, resolved before the generic validate() layer runs) and the
+// session preamble's mode-aware recommended command (inject.mjs) — so the
+// four numbers exist exactly once. `standard` intentionally matches the
+// long-standing bare default (20000): a bare invocation with neither --lane
+// nor --budget stays byte-identical to before this cell (must-have), and a
+// `--lane standard` call now resolves to the same number that was always the
+// unlabelled default. Budget-cut semantics (prefix cut, critical-patterns IDF
+// exception) are untouched by this table — it only picks the NUMBER fed in.
+export const KNOWLEDGE_CONTEXT_LANE_BUDGETS = Object.freeze({
+  tiny: 8000,
+  small: 12000,
+  standard: 20000,
+  'high-risk': 30000,
+});
+
+/** The bare-invocation default — unchanged since before this cell. */
+export const KNOWLEDGE_CONTEXT_DEFAULT_BUDGET = KNOWLEDGE_CONTEXT_LANE_BUDGETS.standard;
+
 function beeOf(data) {
   return data && data.bee && typeof data.bee === 'object' && !Array.isArray(data.bee) ? data.bee : {};
 }

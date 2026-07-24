@@ -2838,6 +2838,51 @@ await check('knowledge.context example: --work okf-foundation --budget 20000 ret
   assert(!result.stdout.includes('Fixture prose.'), `the manifest must never carry file content, got ${result.stdout}`);
 });
 
+// ─── knowledge.context --lane (i54-closeout D3): lane-scaled budget presets ─
+// --lane resolves to a numeric --budget BEFORE the generic validate() layer
+// runs (bee.mjs's resolveKnowledgeContextLaneBudget), so `budget` stays
+// required and a bare call with neither flag keeps failing exactly as before.
+
+await check('knowledge.context --lane standard resolves the standard preset (20000) with no --budget given (i54-closeout D3)', async () => {
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['knowledge', 'context', '--work', 'okf-foundation', '--lane', 'standard', '--json'],
+    cwd: rootKnowledge,
+  });
+  assert(result.status === 0, `expected success, got status=${result.status} stdout=${result.stdout} stderr=${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  assert(manifest.budget === 20000, `--lane standard must resolve to budget 20000, got ${result.stdout}`);
+});
+
+await check('knowledge.context: explicit --budget always wins over --lane when both are given (i54-closeout D3)', async () => {
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['knowledge', 'context', '--work', 'okf-foundation', '--budget', '5000', '--lane', 'high-risk', '--json'],
+    cwd: rootKnowledge,
+  });
+  assert(result.status === 0, `expected success, got status=${result.status} stdout=${result.stdout} stderr=${result.stderr}`);
+  const manifest = JSON.parse(result.stdout);
+  assert(manifest.budget === 5000, `explicit --budget (5000) must win over --lane high-risk (30000), got ${result.stdout}`);
+});
+
+await check('knowledge.context: neither --budget nor --lane still refuses exactly as before this cell (required, missing)', async () => {
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['knowledge', 'context', '--work', 'okf-foundation', '--json'],
+    cwd: rootKnowledge,
+  });
+  assert(result.status !== 0, `a bare call with neither flag must still fail, got status=${result.status} stdout=${result.stdout}`);
+  const payload = JSON.parse(result.stdout);
+  assert(payload.error && payload.error.field === 'budget' && payload.error.reason === 'required, missing', `expected the byte-identical required-missing refusal on --budget, got ${result.stdout}`);
+});
+
+await check('knowledge.context: an unrecognized --lane value is left unfilled, still refusing on missing --budget rather than a silent wrong number', async () => {
+  const result = await runModuleWorker(BEE_MJS, {
+    args: ['knowledge', 'context', '--work', 'okf-foundation', '--lane', 'bogus', '--json'],
+    cwd: rootKnowledge,
+  });
+  assert(result.status !== 0, `an unrecognized --lane must not silently succeed, got status=${result.status} stdout=${result.stdout}`);
+  const payload = JSON.parse(result.stdout);
+  assert(payload.error && payload.error.field === 'budget' && payload.error.reason === 'required, missing', `expected the required-missing refusal on --budget, got ${result.stdout}`);
+});
+
 // ─── knowledge.promote (okf-foundation S7, cell okf-9): the registry example
 // is `bee knowledge promote --work okf-foundation --json`, so it resolves
 // against the SAME isolated fixture work item seeded above. One capped cell

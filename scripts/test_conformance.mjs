@@ -456,9 +456,18 @@ async function adapterRegressionSpawnGuard() {
   );
   const anchoredAllowedOk = anchoredAllowed.status === 0;
 
+  // i54-closeout-1 (D1) widened evaluateCodexSpawn to judge every spawn_agent
+  // payload that carries a `message` string, regardless of the agent_type/
+  // task_name field — coverage only widens, per the locked decision, so an
+  // `agent_type`-shaped payload WITH a message is now an OBSERVED shape and
+  // correctly denies when unmarked (this is not the fail-open case anymore).
+  // The genuinely unobserved shape under the current guard is a spawn_agent
+  // call with no usable `message` at all (evaluateCodexSpawn's own noOpinion
+  // branch, dispatch-guard.mjs:212-214) — that is what this fixture must
+  // exercise to test the real fail-open path.
   const unobservedFailOpen = await runHook(
     MODEL_GUARD,
-    { tool_name: "spawn_agent", tool_input: { agent_type: "default", message: "no marker here at all" } },
+    { tool_name: "spawn_agent", tool_input: { agent_type: "default" } },
     root,
   );
   const unobservedFailOpenOk = unobservedFailOpen.status === 0;

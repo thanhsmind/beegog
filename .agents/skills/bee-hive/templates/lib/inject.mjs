@@ -25,7 +25,7 @@ import { activeDecisions, datamark } from './decisions.mjs';
 import { readBacklogCounts } from './backlog.mjs';
 import { scribingDebt, globalScribingDebt, ceilingScarcityWarning, CEILING_MAX_SHARE } from './cells.mjs';
 import { captureQueue } from './capture.mjs';
-import { collectConcepts, bundleMode, bundleDir } from './knowledge.mjs';
+import { collectConcepts, bundleMode, bundleDir, KNOWLEDGE_CONTEXT_LANE_BUDGETS, KNOWLEDGE_CONTEXT_DEFAULT_BUDGET } from './knowledge.mjs';
 
 const INJECT_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -216,7 +216,17 @@ function bundleProjectMapLines(root) {
 // Resolution reuses knowledge.mjs's single inventory path (D12: no second
 // frontmatter parser anywhere in bee), and a broken bundle degrades to silence —
 // this preamble is orientation, never a place to fail a session.
-const KNOWLEDGE_CONTEXT_BUDGET = 20000;
+//
+// i54-closeout D3: the recommended command now picks its --budget from the
+// active record's `mode` through the SAME preset table the CLI's --lane
+// shorthand resolves against (KNOWLEDGE_CONTEXT_LANE_BUDGETS, knowledge.mjs)
+// — one number table, never two. A mode with no matching preset (unset,
+// unrecognized, or a lane like "spike" the table doesn't cover) falls back to
+// the bare default (20000), byte-identical to every session before this cell.
+function knowledgeContextBudgetForMode(mode) {
+  if (typeof mode !== 'string') return KNOWLEDGE_CONTEXT_DEFAULT_BUDGET;
+  return KNOWLEDGE_CONTEXT_LANE_BUDGETS[mode] ?? KNOWLEDGE_CONTEXT_DEFAULT_BUDGET;
+}
 
 // The two phases where no work is open: nothing started, and the last feature
 // closed. Same pair the intake gate uses — a stale `feature` string outlives
@@ -243,9 +253,10 @@ function knowledgeContextLines(root, record) {
       `- No knowledge work item for "${feature}" — offer to author docs/knowledge/work/${feature}/work-item.md (template: docs/knowledge/areas/okf-profile/concept-model-and-authoring.md, Templates) so the next session starts from curated context.`,
     ];
   }
+  const budget = knowledgeContextBudgetForMode(record.mode);
   return [
     '### Knowledge context — load it before code',
-    `- \`node .bee/bin/bee.mjs knowledge context --work ${feature} --budget ${KNOWLEDGE_CONTEXT_BUDGET}\``,
+    `- \`node .bee/bin/bee.mjs knowledge context --work ${feature} --budget ${budget}\``,
     "- Run it and read the manifest's files before touching code — that manifest is this feature's curated context, and it replaces scanning docs/history.",
   ];
 }

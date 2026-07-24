@@ -713,21 +713,31 @@ writeBridgeConcept(
   'Fixture work item',
 );
 
-await check('preamble TELLS an active feature with a work item to run knowledge context', async () => {
+await check('preamble TELLS an active feature with a work item to run knowledge context, budget scaled to the active mode (i54-closeout D3)', async () => {
   setBridgeState({ phase: 'swarming', mode: 'small', feature: 'fx-feature' });
   const preamble = buildSessionPreamble(bridgeRoot);
   const section = knowledgeSection(preamble);
   assert(section !== null, 'knowledge-context block present when the work item matches');
   assert(section.length <= 4, `block is a pointer, at most 4 lines, got ${section.length}`);
   assert(
-    preamble.includes('node .bee/bin/bee.mjs knowledge context --work fx-feature --budget 20000'),
-    'block names the exact runnable command with the feature and a budget',
+    // mode: 'small' -> the small preset (12000), not the old flat 20000 default.
+    preamble.includes('node .bee/bin/bee.mjs knowledge context --work fx-feature --budget 12000'),
+    'block names the exact runnable command with the feature and the mode-scaled budget',
   );
   assert(
     section.some((line) => /before/i.test(line) && /manifest/i.test(line)),
     'block carries the imperative: read the manifest before touching code',
   );
   assert(offerLines(preamble).length === 0, 'no author-one offer when the work item exists');
+});
+
+await check('preamble knowledge-context budget falls back to the bare default (20000) for a mode with no preset (i54-closeout D3)', async () => {
+  setBridgeState({ phase: 'swarming', mode: 'spike', feature: 'fx-feature' });
+  const preamble = buildSessionPreamble(bridgeRoot);
+  assert(
+    preamble.includes('node .bee/bin/bee.mjs knowledge context --work fx-feature --budget 20000'),
+    'an unmapped mode (e.g. spike) keeps the byte-identical bare fallback of 20000',
+  );
 });
 
 await check('preamble never embeds manifest entries — only the command', async () => {

@@ -27,7 +27,7 @@
     },
     {
       "path": ".bee/bin/lib/command-registry.mjs",
-      "sha256": "130f057e267725080b154a237b1004bdd38c6c3a0887a3dd9274adc0de09343b",
+      "sha256": "b4c385ca3dc19ab8a5a1f912a249f07f96387404cc179357df1358da903a8e9c",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -87,7 +87,7 @@
     },
     {
       "path": ".bee/bin/lib/inject.mjs",
-      "sha256": "5c2f03aa404423ed5bdae62291a780167622fc88e00c462b7f1f3090291eef1c",
+      "sha256": "4df920d3d430c1e0aba2d41f09d764396e2f030bd525b78aa0ab68163703c7cb",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -105,7 +105,7 @@
     },
     {
       "path": ".bee/bin/lib/knowledge.mjs",
-      "sha256": "081da291c155bd85e9e88bf96c2a6302c4da4543086dab88efd6db76618b135a",
+      "sha256": "73ed66b2df865d665bb4c7224084ccec0b5ce2d84f31c7384bdc19e0998908b6",
       "mode": "644",
       "role": "runtime_lib"
     },
@@ -197,7 +197,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "9278288e430ba9ed81a42588ab276e8bb30331d2e8fda10a0c81288d21065b6b",
+      "sha256": "a5c30d02ede4bdeaca3d8f04ba63a013e90898fb5c05f0f9d225c9d6488a9704",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -575,7 +575,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "033eb8f284d207a2bc0f6d3522cff4d81b25cc58250f0aefd5d46e8813edacae",
+      "sha256": "5eebb8eb63939e85efad59165d34a00b8f64d80d4779b161590d0f484a89c705",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/AGENTS.block.md"
@@ -603,7 +603,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/bee.mjs",
-      "sha256": "e0fdbaf27f3ba9c3e2b6dc8b8533c59ba0b42b2a7dd2a48b4a1dc161b2a77977",
+      "sha256": "bb9d838f8b97516b2b87420fb0fb176533c5adeb1d440bc1d16254cadc6e78e8",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/bee.mjs"
@@ -638,7 +638,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/lib/command-registry.mjs",
-      "sha256": "130f057e267725080b154a237b1004bdd38c6c3a0887a3dd9274adc0de09343b",
+      "sha256": "b4c385ca3dc19ab8a5a1f912a249f07f96387404cc179357df1358da903a8e9c",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/lib/command-registry.mjs"
@@ -708,7 +708,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/lib/inject.mjs",
-      "sha256": "5c2f03aa404423ed5bdae62291a780167622fc88e00c462b7f1f3090291eef1c",
+      "sha256": "4df920d3d430c1e0aba2d41f09d764396e2f030bd525b78aa0ab68163703c7cb",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/lib/inject.mjs"
@@ -729,7 +729,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/lib/knowledge.mjs",
-      "sha256": "081da291c155bd85e9e88bf96c2a6302c4da4543086dab88efd6db76618b135a",
+      "sha256": "73ed66b2df865d665bb4c7224084ccec0b5ce2d84f31c7384bdc19e0998908b6",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/lib/knowledge.mjs"
@@ -855,7 +855,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "sha256": "d95058e704e81215023961a30b05f1c5406657ed69f6fbac774b6b5a23c74c59",
+      "sha256": "b670ce790cccd04ff425f71f218b7e4b30c74daaca808e699c6356be3212d94a",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs"
@@ -967,7 +967,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/tests/test_misc.mjs",
-      "sha256": "9d9f99e6ea7868872e76c320def84f2417bd2da0806109b8286e681f83e77229",
+      "sha256": "17836516f9b5df69b222bc09635cdbb429635d3bfa8dd8f9b79fb93282f8d8bf",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/tests/test_misc.mjs"
@@ -1268,7 +1268,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "293f31107f864e7ba7cf3ee2242ec04f7ddf596eac44e23058a9ef27268ea318",
+      "sha256": "d1f81fb2aeedf459e6504dc13e647638d582c58169effa3fe56ba4f1b76816b5",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1646,7 +1646,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "033eb8f284d207a2bc0f6d3522cff4d81b25cc58250f0aefd5d46e8813edacae",
+      "sha256": "5eebb8eb63939e85efad59165d34a00b8f64d80d4779b161590d0f484a89c705",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/AGENTS.block.md"
@@ -1674,7 +1674,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/bee.mjs",
-      "sha256": "e0fdbaf27f3ba9c3e2b6dc8b8533c59ba0b42b2a7dd2a48b4a1dc161b2a77977",
+      "sha256": "bb9d838f8b97516b2b87420fb0fb176533c5adeb1d440bc1d16254cadc6e78e8",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/bee.mjs"
@@ -1709,7 +1709,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/lib/command-registry.mjs",
-      "sha256": "130f057e267725080b154a237b1004bdd38c6c3a0887a3dd9274adc0de09343b",
+      "sha256": "b4c385ca3dc19ab8a5a1f912a249f07f96387404cc179357df1358da903a8e9c",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/lib/command-registry.mjs"
@@ -1779,7 +1779,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/lib/inject.mjs",
-      "sha256": "5c2f03aa404423ed5bdae62291a780167622fc88e00c462b7f1f3090291eef1c",
+      "sha256": "4df920d3d430c1e0aba2d41f09d764396e2f030bd525b78aa0ab68163703c7cb",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/lib/inject.mjs"
@@ -1800,7 +1800,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/lib/knowledge.mjs",
-      "sha256": "081da291c155bd85e9e88bf96c2a6302c4da4543086dab88efd6db76618b135a",
+      "sha256": "73ed66b2df865d665bb4c7224084ccec0b5ce2d84f31c7384bdc19e0998908b6",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/lib/knowledge.mjs"
@@ -1926,7 +1926,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "sha256": "d95058e704e81215023961a30b05f1c5406657ed69f6fbac774b6b5a23c74c59",
+      "sha256": "b670ce790cccd04ff425f71f218b7e4b30c74daaca808e699c6356be3212d94a",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs"
@@ -2038,7 +2038,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/tests/test_misc.mjs",
-      "sha256": "9d9f99e6ea7868872e76c320def84f2417bd2da0806109b8286e681f83e77229",
+      "sha256": "17836516f9b5df69b222bc09635cdbb429635d3bfa8dd8f9b79fb93282f8d8bf",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/tests/test_misc.mjs"
@@ -2853,7 +2853,7 @@
     },
     {
       "path": "skills/bee-hive/templates/AGENTS.block.md",
-      "sha256": "033eb8f284d207a2bc0f6d3522cff4d81b25cc58250f0aefd5d46e8813edacae",
+      "sha256": "5eebb8eb63939e85efad59165d34a00b8f64d80d4779b161590d0f484a89c705",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/AGENTS.block.md"
@@ -2881,7 +2881,7 @@
     },
     {
       "path": "skills/bee-hive/templates/bee.mjs",
-      "sha256": "e0fdbaf27f3ba9c3e2b6dc8b8533c59ba0b42b2a7dd2a48b4a1dc161b2a77977",
+      "sha256": "bb9d838f8b97516b2b87420fb0fb176533c5adeb1d440bc1d16254cadc6e78e8",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/bee.mjs"
@@ -2916,7 +2916,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/command-registry.mjs",
-      "sha256": "130f057e267725080b154a237b1004bdd38c6c3a0887a3dd9274adc0de09343b",
+      "sha256": "b4c385ca3dc19ab8a5a1f912a249f07f96387404cc179357df1358da903a8e9c",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/command-registry.mjs"
@@ -2986,7 +2986,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/inject.mjs",
-      "sha256": "5c2f03aa404423ed5bdae62291a780167622fc88e00c462b7f1f3090291eef1c",
+      "sha256": "4df920d3d430c1e0aba2d41f09d764396e2f030bd525b78aa0ab68163703c7cb",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/inject.mjs"
@@ -3007,7 +3007,7 @@
     },
     {
       "path": "skills/bee-hive/templates/lib/knowledge.mjs",
-      "sha256": "081da291c155bd85e9e88bf96c2a6302c4da4543086dab88efd6db76618b135a",
+      "sha256": "73ed66b2df865d665bb4c7224084ccec0b5ce2d84f31c7384bdc19e0998908b6",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/lib/knowledge.mjs"
@@ -3133,7 +3133,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "sha256": "d95058e704e81215023961a30b05f1c5406657ed69f6fbac774b6b5a23c74c59",
+      "sha256": "b670ce790cccd04ff425f71f218b7e4b30c74daaca808e699c6356be3212d94a",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_bee_cli.mjs"
@@ -3245,7 +3245,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_misc.mjs",
-      "sha256": "9d9f99e6ea7868872e76c320def84f2417bd2da0806109b8286e681f83e77229",
+      "sha256": "17836516f9b5df69b222bc09635cdbb429635d3bfa8dd8f9b79fb93282f8d8bf",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_misc.mjs"

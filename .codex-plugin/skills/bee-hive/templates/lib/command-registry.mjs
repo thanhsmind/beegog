@@ -1651,12 +1651,16 @@ export const COMMAND_REGISTRY = [
       type: 'object',
       properties: {
         work: { type: 'string', description: 'The work item to assemble context for — matched against bee.id on a bee.work-item concept (D32: the id is identity).' },
-        budget: { type: 'number', description: 'Context budget in estimated tokens; sizes are bytes/4 (D27/D12 — no tokenizer dependency).' },
+        budget: { type: 'number', description: 'Context budget in estimated tokens; sizes are bytes/4 (D27/D12 — no tokenizer dependency). Explicit --budget always wins over --lane when both are given.' },
+        lane: { type: 'string', enum: ['tiny', 'small', 'standard', 'high-risk'], description: 'i54-closeout D3: shorthand mapping to a lane-scaled budget preset (tiny 8000 / small 12000 / standard 20000 / high-risk 30000), resolved into --budget before this call reaches validate() — only when --budget is omitted. Omitting both --budget and --lane behaves exactly as before this option existed (required, missing).' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON ({work,decisions,budget,estimator,total_est,entries,truncated,excluded,floor,critical_total,zero_signal_count}) instead of the human table.' },
       },
       required: ['work', 'budget'],
     },
-    examples: ['bee knowledge context --work okf-foundation --budget 20000 --json'],
+    examples: [
+      'bee knowledge context --work okf-foundation --budget 20000 --json',
+      'bee knowledge context --work okf-foundation --lane standard --json',
+    ],
     deprecated: null,
   },
   {
