@@ -97,7 +97,13 @@ concurrency-safe and hermetic is `concurrency-and-hermetic-runs.md`.
   `commands.test` instead. Cap evidence is the cell's scoped verify; the full
   run belongs to CI. Mid-iteration, the level-1 impacted run (direct edges
   only) is the fast local check; the transitive impacted run (`commands.test`)
-  remains what gates wave-close and merge (impacted-level1 D1).
+  remains what gates wave-close and merge (impacted-level1 D1). A repo that
+  declares itself no-test (`commands.verify`/`commands.test` set to the exact
+  sentinel `"none"`, decision 55b951e1) skips both tiers loudly instead: the
+  session preamble, wave-close, session-finish, and worktree merge each print
+  one disabled-gate line rather than running anything, and a cell's own
+  `verify` may itself be `"none"` there, capped on the diff-backed outcome
+  plus a recorded waiver note.
 
 ## Edge Cases Settled
 

@@ -33,19 +33,45 @@
   "deps": [
     "nt-1"
   ],
-  "status": "open",
+  "status": "capped",
   "decisions": [],
   "trace": {
-    "worker": null,
-    "outcome": null,
-    "files_changed": [],
+    "worker": "nt2-worker",
+    "outcome": "sentinel documented on all six surfaces (AGENTS twins, planning, executing, config-reference incl. no-tests row, sample _doc, knowledge R4); parity+samples+render+manifest+registry+knowledge green",
+    "files_changed": [
+      "skills/bee-hive/templates/AGENTS.block.md",
+      "AGENTS.md",
+      "skills/bee-planning/SKILL.md",
+      "skills/bee-executing/SKILL.md",
+      "docs/config-reference.md",
+      ".bee/config-sample.json",
+      "docs/knowledge/areas/verify-pipeline/suite-topology-and-discovery.md",
+      "docs/history/codex-harness-hardening/release-manifest.json",
+      "scripts/impact-registry.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
-    "behavior_change": false,
-    "verification_evidence": null,
-    "verify_output": null,
-    "verify_passed": null,
-    "claim_session": null
+    "capped_at": "2026-07-24T00:19:43.554Z",
+    "behavior_change": true,
+    "verification_evidence": "{\n  \"verify_command\": \"node scripts/test_doctrine_parity.mjs && node scripts/test_skill_render.mjs && node scripts/test_config_samples_safe.mjs && node scripts/release_manifest.mjs --check && node scripts/impact_registry.mjs --check\",\n  \"verify_passed\": true,\n  \"verify_output\": \"doctrine parity green; skill_render 27/27; samples-safe 9/9; manifest 503; registry up to date; knowledge 136 concepts 0 errors (orchestrator re-ran independently)\",\n  \"red_failure_evidence\": \"grep sentinel prose across the six surfaces: 0 hits before nt-2, >=1 per surface after — no surface taught the none declaration prior.\"\n}\n",
+    "verify_output": "doctrine_parity: PASS (23 count claims agree); skill_render: 27 passed 0 failed; config_samples_safe: 9/9 passed; release_manifest --check: 503 file(s) match; impact_registry --check: up to date. Plus: knowledge check 136 concepts/155 files 0 errors 0 warnings; knowledge index --check 18 index files 0 stale.",
+    "verify_passed": true,
+    "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
+    "claimed_at": "2026-07-24T00:14:38.514Z",
+    "verify_command": "node scripts/test_doctrine_parity.mjs && node scripts/test_skill_render.mjs && node scripts/test_config_samples_safe.mjs && node scripts/release_manifest.mjs --check && node scripts/impact_registry.mjs --check",
+    "verified_at": "2026-07-24T00:18:48.820Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-24T00:18:48.820Z",
+        "claim_session": "1da7d53a-3fc1-4199-81e2-0244386dac45",
+        "claimed_at": "2026-07-24T00:14:38.513Z",
+        "acquired_at": "2026-07-24T00:14:38.513Z",
+        "worker": "nt2-worker",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }

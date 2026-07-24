@@ -110,6 +110,10 @@ The split is the point (ci-owned-verify D1/D5): `test` must be *narrower* than `
 
 Below `commands.test` there is a third, narrower layer that is **not** config: each work cell's own `verify` field, authored per change (one test file / one test function, seconds). Config carries the two repo-wide commands; the cell carries the per-change one.
 
+### Projects without tests
+
+A project that deliberately runs no tests declares that in config instead of leaving the keys absent: set `commands.verify` (and/or `commands.test`) to the exact sentinel string `"none"` (no-test-repos D1, decision `55b951e1`). Absence keeps its existing meaning — not-captured-yet, the normal onboarding nag — the sentinel means "this repo will never have one." With the sentinel set: the session preamble skips the CI-status-gate paragraph and prints one loud `Test gates disabled by repo declaration` line instead; cells may carry `verify: "none"` (refused everywhere else, exactly like a prose description would be) and cap on that cell records the diff-backed outcome with an auto waiver note rather than a passing verify result; wave-close, session-finish, and worktree-merge all skip with the same loud line, never silently. Nothing here is permanent — re-enable at any time by recording a real `test`/`verify` command, which restores every gate above on the next session.
+
 ### Per-language recipes
 
 Pick your runner's changed-only/related mode for `test`; `verify` is whatever runs everything.
@@ -121,6 +125,7 @@ Pick your runner's changed-only/related mode for `test`; `verify` is whatever ru
 | **Rust** | `cargo test -p <changed-crate>` (workspace: one crate) · `cargo test <module>::` (one module path) | `cargo test --workspace` |
 | **Python** | `pytest tests/test_<area>.py` (by path) · `pytest -k <expr>` (by name) · `pytest --testmon` (coverage-map impacted, needs pytest-testmon) | `pytest` |
 | **PHP** | `vendor/bin/phpunit --filter <TestClass>` · `vendor/bin/phpunit tests/<Area>/` (by dir) · Laravel: `php artisan test --filter <name>` | `vendor/bin/phpunit` (hoặc `composer test`) |
+| **No tests** | `"none"` (sentinel — declares the repo deliberately test-free) | `"none"` (either key alone is sufficient; setting both is fine) |
 
 Notes:
 - A command that takes the changed-file list from git itself (jest `--onlyChanged`, testmon, bee's `--impacted-from-git`) is the best `test` value — it stays correct with zero per-change editing. Where the runner has no such mode (Go, Rust, PHP), record the *narrow invocation shape* and let the session substitute the changed package/crate/class per change — the doctrine cares that the dev loop never runs the full suite, not which selector you use.
