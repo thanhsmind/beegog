@@ -26,20 +26,38 @@
     ]
   },
   "verify": "node scripts/run_verify.mjs",
-  "status": "claimed",
+  "status": "capped",
   "decisions": [],
   "trace": {
     "worker": "orchestrator",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "v1.15.0 released: bump, regen, 96/96 verify, commit+tag+push, CI dispatched",
+    "files_changed": [
+      "scripts/lib/release-tuple.mjs",
+      "docs/history/codex-harness-hardening/release-manifest.json"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-24T06:01:19.205Z",
     "behavior_change": false,
-    "verification_evidence": null,
+    "verification_evidence": "Full verify 96/96 green foreground pre-commit (wall 64.9s, conc 12). Release commit 6a1c7cd, annotated tag v1.15.0 pushed, CI dispatched run 30071023831. Tuple bumped via single registry; render-then-manifest order honored; two spaced tree snapshots identical before staging; explicit-path git add.",
     "verify_output": null,
-    "verify_passed": null,
+    "verify_passed": true,
     "claim_session": "9de1898e-455f-42fe-a159-2714e2f744f0",
-    "claimed_at": "2026-07-24T05:59:18.711Z"
+    "claimed_at": "2026-07-24T05:59:18.711Z",
+    "verify_command": "node scripts/run_verify.mjs",
+    "verified_at": "2026-07-24T06:01:19.128Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-24T06:01:19.129Z",
+        "claim_session": "9de1898e-455f-42fe-a159-2714e2f744f0",
+        "claimed_at": "2026-07-24T05:59:18.709Z",
+        "acquired_at": "2026-07-24T05:59:18.709Z",
+        "worker": "orchestrator",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }
