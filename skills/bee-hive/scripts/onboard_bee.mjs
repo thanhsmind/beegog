@@ -186,6 +186,12 @@ const HOOK_FILENAMES = [
   "bee-session-init.mjs",
   "bee-prompt-context.mjs",
   "bee-write-guard.mjs",
+  // tokenize-command.mjs is imported by bee-write-guard.mjs's CLI-shape check
+  // (decision D2, cell codex-parity-3) — vendoring the guard without it
+  // crashes ERR_MODULE_NOT_FOUND on every fresh repo-hooks install, making
+  // the guard fail-open instead of blocking pre-Gate-3 writes (canary P5,
+  // cell i54-closeout-9).
+  "tokenize-command.mjs",
   "bee-state-sync.mjs",
   "bee-chain-nudge.mjs",
   "bee-session-close.mjs",
