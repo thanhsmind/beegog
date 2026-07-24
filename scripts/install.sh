@@ -490,9 +490,24 @@ printf '%s' "$STATUS" | node -e '
   const s = JSON.parse(require("fs").readFileSync(0, "utf8"));
   if (!s.onboarding || s.onboarding.installed !== true) { console.error("bee.mjs status reports not installed"); process.exit(1); }
   const expected = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version;
-  if (s.onboarding.bee_version !== expected || s.onboarding.plugin_version !== expected || s.onboarding.drift !== false) {
+  if (s.onboarding.bee_version !== expected || s.onboarding.plugin_version !== expected) {
     console.error(`version parity failed: expected ${expected}, got bee=${s.onboarding.bee_version}, plugin=${s.onboarding.plugin_version}, drift=${s.onboarding.drift}`);
     process.exit(1);
+  }
+  // drift_detail entries come in two shapes (computeRuntimeDrift, bee.mjs):
+  // hash-mismatch/missing entries are bare relative paths (optionally suffixed
+  // " (missing)"), extra-file entries are suffixed " (extra)" -- an unmanaged
+  // .mjs sitting in .bee/bin/lib/ that onboarding never recorded. That is a
+  // softer signal than a real hash/missing mismatch, so it is a warning, not a
+  // fatal version-parity failure: any non-"(extra)" entry still hard-fails.
+  if (s.onboarding.drift === true) {
+    const detail = Array.isArray(s.onboarding.drift_detail) ? s.onboarding.drift_detail : [];
+    const extraOnly = detail.length > 0 && detail.every((entry) => entry.endsWith(" (extra)"));
+    if (!extraOnly) {
+      console.error(`version parity failed: expected ${expected}, got bee=${s.onboarding.bee_version}, plugin=${s.onboarding.plugin_version}, drift=${s.onboarding.drift}`);
+      process.exit(1);
+    }
+    console.log(`verify   unmanaged extra file(s) in .bee/bin/lib/ (not fatal — remove them, or they self-heal on the next onboarding refresh): ${detail.join(", ")}`);
   }
   console.log(`verify   onboarding ok (bee ${s.onboarding.bee_version}), phase: ${s.phase}`);
 ' "$BEE_SRC/.claude-plugin/plugin.json" || fail "Verification failed: unexpected bee.mjs status output."
