@@ -35,20 +35,42 @@
     ]
   },
   "verify": "node skills/bee-hive/templates/tests/test_misc.mjs && grep -q 'provably disjoint' skills/bee-swarming/SKILL.md && grep -q 'provably disjoint' skills/bee-hive/references/routing-and-contracts.md && grep -q 'help --json' AGENTS.md && node scripts/release_manifest.mjs --check",
-  "status": "claimed",
+  "status": "capped",
   "decisions": [],
   "trace": {
     "worker": "ce3-worker",
-    "outcome": null,
-    "files_changed": [],
+    "outcome": "three doctrine clauses live on all six surfaces: scoped red-first, small-lane parallel criterion, schema-first habit",
+    "files_changed": [
+      "skills/bee-executing/SKILL.md",
+      "skills/bee-executing/references/worker-details.md",
+      "skills/bee-swarming/SKILL.md",
+      "skills/bee-hive/references/routing-and-contracts.md",
+      "skills/bee-hive/templates/AGENTS.block.md",
+      "AGENTS.md"
+    ],
     "deviations": [],
     "friction": null,
-    "capped_at": null,
+    "capped_at": "2026-07-24T04:00:17.102Z",
     "behavior_change": false,
-    "verification_evidence": null,
+    "verification_evidence": "Verify green (orchestrator fresh run post-merge): test_misc.mjs 108 passed/0 failed; provably-disjoint clause present in bee-swarming/SKILL.md and routing-and-contracts.md; scoped red-first clause in bee-executing SKILL.md + worker-details.md; schema-first habit in AGENTS.block.md item 7 and rendered AGENTS.md; release_manifest --check 510 files match. Content authored by ce3-worker pre-collision, landed via the user-resolved PR #60 merge (b2478e1); this cap records the fresh verification of that landed state.",
     "verify_output": null,
-    "verify_passed": null,
+    "verify_passed": true,
     "claim_session": "9de1898e-455f-42fe-a159-2714e2f744f0",
-    "claimed_at": "2026-07-24T03:24:57.139Z"
+    "claimed_at": "2026-07-24T03:24:57.139Z",
+    "verify_command": "node skills/bee-hive/templates/tests/test_misc.mjs && grep -q 'provably disjoint' skills/bee-swarming/SKILL.md && grep -q 'provably disjoint' skills/bee-hive/references/routing-and-contracts.md && grep -q 'help --json' AGENTS.md && node scripts/release_manifest.mjs --check",
+    "verified_at": "2026-07-24T04:00:17.016Z",
+    "attempts": [
+      {
+        "n": 1,
+        "at": "2026-07-24T04:00:17.016Z",
+        "claim_session": "9de1898e-455f-42fe-a159-2714e2f744f0",
+        "claimed_at": "2026-07-24T03:58:30.694Z",
+        "acquired_at": "2026-07-24T03:24:57.138Z",
+        "worker": "ce3-worker",
+        "verdict": "pass",
+        "failure_signature": null,
+        "note": null
+      }
+    ]
   }
 }

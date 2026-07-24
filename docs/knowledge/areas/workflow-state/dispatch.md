@@ -8,7 +8,7 @@ bee:
   lifecycle: active
   areas: [workflow-state]
   required_context: [areas/workflow-state/overview.md]
-  decisions: [30606de4-5fae-4c9d-9e3f-8f47a494f8a3 (one unified command entry point publishing a machine-readable catalog), bbc6bcea (shim-retire D1 — the legacy per-group forwarders are deleted; bee.mjs is the sole shipped CLI)]
+  decisions: [30606de4-5fae-4c9d-9e3f-8f47a494f8a3 (one unified command entry point publishing a machine-readable catalog), bbc6bcea (shim-retire D1 — the legacy per-group forwarders are deleted; bee.mjs is the sole shipped CLI), 8ef2bae6 (cli-ergonomics D1 — exhaustive refusal, every problem + a runnable example in one message)]
   sources: ["harness-integration-adopt cells hia-1 and hia-2 (traces and reports, 2026-07-12)", "dispatcher-unify cells du-1..du-6 (traces and reports, 2026-07-12, flushed capture stubs b6a2233c/9e68432b)", "docs/specs/workflow-state.md#B8", "docs/specs/workflow-state.md#R12", "docs/specs/workflow-state.md#R13", "docs/specs/workflow-state.md#E10", "docs/specs/workflow-state.md#E11", "docs/specs/workflow-state.md#P6", "docs/specs/workflow-state.md#P10"]
   authoritative_for: "workflow-state: unified command discovery, validation, and dispatch"
 ---
@@ -38,7 +38,14 @@ valid request, observers receive the same result and exit outcome through either
 surface. This includes revising an open or blocked work cell's allowed plan
 fields. An unknown command is refused with the nearest known command when one is
 available. A malformed request is refused with the command, field, and reason,
-without executing the operation. After a catalog change, observers receive a
+without executing the operation — and the refusal is exhaustive (cli-ergonomics
+D1, 8ef2bae6): every missing and invalid parameter is named in the one refusal,
+alongside a runnable example taken from the catalog entry, so a caller never
+discovers problems one retry at a time. The structured error keeps the first
+problem in its legacy fields (existing consumers unchanged) and carries the
+full list additively. Legacy verbs that deliberately own their own checks
+(DB3) gained the same all-at-once behavior inside the handler layer, on their
+original error channel. After a catalog change, observers receive a
 separate diagnostic signal while the requested command's normal output keeps its
 stable shape.
 

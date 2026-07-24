@@ -8,7 +8,7 @@ bee:
   lifecycle: active
   areas: [doctrine-layer]
   required_context: [areas/doctrine-layer/overview.md]
-  decisions: ["lane-ceremony-v3 D1-D10 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19)", "f21efe6e (tree-hygiene D1/D4 — one canonical scratch home, the write-guard that enforces it)", I51 (issues-46-53 — claim-triggered baseline), I53a (issues-46-53 — sweeper reaches what the guard produces)]
+  decisions: ["lane-ceremony-v3 D1-D10 (docs/history/lane-ceremony-v3/CONTEXT.md, 2026-07-19)", "f21efe6e (tree-hygiene D1/D4 — one canonical scratch home, the write-guard that enforces it)", I51 (issues-46-53 — claim-triggered baseline), I53a (issues-46-53 — sweeper reaches what the guard produces), "8ef2bae6 (cli-ergonomics D3 — scoped red-first, the small-lane parallel criterion, schema-first; 2026-07-24)"]
   sources: ["lane-ceremony-v3 cells lcv3-1..lcv3-4 (traces in .bee/cells/, reports docs/history/lane-ceremony-v3/reports/, 2026-07-19 — plan freeze, lane work-packet shapes, product-file caps, test-anchored flags, intake-first classification; each RED-first against the doctrine assertion suite)", "tree-hygiene (cell th-6, 2026-07-21 — write-guard scratch-shape denial + the three competing prose homes collapsed into one doctrine rule)", "docs/specs/doctrine-layer.md#R13", "docs/specs/doctrine-layer.md#R14", "docs/specs/doctrine-layer.md#R15", "docs/specs/doctrine-layer.md#R16", "docs/specs/doctrine-layer.md#R17", "issues-46-53 cells i-3 (GH #51 — the baseline gate is claim-triggered and lives in the execution discipline; GH #53-adjacent — a guard that directs writes obliges the sweeper to reach there; traces in `.bee/cells/`, 2026-07-23)"]
   authoritative_for: "doctrine-layer: lane classification and working discipline"
 ---
@@ -121,3 +121,18 @@ govern the working residue of a cell rather than its content.
   read once per call and threaded down — never re-read per item — and
   repeated child-process answers are memoized in a pass-local map that dies
   with the pass; no cross-call caches, no TTLs, no daemons.
+
+- **Three roundtrip disciplines (cli-ergonomics D3, `8ef2bae6`):** (1) *Scoped
+  red-first* — the red run executes only the tests the cell adds or changes;
+  the full targeted verify chain runs exactly once, at the end, before cap
+  (a full-suite red loop is the named waste: one audited worker ran 271 tests
+  per loop for 4 new assertions). (2) *The small-lane parallel criterion* —
+  serial stays the default; cells may run in parallel only when every cell's
+  file set INCLUDING regen targets (release manifest, onboarding ledger,
+  plugin mirrors) is provably disjoint; any shared generated artifact forces
+  serial; in doubt, serial. (3) *Schema-first* — load a command group's
+  schema (`bee <group> --help --json`) before its first use in a session:
+  one roundtrip beats a flag-error ladder. All three came out of one session
+  audit where ~40% of orchestrator calls were retries while total CLI wall
+  time was under one second — the scarce resource is roundtrips, never CLI
+  runtime.
