@@ -366,6 +366,53 @@ function checkReadSizeDenial(absPath, label, threshold) {
   }
 }
 
+// ─── worktree-companion-hook mount recognition (fix-write-guard-symlink) ──
+// `bee worktree new --with-companion` symlinks a nested repo's own worktree
+// into this one at `commands.worktree_companion_mount` and records the
+// mapping in `<root>/.bee/companion-session.json` (worktree-store.mjs's
+// runCompanionStart: `{sessionId, worktreePath, mountPath}`). A target that
+// lexically resolves outside the physical worktree PURELY because it crosses
+// that specific, marker-declared symlink is not an escape — it is the
+// companion's own working tree, one hop away. Returns a root-relative path
+// (rooted at `mountPath`, matching canonicalRelPath's contract) when the
+// marker is present, parseable, names an existing `worktreePath`/`mountPath`
+// pair, the marker's declared `worktreePath` realpath matches the MOUNT
+// SYMLINK'S live realpath (a stale/tampered marker must not grant access to
+// wherever the symlink happens to point today), and `rawTarget` resolves
+// inside that mount. Null on any mismatch or failure — the caller falls back
+// to the existing generic containment denial, unchanged.
+function resolveCompanionMountedRelPath(root, cwd, rawTarget) {
+  try {
+    const raw = fs.readFileSync(path.join(root, ".bee", "companion-session.json"), "utf8");
+    const marker = JSON.parse(raw);
+    const declaredWorktreePath = marker && typeof marker === "object" ? marker.worktreePath : undefined;
+    const mountPath = marker && typeof marker === "object" ? marker.mountPath : undefined;
+    if (
+      typeof declaredWorktreePath !== "string" || !declaredWorktreePath ||
+      typeof mountPath !== "string" || !mountPath
+    ) {
+      return null;
+    }
+
+    const declaredReal = realpathOrNull(declaredWorktreePath);
+    const liveMountReal = realpathOrNull(path.join(root, mountPath));
+    if (!declaredReal || !liveMountReal || declaredReal !== liveMountReal) {
+      return null;
+    }
+
+    const targetReal = resolveTargetRealpath(cwd, root, rawTarget);
+    if (!targetReal || !isUnderRoot(liveMountReal, targetReal)) {
+      return null;
+    }
+
+    const offset = path.relative(liveMountReal, targetReal);
+    if (!offset) return mountPath;
+    return `${mountPath}/${offset.split(path.sep).join("/")}`;
+  } catch {
+    return null;
+  }
+}
+
 function getNestedString(obj, keys) {
   for (const key of keys) {
     const value = obj && typeof obj === "object" ? obj[key] : undefined;
@@ -739,7 +786,10 @@ async function main() {
         if (command) {
           const targets = guards.extractBashTargets(command);
           const paths = (targets && targets.paths) || [];
-          const canonicalized = paths.map((p) => ({ raw: p, rel: canonicalRelPath(root, cwd, p) }));
+          const canonicalized = paths.map((p) => ({
+            raw: p,
+            rel: canonicalRelPath(root, cwd, p) || resolveCompanionMountedRelPath(root, cwd, p),
+          }));
           relPaths = canonicalized.filter((c) => c.rel).map((c) => c.rel);
           if (relPaths.length !== paths.length) {
             const firstFailing = canonicalized.find((c) => !c.rel);
@@ -751,7 +801,7 @@ async function main() {
         }
       } else {
         const rawTarget = toolInput.file_path || "";
-        const rel = canonicalRelPath(root, cwd, rawTarget);
+        const rel = canonicalRelPath(root, cwd, rawTarget) || resolveCompanionMountedRelPath(root, cwd, rawTarget);
         if (rel) {
           relPaths = [rel];
         } else {
