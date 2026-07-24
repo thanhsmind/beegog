@@ -2146,7 +2146,16 @@ export function globalScribingDebt(root) {
     const lane = readLane(root, feature);
     const laneStamp = lane ? scribingRunStampMs(lane.last_scribing_run) : null;
     if (laneStamp !== null && (best === null || laneStamp > best)) best = laneStamp;
-    if (state.feature === feature) {
+    // si-3: honor the default record's last_scribing_run by ITS OWN feature
+    // attribution, never by whether that feature happens to be the currently
+    // active one. `state.feature === feature` was wrong in both directions:
+    // (a) it hid a properly-closed feature's own stamp the moment a new
+    // feature became active (live repro: cli-ergonomics stamped 04:02:40,
+    // after its own caps, yet counted orphaned because scribing-integrity had
+    // since become active), and (b) it would have let an unrelated OLDER
+    // feature's stamp wrongly clear the active feature's cells, since the
+    // stamp's own `feature` field was never checked at all.
+    if (state.last_scribing_run && state.last_scribing_run.feature === feature) {
       const defaultStamp = scribingRunStampMs(state.last_scribing_run);
       if (defaultStamp !== null && (best === null || defaultStamp > best)) best = defaultStamp;
     }

@@ -32,6 +32,28 @@ import { readJson, writeJsonAtomic } from '../lib/fsutil.mjs';
 
 const root = makeTempRepo();
 
+// si-3: guard against the exact isolation leak si-1's suite produced once —
+// the LIVE checkout's own .bee/state.json `feature` got stamped to a fixture
+// value ("other-feature") mid-run, then had to be restored by hand. Every
+// fixture in this file uses its own fs.mkdtempSync/makeTempRepo root and
+// threads it through runBeeState/runBeeMjs's explicit `cwd`, so nothing here
+// has a legitimate reason to ever touch the live repo's own state — this is
+// read-only bookkeeping, captured once before the first test runs and
+// compared once after the last, never a write. LIVE_REPO_ROOT is computed
+// the same way this file already resolves run-module-worker.mjs above
+// (relative to this file's own location, canonical-copy-correct — see that
+// import) rather than trusting `process.cwd()`, since individual checks
+// legitimately chdir away and back via runModuleWorker mid-suite.
+const LIVE_REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+function liveRepoFeature() {
+  try {
+    return readJson(path.join(LIVE_REPO_ROOT, '.bee', 'state.json'), null)?.feature ?? null;
+  } catch {
+    return undefined; // unreadable (e.g. no live .bee/ at all) — skip, never false-fail
+  }
+}
+const liveFeatureAtSuiteStart = liveRepoFeature();
+
 // ─── bee.mjs state CLI (cli-mutations-1, decision 0011 primitive) ──────────
 // No dedicated lib/state-mutations module backs this CLI (file-bounds forbid
 // touching lib/state.mjs semantics), so its verb logic is only exercised at
@@ -1842,5 +1864,22 @@ await check('si-1 (D5): status --json scribing_debt gains an ADDITIVE orphaned b
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// si-3: the isolation guard itself — run last, over every check above.
+// liveFeatureAtSuiteStart was captured once before the first check ran; this
+// re-reads the SAME live path and asserts byte-identical `feature`. A
+// mismatch names exactly what si-1's suite once did silently: some check in
+// this file mutated the live repo's own .bee/state.json instead of its own
+// fixture root.
+await check(
+  'si-3: this suite never mutates the LIVE repo .bee/state.json — its `feature` captured at suite start is unchanged at suite end (every fixture here uses its own scratch root; the isolation leak si-1 left behind, restored by hand, must never recur silently)',
+  async () => {
+    const liveFeatureAtSuiteEnd = liveRepoFeature();
+    assert(
+      liveFeatureAtSuiteStart === undefined || liveFeatureAtSuiteEnd === liveFeatureAtSuiteStart,
+      `LIVE .bee/state.json feature drifted during this suite: was ${JSON.stringify(liveFeatureAtSuiteStart)}, is now ${JSON.stringify(liveFeatureAtSuiteEnd)} — some check above wrote through the live repo root instead of its own scratch fixture root.`,
+    );
+  },
+);
 
 printSummaryAndExit();

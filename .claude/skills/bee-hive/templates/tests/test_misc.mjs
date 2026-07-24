@@ -305,6 +305,68 @@ await check('globalScribingDebt clears a lane feature cap via the LANE record la
   }
 });
 
+// ─── scribing-integrity si-3: the sweep stamp honored by ITS OWN feature ───
+// si-1 shipped `if (state.feature === feature)` — the default record's
+// last_scribing_run was only ever consulted when the checked feature
+// happened to be the CURRENTLY ACTIVE one. That is wrong in both directions:
+// a feature that closed cleanly and stamped the default record loses that
+// stamp's visibility the instant a new feature becomes active (live repro:
+// cli-ergonomics stamped 2026-07-24T04:02:40Z, after its own caps, yet
+// counted orphaned once scribing-integrity became active) — and, in the
+// other direction, an unrelated feature's stamp on the default record would
+// have wrongly cleared the currently active feature's own debt, since the
+// stamp's own `feature` field was never checked at all. The fix reads
+// `state.last_scribing_run.feature === feature`, never `state.feature`.
+
+await check('globalScribingDebt honors the default record last_scribing_run by its OWN feature attribution, not by whether that feature is currently active (si-3 defect 1a: a non-active but stamp-matching feature clears)', async () => {
+  const gRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-global-debt-nonactive-stamp-'));
+  fs.mkdirSync(path.join(gRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  // The default record's ACTIVE feature has moved on to something else, but
+  // its last_scribing_run still names the PRIOR feature — exactly the live
+  // repro shape (scribing-integrity active, last_scribing_run.feature ===
+  // "cli-ergonomics").
+  writeJsonAtomic(path.join(gRoot, '.bee', 'state.json'), {
+    phase: 'swarming',
+    feature: 'active-feat',
+    last_scribing_run: { feature: 'closed-feat', at: '2026-07-24T04:02:40.634Z' },
+  });
+  writeOrphanCell(gRoot, 'cf-1', 'closed-feat', '2026-07-24T03:23:00.000Z');
+  try {
+    const debt = globalScribingDebt(gRoot);
+    assert(
+      debt.count === 0,
+      `a non-active feature's own matching last_scribing_run stamp must clear its orphan even though it is not state.feature, got ${debt.count} :: ${JSON.stringify(debt.features)}`,
+    );
+  } finally {
+    fs.rmSync(gRoot, { recursive: true, force: true });
+  }
+});
+
+await check('globalScribingDebt never lets an UNRELATED feature\'s default-record stamp clear the currently active feature\'s own debt (si-3 defect 1b: the stamp\'s own feature field must match)', async () => {
+  const gRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-global-debt-active-mismatch-'));
+  fs.mkdirSync(path.join(gRoot, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(gRoot, '.bee', 'onboarding.json'), { schema_version: '1.0', bee_version: '0.1.0' });
+  // state.feature IS the checked feature, but the stamp riding on the
+  // default record belongs to a DIFFERENT, older feature entirely — it must
+  // never be treated as evidence for the active feature's own debt.
+  writeJsonAtomic(path.join(gRoot, '.bee', 'state.json'), {
+    phase: 'swarming',
+    feature: 'active-feat',
+    last_scribing_run: { feature: 'other-feat', at: '2026-07-24T05:00:00.000Z' },
+  });
+  writeOrphanCell(gRoot, 'af-1', 'active-feat', '2026-07-24T04:00:00.000Z');
+  try {
+    const debt = globalScribingDebt(gRoot);
+    assert(
+      debt.count === 1 && debt.features[0].feature === 'active-feat' && debt.features[0].cells.includes('af-1'),
+      `an unrelated feature's stamp on the default record must never clear the active feature's own cap, got ${debt.count} :: ${JSON.stringify(debt.features)}`,
+    );
+  } finally {
+    fs.rmSync(gRoot, { recursive: true, force: true });
+  }
+});
+
 await check('scribingDebt(root) default call stays byte-for-byte compatible: no opts still scopes strictly to the default record feature/threshold', async () => {
   const dRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-debt-compat-'));
   fs.mkdirSync(path.join(dRoot, '.bee'), { recursive: true });
