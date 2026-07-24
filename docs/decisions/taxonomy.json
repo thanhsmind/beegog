@@ -180,6 +180,9 @@
     "gate",
     "bee-herding",
     "dispatch-guard",
-    "bookkeeping"
+    "bookkeeping",
+    "bypass",
+    "drift",
+    "lib-mirror"
   ]
 }
