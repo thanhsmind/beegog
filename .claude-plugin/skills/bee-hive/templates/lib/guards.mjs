@@ -10,6 +10,10 @@ import { readConfig, resolvePipeline, resolveRoots } from './state.mjs';
 // only fsutil/lock/reservations.mjs — no cycle (same discipline cells.mjs's
 // own findForeignHolds import documents).
 import { findForeignHolds, holdsStoreCorrupt } from './worktree-holds.mjs';
+// wcg-1: the shared nested/companion-checkout detection primitive combines
+// isConcurrentMode() (claims.mjs, already built) with a new structural check.
+// No cycle — claims.mjs imports only fsutil/lock/decisions, never guards.mjs.
+import { isConcurrentMode } from './claims.mjs';
 
 /** File-path patterns that must never be read without asking the human. */
 export const SECRET_PATTERNS = [
@@ -751,6 +755,176 @@ export function checkWrite(root, state, relPath, agentName = null, { sessionId =
   }
 
   return { allow: true };
+}
+
+// ─── shared nested/companion checkout detection (worktree-concurrency-guard,
+//     cell wcg-1; D2 as widened by supersession 0ccc1cf3) ────────────────────
+// The shared detection primitive for BOTH enforcement surfaces named in D1
+// (bee-write-guard.mjs's write check and bee.mjs's handleWorktreeNew). It
+// answers ONE question: does `targetPath` lie inside a nested/companion-shaped
+// checkout — one with its own `.git` boundary — that another concurrently-live
+// session could also reach? Concurrency is part of the answer (per approach.md:
+// the primitive combines isConcurrentMode() with the structural check), so a
+// solo checkout is a pure no-op (D6 backward compatibility).
+//
+// EPIC 1 SCOPE: this is exported and tested but deliberately NOT wired into
+// checkWrite or the hook dispatch yet — that wiring is Epic 2/3, a later slice.
+//
+// The two flagged shapes and one exclusion, with their proven baselines from
+// the validating spike (docs/history/worktree-concurrency-guard/reports/
+// validation-e1.md):
+//   (a) VERIFIED companion mount — a `.bee/companion-session.json` marker whose
+//       declared worktreePath realpath matches the live mount symlink, target
+//       resolving inside that mount. Allowed unconditionally today
+//       (resolveCompanionMountedRelPath, bee-write-guard.mjs:384-414); flagged
+//       here so a concurrency gate can cover it. An UNVERIFIED / marker-less
+//       symlink escape is NOT this shape: today's containment
+//       (canonicalRelPath/describeCrossWorktreeTarget) already denies it
+//       regardless of concurrency, so this primitive stays narrow and does not
+//       flag it (spike case A: status 2, denied by existing containment).
+//   (b) PLAIN nested `.git` physically inside this checkout's own tree — a
+//       distinct git repo at an ancestor dir strictly under root. Completely
+//       unguarded today (spike case B: status 0) — STR65's actual incident
+//       shape, the primary gap this closes.
+// EXCLUDED: a real, `.gitmodules`-REGISTERED git submodule (spike case C:
+// status 0, structurally identical to case B). Since a plain nested repo and a
+// registered submodule cannot be told apart by "has its own `.git`" alone, the
+// exclusion keys off registration evidence (`.gitmodules` `path =` entries),
+// which covers BOTH submodule shapes — a directory `.git` and an absorbed-
+// gitdir `.git` FILE — because it never inspects the `.git` node itself.
+export function isSharedNestedCheckoutTarget(root, targetPath, opts = {}) {
+  // D6: additive, fires only when a second session is concurrently live.
+  if (!isConcurrentMode(root, opts)) return false;
+
+  const rootReal = realpathOrNull(root);
+  if (!rootReal) return false;
+  const absTarget = path.isAbsolute(targetPath)
+    ? targetPath
+    : path.resolve(root, String(targetPath || ''));
+
+  // Shape (a): a marker-verified companion mount the target resolves inside.
+  if (targetInsideVerifiedCompanionMount(root, absTarget)) return true;
+
+  // Shape (b): a plain nested `.git` strictly under root — flagged unless it is
+  // a registration-verified submodule.
+  const nestedDir = findNestedCheckoutDir(rootReal, absTarget);
+  if (nestedDir && !isRegisteredSubmodule(rootReal, nestedDir)) return true;
+
+  return false;
+}
+
+function realpathOrNull(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return null;
+  }
+}
+
+// True when real path `childReal` is `parentReal` itself or strictly nested
+// under it (mirrors bee-write-guard.mjs's isUnderRoot).
+function isRealUnderRoot(parentReal, childReal) {
+  if (!parentReal || !childReal) return false;
+  const rel = path.relative(parentReal, childReal);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+// Realpath of `absPath` when it may not fully exist yet: realpath the deepest
+// existing ancestor, then re-append the unresolved suffix (mirrors
+// bee-write-guard.mjs's resolveTargetRealpath). Null only if nothing resolves.
+function resolveExistingRealpath(absPath) {
+  let cursor = absPath;
+  const unresolved = [];
+  for (;;) {
+    const real = realpathOrNull(cursor);
+    if (real) return unresolved.length ? path.resolve(real, ...unresolved) : real;
+    const parent = path.dirname(cursor);
+    if (parent === cursor) return null;
+    unresolved.unshift(path.basename(cursor));
+    cursor = parent;
+  }
+}
+
+// Replicates resolveCompanionMountedRelPath's VERIFICATION (bee-write-guard.mjs
+// :384-414) as a boolean: a present, parseable marker naming a worktreePath/
+// mountPath pair whose declared worktreePath realpath matches the LIVE mount
+// symlink's realpath, with the target resolving inside that mount. A stale or
+// tampered marker (mismatch) verifies as false — never grant on where the
+// symlink happens to point today.
+function targetInsideVerifiedCompanionMount(root, absTarget) {
+  try {
+    const raw = fs.readFileSync(path.join(root, '.bee', 'companion-session.json'), 'utf8');
+    const marker = JSON.parse(raw);
+    const declaredWorktreePath = marker && typeof marker === 'object' ? marker.worktreePath : undefined;
+    const mountPath = marker && typeof marker === 'object' ? marker.mountPath : undefined;
+    if (
+      typeof declaredWorktreePath !== 'string' || !declaredWorktreePath ||
+      typeof mountPath !== 'string' || !mountPath
+    ) {
+      return false;
+    }
+    const declaredReal = realpathOrNull(declaredWorktreePath);
+    const liveMountReal = realpathOrNull(path.join(root, mountPath));
+    if (!declaredReal || !liveMountReal || declaredReal !== liveMountReal) return false;
+    const targetReal = resolveExistingRealpath(absTarget);
+    if (!targetReal) return false;
+    return isRealUnderRoot(liveMountReal, targetReal);
+  } catch {
+    return false;
+  }
+}
+
+// Walks realpath'd ancestor dirs of `absTarget` from just above the target up
+// toward (but never reaching) root, returning the innermost dir strictly under
+// root that carries its own `.git` node — the nested checkout boundary. Null
+// when none exists before root, or when the walk leaves root's real tree (the
+// companion-symlink case, handled separately above).
+function findNestedCheckoutDir(rootReal, absTarget) {
+  let cursor = absTarget;
+  for (;;) {
+    const parent = path.dirname(cursor);
+    if (parent === cursor) return null;
+    cursor = parent;
+    const cursorReal = realpathOrNull(cursor);
+    if (!cursorReal) continue; // dir does not exist yet — keep climbing
+    if (cursorReal === rootReal) return null; // reached root, no nested boundary
+    if (!isRealUnderRoot(rootReal, cursorReal)) return null; // left root's tree
+    if (hasGitNode(cursorReal)) return cursorReal;
+  }
+}
+
+// A `.git` node exists whether it is a directory (plain repo / plain submodule
+// checkout) or a FILE (git worktree or absorbed-gitdir submodule) — statSync
+// succeeds for both, which is exactly why "has its own `.git`" cannot by itself
+// distinguish a submodule from an accidental shared repo (spike cases B vs C).
+function hasGitNode(dir) {
+  try {
+    fs.statSync(path.join(dir, '.git'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Registration-based submodule exclusion (D2): a genuine submodule is declared
+// in `<root>/.gitmodules` via a `path = <repo-relative>` entry. Keys off that
+// registration, never the `.git` node shape, so a directory-`.git` and a
+// file-`.git` (absorbed-gitdir) submodule are both recognized. Returns false
+// when `.gitmodules` is absent (nothing registered) or unreadable.
+function isRegisteredSubmodule(rootReal, nestedDirReal) {
+  let content;
+  try {
+    content = fs.readFileSync(path.join(rootReal, '.gitmodules'), 'utf8');
+  } catch {
+    return false;
+  }
+  for (const line of content.split(/\r?\n/)) {
+    const match = /^\s*path\s*=\s*(.+?)\s*$/.exec(line);
+    if (!match) continue;
+    const entryReal = realpathOrNull(path.resolve(rootReal, match[1]));
+    if (entryReal && entryReal === nestedDirReal) return true;
+  }
+  return false;
 }
 
 /**
