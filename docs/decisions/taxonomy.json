@@ -187,6 +187,11 @@
     "bookkeeping",
     "bypass",
     "drift",
-    "lib-mirror"
+    "lib-mirror",
+    "hook",
+    "guard",
+    "execution",
+    "mirror",
+    "doctrine"
   ]
 }
