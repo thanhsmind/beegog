@@ -792,6 +792,45 @@ check("repeat install reports current without timestamp-only managed rewrites (b
   assert.equal(sha256(fs.readFileSync(path.join(sb.target, ".bee/onboarding.json"))), onboardingBefore, "onboarding.json must not be rewritten on a repeat install");
 });
 
+// ── 15a. extra-file-only drift (unmanaged .mjs in .bee/bin/lib/) is a warning,
+//        not a hard-fail: installer-verify-extra-drift-1. computeRuntimeDrift
+//        (skills/bee-hive/templates/bee.mjs) flags any .mjs file living in
+//        .bee/bin/lib/ that the recorded managed.lib ledger does not name as
+//        "(extra)" drift -- a much softer signal than a real hash mismatch,
+//        because onboard_bee.mjs's plan/apply never touches a name outside
+//        both the current template lib set AND the previously-recorded
+//        managed.lib keys (it only adds/updates names the source still has,
+//        or removes names the ledger used to record -- see 3c above). Planting
+//        a foreign .mjs the ledger never recorded survives apply untouched, so
+//        install.sh's final verify step must warn and continue instead of
+//        hard-failing version parity.
+check("extra unmanaged .mjs in .bee/bin/lib/ does not hard-fail install.sh's verify step, and the output names it", () => {
+  const sb = sandbox({ preinstalled: true });
+  fs.mkdirSync(sb.target, { recursive: true });
+  const first = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(first.code, 0, `first install must succeed:\n${first.out}`);
+  assertVersionParity(sb);
+
+  const onboarding = JSON.parse(fs.readFileSync(path.join(sb.target, ".bee/onboarding.json"), "utf8"));
+  const plantedName = "unmanaged-extra-drift-probe.mjs";
+  assert.ok(!Object.prototype.hasOwnProperty.call(onboarding.managed?.lib ?? {}, plantedName),
+    `sanity: planted file name must not already be a managed lib entry (got managed.lib: ${Object.keys(onboarding.managed?.lib ?? {}).join(", ")})`);
+  fs.writeFileSync(path.join(sb.target, ".bee/bin/lib", plantedName), "export const extraDriftProbe = true;\n");
+
+  const statusBefore = JSON.parse(execFileSync("node", [".bee/bin/bee.mjs", "status", "--json"], { cwd: sb.target, encoding: "utf8", env: sandboxEnv(sb) }));
+  assert.equal(statusBefore.onboarding?.drift, true, "planting an unmanaged lib file must be visible as drift before the fix is proven");
+  assert.ok((statusBefore.onboarding?.drift_detail ?? []).some((entry) => entry === `.bee/bin/lib/${plantedName} (extra)`),
+    `drift_detail must name the planted file as "(extra)" (got: ${JSON.stringify(statusBefore.onboarding?.drift_detail)})`);
+
+  const second = run(sb, { args: ["-d", sb.target, "-y", "--source", REPO_ROOT] });
+  assert.equal(second.code, 0, `install.sh's verify step must not hard-fail on extra-file-only drift when versions already match:\n${second.out}`);
+  assert.match(second.out, new RegExp(plantedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `verify output must name the specific extra file path so a human/agent knows what to clear:\n${second.out}`);
+  assert.doesNotMatch(second.out, /version parity failed/, "extra-file-only drift must not trigger the version-parity hard-fail message");
+
+  assert.ok(fs.existsSync(path.join(sb.target, ".bee/bin/lib", plantedName)), "the planted extra file itself is untouched by this fix (apply never removes an unrecorded name)");
+});
+
 // ── 16. broken CLI on PATH: repo-copy warns and continues (field regression) ──
 // Field report: a codex npm shim on PATH crashes when run (e.g. "Missing
 // optional dependency @openai/codex-linux-x64" on Windows+WSL). Default
