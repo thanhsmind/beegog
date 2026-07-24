@@ -197,7 +197,7 @@
     },
     {
       "path": ".claude-plugin/skills/.bee-render.json",
-      "sha256": "52cf361034c93db571c29bd6ee32f2b5ae00a0a124d74dce471f636dedf3625a",
+      "sha256": "dab9253c78c31566ab930d8ae3db38d6c57c62679dd7df1688a555d4205987d9",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/.bee-render.json"
@@ -855,7 +855,7 @@
     },
     {
       "path": ".claude-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "sha256": "fe927b666e5dc4a096f828d13af2e775fc190a561ae2bec659fb8535d77bfa18",
+      "sha256": "d95058e704e81215023961a30b05f1c5406657ed69f6fbac774b6b5a23c74c59",
       "mode": "644",
       "role": "plugin_skill_claude_render",
       "packagePath": ".claude-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs"
@@ -1268,7 +1268,7 @@
     },
     {
       "path": ".codex-plugin/skills/.bee-render.json",
-      "sha256": "7ed6e565e00384ba990fb9d3aaafbb1f0aeba0eb83be47f71af6cb158861decc",
+      "sha256": "4ebed6eb046b750e3f84bfe30758abab8f1a3dda39feaa0cccf27e62199a40fe",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/.bee-render.json"
@@ -1926,7 +1926,7 @@
     },
     {
       "path": ".codex-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "sha256": "fe927b666e5dc4a096f828d13af2e775fc190a561ae2bec659fb8535d77bfa18",
+      "sha256": "d95058e704e81215023961a30b05f1c5406657ed69f6fbac774b6b5a23c74c59",
       "mode": "644",
       "role": "plugin_skill_codex_render",
       "packagePath": ".codex-plugin/skills/bee-hive/templates/tests/test_bee_cli.mjs"
@@ -3133,7 +3133,7 @@
     },
     {
       "path": "skills/bee-hive/templates/tests/test_bee_cli.mjs",
-      "sha256": "fe927b666e5dc4a096f828d13af2e775fc190a561ae2bec659fb8535d77bfa18",
+      "sha256": "d95058e704e81215023961a30b05f1c5406657ed69f6fbac774b6b5a23c74c59",
       "mode": "644",
       "role": "plugin_skill",
       "packagePath": "skills/bee-hive/templates/tests/test_bee_cli.mjs"

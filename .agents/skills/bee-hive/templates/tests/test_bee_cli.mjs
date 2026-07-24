@@ -1316,6 +1316,28 @@ await check('backlog.render examples (--write then --check) run through the real
   assert(checkResult.stdout.trim() === 'Current: docs/backlog.md', `expected --check to report Current after the write, got ${checkResult.stdout}`);
 });
 
+// sqs-b2-fix: backlog.findings' own registry example targets --feature
+// state-query-surface, a feature slug that has no natural row on this
+// fixture's backlog.jsonl otherwise (backlog.pbi.status's own
+// "backlog-unification" feature example is a kind:'pbi' row, which
+// isBacklogFindingRow always excludes) — so seed one matching friction row
+// directly, mirroring capture.flush's seed-then-assertExampleOk pattern above.
+await check('backlog.findings example runs through the real dispatcher and returns the seeded friction row for the feature', async () => {
+  fs.appendFileSync(
+    path.join(rootBacklogCapture, '.bee', 'backlog.jsonl'),
+    `${JSON.stringify({ type: 'friction', severity: 'P2', title: 'grep is slow over the seeded fixture repo', detail: 'ripgrep search took too long', feature: 'state-query-surface' })}\n`,
+  );
+  const result = await assertExampleOk('backlog.findings', { cwd: rootBacklogCapture });
+  const { findings } = JSON.parse(result.stdout);
+  assert(Array.isArray(findings) && findings.length === 1, `expected exactly the one seeded finding, got ${result.stdout}`);
+  assert(findings[0].title === 'grep is slow over the seeded fixture repo', `expected the seeded row's title, got ${result.stdout}`);
+
+  const { entry, result: textResult } = await runExample('backlog.findings', { exampleIndex: 1, cwd: rootBacklogCapture });
+  assert(textResult.status === 0, `${entry.name} example "${entry.examples[1]}" exited ${textResult.status}: stdout=${textResult.stdout} stderr=${textResult.stderr}`);
+  const textFindings = JSON.parse(textResult.stdout).findings;
+  assert(Array.isArray(textFindings) && textFindings.length === 1, `expected the --text grep filter to still match the seeded row, got ${textResult.stdout}`);
+});
+
 await check('capture.add example runs through the real dispatcher and returns a stub id', async () => {
   const result = await assertExampleOk('capture.add', { cwd: rootBacklogCapture });
   const stub = JSON.parse(result.stdout);
