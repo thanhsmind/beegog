@@ -54,6 +54,7 @@ import {
   PHASES,
   KNOWN_PHASES,
   MODEL_TIERS,
+  NO_TEST_SENTINEL,
   isKnownPhase,
   checkPhaseTransition,
   checkScribingRunPhase,
@@ -3630,7 +3631,14 @@ async function handleWorktreeMerge(_root, flags) {
   // lands in CI on push. Falls back to commands.verify when commands.test
   // is unset, so a host project that only configured commands.verify keeps
   // today's behavior unchanged.
-  const verifyCommand = configCommands.test || configCommands.verify || undefined;
+  // no-test-repos D1/D2 (decision 55b951e1): the resolved command may be the
+  // literal sentinel string — it must NEVER be spawned as a shell command.
+  // Map it to `undefined` so the existing verifySkipped loud-warning path
+  // (mergeFeatureWorktree: verify: verifyCommand ? 'green' : 'skipped') fires
+  // exactly as it already does for a repo with no verify command configured
+  // at all — one gate, no new code path.
+  const resolvedVerifyCommand = configCommands.test || configCommands.verify || undefined;
+  const verifyCommand = resolvedVerifyCommand === NO_TEST_SENTINEL ? undefined : resolvedVerifyCommand;
   // worktree-companion-hook: no --with-companion flag here — unlike `new`,
   // where a bare worktree is a real, valid choice, `merge` needs none: the
   // worktree's own .bee/companion-session.json marker (written by `new

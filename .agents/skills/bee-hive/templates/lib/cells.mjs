@@ -14,6 +14,9 @@ import {
   resolvePipeline,
   listLanes,
   resolveRoots,
+  readConfig,
+  NO_TEST_SENTINEL,
+  isNoTestRepo,
 } from './state.mjs';
 // fsh-11 (D2/D4): claim-next's cross-session selection + throw-safe two-store
 // claim needs claims.mjs's atomic primitive, reservations.mjs's cross-session
@@ -1108,6 +1111,20 @@ export function writeCell(root, cell) {
   }
 }
 
+// no-test-repos D1/D2 (decision 55b951e1) — the sentinel is a legal `verify`
+// VALUE only in a repo that has declared itself no-test (isNoTestRepo reads
+// commands.verify/commands.test from .bee/config.json); everywhere else it
+// is refused exactly like any other non-command prose string would be.
+// Shared by addCell/addCells (validateNewCell) and updateCell below so both
+// entry points enforce the same rule the same way.
+function assertVerifySentinelAllowed(root, verb, verifyValue) {
+  if (verifyValue !== NO_TEST_SENTINEL) return;
+  if (isNoTestRepo(readConfig(root))) return;
+  throw new Error(
+    `${verb}: verify "${NO_TEST_SENTINEL}" is refused — this repo has not declared itself a no-test repo. FIX: use a real, runnable verify command, or declare the repo no-test first by setting commands.verify (or commands.test) to "${NO_TEST_SENTINEL}" in .bee/config.json (decision 55b951e1).`,
+  );
+}
+
 function validateNewCell(root, cell) {
   if (!cell || typeof cell !== 'object' || Array.isArray(cell)) {
     throw new Error('addCell: cell must be a JSON object.');
@@ -1117,6 +1134,7 @@ function validateNewCell(root, cell) {
       throw new Error(`addCell: cell is missing required field "${field}" (non-empty string).`);
     }
   }
+  assertVerifySentinelAllowed(root, 'addCell', cell.verify);
   if (!ID_PATTERN.test(cell.id)) {
     throw new Error(
       `addCell: invalid id "${cell.id}" — use letters, digits, dot, dash, underscore (e.g. "auth-3").`,
@@ -1403,6 +1421,11 @@ export async function updateCell(root, id, patch) {
       );
     }
   }
+  // no-test-repos D1/D2: same sentinel gate addCell enforces, applied to a
+  // patch that sets/changes `verify`.
+  if (Object.prototype.hasOwnProperty.call(patch, 'verify')) {
+    assertVerifySentinelAllowed(root, 'updateCell', patch.verify);
+  }
 
   return withStoreLock(root, `cells:${id}`, () => {
     assertNotArchived(root, 'updateCell', id); // hardening-1: refuse before ever reading/writing
@@ -1614,7 +1637,18 @@ export async function capCell(
     if (cell.status === 'dropped') throw new Error(`capCell: cell "${id}" was dropped.`);
     let trace = { ...defaultTrace(), ...(cell.trace || {}) };
     trace = guardClaimOwnership(root, id, trace, 'capCell', { sessionId, forceOwnership }); // D4
-    if (trace.verify_passed !== true) {
+    // no-test-repos D2 (decision 55b951e1): a verify-none cell in a
+    // repo that has declared itself no-test skips the passing-verify-result
+    // requirement below outright — there is no verify command that could
+    // ever have run. The auto note stands in as recorded evidence wherever
+    // else this function (and the lane-tier proof check further down) would
+    // otherwise expect one; an explicitly supplied verification_evidence
+    // still wins over the auto note.
+    const noTestWaiver = cell.verify === NO_TEST_SENTINEL && isNoTestRepo(readConfig(root));
+    if (noTestWaiver && !verification_evidence) {
+      verification_evidence = `no-test repo: verification waived by repo declaration (commands.verify: ${NO_TEST_SENTINEL})`;
+    }
+    if (trace.verify_passed !== true && !noTestWaiver) {
       throw new Error(
         `capCell: cell "${id}" has no passing verify result — run the cell's verify command and record it (bee.mjs cells verify --id ${id} --command CMD --passed true) before capping.`,
       );

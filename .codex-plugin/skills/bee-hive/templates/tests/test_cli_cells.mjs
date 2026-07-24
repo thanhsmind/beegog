@@ -18,7 +18,7 @@ import {
   assertRejects,
   printSummaryAndExit,
 } from '../../../../scripts/lib/test-fixture.mjs';
-import { readCell, claimCell, claimNextCell, claimCellCrossSession } from '../lib/cells.mjs';
+import { readCell, addCell, updateCell, capCell, claimCell, claimNextCell, claimCellCrossSession } from '../lib/cells.mjs';
 import { reserve } from '../lib/reservations.mjs';
 import { mirrorHold } from '../lib/worktree-holds.mjs';
 import {
@@ -794,6 +794,108 @@ await check('bee.mjs backlog with no command prints a Use: line listing all four
     assert(
       /counts/.test(result.stderr) && /rank/.test(result.stderr) && /badges/.test(result.stderr) && /add/.test(result.stderr),
       `Use: line should list all four verbs, got ${result.stderr}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── no-test-repos D1/D2 (decision 55b951e1): the 'none' verify sentinel ───
+
+await check('addCell/updateCell accept verify "none" in a repo that has declared itself no-test', async () => {
+  const dir = makeStateRepo('bee-no-test-accept-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'config.json'), {
+      commands: { verify: laneStore.NO_TEST_SENTINEL },
+    });
+    const cell = addCell(dir, makeCell('nt-accept-1', { verify: laneStore.NO_TEST_SENTINEL }));
+    assert(cell.verify === laneStore.NO_TEST_SENTINEL, 'sentinel accepted on addCell in a declared no-test repo');
+
+    addCell(dir, makeCell('nt-accept-2', { verify: 'node -e "process.exit(0)"' }));
+    const updated = await updateCell(dir, 'nt-accept-2', { verify: laneStore.NO_TEST_SENTINEL });
+    assert(updated.verify === laneStore.NO_TEST_SENTINEL, 'sentinel accepted on updateCell in a declared no-test repo');
+
+    // the "test" key alone (verify unset) also counts — either key declares
+    // the repo no-test (D1/D2: verify OR test carrying the sentinel).
+    const dir2 = makeStateRepo('bee-no-test-accept-testkey-');
+    writeJsonAtomic(path.join(dir2, '.bee', 'config.json'), {
+      commands: { test: laneStore.NO_TEST_SENTINEL },
+    });
+    const cell2 = addCell(dir2, makeCell('nt-accept-3', { verify: laneStore.NO_TEST_SENTINEL }));
+    assert(cell2.verify === laneStore.NO_TEST_SENTINEL, 'sentinel accepted when only commands.test carries it');
+    fs.rmSync(dir2, { recursive: true, force: true });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('addCell/updateCell refuse verify "none" in a repo with real recorded commands, naming the sentinel rule', async () => {
+  const dir = makeStateRepo('bee-no-test-refuse-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'config.json'), {
+      commands: { verify: 'npm test' },
+    });
+    await assertRejects(
+      async () => addCell(dir, makeCell('nt-refuse-1', { verify: laneStore.NO_TEST_SENTINEL })),
+      'no-test repo',
+      'addCell refuses the sentinel outside a declared no-test repo',
+    );
+
+    addCell(dir, makeCell('nt-refuse-2'));
+    await assertRejects(
+      () => updateCell(dir, 'nt-refuse-2', { verify: laneStore.NO_TEST_SENTINEL }),
+      'no-test repo',
+      'updateCell refuses the sentinel outside a declared no-test repo',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('addCell/updateCell refuse verify "none" in a repo with NO commands recorded at all (isNoTestRepo is false, not "anything goes")', async () => {
+  const dir = makeStateRepo('bee-no-test-refuse-empty-');
+  try {
+    await assertRejects(
+      async () => addCell(dir, makeCell('nt-refuse-empty-1', { verify: laneStore.NO_TEST_SENTINEL })),
+      'no-test repo',
+      'no recorded commands at all is not an implicit no-test declaration',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('capCell on a verify-none cell in a declared no-test repo waives the passing-verify-result requirement and auto-records the waiver note', async () => {
+  const dir = makeStateRepo('bee-no-test-cap-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'config.json'), {
+      commands: { verify: laneStore.NO_TEST_SENTINEL },
+    });
+    addCell(dir, makeCell('nt-cap-1', { verify: laneStore.NO_TEST_SENTINEL }));
+    // never claimed, never verified — capCell would ordinarily refuse "no
+    // passing verify result"; the waiver skips that requirement outright.
+    await assertRejects(
+      () => capCell(dir, 'nt-cap-1', { outcome: 'done' }),
+      'files_changed',
+      'the waiver does not lift the files_changed requirement — --files is still owed',
+    );
+    const capped = await capCell(dir, 'nt-cap-1', { outcome: 'done', files_changed: ['a.txt'] });
+    assert(capped.status === 'capped', 'cell caps under the waiver with no recorded verify');
+    assert(
+      capped.trace.verification_evidence === 'no-test repo: verification waived by repo declaration (commands.verify: none)',
+      `waiver note recorded verbatim, got: ${JSON.stringify(capped.trace.verification_evidence)}`,
+    );
+
+    // an explicitly supplied verification_evidence still wins over the auto note.
+    addCell(dir, makeCell('nt-cap-2', { verify: laneStore.NO_TEST_SENTINEL }));
+    const capped2 = await capCell(dir, 'nt-cap-2', {
+      outcome: 'done',
+      files_changed: ['b.txt'],
+      verification_evidence: 'explicit evidence supplied by the worker',
+    });
+    assert(
+      capped2.trace.verification_evidence === 'explicit evidence supplied by the worker',
+      'explicit verification_evidence overrides the auto waiver note',
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

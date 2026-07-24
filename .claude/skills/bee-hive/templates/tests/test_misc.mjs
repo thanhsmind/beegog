@@ -45,6 +45,9 @@ import {
   KNOWN_PHASES,
   readConfig,
   COMMAND_KEYS,
+  NO_TEST_SENTINEL,
+  isNoTestCommand,
+  isNoTestRepo,
   modelForTier,
   MODEL_TIERS,
   CONFIGURABLE_TIERS,
@@ -236,6 +239,59 @@ await check('readConfig keeps only known non-empty string commands', async () =>
   assert(!('bogus' in config.commands), 'unknown key dropped');
   assert(!('test' in config.commands), 'non-string value dropped');
   assert(!('start' in config.commands), 'blank string dropped');
+});
+
+// ─── no-test-repos sentinel (decision 55b951e1, D1) ─────────────────────────
+
+await check('normalizeCommands keeps the "none" sentinel exactly like any other non-empty string', async () => {
+  writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
+    commands: { verify: NO_TEST_SENTINEL, test: NO_TEST_SENTINEL },
+  });
+  const config = readConfig(root);
+  assert(config.commands.verify === NO_TEST_SENTINEL, `verify sentinel kept, got ${JSON.stringify(config.commands.verify)}`);
+  assert(config.commands.test === NO_TEST_SENTINEL, `test sentinel kept, got ${JSON.stringify(config.commands.test)}`);
+});
+
+await check('isNoTestCommand/isNoTestRepo recognize the sentinel on either key, and only the sentinel', async () => {
+  assert(isNoTestCommand(NO_TEST_SENTINEL) === true, 'sentinel value recognized');
+  assert(isNoTestCommand('npm test') === false, 'a real command is not the sentinel');
+  assert(isNoTestCommand(undefined) === false, 'absence is not the sentinel');
+  assert(isNoTestRepo({ commands: { verify: NO_TEST_SENTINEL } }) === true, 'verify:none declares no-test');
+  assert(isNoTestRepo({ commands: { test: NO_TEST_SENTINEL } }) === true, 'test:none alone also declares no-test');
+  assert(isNoTestRepo({ commands: { verify: 'npm test' } }) === false, 'a real verify command is not no-test');
+  assert(isNoTestRepo({ commands: {} }) === false, 'no commands recorded is not no-test');
+  assert(isNoTestRepo({}) === false, 'missing commands object is not no-test');
+});
+
+await check('buildSessionPreamble replaces the CI-status-gate paragraph with one loud line when commands.verify is the sentinel', async () => {
+  writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
+    commands: { setup: 'npm install', verify: NO_TEST_SENTINEL },
+  });
+  const preamble = buildSessionPreamble(root);
+  assert(/Standard commands/.test(preamble), 'commands section still present');
+  assert(!/CI status gate/.test(preamble), 'CI-status-gate paragraph is replaced, not merely appended to');
+  assert(
+    /Test gates disabled by repo declaration \(commands\.verify: none\) — cells cap on diff-backed outcomes; re-enable by recording real commands\./.test(
+      preamble,
+    ),
+    `expected the exact loud sentinel line, got:\n${preamble}`,
+  );
+});
+
+await check('buildSessionPreamble keeps the CI status gate and adds a dev-loop note when only commands.test is the sentinel', async () => {
+  writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
+    commands: { verify: 'npm run verify', test: NO_TEST_SENTINEL },
+  });
+  const preamble = buildSessionPreamble(root);
+  assert(/CI status gate/.test(preamble), 'the real verify keeps its CI-status-gate paragraph');
+  assert(
+    /Dev-loop test command disabled by repo declaration \(commands\.test: none\)/.test(preamble),
+    `expected a dev-loop-skip note, got:\n${preamble}`,
+  );
+  // restore the fixture's real commands for the rows that follow.
+  writeJsonAtomic(path.join(root, '.bee', 'config.json'), {
+    commands: { setup: 'npm install', verify: 'npm test' },
+  });
 });
 
 await check('buildSessionPreamble shows commands and CI status gate when verify recorded', async () => {
@@ -798,6 +854,10 @@ const EXPECTED_STATE_EXPORTS = [
   // rows for the actual behavior coverage.
   'localConfigPath',
   'mergeConfigOverlay',
+  // no-test-repos D1 (decision 55b951e1): the 'none' sentinel + its predicates.
+  'NO_TEST_SENTINEL',
+  'isNoTestCommand',
+  'isNoTestRepo',
 ];
 
 await check('readConfig strips a stale advisor key and never throws; advisor exports are gone', async () => {

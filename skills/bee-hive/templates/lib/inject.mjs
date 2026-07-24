@@ -9,6 +9,7 @@ import {
   BEE_VERSION,
   COMMAND_KEYS,
   GATE_NAMES,
+  NO_TEST_SENTINEL,
   readConfig,
   resolveProductRoot,
   cacheFilePath,
@@ -445,10 +446,25 @@ export function buildSessionPreamble(root, { sessionId = null, handoffOutcome = 
     lines.push('');
     lines.push('### Standard commands (host project)');
     for (const key of recordedKeys) lines.push(`- ${key}: \`${commands[key]}\``);
-    if (commands.verify) {
+    if (commands.verify === NO_TEST_SENTINEL) {
+      // no-test-repos D1 (decision 55b951e1): the sentinel REPLACES the
+      // CI-status-gate paragraph outright with one loud line — never a
+      // silent drop of the gate.
+      lines.push(
+        `- Test gates disabled by repo declaration (commands.verify: ${NO_TEST_SENTINEL}) — cells cap on diff-backed outcomes; re-enable by recording real commands.`,
+      );
+    } else if (commands.verify) {
       lines.push(
         '- CI status gate: before your first `cells claim` of this session, check CI instead of running anything locally — the latest full-verify run on the base branch plus any open verify-red issue; red is surfaced and becomes its own fix-first tiny cell — never build on red. No local full-suite run is ever owed: the dev loop runs registry-scoped tests only, and the full suite is CI-owned. The claim is the trigger, not arrival: a session that claims no cell owes no CI check.',
       );
+      if (commands.test === NO_TEST_SENTINEL) {
+        // D1: verify is real (CI-owned gate above stays), but the dev-loop
+        // test command is separately declared no-test — note the skip,
+        // still one loud line, never silent.
+        lines.push(
+          `- Dev-loop test command disabled by repo declaration (commands.test: ${NO_TEST_SENTINEL}) — the CI-owned verify above still governs; re-enable by recording a real \`test\` command.`,
+        );
+      }
     }
   }
 

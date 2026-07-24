@@ -1,0 +1,51 @@
+{
+  "id": "nt-2",
+  "feature": "no-test-repos",
+  "lane": "standard",
+  "title": "Teaching surfaces document the none sentinel",
+  "files": [
+    "skills/bee-hive/templates/AGENTS.block.md",
+    "AGENTS.md",
+    "skills/bee-planning/SKILL.md",
+    "skills/bee-executing/SKILL.md",
+    "docs/config-reference.md",
+    ".bee/config-sample.json",
+    "docs/knowledge/areas/verify-pipeline/suite-topology-and-discovery.md",
+    "docs/history/codex-harness-hardening/release-manifest.json",
+    "scripts/impact-registry.json"
+  ],
+  "read_first": [
+    "skills/bee-hive/templates/AGENTS.block.md",
+    "docs/config-reference.md"
+  ],
+  "action": "Per no-test-repos D3 (decision 55b951e1). (1) AGENTS.block.md item 16 tail + root byte-parallel: after the capture sentence add — a project that deliberately runs no tests records commands.verify: 'none' (and/or test: 'none'); every test gate then reports itself disabled in one loud line instead of running; absence still means capture-them-soon. (2) bee-planning :122 block + bee-executing cap-evidence block: in a none-declared repo, cell verify is 'none' and cap evidence is the diff-backed outcome with the recorded waiver note — never invent a fake check to satisfy the field. (3) docs/config-reference.md commands section: a 'Projects without tests' sub-note (sentinel semantics, loud-skip list, how to re-enable) + the per-language table gains a 'no tests' row; .bee/config-sample.json _doc.commands gains one sentence for the sentinel (keep sample values real commands; zero-validation-problem must hold — run scripts/test_config_samples_safe.mjs). (4) knowledge R4 gains the sentinel sentence; bee knowledge index; knowledge check green. Mirrors regen + release_manifest --write + impact_registry --check.",
+  "must_haves": {
+    "truths": [
+      "AGENTS twins byte-parallel; doctrine_parity green",
+      "sample still validates with zero problems",
+      "config-reference documents sentinel + re-enable path",
+      "knowledge R4 updated; index+check green",
+      "mirrors + manifest regenerated"
+    ]
+  },
+  "verify": "node scripts/test_doctrine_parity.mjs && node scripts/test_skill_render.mjs && node scripts/test_config_samples_safe.mjs && node scripts/release_manifest.mjs --check && node scripts/impact_registry.mjs --check",
+  "behavior_change": true,
+  "deps": [
+    "nt-1"
+  ],
+  "status": "open",
+  "decisions": [],
+  "trace": {
+    "worker": null,
+    "outcome": null,
+    "files_changed": [],
+    "deviations": [],
+    "friction": null,
+    "capped_at": null,
+    "behavior_change": false,
+    "verification_evidence": null,
+    "verify_output": null,
+    "verify_passed": null,
+    "claim_session": null
+  }
+}

@@ -1630,6 +1630,73 @@ try {
       adminLockPath,
     );
   }
+
+  // ── no-test-repos D1/D2 (decision 55b951e1): commands.verify === 'none'
+  // must NEVER be spawned as a shell command — handleWorktreeMerge maps the
+  // sentinel to `undefined` so the existing verifySkipped loud-warning path
+  // fires instead. Proven two ways: (a) the merge succeeds and reports
+  // verify:"skipped" — had the literal string "none" been spawned via
+  // spawnSync(..., { shell: true }), the shell would report "command not
+  // found" (non-zero exit), which the verify gate treats as
+  // MERGE_VERIFY_RED and aborts the merge; ok:true + verify:"skipped" is
+  // only reachable by never spawning it. (b) --cleanup's loud "cleaned up
+  // unchecked" warning fires, exactly as it does for a repo with no
+  // commands.verify recorded at all. ──────────────────────────────────────
+  {
+    const mainNoTest = path.join(mergeTmp, 'mainNoTest');
+    fs.mkdirSync(mainNoTest, { recursive: true });
+    git(mainNoTest, ['init', '-q', '-b', 'main']);
+    git(mainNoTest, ['config', 'user.email', 's@e']);
+    git(mainNoTest, ['config', 'user.name', 's']);
+    fs.writeFileSync(path.join(mainNoTest, '.gitignore'), BEE_GITIGNORE);
+    fs.mkdirSync(path.join(mainNoTest, '.bee'), { recursive: true });
+    fs.writeFileSync(path.join(mainNoTest, '.bee', 'onboarding.json'), JSON.stringify({ schema_version: '1.0', bee_version: '0.0.0' }));
+    fs.writeFileSync(path.join(mainNoTest, '.bee', 'config.json'), JSON.stringify({ commands: { verify: 'none' } }));
+    fs.writeFileSync(path.join(mainNoTest, 'f'), 'x');
+    git(mainNoTest, ['add', '.']);
+    git(mainNoTest, ['commit', '-q', '-m', 'init']);
+
+    const noTestCreated = mergeNewWorktree(mainNoTest, 'wsr-no-test-sentinel');
+    fs.writeFileSync(path.join(noTestCreated.worktreeRoot, 'no-test-work.txt'), 'work under a no-test declaration\n');
+    git(noTestCreated.worktreeRoot, ['add', 'no-test-work.txt']);
+    git(noTestCreated.worktreeRoot, ['commit', '-q', '-m', 'no-test fixture work']);
+    const noTestResult = bee(mainNoTest, ['worktree', 'merge', '--id', noTestCreated.id, '--cleanup', '--json']);
+    let noTestJson = null;
+    try {
+      noTestJson = JSON.parse(noTestResult.stdout);
+    } catch {
+      /* checked below */
+    }
+    {
+      const ok =
+        noTestResult.status === 0 &&
+        noTestJson &&
+        noTestJson.ok === true &&
+        noTestJson.merged === true &&
+        noTestJson.verify === 'skipped';
+      record(
+        'no-test-repos D1/D2: worktree merge with commands.verify:"none" merges and reports verify:"skipped" — the sentinel is never spawned as a shell command',
+        ok,
+        noTestResult.stdout,
+      );
+    }
+    {
+      const ok =
+        noTestJson &&
+        noTestJson.cleanup &&
+        noTestJson.cleanup.ok === true &&
+        /verify skipped — no commands\.verify recorded; cleaned up unchecked\./.test(noTestJson.cleanup.warning || '');
+      record(
+        'no-test-repos D1/D2: --cleanup after a sentinel-declared merge carries the same loud "cleaned up unchecked" warning as an unconfigured repo (verifySkipped path)',
+        ok,
+        JSON.stringify(noTestJson && noTestJson.cleanup),
+      );
+    }
+    {
+      const landed = fs.existsSync(path.join(mainNoTest, 'no-test-work.txt'));
+      record("no-test-repos D1/D2: the worktree's committed work actually landed on main despite the sentinel", landed, mainNoTest);
+    }
+  }
 } finally {
   fs.rmSync(mergeTmp, { recursive: true, force: true });
 }

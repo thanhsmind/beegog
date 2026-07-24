@@ -120,6 +120,30 @@ function normalizeCommands(raw) {
   return commands;
 }
 
+// no-test-repos D1 (decision 55b951e1) — a repo declares itself no-test by
+// setting commands.verify (or commands.test) to this exact sentinel string.
+// Absence keeps its existing meaning (not-captured-yet, unchanged nag) and
+// empty strings still normalize away above — the sentinel is a VALUE a
+// command key is allowed to hold, never a new key or a new normalization
+// branch, so normalizeCommands above needs no change: it already keeps
+// 'none' exactly like it keeps any other non-empty string.
+export const NO_TEST_SENTINEL = 'none';
+
+export function isNoTestCommand(value) {
+  return value === NO_TEST_SENTINEL;
+}
+
+// D1/D2 — either commands.verify or commands.test carrying the sentinel
+// declares the repo no-test (either alone is sufficient to flip every gate
+// this feature touches: inject.mjs's preamble line, cells.mjs's add/update/
+// cap waiver). verify wins for MESSAGING (inject.mjs's preamble line names
+// commands.verify specifically) but this predicate itself does not care
+// which key carries it.
+export function isNoTestRepo(config) {
+  const commands = (config && config.commands) || {};
+  return isNoTestCommand(commands.verify) || isNoTestCommand(commands.test);
+}
+
 const DEFAULT_HOOKS = {
   'session-init': true,
   'prompt-context': true,
