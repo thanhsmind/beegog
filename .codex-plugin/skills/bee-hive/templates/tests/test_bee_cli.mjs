@@ -2494,7 +2494,7 @@ await check('doctor: version-mismatch wording — a live codex --version other t
   const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bee-doctor-codex-stub-'));
   try {
     // A tiny fake "codex" binary ahead on PATH that reports a version other
-    // than PROBED_CODEX_VERSION ('0.144.4') — proves the wording switches
+    // than PROBED_CODEX_VERSION ('0.145.0') — proves the wording switches
     // without needing an actually-different codex install on this machine.
     const stubPath = path.join(stubDir, 'codex');
     fs.writeFileSync(stubPath, '#!/bin/sh\necho "codex-cli 9.9.9"\n', { mode: 0o755 });
@@ -2507,7 +2507,7 @@ await check('doctor: version-mismatch wording — a live codex --version other t
     const parsed = JSON.parse(result.stdout);
     const row = parsed.rows.find((r) => r.row === 'hooks_discovered');
     assert(row.evidence.includes('unprobed_version'), `evidence must carry the unprobed_version token, got ${row.evidence}`);
-    assert(!row.evidence.includes('0.144.4 exposes no machine-readable'), `evidence must not assert the probed-version conclusion verbatim, got ${row.evidence}`);
+    assert(!row.evidence.includes('0.145.0 exposes no machine-readable'), `evidence must not assert the probed-version conclusion verbatim, got ${row.evidence}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(stubDir, { recursive: true, force: true });
@@ -2578,7 +2578,7 @@ await check('doctor: custom_agents verdict is version-scoped, never a bare "unsu
     const parsed = JSON.parse(result.stdout);
     const row = parsed.rows.find((r) => r.row === 'custom_agents');
     assert(row.status === 'unsupported', `expected unsupported, got ${JSON.stringify(row)}`);
-    assert(row.evidence.includes('0.144.4'), `custom_agents evidence must cite the probed version, got ${row.evidence}`);
+    assert(row.evidence.includes('0.145.0'), `custom_agents evidence must cite the probed version, got ${row.evidence}`);
     assert(row.evidence.toLowerCase().includes('version-scoped') || row.evidence.toLowerCase().includes('other versions'), `custom_agents evidence must scope the verdict to the probed version, got ${row.evidence}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

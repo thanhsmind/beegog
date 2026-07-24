@@ -4586,12 +4586,12 @@ function handleConfigUnset(root, flags) {
 // Trust/discovery verdicts below are conclusions about THIS version only —
 // a live codex whose --version differs is unprobed territory, never
 // silently asserted as if it shared the same F1 capability-matrix row.
-const PROBED_CODEX_VERSION = '0.144.4';
+const PROBED_CODEX_VERSION = '0.145.0';
 
 const CODEX_DOCTOR_TRUST_UNKNOWN_REASON =
   `codex-cli ${PROBED_CODEX_VERSION} exposes no machine-readable hook-discovery/trust surface — \`codex doctor --json\` reports no hook/trust/agent rows (capability matrix row F1); trust state lives only in the interactive \`/hooks\` TUI, which is not machine-readable.`;
 
-// `codex --version` prints a full label ("codex-cli 0.144.4"), not a bare
+// `codex --version` prints a full label ("codex-cli 0.145.0"), not a bare
 // semver — extract just the number for comparison against
 // PROBED_CODEX_VERSION so this never false-mismatches on the label text.
 function doctorExtractVersionNumber(raw) {

@@ -618,7 +618,7 @@ check("codex plugin-first: post-cleanup end state has codex-hybrid hooks and no 
   assert.equal(fs.existsSync(path.join(sb.target, ".agents", "skills")), false, "plugin-first must not leave an .agents/skills copy");
 
   // `bee.mjs doctor --runtime codex --json` in the sandbox target: hooks_file_present
-  // must be ok; the trust/discovery rows stay unknown on codex-cli 0.144.4 (no
+  // must be ok; the trust/discovery rows stay unknown on codex-cli 0.145.0 (no
   // machine-readable hook-discovery/trust surface — CODEX_DOCTOR_TRUST_UNKNOWN_REASON),
   // which is EXPECTED, not fought. Since g22-3's three-state re-class, these four
   // rows carry `degrades: true` + a non-empty `degraded_reason` (never `blocking`
@@ -639,7 +639,7 @@ check("codex plugin-first: post-cleanup end state has codex-hybrid hooks and no 
   const rowsByName = Object.fromEntries(doctor.rows.map((row) => [row.row, row]));
   assert.equal(rowsByName.hooks_file_present?.status, "ok", `hooks_file_present must be ok: ${JSON.stringify(rowsByName.hooks_file_present)}`);
   for (const trustRow of ["hooks_discovered", "hooks_trusted", "project_trust", "pending_hook_review"]) {
-    assert.equal(rowsByName[trustRow]?.status, "unknown", `${trustRow} must stay unknown on codex-cli 0.144.4: ${JSON.stringify(rowsByName[trustRow])}`);
+    assert.equal(rowsByName[trustRow]?.status, "unknown", `${trustRow} must stay unknown on codex-cli 0.145.0: ${JSON.stringify(rowsByName[trustRow])}`);
     assert.equal(rowsByName[trustRow]?.degrades, true, `${trustRow} must be flagged degrades: ${JSON.stringify(rowsByName[trustRow])}`);
     assert.ok(
       typeof rowsByName[trustRow]?.degraded_reason === "string" && rowsByName[trustRow].degraded_reason.length > 0,
