@@ -784,14 +784,15 @@ export const COMMAND_REGISTRY = [
   {
     name: 'state.scribing-run',
     invoke: 'bee state scribing-run',
-    description: 'Stamp last_scribing_run (date + ISO-precise at), mirror --next-action to the top-level next_action, and advance phase to compounding. Optional --lane <feature> (D2/D4) routes the stamp to that lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes.',
+    description: 'Stamp last_scribing_run (date + ISO-precise at), mirror --next-action to the top-level next_action, and advance phase to compounding. Optional --lane <feature> (D2/D4) routes the stamp to that lane record instead of the default state.json; a missing or corrupt lane refuses loudly with zero writes. --show (sqs-b3) is a READ-ONLY query mode: it never appends to the scribing ledger and never advances phase, returning the most-recent recorded stamp overall, or for --feature <slug> if given; it needs neither --areas nor --next-action.',
     parameters: {
       type: 'object',
       properties: {
-        feature: { type: 'string', description: 'Feature slug the scribing run covers.' },
+        feature: { type: 'string', description: 'Feature slug the scribing run covers (write mode), or the feature to filter by (read-only --show mode).' },
         areas: { type: 'string', description: 'Comma-separated areas synced.' },
         'next-action': { type: 'string', description: 'Next action after scribing.' },
         lane: { type: 'string', description: 'Route the mutation to this lane record instead of the default state.json. Refuses if the lane is missing or corrupt.' },
+        show: { type: 'boolean', description: 'Read-only query mode: return the most-recent scribing stamp (overall, or for --feature <slug>) without appending to the ledger or advancing phase.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: [],
@@ -799,6 +800,8 @@ export const COMMAND_REGISTRY = [
     examples: [
       'bee state scribing-run --feature newf --areas auth --next-action bee-compounding --json',
       'bee state scribing-run --lane demo-lane --feature demo-lane --areas auth --next-action bee-compounding --json',
+      'bee state scribing-run --show --json',
+      'bee state scribing-run --show --feature newf --json',
     ],
     deprecated: null,
   },

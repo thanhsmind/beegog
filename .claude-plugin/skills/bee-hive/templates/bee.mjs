@@ -101,6 +101,8 @@ import {
   scribingDebt,
   globalScribingDebt,
   appendScribingLedger,
+  readScribingLedger,
+  bestScribingStampMs,
   tierMix,
   ceilingScarcityWarning,
   claimNextCell,
@@ -2377,6 +2379,38 @@ function handleStateWorkerPrune(root, flags) {
 
 // D6 — async: record-read through write() runs inside withStoreLock('state').
 async function handleStateScribingRun(root, flags) {
+  // sqs-b3: --show is a READ-ONLY query mode — it MUST return here, ABOVE
+  // rejectDryRun/requireFlags below. Those two calls demand --areas/
+  // --next-action, which a read never supplies; falling through to them
+  // would wrongly refuse every --show call for lacking write-only flags
+  // (the exact trap this cell exists to avoid — validation-slice1.md's
+  // sqs-b3 WARNING). --show never appends to the scribing ledger and never
+  // advances phase: it only reads the most-recent recorded stamp, overall or
+  // for --feature <slug> if given, reusing readScribingLedger/
+  // bestScribingStampMs (lib/cells.mjs) — the same reader and per-feature
+  // max-stamp logic globalScribingDebt's orphan sweep uses, never a second
+  // implementation.
+  if (flags.show === true) {
+    const showFeature = flags.feature !== undefined ? String(flags.feature) : null;
+    let stampMs = null;
+    if (showFeature) {
+      stampMs = bestScribingStampMs(root, showFeature);
+    } else {
+      const ledger = readScribingLedger(root);
+      for (const entry of ledger) {
+        if (!entry) continue;
+        const parsed = Date.parse(entry.ts);
+        if (Number.isFinite(parsed) && (stampMs === null || parsed > stampMs)) stampMs = parsed;
+      }
+    }
+    const stampIso = stampMs === null ? null : new Date(stampMs).toISOString();
+    const result = { feature: showFeature, stamp: stampIso };
+    const text = stampIso
+      ? `Last scribing run${showFeature ? ` for "${showFeature}"` : ''}: ${stampIso}`
+      : `No scribing run recorded${showFeature ? ` for "${showFeature}"` : ''}.`;
+    return { result, text };
+  }
+
   rejectDryRun(flags);
   // ce-1: feature/areas/next-action batched into one refusal (requireFlags).
   const { feature, areas: areasRaw, 'next-action': nextAction } = requireFlags(
@@ -5706,7 +5740,11 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict', 'queue-submit']);
+// `show` (sqs-b3) is state.scribing-run's read-only query opt-in — MUST be
+// here or `state scribing-run --show --feature X` would consume `--feature`
+// as --show's own value, same class of bug dry-run/write/as-lane guard
+// against above.
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict', 'queue-submit', 'show']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

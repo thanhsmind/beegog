@@ -1907,6 +1907,126 @@ await check('si-1 (D5): status --json scribing_debt gains an ADDITIVE orphaned b
   }
 });
 
+await check('sqs-b3: state scribing-run --show returns the most-recent stamp overall, across every feature in the ledger', async () => {
+  const dir = makeStateRepo('bee-scribing-show-overall-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming', feature: 'demo' });
+    const first = await runBeeState(dir, [
+      'scribing-run', '--feature', 'demo', '--areas', 'demo-area', '--next-action', 'bee-compounding', '--json',
+    ]);
+    assert(first.status === 0, `setup scribing-run should succeed, got ${first.status}: ${first.stderr}`);
+    // A second, later stamp for a DIFFERENT feature must win as "overall".
+    const second = await runBeeState(dir, [
+      'scribing-run', '--feature', 'other-feat', '--areas', 'other-area', '--next-action', '-', '--json',
+    ]);
+    assert(second.status === 0, `second scribing-run should succeed, got ${second.status}: ${second.stderr}`);
+    const show = await runBeeState(dir, ['scribing-run', '--show', '--json']);
+    assert(show.status === 0, `--show should succeed, got ${show.status}: ${show.stdout}${show.stderr}`);
+    const payload = JSON.parse(show.stdout);
+    assert(payload.feature === null, `overall --show carries no feature filter, got ${JSON.stringify(payload)}`);
+    const secondEntry = JSON.parse(
+      fs.readFileSync(path.join(dir, '.bee', 'logs', 'scribing-runs.jsonl'), 'utf8').trim().split('\n').pop(),
+    );
+    assert(
+      payload.stamp === secondEntry.ts,
+      `overall --show must return the LATEST stamp across every feature (${secondEntry.ts}), got ${JSON.stringify(payload)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('sqs-b3: state scribing-run --show --feature <slug> returns that feature\'s own last stamp, not a different feature\'s later one', async () => {
+  const dir = makeStateRepo('bee-scribing-show-feature-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming', feature: 'demo' });
+    const first = await runBeeState(dir, [
+      'scribing-run', '--feature', 'demo', '--areas', 'demo-area', '--next-action', 'bee-compounding', '--json',
+    ]);
+    assert(first.status === 0, `setup scribing-run should succeed, got ${first.status}: ${first.stderr}`);
+    const firstEntry = JSON.parse(
+      fs.readFileSync(path.join(dir, '.bee', 'logs', 'scribing-runs.jsonl'), 'utf8').trim().split('\n').pop(),
+    );
+    // A LATER stamp for a different feature must not leak into "demo"'s answer.
+    const second = await runBeeState(dir, [
+      'scribing-run', '--feature', 'other-feat', '--areas', 'other-area', '--next-action', '-', '--json',
+    ]);
+    assert(second.status === 0, `second scribing-run should succeed, got ${second.status}: ${second.stderr}`);
+    const show = await runBeeState(dir, ['scribing-run', '--show', '--feature', 'demo', '--json']);
+    assert(show.status === 0, `--show --feature should succeed, got ${show.status}: ${show.stdout}${show.stderr}`);
+    const payload = JSON.parse(show.stdout);
+    assert(payload.feature === 'demo', `--show --feature must echo the requested feature, got ${JSON.stringify(payload)}`);
+    assert(
+      payload.stamp === firstEntry.ts,
+      `--show --feature demo must return demo's OWN last stamp (${firstEntry.ts}), not the later other-feat one, got ${JSON.stringify(payload)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('sqs-b3: state scribing-run --show is read-only — it does not append to the ledger and does not advance phase', async () => {
+  const dir = makeStateRepo('bee-scribing-show-readonly-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming', feature: 'demo' });
+    const setup = await runBeeState(dir, [
+      'scribing-run', '--feature', 'demo', '--areas', 'demo-area', '--next-action', 'bee-compounding', '--json',
+    ]);
+    assert(setup.status === 0, `setup scribing-run should succeed, got ${setup.status}: ${setup.stderr}`);
+    const ledgerPath = path.join(dir, '.bee', 'logs', 'scribing-runs.jsonl');
+    const beforeLedger = fs.readFileSync(ledgerPath, 'utf8');
+    const beforeState = fs.readFileSync(path.join(dir, '.bee', 'state.json'));
+    const show = await runBeeState(dir, ['scribing-run', '--show', '--feature', 'demo', '--json']);
+    assert(show.status === 0, `--show should succeed, got ${show.status}: ${show.stdout}${show.stderr}`);
+    const afterLedger = fs.readFileSync(ledgerPath, 'utf8');
+    const afterState = fs.readFileSync(path.join(dir, '.bee', 'state.json'));
+    assert(afterLedger === beforeLedger, '--show must NOT append a line to the scribing ledger');
+    assert(afterState.equals(beforeState), '--show must NOT mutate state.json (no phase advance, no field write)');
+    // The setup call above already advanced phase to "compounding" (the
+    // normal write-mode side effect) — --show's own contract is that it
+    // changes NOTHING further, which the byte-equality assert above already
+    // proves; this just names the specific field for a clearer failure.
+    const before = JSON.parse(beforeState.toString());
+    const after = JSON.parse(afterState.toString());
+    assert(after.phase === before.phase, `--show must not advance phase, was ${before.phase} now ${after.phase}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('sqs-b3: state scribing-run --show works with NO --areas/--next-action (a bare read never needs write-only flags)', async () => {
+  const dir = makeStateRepo('bee-scribing-show-bare-');
+  try {
+    writeJsonAtomic(path.join(dir, '.bee', 'state.json'), { phase: 'swarming', feature: null });
+    const show = await runBeeState(dir, ['scribing-run', '--show', '--json']);
+    assert(
+      show.status === 0,
+      `--show alone (no --areas/--next-action) must succeed since it never writes, got ${show.status}: ${show.stdout}${show.stderr}`,
+    );
+    const payload = JSON.parse(show.stdout);
+    assert(payload.stamp === null, `an empty ledger must yield a null stamp, got ${JSON.stringify(payload)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('sqs-b3: bee.mjs --help --json advertises scribing-run --show', async () => {
+  const dir = makeStateRepo('bee-scribing-show-registry-');
+  try {
+    const result = await runModuleWorker(beeStateModulePath(), { args: ['--help', '--json'], cwd: dir });
+    assert(result.status === 0, `--help --json should succeed, got ${result.status}: ${result.stderr}`);
+    const manifest = JSON.parse(result.stdout);
+    const entry = manifest.commands.find((c) => c.name === 'state.scribing-run');
+    assert(entry, 'state.scribing-run must be registered in the command manifest');
+    assert(
+      entry.parameters.properties.show,
+      `state.scribing-run's registry entry must declare a --show flag, got ${JSON.stringify(Object.keys(entry.parameters.properties))}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // si-3: the isolation guard itself — run last, over every check above.
 // liveFeatureAtSuiteStart was captured once before the first check ran; this
 // re-reads the SAME live path and asserts byte-identical `feature`. A

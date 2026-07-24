@@ -2082,7 +2082,10 @@ export function scribingLedgerPath(root) {
   return path.join(root, '.bee', 'logs', 'scribing-runs.jsonl');
 }
 
-function readScribingLedger(root) {
+// sqs-b3: exported so `state scribing-run --show` (bee.mjs) can read the
+// SAME ledger rows globalScribingDebt reads below, instead of a second
+// hand-rolled readJsonl(scribingLedgerPath(root)) composition.
+export function readScribingLedger(root) {
   return readJsonl(scribingLedgerPath(root));
 }
 
@@ -2125,6 +2128,41 @@ function scribingRunStampMs(run) {
 // Archived cells are out of scope (decision: sweep covers live cells only —
 // rewriting historical debt is not this cell's job). Returns
 // { count, features: [{ feature, cells }] }, features sorted by name.
+// sqs-b3: extracted out of globalScribingDebt so `state scribing-run --show
+// --feature <slug>` (bee.mjs) can reuse the EXACT SAME "best known stamp for
+// this feature" logic the orphan sweep below uses — ledger max, then the
+// feature's own lane stamp, then the default record's stamp (only when it
+// names this same feature) — never a second hand-rolled traversal. `ctx`
+// lets a caller that already has the ledger/state in hand (globalScribingDebt
+// iterating many features) pass them in instead of re-reading per call.
+export function bestScribingStampMs(root, feature, ctx = {}) {
+  const ledger = ctx.ledger || readScribingLedger(root);
+  const state = ctx.state || readState(root);
+  let best = null;
+  for (const entry of ledger) {
+    if (!entry || entry.feature !== feature) continue;
+    const parsed = Date.parse(entry.ts);
+    if (Number.isFinite(parsed) && (best === null || parsed > best)) best = parsed;
+  }
+  const lane = readLane(root, feature);
+  const laneStamp = lane ? scribingRunStampMs(lane.last_scribing_run) : null;
+  if (laneStamp !== null && (best === null || laneStamp > best)) best = laneStamp;
+  // si-3: honor the default record's last_scribing_run by ITS OWN feature
+  // attribution, never by whether that feature happens to be the currently
+  // active one. `state.feature === feature` was wrong in both directions:
+  // (a) it hid a properly-closed feature's own stamp the moment a new
+  // feature became active (live repro: cli-ergonomics stamped 04:02:40,
+  // after its own caps, yet counted orphaned because scribing-integrity had
+  // since become active), and (b) it would have let an unrelated OLDER
+  // feature's stamp wrongly clear the active feature's cells, since the
+  // stamp's own `feature` field was never checked at all.
+  if (state.last_scribing_run && state.last_scribing_run.feature === feature) {
+    const defaultStamp = scribingRunStampMs(state.last_scribing_run);
+    if (defaultStamp !== null && (best === null || defaultStamp > best)) best = defaultStamp;
+  }
+  return best;
+}
+
 export function globalScribingDebt(root) {
   const cells = listCells(root, { status: 'capped' }).filter(
     (cell) => (cell.trace || {}).behavior_change === true,
@@ -2137,28 +2175,7 @@ export function globalScribingDebt(root) {
 
   const bestStampMs = (feature) => {
     if (stampCache.has(feature)) return stampCache.get(feature);
-    let best = null;
-    for (const entry of ledger) {
-      if (!entry || entry.feature !== feature) continue;
-      const parsed = Date.parse(entry.ts);
-      if (Number.isFinite(parsed) && (best === null || parsed > best)) best = parsed;
-    }
-    const lane = readLane(root, feature);
-    const laneStamp = lane ? scribingRunStampMs(lane.last_scribing_run) : null;
-    if (laneStamp !== null && (best === null || laneStamp > best)) best = laneStamp;
-    // si-3: honor the default record's last_scribing_run by ITS OWN feature
-    // attribution, never by whether that feature happens to be the currently
-    // active one. `state.feature === feature` was wrong in both directions:
-    // (a) it hid a properly-closed feature's own stamp the moment a new
-    // feature became active (live repro: cli-ergonomics stamped 04:02:40,
-    // after its own caps, yet counted orphaned because scribing-integrity had
-    // since become active), and (b) it would have let an unrelated OLDER
-    // feature's stamp wrongly clear the active feature's cells, since the
-    // stamp's own `feature` field was never checked at all.
-    if (state.last_scribing_run && state.last_scribing_run.feature === feature) {
-      const defaultStamp = scribingRunStampMs(state.last_scribing_run);
-      if (defaultStamp !== null && (best === null || defaultStamp > best)) best = defaultStamp;
-    }
+    const best = bestScribingStampMs(root, feature, { ledger, state });
     stampCache.set(feature, best);
     return best;
   };
