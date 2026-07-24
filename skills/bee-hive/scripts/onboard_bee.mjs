@@ -2613,6 +2613,7 @@ function computePlan(
   }
 
   // 3. vendored helpers + lib (copy when missing or drifted)
+  const onboarding = readJsonIfExists(path.join(repoRoot, ".bee", "onboarding.json"));
   for (const name of listTemplateHelpers()) {
     const source = fs.readFileSync(path.join(TEMPLATES_DIR, name), "utf8");
     const target = path.join(repoRoot, ".bee", "bin", name);
@@ -2628,11 +2629,29 @@ function computePlan(
       plan.push({ action: "remove_helper", path: `.bee/bin/${name}` });
     }
   }
-  for (const name of listTemplateLibModules()) {
+  const currentLibNames = new Set(listTemplateLibModules());
+  for (const name of currentLibNames) {
     const source = fs.readFileSync(path.join(TEMPLATES_LIB_DIR, name), "utf8");
     const target = path.join(repoRoot, ".bee", "bin", "lib", name);
     if (readTextIfExists(target) !== source) {
       plan.push({ action: "copy_lib", path: `.bee/bin/lib/${name}` });
+    }
+  }
+  // 3c. retired lib modules (mirrors 3a, but self-derived instead of a hand
+  // list): a lib module the recorded ledger's managed.lib still names, but the
+  // current source templates/lib no longer has, is an orphan on every host
+  // that installed it before the removal. computeRuntimeDrift (bee.mjs)
+  // already flags such a file as "(extra)" forever, because nothing before
+  // this removed it - copy_lib only ever adds/updates names the source still
+  // has. Deriving from the ledger diff (not a RETIRED_HELPERS-style allowlist)
+  // means a future lib retirement never needs its own entry here.
+  const previousLibNames =
+    onboarding && onboarding.managed && onboarding.managed.lib
+      ? Object.keys(onboarding.managed.lib)
+      : [];
+  for (const name of previousLibNames) {
+    if (!currentLibNames.has(name) && fs.existsSync(path.join(repoRoot, ".bee", "bin", "lib", name))) {
+      plan.push({ action: "remove_lib", path: `.bee/bin/lib/${name}` });
     }
   }
 
@@ -2774,7 +2793,7 @@ function computePlan(
   const statusline = statuslineOptIn(repoRoot);
   const desiredManaged = buildManagedVersions(
     renderedBlock, renderedGitignoreBlock, repoHooks, statusline, codexHybrid);
-  const onboarding = readJsonIfExists(path.join(repoRoot, ".bee", "onboarding.json"));
+  // onboarding already read in section 3, above, and reused here.
   const onboardingCurrent =
     onboarding &&
     onboarding.schema_version === ONBOARDING_SCHEMA_VERSION &&
@@ -3124,6 +3143,15 @@ function applyPlan(
       case "copy_lib": {
         const name = path.basename(item.path);
         writeFileAtomic(target, fs.readFileSync(path.join(TEMPLATES_LIB_DIR, name), "utf8"));
+        break;
+      }
+      case "remove_lib": {
+        // Same exact-path safety as remove_helper: item.path is always
+        // .bee/bin/lib/<name>, derived from the ledger diff in section 3c
+        // above, never host/user-supplied.
+        if (path.dirname(item.path) === ".bee/bin/lib") {
+          fs.rmSync(target, { force: true });
+        }
         break;
       }
       case "copy_repo_hook": {

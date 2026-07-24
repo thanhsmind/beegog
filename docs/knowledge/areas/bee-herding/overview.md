@@ -8,8 +8,8 @@ bee:
   lifecycle: active
   areas: [bee-herding]
   required_context: [areas/worktree-parallelism/overview.md]
-  decisions: [herding-adopt D1 (rename mandatory), herding-adopt D7 (posture split), herding-adopt D10 (dispatch interlock), herding-adopt D11 (merge is a gesture), herding-adopt D12 (supervised acceptance cycle)]
-  sources: ["PR #50 (external contribution, vantt — the design)", "herding-adopt cells h-2, h-3 (adoption: rename, hardening, merge demotion, interlock, shipping switch; traces in `.bee/cells/`, 2026-07-23)", docs/history/herding-adopt/CONTEXT.md, docs/history/herding-adopt/reports/advisor-digest.md]
+  decisions: [herding-adopt D1 (rename mandatory), herding-adopt D7 (posture split), herding-adopt D10 (dispatch interlock), herding-adopt D11 (merge is a gesture), herding-adopt D12 (supervised acceptance cycle), "herding-dispatch-lock-toggle D1-D3 (bee herding enable/disable/status CLI verb group, byte-identical to the manual marker gesture)", "herding-dispatch-lock-toggle D4 (CLI verbs stay owner-typed only, never called by bee automation)", herding-dispatch-lock-toggle D5 (no runtime guard added — explicit user decision)]
+  sources: ["PR #50 (external contribution, vantt — the design)", "herding-adopt cells h-2, h-3 (adoption: rename, hardening, merge demotion, interlock, shipping switch; traces in `.bee/cells/`, 2026-07-23)", docs/history/herding-adopt/CONTEXT.md, docs/history/herding-adopt/reports/advisor-digest.md, docs/history/herding-dispatch-lock-toggle/CONTEXT.md, "hdlt-1 (cell: bee herding enable/disable/status CLI verb group; trace in .bee/cells/hdlt-1.json, 2026-07-23)"]
   authoritative_for: "bee-herding: the three-role cockpit, its safety boundaries, and adoption"
 ---
 
@@ -36,7 +36,10 @@ isolated copy — is what runs unattended.**
 - **Working agent** — a session started in its own isolated worktree to do one unit of work. Up to
   four run at once.
 - **Enable marker** — an owner-created file. Without it, dispatch selects nothing. It is the switch
-  that arms the loop, and only the human sets it.
+  that arms the loop, and only the human sets it — by hand (`touch`/`rm` the marker file) or through
+  the equivalent `bee herding enable`/`disable`/`status` CLI verbs, which perform the identical file
+  operation (same path, same resolution logic as the interlock) and exist purely as a human-typed
+  convenience: no bee automation ever calls them.
 - **Stop gesture** — an owner-created file that halts the control loops at the next iteration
   boundary. It does **not** halt working agents already running.
 - **Dispatchable** — a backlog item that is ready, unclaimed, has no worktree yet, and passes the
@@ -79,7 +82,8 @@ turn ceiling — iterations were bounded in the original design, spend was not.
 ## Actors & Access
 
 - **The owner** performs three acts and only three: bootstrap once, set the enable marker to arm
-  dispatch, and run the merge gesture to land finished work. Everything else is the cockpit's.
+  dispatch (by hand or via `bee herding enable`/`disable`), and run the merge gesture to land
+  finished work. Everything else is the cockpit's.
 - **The dispatch controller** reads state and the backlog and starts working agents; it is confined
   to an enumerated command surface, because a cold model re-invoked ~1,440 times a day will
   eventually improvise if left unconstrained.
@@ -112,6 +116,13 @@ turn ceiling — iterations were bounded in the original design, spend was not.
 - R7 — **Adoption is not complete until one supervised end-to-end cycle has run** (D12). Every
   hardened defect was found by running things; the assembled system's first real run is a watched
   acceptance cycle the owner performs, not a headless claim.
+- R8 — **The enable marker has two equivalent human-typed forms, never an automated one**
+  (herding-dispatch-lock-toggle D1-D5). `bee herding enable`/`disable`/`status` perform byte-identical
+  operations to the manual `touch`/`rm` gesture — same file, same resolution logic as the interlock —
+  and deliberately carry no runtime guard (no TTY check, not hidden from `bee --help --json`): an
+  explicit, considered trade-off that keeps the safety property exactly where R3 already put it
+  (convention, not enforcement) rather than adding a new one. No bee automation, skill, or agent code
+  ever calls these verbs itself.
 
 ## Edge Cases Settled
 
@@ -141,6 +152,9 @@ turn ceiling — iterations were bounded in the original design, spend was not.
 - The skill and its three roles: `skills/bee-herding/SKILL.md`; the loop driver
   `scripts/control-loop.sh`; the one-shot `scripts/bootstrap-cockpit.sh`; the owner interlock
   `scripts/dispatch-interlock.mjs`; the work classifier `scripts/classify-lane.mjs`.
+- The CLI-verb equivalent of the manual marker gesture: `skills/bee-hive/templates/lib/herding.mjs`,
+  wired into `skills/bee-hive/templates/bee.mjs` as the `herding` command group. Test coverage:
+  `skills/bee-hive/templates/tests/test_herding_cli.mjs`.
 - Regression coverage: `skills/bee-hive/templates/tests/test_herding.mjs`.
 - The isolation the working agents depend on is `worktree-parallelism`; the guarded landing is that
   area's merge gate.

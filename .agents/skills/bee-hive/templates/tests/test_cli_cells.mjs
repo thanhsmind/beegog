@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runModuleWorker } from '../../../../scripts/lib/run-module-worker.mjs';
 import {
@@ -37,6 +38,7 @@ import * as laneStore from '../lib/state.mjs';
 import * as laneBinding from '../lib/claims.mjs';
 import { writeJsonAtomic } from '../lib/fsutil.mjs';
 import { KIND_ALIASES, NORMALIZED_KINDS, buildDigest } from '../lib/feedback.mjs';
+import { readBacklogCounts } from '../lib/backlog.mjs';
 
 const root = makeTempRepo();
 
@@ -607,6 +609,33 @@ function runBeeBacklog(cwd, args) {
 // weakened.
 const PIN = '2020-01-01T00:00:00.000Z';
 
+// A REAL git repo (git init, not the synthetic `.git`-less makeStateRepo
+// scaffold) — commitBacklogRow's --queue-submit path runs `git rev-parse
+// --is-inside-work-tree` / `--git-dir` and a scoped `git add`/`git commit`,
+// none of which succeed against a bare mkdir. Same shape as
+// test_herding_cli.mjs's makeHerdingRepo.
+function git(cwd, args) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  assert(r.status === 0, `git ${args.join(' ')} (cwd=${cwd}) failed: ${r.stderr}`);
+  return r.stdout;
+}
+
+function makeGitBacklogRepo(prefix) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  git(root, ['init', '-q', '-b', 'main']);
+  git(root, ['config', 'user.email', 's@e']);
+  git(root, ['config', 'user.name', 's']);
+  fs.writeFileSync(path.join(root, 'f'), 'x');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-q', '-m', 'init']);
+  fs.mkdirSync(path.join(root, '.bee'), { recursive: true });
+  writeJsonAtomic(path.join(root, '.bee', 'onboarding.json'), {
+    schema_version: '1.0',
+    bee_version: '0.1.0',
+  });
+  return fs.realpathSync(root);
+}
+
 function readBacklogJsonlLines(repoRoot) {
   const file = path.join(repoRoot, '.bee', 'backlog.jsonl');
   if (!fs.existsSync(file)) return [];
@@ -764,6 +793,299 @@ await check('bee.mjs backlog add accepts an arbitrary free-string --layer with n
   }
 });
 
+// ─── backlog-auto-commit-2 (D1/D2): --queue-submit scopes commitBacklogRow's
+// auto-commit to explicit human queue-submits, and a merge-in-progress skip
+// is surfaced instead of silent. Real git-repo fixtures (makeGitBacklogRepo)
+// — commitBacklogRow's git calls are no-ops against the synthetic
+// makeStateRepo scaffold used by every test above this block. ──────────────
+
+await check('bee.mjs backlog add with --queue-submit omitted never invokes git and returns committed:false with no commit created', async () => {
+  const dir = makeGitBacklogRepo('bee-backlog-add-noqueue-');
+  try {
+    const before = git(dir, ['rev-parse', 'HEAD']).trim();
+    const result = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'agent self-observation row',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--json',
+    ]);
+    assert(result.status === 0, `add should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(row.committed === false, `expected committed:false with --queue-submit omitted, got ${JSON.stringify(row)}`);
+    assert(!('commit_sha' in row), `no commit_sha when uncommitted, got ${JSON.stringify(row)}`);
+    assert(!('commit_skipped_reason' in row), `no commit_skipped_reason for the default-false path, got ${JSON.stringify(row)}`);
+    const after = git(dir, ['rev-parse', 'HEAD']).trim();
+    assert(before === after, 'HEAD unchanged — no commit was created');
+    const lines = readBacklogJsonlLines(dir);
+    assert(lines.length === 1, `row still appended to the jsonl despite no commit, got ${lines.length}`);
+
+    const explicitFalse = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'second self-observation row',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--queue-submit=false',
+      '--json',
+    ]);
+    assert(explicitFalse.status === 0, `add should succeed, got ${explicitFalse.status}: ${explicitFalse.stderr}`);
+    const explicitRow = JSON.parse(explicitFalse.stdout);
+    assert(explicitRow.committed === false, `explicit --queue-submit=false also skips the commit, got ${JSON.stringify(explicitRow)}`);
+    const afterExplicit = git(dir, ['rev-parse', 'HEAD']).trim();
+    assert(before === afterExplicit, 'HEAD still unchanged after an explicit --queue-submit=false add');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog add --queue-submit performs the scoped commit, returns committed:true + commit_sha, touching only .bee/backlog.jsonl', async () => {
+  const dir = makeGitBacklogRepo('bee-backlog-add-queue-');
+  try {
+    const result = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'human queue-submitted row',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--queue-submit',
+      '--json',
+    ]);
+    assert(result.status === 0, `add should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(row.committed === true, `expected committed:true with --queue-submit, got ${JSON.stringify(row)}`);
+    assert(typeof row.commit_sha === 'string' && row.commit_sha.length > 0, `expected a commit_sha, got ${JSON.stringify(row)}`);
+
+    const headSha = git(dir, ['rev-parse', 'HEAD']).trim();
+    assert(headSha === row.commit_sha, `HEAD advanced to the returned commit_sha, got HEAD=${headSha} vs ${row.commit_sha}`);
+    const changedFiles = git(dir, ['show', '--name-only', '--pretty=format:', 'HEAD'])
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    assert(
+      changedFiles.length === 1 && changedFiles[0] === path.join('.bee', 'backlog.jsonl'),
+      `commit touches only .bee/backlog.jsonl, got ${JSON.stringify(changedFiles)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog add --queue-submit with a merge in progress returns commit_skipped_reason:"merge_in_progress" and the text output carries the warning suffix, without committing', async () => {
+  const dir = makeGitBacklogRepo('bee-backlog-add-mergeskip-');
+  try {
+    const gitDir = git(dir, ['rev-parse', '--git-dir']).trim();
+    const mergeHeadPath = path.resolve(dir, gitDir, 'MERGE_HEAD');
+    const headSha = git(dir, ['rev-parse', 'HEAD']).trim();
+    fs.writeFileSync(mergeHeadPath, `${headSha}\n`, 'utf8');
+
+    const jsonResult = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'row during an in-progress merge',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--queue-submit',
+      '--json',
+    ]);
+    assert(jsonResult.status === 0, `add should succeed (the row still appends), got ${jsonResult.status}: ${jsonResult.stderr}`);
+    const row = JSON.parse(jsonResult.stdout);
+    assert(row.committed === false, `expected committed:false during a merge, got ${JSON.stringify(row)}`);
+    assert(
+      row.commit_skipped_reason === 'merge_in_progress',
+      `expected commit_skipped_reason:"merge_in_progress", got ${JSON.stringify(row)}`,
+    );
+    assert(!('commit_sha' in row), `no commit_sha when the commit was skipped, got ${JSON.stringify(row)}`);
+
+    const textResult = await runBeeBacklog(dir, [
+      'add',
+      '--type',
+      'friction',
+      '--title',
+      'a second row during the same merge',
+      '--severity',
+      'P2',
+      '--layer',
+      'state',
+      '--queue-submit',
+    ]);
+    assert(textResult.status === 0, `add should succeed, got ${textResult.status}: ${textResult.stderr}`);
+    assert(
+      /auto-commit skipped: merge in progress/.test(textResult.stdout),
+      `text output names the merge-in-progress skip, got stdout="${textResult.stdout}"`,
+    );
+
+    const headAfter = git(dir, ['rev-parse', 'HEAD']).trim();
+    assert(headAfter === headSha, 'HEAD unchanged — no commit was attempted while MERGE_HEAD was present');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── bee.mjs backlog propose verb (backlog-submit-command D1/D2/D3/D5) ─────
+// The human-facing submit verb, distinct from `add` above (which appends a
+// friction/proposal row to the feedback queue). Since backlog-unification D3
+// propose writes the SAME .bee/backlog.jsonl stream as `backlog pbi add` —
+// one kind:'pbi' add event with a generated id — and NOT docs/backlog.md,
+// which is now the generated view (`backlog render`). Reuses the
+// makeStateRepo/runBeeBacklog scaffold; readBacklogCounts reads the fold.
+
+function makeBacklogFoldRepo(prefix) {
+  return makeStateRepo(prefix);
+}
+
+await check('bee.mjs backlog propose on a fresh repo mints a p-<8hex> id, defaults --feature to "—", and is immediately counted by readBacklogCounts as proposed', async () => {
+  const dir = makeBacklogFoldRepo('bee-backlog-propose-fresh-');
+  try {
+    const result = await runBeeBacklog(dir, ['propose', '--story', 'A human can submit an item', '--cos', 'a row appears', '--json']);
+    assert(result.status === 0, `propose should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(/^p-[0-9a-f]{8}$/.test(row.id), `expected a generated p-<8hex> id, got ${row.id}`);
+    assert(row.feature === '—', `feature defaults to "—" when --feature is omitted, got ${row.feature}`);
+
+    const counts = readBacklogCounts(dir);
+    assert(counts.proposed === 1 && counts.total === 1, `readBacklogCounts immediately sees the new item as proposed, got ${JSON.stringify(counts)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose lands in the SAME fold as backlog pbi add — one shared stream, never a second store', async () => {
+  const dir = makeBacklogFoldRepo('bee-backlog-propose-shared-');
+  try {
+    const added = await runBeeBacklog(dir, ['pbi', 'add', '--title', 'via pbi add', '--json']);
+    assert(added.status === 0, `pbi add should succeed, got ${added.status}: ${added.stderr}`);
+    const proposed = await runBeeBacklog(dir, ['propose', '--story', 'via propose', '--cos', 'shared stream', '--json']);
+    assert(proposed.status === 0, `propose should succeed, got ${proposed.status}: ${proposed.stderr}`);
+
+    const listed = await runBeeBacklog(dir, ['pbi', 'list', '--json']);
+    assert(listed.status === 0, `pbi list should succeed, got ${listed.status}: ${listed.stderr}`);
+    const items = JSON.parse(listed.stdout);
+    const viaPropose = items.find((item) => item.id === JSON.parse(proposed.stdout).id);
+    assert(viaPropose, `the proposed item must be visible through pbi list, got ${listed.stdout}`);
+    assert(viaPropose.status === 'proposed', `propose always writes status=proposed, got ${JSON.stringify(viaPropose)}`);
+    assert(viaPropose.title === 'via propose', `--story is stored as the PBI title, got ${JSON.stringify(viaPropose)}`);
+    assert(items.some((item) => item.id === JSON.parse(added.stdout).id), 'the pbi-add item is still in the same fold');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose rejects an oversize/missing/whitespace-only --story or --cos, leaving the backlog log byte-untouched', async () => {
+  const dir = makeBacklogFoldRepo('bee-backlog-propose-badfields-');
+  const log = path.join(dir, '.bee', 'backlog.jsonl');
+  try {
+    // Seed one real event so "byte-untouched" is a claim about existing
+    // content, not about a file that never existed.
+    const seeded = await runBeeBacklog(dir, ['propose', '--story', 'seed', '--cos', 'seed cos', '--json']);
+    assert(seeded.status === 0, `seeding propose should succeed, got ${seeded.status}: ${seeded.stderr}`);
+    const before = fs.readFileSync(log, 'utf8');
+
+    const longStory = 's'.repeat(201);
+    const badStory = await runBeeBacklog(dir, ['propose', '--story', longStory, '--cos', 'ok']);
+    assert(badStory.status !== 0, 'a story over 200 chars is rejected');
+
+    const longCos = 'c'.repeat(2001);
+    const badCos = await runBeeBacklog(dir, ['propose', '--story', 'ok', '--cos', longCos]);
+    assert(badCos.status !== 0, 'a cos over 2000 chars is rejected');
+
+    const missingStory = await runBeeBacklog(dir, ['propose', '--cos', 'ok']);
+    assert(missingStory.status !== 0, 'a missing --story is rejected');
+
+    const missingCos = await runBeeBacklog(dir, ['propose', '--story', 'ok']);
+    assert(missingCos.status !== 0, 'a missing --cos is rejected');
+
+    const blankStory = await runBeeBacklog(dir, ['propose', '--story', '   ', '--cos', 'ok']);
+    assert(blankStory.status !== 0, 'a whitespace-only --story is rejected');
+
+    const blankCos = await runBeeBacklog(dir, ['propose', '--story', 'ok', '--cos', '   ']);
+    assert(blankCos.status !== 0, 'a whitespace-only --cos is rejected');
+
+    const after = fs.readFileSync(log, 'utf8');
+    assert(before === after, 'every rejected propose left .bee/backlog.jsonl byte-for-byte untouched');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose called twice in succession never collides — each call mints its own id', async () => {
+  const dir = makeBacklogFoldRepo('bee-backlog-propose-twice-');
+  try {
+    const first = await runBeeBacklog(dir, ['propose', '--story', 'first', '--cos', 'first cos', '--json']);
+    assert(first.status === 0, `first propose should succeed, got ${first.status}: ${first.stderr}`);
+    const firstRow = JSON.parse(first.stdout);
+
+    const second = await runBeeBacklog(dir, ['propose', '--story', 'second', '--cos', 'second cos', '--json']);
+    assert(second.status === 0, `second propose should succeed, got ${second.status}: ${second.stderr}`);
+    const secondRow = JSON.parse(second.stdout);
+
+    assert(firstRow.id !== secondRow.id, `two successive proposals must never collide, got ${firstRow.id} and ${secondRow.id}`);
+
+    const counts = readBacklogCounts(dir);
+    assert(counts.proposed === 2 && counts.total === 2, `both items counted, got ${JSON.stringify(counts)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose keeps a "|" and an embedded newline intact — the fold is JSONL, so no table-cell mangling is needed or done', async () => {
+  const dir = makeBacklogFoldRepo('bee-backlog-propose-rawtext-');
+  try {
+    const result = await runBeeBacklog(dir, ['propose', '--story', 'A|B\nC', '--cos', 'has a | pipe too', '--json']);
+    assert(result.status === 0, `propose should succeed, got ${result.status}: ${result.stderr}`);
+    const row = JSON.parse(result.stdout);
+    assert(row.story === 'A|B\nC', `the story round-trips verbatim through the fold, got ${JSON.stringify(row.story)}`);
+
+    // One event per line is the JSONL contract: an embedded newline must be
+    // escaped by the writer, never allowed to split the record across lines.
+    const lines = fs.readFileSync(path.join(dir, '.bee', 'backlog.jsonl'), 'utf8').split('\n').filter(Boolean);
+    assert(lines.length === 1, `an embedded newline must not split the record, got ${lines.length} lines`);
+    assert(JSON.parse(lines[0]).title === 'A|B\nC', 'the stored event parses back to the verbatim story');
+
+    const counts = readBacklogCounts(dir);
+    assert(counts.proposed === 1 && counts.total === 1, `the item stays countable, got ${JSON.stringify(counts)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await check('bee.mjs backlog propose records a given --feature and confirms with a one-line text summary naming the id', async () => {
+  const dir = makeBacklogFoldRepo('bee-backlog-propose-feature-');
+  try {
+    const withFeature = await runBeeBacklog(dir, ['propose', '--story', 'x', '--cos', 'y', '--feature', 'my-feature', '--json']);
+    assert(withFeature.status === 0, `propose should succeed, got ${withFeature.status}: ${withFeature.stderr}`);
+    assert(JSON.parse(withFeature.stdout).feature === 'my-feature', 'a given --feature is carried through, not overridden by the "—" default');
+
+    const textResult = await runBeeBacklog(dir, ['propose', '--story', 'raw check', '--cos', 'raw cos']);
+    assert(textResult.status === 0, `propose should succeed, got ${textResult.status}: ${textResult.stderr}`);
+    assert(/^Proposed p-[0-9a-f]{8}: /.test(textResult.stdout), `text confirmation names the assigned id, got stdout="${textResult.stdout}"`);
+
+    const listed = await runBeeBacklog(dir, ['pbi', 'list', '--json']);
+    const stored = JSON.parse(listed.stdout).find((item) => item.title === 'raw check');
+    assert(stored && stored.status === 'proposed', `the stored event carries status=proposed, got ${listed.stdout}`);
+    assert(stored.cos === 'raw cos', `the stored event carries the acceptance criteria, got ${JSON.stringify(stored)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await check('bee.mjs backlog counts/rank/badges verbs are unchanged by the add verb addition', async () => {
   const dir = makeStateRepo('bee-backlog-counts-');
   try {
@@ -785,15 +1107,19 @@ await check('bee.mjs backlog counts/rank/badges verbs are unchanged by the add v
   }
 });
 
-await check('bee.mjs backlog with no command prints a Use: line listing all four verbs and exits non-zero', async () => {
+await check('bee.mjs backlog with no command prints a Use: line listing all five verbs and exits non-zero', async () => {
   const dir = makeStateRepo('bee-backlog-noverb-');
   try {
     const result = await runBeeBacklog(dir, []);
     assert(result.status !== 0, 'no-command invocation exits non-zero');
     assert(/Use:/.test(result.stderr), `expected a "Use:" line, got stderr="${result.stderr}"`);
     assert(
-      /counts/.test(result.stderr) && /rank/.test(result.stderr) && /badges/.test(result.stderr) && /add/.test(result.stderr),
-      `Use: line should list all four verbs, got ${result.stderr}`,
+      /counts/.test(result.stderr) &&
+        /rank/.test(result.stderr) &&
+        /badges/.test(result.stderr) &&
+        /add/.test(result.stderr) &&
+        /propose/.test(result.stderr),
+      `Use: line should list all five verbs, got ${result.stderr}`,
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

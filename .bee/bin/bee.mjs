@@ -127,6 +127,7 @@ import { findForeignHolds, releaseHolds, sweepExpiredHolds, withHoldsLock, inser
 // maxAttempts override is ever passed here.
 import { withStoreLock } from './lib/lock.mjs';
 import { writeGrant, removeGrant, listGrants, bootstrapWorktreeStore, createFeatureWorktree, mergeFeatureWorktree } from './lib/worktree-store.mjs';
+import { enableHerding, disableHerding, herdingStatus } from './lib/herding.mjs';
 import { prepareDispatch } from './lib/dispatch-prepare.mjs';
 import {
   classifyNativeTransport,
@@ -2547,6 +2548,11 @@ function handleStateCompactCapsule(root, flags) {
 const BACKLOG_SEVERITIES = ['P1', 'P2', 'P3'];
 const BACKLOG_MAX_TITLE = 200;
 const BACKLOG_MAX_LAYER = 40;
+// `propose` targets docs/backlog.md's own Story/CoS cells (PD1), a
+// different table than `add`'s .bee/backlog.jsonl title/layer above —
+// BACKLOG_MAX_STORY mirrors BACKLOG_MAX_TITLE's convention on purpose.
+const BACKLOG_MAX_STORY = 200;
+const BACKLOG_MAX_COS = 2000;
 
 function backlogAllowedTypes() {
   return [...new Set([...Object.keys(KIND_ALIASES), ...NORMALIZED_KINDS])].sort();
@@ -2588,6 +2594,78 @@ function handleBacklogBadges(root, flags) {
   return { result: badges, text: `${verb}: ${badges.badges}` };
 }
 
+const BACKLOG_COMMIT_SUBJECT_MAX = 72;
+
+/** Runs a git subcommand scoped to `root` — same spawnSync('git', args, {
+ * cwd, encoding: 'utf8' }) shape as lib/worktree-store.mjs's runGit and
+ * lib/reviews.mjs's defaultRunGit, kept local here since bee.mjs's own
+ * handleBacklogAdd is the only caller. */
+function runBacklogGit(root, args) {
+  return spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+}
+
+/** Commits the just-appended backlog row on its own, scoped to ONLY
+ * .bee/backlog.jsonl — never `git add -A` / a plain `git commit` — so any
+ * other staged or unstaged change in the tree is left untouched. Degrades
+ * to {committed:false, sha:null} without throwing on every failure path
+ * (no .git, spawn error, non-zero exit): appendJsonl already succeeded by
+ * the time this runs, and that success must never be rolled back or turned
+ * into a command failure — this is what keeps the no-.git tmpdir fixture in
+ * test_bee_cli.mjs's backlog.add example passing unchanged.
+ *
+ * Gated on `queueSubmit` (D1): a human queue-submit row (`--queue-submit`)
+ * is the only case that attempts a commit at all — an agent's own
+ * self-observation row (friction/debt/finding about its own session) is
+ * appended by appendJsonl but never committed, so the flag stays false and
+ * this returns immediately without invoking git. When queueSubmit is true,
+ * a merge in progress is detected up front (D2) by resolving the REAL
+ * git-dir via `git rev-parse --git-dir` — never a hardcoded .git/MERGE_HEAD,
+ * since linked worktrees point .git elsewhere — and checking for a
+ * MERGE_HEAD file there before attempting the scoped commit. */
+function commitBacklogRow(root, line, queueSubmit) {
+  if (!queueSubmit) {
+    return { committed: false, sha: null };
+  }
+
+  const inWorkTree = runBacklogGit(root, ['rev-parse', '--is-inside-work-tree']);
+  if (inWorkTree.error || inWorkTree.status !== 0 || (inWorkTree.stdout || '').trim() !== 'true') {
+    return { committed: false, sha: null };
+  }
+
+  const gitDirResult = runBacklogGit(root, ['rev-parse', '--git-dir']);
+  if (gitDirResult.error || gitDirResult.status !== 0 || !(gitDirResult.stdout || '').trim()) {
+    return { committed: false, sha: null };
+  }
+  const gitDir = path.resolve(root, gitDirResult.stdout.trim());
+  if (fs.existsSync(path.join(gitDir, 'MERGE_HEAD'))) {
+    return { committed: false, sha: null, commit_skipped_reason: 'merge_in_progress' };
+  }
+
+  const backlogPathspec = path.join('.bee', 'backlog.jsonl');
+  const addResult = runBacklogGit(root, ['add', '--', backlogPathspec]);
+  if (addResult.error || addResult.status !== 0) {
+    return { committed: false, sha: null };
+  }
+
+  const truncatedTitle =
+    line.title.length > BACKLOG_COMMIT_SUBJECT_MAX ? `${line.title.slice(0, BACKLOG_COMMIT_SUBJECT_MAX)}...` : line.title;
+  const bodyLines = [`type: ${line.type}`, `severity: ${line.severity}`, `layer: ${line.layer}`];
+  if (line.feature) bodyLines.push(`feature: ${line.feature}`);
+  if (line.detail) bodyLines.push(`detail: ${line.detail}`);
+  const message = `chore(backlog): ${truncatedTitle}\n\n${bodyLines.join('\n')}`;
+
+  const commitResult = runBacklogGit(root, ['commit', '-m', message, '--', backlogPathspec]);
+  if (commitResult.error || commitResult.status !== 0) {
+    return { committed: false, sha: null };
+  }
+
+  const shaResult = runBacklogGit(root, ['rev-parse', 'HEAD']);
+  if (shaResult.error || shaResult.status !== 0 || !(shaResult.stdout || '').trim()) {
+    return { committed: false, sha: null };
+  }
+  return { committed: true, sha: shaResult.stdout.trim() };
+}
+
 function handleBacklogAdd(root, flags) {
   // ce-1: every missing/invalid flag reported in ONE refusal (batch), via
   // requireFlags — type/severity enums enforced here (not by the generic
@@ -2612,6 +2690,7 @@ function handleBacklogAdd(root, flags) {
   }
   const detail = flags.detail !== undefined && flags.detail !== true ? String(flags.detail) : '';
   const feature = flags.feature !== undefined && flags.feature !== true ? String(flags.feature) : '';
+  const queueSubmit = flags['queue-submit'] === true;
   const line = {
     ts: new Date().toISOString(),
     type,
@@ -2622,7 +2701,55 @@ function handleBacklogAdd(root, flags) {
     feature,
   };
   appendJsonl(path.join(root, '.bee', 'backlog.jsonl'), line);
-  return { result: line, text: `Appended ${severity} ${type} row to .bee/backlog.jsonl: "${title}"` };
+  const { committed, sha, commit_skipped_reason: commitSkippedReason } = commitBacklogRow(root, line, queueSubmit);
+  const commitSuffix = committed
+    ? ` (committed ${sha.slice(0, 7)})`
+    : commitSkippedReason === 'merge_in_progress'
+      ? ' (auto-commit skipped: merge in progress)'
+      : '';
+  return {
+    result: {
+      ...line,
+      committed,
+      ...(committed ? { commit_sha: sha } : {}),
+      ...(commitSkippedReason ? { commit_skipped_reason: commitSkippedReason } : {}),
+    },
+    text: `Appended ${severity} ${type} row to .bee/backlog.jsonl: "${title}"${commitSuffix}`,
+  };
+}
+
+/** `backlog.propose` (backlog-submit-command D1/D2/D3/D5): the human-facing
+ * submit verb — a story + acceptance criteria, no id and no title ceremony.
+ * It targets the PBI layer, not the friction queue `add` above writes.
+ * Storage is the .bee/backlog.jsonl PBI fold, NOT docs/backlog.md: since
+ * backlog-unification D3 that table is a GENERATED view (`bee backlog
+ * render`), so appending a row to it would be erased by the next render and
+ * flagged as drift by `render --check` in between. propose is therefore a
+ * validating front door onto addPbi — the length caps and required-ness live
+ * here, before the single append, so any rejection leaves the log
+ * byte-untouched, matching `add`'s own convention. */
+function handleBacklogPropose(root, flags) {
+  const story = requireFlag(flags, 'story').trim();
+  if (!story) {
+    throw new Error('propose: --story is required (non-empty).');
+  }
+  if (story.length > BACKLOG_MAX_STORY) {
+    throw new Error(`propose: --story is ${story.length} chars, over the ${BACKLOG_MAX_STORY}-char limit. FIX: shorten the story.`);
+  }
+  const cos = requireFlag(flags, 'cos').trim();
+  if (!cos) {
+    throw new Error('propose: --cos is required (non-empty).');
+  }
+  if (cos.length > BACKLOG_MAX_COS) {
+    throw new Error(`propose: --cos is ${cos.length} chars, over the ${BACKLOG_MAX_COS}-char limit. FIX: shorten the cos.`);
+  }
+  const feature = flags.feature !== undefined && flags.feature !== true ? String(flags.feature) : '';
+  const item = addPbi(root, { title: story, cos, status: 'proposed', feature });
+  const row = { id: item.id, story: item.title, cos: item.cos || cos, feature: item.feature || '—' };
+  return {
+    result: row,
+    text: `Proposed ${row.id}: "${row.story}" (feature: ${row.feature})`,
+  };
 }
 
 // ─── backlog pbi / backlog render (backlog-unification D1-D5): the
@@ -3799,6 +3926,34 @@ async function handleWorktreeUnregister(root, flags) {
   // hardening-4b: removeGrant is now withStoreLock-wrapped (async).
   await removeGrant(mainStoreRoot, id);
   return { result: { ok: true, id, main_root: mainRoot }, text: `Removed worktree grant for id ${id}.` };
+}
+
+// ─── herding: enable/disable/status the dispatch loop's owner enable marker
+// (herding-dispatch-lock-toggle, decisions D1-D5). lib/herding.mjs owns the
+// filesystem operation and mirrors dispatch-interlock.mjs's own git-common-dir
+// resolution and ENABLE_BASENAME exactly, so this group and the read-only
+// interlock always agree on the same file. D4: these verbs are a convenience
+// for the human owner's own terminal action only — never called from
+// dispatch-interlock.mjs, bootstrap, dispatch, merge, or any other bee
+// automation/skill/agent code. D5: no runtime guard (no TTY check, not
+// excluded from --help --json) — convention-only safety, same level as
+// today's manual touch/rm. ──────────────────────────────────────────────────
+function handleHerdingEnable(_root, _flags) {
+  const result = enableHerding();
+  return { result, text: `Enabled bee-herding dispatch: ${result.marker}` };
+}
+
+function handleHerdingDisable(_root, _flags) {
+  const result = disableHerding();
+  return { result, text: `Disabled bee-herding dispatch: ${result.marker}` };
+}
+
+function handleHerdingStatus(_root, _flags) {
+  const result = herdingStatus();
+  const text = result.enabled
+    ? `enabled — owner marker present (${result.marker})`
+    : `disabled — no owner marker at ${result.marker}`;
+  return { result, text };
 }
 
 // ─── tmp sweep (tree-hygiene th-4, CONTEXT D1/D2) ──────────────────────────
@@ -5070,7 +5225,7 @@ function backlogUsageFallback(leading) {
     const sub = leading[2];
     return `Unknown pbi action "${sub || '(missing)'}". Use: add, status, amend, list.`;
   }
-  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add, pbi, render.`;
+  return `Unknown command "${verb || '(missing)'}". Use: counts, rank, badges, add, propose, pbi, render.`;
 }
 
 function captureUsageFallback(leading) {
@@ -5118,6 +5273,11 @@ function configUsageFallback(leading) {
 function worktreeUsageFallback(leading) {
   const verb = leading[1];
   return `Unknown command "${verb || '(missing)'}". Use: register, list, unregister, new, merge.`;
+}
+
+function herdingUsageFallback(leading) {
+  const verb = leading[1];
+  return `Unknown command "${verb || '(missing)'}". Use: enable, disable, status.`;
 }
 
 function dispatchUsageFallback(leading) {
@@ -5173,6 +5333,7 @@ const GROUP_USAGE_FALLBACKS = {
   feedback: feedbackUsageFallback,
   perf: perfUsageFallback,
   worktree: worktreeUsageFallback,
+  herding: herdingUsageFallback,
   config: configUsageFallback,
   dispatch: dispatchUsageFallback,
   recovery: recoveryUsageFallback,
@@ -5239,6 +5400,7 @@ const HANDLERS = {
   'backlog.rank': handleBacklogRank,
   'backlog.badges': handleBacklogBadges,
   'backlog.add': handleBacklogAdd,
+  'backlog.propose': handleBacklogPropose,
   'backlog.pbi.add': handleBacklogPbiAdd,
   'backlog.pbi.status': handleBacklogPbiStatus,
   'backlog.pbi.amend': handleBacklogPbiAmend,
@@ -5280,6 +5442,9 @@ const HANDLERS = {
   'worktree.unregister': handleWorktreeUnregister,
   'worktree.new': handleWorktreeNew,
   'worktree.merge': handleWorktreeMerge,
+  'herding.enable': handleHerdingEnable,
+  'herding.disable': handleHerdingDisable,
+  'herding.status': handleHerdingStatus,
   'tmp.sweep': handleTmpSweep,
   'config.get': handleConfigGet,
   'config.set': handleConfigSet,
@@ -5310,7 +5475,7 @@ const HANDLERS = {
 // state.set/gate/scribing-run/session.bind, so the two never collide here.
 // `cleanup` (worktree-session-routing wsr-2, GH #21, decision D8b) is
 // `worktree merge`'s flag-alone opt-in for post-merge worktree removal.
-export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict']);
+export const FLAG_ALONE_BOOLEANS = new Set(['json', 'stdin', 'behavior-change', 'evidence-stdin', 'active-only', 'dry-run', 'write', 'as-lane', 'waive-scribing-debt', 'html', 'string', 'cleanup', 'force-ownership', 'local', 'all', 'untagged', 'check', 'with-companion', 'lanes-full', 'strict', 'queue-submit']);
 
 export function splitCommandTokens(argv) {
   const leading = [];

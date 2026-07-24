@@ -4223,6 +4223,76 @@ const RETIRED_HELPER_NAMES = [
   }
 }
 
+// --- retired lib module removal (self-derived from the ledger diff) --------
+// A lib module the recorded ledger's managed.lib still names, but current
+// source templates/lib no longer has, is an orphan on every host that
+// installed it before the removal: copy_lib only ever adds/updates names the
+// source still has, so nothing before this removed the stale file, and
+// computeRuntimeDrift (bee.mjs) flags it as "(extra)" forever. Unlike
+// RETIRED_HELPERS (a hand-maintained allowlist), this removal is derived from
+// the ledger diff itself - no future lib retirement needs its own entry here.
+{
+  const libTmp = fs.mkdtempSync(path.join(os.tmpdir(), "bee-onboard-stale-lib-"));
+  const libHome = makeFakeHome();
+  try {
+    const firstApply = await runOnboard(["--repo-root", libTmp, "--apply", "--json"], libHome);
+    check(firstApply.payload?.status === "applied", "stale lib: initial onboard applies", firstApply.stderr);
+
+    // Simulate a host onboarded while a since-removed lib module still shipped:
+    // the ledger records it (arbitrary hash - only presence-as-a-key matters)
+    // and the installed copy sits on disk, exactly as copy_lib would have left
+    // it before the module was retired from source.
+    const onboardingPath = path.join(libTmp, ".bee", "onboarding.json");
+    const onboarding = JSON.parse(fs.readFileSync(onboardingPath, "utf8"));
+    onboarding.managed.lib["zz-test-retired-lib.mjs"] = "0".repeat(64);
+    fs.writeFileSync(onboardingPath, `${JSON.stringify(onboarding, null, 2)}\n`, "utf8");
+    fs.writeFileSync(
+      path.join(libTmp, ".bee", "bin", "lib", "zz-test-retired-lib.mjs"),
+      "// orphaned lib module\n",
+      "utf8",
+    );
+
+    const stalePlan = await runOnboard(["--repo-root", libTmp, "--json"], libHome);
+    const removeLibItems = (stalePlan.payload?.plan || []).filter((i) => i.action === "remove_lib");
+    check(
+      JSON.stringify(removeLibItems.map((i) => i.path)) ===
+        JSON.stringify([".bee/bin/lib/zz-test-retired-lib.mjs"]),
+      "stale lib: plan lists a remove_lib item for the orphaned module only",
+      JSON.stringify(removeLibItems),
+    );
+    check(
+      fs.existsSync(path.join(libTmp, ".bee", "bin", "lib", "zz-test-retired-lib.mjs")),
+      "stale lib: plan mode writes nothing (orphan still on disk before apply)",
+    );
+
+    const staleApply = await runOnboard(["--repo-root", libTmp, "--apply", "--json"], libHome);
+    check(staleApply.payload?.status === "applied", "stale lib: apply succeeds", staleApply.stderr);
+    check(
+      !fs.existsSync(path.join(libTmp, ".bee", "bin", "lib", "zz-test-retired-lib.mjs")),
+      "stale lib: orphaned module deleted from .bee/bin/lib on --apply",
+    );
+    const survivingLibNames = listMjs(path.join(libTmp, ".bee", "bin", "lib"));
+    check(
+      survivingLibNames.length > 0 && !survivingLibNames.includes("zz-test-retired-lib.mjs"),
+      "stale lib: current lib modules survive the removal pass untouched",
+      JSON.stringify(survivingLibNames),
+    );
+
+    // --- idempotence: a second run plans zero remove_lib items -------------
+    const libReplan = await runOnboard(["--repo-root", libTmp, "--json"], libHome);
+    const replanLibItems = (libReplan.payload?.plan || []).filter((i) => i.action === "remove_lib");
+    check(replanLibItems.length === 0,
+      "idempotence: re-running onboarding after lib removal plans zero remove_lib items",
+      JSON.stringify(replanLibItems));
+    check(libReplan.payload?.status === "up_to_date",
+      "idempotence: repo with orphaned lib module already removed reports up_to_date",
+      JSON.stringify(libReplan.payload));
+  } finally {
+    fs.rmSync(libTmp, { recursive: true, force: true });
+    fs.rmSync(libHome, { recursive: true, force: true });
+  }
+}
+
 // --- legacy-global version-parity refresh (installer-version-parity-1-3-1) ---
 // WITHOUT --global-skills, a managed skill that ALREADY EXISTS under the legacy
 // global ~/.claude/skills root is refreshed in place to current source content

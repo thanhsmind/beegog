@@ -457,6 +457,37 @@
         "scripts/test_worktree_store.mjs"
       ]
     },
+    ".bee/bin/lib/herding.mjs": {
+      "direct": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check"
+      ],
+      "all": [
+        ".bee/bin/bee.mjs knowledge check",
+        ".bee/bin/bee.mjs knowledge index --check",
+        "scripts/okf_migrate.mjs --check advisor-protocol",
+        "scripts/okf_migrate.mjs --check decision-memory",
+        "scripts/okf_migrate.mjs --check doctrine-layer",
+        "scripts/okf_migrate.mjs --check feedback-digest",
+        "scripts/okf_migrate.mjs --check hook-runtime",
+        "scripts/okf_migrate.mjs --check okf-profile",
+        "scripts/okf_migrate.mjs --check onboarding",
+        "scripts/okf_migrate.mjs --check performance-log",
+        "scripts/okf_migrate.mjs --check verify-pipeline",
+        "scripts/okf_migrate.mjs --check workflow-state",
+        "scripts/okf_migrate.mjs --check worktree-parallelism",
+        "scripts/okf_migrate.mjs --check-patterns",
+        "scripts/test_compact_verbs.mjs",
+        "scripts/test_conformance.mjs",
+        "scripts/test_native_probe.mjs",
+        "scripts/test_nested_clone_isolation.mjs",
+        "scripts/test_okf_pins.mjs",
+        "scripts/test_run_verify_skip_marker.mjs",
+        "scripts/test_worktree_cli.mjs",
+        "scripts/test_worktree_companion.mjs",
+        "scripts/test_worktree_holds.mjs"
+      ]
+    },
     ".bee/bin/lib/inject.mjs": {
       "direct": [],
       "all": [
@@ -1021,6 +1052,14 @@
         "scripts/test_worktree_store.mjs"
       ]
     },
+    ".claude/skills/bee-herding/scripts/dispatch-interlock.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs"
+      ]
+    },
     "hooks/adapter.mjs": {
       "direct": [
         "hooks/test_hook_contracts.mjs"
@@ -1239,6 +1278,7 @@
         "skills/bee-hive/templates/tests/test_config_validate.mjs",
         "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
         "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs",
         "skills/bee-hive/templates/tests/test_knowledge.mjs",
         "skills/bee-hive/templates/tests/test_misc.mjs",
         "skills/bee-hive/templates/tests/test_reviews.mjs",
@@ -1266,6 +1306,7 @@
         "skills/bee-hive/templates/tests/test_config_validate.mjs",
         "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
         "skills/bee-hive/templates/tests/test_feedback.mjs",
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs",
         "skills/bee-hive/templates/tests/test_knowledge.mjs",
         "skills/bee-hive/templates/tests/test_misc.mjs",
         "skills/bee-hive/templates/tests/test_reviews.mjs",
@@ -1287,6 +1328,7 @@
         "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
         "skills/bee-hive/templates/tests/test_feedback.mjs",
         "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs",
         "skills/bee-hive/templates/tests/test_intent.mjs",
         "skills/bee-hive/templates/tests/test_misc.mjs",
         "skills/bee-hive/templates/tests/test_reservations.mjs",
@@ -1307,6 +1349,7 @@
         "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
         "skills/bee-hive/templates/tests/test_feedback.mjs",
         "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs",
         "skills/bee-hive/templates/tests/test_intent.mjs",
         "skills/bee-hive/templates/tests/test_misc.mjs",
         "skills/bee-hive/templates/tests/test_reservations.mjs",
@@ -1798,6 +1841,7 @@
     "skills/bee-hive/templates/lib/backlog.mjs": {
       "direct": [
         "skills/bee-hive/templates/tests/test_backlog_capture.mjs",
+        "skills/bee-hive/templates/tests/test_cli_cells.mjs",
         "skills/bee-hive/templates/tests/test_state.mjs"
       ],
       "all": [
@@ -2086,6 +2130,7 @@
         "skills/bee-hive/templates/tests/test_decisions_propagation.mjs",
         "skills/bee-hive/templates/tests/test_feedback.mjs",
         "skills/bee-hive/templates/tests/test_guards.mjs",
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs",
         "skills/bee-hive/templates/tests/test_intent.mjs",
         "skills/bee-hive/templates/tests/test_knowledge.mjs",
         "skills/bee-hive/templates/tests/test_misc.mjs",
@@ -2123,6 +2168,7 @@
         "skills/bee-hive/templates/tests/test_feedback.mjs",
         "skills/bee-hive/templates/tests/test_guards.mjs",
         "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs",
         "skills/bee-hive/templates/tests/test_intent.mjs",
         "skills/bee-hive/templates/tests/test_knowledge.mjs",
         "skills/bee-hive/templates/tests/test_misc.mjs",
@@ -2144,6 +2190,16 @@
         "skills/bee-hive/templates/tests/test_guards.mjs",
         "skills/bee-hive/templates/tests/test_guards_tokenizer.mjs",
         "skills/bee-hive/templates/tests/test_misc.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/lib/herding.mjs": {
+      "direct": [],
+      "all": [
+        "scripts/test_dispatch_prepare.mjs",
+        "scripts/test_native_probe.mjs",
+        "skills/bee-hive/templates/tests/test_bee_cli.mjs",
+        "skills/bee-hive/templates/tests/test_knowledge.mjs",
+        "skills/bee-hive/templates/tests/test_scratch.mjs"
       ]
     },
     "skills/bee-hive/templates/lib/inject.mjs": {
@@ -2694,6 +2750,14 @@
       ],
       "all": [
         "skills/bee-hive/templates/tests/test_herding.mjs"
+      ]
+    },
+    "skills/bee-hive/templates/tests/test_herding_cli.mjs": {
+      "direct": [
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs"
+      ],
+      "all": [
+        "skills/bee-hive/templates/tests/test_herding_cli.mjs"
       ]
     },
     "skills/bee-hive/templates/tests/test_intent.mjs": {

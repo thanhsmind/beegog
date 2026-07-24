@@ -1110,10 +1110,20 @@ await check('knowledge promote WRITES NOTHING: buildPromotion leaves the whole r
 
 await check('knowledge promote WRITES NOTHING through the CLI either: bundle and .bee/cells/ byte-identical; the only delta is the dispatcher cache every verb writes', async () => {
   const root = makePromoteFixture();
+  // The dispatcher writes its own per-invocation files (.bee/cache/ manifest,
+  // .bee/logs/timings.jsonl) on EVERY bee verb, promote included. That set is
+  // DERIVED, never hand-listed: a read-only `knowledge check` in a virgin repo
+  // is run first, and whatever it creates is by definition the dispatcher's,
+  // not promote's — so a new dispatcher-owned file never turns this guard red
+  // and, equally, never silently widens what promote itself may write.
+  const virgin = makeRepo();
+  const virginBefore = snapshotTree(virgin);
+  await runBee(['knowledge', 'check', '--json'], virgin);
+  const virginDelta = [...snapshotTree(virgin).keys()].filter((rel) => !virginBefore.has(rel));
+
   /** Everything promote could possibly be accused of writing: the bundle and
-   *  the runtime store — but NOT .bee/cache/, which the dispatcher writes on
-   *  every single bee invocation (proven below against `knowledge check`). */
-  const owned = (snapshot) => new Map([...snapshot].filter(([rel]) => !rel.startsWith('.bee/cache/')));
+   *  the runtime store — minus the dispatcher's own derived per-run files. */
+  const owned = (snapshot) => new Map([...snapshot].filter(([rel]) => !virginDelta.includes(rel)));
   const before = snapshotTree(root);
   const result = await runBee(['knowledge', 'promote', '--work', 'demo-work', '--json'], root);
   assert(result.status === 0, `promote must exit 0, got ${result.status}: ${result.stderr}`);
@@ -1127,13 +1137,9 @@ await check('knowledge promote WRITES NOTHING through the CLI either: bundle and
     assert(afterOwned.get(rel) === bytes, `promote must not modify ${rel} (D2)`);
   }
   const delta = [...after.keys()].filter((rel) => !before.has(rel));
-  // The delta is the dispatcher's, not promote's: a read-only `knowledge
-  // check` in a virgin repo produces exactly the same file.
-  const virgin = makeRepo();
-  const virginBefore = snapshotTree(virgin);
-  await runBee(['knowledge', 'check', '--json'], virgin);
-  const virginDelta = [...snapshotTree(virgin).keys()].filter((rel) => !virginBefore.has(rel));
-  assert(JSON.stringify(delta) === JSON.stringify(virginDelta), `promote's only file delta must be the dispatcher cache every verb writes.\npromote: ${JSON.stringify(delta)}\ncheck:   ${JSON.stringify(virginDelta)}`);
+  // The delta is the dispatcher's, not promote's: the read-only `knowledge
+  // check` run in a virgin repo above produces exactly the same files.
+  assert(JSON.stringify(delta) === JSON.stringify(virginDelta), `promote's only file delta must be the per-run files every verb writes.\npromote: ${JSON.stringify(delta)}\ncheck:   ${JSON.stringify(virginDelta)}`);
 });
 
 await check('knowledge promote: the human form carries the three proposal sections and says nothing was written', async () => {

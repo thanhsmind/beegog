@@ -1083,7 +1083,7 @@ export const COMMAND_REGISTRY = [
     name: 'backlog.add',
     invoke: 'bee backlog add',
     description:
-      'Validate then append one row to .bee/backlog.jsonl (the feedback-digest source lib/feedback.mjs\'s collectFeedback reads) — agents never hand-edit .bee state. --type must be a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value (lib/feedback.mjs), --severity is P1|P2|P3, --layer is a free non-empty string <=40 chars (no allowlist), --title is required and <=200 chars. Any rejection leaves the file untouched.',
+      'Validate then append one row to .bee/backlog.jsonl (the feedback-digest source lib/feedback.mjs\'s collectFeedback reads) — agents never hand-edit .bee state. --type must be a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value (lib/feedback.mjs), --severity is P1|P2|P3, --layer is a free non-empty string <=40 chars (no allowlist), --title is required and <=200 chars. Any rejection leaves the file untouched. The row is always appended regardless of --queue-submit; only the auto-commit is gated: --queue-submit defaults false and must be passed explicitly for a human queue-submission (the caller is always the agent process, but the flag marks intent — a new item for the processing queue vs. the agent logging its own friction/debt/finding about its own session). With --queue-submit, a merge in progress is detected up front and the commit is skipped with commit_skipped_reason:"merge_in_progress" plus a visible warning suffix in the text output; every other commit failure stays a silent committed:false as before.',
     parameters: {
       type: 'object',
       properties: {
@@ -1093,11 +1093,36 @@ export const COMMAND_REGISTRY = [
         layer: { type: 'string', description: 'Free non-empty layer string, <=40 chars.' },
         detail: { type: 'string', description: 'Optional detail text.' },
         feature: { type: 'string', description: 'Optional feature slug.' },
+        'queue-submit': {
+          type: 'boolean',
+          description:
+            'Human queue-submission for this row (default false). Only when true does the scoped auto-commit run at all — an agent logging its own friction/debt/finding about its own session leaves this unset so appendJsonl still writes the row but no commit is attempted.',
+        },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
       },
       required: [],
     },
-    examples: ['bee backlog add --type friction --title "example backlog row" --severity P2 --layer state --json'],
+    examples: ['bee backlog add --type friction --title "example backlog row" --severity P2 --layer state --queue-submit --json'],
+    deprecated: null,
+  },
+  {
+    name: 'backlog.propose',
+    invoke: 'bee backlog propose',
+    description:
+      'Submit a new product-backlog item (PBI) on demand — the human-facing front door onto "backlog pbi add", taking a story plus acceptance criteria with no id and no separate title. It appends one kind:\'pbi\' add event to the .bee/backlog.jsonl PBI fold with an auto-generated `p-<8hex>` id and Status=proposed; docs/backlog.md is the GENERATED view of that fold (backlog-unification D3), so run "bee backlog render --write" to refresh the table. The command stops at the proposal — it never auto-starts bee-qualifying/bee-exploring for the new item. --story is required, <=200 chars (stored as the PBI title); --cos (acceptance criteria) is required, <=2000 chars; --feature is optional and reports as "—" when omitted. Any validation rejection leaves the log untouched.',
+    parameters: {
+      type: 'object',
+      properties: {
+        story: { type: 'string', description: 'PBI story text, required, <=200 chars — stored as the PBI title.' },
+        cos: { type: 'string', description: 'Acceptance criteria (conditions of satisfaction), required, <=2000 chars.' },
+        feature: { type: 'string', description: 'Optional feature slug; reports as "—" when omitted.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: ['story', 'cos'],
+    },
+    examples: [
+      'bee backlog propose --story "A human can submit a backlog item on demand" --cos "bee backlog propose appends a proposed PBI with an auto-assigned id" --feature backlog-submit-command --json',
+    ],
     deprecated: null,
   },
 
@@ -1832,6 +1857,60 @@ export const COMMAND_REGISTRY = [
       required: [],
     },
     examples: ['bee worktree unregister --id abc123 --json'],
+    deprecated: null,
+  },
+
+  // ─── herding (herding-dispatch-lock-toggle, decisions D1-D5) — the human
+  // owner's terminal-only convenience for the bee-herding dispatch loop's
+  // owner enable marker. Byte-for-byte the same filesystem operation as
+  // today's manual `touch`/`rm` of `<main-root>/.bee/tmp/bee-herding.enable`;
+  // `.claude/skills/bee-herding/scripts/dispatch-interlock.mjs` stays the
+  // sole reader and is never modified or called from here (D4). No runtime
+  // guard is added (D5, explicit user decision) — no TTY/interactivity
+  // check, and this group is NOT hidden from `bee.mjs --help --json`. ──────
+  {
+    name: 'herding.enable',
+    invoke: 'bee herding enable',
+    description:
+      "Create the bee-herding dispatch loop's owner enable marker (<main-root>/.bee/tmp/bee-herding.enable) — the SAME marker `.claude/skills/bee-herding/scripts/dispatch-interlock.mjs` reads before dispatch may build any dispatchable set. The main checkout root is resolved via `git rev-parse --git-common-dir`, identically to dispatch-interlock.mjs. Idempotent: running this on an already-enabled marker is not an error. Human-only convenience (D4) — never call this from dispatch-interlock.mjs, bootstrap, dispatch, merge, or any other bee automation/skill/agent code.",
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee herding enable --json'],
+    deprecated: null,
+  },
+  {
+    name: 'herding.disable',
+    invoke: 'bee herding disable',
+    description:
+      "Remove the bee-herding dispatch loop's owner enable marker (<main-root>/.bee/tmp/bee-herding.enable), so `.claude/skills/bee-herding/scripts/dispatch-interlock.mjs` refuses to let dispatch build a dispatchable set again. Idempotent: running this on an already-absent marker is not an error. Human-only convenience (D4) — never call this from dispatch-interlock.mjs, bootstrap, dispatch, merge, or any other bee automation/skill/agent code.",
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line confirmation.' },
+      },
+      required: [],
+    },
+    examples: ['bee herding disable --json'],
+    deprecated: null,
+  },
+  {
+    name: 'herding.status',
+    invoke: 'bee herding status',
+    description:
+      "Report whether the bee-herding dispatch loop's owner enable marker currently exists — {enabled, marker, main_root}, the same shape dispatch-interlock.mjs itself emits on stdout.",
+    parameters: {
+      type: 'object',
+      properties: {
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of a one-line summary.' },
+      },
+      required: [],
+    },
+    examples: ['bee herding status --json'],
     deprecated: null,
   },
 

@@ -172,6 +172,21 @@
     "workflow",
     "swarming",
     "handoff",
-    "autopilot"
+    "autopilot",
+    "feedback-digest",
+    "compounding",
+    "worktree-coordination",
+    "merge",
+    "release-manifest",
+    "herding-dispatch-lock-toggle",
+    "safety",
+    "exploring",
+    "gate",
+    "bee-herding",
+    "dispatch-guard",
+    "bookkeeping",
+    "bypass",
+    "drift",
+    "lib-mirror"
   ]
 }
