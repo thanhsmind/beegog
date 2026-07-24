@@ -346,6 +346,41 @@ await check('validate() never throws on a malformed commandEntry', async () => {
   assert(result.error.command === 'bogus', 'error.command still names the command');
 });
 
+await check('validate() problems[] names every missing required field, not just the first (ce-1 batch validation)', async () => {
+  const tierEntry = entryByName('cells.tier');
+  const result = validate(tierEntry, {});
+  assert(result.ok === false, 'missing both required fields must not validate ok');
+  assert(Array.isArray(result.problems), `problems must be an array, got ${JSON.stringify(result)}`);
+  assert(result.problems.length === 2, `expected 2 problems (id + tier), got ${JSON.stringify(result.problems)}`);
+  assert(
+    result.problems.every((p) => p.reason === 'required, missing'),
+    `every problem should be a required miss, got ${JSON.stringify(result.problems)}`,
+  );
+  const fields = result.problems.map((p) => p.field);
+  assert(fields.includes('id') && fields.includes('tier'), `expected both "id" and "tier" named, got ${JSON.stringify(fields)}`);
+  // error stays FIRST-problem-shaped (test_bee_cli.mjs:325 discipline) —
+  // schema.required order is ['id', 'tier'], so "id" comes first.
+  assert(result.error.field === 'id' && result.error.reason === 'required, missing', `error should still be the first problem, got ${JSON.stringify(result.error)}`);
+});
+
+await check('validate() enum support: an out-of-enum value is rejected with a reason naming the allowed values', async () => {
+  const tierEntry = entryByName('cells.tier');
+  const result = validate(tierEntry, { id: 'demo-1', tier: 'bogus-tier' });
+  assert(result.ok === false, 'an out-of-enum tier must not validate ok');
+  assert(result.error.field === 'tier', `error.field should be "tier", got ${JSON.stringify(result.error)}`);
+  assert(/extraction/.test(result.error.reason) && /generation/.test(result.error.reason) && /ceiling/.test(result.error.reason), `reason should name the allowed tiers, got: ${result.error.reason}`);
+  assert(result.problems.length === 1 && result.problems[0].field === 'tier', `problems should carry the single enum problem, got ${JSON.stringify(result.problems)}`);
+});
+
+await check('validate() problems[] combines a missing required field with an out-of-enum value in one refusal', async () => {
+  const tierEntry = entryByName('cells.tier');
+  const result = validate(tierEntry, { tier: 'bogus-tier' });
+  assert(result.ok === false, 'missing id + bogus tier must not validate ok');
+  assert(result.problems.length === 2, `expected 2 problems (missing id, invalid tier), got ${JSON.stringify(result.problems)}`);
+  assert(result.problems[0].field === 'id' && result.problems[0].reason === 'required, missing', `first problem should be the missing id, got ${JSON.stringify(result.problems[0])}`);
+  assert(result.problems[1].field === 'tier' && /extraction/.test(result.problems[1].reason), `second problem should name the tier enum, got ${JSON.stringify(result.problems[1])}`);
+});
+
 await check('isValidParameterSchema() rejects a bespoke (non-JSON-Schema) shape', async () => {
   assert(isValidParameterSchema({ id: 'string', worker: 'string' }) === false, 'a flat key->type map is not the D3 shape');
   assert(isValidParameterSchema({ type: 'object', properties: {}, required: ['missing'] }) === false, 'required field absent from properties must fail');
@@ -2787,6 +2822,58 @@ writeState(root2, {
 async function runBee(args, cwd = root2) {
   return await runModuleWorker(BEE_MJS, { args, cwd });
 }
+
+// ─── ce-1 (cli-ergonomics D1): batch flag validation end to end ────────────
+// One invocation reports every missing/invalid flag, with a runnable
+// Example line — both through the generic validate() layer (STDOUT, DA5/D3)
+// and through the three handler-owned legacy verbs (STDERR, DB3).
+
+await check('main(): a validate()-layer refusal (cells.tier, no flags) lists every problem plus an Example line, still on STDOUT (DB3 channel unchanged)', async () => {
+  const result = await runBee(['cells', 'tier']);
+  assert(result.status === 1, `expected exit 1, got ${result.status} (stdout: ${result.stdout}, stderr: ${result.stderr})`);
+  assert(/id/.test(result.stdout), `expected "id" named, got: ${result.stdout}`);
+  assert(/tier/.test(result.stdout), `expected "tier" named, got: ${result.stdout}`);
+  assert(/Example:/.test(result.stdout), `expected an Example: line, got: ${result.stdout}`);
+  // stderr still carries the D3 work-visibility timing line ("[bee] cells
+  // tier Nms") on every direct invocation — DB3 is about the REFUSAL text
+  // itself, which must stay off stderr entirely.
+  assert(!/required, missing/.test(result.stderr), `validate-layer refusal text must stay on STDOUT (DB3), not leak onto stderr: ${result.stderr}`);
+});
+
+await check('main(): backlog add with zero flags names every missing flag on STDERR (DB3 channel unchanged) plus an Example line', async () => {
+  const result = await runBee(['backlog', 'add']);
+  assert(result.status === 1, `expected exit 1, got ${result.status} (stdout: ${result.stdout}, stderr: ${result.stderr})`);
+  assert(result.stdout === '', `handler-owned refusals stay on STDERR (DB3) — unexpected stdout: ${result.stdout}`);
+  for (const flag of ['type', 'title', 'severity', 'layer']) {
+    assert(result.stderr.includes(`--${flag}`), `expected --${flag} named in the refusal, got: ${result.stderr}`);
+  }
+  assert(/Example:/.test(result.stderr), `expected an Example: line, got: ${result.stderr}`);
+});
+
+await check('main(): backlog add with an invalid --severity names P1/P2/P3 in one refusal', async () => {
+  const result = await runBee(['backlog', 'add', '--type', 'friction', '--title', 'demo', '--severity', 'P9', '--layer', 'state']);
+  assert(result.status === 1, `expected exit 1, got ${result.status} (stderr: ${result.stderr})`);
+  assert(/P1/.test(result.stderr) && /P2/.test(result.stderr) && /P3/.test(result.stderr), `expected P1/P2/P3 named, got: ${result.stderr}`);
+  assert(/Example:/.test(result.stderr), `expected an Example: line, got: ${result.stderr}`);
+});
+
+await check('main(): state gate with zero flags names both --name and --approved on STDERR in one refusal', async () => {
+  const result = await runBee(['state', 'gate']);
+  assert(result.status === 1, `expected exit 1, got ${result.status} (stderr: ${result.stderr})`);
+  assert(result.stdout === '', `handler-owned refusals stay on STDERR (DB3) — unexpected stdout: ${result.stdout}`);
+  assert(result.stderr.includes('--name'), `expected --name named, got: ${result.stderr}`);
+  assert(result.stderr.includes('--approved'), `expected --approved named, got: ${result.stderr}`);
+  assert(/Example:/.test(result.stderr), `expected an Example: line, got: ${result.stderr}`);
+});
+
+await check('main(): state scribing-run with zero flags names --feature, --areas and --next-action on STDERR in one refusal', async () => {
+  const result = await runBee(['state', 'scribing-run']);
+  assert(result.status === 1, `expected exit 1, got ${result.status} (stderr: ${result.stderr})`);
+  assert(result.stderr.includes('--feature'), `expected --feature named, got: ${result.stderr}`);
+  assert(result.stderr.includes('--areas'), `expected --areas named, got: ${result.stderr}`);
+  assert(result.stderr.includes('--next-action'), `expected --next-action named, got: ${result.stderr}`);
+  assert(/Example:/.test(result.stderr), `expected an Example: line, got: ${result.stderr}`);
+});
 
 // ─── pure-logic unit tests (direct import, no spawn — no side effects since
 // bee.mjs guards main() behind a direct-run check) ──────────────────────────

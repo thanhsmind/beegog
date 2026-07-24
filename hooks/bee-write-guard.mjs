@@ -578,10 +578,18 @@ function checkCliShape(command, registry, validateFn) {
       if (result && result.ok === false) {
         const field = result.error && result.error.field;
         const reason = (result.error && result.error.reason) || "does not match the command's schema";
+        // ce-1 (cli-ergonomics D1): when validateFn returns the batched
+        // `problems` array (validate-args.mjs), render every problem joined
+        // instead of just the first — the pinned substrings stay exactly
+        // where they were: "bee CLI-shape guard" and entry.name in the
+        // opening clause, "field: <first>" still naming result.error.field
+        // (the FIRST problem) at the end, unchanged position.
+        const problems = Array.isArray(result.problems) && result.problems.length > 0 ? result.problems : [{ field, reason }];
+        const detail = problems.map((p) => `${p.reason}${p.field ? ` (--${p.field})` : ""}`).join("; ");
         return {
           reason:
             `bee CLI-shape guard: "${String(command).trim()}" ` +
-            `does not match ${entry.name}'s schema — ${reason}${field ? ` (field: ${field})` : ""}. ` +
+            `does not match ${entry.name}'s schema — ${detail}${field ? ` (field: ${field})` : ""}. ` +
             `Correction: run \`${entry.invoke}\` with the required parameters (see \`bee --help --json\`).`,
         };
       }

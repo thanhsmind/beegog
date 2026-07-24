@@ -426,3 +426,5 @@
 {"ts":"2026-07-24T02:07:08.900Z","type":"friction","title":"t","detail":"","severity":"P3","layer":"x","feature":""}
 {"ts":"2026-07-24T02:07:28.962Z","type":"friction","title":"write-guard denies harness memory writes (out-of-worktree ~/.claude memory root)","detail":"","severity":"P3","layer":"workflow","feature":""}
 {"ts":"2026-07-24T02:07:29.026Z","type":"friction","title":"backlog has no retract verb for a mistaken friction row","detail":"","severity":"P3","layer":"cli","feature":""}
+{"ts":"2026-07-24T02:31:26.829Z","type":"friction","title":"flag errors drip-feed one missing flag per attempt — batch-validate and print the full runnable signature on first failure","detail":"","severity":"P2","layer":"cli","feature":""}
+{"ts":"2026-07-24T02:31:26.893Z","type":"friction","title":"cells add: no --dry-run, and array validation stops at the first bad cell — 5KB payload re-sent per retry","detail":"","severity":"P3","layer":"cli","feature":""}

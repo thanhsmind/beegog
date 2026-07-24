@@ -244,6 +244,47 @@ function requireFlag(flags, name) {
   return String(value);
 }
 
+// ce-1 (cli-ergonomics D1): batch cousin of requireFlag — collects EVERY
+// missing/invalid flag in `spec` ({name, enum?}[]) instead of throwing at the
+// first, then throws ONE Error naming all of them plus a runnable Example
+// line. Same channel as requireFlag (a thrown Error, routed to STDERR by
+// emitError — DB3, command-registry.mjs:1024-1031/641-648): only the
+// message batches, nothing moves off stderr. Returns {name: string} for
+// every spec entry once every flag is present and valid.
+function requireFlags(flags, spec, example) {
+  const missing = [];
+  const invalid = [];
+  const values = {};
+  for (const { name, enum: allowed } of spec) {
+    const value = flags[name];
+    if (value === undefined || value === '' || value === true) {
+      missing.push(`--${name}`);
+      continue;
+    }
+    const str = String(value);
+    if (allowed && !allowed.includes(str)) {
+      invalid.push(`--${name} "${str}" (must be one of ${allowed.join(', ')})`);
+      continue;
+    }
+    values[name] = str;
+  }
+  if (missing.length === 0 && invalid.length === 0) return values;
+  const parts = [];
+  if (missing.length) parts.push(`missing required flag(s): ${missing.join(', ')}`);
+  if (invalid.length) parts.push(`invalid flag(s): ${invalid.join('; ')}`);
+  const exampleLine = example ? ` Example: ${example}` : '';
+  throw new Error(`${parts.join('; ')}.${exampleLine}`);
+}
+
+// Looks up a registry entry's first documented example — used to append a
+// runnable "Example: ..." line to batch refusals (requireFlags callers and
+// the generic validate()-failure message below) so a fix is one copy-paste
+// away, never just a list of what's wrong.
+function exampleFor(commandName) {
+  const entry = COMMAND_REGISTRY.find((e) => e.name === commandName);
+  return entry && Array.isArray(entry.examples) ? entry.examples[0] : undefined;
+}
+
 function readFileText(file, label) {
   try {
     return fs.readFileSync(file, 'utf8');
@@ -1973,13 +2014,20 @@ async function handleStateGate(root, flags) {
       'gate: --owner is not accepted — routing ownership protects generic `state set` fields only. FIX: omit --owner and use the dedicated gate command.',
     );
   }
-  const name = requireFlag(flags, 'name');
-  if (!GATE_NAMES.includes(name)) {
-    throw new Error(
-      `gate: invalid gate name "${name}" — must be one of ${GATE_NAMES.join(', ')}. FIX: pass --name <one of these>.`,
-    );
-  }
-  const approved = requireBoolFlag(flags, 'approved');
+  // ce-1: name/approved batched into one refusal (requireFlags) — 'approved'
+  // is enum-checked against the literal CLI-string encoding ('true'/'false',
+  // the same set requireBoolFlag enforced) rather than parsed as a boolean
+  // first, so an invalid value still lands in the SAME batch as a missing
+  // --name instead of throwing separately.
+  const { name, approved: approvedRaw } = requireFlags(
+    flags,
+    [
+      { name: 'name', enum: GATE_NAMES },
+      { name: 'approved', enum: ['true', 'false'] },
+    ],
+    exampleFor('state.gate'),
+  );
+  const approved = approvedRaw === 'true';
   const laneFeature = optionalLaneFlag(flags, 'gate');
 
   const state = await withStoreLock(root, 'state', () => {
@@ -2182,9 +2230,13 @@ function handleStateWorkerPrune(root, flags) {
 // D6 — async: record-read through write() runs inside withStoreLock('state').
 async function handleStateScribingRun(root, flags) {
   rejectDryRun(flags);
-  const feature = requireFlag(flags, 'feature');
-  const areas = splitList(requireFlag(flags, 'areas'));
-  const nextAction = requireFlag(flags, 'next-action');
+  // ce-1: feature/areas/next-action batched into one refusal (requireFlags).
+  const { feature, areas: areasRaw, 'next-action': nextAction } = requireFlags(
+    flags,
+    [{ name: 'feature' }, { name: 'areas' }, { name: 'next-action' }],
+    exampleFor('state.scribing-run'),
+  );
+  const areas = splitList(areasRaw);
   const now = new Date();
   const at = now.toISOString();
   const date = at.slice(0, 10);
@@ -2522,21 +2574,24 @@ function handleBacklogBadges(root, flags) {
 }
 
 function handleBacklogAdd(root, flags) {
-  const type = requireFlag(flags, 'type');
-  if (!Object.prototype.hasOwnProperty.call(KIND_ALIASES, type) && !NORMALIZED_KINDS.has(type)) {
-    throw new Error(
-      `add: invalid --type "${type}" — not a KIND_ALIASES key or an already-normalized NORMALIZED_KINDS value (lib/feedback.mjs), so buildDigest would drop it as unknown_type. FIX: use one of ${backlogAllowedTypes().join(', ')}.`,
-    );
-  }
-  const title = requireFlag(flags, 'title');
+  // ce-1: every missing/invalid flag reported in ONE refusal (batch), via
+  // requireFlags — type/severity enums enforced here (not by the generic
+  // validate() layer: backlog.add's registry entry stays `required: []`,
+  // DB3). Length checks (title/layer) stay separate, ad hoc, AFTER the
+  // batch — they are not part of the {name, enum?} spec shape.
+  const { type, title, severity, layer } = requireFlags(
+    flags,
+    [
+      { name: 'type', enum: backlogAllowedTypes() },
+      { name: 'title' },
+      { name: 'severity', enum: BACKLOG_SEVERITIES },
+      { name: 'layer' },
+    ],
+    exampleFor('backlog.add'),
+  );
   if (title.length > BACKLOG_MAX_TITLE) {
     throw new Error(`add: --title is ${title.length} chars, over the ${BACKLOG_MAX_TITLE}-char limit. FIX: shorten the title.`);
   }
-  const severity = requireFlag(flags, 'severity');
-  if (!BACKLOG_SEVERITIES.includes(severity)) {
-    throw new Error(`add: invalid --severity "${severity}". FIX: use one of ${BACKLOG_SEVERITIES.join(', ')}.`);
-  }
-  const layer = requireFlag(flags, 'layer');
   if (layer.length > BACKLOG_MAX_LAYER) {
     throw new Error(`add: --layer is ${layer.length} chars, over the ${BACKLOG_MAX_LAYER}-char limit. FIX: shorten the layer.`);
   }
@@ -5619,11 +5674,23 @@ export async function main(argv) {
 
   const validation = validate(entry, parsed.flags);
   if (!validation.ok) {
-    const { field, reason, command } = validation.error;
+    const { command } = validation.error;
+    // ce-1: list EVERY problem, not just the first — `error` stays
+    // first-problem-shaped in `result` for machine consumers (test_bee_cli.mjs:325
+    // pin), the human-facing `text` gets every problem plus a runnable
+    // Example line. Channel is unchanged: this is the generic validate()
+    // path, which has always emitted via `emit()` (stdout — DB3 leaves this
+    // path alone; the three handler-owned verbs never reach here).
+    const problems = Array.isArray(validation.problems) && validation.problems.length > 0
+      ? validation.problems
+      : [validation.error];
+    const detail = problems.map((p) => `${p.reason}${p.field ? ` (--${p.field})` : ''}`).join('; ');
+    const example = exampleFor(command);
+    const exampleLine = example ? ` Example: ${example}` : '';
     return emit(
       {
-        result: { ok: false, error: validation.error },
-        text: `Invalid call to "${command}": ${reason}${field ? ` (--${field})` : ''}.`,
+        result: { ok: false, error: validation.error, problems: validation.problems },
+        text: `Invalid call to "${command}": ${detail}.${exampleLine}`,
         exitCode: 1,
       },
       useJson,

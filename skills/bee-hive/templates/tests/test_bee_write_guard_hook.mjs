@@ -213,6 +213,21 @@ check('a malformed bee.mjs-shaped Bash call (missing required --id) is denied be
   assert(result.stderr.includes('field: id'), `expected the missing field named, got: ${result.stderr}`);
 });
 
+check('ce-1: a call missing every required flag renders ALL problems joined, keeping the pinned substrings ("bee CLI-shape guard", entry name, "field: <first>")', () => {
+  const root = makeFixtureRoot();
+  const result = runHook(root, {
+    tool_name: 'Bash',
+    tool_input: { command: 'node .bee/bin/bee_cells.mjs tier' },
+  });
+  assert(result.status === 2, `expected exit 2, got ${result.status} (stderr: ${result.stderr})`);
+  assert(result.stderr.includes('bee CLI-shape guard'), `expected CLI-shape guard reason, got: ${result.stderr}`);
+  assert(result.stderr.includes('cells.tier'), `expected the resolved command name, got: ${result.stderr}`);
+  assert(result.stderr.includes('field: id'), `expected the FIRST problem field named, got: ${result.stderr}`);
+  const requiredMisses = result.stderr.match(/required, missing/g) || [];
+  assert(requiredMisses.length === 2, `expected BOTH missing fields (id, tier) reported — one "required, missing" per problem, got ${requiredMisses.length} in: ${result.stderr}`);
+  assert(result.stderr.includes('(--tier)'), `expected the second problem\'s own field annotated, got: ${result.stderr}`);
+});
+
 check('a well-formed bee.mjs-shaped Bash call is allowed (check (d) does not false-positive)', () => {
   const root = makeFixtureRoot();
   const result = runHook(root, {
