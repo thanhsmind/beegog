@@ -1279,6 +1279,96 @@ async function main() {
     check(isSharedNestedCheckoutTarget(noMarkerRoot, path.join(noMarkerRoot, target)) === false, "row77: a symlink mount with NO marker is NOT flagged by the primitive (containment's job, not this primitive's)", `no-marker`);
   }
 
+  // --- 78-82. worktree-concurrency-guard, cell wcg-2: isSharedNestedCheckoutTarget
+  // WIRED into the write-guard hook's Edit/Write and Bash dispatch (D1b/D3/D5).
+  // Exercised through the real hook child process (not in-process), because
+  // this is the behavior change: a write that used to succeed is now refused.
+  // The guard fires BEFORE checkWrite, only for a physically-contained
+  // (canonicalRelPath-resolved) target that is a genuinely shared nested
+  // checkout AND is NOT covered by a verified companion marker; a verified
+  // companion mount reached through its sanctioned symlink stays exempt (D1b:
+  // "no verified companion marker covers it"). Concurrency excludes the acting
+  // session, so a solo session is a pure no-op (D6).
+
+  // Row 78 (RED-FIRST, behavior_change): an Edit into a plain nested `.git`
+  // inside a shared checkout, with another live session, is DENIED. Pre-wiring
+  // this write SUCCEEDED (status 0) — STR65's exact unguarded incident shape.
+  {
+    const root = buildFixture("bee-wcg2-edit-plain-nested-concurrent-");
+    const nested = path.join(root, "repo");
+    fs.mkdirSync(nested, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: nested, stdio: ["ignore", "pipe", "pipe"] });
+    fs.writeFileSync(path.join(nested, "foo.js"), "// nested plain\n");
+    addLiveSession(root); // another session is live -> concurrent
+    const r78 = await runHookPayload(
+      { tool_name: "Edit", tool_input: { file_path: "repo/foo.js", old_string: "x", new_string: "y" }, session_id: "me" },
+      root,
+    );
+    check(r78.status === 2, "row78: an Edit into a plain nested .git while another session is live is DENIED (was allowed pre-wiring — STR65 shape)", `status=${r78.status} stderr=${r78.stderr}`);
+    // Row 79: the denial teaches the paved-road escape (D3/D4): a FRESH
+    // `bee worktree new --with-companion`, never an in-place conversion.
+    check(/bee worktree new --with-companion/.test(r78.stderr), "row79: the denial names `bee worktree new --with-companion` as the fix", r78.stderr);
+    check(/fresh|new (companion )?worktree/i.test(r78.stderr), "row79: the fix is worded as opening a FRESH/new worktree, not upgrading the current one in place", r78.stderr);
+  }
+
+  // Row 80 (D6 backward-compat + session exclusion): the SAME Edit, but the
+  // only live session is the acting session itself — isConcurrentMode excludes
+  // it, so the guard is a pure no-op and the write is ALLOWED.
+  {
+    const root = buildFixture("bee-wcg2-edit-plain-nested-solo-");
+    const nested = path.join(root, "repo");
+    fs.mkdirSync(nested, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: nested, stdio: ["ignore", "pipe", "pipe"] });
+    fs.writeFileSync(path.join(nested, "foo.js"), "// nested plain\n");
+    addLiveSession(root, "me"); // only the acting session is live -> solo
+    const r80 = await runHookPayload(
+      { tool_name: "Edit", tool_input: { file_path: "repo/foo.js", old_string: "x", new_string: "y" }, session_id: "me" },
+      root,
+    );
+    check(r80.status === 0, "row80: the same plain-nested Edit is ALLOWED when the only live session is the acting one (D6 no-op / session exclusion)", `status=${r80.status} stderr=${r80.stderr}`);
+  }
+
+  // Row 81 (Bash dispatch branch): a Bash-extracted write target into a plain
+  // nested `.git` while concurrent is DENIED too — proves the guard covers the
+  // Bash branch, not only Edit/Write.
+  {
+    const root = buildFixture("bee-wcg2-bash-plain-nested-concurrent-");
+    const nested = path.join(root, "repo");
+    fs.mkdirSync(nested, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: nested, stdio: ["ignore", "pipe", "pipe"] });
+    fs.writeFileSync(path.join(nested, "foo.js"), "// nested plain\n");
+    addLiveSession(root);
+    const r81 = await runHookPayload(
+      { tool_name: "Bash", tool_input: { command: "cp new.js repo/foo.js" }, session_id: "me" },
+      root,
+    );
+    check(r81.status === 2, "row81: a Bash write into a plain nested .git while concurrent is DENIED (Bash branch wired)", `status=${r81.status} stderr=${r81.stderr}`);
+  }
+
+  // Row 82 (paved-road preserved, D1b exemption): a write into a VERIFIED
+  // companion mount reached through its declared symlink stays ALLOWED even
+  // when concurrent — the verified marker covers it, so the new guard never
+  // fires (the whole point of `--with-companion`). This is the exemption that
+  // separates a sanctioned companion write from an unguarded shared-checkout
+  // write; without it the guard would break its own paved road.
+  {
+    const mountTarget = mkFixture("bee-wcg2-companion-mount-");
+    execFileSync("git", ["init", "-q"], { cwd: mountTarget, stdio: ["ignore", "pipe", "pipe"] });
+    fs.writeFileSync(path.join(mountTarget, "foo.js"), "// companion file\n");
+    const root = buildFixture("bee-wcg2-companion-verified-concurrent-");
+    fs.symlinkSync(mountTarget, path.join(root, "repo"));
+    fs.writeFileSync(
+      path.join(root, ".bee", "companion-session.json"),
+      `${JSON.stringify({ sessionId: "s1", worktreePath: mountTarget, mountPath: "repo" }, null, 2)}\n`,
+    );
+    addLiveSession(root);
+    const r82 = await runHookPayload(
+      { tool_name: "Edit", tool_input: { file_path: "repo/foo.js", old_string: "x", new_string: "y" }, session_id: "me" },
+      root,
+    );
+    check(r82.status === 0, "row82: a write into a verified companion mount stays ALLOWED even when concurrent (verified marker covers it — paved road preserved)", `status=${r82.status} stderr=${r82.stderr}`);
+  }
+
   process.stdout.write(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}\n`);
   process.exitCode = failures === 0 ? 0 : 1;
 }
