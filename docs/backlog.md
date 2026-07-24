@@ -47,6 +47,9 @@ never a generation timestamp or any other wall-clock value.
 ## Done / Declined
 
 - [p-0aa807b9] run_verify --impacted gains --level 1: direct-edge-only selection for the dev loop, transitive closure reserved for wave-close/merge — done
+- [p-4f2f032e] A human can directly submit a new work item into the product backlog on demand, with its own PBI ID — done
+- [p-70481060] bee backlog add's auto-commit only fires for a human queueing work, never for an agent self-adding a row about its own in-flight work — done
+- [p-a6fb70cc] Adding a backlog row never leaves an uncommitted file behind — done
 - [p-ccc558a0] Installer verify fails: bee.mjs status reports drift=true post-apply when repo-copy sync leaves an orphaned extra lib file — done
 - [P1] A greenfield repo with no build gets an init lane on its first onboard — done
 - [P10] Gate 4 walkthrough can quiz the approver — done
