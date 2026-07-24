@@ -532,16 +532,134 @@ function printScopedBanner(selected, total) {
   );
 }
 
-export function runOne(entry) {
+// ─── per-suite timeout + heartbeat (i54-closeout-2, D2) ────────────────────
+// runOne() used to spawn a suite with no upper bound: a hung child ran
+// forever with zero visible signal beyond "the pool never finished". Two
+// independent behaviors close that gap without touching the hermetic env
+// scrub (childEnv(), unchanged below) or any pass/fail semantics for
+// non-timeout suites: (a) a per-suite wall-clock timeout that kills the
+// WHOLE child process group (not just the direct child — a suite may have
+// spawned its own grandchildren) and reports a distinct TIMEOUT failure,
+// never conflated with an ordinary red, never a silent hang; (b) a
+// heartbeat line to STDERR (never stdout, so machine-readable summary
+// output stays clean) naming whichever suites are still in flight, so a
+// human or agent watching a long run never mistakes progress for a freeze.
+const DEFAULT_SUITE_TIMEOUT_MS = 300000;
+const DEFAULT_HEARTBEAT_MS = 30000;
+
+// BEE_VERIFY_SUITE_TIMEOUT_MS: "0" or "none" (case-insensitive) disables the
+// timeout outright; unset, blank, or unparseable falls back to the 300s
+// default rather than silently running unbounded.
+export function resolveSuiteTimeoutMs() {
+  const raw = process.env.BEE_VERIFY_SUITE_TIMEOUT_MS;
+  if (raw === undefined) return DEFAULT_SUITE_TIMEOUT_MS;
+  const trimmed = raw.trim();
+  if (trimmed === "") return DEFAULT_SUITE_TIMEOUT_MS;
+  const lower = trimmed.toLowerCase();
+  if (lower === "0" || lower === "none") return 0;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_SUITE_TIMEOUT_MS;
+}
+
+// BEE_VERIFY_HEARTBEAT_MS: cadence override, defaulting to ~30s; unset,
+// blank, zero, negative, or unparseable falls back to the default rather
+// than spinning a zero-delay interval.
+export function resolveHeartbeatMs() {
+  const raw = process.env.BEE_VERIFY_HEARTBEAT_MS;
+  if (raw === undefined) return DEFAULT_HEARTBEAT_MS;
+  const trimmed = raw.trim();
+  if (trimmed === "") return DEFAULT_HEARTBEAT_MS;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_HEARTBEAT_MS;
+}
+
+// In-flight tracker: shared between runOne/runSerialGroup (which start/end
+// entries as they actually run) and the heartbeat interval (which only ever
+// reads a snapshot). Kept as its own tiny object — injectable and directly
+// testable without needing the full pool/process.exit machinery of
+// runSelectedSuites.
+export function createInFlightTracker() {
+  const inFlight = new Map();
+  return {
+    start(label) {
+      inFlight.set(label, Date.now());
+    },
+    end(label) {
+      inFlight.delete(label);
+    },
+    snapshot() {
+      return [...inFlight.entries()];
+    },
+  };
+}
+
+// Prints one HEARTBEAT line to stderr per tick naming every suite still in
+// flight plus its own elapsed time and the run's total elapsed time. Silent
+// on a tick where nothing is in flight (e.g. right at pool start) — never a
+// blank/noise line. `intervalMs`/`wallStart`/`log` are all injectable so a
+// test can assert emission on a short interval without an unconditional 30s
+// sleep; `intervalMs <= 0` disables the heartbeat entirely (returns null,
+// nothing to clear). Default `log` is `console.error` — stderr, never
+// stdout, so machine-readable summary output is never corrupted.
+export function startHeartbeat(tracker, { intervalMs = resolveHeartbeatMs(), wallStart = Date.now(), log = console.error } = {}) {
+  if (!(intervalMs > 0)) return null;
+  const timer = setInterval(() => {
+    const active = tracker.snapshot();
+    if (active.length === 0) return;
+    const now = Date.now();
+    const totalS = ((now - wallStart) / 1000).toFixed(1);
+    const names = active
+      .map(([label, startedAt]) => `${label} (${((now - startedAt) / 1000).toFixed(1)}s)`)
+      .join(", ");
+    log(`HEARTBEAT: ${active.length} suite(s) still running after ${totalS}s: ${names}`);
+  }, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return timer;
+}
+
+export function stopHeartbeat(timer) {
+  if (timer) clearInterval(timer);
+}
+
+export function runOne(entry, opts = {}) {
   const [script, ...args] = entry;
+  const label = suiteLabel(entry);
   const start = Date.now();
+  const timeoutMs = opts.timeoutMs !== undefined ? opts.timeoutMs : resolveSuiteTimeoutMs();
+  const tracker = opts.tracker;
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], {
       cwd: REPO_ROOT,
       env: childEnv(),
+      // detached: true makes this child the leader of its own process group
+      // (POSIX) so a timeout can kill the group — the child plus any
+      // grandchildren it spawned — instead of leaving orphans running past
+      // the kill.
+      detached: true,
     });
+    tracker?.start(label);
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    let timer = null;
+
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          // Negative pid = kill the whole process group, not just this pid.
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            // process already gone; nothing left to kill.
+          }
+        }
+      }, timeoutMs);
+    }
+
     child.stdout.on("data", (d) => {
       stdout += d;
     });
@@ -549,12 +667,23 @@ export function runOne(entry) {
       stderr += d;
     });
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      tracker?.end(label);
+      const ms = Date.now() - start;
+      const finalCode = timedOut ? 124 : code;
+      if (timedOut) {
+        stderr += `\nTIMEOUT after ${timeoutMs}ms — suite killed\n`;
+      }
       resolve({
-        label: suiteLabel(entry),
-        code,
-        ms: Date.now() - start,
+        label,
+        code: finalCode,
+        ms,
         stdout,
         stderr,
+        timedOut,
+        timeoutMs,
       });
     });
   });
@@ -563,12 +692,13 @@ export function runOne(entry) {
 // Run a group of suite entries strictly one after another; return their
 // individual results. Used for the SERIAL_SENSITIVE unit so those suites
 // never overlap each other, even though the group as a whole runs
-// concurrently with other pool units.
-async function runSerialGroup(entries) {
+// concurrently with other pool units. `opts` (tracker, timeoutMs) passes
+// straight through to each runOne() call.
+async function runSerialGroup(entries, opts = {}) {
   const results = [];
   for (const entry of entries) {
     // eslint-disable-next-line no-await-in-loop
-    results.push(await runOne(entry));
+    results.push(await runOne(entry, opts));
   }
   return results;
 }
@@ -766,31 +896,41 @@ async function runSelectedSuites(activeSuites, { concurrency, beforeBanner, afte
   const bundleEntries = rest.filter((entry) => LIVE_BUNDLE_GROUP.has(suiteLabel(entry)));
   const parallelEntries = rest.filter((entry) => !LIVE_BUNDLE_GROUP.has(suiteLabel(entry)));
 
+  const tracker = createInFlightTracker();
+
   const units = [];
   if (serialEntries.length > 0) {
-    units.push(() => runSerialGroup(serialEntries));
+    units.push(() => runSerialGroup(serialEntries, { tracker }));
   }
   if (bundleEntries.length > 0) {
-    units.push(() => runSerialGroup(bundleEntries));
+    units.push(() => runSerialGroup(bundleEntries, { tracker }));
   }
   for (const entry of parallelEntries) {
-    units.push(() => runOne(entry).then((r) => [r]));
+    units.push(() => runOne(entry, { tracker }).then((r) => [r]));
   }
 
   if (beforeBanner) beforeBanner();
 
   const wallStart = Date.now();
+  const heartbeatTimer = startHeartbeat(tracker, { wallStart });
   const results = await runPool(units, concurrency);
+  stopHeartbeat(heartbeatTimer);
   const wallMs = Date.now() - wallStart;
 
   results.sort((a, b) => a.label.localeCompare(b.label));
 
   let anyFail = false;
   for (const r of results) {
-    const status = r.code === 0 ? "PASS" : "FAIL";
+    const status = r.timedOut ? "TIMEOUT" : r.code === 0 ? "PASS" : "FAIL";
     if (r.code !== 0) anyFail = true;
-    const note = status === "PASS" ? skipNote(r.stdout) : null;
-    console.log(`${status}  ${String(r.ms).padStart(6)}ms  ${r.label}${note ? `  [SKIPPED: ${note}]` : ""}`);
+    let note = "";
+    if (status === "PASS") {
+      const skip = skipNote(r.stdout);
+      if (skip) note = `  [SKIPPED: ${skip}]`;
+    } else if (status === "TIMEOUT") {
+      note = `  [after ${r.timeoutMs}ms]`;
+    }
+    console.log(`${status}  ${String(r.ms).padStart(6)}ms  ${r.label}${note}`);
   }
 
   const failed = results.filter((r) => r.code !== 0);
